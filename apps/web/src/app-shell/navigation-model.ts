@@ -125,6 +125,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
  * (sale, history, stock, products, customers, result) are not here.
  */
 const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
+  "account-security",
   "categories",
   "expenses",
   "payment-profiles",

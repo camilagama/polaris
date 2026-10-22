@@ -79,6 +79,7 @@ describe("resolveRoute", () => {
       "/expenses",
       "/categories",
       "/sales/detail",
+      "/conta/seguranca",
     ]) {
       expect(resolveRoute(path)).toMatchObject({ onlineOnly: true });
     }

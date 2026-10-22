@@ -26,8 +26,7 @@ export function leaveSessionOver(
   const reason = options.atOpen
     ? openingReason(readSessionMarker())
     : ("sessao" as const);
-  // whatever was said is said once: the next opening without a session starts clean
-  clearSessionMarker();
+
   // a send that never answers must not trap the person on this panel: the caches are
   // already gone and the runtime drops the copy at the next start anyway
   const grace = new Promise<void>((resolve) => {
@@ -35,5 +34,10 @@ export function leaveSessionOver(
   });
   Promise.race([runtime?.dropSessionCopy() ?? Promise.resolve(), grace])
     .catch(() => undefined)
-    .then(() => leaveTo(signInPath({ reason, returnTo })));
+    .then(() => {
+      // whatever was said is said once: the next opening without a session starts clean (cleared only now, so a
+      // second call during the wait still reads it)
+      clearSessionMarker();
+      leaveTo(signInPath({ reason, returnTo }));
+    });
 }
