@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import {
+  OFFLINE_POC_ORIGIN,
+  OFFLINE_POC_PORT,
+  reuseExistingServer,
+  workersFrom,
+} from "./e2e/run-settings";
 
 const inCI = Boolean(process.env.CI);
 
@@ -34,15 +40,16 @@ export default defineConfig({
   testMatch: "**/*.e2e.ts",
   timeout: 45_000,
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: OFFLINE_POC_ORIGIN,
     trace: "retain-on-failure",
   },
   webServer: {
-    command:
-      "bun run build:offline-poc && bunx vite preview --config vite.offline.config.ts --host 127.0.0.1 --port 4173 --strictPort",
-    reuseExistingServer: !inCI,
+    command: `bun run build:offline-poc && bunx vite preview --config vite.offline.config.ts --host 127.0.0.1 --port ${OFFLINE_POC_PORT} --strictPort`,
+    reuseExistingServer,
     timeout: 120_000,
-    url: "http://127.0.0.1:4173/offline-poc?release=1",
+    url: `${OFFLINE_POC_ORIGIN}/offline-poc?release=1`,
   },
-  workers: 1, // SQLite WASM is memory-intensive; keep browser runs serial.
+  // SQLite WASM is memory-intensive: a few workers, not one per core. Each test has its own browser context, so its
+  // OPFS and storage are its own. `E2E_WORKERS` sets the number of workers.
+  workers: workersFrom(inCI ? 2 : 1),
 });

@@ -2,12 +2,14 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { productionPolicy, watchCspViolations } from "../e2e/csp-fixture";
+import { PWA_ORIGIN } from "../e2e/run-settings";
 
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const APPEARANCE = /^Aparência:/;
-const OWN_FONT_FILE =
-  /^http:\/\/127\.0\.0\.1:4174\/assets\/geist[\w-]+\.woff2$/;
+const OWN_FONT_FILE = new RegExp(
+  `^${PWA_ORIGIN.replaceAll(".", "\\.")}/assets/geist[\\w-]+\\.woff2$`
+);
 
 /**
  * ADR 0103, condition 2 (and V1 of the architect): every interface primitive opens under the shell's real

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { OFFLINE_POC_ORIGIN } from "./run-settings";
 
 /**
  * The real Cloudflare Turnstile script on the five pages that load it (ADR 0100, AC-7), under the policy
@@ -24,7 +25,7 @@ const HEADERS = readFileSync(
   new URL("../public/_headers", import.meta.url),
   "utf8"
 );
-const APP_ORIGIN = "http://127.0.0.1:4173";
+const APP_ORIGIN = OFFLINE_POC_ORIGIN;
 const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const STAND_IN_TOKEN = /^tt-/;
 const CSP_MESSAGE = /Content Security Policy|Refused to/i;
