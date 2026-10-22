@@ -5,8 +5,8 @@ import type { Client } from "pg";
  * and proved by the definer-hardening gate). Each of these roles owns SECURITY DEFINER functions and is only a
  * target of ownership, never a login, so all of them must be NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
  * NOREPLICATION and NOBYPASSRLS. No migration gives any of them BYPASSRLS (each `CREATE ROLE`/`ALTER ROLE` of a
- * `*_owner` says NOBYPASSRLS), so there is no exception: if one ever needs it, list it in `ALLOWED_ATTRIBUTES`
- * with the reason, for that role only.
+ * `*_owner` says NOBYPASSRLS), so there is no exception; if one ever needs an attribute, accept it here for that
+ * role only, with the reason.
  */
 const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
 
@@ -28,9 +28,6 @@ type Attribute =
   | "REPLICATION"
   | "SUPERUSER";
 
-// role name -> attributes it may hold, with the reason in a comment; empty on purpose (checked in the migrations)
-const ALLOWED_ATTRIBUTES: Readonly<Record<string, readonly Attribute[]>> = {};
-
 const OWNER_ROLES_SQL = `SELECT rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
    FROM pg_roles
   WHERE rolname LIKE '${OWNER_ROLE_LIKE}'
@@ -48,9 +45,8 @@ export function ownerAttributeFindings(rows: OwnerRoleRow[]): string[] {
       ["REPLICATION", row.rolreplication],
       ["BYPASSRLS", row.rolbypassrls],
     ];
-    const allowed = ALLOWED_ATTRIBUTES[row.rolname] ?? [];
     for (const [attribute, isHeld] of held) {
-      if (isHeld && !allowed.includes(attribute)) {
+      if (isHeld) {
         findings.push(`${row.rolname}: ${attribute}`);
       }
     }

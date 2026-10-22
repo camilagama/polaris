@@ -11,6 +11,7 @@ import {
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { findOwnerAttributeViolations } from "./owner-role-attributes";
 import {
   gateBranchPattern,
   journalMigrationCount,
@@ -45,8 +46,8 @@ import {
  * The replay is the real command (`bun run db:migrate` of this package, drizzle-kit), so a refusal is the one the
  * staging deploy would hit; the error of the failing migration is printed first.
  *
- * After the replay the gate runs the read-only definer-hardening checks, the ones `staging:verify-database after-migrate`
- * runs on Neon. PostgreSQL 16+ makes a non-superuser with CREATEROLE a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE of
+ * After the replay the gate runs the read-only definer-hardening checks and the check of the attributes of the
+ * `polaris_*_owner` roles, the ones `staging:verify-database after-migrate` runs on Neon. PostgreSQL 16+ makes a non-superuser with CREATEROLE a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE of
  * every role it creates, so the owner is an ADMIN-only member of every `polaris_*` role here too (the gate asserts the
  * edges exist, so the proof cannot pass by their absence); such an edge is not a runtime login, and the checks must pass.
  * The control: the same owner with INHERIT or SET on a `*_runtime` group is a runtime login that is the database owner,
@@ -318,6 +319,10 @@ async function run() {
         "the owner is an ADMIN-only member (no INHERIT, no SET) of every runtime group it created"
       );
       assertClean(await findViolations(verify));
+      // the attributes of the polaris_*_owner roles, the other read-only check of `staging:verify-database after-migrate`
+      const ownerRoles = await findOwnerAttributeViolations(verify);
+      assert.ok(ownerRoles.checked > 0, "no polaris_*_owner role was created");
+      assert.deepEqual(ownerRoles.findings, []);
       // the control: INHERIT or SET on a runtime group makes the owner a runtime login, which is the database owner
       const [group] = await rolesWhere(
         verify,
