@@ -196,7 +196,10 @@
     "staging": {
       "name": "polaris-web-staging",
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
-      "workers_dev": true,
+      // Served at dash.araute.app by a Custom Domain created outside this file (ADR 0097, runbook staging.md):
+      // no `routes` here, so the deploy token needs no zone permission and a deploy leaves the domain alone.
+      // workers.dev is off because the origin check accepts one origin only (BETTER_AUTH_BASE_URL).
+      "workers_dev": false,
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
@@ -206,7 +209,7 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
-        "BETTER_AUTH_BASE_URL": "https://polaris-web-staging.polaris-pr11-gate.workers.dev",
+        "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev",
         "OFFLINE_LEASE_KEY_ID": "staging-1"
       },
