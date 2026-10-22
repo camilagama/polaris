@@ -4,7 +4,8 @@ import { getProduct } from "../server/catalog";
 import { ProductView, useFooterHref } from "../views";
 
 export const Route = createFileRoute("/$slug/p/$productId")({
-  component: ProductDetail,
+  loader: ({ params }) =>
+    getProduct({ data: { productId: params.productId, slug: params.slug } }),
   head: ({ loaderData }) =>
     loaderData
       ? productHead({
@@ -13,8 +14,7 @@ export const Route = createFileRoute("/$slug/p/$productId")({
           profile: loaderData.profile,
         })
       : {},
-  loader: ({ params }) =>
-    getProduct({ data: { productId: params.productId, slug: params.slug } }),
+  component: ProductDetail,
 });
 
 function ProductDetail() {

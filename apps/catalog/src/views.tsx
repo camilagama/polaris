@@ -38,7 +38,7 @@ export function useFooterHref(): string | null {
 }
 
 /** On every page, for every store: nothing in the profile, the database or the API switches it off. */
-export function Footer({ href }: { href: string | null }) {
+function Footer({ href }: { href: string | null }) {
   return (
     <footer className="foot">
       <span aria-hidden="true" className="dot" />

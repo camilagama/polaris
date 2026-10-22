@@ -5,7 +5,11 @@ import { StoreView, useFooterHref } from "../views";
 
 // the order matters for inference: search, then deps, then loader, then head
 export const Route = createFileRoute("/$slug/")({
-  component: Store,
+  validateSearch: (search: Record<string, unknown>): { after?: string } =>
+    typeof search.after === "string" ? { after: search.after } : {},
+  loaderDeps: ({ search }) => ({ after: search.after }),
+  loader: ({ deps, params }) =>
+    getStore({ data: { after: deps.after, slug: params.slug } }),
   head: ({ loaderData }) =>
     loaderData
       ? storeHead({
@@ -14,11 +18,7 @@ export const Route = createFileRoute("/$slug/")({
           profile: loaderData.profile,
         })
       : {},
-  loader: ({ deps, params }) =>
-    getStore({ data: { after: deps.after, slug: params.slug } }),
-  loaderDeps: ({ search }) => ({ after: search.after }),
-  validateSearch: (search: Record<string, unknown>): { after?: string } =>
-    typeof search.after === "string" ? { after: search.after } : {},
+  component: Store,
 });
 
 /** The first product shown that has a picture: the store's preview image. */

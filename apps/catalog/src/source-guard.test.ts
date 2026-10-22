@@ -299,7 +299,10 @@ describe("POLARIS_SITE_URL by environment (AC-11)", () => {
     const config = JSON.parse(
       raw.replace(LINE_COMMENT, "").replace(TRAILING_COMMA, "$1")
     ) as {
-      env: Record<string, { vars: Record<string, string> }>;
+      env: {
+        production: { vars: Record<string, string> };
+        staging: { vars: Record<string, string> };
+      };
       vars: Record<string, string>;
     };
     expect(config.vars.POLARIS_SITE_URL).toBe("");
