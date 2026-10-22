@@ -46,7 +46,7 @@ Os itens 3, 14, 15 e 16 do [release-checklist](../runbooks/release-checklist.md)
 ### Itens do release-checklist no staging
 
 - **Itens 3 e 15:** o staging é **ensaio**. A prova vale de novo no go-live, contra o banco de produção.
-- A cada migrate, o workflow roda a parte só de leitura do gate `definer-hardening` ([ADR 0093](0093-funcoes-security-definer-e-privilegios-padrao.md)) contra o banco de staging (`staging:verify-database after-migrate`).
+- A cada migrate, o workflow roda a parte só de leitura do gate `definer-hardening` ([ADR 0093](0093-funcoes-security-definer-e-privilegios-padrao.md)) contra o banco de staging (`staging:verify-database after-migrate`), junto com a conferência dos atributos dos papéis `polaris_%_owner` (`NOLOGIN`, `NOSUPERUSER`, `NOCREATEROLE`, `NOCREATEDB`, `NOREPLICATION`, `NOBYPASSRLS`).
 - **Item 14:** a cota do binding `IMAGES` é provocada pelo caminho real de miniatura (envio de imagem sintética pelo app, com miniaturas geradas pelo Worker), e não por uma rota de diagnóstico, que não existe.
 - **Item 16 (decisão):** uma versão temporária, enviada com `wrangler versions upload --env staging`, lança uma exceção não capturada. Depois, a conferência nos Workers Logs e o rollback. **Nunca** uma rota de falha no código.
 

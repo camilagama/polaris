@@ -8,6 +8,7 @@ import {
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
+import { findOwnerAttributeViolations } from "./owner-role-attributes";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -27,9 +28,12 @@ import {
  *      schema public, directly or through PUBLIC, and neither has any role it can reach with SET ROLE;
  *   3. no runtime role is the database owner (`datdba`) or a superuser, or a member (with SET or INHERIT) of the database owner,
  *      of `neon_superuser` (when it exists) or of any `*_owner` role;
- *   4. no SECURITY DEFINER function is executable by PUBLIC (an absent ACL means PUBLIC may execute).
+ *   4. no SECURITY DEFINER function is executable by PUBLIC (an absent ACL means PUBLIC may execute);
+ *   5. every `polaris_*_owner` role is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOBYPASSRLS
+ *      (the same read-only check as `staging:verify-database after-migrate`).
  * The gate then proves it can fail: it creates a throwaway function without `pg_temp` and without a REVOKE, grants
- * TEMPORARY and CREATE to a runtime role, makes a throwaway runtime login the database owner or a member of an owner role,
+ * TEMPORARY and CREATE to a runtime role, makes a throwaway runtime login the database owner or a member of an owner role
+ * (also with ADMIN OPTION alone on a runtime group and on an owner role), creates a throwaway `polaris_*_owner` role with LOGIN, CREATEDB and CREATEROLE (and REPLICATION and BYPASSRLS, as a superuser),
  * and each check must report exactly that; everything is undone.
  */
 const expectedDatabase =
@@ -73,6 +77,10 @@ async function run() {
   const adminOnly = `gate_definer_adminonly_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
   let adminOnlyCreated = false;
   let neonSuperuserCreated = false;
+  const adminBoth = `gate_definer_adminboth_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
+  let adminBothCreated = false;
+  const ownerAttributes = `polaris_gate_attr_${randomUUID().slice(0, 8).replaceAll("-", "")}_owner`;
+  let ownerAttributesCreated = false;
 
   try {
     const server = await client.query<{
@@ -349,6 +357,66 @@ async function run() {
       "a login that is not the database owner, with ADMIN OPTION alone on a runtime group, is a runtime login and is checked like one"
     );
 
+    // a login that is not the database owner, with ADMIN OPTION alone on a runtime group and on an owner role: the owner edge is the finding
+    await client.query(`CREATE ROLE ${adminBoth} NOLOGIN NOSUPERUSER`);
+    adminBothCreated = true;
+    // control: the ADMIN edge on an owner role alone, without the runtime group, makes no runtime login
+    await client.query(
+      `GRANT "${otherOwner}" TO ${adminBoth} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+    );
+    assertClean(await findViolations(client));
+    await client.query(`REVOKE "${otherOwner}" FROM ${adminBoth}`);
+    await client.query(
+      `GRANT ${PROBE_ROLE} TO ${adminBoth} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+    );
+    // control: without an edge to a *_owner role, nothing is reported (the runtime group edge alone is not a finding)
+    assertClean(await findViolations(client));
+    await client.query(
+      `GRANT "${otherOwner}" TO ${adminBoth} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+    );
+    assert.deepEqual((await findViolations(client)).ownerMembership, [
+      `${adminBoth}->${otherOwner}`,
+    ]);
+    await client.query(`REVOKE "${otherOwner}" FROM ${adminBoth}`);
+    assertClean(await findViolations(client));
+    await client.query(`DROP ROLE ${adminBoth}`);
+    adminBothCreated = false;
+    tests.push(
+      "a login that is not the database owner, with only ADMIN OPTION on a runtime group and only ADMIN OPTION on a *_owner role, is reported in ownerMembership; without the *_owner edge nothing is reported"
+    );
+
+    // the attributes of the polaris_*_owner roles: the migrated ones are clean, a throwaway one with forbidden attributes is reported
+    const migratedOwners = await findOwnerAttributeViolations(client);
+    assert.ok(migratedOwners.checked > 0);
+    assert.deepEqual(migratedOwners.findings, []);
+    await client.query(
+      `CREATE ROLE ${ownerAttributes} LOGIN NOSUPERUSER CREATEDB CREATEROLE`
+    );
+    ownerAttributesCreated = true;
+    const expectedAttributes = [
+      `${ownerAttributes}: LOGIN`,
+      `${ownerAttributes}: CREATEROLE`,
+      `${ownerAttributes}: CREATEDB`,
+    ];
+    assert.deepEqual(
+      (await findOwnerAttributeViolations(client)).findings,
+      expectedAttributes
+    );
+    if (self.rows[0]?.rolsuper) {
+      await client.query(`ALTER ROLE ${ownerAttributes} REPLICATION BYPASSRLS`);
+      assert.deepEqual((await findOwnerAttributeViolations(client)).findings, [
+        ...expectedAttributes,
+        `${ownerAttributes}: REPLICATION`,
+        `${ownerAttributes}: BYPASSRLS`,
+      ]);
+    }
+    await client.query(`DROP ROLE ${ownerAttributes}`);
+    ownerAttributesCreated = false;
+    assert.deepEqual((await findOwnerAttributeViolations(client)).findings, []);
+    tests.push(
+      "a polaris_*_owner role with LOGIN, CREATEROLE or CREATEDB (and REPLICATION or BYPASSRLS, as a superuser) is reported, naming the role and the attribute; the migrated owner roles are clean"
+    );
+
     // the gate can fail: a role the login can reach with SET ROLE, even without inheriting it, holds TEMPORARY or CREATE
     await client.query(`CREATE ROLE ${reach} NOLOGIN NOSUPERUSER`);
     reachCreated = true;
@@ -426,6 +494,15 @@ async function run() {
     }
     if (runnerCreated) {
       await cleanup("runner login", `DROP ROLE IF EXISTS ${runner}`);
+    }
+    if (adminBothCreated) {
+      await cleanup("admin-both login", `DROP ROLE IF EXISTS ${adminBoth}`);
+    }
+    if (ownerAttributesCreated) {
+      await cleanup(
+        "owner attributes role",
+        `DROP ROLE IF EXISTS ${ownerAttributes}`
+      );
     }
     if (adminOnlyCreated) {
       await cleanup("admin-only login", `DROP ROLE IF EXISTS ${adminOnly}`);

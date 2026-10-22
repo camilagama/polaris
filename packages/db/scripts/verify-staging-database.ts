@@ -12,6 +12,7 @@ import {
   type EnvironmentReadings,
   markerComment,
 } from "./environment-marker";
+import { findOwnerAttributeViolations } from "./owner-role-attributes";
 import { poolerPattern, sqlState } from "./sales-gate-support";
 
 /**
@@ -24,7 +25,9 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
  *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect).
  * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093); PUBLIC has no
- *   TEMPORARY; and every login other than the owner is a member of a `polaris_*_runtime` group (item 15).
+ *   TEMPORARY; every `polaris_*_owner` role is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and
+ *   NOBYPASSRLS (`owner-role-attributes.ts`); and every login other than the owner is a member of a
+ *   `polaris_*_runtime` group (item 15).
  *
  * The output lists names only: no URL, password or data.
  */
@@ -94,6 +97,13 @@ async function checkHardening(client: Client) {
     "SELECT has_database_privilege('public', current_database(), 'TEMPORARY') AS can_temp"
   );
   assert.equal(temporary.rows[0]?.can_temp, false, "PUBLIC has TEMPORARY");
+  const owners = await findOwnerAttributeViolations(client);
+  assert.ok(owners.checked > 0, "no polaris_*_owner role");
+  assert.deepEqual(
+    owners.findings,
+    [],
+    "polaris_*_owner roles with an attribute they must not have (role: attribute)"
+  );
   // every login the app uses belongs to a runtime group: the gate sees only those as runtime roles
   const logins = await client.query<{ groups: string[]; login: string }>(
     `SELECT r.rolname AS login,
@@ -118,6 +128,7 @@ async function checkHardening(client: Client) {
   return [
     "definer-hardening (read-only): no finding",
     "PUBLIC has no TEMPORARY on the database",
+    `${owners.checked} polaris_*_owner roles: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
     ...appLogins.map((row) => `login ${row.login}: ${row.groups.join(", ")}`),
   ];
 }
