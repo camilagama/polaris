@@ -70,6 +70,8 @@ async function run() {
   let reachCreated = false;
   const superuser = `gate_definer_super_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
   let superuserCreated = false;
+  const adminOnly = `gate_definer_adminonly_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
+  let adminOnlyCreated = false;
   let neonSuperuserCreated = false;
 
   try {
@@ -328,6 +330,25 @@ async function run() {
       "a runtime login that is the database owner, a superuser or has CREATEROLE, REPLICATION or BYPASSRLS, or that reaches (with SET, INHERIT or ADMIN OPTION, directly, through a group or through a mixed chain) the database owner, neon_superuser, a superuser, a *_owner role or a predefined file or program role, is reported by the gate"
     );
 
+    // a role that is not the database owner and has only ADMIN OPTION on a runtime group (no INHERIT, no SET) is still a runtime role: it could grant itself the group
+    await client.query(
+      `CREATE ROLE ${adminOnly} NOLOGIN NOSUPERUSER CREATEROLE`
+    );
+    adminOnlyCreated = true;
+    await client.query(
+      `GRANT ${PROBE_ROLE} TO ${adminOnly} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+    );
+    assert.deepEqual((await findViolations(client)).privilegedRuntime, [
+      `${adminOnly} (CREATEROLE, REPLICATION or BYPASSRLS)`,
+    ]);
+    await client.query(`ALTER ROLE ${adminOnly} NOCREATEROLE`);
+    assertClean(await findViolations(client));
+    await client.query(`DROP ROLE ${adminOnly}`);
+    adminOnlyCreated = false;
+    tests.push(
+      "a login that is not the database owner, with ADMIN OPTION alone on a runtime group, is a runtime login and is checked like one"
+    );
+
     // the gate can fail: a role the login can reach with SET ROLE, even without inheriting it, holds TEMPORARY or CREATE
     await client.query(`CREATE ROLE ${reach} NOLOGIN NOSUPERUSER`);
     reachCreated = true;
@@ -405,6 +426,9 @@ async function run() {
     }
     if (runnerCreated) {
       await cleanup("runner login", `DROP ROLE IF EXISTS ${runner}`);
+    }
+    if (adminOnlyCreated) {
+      await cleanup("admin-only login", `DROP ROLE IF EXISTS ${adminOnly}`);
     }
     if (superuserCreated) {
       await cleanup("superuser login", `DROP ROLE IF EXISTS ${superuser}`);

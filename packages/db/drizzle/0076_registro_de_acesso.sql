@@ -12,7 +12,12 @@ BEGIN
     EXECUTE 'CREATE ROLE polaris_access_log_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
   END IF;
   -- a role that already existed gets the same attributes: this one reads the IPs and is never a login
-  EXECUTE 'ALTER ROLE polaris_access_log_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
+  -- no NOSUPERUSER here: PostgreSQL refuses it to a role that is not a superuser itself (Neon), and a role made by one never is;
+  -- the check below keeps the guarantee
+  EXECUTE 'ALTER ROLE polaris_access_log_owner NOLOGIN NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS';
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'polaris_access_log_owner' AND rolsuper) THEN
+    RAISE EXCEPTION 'polaris_access_log_owner must not be a superuser';
+  END IF;
 END
 $roles$;--> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO polaris_access_log_owner;--> statement-breakpoint
