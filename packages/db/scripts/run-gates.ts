@@ -210,7 +210,7 @@ gates.push(
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
-  // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
+  // Local Postgres only, like admin-worker. They are the last gates of the list before migrations-without-superuser, which is the order they run in (not the order of a
   // suite): the scheduled jobs of the Web Worker run for real against what the gates before left.
   {
     env: salesEnv,
@@ -223,6 +223,14 @@ gates.push(
     localOnly: true,
     name: "catalog-worker",
     script: "verify-catalog-worker-gate.ts",
+  },
+  // every migration replayed by an owner who is not a superuser, as on Neon. Last: it parks the polaris_* roles of the
+  // gate database for the replay and gives them back (see the header of the script)
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "migrations-without-superuser",
+    script: "verify-migrations-without-superuser-gate.ts",
   }
 );
 
@@ -303,6 +311,7 @@ const suites: Record<string, string[]> = {
     "rls",
     "web-worker",
     "catalog-worker",
+    "migrations-without-superuser",
   ],
   // Run it on a fresh database (the gates are not rerunnable on one that already ran them).
   // POLARIS_CONCURRENCY_REPEAT sets the rounds of each race (default 3 here, 1 in `ci`).
