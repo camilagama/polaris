@@ -48,6 +48,13 @@ import {
  * the expired rows of each class, counted from the right moment, skips an organization under a legal hold, and is
  * reachable only through the function of the retention owner (which no role can execute until the job exists).
  */
+// the roles that may insert into tenant_audit_event (0095 added the epoch and onboarding owners)
+const AUDIT_WRITERS = [
+  "polaris_authorization_epoch_owner",
+  "polaris_onboarding_owner",
+  "polaris_pr11_runtime",
+  "polaris_privacy_owner",
+];
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
   process.env.POLARIS_SALES_GATE_DATABASE ??
@@ -401,6 +408,41 @@ async function run() {
     );
     tests.push(
       "the purge owner has no privilege and no policy on the audit and the purge function does not mention it; the retention owner reads four columns and only deletes"
+    );
+
+    // who writes the audit: the tenant runtime, the privacy owner and, since 0095, the epoch owner (the bump audits each grant it
+    // revokes) and the onboarding owner (the first organization), each through an INSERT policy of its own and nobody else (the
+    // logins of the gates inherit the tenant runtime and are left out by name)
+    const writers = await owner.pool.query<{ rolname: string }>(
+      `SELECT r.rolname FROM pg_catalog.pg_roles AS r
+        WHERE r.rolname ~ '^polaris_.+_(owner|runtime|reader)$' AND r.rolname !~ 'gate'
+          AND (has_table_privilege(r.oid, 'public.tenant_audit_event', 'INSERT')
+            OR has_any_column_privilege(r.oid, 'public.tenant_audit_event', 'INSERT'))`
+    );
+    sameSet(
+      writers.rows.map((row) => row.rolname),
+      AUDIT_WRITERS
+    );
+    const insertPolicies = await owner.pool.query<{
+      policyname: string;
+      roles: string[];
+    }>(
+      `SELECT policyname, roles::text[] AS roles FROM pg_catalog.pg_policies
+        WHERE schemaname = 'public' AND tablename = 'tenant_audit_event' AND cmd IN ('INSERT', 'ALL')`
+    );
+    sameSet(
+      insertPolicies.rows.map(
+        (row) => `${row.policyname}:${row.roles.join(",")}`
+      ),
+      [
+        "tenant_audit_event_authorization_epoch_owner_insert:polaris_authorization_epoch_owner",
+        "tenant_audit_event_current_actor_insert:polaris_pr11_runtime",
+        "tenant_audit_event_onboarding_owner_insert:polaris_onboarding_owner",
+        "tenant_audit_event_privacy_owner_insert:polaris_privacy_owner",
+      ]
+    );
+    tests.push(
+      `exactly ${AUDIT_WRITERS.join(", ")} insert into the audit, each through one INSERT policy TO itself`
     );
 
     // ---------------------------------------------------- the CHECK is the domain

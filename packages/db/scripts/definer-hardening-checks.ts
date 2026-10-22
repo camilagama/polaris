@@ -13,6 +13,24 @@ import type { Client } from "pg";
 // An edge of the database owner with ADMIN OPTION alone (inherit and set false) does not count toward membership: it lets the owner administer the group, not use its privileges. PostgreSQL 16+ creates exactly that edge when a role with CREATEROLE but no SUPERUSER creates a role: the creator is made a member WITH ADMIN OPTION, INHERIT FALSE, SET FALSE (on Neon the grantor is cloud_admin), so `neondb_owner` is an ADMIN-only member of every polaris_* role, and that does not make it a runtime login. The edge would let the owner put itself in the group (GRANT … TO self), but the owner and migrator already can: it owns the database and the objects and creates and drops these roles, so there is nothing to find. The exemption is only the owner's: any other role with an ADMIN-only edge on a runtime group is still a runtime role, because nothing explains that edge and the role could grant itself the group.
 
 export const RUNTIME_GROUP_PATTERN = "^polaris_.+_runtime$";
+/** The roles that own SECURITY DEFINER functions (a LIKE pattern): `polaris_<name>_owner`. */
+export const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
+/**
+ * The settings that scope an owner role to the user or organization of a call (`app.owner_scope.<name>`), written by the
+ * function itself (migration 0095). No runtime policy reads them, and a policy that reads them reads no runtime setting.
+ */
+export const OWNER_SCOPE_PREFIX = "app.owner_scope.";
+/**
+ * The owner roles whose policies read a setting of the runtime, by name, with the one setting each may read and the reason;
+ * any other is a finding. `polaris_device_session_owner` (0078) ends the sessions of the device the current user revoked:
+ * its two SELECT policies (`devices_session_owner_select`, `device_sessions_session_owner_select`) read `app.user_id`, the
+ * user the runtime proved from the verified session (the trust of the runtime's own policies), and its function checks that
+ * the acting session is a live one of that user. It acts for the caller by design; moving it to `app.owner_scope.*` is a
+ * decision of its own.
+ */
+const OWNERS_READING_RUNTIME_SETTINGS: ReadonlyMap<string, string> = new Map([
+  ["polaris_device_session_owner", "app.user_id"],
+]);
 // fewer definer functions than the migrations create means the database is not the migrated one
 export const MIN_DEFINER_FUNCTIONS = 88;
 const RUNTIME_ROLE_PATTERN = "^polaris_gate_runner_[0-9a-f]+$";
@@ -21,13 +39,19 @@ const SEARCH_PATH_SPLIT = /\s*,\s*/;
 
 interface DefinerRow {
   config: string[] | null;
+  owner: string;
+  ownerIsOwnerRole: boolean;
   publicExecute: boolean;
   signature: string;
 }
 
 export interface Findings {
   createInPublic: string[];
+  /** SECURITY DEFINER functions (`signature (owner)`) whose owner is not a `polaris_*_owner` role */
+  foreignOwner: string[];
   ownerMembership: string[];
+  /** `schema.table.policy ({roles}): reason` for a policy that breaks the scope of the owners (`app.owner_scope.*`) */
+  ownerScope: string[];
   privilegedRuntime: string[];
   publicExecute: string[];
   temporary: string[];
@@ -96,6 +120,22 @@ function endsInPgTemp(config: string[] | null): boolean {
   return path.at(-1) === "pg_temp";
 }
 
+/** The rows of `becomes` (a runtime role and a role it can become, itself included), for the fuzz of the definer-hardening gate. */
+export async function findBecomes(
+  client: Client
+): Promise<{ role: string; runtime: string }[]> {
+  const { rows } = await client.query<{ role: string; runtime: string }>(
+    `${BECOMES_CTE}
+     SELECT DISTINCT r.rolname AS runtime, t.rolname AS role
+       FROM becomes
+       JOIN pg_roles r ON r.oid = becomes.runtime_oid
+       JOIN pg_roles t ON t.oid = becomes.role_oid
+      ORDER BY 1, 2`,
+    [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
+  );
+  return rows;
+}
+
 export interface ReachableRole {
   can_create: boolean;
   can_temp: boolean;
@@ -145,7 +185,9 @@ export async function findViolations(client: Client): Promise<Findings> {
   const definers = await client.query<DefinerRow>(
     `SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS signature,
             p.proconfig AS config,
-            has_function_privilege('public', p.oid, 'EXECUTE') AS "publicExecute"
+            has_function_privilege('public', p.oid, 'EXECUTE') AS "publicExecute",
+            pg_get_userbyid(p.proowner) AS owner,
+            pg_get_userbyid(p.proowner) LIKE '${OWNER_ROLE_LIKE}' AS "ownerIsOwnerRole"
        FROM pg_proc p
        JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE p.prosecdef
@@ -163,6 +205,11 @@ export async function findViolations(client: Client): Promise<Findings> {
   const publicExecute = definers.rows
     .filter((row) => row.publicExecute)
     .map((row) => row.signature);
+  // a definer function runs with its owner's rights: the database owner (BYPASSRLS on Neon), or any role that is not an
+  // owner role of its own, would run over the row security of every tenant. The same scope as the DO at the end of 0095.
+  const foreignOwner = definers.rows
+    .filter((row) => !row.ownerIsOwnerRole)
+    .map((row) => `${row.signature} (${row.owner})`);
   // the checks below follow SET ROLE chains through pg_has_role (and ADMIN OPTION, see BECOMES_CTE)
   const privileged = await client.query<{ reason: string; rolname: string }>(
     `${RUNTIME_ROLES_CTE}
@@ -212,9 +259,11 @@ export async function findViolations(client: Client): Promise<Findings> {
       ...(pub.can_create ? ["PUBLIC"] : []),
       ...roles.filter((row) => row.can_create).map((row) => row.rolname),
     ],
+    foreignOwner,
     ownerMembership: membership.rows.map(
       (row) => `${row.login}->${row.target}`
     ),
+    ownerScope: await findOwnerScopeViolations(client),
     privilegedRuntime: privileged.rows.map(
       (row) => `${row.rolname} (${row.reason})`
     ),
@@ -227,7 +276,127 @@ export async function findViolations(client: Client): Promise<Findings> {
   };
 }
 
+interface PolicySettingsRow {
+  /** every role of the policy is a `polaris_*_owner` role */
+  allOwnerRoles: boolean;
+  /** some `polaris_*_owner` role holds a privilege on the table of the policy */
+  ownerOnTable: boolean;
+  policy: string;
+  roles: string[];
+  settings: string[];
+}
+
+const isRuntimeSetting = (name: string) =>
+  name.startsWith("app.") && !name.startsWith(OWNER_SCOPE_PREFIX);
+
+/** what a policy of owner roles, or one TO PUBLIC on a table an owner uses, reads of the runtime beyond what its owner may */
+function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
+  const runtime = row.settings.filter(isRuntimeSetting);
+  if (runtime.length === 0) {
+    return;
+  }
+  if (row.roles.includes("public") && row.ownerOnTable) {
+    return `a policy TO PUBLIC, on a table an owner role uses, reads the runtime setting ${runtime.join(", ")}`;
+  }
+  if (!row.allOwnerRoles) {
+    return;
+  }
+  const extra = runtime.filter(
+    (name) =>
+      !row.roles.every(
+        (role) => OWNERS_READING_RUNTIME_SETTINGS.get(role) === name
+      )
+  );
+  return extra.length > 0
+    ? `a policy of an owner role reads the runtime setting ${extra.join(", ")}`
+    : undefined;
+}
+
+/**
+ * The scope of the owners, in both directions (migration 0095):
+ * - a policy that reads an `app.owner_scope.*` setting is `TO` exactly one `polaris_*_owner` role (a policy without `TO`,
+ *   or `TO` a runtime, would let the runtime set the scope itself), every policy that reads the same setting is `TO` that
+ *   same role (a scope belongs to one owner: another owner's function would find it left in the transaction), and it reads
+ *   no setting of the runtime (any other `app.*`);
+ * - a policy of owner roles reads no setting of the runtime, but for the one setting of each owner named in
+ *   OWNERS_READING_RUNTIME_SETTINGS, and neither does a policy TO PUBLIC on a table some owner role holds a privilege on
+ *   (PUBLIC includes the owners).
+ * The settings come from the text of the expressions (`current_setting('…')`); one read inside a function the policy calls
+ * is not seen.
+ */
+export async function findOwnerScopeViolations(
+  client: Client
+): Promise<string[]> {
+  const { rows } = await client.query<PolicySettingsRow>(
+    `SELECT pol.schemaname || '.' || pol.tablename || '.' || pol.policyname AS policy,
+            pol.roles::text[] AS roles,
+            coalesce((SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
+                        FROM regexp_matches(coalesce(pol.qual, '') || ' ' || coalesce(pol.with_check, ''),
+                                            'current_setting\\(''([^'']+)''', 'g') AS m), '{}'::text[]) AS settings,
+            NOT EXISTS (SELECT 1 FROM unnest(pol.roles) AS r(name) WHERE r.name NOT LIKE '${OWNER_ROLE_LIKE}') AS "allOwnerRoles",
+            EXISTS (SELECT 1 FROM pg_roles o
+                     WHERE o.rolname LIKE '${OWNER_ROLE_LIKE}'
+                       AND (has_table_privilege(o.oid, c.oid, 'SELECT,INSERT,UPDATE,DELETE')
+                         OR has_any_column_privilege(o.oid, c.oid, 'SELECT,INSERT,UPDATE'))) AS "ownerOnTable"
+       FROM pg_policies pol
+       JOIN pg_namespace n ON n.nspname = pol.schemaname
+       JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = pol.tablename
+      ORDER BY 1`
+  );
+  // the roles of the policies that read each owner_scope setting: more than one means two owners share a scope
+  const scopeRoles = new Map<string, Set<string>>();
+  for (const row of rows) {
+    for (const name of row.settings) {
+      if (name.startsWith(OWNER_SCOPE_PREFIX)) {
+        scopeRoles.set(
+          name,
+          new Set([...(scopeRoles.get(name) ?? []), ...row.roles])
+        );
+      }
+    }
+  }
+  const findings: string[] = [];
+  for (const row of rows) {
+    const scoped = row.settings.filter((name) =>
+      name.startsWith(OWNER_SCOPE_PREFIX)
+    );
+    const runtime = row.settings.filter(isRuntimeSetting);
+    const label = `${row.policy} ({${row.roles.join(",")}})`;
+    if (scoped.length > 0 && !(row.roles.length === 1 && row.allOwnerRoles)) {
+      findings.push(
+        `${label}: reads ${scoped.join(", ")} and is not TO one polaris_*_owner role`
+      );
+    }
+    const shared = scoped.filter(
+      (name) => (scopeRoles.get(name)?.size ?? 0) > 1
+    );
+    if (shared.length > 0) {
+      findings.push(
+        `${label}: reads ${shared.join(", ")}, which a policy of another role reads too`
+      );
+    }
+    const runtimeFinding =
+      scoped.length > 0 && runtime.length > 0
+        ? `reads ${scoped.join(", ")} and the runtime setting ${runtime.join(", ")}`
+        : runtimeSettingFinding(row);
+    if (runtimeFinding) {
+      findings.push(`${label}: ${runtimeFinding}`);
+    }
+  }
+  return findings;
+}
+
 export function assertClean(findings: Findings) {
+  assert.deepEqual(
+    findings.foreignOwner,
+    [],
+    "SECURITY DEFINER functions that do not belong to a polaris_*_owner role (signature (owner))"
+  );
+  assert.deepEqual(
+    findings.ownerScope,
+    [],
+    "policies that read app.owner_scope.* without being TO one polaris_*_owner role or together with a runtime setting, or policies of owner roles that read a runtime setting"
+  );
   assert.deepEqual(
     findings.unpinned,
     [],
