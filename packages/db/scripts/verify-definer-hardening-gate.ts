@@ -48,7 +48,12 @@ import {
  *   6. every SECURITY DEFINER function belongs to a `polaris_*_owner` role (`foreignOwner`): one left with the database owner
  *      runs with BYPASSRLS on Neon;
  *   7. a policy that reads `app.owner_scope.*` is TO one `polaris_*_owner` role and reads no runtime setting, and a policy of
- *      an owner role reads no runtime setting (`ownerScope`; the one owner named in definer-hardening-checks.ts aside).
+ *      an owner role reads no runtime setting (`ownerScope`, with no exception since 0097);
+ *   8. every table of public a `polaris_*` role holds a privilege on has row security enabled and forced, but the exact list
+ *      `TABLES_WITHOUT_ROW_SECURITY` (`tableWithoutRowSecurity`);
+ *   9. on a table with forced row security, every role with a privilege (of the ACL, inherited too) has a permissive policy
+ *      for the command (`rowSecurityWithoutPolicy`);
+ *  10. every policy on `app.owner_scope.<name>` has a function of its role that writes that setting (`scopeWithoutWriter`).
  * The gate then proves it can fail: it creates a throwaway function without `pg_temp` and without a REVOKE, grants
  * TEMPORARY and CREATE to a runtime role, makes a throwaway runtime login the database owner or a member of an owner role
  * (also with ADMIN OPTION alone on a runtime group, on an owner role, on a predefined role or on a role with attributes), creates a throwaway `polaris_*_owner` role with LOGIN, CREATEDB and CREATEROLE (and REPLICATION and BYPASSRLS, as a superuser),
@@ -66,6 +71,9 @@ const expectedDatabase =
 const PROBE_ROLE = "polaris_catalog_runtime";
 // the owner role a probe function is moved to, as the control of foreignOwner and of the owner scope
 const CONTROL_OWNER = "polaris_sync_owner";
+// the line of end_device_sessions that writes its scope (0097), taken out by the probe of scopeWithoutWriter
+const DEVICE_SESSION_SCOPE_LINE =
+  "PERFORM pg_catalog.set_config('app.owner_scope.device_session_user_id', v_user, true);";
 const RUNTIME_LOGIN_PATTERN = /^polaris_gate_runner_[0-9a-f]+$/;
 // the fuzz of `becomes`: the same graphs on every run, at least 200 of them
 const FUZZ_SEED = 20_261_022;
@@ -283,7 +291,8 @@ async function run() {
     assertClean(await findViolations(client));
 
     // the scope of the owners: a policy that reads app.owner_scope.* is TO one owner role and reads no runtime setting, and an owner's
-    // policy reads no runtime setting (the two policies of polaris_device_session_owner aside, by name); policies on a throwaway table, rolled back
+    // policy reads no runtime setting, with no exception (0097 moved the last two, of polaris_device_session_owner, to its scope); policies on a
+    // throwaway table, rolled back
     await inRolledBackTransaction(async () => {
       const table = `${probe}_scope`;
       await client.query(`CREATE TABLE public.${table} (id integer)`);
@@ -307,13 +316,13 @@ async function run() {
       const label = (roles: string) => `public.${table}.probe ({${roles}})`;
       const scoped = "current_setting('app.owner_scope.probe_id', true) = 'x'";
       const userSetting = "current_setting('app.user_id', true) = 'x'";
-      // controls: an owner's policy on its own scope, a runtime's on the runtime setting, and the owner named in the check
+      // controls: an owner's policy on its own scope and a runtime's on the runtime setting
       assert.deepEqual(await scopeFindings(`TO ${CONTROL_OWNER}`, scoped), []);
       assert.deepEqual(
         await scopeFindings("TO polaris_pr11_runtime", userSetting),
         []
       );
-      // (the two real policies of polaris_device_session_owner are the control of the exception by policy: the database is clean
+      // (the four real policies of polaris_device_session_owner, on its scope since 0097, are a control too: the database is clean
       // before and after every probe, with them in place)
       // the probes
       const notOneOwner =
@@ -344,8 +353,8 @@ async function run() {
           `public.${table}.probe_other ({polaris_onboarding_owner}): reads app.owner_scope.probe_id, which a policy of another role reads too`,
         ]
       );
-      // the exception of polaris_device_session_owner is the fixed set of its two policies (table.policy), not the owner and the
-      // setting: the same expression in a new policy, on a table of its own or on one of the two tables, is reported
+      // polaris_device_session_owner has no exception any more: a policy of it that reads app.user_id, on a table of its own, on
+      // devices, on device_sessions or on session, is reported, and so is one of its real policies put back on app.user_id
       assert.deepEqual(
         await scopeFindings("TO polaris_device_session_owner", userSetting),
         [
@@ -374,7 +383,32 @@ async function run() {
           "public.device_sessions.probe ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id",
         ]
       );
-      // the owner and a runtime in the same policy: it holds for the owner too, and the exception is only for the owner alone
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_device_session_owner",
+          "user_id = current_setting('app.user_id', true)",
+          [],
+          "session"
+        ),
+        [
+          "public.session.probe ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id",
+        ]
+      );
+      for (const [onTable, policy] of [
+        ["devices", "devices_session_owner_select"],
+        ["device_sessions", "device_sessions_session_owner_select"],
+        ["session", "session_device_session_owner_delete"],
+      ] as const) {
+        await client.query("SAVEPOINT scope_probe");
+        await client.query(
+          `ALTER POLICY ${policy} ON public.${onTable} USING (user_id = NULLIF(current_setting('app.user_id', true), ''))`
+        );
+        assert.deepEqual((await findViolations(client)).ownerScope, [
+          `public.${onTable}.${policy} ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id`,
+        ]);
+        await client.query("ROLLBACK TO SAVEPOINT scope_probe");
+      }
+      // the owner and a runtime in the same policy: it holds for the owner too
       assert.deepEqual(
         await scopeFindings(
           "TO polaris_device_session_owner, polaris_pr11_runtime",
@@ -422,7 +456,7 @@ async function run() {
           `${label(CONTROL_OWNER)}: a policy of an owner role reads the runtime setting app.user_id`,
         ]
       );
-      // the owner named in the check may read app.user_id and nothing else of the runtime
+      // nor app.organization_id
       assert.deepEqual(
         await scopeFindings(
           "TO polaris_device_session_owner",
@@ -464,7 +498,218 @@ async function run() {
     });
     assertClean(await findViolations(client));
     tests.push(
-      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too), a third policy of polaris_device_session_owner that reads app.user_id (new table, or devices or device_sessions, or together with a runtime in the same TO), a policy of any role that reads a custom setting outside app. and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, the two real policies of polaris_device_session_owner, a PostgreSQL setting without a dot and a policy TO PUBLIC on a table no owner uses are not"
+      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too), any policy of polaris_device_session_owner that reads app.user_id (new table, devices, device_sessions or session, one of its four real policies put back on app.user_id, or together with a runtime in the same TO: no exception since 0097), a policy of any role that reads a custom setting outside app. and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, the four real policies of polaris_device_session_owner (on its scope), a PostgreSQL setting without a dot and a policy TO PUBLIC on a table no owner uses are not"
+    );
+
+    // row security on every table a polaris_* role uses (tableWithoutRowSecurity), a policy for every grant under FORCE
+    // (rowSecurityWithoutPolicy), with role inheritance, and a writer for every owner scope (scopeWithoutWriter); rolled back
+    await inRolledBackTransaction(async () => {
+      const table = `${probe}_rls`;
+      const group = `polaris_gate_rlsgroup_${suffix()}`;
+      const member = `polaris_gate_rlsmember_${suffix()}`;
+      const detached = `polaris_gate_rlsnoinherit_${suffix()}`;
+      await client.query(`CREATE TABLE public.${table} (id integer)`);
+      await client.query(
+        `CREATE ROLE ${group} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+      );
+      await client.query(
+        `CREATE ROLE ${member} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+      );
+      await client.query(
+        `CREATE ROLE ${detached} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+      );
+      await client.query(
+        `GRANT ${group} TO ${member} WITH INHERIT TRUE, SET FALSE`
+      );
+      // SET without INHERIT: the role acts as the group only after SET ROLE, and then the group's policies apply
+      await client.query(
+        `GRANT ${group} TO ${detached} WITH INHERIT FALSE, SET TRUE`
+      );
+      const rls = async () => {
+        const found = await findViolations(client);
+        return {
+          noPolicy: found.rowSecurityWithoutPolicy,
+          noRls: found.tableWithoutRowSecurity,
+        };
+      };
+      // control: a table no polaris_* role uses needs no row security
+      assertClean(await findViolations(client));
+      await client.query(
+        `GRANT SELECT (id), DELETE ON public.${table} TO ${group}`
+      );
+      assert.deepEqual(await rls(), {
+        noPolicy: [],
+        noRls: [`public.${table}`],
+      });
+      await client.query(
+        `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY`
+      );
+      assert.deepEqual((await rls()).noRls, [`public.${table}`]);
+      await client.query(
+        `ALTER TABLE public.${table} FORCE ROW LEVEL SECURITY`
+      );
+      // forced, with no policy: the group and the role that inherits it, for each command; not the role that only SETs to it
+      assert.deepEqual(await rls(), {
+        noPolicy: [
+          `public.${table} ${group} DELETE`,
+          `public.${table} ${group} SELECT`,
+          `public.${table} ${member} DELETE`,
+          `public.${table} ${member} SELECT`,
+        ],
+        noRls: [],
+      });
+      // a policy TO the member covers the member only; a restrictive one covers nobody
+      await client.query(
+        `CREATE POLICY probe_member ON public.${table} AS PERMISSIVE FOR SELECT TO ${member} USING (true)`
+      );
+      await client.query(
+        `CREATE POLICY probe_restrictive ON public.${table} AS RESTRICTIVE FOR DELETE TO ${group} USING (true)`
+      );
+      assert.deepEqual((await rls()).noPolicy, [
+        `public.${table} ${group} DELETE`,
+        `public.${table} ${group} SELECT`,
+        `public.${table} ${member} DELETE`,
+      ]);
+      // a SELECT policy TO the group covers both for SELECT, not for DELETE; FOR ALL covers DELETE too
+      await client.query(
+        `CREATE POLICY probe_group ON public.${table} AS PERMISSIVE FOR SELECT TO ${group} USING (true)`
+      );
+      assert.deepEqual((await rls()).noPolicy, [
+        `public.${table} ${group} DELETE`,
+        `public.${table} ${member} DELETE`,
+      ]);
+      await client.query(
+        `CREATE POLICY probe_all ON public.${table} AS PERMISSIVE FOR ALL TO ${group} USING (true)`
+      );
+      assert.deepEqual(await rls(), { noPolicy: [], noRls: [] });
+      // a privilege of PUBLIC needs a policy TO PUBLIC
+      await client.query(`GRANT INSERT ON public.${table} TO PUBLIC`);
+      assert.deepEqual((await rls()).noPolicy, [
+        `public.${table} PUBLIC INSERT`,
+      ]);
+      await client.query(
+        `CREATE POLICY probe_public ON public.${table} AS PERMISSIVE FOR INSERT WITH CHECK (true)`
+      );
+      assert.deepEqual(await rls(), { noPolicy: [], noRls: [] });
+      await client.query(`REVOKE INSERT ON public.${table} FROM PUBLIC`);
+      // the real table: session without FORCE, or without the policy of a role that holds a grant, is reported
+      await client.query("SAVEPOINT rls_probe");
+      await client.query(
+        "ALTER TABLE public.session NO FORCE ROW LEVEL SECURITY"
+      );
+      assert.deepEqual(await rls(), {
+        noPolicy: [],
+        noRls: ["public.session"],
+      });
+      await client.query("ROLLBACK TO SAVEPOINT rls_probe");
+      await client.query(
+        "DROP POLICY session_unverified_user_owner_select ON public.session"
+      );
+      await client.query(
+        "DROP POLICY session_device_session_owner_delete ON public.session"
+      );
+      assert.deepEqual((await rls()).noPolicy, [
+        "public.session polaris_device_session_owner DELETE",
+        "public.session polaris_unverified_user_owner SELECT",
+      ]);
+      await client.query("ROLLBACK TO SAVEPOINT rls_probe");
+      // the list is exact and does not outlive its reason: a listed table with row security forced is reported
+      await client.query(
+        "ALTER TABLE public.verification ENABLE ROW LEVEL SECURITY"
+      );
+      await client.query(
+        "ALTER TABLE public.verification FORCE ROW LEVEL SECURITY"
+      );
+      assert.deepEqual((await rls()).noRls, [
+        "public.verification: listed without row security, but it has row security enabled and forced",
+      ]);
+      await client.query("ROLLBACK TO SAVEPOINT rls_probe");
+      // and its grants are exact: one more grant on a listed table (to a role of the app or to PUBLIC) is reported, and so is
+      // a listed grant that is gone
+      await client.query(
+        "GRANT SELECT (password) ON public.account TO polaris_pr11_runtime"
+      );
+      await client.query("GRANT SELECT ON public.verification TO PUBLIC");
+      await client.query(
+        "REVOKE INSERT ON public.auth_security_audit_event FROM polaris_device_session_owner"
+      );
+      assert.deepEqual((await rls()).noRls, [
+        "public.account: grant not in TABLES_WITHOUT_ROW_SECURITY: polaris_pr11_runtime SELECT (password)",
+        "public.auth_security_audit_event: listed grant missing: polaris_device_session_owner INSERT",
+        "public.verification: grant not in TABLES_WITHOUT_ROW_SECURITY: PUBLIC SELECT",
+      ]);
+      await client.query("ROLLBACK TO SAVEPOINT rls_probe");
+      assert.deepEqual(await rls(), { noPolicy: [], noRls: [] });
+
+      // scopeWithoutWriter: a policy on a scope no function of its role writes is reported; one function of the role that
+      // writes it is the control; a function of another owner that writes it is not
+      const scopeTable = `${probe}_writer`;
+      await client.query(`CREATE TABLE public.${scopeTable} (id integer)`);
+      await client.query(
+        `CREATE POLICY probe ON public.${scopeTable} AS PERMISSIVE FOR SELECT TO ${CONTROL_OWNER} USING (current_setting('app.owner_scope.probe_writer_id', true) = 'x')`
+      );
+      const unwritten = `public.${scopeTable}.probe (${CONTROL_OWNER}): app.owner_scope.probe_writer_id`;
+      assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
+        unwritten,
+      ]);
+      await client.query(
+        `GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}, polaris_onboarding_owner`
+      );
+      await client.query(
+        `GRANT ${CONTROL_OWNER}, polaris_onboarding_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+      );
+      const writer = (name: string) =>
+        `CREATE FUNCTION public.${probe}_${name}() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN PERFORM pg_catalog.set_config( 'APP.owner_scope.probe_writer_id', 'x', true); END $body$`;
+      await client.query("SET ROLE polaris_onboarding_owner");
+      await client.query(writer("other_owner"));
+      await client.query("RESET ROLE");
+      assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
+        unwritten,
+      ]);
+      // a writer of the same owner that is only a comment, or that sets the scope for the session (false), does not count
+      await client.query(`SET ROLE ${CONTROL_OWNER}`);
+      await client.query(
+        `CREATE FUNCTION public.${probe}_commented() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN\n  -- PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', true);\n  NULL;\nEND $body$`
+      );
+      await client.query(
+        `CREATE FUNCTION public.${probe}_session_wide() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', false); END $body$`
+      );
+      await client.query("RESET ROLE");
+      assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
+        unwritten,
+      ]);
+      await client.query(`SET ROLE ${CONTROL_OWNER}`);
+      await client.query(writer("own_owner"));
+      await client.query("RESET ROLE");
+      assert.deepEqual((await findViolations(client)).scopeWithoutWriter, []);
+      // the real owner: end_device_sessions without its set_config leaves the four policies of its owner without a writer
+      await client.query(
+        "GRANT polaris_device_session_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
+      );
+      await client.query(
+        "GRANT CREATE ON SCHEMA public TO polaris_device_session_owner"
+      );
+      const body = (
+        await client.query<{ definition: string }>(
+          "SELECT pg_get_functiondef('public.end_device_sessions(uuid, text, boolean, boolean, text)'::regprocedure) AS definition"
+        )
+      ).rows[0]?.definition;
+      assert.ok(body);
+      const withoutScope = body.replace(DEVICE_SESSION_SCOPE_LINE, "");
+      assert.notEqual(withoutScope, body);
+      await client.query("SET ROLE polaris_device_session_owner");
+      await client.query(withoutScope);
+      await client.query("RESET ROLE");
+      assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
+        "public.device_sessions.device_sessions_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
+        "public.devices.devices_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
+        "public.session.session_device_session_owner_delete (polaris_device_session_owner): app.owner_scope.device_session_user_id",
+        "public.session.session_device_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
+      ]);
+    });
+    assertClean(await findViolations(client));
+    tests.push(
+      "a table of public a polaris_* role uses without row security enabled and forced (session with NO FORCE too), a listed table that has it (verification), a grant on a listed table that is not in its exact list (a column of account, PUBLIC on verification) or a listed grant that is gone, a grant under FORCE with no permissive policy for the command (to the group and to the role that inherits it, not to one that only SETs to it; a restrictive policy or one of another command does not cover; PUBLIC needs TO PUBLIC; session without the policy of polaris_unverified_user_owner or of the DELETE of polaris_device_session_owner) and a policy on app.owner_scope.* whose role has no function that writes it (only in a comment, only for the session with false, only in a function of another owner, or end_device_sessions without its set_config) are reported; the policy TO the group or FOR ALL, the function of the same owner that writes the scope, and the database as migrated are clean"
     );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)

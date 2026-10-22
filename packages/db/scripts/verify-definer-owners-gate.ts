@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { OWNER_SCOPE_PREFIX } from "./definer-hardening-checks";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -22,7 +21,7 @@ import {
  *   2. owner and EXECUTE of each function: the runtimes that called it still do, the migrator executes the two triggers;
  *   3. the exact matrix of each owner: the listed columns only, no table privilege, no DELETE, TRUNCATE, REFERENCES or
  *      TRIGGER anywhere, no CREATE on any schema, no object owned but its functions, no EXECUTE granted on another function;
- *   4. every policy that reads `app.owner_scope.*` is TO its one owner and reads only that owner's settings, and the owners
+ *   4. every policy that reads a setting of these owners (`app.owner_scope.*`) is TO its one owner and reads only that owner's settings, and the owners
  *      have no other policy; a runtime that sets those settings itself sees no row more and writes nothing;
  *   5. each owner without its setting sees nothing and writes nothing (fail-closed); with the setting of one user or
  *      organization it sees and writes only that one, whatever the statement asks;
@@ -46,6 +45,13 @@ const EPOCH_SCOPE = "app.owner_scope.authorization_epoch_user_id";
 const ONBOARDING_USER_SCOPE = "app.owner_scope.onboarding_user_id";
 const ONBOARDING_ORGANIZATION_SCOPE =
   "app.owner_scope.onboarding_organization_id";
+// the settings of the three owners of 0095 (another owner's scope, such as the one of 0097, has its own gate)
+const SCOPES = [
+  SYNC_SCOPE,
+  EPOCH_SCOPE,
+  ONBOARDING_USER_SCOPE,
+  ONBOARDING_ORGANIZATION_SCOPE,
+];
 const TABLES = [
   "memberships",
   "offline_grants",
@@ -392,10 +398,11 @@ async function run() {
                           FROM regexp_matches(coalesce(pol.qual, '') || ' ' || coalesce(pol.with_check, ''),
                                               'current_setting\\(''([^'']+)''', 'g') AS m), '{}'::text[]) AS settings
          FROM pg_policies pol
-        WHERE coalesce(pol.qual, '') || coalesce(pol.with_check, '') LIKE '%' || $1 || '%'
+        WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) AS scope(name)
+                       WHERE coalesce(pol.qual, '') || coalesce(pol.with_check, '') LIKE '%' || scope.name || '%')
            OR pol.roles && $2::name[]
         ORDER BY 1`,
-      [OWNER_SCOPE_PREFIX, OWNERS]
+      [SCOPES, OWNERS]
     );
     for (const owner of OWNERS) {
       assert.deepEqual(
@@ -415,7 +422,7 @@ async function run() {
       );
       assert.ok(
         OWNERS.some((owner) => row.roles[0] === owner),
-        `${row.policy} reads app.owner_scope.* and is TO ${row.roles.join(",")}`
+        `${row.policy} reads a setting of the three owners and is TO ${row.roles.join(",")}`
       );
     }
     // a policy TO PUBLIC would hold for the owners too: there is none on the six tables
@@ -428,7 +435,7 @@ async function run() {
       "no policy TO PUBLIC on the six tables"
     );
     tests.push(
-      "every policy that reads app.owner_scope.* is TO exactly one of the three owners and reads only that owner's settings; the owners have no other policy, and no policy on the six tables is TO PUBLIC"
+      "every policy that reads a setting of the three owners (app.owner_scope.*) is TO exactly one of the three owners and reads only that owner's settings; the owners have no other policy, and no policy on the six tables is TO PUBLIC"
     );
 
     // ----------------------------------------------------------- fixtures

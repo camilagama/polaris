@@ -34,6 +34,7 @@ import {
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
+  sqlState,
   type TenantFixture,
   temporaryRuntimeUrl,
 } from "./sales-gate-support";
@@ -49,7 +50,11 @@ import {
  *   - `end_device_sessions()` is a SECURITY DEFINER of a NOLOGIN owner with the least privileges, executable only by
  *     the tenant runtime, and it refuses a live device, another user's device, a missing user and a foreign session;
  *   - the auth audit gets one `device_revoked` row whenever a device goes from live to revoked (even with no session
- *     linked to it) and whenever a repeated revocation ends a session; a repetition that ends nothing is not audited.
+ *     linked to it) and whenever a repeated revocation ends a session; a repetition that ends nothing is not audited;
+ *   - `session` has row security, forced (0097): the auth runtime, through a real login, still does everything Better Auth
+ *     does and the foreign keys still cascade; the owner sees and deletes only the sessions of the user its function
+ *     writes in `app.owner_scope.device_session_user_id`, also with no WHERE or with the filter of the body taken out,
+ *     and a body that forgets the scope fails with 42501.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -58,6 +63,7 @@ const expectedDatabase =
 
 const ownerRole = "polaris_device_session_owner";
 const sessionIndexColumns = /\(session_id\)/;
+const NOT_A_REVOKED_DEVICE = /not a revoked device of the user/;
 const requestIdFormat = /^[A-Za-z0-9_-]{1,64}$/;
 const authRuntimeRole = "polaris_auth_runtime";
 const fresh = (id: string) => ({ fresh: true, id });
@@ -85,6 +91,7 @@ function withSession<T>(
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate script, scenario by scenario
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -97,6 +104,8 @@ async function run() {
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let loginRole: string | undefined;
   let loginRoleCreated = false;
+  let authLogin: string | undefined;
+  let authLoginCreated = false;
   const tests: string[] = [];
 
   try {
@@ -962,6 +971,416 @@ async function run() {
     assert.ok(!(await linkExists(second.id, lateSession)));
     tests.push("a lease on a revoked device is refused and links nothing");
 
+    // -------------- 8. row security of session (0097): the owner bound to the user of the call, the rest as before
+    const sessionTable = await admin.pool.query<{
+      forced: boolean;
+      rls: boolean;
+    }>(
+      "SELECT relrowsecurity AS rls, relforcerowsecurity AS forced FROM pg_class WHERE oid = 'public.session'::regclass"
+    );
+    assert.deepEqual(sessionTable.rows, [{ forced: true, rls: true }]);
+    const scopeQual =
+      "(user_id = NULLIF(current_setting('app.owner_scope.device_session_user_id'::text, true), ''::text))";
+    const sessionPolicies = await admin.pool.query<{
+      cmd: string;
+      permissive: string;
+      policy: string;
+      qual: string | null;
+      roles: string[];
+      with_check: string | null;
+    }>(
+      `SELECT tablename || '.' || policyname AS policy, permissive, cmd, roles::text[] AS roles, qual, with_check
+         FROM pg_policies
+        WHERE schemaname = 'public' AND (tablename = 'session' OR $1 = ANY (roles))
+        ORDER BY 1`,
+      [ownerRole]
+    );
+    const ownerPolicy = (policy: string, cmd: string) => ({
+      cmd,
+      permissive: "PERMISSIVE",
+      policy,
+      qual: scopeQual,
+      roles: [ownerRole],
+      with_check: null,
+    });
+    assert.deepEqual(sessionPolicies.rows, [
+      ownerPolicy(
+        "device_sessions.device_sessions_session_owner_select",
+        "SELECT"
+      ),
+      ownerPolicy("devices.devices_session_owner_select", "SELECT"),
+      {
+        cmd: "ALL",
+        permissive: "PERMISSIVE",
+        policy: "session.session_auth_runtime_all",
+        qual: "true",
+        roles: [authRuntimeRole],
+        with_check: "true",
+      },
+      ownerPolicy("session.session_device_session_owner_delete", "DELETE"),
+      ownerPolicy("session.session_device_session_owner_select", "SELECT"),
+      {
+        cmd: "SELECT",
+        permissive: "PERMISSIVE",
+        policy: "session.session_unverified_user_owner_select",
+        qual: "true",
+        roles: ["polaris_unverified_user_owner"],
+        with_check: null,
+      },
+    ]);
+    // the grants on session are the ones of before 0097, and no other application role (nor PUBLIC) has any (the groups and
+    // owners, NOLOGIN; a login gets its rights from its group)
+    const sessionGrants = await admin.pool.query<{
+      grantee: string;
+      privileges: string[];
+    }>(
+      `SELECT r.rolname AS grantee,
+              array_remove(ARRAY[
+                CASE WHEN has_table_privilege(r.oid, 'public.session', 'SELECT') THEN 'SELECT' END,
+                CASE WHEN NOT has_table_privilege(r.oid, 'public.session', 'SELECT') AND has_any_column_privilege(r.oid, 'public.session', 'SELECT')
+                     THEN 'SELECT (' || (SELECT string_agg(a.attname, ',' ORDER BY a.attname) FROM pg_attribute a
+                                          WHERE a.attrelid = 'public.session'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+                                            AND has_column_privilege(r.oid, 'public.session', a.attnum, 'SELECT')) || ')' END,
+                CASE WHEN has_table_privilege(r.oid, 'public.session', 'INSERT') THEN 'INSERT' END,
+                CASE WHEN has_table_privilege(r.oid, 'public.session', 'UPDATE') THEN 'UPDATE' END,
+                CASE WHEN has_table_privilege(r.oid, 'public.session', 'DELETE') THEN 'DELETE' END,
+                CASE WHEN has_table_privilege(r.oid, 'public.session', 'TRUNCATE,REFERENCES,TRIGGER') THEN 'OTHER' END
+              ], NULL) AS privileges
+         FROM pg_roles r
+        WHERE r.rolname LIKE 'polaris\\_%' AND NOT r.rolcanlogin
+          AND (has_table_privilege(r.oid, 'public.session', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+            OR has_any_column_privilege(r.oid, 'public.session', 'SELECT,INSERT,UPDATE,REFERENCES'))
+        ORDER BY 1`
+    );
+    assert.deepEqual(sessionGrants.rows, [
+      {
+        grantee: authRuntimeRole,
+        privileges: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+      },
+      {
+        grantee: ownerRole,
+        privileges: ["SELECT (created_at,id,user_id)", "DELETE"],
+      },
+      {
+        grantee: "polaris_unverified_user_owner",
+        privileges: ["SELECT (user_id)"],
+      },
+    ]);
+    const publicOnSession = await admin.pool.query<{ any: boolean }>(
+      "SELECT has_table_privilege('public', 'public.session', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('public', 'public.session', 'SELECT,INSERT,UPDATE,REFERENCES') AS any"
+    );
+    assert.equal(
+      publicOnSession.rows[0]?.any,
+      false,
+      "PUBLIC has nothing on session"
+    );
+    tests.push(
+      "session has row security enabled and forced, with exactly four permissive policies, each TO one role (auth runtime ALL true; unverified-user owner SELECT true; device-session owner SELECT and DELETE on app.owner_scope.device_session_user_id), and the two policies of the owner on devices and device_sessions read the same scope; the grants on session are those of before (auth runtime SELECT, INSERT, UPDATE, DELETE; owner SELECT of id, user_id, created_at and DELETE; unverified-user owner SELECT of user_id) and PUBLIC has none"
+    );
+
+    // the auth runtime through a real login (a member of the group, INHERIT), not the admin: every Better Auth operation
+    authLogin = `polaris_device_sessions_auth_${loginSuffix}`;
+    const authPassword = randomBytes(24).toString("hex");
+    await admin.pool.query(
+      `CREATE ROLE "${authLogin}" WITH LOGIN INHERIT PASSWORD '${authPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+    );
+    authLoginCreated = true;
+    await admin.pool.query(`GRANT "${authRuntimeRole}" TO "${authLogin}"`);
+    const authClient = new Client({
+      connectionString: temporaryRuntimeUrl(adminUrl, authLogin, authPassword),
+    });
+    await authClient.connect();
+    try {
+      const whoAmI = await authClient.query<{
+        bypass: boolean;
+        member: boolean;
+        name: string;
+      }>(
+        `SELECT current_user AS name, r.rolbypassrls AS bypass, pg_has_role(current_user, $1, 'USAGE') AS member
+           FROM pg_roles r WHERE r.rolname = current_user`,
+        [authRuntimeRole]
+      );
+      assert.deepEqual(whoAmI.rows, [
+        { bypass: false, member: true, name: authLogin },
+      ]);
+      const token = `gate-token-${randomUUID()}`;
+      const authSession = `gate-session-${randomUUID()}`;
+      // the login asks for 60 days: the trigger stamps created_at and caps the expiry at 30 days
+      const inserted = await authClient.query<{ capped: boolean }>(
+        `INSERT INTO public.session (id, token, user_id, expires_at, created_at, updated_at, ip_address, user_agent)
+         VALUES ($1, $2, $3, now() + interval '60 days', now() - interval '90 days', now(), '203.0.113.7', 'gate')
+         RETURNING created_at = now() AND expires_at = now() + interval '30 days' AS capped`,
+        [authSession, token, tenantA.userId]
+      );
+      assert.deepEqual(inserted.rows, [{ capped: true }]);
+      const byToken = await authClient.query<{ id: string; user_id: string }>(
+        "SELECT id, user_id FROM public.session WHERE token = $1",
+        [token]
+      );
+      assert.deepEqual(byToken.rows, [
+        { id: authSession, user_id: tenantA.userId },
+      ]);
+      // it sees every session of every user: Better Auth gives no user per query
+      const everyone = await authClient.query<{ users: string[] }>(
+        "SELECT array_agg(DISTINCT user_id ORDER BY user_id) AS users FROM public.session WHERE user_id = ANY ($1)",
+        [[tenantA.userId, tenantB.userId]]
+      );
+      assert.deepEqual(
+        everyone.rows[0]?.users,
+        [tenantA.userId, tenantB.userId].sort()
+      );
+      const refreshed = await authClient.query(
+        "UPDATE public.session SET expires_at = now() + interval '7 days', ip_address = '203.0.113.8', updated_at = now() WHERE token = $1",
+        [token]
+      );
+      assert.equal(refreshed.rowCount, 1);
+      const loggedOut = await authClient.query(
+        "DELETE FROM public.session WHERE token = $1",
+        [token]
+      );
+      assert.equal(loggedOut.rowCount, 1);
+      // the password reset ends every session of the user (revokeSessionsOnPasswordReset), here of a throwaway user
+      const resetUser = `gate-reset-${randomUUID()}`;
+      await authClient.query(
+        `INSERT INTO public."user" (id, name, email) VALUES ($1, 'Gate reset', $1 || '@example.test')`,
+        [resetUser]
+      );
+      for (let index = 0; index < 2; index += 1) {
+        await authClient.query(
+          "INSERT INTO public.session (id, token, user_id, expires_at) VALUES ($1, $2, $3, now() + interval '7 days')",
+          [
+            `gate-session-${randomUUID()}`,
+            `gate-token-${randomUUID()}`,
+            resetUser,
+          ]
+        );
+      }
+      const reset = await authClient.query(
+        "DELETE FROM public.session WHERE user_id = $1",
+        [resetUser]
+      );
+      assert.equal(reset.rowCount, 2);
+
+      // the foreign keys under row security: deleting a user takes its sessions and their links (cascade), deleting a
+      // session takes its links, and the tenant runtime links a session it cannot read (the check ignores row security)
+      const goneUser = `gate-gone-${randomUUID()}`;
+      await authClient.query(
+        `INSERT INTO public."user" (id, name, email) VALUES ($1, 'Gate gone', $1 || '@example.test')`,
+        [goneUser]
+      );
+      const goneSessions = [
+        `gate-session-${randomUUID()}`,
+        `gate-session-${randomUUID()}`,
+      ];
+      for (const id of goneSessions) {
+        await authClient.query(
+          "INSERT INTO public.session (id, token, user_id, expires_at) VALUES ($1, $2, $3, now() + interval '7 days')",
+          [id, `gate-token-${randomUUID()}`, goneUser]
+        );
+      }
+      const cascadeDevice = await registerDevice(db, goneUser, {
+        sessionId: goneSessions[0] as string,
+      });
+      assert.ok(await linkExists(cascadeDevice.id, goneSessions[0] as string));
+      const goneByCascade = await authClient.query(
+        'DELETE FROM public."user" WHERE id = $1',
+        [goneUser]
+      );
+      assert.equal(goneByCascade.rowCount, 1);
+      for (const id of goneSessions) {
+        assert.equal(
+          await sessionExists(id),
+          false,
+          "the session went with its user"
+        );
+      }
+      assert.equal(
+        await linkExists(cascadeDevice.id, goneSessions[0] as string),
+        false
+      );
+      const linkedSession = await createSession(tenantA.userId);
+      const linkedDevice = await registerDevice(db, tenantA.userId, {
+        sessionId: linkedSession,
+      });
+      assert.ok(await linkExists(linkedDevice.id, linkedSession));
+      const sessionGone = await authClient.query(
+        "DELETE FROM public.session WHERE id = $1",
+        [linkedSession]
+      );
+      assert.equal(sessionGone.rowCount, 1);
+      assert.equal(await linkExists(linkedDevice.id, linkedSession), false);
+    } finally {
+      await authClient.end();
+    }
+    tests.push(
+      "the auth runtime, through a real login that is a member of the group (INHERIT, no bypass), does what Better Auth does under row security: insert (the trigger stamps created_at and caps the expiry at 30 days), read by token, see the sessions of every user, refresh, delete by token and by user; deleting a user takes its sessions and their links (cascade), deleting a session takes its links, and the tenant runtime links a session it cannot read"
+    );
+
+    // the owner never deletes a session of another user: as the owner role itself, in transactions rolled back
+    const ownerClient = new Client({ connectionString: adminUrl });
+    await ownerClient.connect();
+    const countOf = async (userId: string) =>
+      Number(
+        (
+          await ownerClient.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.session WHERE user_id = $1",
+            [userId]
+          )
+        ).rows[0]?.count
+      );
+    const rolledBack = async (body: () => Promise<void>) => {
+      await ownerClient.query("BEGIN");
+      try {
+        await ownerClient.query(
+          `GRANT ${ownerRole} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+        );
+        await body();
+      } finally {
+        await ownerClient.query("ROLLBACK");
+      }
+    };
+    try {
+      await createSession(tenantB.userId);
+      await createSession(tenantB.userId);
+      const sessionsOfA = await countOf(tenantA.userId);
+      const sessionsOfB = await countOf(tenantB.userId);
+      assert.ok(sessionsOfA > 0 && sessionsOfB > 1);
+      // DELETE with no WHERE, in the scope of A (and with app.user_id of B): only the sessions of A
+      for (const appUser of [tenantA.userId, tenantB.userId]) {
+        await rolledBack(async () => {
+          await ownerClient.query(
+            "SELECT set_config('app.owner_scope.device_session_user_id', $1, true), set_config('app.user_id', $2, true)",
+            [tenantA.userId, appUser]
+          );
+          await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
+          const deleted = await ownerClient.query("DELETE FROM public.session");
+          await ownerClient.query("RESET ROLE");
+          assert.equal(deleted.rowCount, sessionsOfA, "only the sessions of A");
+          assert.equal(await countOf(tenantA.userId), 0);
+          assert.equal(await countOf(tenantB.userId), sessionsOfB, "B intact");
+        });
+      }
+      // with no scope (app.user_id alone does not count any more) it sees and deletes nothing
+      await rolledBack(async () => {
+        await ownerClient.query("SELECT set_config('app.user_id', $1, true)", [
+          tenantA.userId,
+        ]);
+        await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
+        const seen = await ownerClient.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM public.session"
+        );
+        assert.equal(seen.rows[0]?.count, "0");
+        const deleted = await ownerClient.query("DELETE FROM public.session");
+        assert.equal(deleted.rowCount, 0);
+        const devicesSeen = await ownerClient.query<{ count: string }>(
+          "SELECT (SELECT count(*) FROM public.devices) + (SELECT count(*) FROM public.device_sessions) AS count"
+        );
+        assert.equal(devicesSeen.rows[0]?.count, "0");
+      });
+
+      // the body of the function changed in a transaction rolled back, called by the tenant runtime as in production
+      const definition = (
+        await ownerClient.query<{ definition: string }>(
+          "SELECT pg_get_functiondef('public.end_device_sessions(uuid, text, boolean, boolean, text)'::regprocedure) AS definition"
+        )
+      ).rows[0]?.definition;
+      assert.ok(definition);
+      const whereStart = definition.indexOf(
+        "WHERE ended_session.user_id = v_user"
+      );
+      const whereEnd = definition.indexOf("RETURNING ended_session.id");
+      assert.ok(whereStart > 0 && whereEnd > whereStart);
+      const scopeLine =
+        "PERFORM pg_catalog.set_config('app.owner_scope.device_session_user_id', v_user, true);";
+      assert.ok(definition.includes(scopeLine));
+      const bodies: [string, string | undefined][] = [
+        ["the real function", undefined],
+        [
+          "the filter of the DELETE replaced by true",
+          `${definition.slice(0, whereStart)}WHERE true\n    ${definition.slice(whereEnd)}`,
+        ],
+        ["no set_config of the scope", definition.replace(scopeLine, "")],
+      ];
+      for (const [label, body] of bodies) {
+        await rolledBack(async () => {
+          const victim = await ownerClient.query<{ id: string }>(
+            "SELECT id FROM public.session WHERE user_id = $1 ORDER BY id LIMIT 1",
+            [tenantA.userId]
+          );
+          const linked = victim.rows[0]?.id;
+          assert.ok(linked);
+          const device = await ownerClient.query<{ id: string }>(
+            "INSERT INTO public.devices (user_id, revoked_at) VALUES ($1, now()) RETURNING id::text",
+            [tenantA.userId]
+          );
+          const deviceId = device.rows[0]?.id;
+          assert.ok(deviceId);
+          await ownerClient.query(
+            "INSERT INTO public.device_sessions (device_id, session_id, user_id, origin) VALUES ($1, $2, $3, 'use')",
+            [deviceId, linked, tenantA.userId]
+          );
+          if (body !== undefined) {
+            await ownerClient.query(
+              `GRANT CREATE ON SCHEMA public TO ${ownerRole}`
+            );
+            await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
+            await ownerClient.query(body);
+            await ownerClient.query("RESET ROLE");
+          }
+          await ownerClient.query(
+            `GRANT ${runtimeRole} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+          );
+          await ownerClient.query(
+            "SELECT set_config('app.user_id', $1, true)",
+            [tenantA.userId]
+          );
+          await ownerClient.query(`SET LOCAL ROLE ${runtimeRole}`);
+          const call = () =>
+            ownerClient.query<{ ended_session_count: number }>(
+              "SELECT * FROM public.end_device_sessions($1::uuid, NULL, false, false, NULL)",
+              [deviceId]
+            );
+          if (label === "no set_config of the scope") {
+            // the owner sees no device of the user, so the revoked device is refused: the body fails closed, loudly
+            await assert.rejects(call, (error: unknown) => {
+              assert.equal(sqlState(error), "42501", label);
+              assert.match(
+                (error as Error).message,
+                NOT_A_REVOKED_DEVICE,
+                label
+              );
+              return true;
+            });
+            return;
+          }
+          const ended = await call();
+          await ownerClient.query("RESET ROLE");
+          assert.equal(
+            await countOf(tenantB.userId),
+            sessionsOfB,
+            `${label}: the sessions of B are intact`
+          );
+          if (body === undefined) {
+            assert.equal(ended.rows[0]?.ended_session_count, 1, label);
+            assert.equal(await countOf(tenantA.userId), sessionsOfA - 1);
+          } else {
+            // with no filter the policy is the only limit: every session of A goes, none of B
+            assert.equal(
+              ended.rows[0]?.ended_session_count,
+              sessionsOfA,
+              label
+            );
+            assert.equal(await countOf(tenantA.userId), 0);
+          }
+        });
+      }
+    } finally {
+      await ownerClient.end();
+    }
+    tests.push(
+      "the owner never deletes a session of another user: as polaris_device_session_owner, DELETE FROM session with no WHERE deletes only the sessions of the scope (also with app.user_id of another user) and, with no scope, sees and deletes nothing (nor any device or link); end_device_sessions with the filter of its DELETE replaced by true ends every session of the caller and none of another user, and without the set_config of the scope it fails with 42501; the real function, in the same setup, ends exactly the linked session"
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -982,6 +1401,10 @@ async function run() {
     if (loginRole && loginRoleCreated) {
       await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
+    }
+    if (authLogin && authLoginCreated) {
+      await admin.pool.query(`REVOKE "${authRuntimeRole}" FROM "${authLogin}"`);
+      await admin.pool.query(`DROP ROLE "${authLogin}"`);
     }
     await admin.pool.end();
   }
