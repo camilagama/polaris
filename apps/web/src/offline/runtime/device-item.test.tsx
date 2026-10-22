@@ -28,8 +28,10 @@ function render(props: Partial<Parameters<typeof DeviceItem>[0]> = {}): string {
         onAsk={vi.fn()}
         onCancel={vi.fn()}
         onChoose={vi.fn()}
+        online={true}
         onRevoke={vi.fn()}
         row={row()}
+        sessionGone={false}
         {...props}
       />
     </ul>
@@ -116,6 +118,26 @@ describe("a device row", () => {
     expect(html).toContain("use o botão <strong>Sair</strong>");
     expect(html).toContain("no celular ele está no Menu");
     expect(html).toContain("em tela grande, no alto da página");
+  });
+
+  it("this device, without a connection: says Sair will not take it off the list until it leaves online", () => {
+    const html = render({ online: false, row: row({ isCurrent: true }) });
+    expect(html).toContain(
+      "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho."
+    );
+    expect(html).not.toContain("Para tirar este aparelho");
+    const connected = render({ online: true, row: row({ isCurrent: true }) });
+    expect(connected).toContain("Para tirar este aparelho, use o botão");
+    expect(connected).not.toContain("Sem conexão");
+  });
+
+  it("this device, session over: no promise about Sair, the panel above already says it", () => {
+    const html = render({
+      row: row({ isCurrent: true }),
+      sessionGone: true,
+    });
+    expect(html).toContain("Este aparelho");
+    expect(html).not.toContain("Sair");
   });
 });
 

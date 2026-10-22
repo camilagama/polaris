@@ -21,9 +21,22 @@ interface RowProps {
   onAsk: (id: string) => void;
   onCancel: () => void;
   onChoose: (endOtherSessions: boolean) => void;
+  /** There is a connection: Sair can revoke this device on the server before it leaves. */
+  online: boolean;
   onRevoke: (id: string) => void;
   row: DeviceRow;
+  /** The session is over (the panel above says so): no promise about what Sair does. */
+  sessionGone: boolean;
 }
+
+const THIS_DEVICE_ONLINE_HELP = (
+  <>
+    Para tirar este aparelho, use o botão <strong>Sair</strong>: no celular ele
+    está no Menu; em tela grande, no alto da página.
+  </>
+);
+const THIS_DEVICE_OFFLINE_HELP =
+  "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho.";
 
 export function DeviceItem({
   actionError,
@@ -35,7 +48,9 @@ export function DeviceItem({
   onCancel,
   onChoose,
   onRevoke,
+  online,
   row,
+  sessionGone,
 }: RowProps) {
   const askRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLFieldSetElement>(null);
@@ -73,10 +88,9 @@ export function DeviceItem({
           {row.lastSeenText}
         </p>
       </div>
-      {row.isCurrent ? (
+      {row.isCurrent && !sessionGone ? (
         <p className="device-meta">
-          Para tirar este aparelho, use o botão <strong>Sair</strong>: no
-          celular ele está no Menu; em tela grande, no alto da página.
+          {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
         </p>
       ) : null}
       {!row.isCurrent && confirming ? (
