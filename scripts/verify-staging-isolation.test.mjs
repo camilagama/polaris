@@ -16,18 +16,18 @@ const readConfig = (app) =>
   );
 
 /** The repository configs as they are: staging filled in with the ids of the real resources. */
-const filledEntries = () =>
+const repositoryEntries = () =>
   WORKERS.map((app) => ({ app, config: readConfig(app) }));
 
 const entryOf = (entries, app) => entries.find((entry) => entry.app === app);
 
 describe("the staging isolation check", () => {
   it("passes on the repository config: no staging value is a placeholder", () => {
-    expect(findIsolationProblems(filledEntries())).toEqual([]);
+    expect(findIsolationProblems(repositoryEntries())).toEqual([]);
   });
 
   it("refuses a staging value that goes back to a placeholder", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     entryOf(entries, "web").config.env.staging.account_id =
       "PLACEHOLDER-staging-account-id";
     entryOf(entries, "catalog").config.env.staging.hyperdrive[0].id =
@@ -39,7 +39,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a top level that could deploy something", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const web = entryOf(entries, "web").config;
     web.name = "polaris-web";
     web.workers_dev = true;
@@ -54,7 +54,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a missing environment", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     entryOf(entries, "catalog").config.env.production = undefined;
     expect(findIsolationProblems(entries)).toContain(
       "catalog: env.staging and env.production must both be declared"
@@ -62,7 +62,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a staging environment without the queue consumers or a variable production lacks", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const web = entryOf(entries, "web").config;
     web.env.staging.queues.consumers =
       web.env.staging.queues.consumers.slice(1);
@@ -74,7 +74,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a staging environment that lacks a binding of the top level", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.ratelimits = staging.ratelimits.slice(1);
     staging.images = undefined;
@@ -85,7 +85,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a staging Worker name that does not end in -staging", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     entryOf(entries, "catalog").config.env.staging.name = "polaris-catalog";
     expect(findIsolationProblems(entries)).toEqual([
       'catalog: env.staging: name "polaris-catalog" must end in -staging, or the deploy would publish another Worker',
@@ -93,7 +93,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses staging resources shared with production or with the top level", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const web = entryOf(entries, "web").config;
     web.env.production.hyperdrive[0].id = web.env.staging.hyperdrive[0].id;
     web.env.staging.ratelimits[0].namespace_id = "901016";
@@ -111,7 +111,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a staging queue or bucket that does not say staging", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.queues.producers[0].queue = "polaris-critical";
     staging.r2_buckets[0].bucket_name = "polaris-media";
@@ -125,7 +125,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses a binding kind staging does not use, a route and a non-staging URL", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.services = [{ binding: "PROD", service: "polaris-web" }];
     staging.kv_namespaces = [{ binding: "KV", id: "x" }];
@@ -142,7 +142,7 @@ describe("the staging isolation check", () => {
   });
 
   it("accepts the empty binding lists a generated wrangler.json writes", () => {
-    const entries = filledEntries().map((entry) => ({
+    const entries = repositoryEntries().map((entry) => ({
       ...entry,
       built: {
         ...entry.config.env.staging,
@@ -155,7 +155,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const web = entryOf(entries, "web").config.env.staging;
     const catalog = entryOf(entries, "catalog").config.env.staging;
     catalog.hyperdrive[0].id = web.hyperdrive[0].id;
@@ -165,7 +165,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses previews, a missing environment marker and password sign-in in staging", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.preview_urls = true;
     staging.vars.POLARIS_ENVIRONMENT = "production";
@@ -178,7 +178,7 @@ describe("the staging isolation check", () => {
   });
 
   it("refuses an Admin reachable in staging", () => {
-    const entries = filledEntries();
+    const entries = repositoryEntries();
     const { staging } = entryOf(entries, "admin").config.env;
     staging.workers_dev = true;
     staging.routes = [{ custom_domain: true, pattern: "admin.example.com" }];
@@ -201,7 +201,7 @@ describe("the staging isolation check", () => {
     });
 
     it("passes when the build resolved env.staging", () => {
-      const entries = filledEntries().map((entry) => ({
+      const entries = repositoryEntries().map((entry) => ({
         ...entry,
         built: built(entry.config),
       }));
@@ -209,7 +209,7 @@ describe("the staging isolation check", () => {
     });
 
     it("refuses a missing build, a build of another environment or bindings that differ", () => {
-      const entries = filledEntries().map((entry) => ({
+      const entries = repositoryEntries().map((entry) => ({
         ...entry,
         built: built(entry.config),
       }));
