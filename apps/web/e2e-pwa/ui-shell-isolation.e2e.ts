@@ -339,6 +339,12 @@ test.describe("controle: a verificação pega a regra legacy que vaza", () => {
       found: 'select "sonda de lista": box-sizing content-box (com legacy)',
       name: ".ui-root select",
     },
+    // the margin of the probe: a side the layer gives to a control is a leak
+    {
+      css: ".ui-root select { margin-top: 7px; }",
+      found: 'select "sonda de lista": margin-top 7px (com legacy)',
+      name: ".ui-root select (margem)",
+    },
     {
       css: ".ui-root textarea { box-sizing: content-box; }",
       found: 'textarea "sonda de texto": box-sizing content-box (com legacy)',
@@ -389,6 +395,20 @@ test.describe("controle: a verificação pega a regra legacy que vaza", () => {
         )
       )
     ).toBe(true);
+  });
+
+  test("a margem auto que acompanha o contêiner não reprova", async ({
+    page,
+  }) => {
+    await CHANGE_PASSWORD.open(page);
+    await addProbe(page);
+    await addPageRule(
+      page,
+      '[data-ui] select[aria-label="sonda de lista"] { display: block; width: 10rem; margin-inline: auto; }'
+    );
+    // the old layer changes the width of the shell, so the used value of the `auto` margins changes
+    await addLegacyRule(page, ".ui-root { padding-left: 40px; }");
+    expect(leaks(await legacyLayerOnAndOff(page))).toEqual([]);
   });
 
   test("uma regra legacy só para o que é antigo não reprova", async ({

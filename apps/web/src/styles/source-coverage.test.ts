@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, posix, relative, sep } from "node:path";
+import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { __unstable__loadDesignSystem } from "tailwindcss";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -10,6 +11,10 @@ import { describe, expect, it } from "vitest";
  * uses `data-ui`; it must be covered by some `@source`. The list stays file by file, not a folder glob: a
  * folder such as `sales/` or `sign-in/` still holds old screens, and utilities generated from them would
  * restyle those screens (ADR 0103, section 3).
+ *
+ * A component with no import from `src/ui`, only Tailwind classes, is migrated too once a migrated file imports
+ * it: a class of its `className` that Tailwind generates and no old sheet defines is a utility and needs a
+ * source. An old component that a migrated screen imports (old classes only) stays out.
  */
 const src = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = "styles/index.css";
@@ -22,6 +27,16 @@ const MIGRATED =
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 // `src/ui` and the gallery are sources as whole folders and need no listing
 const OWN_FOLDERS = ["ui/", "ui-gallery/"];
+
+function cssFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return cssFiles(path);
+    }
+    return entry.name.endsWith(".css") ? [path] : [];
+  });
+}
 
 function tsxFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -66,12 +81,103 @@ function covered(file: string, sources: string[]): boolean {
 }
 
 const SIBLING_IMPORT = /from\s+["']\.\/([^"']+)["']/g;
+const ANY_IMPORT = /from\s+["'](\.{1,2}\/[^"']+|@\/[^"']+)["']/g;
+const CLASS_ATTRIBUTE = /\bclassName=/g;
+const QUOTED = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
+const WHITESPACE = /\s+/;
+const CLASS_TOKEN = /^[\w:./[\]%()#&>*=,-]+$/;
+const TEMPLATE_HOLE = /\$\{[^}]*\}/g;
+const CSS_STRING = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
+const CSS_URL = /url\([^)]*\)/g;
+const CSS_CLASS = /\.(-?[_a-zA-Z](?:\\.|[\w-])*)/g;
+const FAKE_UTILITY = /[:-]/;
+const LEGACY_SHEET = /@layer legacy\s*\{/;
+
+/** The class names the old sheets (`@layer legacy`) define. */
+function legacyClasses(sheets: string[]): Set<string> {
+  return new Set(
+    sheets
+      .filter((sheet) => LEGACY_SHEET.test(sheet))
+      .flatMap((sheet) => [
+        ...sheet
+          .replace(COMMENT, "")
+          .replace(CSS_STRING, '""')
+          .replace(CSS_URL, "")
+          .matchAll(CSS_CLASS),
+      ])
+      .map((match) => (match[1] as string).replace(/\\(.)/g, "$1"))
+  );
+}
+
+/** The text of the value of every `className=` of a file: a string, or a balanced `{ … }` expression. */
+function classAttributes(text: string): string[] {
+  return [...text.matchAll(CLASS_ATTRIBUTE)].map((match) => {
+    const start = (match.index as number) + match[0].length;
+    const opener = text[start];
+    if (opener === '"' || opener === "'") {
+      return text.slice(start + 1, text.indexOf(opener, start + 1));
+    }
+    let depth = 0;
+    let index = start;
+    while (index < text.length) {
+      if (text[index] === "{") {
+        depth += 1;
+      } else if (text[index] === "}") {
+        depth -= 1;
+      }
+      index += 1;
+      if (depth === 0) {
+        break;
+      }
+    }
+    return text.slice(start, index);
+  });
+}
+
+/** The classes of a file's `className`s that are Tailwind utilities (`isUtility`): the ones it relies on. */
+function utilityClasses(
+  text: string,
+  isUtility: (token: string) => boolean
+): string[] {
+  return classAttributes(text)
+    .flatMap((value) =>
+      value.includes('"') || value.includes("'") || value.includes("`")
+        ? [...value.matchAll(QUOTED)].map(
+            (match) => match[1] ?? match[2] ?? match[3] ?? ""
+          )
+        : [value]
+    )
+    .flatMap((value) => value.replace(TEMPLATE_HOLE, " ").split(WHITESPACE))
+    .filter((token) => CLASS_TOKEN.test(token))
+    .filter(isUtility);
+}
+
+/** The file an import names (`./x`, `../x`, `@/x`) among the files, as a path relative to `src`. */
+function importedFiles(
+  file: string,
+  text: string,
+  files: Map<string, string>
+): string[] {
+  return [...text.matchAll(ANY_IMPORT)]
+    .map((match) => {
+      const path = match[1] as string;
+      return path.startsWith("@/")
+        ? path.slice(2)
+        : posix.join(posix.dirname(file), path);
+    })
+    .flatMap((path) => [`${path}.tsx`, `${path}/index.tsx`])
+    .filter((path) => files.has(path));
+}
 
 /**
- * The migrated files: those that import a component of `src/ui` or use `data-ui`, and the files of the same
- * folder that import one of those (the pages of the password family import `entry-ui` and carry their own classes).
+ * The migrated files: those that import a component of `src/ui` or use `data-ui`, the files of the same
+ * folder that import one of those (the pages of the password family import `entry-ui` and carry their own classes),
+ * and the files a migrated file imports that carry a Tailwind utility.
  */
-function migrated(files: Map<string, string>): Set<string> {
+function migrated(
+  files: Map<string, string>,
+  isUtility: (token: string) => boolean
+): Set<string> {
   const found = new Set(
     [...files].filter(([, text]) => MIGRATED.test(text)).map(([file]) => file)
   );
@@ -88,17 +194,69 @@ function migrated(files: Map<string, string>): Set<string> {
         grew = true;
       }
     }
+    // a component a migrated file imports and that carries Tailwind classes (it may import nothing of `src/ui`)
+    for (const file of [...found]) {
+      for (const imported of importedFiles(
+        file,
+        files.get(file) ?? "",
+        files
+      )) {
+        const text = files.get(imported) ?? "";
+        if (
+          !found.has(imported) &&
+          utilityClasses(text, isUtility).length > 0
+        ) {
+          found.add(imported);
+          grew = true;
+        }
+      }
+    }
   }
   return found;
 }
 
 /** The migrated files (by their text) that no source covers. */
-function uncovered(files: Map<string, string>, sources: string[]): string[] {
-  const found = migrated(files);
+function uncovered(
+  files: Map<string, string>,
+  sources: string[],
+  isUtility: (token: string) => boolean = () => false
+): string[] {
+  const found = migrated(files, isUtility);
   return [...found]
     .filter((file) => !OWN_FOLDERS.some((folder) => file.startsWith(folder)))
     .filter((file) => !covered(file, sources))
     .sort();
+}
+
+/** A stand-in for Tailwind in the controls: a class with a dash or a colon that no old sheet defines. */
+function fakeUtility(legacy: string[]): (token: string) => boolean {
+  return (token) => !legacy.includes(token) && FAKE_UTILITY.test(token);
+}
+
+/**
+ * What Tailwind would generate for a token, with the theme of the app: `candidatesToCss` answers `null` for a
+ * name that is no utility (`is-group`, `success`). The tokens an old sheet defines are left out: whether one of them
+ * also is a utility is the business of `utility-legacy-overlap.test.ts`.
+ */
+async function appUtility(legacy: Set<string>) {
+  const design = await __unstable__loadDesignSystem(
+    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "./theme.css";',
+    {
+      base: join(src, "styles"),
+      loadStylesheet: (id, base) => {
+        const path = id.startsWith(".")
+          ? join(base, id)
+          : fileURLToPath(import.meta.resolve(id));
+        return Promise.resolve({
+          base: dirname(path),
+          content: readFileSync(path, "utf8"),
+          path,
+        });
+      },
+    }
+  );
+  return (token: string) =>
+    !legacy.has(token) && design.candidatesToCss([token])[0] !== null;
 }
 
 describe("@source covers every file of a migrated screen (ADR 0103)", () => {
@@ -135,7 +293,58 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
     expect(uncovered(files, ["inventory"])).toEqual([]);
   });
 
-  it("no migrated .tsx of the app is left out of the @source of the entry", () => {
+  it("control: a component with only Tailwind classes, imported by a migrated file, is reported", () => {
+    const files = new Map([
+      [
+        "inventory/page.tsx",
+        'import { Button } from "@/ui/button";\nimport { Row } from "./row";',
+      ],
+      ["inventory/row.tsx", '<li className="flex md:w-fit old-row" />'],
+      ["inventory/old-note.tsx", '<p className="old-row" />'],
+      [
+        "inventory/dynamic.tsx",
+        ["<p className={`old-row $", "{tone}`} />"].join(""),
+      ],
+      [
+        "inventory/cn.tsx",
+        '<p className={cn("old-row", open && "md:flex-none")} />',
+      ],
+      ["sales/alone.tsx", '<p className="p-4" />'],
+    ]);
+    const isUtility = fakeUtility(["old-row"]);
+    const page = files.get("inventory/page.tsx") as string;
+    files.set(
+      "inventory/page.tsx",
+      `${page}\nimport { Note } from "./old-note";\nimport { D } from "./dynamic";\nimport { C } from "./cn";`
+    );
+    // the old component (old classes only) is not migrated; the ones with a utility are
+    expect(uncovered(files, ["inventory/page.tsx"], isUtility)).toEqual([
+      "inventory/cn.tsx",
+      "inventory/row.tsx",
+    ]);
+    expect(
+      uncovered(
+        files,
+        ["inventory/page.tsx", "inventory/row.tsx", "inventory/cn.tsx"],
+        isUtility
+      )
+    ).toEqual([]);
+  });
+
+  it("reads the classes of a className that no old sheet defines", () => {
+    const isUtility = fakeUtility(["old"]);
+    expect(
+      utilityClasses(
+        '<a className="old md:w-fit" /><b className={cn("old", x && "p-2 hover:bg-x")} />',
+        isUtility
+      )
+    ).toEqual(["md:w-fit", "p-2", "hover:bg-x"]);
+    expect(utilityClasses('<a className="old" id="p-4" />', isUtility)).toEqual(
+      []
+    );
+  });
+
+  it("no migrated .tsx of the app is left out of the @source of the entry", async () => {
     const sources = sourcePaths(readFileSync(join(src, ENTRY), "utf8"));
     const files = new Map(
       tsxFiles(src).map((path) => [
@@ -143,11 +352,19 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
         readFileSync(path, "utf8"),
       ])
     );
+    const legacy = legacyClasses(
+      cssFiles(src).map((path) => readFileSync(path, "utf8"))
+    );
+    expect(legacy.size).toBeGreaterThan(100);
+    const isUtility = await appUtility(legacy);
+    expect(isUtility("md:w-fit")).toBe(true);
+    expect(isUtility("is-group")).toBe(false);
+    const found = migrated(files, isUtility);
     // the guard sees the migrated screens at all: the stock row buttons are one of them
-    expect(migrated(files).size).toBeGreaterThan(10);
-    expect(migrated(files).has("inventory/stock-row-actions.tsx")).toBe(true);
+    expect(found.size).toBeGreaterThan(10);
+    expect(found.has("inventory/stock-row-actions.tsx")).toBe(true);
     // the pages of the password family are found through `entry-ui`, not by their own imports
-    expect(migrated(files).has("sign-in/unlock-page.tsx")).toBe(true);
+    expect(found.has("sign-in/unlock-page.tsx")).toBe(true);
     // a line for a file that is gone does nothing (Tailwind ignores it); a folder (other than the two of the
     // interface) would generate the utilities of old screens
     for (const source of sources) {
@@ -157,6 +374,6 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
         source
       ).toBe(true);
     }
-    expect(uncovered(files, sources)).toEqual([]);
+    expect(uncovered(files, sources, isUtility)).toEqual([]);
   });
 });

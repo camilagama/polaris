@@ -41,10 +41,13 @@ export function ProductsHeader({ buttonRef, onNew, showNew }: HeaderProps) {
   );
 }
 
+/** The id of the offline notice: the archived notice's "Desfazer" points at it while it is off for lack of connection. */
+export const OFFLINE_NOTICE_ID = "products-offline-notice";
+
 /** Said while there is no connection: what still works and what waits. */
 export function OfflineNotice() {
   return (
-    <Alert variant="warning">
+    <Alert id={OFFLINE_NOTICE_ID} variant="warning">
       <CloudOffIcon aria-hidden="true" />
       <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription>
@@ -64,6 +67,8 @@ interface FeedbackProps {
   regionRef: Ref<HTMLDivElement>;
   /** No connection or an action running: the restore cannot start. */
   undoDisabled?: boolean | undefined;
+  /** The notice that says why the restore is off (no connection), when there is one; read with the button. */
+  undoReasonId?: string | undefined;
 }
 
 /** What the last action did: nothing is drawn (not even a gap) without a message. */
@@ -73,6 +78,7 @@ export function ActionFeedback({
   onUndo,
   regionRef,
   undoDisabled,
+  undoReasonId,
 }: FeedbackProps) {
   if (!(error || notice)) {
     return null;
@@ -95,9 +101,12 @@ export function ActionFeedback({
           >
             {notice}
             {onUndo ? (
+              // aria-disabled, not disabled: the button stays reachable and reads why it is off (the offline notice)
               <Button
-                disabled={undoDisabled}
-                onClick={onUndo}
+                aria-describedby={undoDisabled ? undoReasonId : undefined}
+                aria-disabled={undoDisabled || undefined}
+                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                onClick={undoDisabled ? undefined : onUndo}
                 size="sm"
                 type="button"
                 variant="link"
