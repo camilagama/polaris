@@ -33,6 +33,27 @@ export interface Findings {
   unpinned: string[];
 }
 
+// runtime roles (see RUNTIME_*_PATTERN); $1 is RUNTIME_GROUP_PATTERN and $2 is RUNTIME_ROLE_PATTERN
+export const RUNTIME_ROLES_CTE = `
+    WITH RECURSIVE closure(member, roleid) AS (
+      SELECT member, roleid FROM pg_auth_members
+       WHERE inherit_option OR set_option OR member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
+      UNION
+      SELECT c.member, m.roleid FROM closure c JOIN pg_auth_members m ON m.member = c.roleid
+       WHERE m.inherit_option OR m.set_option OR m.member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
+    ),
+    runtime AS (
+      SELECT r.oid, r.rolname, r.rolsuper, r.rolcreaterole, r.rolreplication, r.rolbypassrls, r.oid = d.datdba AS is_owner
+        FROM pg_roles r, pg_database d
+       WHERE d.datname = current_database()
+         AND (r.rolname ~ $2
+          OR r.rolname ~ $1
+          OR EXISTS (
+            SELECT 1 FROM closure c JOIN pg_roles g ON g.oid = c.roleid
+             WHERE c.member = r.oid AND g.rolname ~ $1
+          ))
+    )`;
+
 function endsInPgTemp(config: string[] | null): boolean {
   const entry = (config ?? []).find((item) =>
     item.startsWith(SEARCH_PATH_PREFIX)
@@ -45,6 +66,44 @@ function endsInPgTemp(config: string[] | null): boolean {
     .split(SEARCH_PATH_SPLIT)
     .map((item) => item.replaceAll('"', ""));
   return path.at(-1) === "pg_temp";
+}
+
+export interface ReachableRole {
+  can_create: boolean;
+  can_temp: boolean;
+  /** a runtime role that is not a `*_runtime` group: a login of the app, which must be able to log in */
+  is_login: boolean;
+  rolbypassrls: boolean;
+  rolcanlogin: boolean;
+  rolcreatedb: boolean;
+  rolcreaterole: boolean;
+  rolname: string;
+  rolreplication: boolean;
+  rolsuper: boolean;
+}
+
+/**
+ * Every role a runtime role is, or can become with SET ROLE, or inherits (itself included), with its attributes and
+ * its TEMPORARY and CREATE rights. A superuser or database owner among the runtime roles is left out: it is reported
+ * as such by `privilegedRuntime`, and for a superuser pg_has_role says it is a member of everything.
+ */
+export async function findReachableRoles(
+  client: Client
+): Promise<ReachableRole[]> {
+  const { rows } = await client.query<ReachableRole>(
+    `${RUNTIME_ROLES_CTE}
+     SELECT DISTINCT t.rolname,
+            has_database_privilege(t.oid, current_database(), 'TEMPORARY') AS can_temp,
+            has_schema_privilege(t.oid, 'public', 'CREATE') AS can_create,
+            t.oid IN (SELECT oid FROM runtime WHERE rolname !~ $1) AS is_login,
+            t.rolcanlogin, t.rolsuper, t.rolcreaterole, t.rolcreatedb, t.rolreplication, t.rolbypassrls
+       FROM runtime
+       JOIN pg_roles t ON pg_has_role(runtime.oid, t.oid, 'SET') OR pg_has_role(runtime.oid, t.oid, 'USAGE')
+      WHERE NOT runtime.rolsuper AND NOT runtime.is_owner
+      ORDER BY 1`,
+    [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
+  );
+  return rows;
 }
 
 export async function findViolations(client: Client): Promise<Findings> {
@@ -70,28 +129,9 @@ export async function findViolations(client: Client): Promise<Findings> {
   const publicExecute = definers.rows
     .filter((row) => row.publicExecute)
     .map((row) => row.signature);
-  // runtime roles (see RUNTIME_*_PATTERN); the checks below also follow SET ROLE chains through pg_has_role
-  const runtime = `
-    WITH RECURSIVE closure(member, roleid) AS (
-      SELECT member, roleid FROM pg_auth_members
-       WHERE inherit_option OR set_option OR member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
-      UNION
-      SELECT c.member, m.roleid FROM closure c JOIN pg_auth_members m ON m.member = c.roleid
-       WHERE m.inherit_option OR m.set_option OR m.member <> (SELECT datdba FROM pg_database WHERE datname = current_database())
-    ),
-    runtime AS (
-      SELECT r.oid, r.rolname, r.rolsuper, r.rolcreaterole, r.rolreplication, r.rolbypassrls, r.oid = d.datdba AS is_owner
-        FROM pg_roles r, pg_database d
-       WHERE d.datname = current_database()
-         AND (r.rolname ~ $2
-          OR r.rolname ~ $1
-          OR EXISTS (
-            SELECT 1 FROM closure c JOIN pg_roles g ON g.oid = c.roleid
-             WHERE c.member = r.oid AND g.rolname ~ $1
-          ))
-    )`;
+  // the checks below follow SET ROLE chains through pg_has_role
   const privileged = await client.query<{ reason: string; rolname: string }>(
-    `${runtime}
+    `${RUNTIME_ROLES_CTE}
      SELECT rolname,
             CASE WHEN is_owner THEN 'database owner'
                  WHEN rolsuper THEN 'superuser'
@@ -106,7 +146,7 @@ export async function findViolations(client: Client): Promise<Findings> {
   // the login reaches one when a role it can become with SET ROLE (itself included) inherits it, can SET to it or has ADMIN OPTION on it
   // (whoever has ADMIN OPTION can grant itself SET and INHERIT)
   const membership = await client.query<{ login: string; target: string }>(
-    `${runtime}
+    `${RUNTIME_ROLES_CTE}
      SELECT DISTINCT runtime.rolname AS login, t.rolname AS target
        FROM runtime
        JOIN pg_roles via ON pg_has_role(runtime.oid, via.oid, 'SET')
@@ -128,21 +168,7 @@ export async function findViolations(client: Client): Promise<Findings> {
       ORDER BY 1, 2`,
     [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
   );
-  const roles = await client.query<{
-    can_create: boolean;
-    can_temp: boolean;
-    rolname: string;
-  }>(
-    `${runtime}
-     SELECT DISTINCT t.rolname,
-            has_database_privilege(t.oid, current_database(), 'TEMPORARY') AS can_temp,
-            has_schema_privilege(t.oid, 'public', 'CREATE') AS can_create
-       FROM runtime
-       JOIN pg_roles t ON pg_has_role(runtime.oid, t.oid, 'SET')
-      WHERE NOT runtime.rolsuper AND NOT runtime.is_owner
-      ORDER BY 1`,
-    [RUNTIME_GROUP_PATTERN, RUNTIME_ROLE_PATTERN]
-  );
+  const roles = await findReachableRoles(client);
   const publicRights = await client.query<{
     can_create: boolean;
     can_temp: boolean;
@@ -155,7 +181,7 @@ export async function findViolations(client: Client): Promise<Findings> {
   return {
     createInPublic: [
       ...(pub.can_create ? ["PUBLIC"] : []),
-      ...roles.rows.filter((row) => row.can_create).map((row) => row.rolname),
+      ...roles.filter((row) => row.can_create).map((row) => row.rolname),
     ],
     ownerMembership: membership.rows.map(
       (row) => `${row.login}->${row.target}`
@@ -166,7 +192,7 @@ export async function findViolations(client: Client): Promise<Findings> {
     publicExecute,
     temporary: [
       ...(pub.can_temp ? ["PUBLIC"] : []),
-      ...roles.rows.filter((row) => row.can_temp).map((row) => row.rolname),
+      ...roles.filter((row) => row.can_temp).map((row) => row.rolname),
     ],
     unpinned,
   };

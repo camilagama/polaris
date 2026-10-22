@@ -12,7 +12,7 @@ import {
   type EnvironmentReadings,
   markerComment,
 } from "./environment-marker";
-import { findOwnerAttributeViolations } from "./owner-role-attributes";
+import { assertOwnerRolesClean } from "./owner-role-attributes";
 import { poolerPattern, sqlState } from "./sales-gate-support";
 
 /**
@@ -25,8 +25,10 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
  *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect).
  * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093); PUBLIC has no
- *   TEMPORARY; every `polaris_*_owner` role is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and
- *   NOBYPASSRLS (`owner-role-attributes.ts`); and every login other than the owner is a member of a
+ *   TEMPORARY; every `polaris_*_owner` role and every role a runtime role reaches (the `*_runtime` groups and what they
+ *   can SET to or inherit, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
+ *   NOREPLICATION and NOBYPASSRLS, with a floor on how many were looked at, and no `*_owner` role is a member of a
+ *   privileged role (`owner-role-attributes.ts`); and every login other than the owner is a member of a
  *   `polaris_*_runtime` group (item 15).
  *
  * The output lists names only: no URL, password or data.
@@ -97,13 +99,7 @@ async function checkHardening(client: Client) {
     "SELECT has_database_privilege('public', current_database(), 'TEMPORARY') AS can_temp"
   );
   assert.equal(temporary.rows[0]?.can_temp, false, "PUBLIC has TEMPORARY");
-  const owners = await findOwnerAttributeViolations(client);
-  assert.ok(owners.checked > 0, "no polaris_*_owner role");
-  assert.deepEqual(
-    owners.findings,
-    [],
-    "polaris_*_owner roles with an attribute they must not have (role: attribute)"
-  );
+  const roles = await assertOwnerRolesClean(client);
   // every login the app uses belongs to a runtime group: the gate sees only those as runtime roles
   const logins = await client.query<{ groups: string[]; login: string }>(
     `SELECT r.rolname AS login,
@@ -128,7 +124,8 @@ async function checkHardening(client: Client) {
   return [
     "definer-hardening (read-only): no finding",
     "PUBLIC has no TEMPORARY on the database",
-    `${owners.checked} polaris_*_owner roles: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
+    `${roles.owners} polaris_*_owner roles and ${roles.reachable} roles a runtime role reaches: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
+    `the ${roles.owners} polaris_*_owner roles are members of no privileged role`,
     ...appLogins.map((row) => `login ${row.login}: ${row.groups.join(", ")}`),
   ];
 }
