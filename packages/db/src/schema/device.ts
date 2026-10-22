@@ -20,6 +20,8 @@ const runtimeRole = "polaris_pr11_runtime";
 const deviceSessionOwnerRole = "polaris_device_session_owner";
 
 const currentUser = sql`NULLIF(current_setting('app.user_id', true), '')`;
+/** The user of the call of `end_device_sessions()`, written by the function itself (0097), never by the runtime. */
+const deviceSessionUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.device_session_user_id', true), '')`;
 
 /**
  * One browser installation of one user. Devices belong to the user, not to an
@@ -69,7 +71,7 @@ export const devices = pgTable(
     pgPolicy("devices_session_owner_select", {
       for: "select",
       to: deviceSessionOwnerRole,
-      using: sql`${table.userId} = ${currentUser}`,
+      using: sql`${table.userId} = ${deviceSessionUserScope}`,
     }),
   ]
 ).enableRLS();
@@ -127,7 +129,7 @@ export const deviceSessions = pgTable(
     pgPolicy("device_sessions_session_owner_select", {
       for: "select",
       to: deviceSessionOwnerRole,
-      using: sql`${table.userId} = ${currentUser}`,
+      using: sql`${table.userId} = ${deviceSessionUserScope}`,
     }),
   ]
 ).enableRLS();

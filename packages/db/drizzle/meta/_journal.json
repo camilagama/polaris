@@ -673,6 +673,13 @@
       "when": 1792670480610,
       "tag": "0096_escopo_do_select_de_organizations_do_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1792686694437,
+      "tag": "0097_rls_da_sessao",
+      "breakpoints": true
     }
   ]
 }
