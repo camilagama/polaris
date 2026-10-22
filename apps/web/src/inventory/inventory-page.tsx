@@ -327,7 +327,7 @@ export function InventoryPage() {
           </InputGroup>
         </Field>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          <ButtonGroup aria-label="Saldo">
+          <ButtonGroup aria-label="Filtrar por saldo">
             {STOCK_FILTERS.map(([value, label]) => (
               <Button
                 aria-pressed={filters.stock === value}

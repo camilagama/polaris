@@ -17,8 +17,8 @@ import {
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
-const RECEIVE_SHIRT = "Receber estoque de Calça jeans, 42";
-const WRITE_OFF_SHIRT = "Baixar estoque de Calça jeans, 42";
+const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
+const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
 const COUNT_SHIRT = "Contar estoque de Camiseta do teste, Azul";
 
 const THEMES = [
@@ -106,7 +106,7 @@ async function openStockLab(page: Page, stored: string) {
 
 async function useEveryControl(page: Page) {
   // the filters: the balance, the archived products (the mug has no balance and is archived) and the search
-  const filter = page.getByRole("group", { name: "Saldo" });
+  const filter = page.getByRole("group", { name: "Filtrar por saldo" });
   await filter.getByRole("button", { name: "Sem saldo" }).click();
   await expect(
     filter.getByRole("button", { name: "Sem saldo" })
@@ -124,7 +124,7 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Atualizar" }).click();
 
   // a receipt: the stepper, the review, the confirmation, the record
-  await page.getByRole("button", { name: RECEIVE_SHIRT }).click();
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   const quantity = page.getByLabel("Quantidade recebida");
   await expect(quantity).toBeFocused();
   await page.getByRole("button", { name: "Mais uma unidade" }).click();
@@ -143,7 +143,7 @@ async function useEveryControl(page: Page) {
     page.getByRole("status").filter({ hasText: "Receber estoque" })
   ).toBeFocused();
   await page.getByRole("button", { name: "Fechar" }).click();
-  await expect(page.getByRole("button", { name: RECEIVE_SHIRT })).toBeFocused();
+  await expect(page.getByRole("button", { name: RECEIVE_JEANS })).toBeFocused();
 
   // a count (the valuation field, as the cost is unknown) and a write-off (the choice list and the note)
   await page.getByRole("button", { name: COUNT_SHIRT }).click();
@@ -151,7 +151,7 @@ async function useEveryControl(page: Page) {
     page.getByLabel("Custo unitário para valoração (R$)")
   ).toBeVisible();
   await page.getByRole("button", { name: "Fechar" }).click();
-  await page.getByRole("button", { name: WRITE_OFF_SHIRT }).click();
+  await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await page
     .getByRole("combobox", { exact: true, name: "Motivo da baixa" })
     .click();
@@ -189,7 +189,7 @@ test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o 
   page,
 }) => {
   await openStockLab(page, "claro");
-  await page.getByRole("button", { name: RECEIVE_SHIRT }).click();
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   const quantity = page.getByLabel("Quantidade recebida");
   await expect(quantity).toBeFocused();
@@ -224,7 +224,7 @@ test("a 320 px nada transborda: a lista, o painel aberto e a revisão", async ({
     expect(found.past).toEqual([]);
   };
   await sideways();
-  await page.getByRole("button", { name: WRITE_OFF_SHIRT }).click();
+  await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await sideways();
   await page.getByLabel("Quantidade a baixar").fill("2");
   await page
@@ -236,4 +236,18 @@ test("a 320 px nada transborda: a lista, o painel aberto e a revisão", async ({
     page.getByRole("button", { name: "Confirmar baixa" })
   ).toBeVisible();
   await sideways();
+});
+
+test("a baixa sem motivo leva o foco à lista de motivos", async ({ page }) => {
+  await openStockLab(page, "claro");
+  await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
+  await page.getByLabel("Quantidade a baixar").fill("1");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+  const reason = page.getByRole("combobox", {
+    exact: true,
+    name: "Motivo da baixa",
+  });
+  await expect(reason).toBeFocused();
+  await expect(reason).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Escolha o motivo da baixa.")).toBeVisible();
 });

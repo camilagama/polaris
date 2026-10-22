@@ -83,6 +83,8 @@ interface StockCommandPanelProps {
 /* -------------------------------------------------------------------------- */
 
 interface ActionsProps {
+  /** The id of the notice that says why the action is blocked. */
+  blockId: string;
   confirming: boolean;
   label: string;
   locked: boolean;
@@ -97,6 +99,7 @@ interface ActionsProps {
 
 function Actions({
   blocked,
+  blockId,
   closable,
   confirming,
   label,
@@ -121,7 +124,14 @@ function Actions({
           )}
         </>
       ) : (
-        <Button disabled={blocked} onClick={onReview} type="button">
+        // aria-disabled, not disabled: the button stays reachable and reads why it is off (the notice above the form)
+        <Button
+          aria-describedby={blocked ? blockId : undefined}
+          aria-disabled={blocked || undefined}
+          className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+          onClick={blocked ? undefined : onReview}
+          type="button"
+        >
           Revisar
         </Button>
       )}
@@ -397,7 +407,7 @@ export function StockCommandPanel({
         </Alert>
       ) : null}
       {block ? (
-        <Alert role="note" variant="warning">
+        <Alert id={`${prefix}-block`} role="note" variant="warning">
           <AlertDescription>{block}</AlertDescription>
         </Alert>
       ) : null}
@@ -428,6 +438,7 @@ export function StockCommandPanel({
           />
         ) : null}
         <Actions
+          blockId={`${prefix}-block`}
           blocked={block !== null}
           closable={canCloseStock(state)}
           confirming={confirming}

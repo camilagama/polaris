@@ -667,11 +667,11 @@ export function stockSummary(
 export function stockConsequence(action: StockAction): string {
   switch (action) {
     case "receive":
-      return "O recebimento entra no histórico e muda o custo médio; um erro se corrige com uma contagem ou uma baixa.";
+      return "O recebimento entra no histórico e muda o custo médio; não pode ser editado depois, e um erro se corrige com uma contagem ou uma baixa.";
     case "count":
-      return "A contagem substitui o saldo e fica no histórico, mesmo sem diferença; ela falha se o saldo mudar enquanto você confirma.";
+      return "A contagem substitui o saldo pela quantidade contada e fica no histórico, mesmo sem diferença; ela falha se o saldo mudar enquanto você confirma.";
     default:
-      return "A baixa tira as unidades do saldo e fica no histórico com o motivo; não muda o custo médio nem cria despesa.";
+      return "A baixa tira as unidades do saldo e fica no histórico com o motivo; não muda o custo médio do saldo restante nem cria despesa.";
   }
 }
 
