@@ -85,7 +85,7 @@ const ANY_IMPORT = /from\s+["'](\.{1,2}\/[^"']+|@\/[^"']+)["']/g;
 const CLASS_ATTRIBUTE = /\bclassName=/g;
 const QUOTED = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
 const WHITESPACE = /\s+/;
-const CLASS_TOKEN = /^[\w:./[\]%()#&>*=,-]+$/;
+const CLASS_TOKEN = /^[\w:./[\]%()#&>*=,!-]+$/;
 const TEMPLATE_HOLE = /\$\{[^}]*\}/g;
 const CSS_STRING = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
 const CSS_URL = /url\([^)]*\)/g;
@@ -134,12 +134,27 @@ function classAttributes(text: string): string[] {
   });
 }
 
+const IDENTIFIER = /^\{\s*([A-Za-z_$][\w$]*)\s*\}$/;
+
+/** `className={LINK}` reads the string of `const LINK = "…"` of the same file (the pattern of a shared class list). */
+function constantsOf(value: string, text: string): string[] {
+  const name = IDENTIFIER.exec(value.trim())?.[1];
+  if (!name) {
+    return [];
+  }
+  const declaration = new RegExp(
+    `\\b(?:const|let)\\s+${name.replace(/\$/g, "\\$")}\\b[^=]*=\\s*(["'\`])([\\s\\S]*?)\\1`
+  ).exec(text);
+  return declaration ? [`"${declaration[2]}"`] : [];
+}
+
 /** The classes of a file's `className`s that are Tailwind utilities (`isUtility`): the ones it relies on. */
 function utilityClasses(
   text: string,
   isUtility: (token: string) => boolean
 ): string[] {
   return classAttributes(text)
+    .flatMap((value) => [value, ...constantsOf(value, text)])
     .flatMap((value) =>
       value.includes('"') || value.includes("'") || value.includes("`")
         ? [...value.matchAll(QUOTED)].map(
@@ -234,19 +249,29 @@ function fakeUtility(legacy: string[]): (token: string) => boolean {
 }
 
 /**
- * What Tailwind would generate for a token, with the theme of the app: `candidatesToCss` answers `null` for a
+ * What Tailwind would generate for a token, with the theme of the app (the imports of the CSS entry that define
+ * utilities; `__unstable__loadDesignSystem` is pinned by the exact version of `tailwindcss`): `candidatesToCss` answers `null` for a
  * name that is no utility (`is-group`, `success`). The tokens an old sheet defines are left out: whether one of them
  * also is a utility is the business of `utility-legacy-overlap.test.ts`.
  */
+/** Where an `@import` of the entry lives: a relative file, the animations package (its file is behind `exports`), or Tailwind's. */
+function stylesheetPath(id: string, base: string): string {
+  if (id.startsWith(".")) {
+    return join(base, id);
+  }
+  if (id === "tw-animate-css") {
+    return join(src, "../node_modules/tw-animate-css/dist/tw-animate.css");
+  }
+  return fileURLToPath(import.meta.resolve(id));
+}
+
 async function appUtility(legacy: Set<string>) {
   const design = await __unstable__loadDesignSystem(
-    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "./theme.css";',
+    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "tw-animate-css";\n@import "./shadcn-tailwind.css";\n@import "./theme.css";',
     {
       base: join(src, "styles"),
       loadStylesheet: (id, base) => {
-        const path = id.startsWith(".")
-          ? join(base, id)
-          : fileURLToPath(import.meta.resolve(id));
+        const path = stylesheetPath(id, base);
         return Promise.resolve({
           base: dirname(path),
           content: readFileSync(path, "utf8"),
@@ -310,22 +335,32 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
         '<p className={cn("old-row", open && "md:flex-none")} />',
       ],
       ["sales/alone.tsx", '<p className="p-4" />'],
+      [
+        "inventory/shared.tsx",
+        'const LINK = "underline mb-1!";\n<a className={LINK} />',
+      ],
     ]);
     const isUtility = fakeUtility(["old-row"]);
     const page = files.get("inventory/page.tsx") as string;
     files.set(
       "inventory/page.tsx",
-      `${page}\nimport { Note } from "./old-note";\nimport { D } from "./dynamic";\nimport { C } from "./cn";`
+      `${page}\nimport { Note } from "./old-note";\nimport { D } from "./dynamic";\nimport { C } from "./cn";\nimport { S } from "./shared";`
     );
     // the old component (old classes only) is not migrated; the ones with a utility are
     expect(uncovered(files, ["inventory/page.tsx"], isUtility)).toEqual([
       "inventory/cn.tsx",
       "inventory/row.tsx",
+      "inventory/shared.tsx",
     ]);
     expect(
       uncovered(
         files,
-        ["inventory/page.tsx", "inventory/row.tsx", "inventory/cn.tsx"],
+        [
+          "inventory/page.tsx",
+          "inventory/row.tsx",
+          "inventory/cn.tsx",
+          "inventory/shared.tsx",
+        ],
         isUtility
       )
     ).toEqual([]);
@@ -358,6 +393,7 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
     expect(legacy.size).toBeGreaterThan(100);
     const isUtility = await appUtility(legacy);
     expect(isUtility("md:w-fit")).toBe(true);
+    expect(isUtility("animate-in")).toBe(true);
     expect(isUtility("is-group")).toBe(false);
     const found = migrated(files, isUtility);
     // the guard sees the migrated screens at all: the stock row buttons are one of them
