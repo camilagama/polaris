@@ -199,7 +199,18 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
     ]);
+    production.vars.BETTER_AUTH_BASE_URL = "https://dash.araute.app./";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+    ]);
+    production.vars.CATALOG_ORIGIN =
+      "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+      "web: env.production vars.CATALOG_ORIGIN must not use the host of staging",
+    ]);
     production.vars.BETTER_AUTH_BASE_URL = "https://app.example.com";
+    production.vars.CATALOG_ORIGIN = "https://catalog.example.com";
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 

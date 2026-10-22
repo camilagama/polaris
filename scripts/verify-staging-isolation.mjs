@@ -34,6 +34,7 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // The web of staging is served at this host by a Custom Domain created outside the config (ADR 0097):
 // an exact string, so another subdomain, http, a path or userinfo never matches. The catalog stays on workers.dev.
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
+const TRAILING_DOTS = /\.+$/;
 const STAGING_CATALOG_ORIGIN =
   /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/;
 const STAGING_URLS = {
@@ -473,10 +474,10 @@ export function findIsolationProblems(entries) {
   return problems;
 }
 
-/** The lowercase host of a URL, or undefined when the value is missing or not a URL. */
+/** The lowercase host of a URL without a trailing dot (a name that resolves the same), or undefined when the value is not a URL. */
 function hostOf(value) {
   try {
-    return new URL(value).hostname.toLowerCase();
+    return new URL(value).hostname.toLowerCase().replace(TRAILING_DOTS, "");
   } catch {
     // not a URL: no host
   }

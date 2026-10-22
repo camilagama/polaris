@@ -46,7 +46,7 @@ export function smokeChecks({ catalog, web }) {
   ];
 }
 
-const STAGING_HOST = /^polaris-[a-z]+-staging\./;
+const STAGING_HOST = /^polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev$/;
 // the web of staging is served at this host by a Custom Domain (ADR 0097)
 const STAGING_WEB_HOST = "dash.araute.app";
 const ATTEMPTS = 3;
@@ -59,8 +59,8 @@ function isStagingOrigin(key, origin) {
     return (
       url.protocol === "https:" &&
       url.origin === origin &&
-      (STAGING_HOST.test(url.hostname) ||
-        (key === "web" && url.hostname === STAGING_WEB_HOST))
+      (STAGING_HOST.test(url.host) ||
+        (key === "web" && url.host === STAGING_WEB_HOST))
     );
   } catch {
     return false;

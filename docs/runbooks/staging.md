@@ -100,8 +100,9 @@ Criar ou recriar (a zona `araute.app` está na mesma conta; usar credencial com 
 2. Conferir: `curl -fsS https://dash.araute.app/health` responde 200.
 3. **Curinga:** a zona tem um registro `*.araute.app` com proxy, que sozinho responde 525. O registro específico do Custom Domain prevalece sobre ele; não apague o curinga por causa disto, e não espere que outro subdomínio sem Custom Domain responda.
 4. **Google:** em **Clients** do projeto `polaris-staging`, o URI de redirecionamento autorizado é `https://dash.araute.app/api/auth/callback/google` (seção 4). Sem ele o login falha com `redirect_uri_mismatch`.
-5. **GitHub:** a variável `STAGING_WEB_URL` do Environment `staging` passa a `https://dash.araute.app` (o smoke a lê e só aceita esse host, ou um `polaris-<app>-staging.…`). Muda depois do merge: entre o deploy que muda `BETTER_AUTH_BASE_URL` e a variável, o smoke aponta para um endereço que já não serve o web.
-6. Quem estava logado pelo `workers.dev` entra de novo: o cookie é de outro host.
+5. **GitHub:** a variável `STAGING_WEB_URL` do Environment `staging` passa a `https://dash.araute.app` (o smoke a lê e aceita esse host ou um `polaris-<app>-staging.<conta>.workers.dev`). Com `workers_dev: false`, o `workers.dev` do web deixa de servir no primeiro deploy deste PR, e o smoke que ainda apontar para ele fica vermelho: mude a variável logo antes do merge ou, mudando depois, reexecute o run do deploy.
+6. **Turnstile:** com `AUTH_ABUSE_PROTECTION_ENABLED` desligado no staging nada muda. Se ligar, o widget precisa do hostname `dash.araute.app` (o hostname esperado vem de `BETTER_AUTH_BASE_URL`, ver [auth-abuse-protection](./auth-abuse-protection.md)).
+7. Quem estava logado pelo `workers.dev` entra de novo: o cookie é de outro host.
 
 ## 4. Cliente OAuth do Google (responsável)
 

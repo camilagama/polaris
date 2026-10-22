@@ -146,6 +146,11 @@ describe("the staging smoke", () => {
       "https://dash.araute.app/path",
       "https://user:pw@dash.araute.app",
       "https://dash.araute.app.evil.example",
+      "https://DASH.araute.app",
+      "https://dash.araute.app:8443",
+      "https://polaris-web-staging.example.workers.dev:8443",
+      "https://dash.araute.app./",
+      "https://polaris-web-staging.evil.example",
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
       expect(await runSmoke({ ...origins, web }, fetchImpl)).toEqual(
