@@ -53,7 +53,7 @@ const BINDINGS = [
   ],
 ] as const;
 /** The tests of apps/web/worker/index.workerd-db.test.ts: one added or removed is changed here too, or the gate fails (an `it.each` counts one test per case). */
-const WEB_WORKER_TESTS = 25;
+const WEB_WORKER_TESTS = 30;
 const MAINTENANCE_JOBS = [
   "auth.login_lock_expiry",
   "auth.unverified_user_purge",
@@ -240,6 +240,21 @@ async function run() {
       version: 1,
     };
 
+    // the sign-in flows of the Worker (apps/web/worker/index.workerd-db.test.ts): the users each journey makes carry this tag,
+    // and the gate made one user, verified and linked to Google, for the person who signs in again
+    const authTag = `wkw-${suffix}`;
+    const linkedUserId = randomUUID();
+    const linkedAccountId = `${authTag}-linked`;
+    const linkedEmail = `${authTag}-google-linked@example.invalid`;
+    await owner.pool.query(
+      'INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, $2, $3, true)',
+      [linkedUserId, "Linked Google Person", linkedEmail]
+    );
+    await owner.pool.query(
+      "INSERT INTO public.account (id, account_id, provider_id, user_id) VALUES ($1, $2, 'google', $3)",
+      [randomUUID(), linkedAccountId, linkedUserId]
+    );
+
     const incidentCount = async (cause: string, subject: string) =>
       Number(
         (
@@ -267,6 +282,14 @@ async function run() {
       {
         ...urls,
         POLARIS_WEB_WORKER_FIXTURE: JSON.stringify({
+          auth: {
+            googleLinked: {
+              accountId: linkedAccountId,
+              email: linkedEmail,
+              userId: linkedUserId,
+            },
+            tag: authTag,
+          },
           events,
           forged,
           logins: loginsByBinding,
@@ -390,6 +413,138 @@ async function run() {
     );
     tests.push(
       "each notice of the dead-letter queue became one incident, and the misrouted event is kept dead; the notice recorded while the database was down changed nothing"
+    );
+
+    // ------------------------------------------------- what the sign-in flows left in the authentication tables
+    const authUser = async (journey: string) => {
+      const found = await owner.pool.query<{
+        id: string;
+        verified: boolean;
+      }>(
+        'SELECT id, email_verified AS verified FROM public."user" WHERE email = $1',
+        [`${authTag}-${journey}@example.invalid`]
+      );
+      assert.equal(found.rowCount, 1, `one user for ${journey}`);
+      const [row] = found.rows;
+      assert.ok(row);
+      return row;
+    };
+    const count = async (text: string, values: unknown[]) =>
+      Number((await owner.pool.query<{ n: string }>(text, values)).rows[0]?.n);
+    const sessionsOf = (userId: string) =>
+      count(
+        "SELECT count(*)::text AS n FROM public.session WHERE user_id = $1",
+        [userId]
+      );
+    const auditsOf = (userId: string, eventType: string) =>
+      count(
+        "SELECT count(*)::text AS n FROM public.auth_security_audit_event WHERE actor_id = $1 AND event_type = $2 AND outcome = 'succeeded'",
+        [userId, eventType]
+      );
+    /** The credential account holds a hash of the password, never the password. */
+    const credentialHash = async (userId: string) => {
+      const found = await owner.pool.query<{ password: string | null }>(
+        "SELECT password FROM public.account WHERE user_id = $1 AND provider_id = 'credential'",
+        [userId]
+      );
+      assert.equal(found.rowCount, 1, "one credential account");
+      const hash = found.rows[0]?.password;
+      assert.ok(hash && hash.length > 40, "the password is stored as a hash");
+      assert.equal(hash.includes("passphrase"), false);
+      return hash;
+    };
+
+    const signedUp = await authUser("signup");
+    assert.equal(signedUp.verified, true, "the link verified the e-mail");
+    await credentialHash(signedUp.id);
+    assert.equal(
+      await count(
+        "SELECT count(*)::text AS n FROM public.legal_acceptance WHERE user_id = $1 AND origin = 'signup'",
+        [signedUp.id]
+      ),
+      2,
+      "the sign-up recorded both acceptances"
+    );
+    assert.equal(
+      await sessionsOf(signedUp.id),
+      0,
+      "the logout ended the session"
+    );
+    assert.equal(await auditsOf(signedUp.id, "logout_succeeded"), 1);
+
+    const changed = await authUser("change");
+    await credentialHash(changed.id);
+    assert.equal(
+      await sessionsOf(changed.id),
+      2,
+      "the change ended the phone and the laptop; left are the new session of the change and the sign-in with the new password"
+    );
+    assert.equal(await auditsOf(changed.id, "password_changed"), 1);
+
+    const reset = await authUser("reset");
+    await credentialHash(reset.id);
+    assert.equal(
+      await count(
+        "SELECT count(*)::text AS n FROM public.verification WHERE identifier LIKE 'reset-password:%' AND value = $1",
+        [reset.id]
+      ),
+      0,
+      "the reset token was consumed"
+    );
+    assert.equal(
+      await sessionsOf(reset.id),
+      1,
+      "the reset ended the open session; only the sign-in with the new password is left"
+    );
+    assert.equal(await auditsOf(reset.id, "password_reset_completed"), 1);
+
+    const googleNew = await authUser("google-new");
+    assert.equal(googleNew.verified, true);
+    const googleAccount = await owner.pool.query<{
+      access_token: string | null;
+      id_token: string | null;
+      provider_id: string;
+    }>(
+      "SELECT access_token, id_token, provider_id FROM public.account WHERE user_id = $1 AND account_id = $2",
+      [googleNew.id, `${authTag}-new`]
+    );
+    assert.deepEqual(
+      googleAccount.rows.map((row) => row.provider_id),
+      ["google"]
+    );
+    assert.equal(
+      googleAccount.rows[0]?.id_token,
+      null,
+      "the id token is not kept"
+    );
+    assert.ok(
+      googleAccount.rows[0]?.access_token &&
+        googleAccount.rows[0].access_token !== "harness-access-token",
+      "the access token is kept encrypted"
+    );
+    assert.equal(await sessionsOf(googleNew.id), 1);
+    assert.equal(await auditsOf(googleNew.id, "google_callback_succeeded"), 1);
+
+    assert.equal(
+      await count(
+        'SELECT count(*)::text AS n FROM public."user" WHERE email = $1',
+        [linkedEmail]
+      ),
+      1,
+      "the linked person got no second user"
+    );
+    assert.equal(
+      await count(
+        "SELECT count(*)::text AS n FROM public.account WHERE user_id = $1",
+        [linkedUserId]
+      ),
+      1,
+      "and no second account"
+    );
+    assert.equal(await sessionsOf(linkedUserId), 1);
+    assert.equal(await auditsOf(linkedUserId, "google_callback_succeeded"), 1);
+    tests.push(
+      "the e-mail and password flows (sign-up, verification by the link, sign-in, change and reset of the password, sign-out) and the Google sign-in (a new person and an already linked one) ran through the Worker's fetch with only the authentication role, and left the user, the credential hash, the sessions that remain, the consumed reset token and the audit events the journeys call for"
     );
 
     console.log(

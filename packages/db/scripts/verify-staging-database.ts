@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Client } from "pg";
 import {
   assertClean,
+  findForcedTableOwnerWithoutBypass,
   findViolations,
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
@@ -23,12 +24,15 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  * so a wrong URL never migrates or reads another environment.
  *
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
- *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect).
+ *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect); and every table with forced
+ *   row security belongs to a superuser or to a role with BYPASSRLS (`forcedTableOwnerWithoutBypass`): an owner without
+ *   it would see zero rows in a data migration, so the deploy stops before migrating (and so does a migrator without it).
  * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093), which includes that
  *   every SECURITY DEFINER function belongs to a `polaris_*_owner` role (`foreignOwner`: one left with the owner of the
  *   database runs with BYPASSRLS) and that the policies on `app.owner_scope.*` are each TO one owner role and read no
  *   setting of the runtime (`ownerScope`); that every table of public a `polaris_*` role uses has row security
- *   enabled and forced, the exact list of Better Auth's tables aside (`tableWithoutRowSecurity`), that every grant under forced
+ *   enabled and forced, with no exception since 0098 (`tableWithoutRowSecurity`), that the owner of every table with forced
+ *   row security bypasses it (`forcedTableOwnerWithoutBypass`), that every grant under forced
  *   row security has a policy for its command (`rowSecurityWithoutPolicy`) and that every `app.owner_scope.*` read by a
  *   policy is written by a function of its owner (`scopeWithoutWriter`); PUBLIC has no TEMPORARY; every `polaris_*_owner` role and every role a runtime role reaches (the `*_runtime` groups and what they
  *   can SET to, inherit or administer with ADMIN OPTION, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
@@ -81,8 +85,23 @@ async function checkOwner(client: Client) {
       row.public_owner === row.migrator,
     "schema public belongs to another role than the migrator"
   );
+  // with forced row security, a data migration sees rows only as a superuser or with BYPASSRLS (the role's own attribute)
+  const bypass = await client.query<{ bypass: boolean }>(
+    "SELECT rolsuper OR rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user"
+  );
+  assert.equal(
+    bypass.rows[0]?.bypass,
+    true,
+    "the migrator is neither a superuser nor BYPASSRLS"
+  );
+  assert.deepEqual(
+    await findForcedTableOwnerWithoutBypass(client),
+    [],
+    "tables with forced row security whose owner is neither a superuser nor BYPASSRLS (schema.table (owner))"
+  );
   return [
     `the migrator ${row.migrator} owns the database and schema public (${row.public_owner})`,
+    "the migrator and the owner of every table with forced row security are superusers or have BYPASSRLS",
   ];
 }
 
@@ -127,7 +146,7 @@ async function checkHardening(client: Client) {
     "logins that are not members of a polaris_*_runtime group"
   );
   return [
-    "definer-hardening (read-only): no finding (search_path, TEMPORARY, CREATE, runtime reach, PUBLIC EXECUTE, foreignOwner, ownerScope, tableWithoutRowSecurity, rowSecurityWithoutPolicy, scopeWithoutWriter)",
+    "definer-hardening (read-only): no finding (search_path, TEMPORARY, CREATE, runtime reach, PUBLIC EXECUTE, foreignOwner, ownerScope, tableWithoutRowSecurity, forcedTableOwnerWithoutBypass, rowSecurityWithoutPolicy, scopeWithoutWriter)",
     "PUBLIC has no TEMPORARY on the database",
     `${roles.owners} polaris_*_owner roles and ${roles.reachable} roles a runtime role reaches: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
     `the ${roles.owners} polaris_*_owner roles are members of no role`,
