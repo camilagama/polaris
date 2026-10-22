@@ -86,4 +86,22 @@ function InputGroupInput({ className, ...props }: ComponentProps<"input">) {
   );
 }
 
-export { InputGroup, InputGroupAddon, InputGroupInput };
+/* A text area in a group (a note of several lines): the group is `h-auto items-stretch` there, so it grows with the
+   text; the area is a native element, resized by the person only downward. */
+function InputGroupTextarea({
+  className,
+  ...props
+}: ComponentProps<"textarea">) {
+  return (
+    <textarea
+      className={cn(
+        "min-h-20 w-full min-w-0 flex-1 resize-y bg-transparent px-3 py-2 text-sm touch:text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
+        className
+      )}
+      data-slot="input-group-control"
+      {...props}
+    />
+  );
+}
+
+export { InputGroup, InputGroupAddon, InputGroupInput, InputGroupTextarea };

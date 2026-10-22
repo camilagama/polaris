@@ -1,3 +1,6 @@
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
+import SearchIcon from "lucide-react/dist/esm/icons/search";
 import {
   type ChangeEvent,
   type MouseEvent,
@@ -6,17 +9,25 @@ import {
   useMemo,
   useState,
 } from "react";
-import { focusLater } from "../lib/focus";
-import { calendarDayInTimezone } from "../lib/dates";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { ButtonGroup } from "@/ui/button-group";
+import { Card } from "@/ui/card";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { useCurrentOrganization } from "../lib/current-organization";
-import "./inventory-page.css";
+import { calendarDayInTimezone } from "../lib/dates";
+import { focusLater } from "../lib/focus";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   STOCK_ACTION_LABELS,
   STOCK_ACTIONS,
   type StockAction,
 } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
-import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   STOCK_FILTERS,
   type StockFilter,
@@ -34,6 +45,12 @@ interface OpenCommand {
   target: StockTarget;
 }
 
+/** A link inside a sentence: no touch area of its own (a line of text), only the focus ring. */
+const LINK =
+  "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+/** A link on a line of its own: it gets the 48 px touch area. */
+const STANDALONE_LINK = `touch-hit ${LINK}`;
+
 const triggerId = (variantId: string, action: StockAction) =>
   `stock-trigger-${variantId}-${action}`;
 
@@ -45,19 +62,41 @@ function isStockAction(value: string | undefined): value is StockAction {
   return STOCK_ACTIONS.some((action) => action === value);
 }
 
+/** Said at the top of the screen while there is no connection. */
+function OfflineStockNotice() {
+  return (
+    <Alert variant="warning">
+      <CloudOffIcon aria-hidden="true" />
+      <AlertTitle>Sem conexão.</AlertTitle>
+      <AlertDescription>
+        O saldo é o do aparelho, com o que está na fila. Receber, contar e
+        baixar ficam guardados e vão quando a conexão voltar (acompanhe em{" "}
+        <a className={LINK} href="/attention">
+          Pendências
+        </a>
+        ). O custo médio só aparece com conexão.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 interface RowActionsProps {
   disabled: boolean;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   row: StockRow;
 }
 
+/** The three commands of a variant, glued into one control: their touch areas are one piece. */
 function RowActions({ disabled, onOpen, row }: RowActionsProps) {
   return (
-    <div className="stock-actions">
+    <ButtonGroup
+      aria-label={`Movimentos de ${row.productName}, ${row.variantText}`}
+      className="w-full md:w-fit"
+    >
       {STOCK_ACTIONS.map((action) => (
-        <button
+        <Button
           aria-label={`${STOCK_ACTION_LABELS[action].trigger} estoque de ${row.productName}, ${row.variantText}`}
-          className="quiet-button"
+          className="flex-1 md:flex-none"
           data-stock-action={action}
           data-variant-id={row.id}
           disabled={disabled}
@@ -65,19 +104,35 @@ function RowActions({ disabled, onOpen, row }: RowActionsProps) {
           key={action}
           onClick={onOpen}
           type="button"
+          variant="outline"
         >
           {STOCK_ACTION_LABELS[action].trigger}
-        </button>
+        </Button>
       ))}
+    </ButtonGroup>
+  );
+}
+
+interface FigureProps {
+  children: ReactNode;
+  className?: string | undefined;
+  label: string;
+}
+
+function Figure({ children, className, label }: FigureProps) {
+  return (
+    <div className={cn("grid min-w-0 content-start gap-0.5", className)}>
+      <dt className="text-muted-foreground text-support">{label}</dt>
+      <dd className="[overflow-wrap:anywhere]">{children}</dd>
     </div>
   );
 }
 
 interface StockItemProps {
   children: ReactNode;
-  panelOpen: boolean;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   otherPanelOpen: boolean;
+  panelOpen: boolean;
   row: StockRow;
 }
 
@@ -89,49 +144,58 @@ function StockItem({
   row,
 }: StockItemProps) {
   return (
-    <li className={panelOpen ? "stock-item is-open" : "stock-item"}>
-      <div className="stock-row">
-        <div className="stock-name">
-          <p className="stock-product">
+    <li
+      className={cn(
+        "grid gap-3 p-(--card-spacing)",
+        panelOpen && "bg-muted/50"
+      )}
+      data-open={panelOpen ? "" : undefined}
+    >
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-6">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
             {row.productName}
-            {row.archived ? (
-              <span className="stock-badge is-archived">Arquivado</span>
-            ) : null}
+            {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
           </p>
-          <p className="stock-variant">
+          <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
             {row.variantText}
             {row.skuText ? (
               <>
                 {" "}
-                · <span className="stock-sku">SKU {row.skuText}</span>
+                · <span className="font-mono">SKU {row.skuText}</span>
               </>
             ) : null}
           </p>
         </div>
-        <dl className="stock-figures">
-          <div>
-            <dt>Saldo</dt>
-            <dd className={`stock-quantity is-${row.tone}`}>
-              {row.quantityText}
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support md:grid-cols-3">
+          <Figure label="Saldo">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span
+                className={cn(
+                  "font-semibold text-value-md tabular-nums",
+                  row.tone === "empty" && "text-warning"
+                )}
+              >
+                {row.quantityText}
+              </span>
               {row.tone === "empty" ? (
-                <span className="stock-badge is-empty">Sem saldo</span>
+                <Badge variant="warning">Sem saldo</Badge>
               ) : null}
-            </dd>
-          </div>
-          <div>
-            <dt>Custo médio</dt>
-            <dd
-              className={
-                row.costUnknown ? "stock-cost is-unknown" : "stock-cost"
-              }
+            </span>
+          </Figure>
+          <Figure label="Custo médio">
+            <span
+              className={cn(
+                "tabular-nums",
+                row.costUnknown && "text-warning italic"
+              )}
             >
               {row.costText}
-            </dd>
-          </div>
-          <div>
-            <dt>Atualizado</dt>
-            <dd>{row.updatedText}</dd>
-          </div>
+            </span>
+          </Figure>
+          <Figure className="col-span-2 md:col-span-1" label="Atualizado">
+            <span className="tabular-nums">{row.updatedText}</span>
+          </Figure>
         </dl>
         <RowActions
           disabled={panelOpen || otherPanelOpen}
@@ -141,6 +205,20 @@ function StockItem({
       </div>
       {children}
     </li>
+  );
+}
+
+interface StateCardProps {
+  children: ReactNode;
+  role?: "status" | undefined;
+}
+
+/** The loading and empty states: a card with one line, centered under the toolbar. */
+function StateCard({ children, role }: StateCardProps) {
+  return (
+    <Card className="items-center px-(--card-spacing) text-center" role={role}>
+      <p className="text-muted-foreground">{children}</p>
+    </Card>
   );
 }
 
@@ -172,8 +250,7 @@ export function InventoryPage() {
     [setFilters]
   );
   const handleArchived = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      setFilters({ includeArchived: event.target.checked }),
+    (checked: boolean) => setFilters({ includeArchived: checked }),
     [setFilters]
   );
   const handleFilter = useCallback(
@@ -216,143 +293,162 @@ export function InventoryPage() {
   const handleReload = useCallback(() => reload(), [reload]);
 
   return (
-    <div className="inventory-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Operação</p>
-          <h1>Estoque</h1>
-          <p className="categories-intro-copy">
-            O saldo de cada variante muda só por recebimento, contagem ou baixa,
-            e cada um fica no histórico. Vendas, cancelamentos e devoluções
-            movem o estoque sozinhas.
-          </p>
-        </div>
-      </section>
-
-      {offline ? (
-        <p className="categories-message is-success" role="status">
-          Sem conexão. O saldo mostrado é o do aparelho, com o que está na fila.
-          Receber, contar e baixar ficam guardados e são enviados quando a
-          conexão voltar (acompanhe em <a href="/attention">Pendências</a>); o
-          custo médio só aparece com conexão.
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <header className="grid gap-1">
+        <h1 className="text-title">Estoque</h1>
+        <p className="text-muted-foreground text-support">
+          O saldo muda por recebimento, contagem ou baixa, e cada um fica no
+          histórico; venda, cancelamento e devolução movem sozinhos.
         </p>
-      ) : null}
+      </header>
 
-      <search aria-label="Filtrar estoque" className="stock-toolbar">
-        <div className="stock-search">
-          <label className="field-label" htmlFor="stock-query">
+      {offline ? <OfflineStockNotice /> : null}
+
+      <search aria-label="Filtrar estoque" className="grid gap-3">
+        <Field className="md:max-w-md">
+          <FieldLabel className="sr-only" htmlFor="stock-query">
             Buscar
-          </label>
-          <input
-            autoComplete="off"
-            id="stock-query"
-            onChange={handleQuery}
-            placeholder="Produto, variante ou SKU"
-            type="search"
-            value={filters.query}
-          />
-        </div>
-        <fieldset className="stock-filter">
-          <legend className="field-label">Saldo</legend>
-          <div className="stock-segmented">
+          </FieldLabel>
+          <InputGroup>
+            <InputGroupAddon>
+              <SearchIcon aria-hidden="true" />
+            </InputGroupAddon>
+            <InputGroupInput
+              autoComplete="off"
+              id="stock-query"
+              onChange={handleQuery}
+              placeholder="Produto, variante ou SKU"
+              type="search"
+              value={filters.query}
+            />
+          </InputGroup>
+        </Field>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+          <ButtonGroup aria-label="Saldo">
             {STOCK_FILTERS.map(([value, label]) => (
-              <button
+              <Button
                 aria-pressed={filters.stock === value}
-                className={
-                  filters.stock === value
-                    ? "category-tab is-selected"
-                    : "category-tab"
-                }
+                className="aria-pressed:border-foreground/70 aria-pressed:bg-secondary aria-pressed:font-semibold"
                 data-stock-filter={value}
                 key={value}
                 onClick={handleFilter}
                 type="button"
+                variant="outline"
               >
                 {label}
-              </button>
+              </Button>
             ))}
-          </div>
-        </fieldset>
-        <label className="stock-archived">
-          <input
-            checked={filters.includeArchived}
-            onChange={handleArchived}
-            type="checkbox"
-          />
-          Incluir produtos arquivados
-        </label>
-        <button className="quiet-button" onClick={handleReload} type="button">
-          Atualizar
-        </button>
+          </ButtonGroup>
+          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+            <Checkbox
+              checked={filters.includeArchived}
+              id="stock-archived"
+              onCheckedChange={handleArchived}
+            />
+            <FieldLabel htmlFor="stock-archived">
+              Incluir produtos arquivados
+            </FieldLabel>
+          </Field>
+          <Button onClick={handleReload} type="button" variant="ghost">
+            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+            Atualizar
+          </Button>
+        </div>
       </search>
 
-      <p aria-live="polite" className="stock-count" role="status">
-        {state.status === "ready" ? stockCountText(state) : " "}
+      <p
+        aria-live="polite"
+        className="min-h-5 text-muted-foreground text-support"
+        role="status"
+      >
+        {state.status === "ready" ? stockCountText(state) : " "}
       </p>
 
       {view.kind === "loading" ? (
-        <p className="category-empty-state" role="status">
-          {view.message}
-        </p>
+        <StateCard role="status">{view.message}</StateCard>
       ) : null}
       {view.kind === "error" ? (
-        <p className="categories-message is-error" role="alert">
-          {view.message}{" "}
-          <button className="quiet-button" onClick={handleReload} type="button">
-            Tentar novamente
-          </button>
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {view.message}
+            <Button
+              onClick={handleReload}
+              size="sm"
+              type="button"
+              variant="link"
+            >
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <p className="category-empty-state">
-          {view.message}{" "}
+        <StateCard>
+          {view.message}
           {view.showCatalogLink ? (
-            <a href="/products">Ir para Produtos</a>
+            <>
+              {" "}
+              <a className={STANDALONE_LINK} href="/products">
+                Ir para Produtos
+              </a>
+            </>
           ) : null}
-        </p>
+        </StateCard>
       ) : null}
       {view.kind === "ready" ? (
-        <ul aria-label="Saldos por variante" className="stock-list">
-          {view.rows.map((row) => (
-            <StockItem
-              key={row.id}
-              onOpen={handleOpen}
-              otherPanelOpen={open !== null && open.target.variantId !== row.id}
-              panelOpen={open?.target.variantId === row.id}
-              row={row}
-            >
-              {open?.target.variantId === row.id ? (
-                <StockCommandPanel
-                  action={open.action}
-                  key={`${open.target.variantId}-${open.action}`}
-                  local={offlineWorkspace ?? undefined}
-                  onBalance={applyBalance}
-                  onClose={handleClose}
-                  onReloadList={reload}
-                  organizationId={organizationId}
-                  target={open.target}
-                  today={today}
-                />
-              ) : null}
-            </StockItem>
-          ))}
-        </ul>
+        <Card className="gap-0 py-0">
+          <ul
+            aria-label="Saldos por variante"
+            className="divide-y divide-border"
+          >
+            {view.rows.map((row) => (
+              <StockItem
+                key={row.id}
+                onOpen={handleOpen}
+                otherPanelOpen={
+                  open !== null && open.target.variantId !== row.id
+                }
+                panelOpen={open?.target.variantId === row.id}
+                row={row}
+              >
+                {open?.target.variantId === row.id ? (
+                  <StockCommandPanel
+                    action={open.action}
+                    key={`${open.target.variantId}-${open.action}`}
+                    local={offlineWorkspace ?? undefined}
+                    onBalance={applyBalance}
+                    onClose={handleClose}
+                    onReloadList={reload}
+                    organizationId={organizationId}
+                    target={open.target}
+                    today={today}
+                  />
+                ) : null}
+              </StockItem>
+            ))}
+          </ul>
+        </Card>
       ) : null}
 
       {more.error ? (
-        <p className="categories-message is-error" role="alert">
-          {more.error}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{more.error}</AlertDescription>
+        </Alert>
       ) : null}
       {more.visible ? (
-        <button
-          className="quiet-button stock-more"
+        <Button
+          className="justify-self-start"
           disabled={more.busy}
           onClick={loadMore}
           type="button"
+          variant="outline"
         >
           {more.label}
-        </button>
+        </Button>
       ) : null}
     </div>
   );

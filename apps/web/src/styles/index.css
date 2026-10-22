@@ -23,6 +23,8 @@
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
 @source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
+/* The stock screen (v5.1): the page, the panel and its fields; the logic files have no class. */
+@source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields}.tsx";
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
 
 /*

@@ -1,8 +1,11 @@
+import MinusIcon from "lucide-react/dist/esm/icons/minus";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { type ChangeEvent, type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { ButtonGroup } from "@/ui/button-group";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import {
@@ -53,11 +56,13 @@ interface TextFieldProps {
   error?: string | undefined;
   hint?: string | undefined;
   id: string;
-  inputMode: "decimal" | "numeric";
+  inputMode?: "decimal" | "numeric" | undefined;
   label: string;
-  maxLength: number;
+  maxLength?: number | undefined;
   onChange: (value: string) => void;
   placeholder?: string | undefined;
+  /** A date takes the browser's picker; the default is text. */
+  type?: "date" | "text" | undefined;
   value: string;
 }
 
@@ -72,6 +77,7 @@ export function TextField({
   maxLength,
   onChange,
   placeholder,
+  type,
   value,
 }: TextFieldProps) {
   const handleChange = useCallback(
@@ -92,9 +98,96 @@ export function TextField({
           maxLength={maxLength}
           onChange={handleChange}
           placeholder={placeholder}
+          type={type}
           value={value}
         />
       </InputGroup>
+      <FieldTexts error={error} hint={hint} id={id} />
+    </Field>
+  );
+}
+
+interface QuantityStepperProps {
+  error: string | undefined;
+  hint?: string | undefined;
+  id: string;
+  label: string;
+  /** The text after a tap on −, or null when that tap is not possible (the button is off). */
+  less: string | null;
+  /** The same for +. */
+  more: string | null;
+  onChange: (value: string) => void;
+  value: string;
+}
+
+/**
+ * − field +. The field is 64 px wide (Petković C-1): with touch each button has a 48 px area, 6 px past each
+ * side, and 52 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
+ * The buttons are named without the word "quantidade", so the label of the field names the field only.
+ */
+export function QuantityStepper({
+  error,
+  hint,
+  id,
+  label,
+  less,
+  more,
+  onChange,
+  value,
+}: QuantityStepperProps) {
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+    [onChange]
+  );
+  const handleLess = useCallback(() => {
+    if (less !== null) {
+      onChange(less);
+    }
+  }, [less, onChange]);
+  const handleMore = useCallback(() => {
+    if (more !== null) {
+      onChange(more);
+    }
+  }, [more, onChange]);
+  return (
+    <Field className="w-auto" data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      {/* the field has its own label: the group is only layout (role="none"), no nameless "group" to announce */}
+      <ButtonGroup role="none">
+        <Button
+          aria-label="Menos uma unidade"
+          disabled={less === null}
+          onClick={handleLess}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <MinusIcon aria-hidden="true" />
+        </Button>
+        <InputGroup className="w-16">
+          <InputGroupInput
+            aria-describedby={describedBy(id, error, hint)}
+            aria-invalid={error ? true : undefined}
+            autoComplete="off"
+            className="px-1 text-center tabular-nums"
+            id={id}
+            inputMode="numeric"
+            maxLength={10}
+            onChange={handleChange}
+            value={value}
+          />
+        </InputGroup>
+        <Button
+          aria-label="Mais uma unidade"
+          disabled={more === null}
+          onClick={handleMore}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <PlusIcon aria-hidden="true" />
+        </Button>
+      </ButtonGroup>
       <FieldTexts error={error} hint={hint} id={id} />
     </Field>
   );

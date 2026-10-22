@@ -1,7 +1,6 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
-import type { WriteOffReasonCode } from "@polaris/domain/inventory/write-off-stock";
+import CheckIcon from "lucide-react/dist/esm/icons/check";
 import {
-  type ChangeEvent,
   type FormEvent,
   type RefObject,
   useCallback,
@@ -9,17 +8,22 @@ import {
   useRef,
   useState,
 } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { FieldLegend, FieldSet } from "@/ui/field";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { queueOfflineStock } from "./queue-offline-stock";
 import {
   backToStockEditing,
   canCloseStock,
-  isStockDraftChanged,
   cancelDiscardStock,
   discardLockedStock,
   editStockField,
   firstInvalidStockField,
+  isStockDraftChanged,
   mapStockError,
   prepareStockSubmission,
   requestDiscardStock,
@@ -29,25 +33,24 @@ import {
   STOCK_FIELD_ORDER,
   type StockAction,
   type StockCall,
-  type StockCommandState,
-  type StockFailure,
   type StockFieldName,
   type StockResult,
   startStockCommand,
   stockActionBlock,
-  stockConsequence,
   stockFailed,
   stockQueueFailed,
   stockSubmitLabel,
   stockSucceeded,
-  stockSummary,
   validateStockDraft,
-  valuationApplies,
   visibleStockIssues,
-  WRITE_OFF_REASONS,
 } from "./stock-command-model";
-import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { queueOfflineStock } from "./queue-offline-stock";
+import {
+  Confirmation,
+  EditFields,
+  FailureNotice,
+  LockedNotice,
+  stockFieldId,
+} from "./stock-panel-fields";
 import {
   costText,
   type StockTarget,
@@ -76,444 +79,8 @@ interface StockCommandPanelProps {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Fields                                                                     */
-/* -------------------------------------------------------------------------- */
-
-interface FieldProps {
-  disabled: boolean;
-  error: string | undefined;
-  hint?: string | undefined;
-  id: string;
-  inputRef: (element: HTMLElement | null) => void;
-  label: string;
-}
-
-function describedBy(
-  id: string,
-  error: string | undefined,
-  hint: string | undefined
-) {
-  const ids = [error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(
-    (value): value is string => value !== null
-  );
-  return ids.length > 0 ? ids.join(" ") : undefined;
-}
-
-interface TextFieldProps extends FieldProps {
-  inputMode: "decimal" | "numeric" | undefined;
-  maxLength: number;
-  onChange: (value: string) => void;
-  placeholder?: string | undefined;
-  type?: "date" | "text";
-  value: string;
-}
-
-function TextField({
-  disabled,
-  error,
-  hint,
-  id,
-  inputMode,
-  inputRef,
-  label,
-  maxLength,
-  onChange,
-  placeholder,
-  type = "text",
-  value,
-}: TextFieldProps) {
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
-  );
-  return (
-    <div className="stock-field">
-      <label htmlFor={id}>{label}</label>
-      <input
-        aria-describedby={describedBy(id, error, hint)}
-        aria-invalid={error ? true : undefined}
-        autoComplete="off"
-        disabled={disabled}
-        id={id}
-        inputMode={inputMode}
-        maxLength={type === "date" ? undefined : maxLength}
-        onChange={handleChange}
-        placeholder={placeholder}
-        ref={inputRef}
-        type={type}
-        value={value}
-      />
-      {hint ? (
-        <p className="stock-hint" id={`${id}-hint`}>
-          {hint}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="stock-error" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-interface ReasonFieldsProps {
-  disabled: boolean;
-  noteError: string | undefined;
-  onNoteChange: (value: string) => void;
-  onReasonChange: (value: string) => void;
-  prefix: string;
-  reasonCode: WriteOffReasonCode | "";
-  reasonError: string | undefined;
-  reasonNote: string;
-  registerRef: (field: StockFieldName) => (element: HTMLElement | null) => void;
-}
-
-function ReasonFields({
-  disabled,
-  noteError,
-  onNoteChange,
-  onReasonChange,
-  prefix,
-  reasonCode,
-  reasonError,
-  reasonNote,
-  registerRef,
-}: ReasonFieldsProps) {
-  const handleReason = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) =>
-      onReasonChange(event.target.value),
-    [onReasonChange]
-  );
-  const handleNote = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) =>
-      onNoteChange(event.target.value),
-    [onNoteChange]
-  );
-  return (
-    <>
-      <div className="stock-field">
-        <label htmlFor={`${prefix}-reason`}>Motivo da baixa</label>
-        <select
-          aria-describedby={reasonError ? `${prefix}-reason-error` : undefined}
-          aria-invalid={reasonError ? true : undefined}
-          disabled={disabled}
-          id={`${prefix}-reason`}
-          onChange={handleReason}
-          ref={registerRef("reasonCode")}
-          value={reasonCode}
-        >
-          <option value="">Escolha o motivo</option>
-          {WRITE_OFF_REASONS.map(([code, label]) => (
-            <option key={code} value={code}>
-              {label}
-            </option>
-          ))}
-        </select>
-        {reasonError ? (
-          <p className="stock-error" id={`${prefix}-reason-error`} role="alert">
-            {reasonError}
-          </p>
-        ) : null}
-      </div>
-      <div className="stock-field">
-        <label htmlFor={`${prefix}-note`}>
-          {reasonCode === "other"
-            ? "Observação (obrigatória para “Outro”)"
-            : "Observação (opcional)"}
-        </label>
-        <textarea
-          aria-describedby={noteError ? `${prefix}-note-error` : undefined}
-          aria-invalid={noteError ? true : undefined}
-          disabled={disabled}
-          id={`${prefix}-note`}
-          onChange={handleNote}
-          ref={registerRef("reasonNote")}
-          rows={3}
-          value={reasonNote}
-        />
-        {noteError ? (
-          <p className="stock-error" id={`${prefix}-note-error`} role="alert">
-            {noteError}
-          </p>
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Sections                                                                   */
-/* -------------------------------------------------------------------------- */
-
-interface EditFieldsProps {
-  disabled: boolean;
-  errors: Partial<Record<StockFieldName, string>>;
-  onChange: (field: StockFieldName, value: string) => void;
-  prefix: string;
-  registerRef: (field: StockFieldName) => (element: HTMLElement | null) => void;
-  state: StockCommandState;
-}
-
-function EditFields({
-  disabled,
-  errors,
-  onChange,
-  prefix,
-  registerRef,
-  state,
-}: EditFieldsProps) {
-  const { draft, target } = state;
-  const handleQuantity = useCallback(
-    (value: string) => onChange("quantity", value),
-    [onChange]
-  );
-  const handleUnitCost = useCallback(
-    (value: string) => onChange("unitCost", value),
-    [onChange]
-  );
-  const handlePhysical = useCallback(
-    (value: string) => onChange("physicalQuantity", value),
-    [onChange]
-  );
-  const handleValuation = useCallback(
-    (value: string) => onChange("valuationUnitCost", value),
-    [onChange]
-  );
-  const handleDate = useCallback(
-    (value: string) => onChange("occurredOn", value),
-    [onChange]
-  );
-  const handleReasonCode = useCallback(
-    (value: string) => onChange("reasonCode", value),
-    [onChange]
-  );
-  const handleReasonNote = useCallback(
-    (value: string) => onChange("reasonNote", value),
-    [onChange]
-  );
-
-  return (
-    <div className="stock-fields">
-      {draft.action === "receive" ? (
-        <>
-          <TextField
-            disabled={disabled}
-            error={errors.quantity}
-            id={`${prefix}-quantity`}
-            inputMode="numeric"
-            inputRef={registerRef("quantity")}
-            label="Quantidade recebida"
-            maxLength={10}
-            onChange={handleQuantity}
-            value={draft.quantity}
-          />
-          <TextField
-            disabled={disabled}
-            error={errors.unitCost}
-            hint="Custo de cada unidade, em reais. Obrigatório: ele alimenta o custo médio."
-            id={`${prefix}-unit-cost`}
-            inputMode="decimal"
-            inputRef={registerRef("unitCost")}
-            label="Custo unitário (R$)"
-            maxLength={26}
-            onChange={handleUnitCost}
-            placeholder="Ex.: 12,50"
-            value={draft.unitCost}
-          />
-        </>
-      ) : null}
-      {draft.action === "count" ? (
-        <>
-          <TextField
-            disabled={disabled}
-            error={errors.physicalQuantity}
-            hint={`Saldo no sistema: ${unitsText(target.quantity)}. Informe o que você contou de verdade.`}
-            id={`${prefix}-physical`}
-            inputMode="numeric"
-            inputRef={registerRef("physicalQuantity")}
-            label="Quantidade contada"
-            maxLength={10}
-            onChange={handlePhysical}
-            value={draft.physicalQuantity}
-          />
-          {valuationApplies(target) ? (
-            <TextField
-              disabled={disabled}
-              error={errors.valuationUnitCost}
-              hint="Opcional. O custo desta variante é desconhecido; informe um custo unitário para estabelecê-lo (só vale com quantidade contada maior que zero)."
-              id={`${prefix}-valuation`}
-              inputMode="decimal"
-              inputRef={registerRef("valuationUnitCost")}
-              label="Custo unitário para valoração (R$)"
-              maxLength={26}
-              onChange={handleValuation}
-              placeholder="Ex.: 12,50"
-              value={draft.valuationUnitCost}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {draft.action === "write_off" ? (
-        <>
-          <TextField
-            disabled={disabled}
-            error={errors.quantity}
-            hint={`Saldo atual: ${unitsText(target.quantity)}.`}
-            id={`${prefix}-quantity`}
-            inputMode="numeric"
-            inputRef={registerRef("quantity")}
-            label="Quantidade a baixar"
-            maxLength={10}
-            onChange={handleQuantity}
-            value={draft.quantity}
-          />
-          <ReasonFields
-            disabled={disabled}
-            noteError={errors.reasonNote}
-            onNoteChange={handleReasonNote}
-            onReasonChange={handleReasonCode}
-            prefix={prefix}
-            reasonCode={draft.reasonCode}
-            reasonError={errors.reasonCode}
-            reasonNote={draft.reasonNote}
-            registerRef={registerRef}
-          />
-        </>
-      ) : null}
-      <TextField
-        disabled={disabled}
-        error={errors.occurredOn}
-        hint="Dia em que aconteceu, no calendário da organização."
-        id={`${prefix}-date`}
-        inputMode={undefined}
-        inputRef={registerRef("occurredOn")}
-        label="Data"
-        maxLength={10}
-        onChange={handleDate}
-        type="date"
-        value={draft.occurredOn}
-      />
-    </div>
-  );
-}
-
-interface FailureNoticeProps {
-  failure: StockFailure;
-}
-
-function FailureNotice({ failure }: FailureNoticeProps) {
-  return (
-    <div className="stock-message is-error" role="alert">
-      <p>{failure.message}</p>
-    </div>
-  );
-}
-
-interface LockedNoticeProps {
-  confirmingDiscard: boolean;
-  failure: StockFailure;
-  onDiscardCancel: () => void;
-  onDiscardConfirm: () => void;
-  onDiscardRequest: () => void;
-}
-
-function LockedNotice({
-  confirmingDiscard,
-  failure,
-  onDiscardCancel,
-  onDiscardConfirm,
-  onDiscardRequest,
-}: LockedNoticeProps) {
-  return (
-    <div className="stock-message is-error" role="alert">
-      <p>{failure.message}</p>
-      {confirmingDiscard ? (
-        <>
-          <p>
-            <strong>Este movimento pode já ter sido registrado.</strong> Se você
-            descartar e refizer, ele pode ficar duplicado. Descarte só depois de
-            conferir o saldo e o histórico.
-          </p>
-          <div className="stock-actions-row">
-            <button
-              className="danger-button"
-              onClick={onDiscardConfirm}
-              type="button"
-            >
-              Sim, descartar e recomeçar
-            </button>
-            <button
-              className="quiet-button"
-              onClick={onDiscardCancel}
-              type="button"
-            >
-              Voltar
-            </button>
-          </div>
-        </>
-      ) : (
-        <button
-          className="quiet-button"
-          onClick={onDiscardRequest}
-          type="button"
-        >
-          Descartar esta tentativa
-        </button>
-      )}
-    </div>
-  );
-}
-
-interface ConfirmationProps {
-  state: StockCommandState;
-}
-
-function Confirmation({ state }: ConfirmationProps) {
-  const { body } = validateStockDraft(state.draft, state.target, state.today);
-  if (body === null) {
-    return null;
-  }
-  return (
-    <>
-      <dl className="stock-summary">
-        {stockSummary(body, state.target).map((line) => (
-          <div key={line.label}>
-            <dt>{line.label}</dt>
-            <dd>{line.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="stock-message is-warning">
-        {stockConsequence(state.action)}
-      </p>
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Panel                                                                      */
 /* -------------------------------------------------------------------------- */
-
-function useFieldRefs() {
-  const refs = useRef(new Map<StockFieldName, HTMLElement>());
-  const register = useCallback(
-    (field: StockFieldName) => (element: HTMLElement | null) => {
-      if (element) {
-        refs.current.set(field, element);
-      } else {
-        refs.current.delete(field);
-      }
-    },
-    []
-  );
-  const focus = useCallback((field: StockFieldName | null) => {
-    if (field !== null) {
-      refs.current.get(field)?.focus();
-    }
-  }, []);
-  return { focus, register };
-}
 
 interface ActionsProps {
   confirming: boolean;
@@ -541,37 +108,27 @@ function Actions({
   submitting,
 }: ActionsProps) {
   return (
-    <div className="stock-actions-row">
+    <div className="flex flex-wrap gap-3">
       {confirming ? (
         <>
-          <button
-            className="primary-button"
-            disabled={submitting}
-            onClick={onConfirm}
-            type="button"
-          >
+          <Button disabled={submitting} onClick={onConfirm} type="button">
             {label}
-          </button>
+          </Button>
           {locked ? null : (
-            <button className="quiet-button" onClick={onBack} type="button">
+            <Button onClick={onBack} type="button" variant="outline">
               Voltar
-            </button>
+            </Button>
           )}
         </>
       ) : (
-        <button
-          className="primary-button"
-          disabled={blocked}
-          onClick={onReview}
-          type="button"
-        >
+        <Button disabled={blocked} onClick={onReview} type="button">
           Revisar
-        </button>
+        </Button>
       )}
       {closable ? (
-        <button className="quiet-button" onClick={onClose} type="button">
+        <Button onClick={onClose} type="button" variant="ghost">
           {confirming ? "Cancelar" : "Fechar"}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -599,8 +156,15 @@ export function StockCommandPanel({
   const inFlight = useRef<boolean>(false);
   const statusRef: RefObject<HTMLDivElement | null> = useRef(null);
   const panelRef: RefObject<HTMLElement | null> = useRef(null);
-  const { focus, register } = useFieldRefs();
   const prefix = `stock-${target.variantId}-${action}`;
+  const focus = useCallback(
+    (field: StockFieldName | null) => {
+      if (field !== null) {
+        document.getElementById(stockFieldId(prefix, field))?.focus();
+      }
+    },
+    [prefix]
+  );
   const labels = STOCK_ACTION_LABELS[action];
 
   useEffect(() => {
@@ -773,26 +337,35 @@ export function StockCommandPanel({
 
   if (submission.phase === "success") {
     return (
-      <section aria-labelledby={`${prefix}-title`} className="stock-panel">
-        <h3 id={`${prefix}-title`}>{labels.title}</h3>
+      <section
+        aria-labelledby={`${prefix}-title`}
+        className="grid gap-3 rounded-lg border bg-card p-3 md:p-4"
+      >
         <div
-          className="stock-message is-success"
+          className="focus-ring grid gap-1 rounded-sm"
           ref={statusRef}
           role="status"
           tabIndex={-1}
         >
+          <h3
+            className="flex items-center gap-2 text-section"
+            id={`${prefix}-title`}
+          >
+            <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+            {labels.title}
+          </h3>
           <p>{submission.message}</p>
           {submission.queued ? null : (
-            <p className="stock-hint">
+            <p className="text-muted-foreground text-support">
               Saldo: {unitsText(submission.balance.quantity)} · custo médio:{" "}
               {costText(submission.balance.movingAverageCost)}
             </p>
           )}
         </div>
-        <div className="stock-actions-row">
-          <button className="primary-button" onClick={onClose} type="button">
+        <div>
+          <Button onClick={onClose} type="button">
             Fechar
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -801,42 +374,46 @@ export function StockCommandPanel({
   return (
     <section
       aria-labelledby={`${prefix}-title`}
-      className="stock-panel"
+      className="focus-ring grid gap-3 rounded-lg border bg-card p-3 md:p-4"
       ref={panelRef}
       tabIndex={-1}
     >
-      <h3 id={`${prefix}-title`}>{labels.title}</h3>
-      <p className="stock-hint">
-        {state.target.productName} — {state.target.variantText}. Saldo atual:{" "}
-        {unitsText(state.target.quantity)} · custo médio:{" "}
-        {targetCostText(state.target)}.
-      </p>
-      {state.target.archived ? (
-        <p className="stock-message is-warning" role="note">
-          Produto arquivado: o estoque ainda pode ser ajustado, mas ele não
-          aparece para venda.
+      <div className="grid gap-0.5">
+        <h3 className="text-section" id={`${prefix}-title`}>
+          {labels.title}
+        </h3>
+        <p className="text-muted-foreground text-support">
+          {state.target.productName} — {state.target.variantText}. Saldo atual:{" "}
+          {unitsText(state.target.quantity)} · custo médio:{" "}
+          {targetCostText(state.target)}.
         </p>
+      </div>
+      {state.target.archived ? (
+        <Alert role="note" variant="warning">
+          <AlertDescription>
+            Produto arquivado: o estoque ainda pode ser ajustado, mas ele não
+            aparece para venda.
+          </AlertDescription>
+        </Alert>
       ) : null}
       {block ? (
-        <p className="stock-message is-warning" role="note">
-          {block}
-        </p>
+        <Alert role="note" variant="warning">
+          <AlertDescription>{block}</AlertDescription>
+        </Alert>
       ) : null}
-      <form noValidate onSubmit={handleSubmitForm}>
-        <fieldset
-          className="stock-form"
+      <form className="grid gap-4" noValidate onSubmit={handleSubmitForm}>
+        <FieldSet
           disabled={block !== null || locked || confirming || submitting}
         >
-          <legend className="visually-hidden">{labels.title}</legend>
+          <FieldLegend className="sr-only">{labels.title}</FieldLegend>
           <EditFields
-            disabled={false}
+            disabled={block !== null || locked || confirming || submitting}
             errors={errors}
             onChange={handleChange}
             prefix={prefix}
-            registerRef={register}
             state={state}
           />
-        </fieldset>
+        </FieldSet>
         {confirming ? <Confirmation state={state} /> : null}
         {submission.phase === "failed" ? (
           <FailureNotice failure={submission.failure} />

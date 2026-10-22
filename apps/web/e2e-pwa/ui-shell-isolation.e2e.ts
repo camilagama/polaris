@@ -9,6 +9,7 @@ import {
   leaks,
   legacyLayerOnAndOff,
 } from "./ui-shell-isolation";
+import { serveStockRows } from "./ui-stock-states";
 
 /**
  * The migrated screens inside the real shell (t193): nothing of `@layer legacy` may reach what is under `[data-ui]`
@@ -22,6 +23,7 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+const WRITE_OFF_SHIRT = /^Baixar estoque de Camiseta/;
 const json = (body: unknown) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
@@ -45,7 +47,8 @@ const settle = async (page: Page) => {
 async function openInShell(
   page: Page,
   path: string,
-  ready: () => Promise<void>
+  ready: () => Promise<void>,
+  serve?: (page: Page) => Promise<void>
 ) {
   await page.route("**/api/auth-methods", (route) =>
     route.fulfill(
@@ -62,6 +65,8 @@ async function openInShell(
         )
       : route.abort("internetdisconnected")
   );
+  // after the catch-all above: the last route registered is the first asked
+  await serve?.(page);
   await page.goto(path);
   await expect(page.locator(".ui-root.app-shell-root")).toBeVisible();
   await ready();
@@ -94,6 +99,24 @@ const SCREENS = [
           page.getByRole("heading", { level: 1, name: "Nova venda" })
         ).toBeVisible()
       ),
+  },
+  {
+    // with the rows read and a write-off open: the list, the stepper, the choice list, the note and the date
+    name: "Estoque no shell",
+    open: async (page: Page) => {
+      await openInShell(
+        page,
+        "/inventory",
+        async () => {
+          await expect(
+            page.getByRole("heading", { level: 1, name: "Estoque" })
+          ).toBeVisible();
+          await page.getByRole("button", { name: WRITE_OFF_SHIRT }).click();
+          await expect(page.getByLabel("Observação (opcional)")).toBeVisible();
+        },
+        serveStockRows
+      );
+    },
   },
   ...ENTRY_PAGES.map(({ heading, path }) => ({
     name: path,

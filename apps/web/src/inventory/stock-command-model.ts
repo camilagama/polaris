@@ -199,6 +199,27 @@ function parseWholeNumber(text: string, minimum: number): FieldParse<number> {
     : { kind: "ok", value };
 }
 
+/**
+ * The quantity after one tap of the − or + of the stepper, or null when that tap is not possible (below the
+ * minimum, above the limit of a variant, or a text that is not a whole number, which the person fixes by
+ * typing). An empty field starts at 1.
+ */
+export function stepStockQuantity(
+  text: string,
+  step: 1 | -1,
+  minimum: number
+): string | null {
+  const parsed = parseWholeNumber(text, 0);
+  if (parsed.kind === "empty") {
+    return step === 1 ? "1" : null;
+  }
+  if (parsed.kind !== "ok") {
+    return null;
+  }
+  const next = parsed.value + step;
+  return next < minimum || next > MAX_INVENTORY_QUANTITY ? null : String(next);
+}
+
 /** A BRL unit cost with up to six decimals; a comma or a dot is the separator. */
 export function parseUnitCost(text: string): FieldParse<string> {
   const trimmed = text.trim();
@@ -646,11 +667,11 @@ export function stockSummary(
 export function stockConsequence(action: StockAction): string {
   switch (action) {
     case "receive":
-      return "O recebimento entra no histórico e muda o custo médio do saldo. Ele não pode ser editado depois; um erro se corrige com uma contagem ou uma baixa.";
+      return "O recebimento entra no histórico e muda o custo médio; um erro se corrige com uma contagem ou uma baixa.";
     case "count":
-      return "A contagem substitui o saldo pela quantidade contada e fica no histórico, inclusive quando não há diferença. Ela falha se o saldo mudar enquanto você confirma.";
+      return "A contagem substitui o saldo e fica no histórico, mesmo sem diferença; ela falha se o saldo mudar enquanto você confirma.";
     default:
-      return "A baixa tira as unidades do saldo e fica no histórico com o motivo. Ela não muda o custo médio do saldo restante nem cria despesa.";
+      return "A baixa tira as unidades do saldo e fica no histórico com o motivo; não muda o custo médio nem cria despesa.";
   }
 }
 

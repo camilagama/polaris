@@ -18,6 +18,7 @@ import {
   type StockCommandState,
   type StockResult,
   startStockCommand,
+  stepStockQuantity,
   stockActionBlock,
   stockConsequence,
   stockFailed,
@@ -82,6 +83,30 @@ function confirming(state: StockCommandState): StockCommandState {
 function issuesOf(state: StockCommandState) {
   return validateStockDraft(state.draft, state.target, state.today).issues;
 }
+
+describe("stepStockQuantity (the − and + of the quantity)", () => {
+  it.each([
+    ["5", 1, 1, "6"],
+    ["5", -1, 1, "4"],
+    ["", 1, 1, "1"],
+    ["", -1, 0, null],
+    ["1", -1, 1, null],
+    ["1", -1, 0, "0"],
+    ["0", -1, 0, null],
+    ["0", 1, 0, "1"],
+    ["1,5", 1, 1, null],
+    ["abc", -1, 0, null],
+    ["-3", 1, 0, null],
+    ["2147483646", 1, 1, "2147483647"],
+    ["2147483647", 1, 1, null],
+    ["99999999999", -1, 1, null],
+  ] as const)(
+    "%j with step %i and minimum %i gives %j",
+    (text, step, minimum, expected) => {
+      expect(stepStockQuantity(text, step, minimum)).toBe(expected);
+    }
+  );
+});
 
 describe("parseUnitCost", () => {
   it.each([
