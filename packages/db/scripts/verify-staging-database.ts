@@ -26,7 +26,7 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
  *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect); and every table with forced
  *   row security belongs to a superuser or to a role with BYPASSRLS (`forcedTableOwnerWithoutBypass`): an owner without
- *   it would see zero rows in a data migration, so the deploy stops before migrating.
+ *   it would see zero rows in a data migration, so the deploy stops before migrating (and so does a migrator without it).
  * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093), which includes that
  *   every SECURITY DEFINER function belongs to a `polaris_*_owner` role (`foreignOwner`: one left with the owner of the
  *   database runs with BYPASSRLS) and that the policies on `app.owner_scope.*` are each TO one owner role and read no
@@ -85,6 +85,15 @@ async function checkOwner(client: Client) {
       row.public_owner === row.migrator,
     "schema public belongs to another role than the migrator"
   );
+  // with forced row security, a data migration sees rows only as a superuser or with BYPASSRLS (the role's own attribute)
+  const bypass = await client.query<{ bypass: boolean }>(
+    "SELECT rolsuper OR rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user"
+  );
+  assert.equal(
+    bypass.rows[0]?.bypass,
+    true,
+    "the migrator is neither a superuser nor BYPASSRLS"
+  );
   assert.deepEqual(
     await findForcedTableOwnerWithoutBypass(client),
     [],
@@ -92,7 +101,7 @@ async function checkOwner(client: Client) {
   );
   return [
     `the migrator ${row.migrator} owns the database and schema public (${row.public_owner})`,
-    "every table with forced row security belongs to a superuser or to a role with BYPASSRLS",
+    "the migrator and the owner of every table with forced row security are superusers or have BYPASSRLS",
   ];
 }
 

@@ -573,7 +573,11 @@ describe("the e-mail and password flows of the web worker", () => {
   const email = (journey: string) =>
     `${fixture.auth.tag}-${journey}@example.invalid`;
 
-  /** A JWT with no signature: the Google provider only decodes the identity token it gets from the token endpoint. */
+  /**
+   * A JWT with no signature: the Google provider of Better Auth (1.6) only decodes the identity token it gets from the
+   * token endpoint in the callback. A version that verifies the signature there breaks these two tests, and then the
+   * token needs a key the test serves as Google's JWKS.
+   */
   function forgedIdToken(claims: Record<string, unknown>) {
     const part = (value: object) =>
       btoa(JSON.stringify(value))

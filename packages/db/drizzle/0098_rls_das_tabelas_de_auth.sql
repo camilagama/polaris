@@ -27,8 +27,9 @@
 -- turned on last. The previous Worker runs the same queries with the same roles and calls the same functions. Everything
 -- commits together: a request sees the old catalog or the new one, never half.
 -- CREATE POLICY and ALTER TABLE take an ACCESS EXCLUSIVE lock, and `/get-session` reads `session` and `"user"`: the locks are
--- taken first, in one fixed order, so the migration never holds one table waiting for the next, and it fails at once
--- instead of queueing requests. The timeout is this migration's only (RESET at the end).
+-- taken first, in one fixed order (the tables already locked are held while it waits for the next, for at most 10 s), and
+-- a lock not had in 10 s fails the whole migration instead of queueing requests. The timeout is this migration's only (RESET
+-- at the end).
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 LOCK TABLE public."user", public.account, public.session, public.verification, public.auth_security_audit_event IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
 CREATE POLICY "user_auth_runtime_all" ON "user" AS PERMISSIVE FOR ALL TO "polaris_auth_runtime" USING (true) WITH CHECK (true);--> statement-breakpoint
@@ -160,6 +161,10 @@ BEGIN
    WHERE c.oid = ANY (v_tables || 'public.session'::regclass) AND NOT r.rolsuper AND NOT r.rolbypassrls;
   IF v_found IS NOT NULL THEN
     RAISE EXCEPTION 'the owner of the tables with forced row security is neither a superuser nor BYPASSRLS: %', v_found;
+  END IF;
+  -- and so is the migrator itself (a backfill of a later migration runs as it)
+  IF NOT (SELECT r.rolsuper OR r.rolbypassrls FROM pg_catalog.pg_roles AS r WHERE r.rolname = CURRENT_USER) THEN
+    RAISE EXCEPTION 'the migrator % is neither a superuser nor BYPASSRLS: with forced row security a data migration would see zero rows', CURRENT_USER;
   END IF;
   -- the exact policies of the five tables: name, command, one role each, never PUBLIC, permissive
   SELECT pg_catalog.string_agg(pol.polrelid::regclass::text || '.' || pol.polname || ':' || pol.polcmd::text || ':' || pg_catalog.array_to_string(

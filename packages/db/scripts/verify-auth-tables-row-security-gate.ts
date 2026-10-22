@@ -451,7 +451,7 @@ async function run() {
       )
     ).rows.map((row) => row.value);
     assert.deepEqual(
-      types,
+      [...types].sort(),
       [...AUTH_RUNTIME_TYPES, ...OWNER_ONLY_TYPES].sort(),
       "every type of the auth audit is classified in exactly one list of this gate (auth runtime or owner only)"
     );
@@ -720,13 +720,13 @@ async function run() {
       }
     }
     assert.deepEqual(
-      byAuth,
-      AUTH_RUNTIME_TYPES,
+      byAuth.sort(),
+      [...AUTH_RUNTIME_TYPES].sort(),
       "the auth runtime writes its types only"
     );
     assert.deepEqual(
-      byOwners,
-      OWNER_ONLY_TYPES,
+      byOwners.sort(),
+      [...OWNER_ONLY_TYPES].sort(),
       "the owners write their types only"
     );
     // the device owner: only with the actor of its scope; the purge owner: only succeeded, with no actor (no grant on it)
@@ -1033,6 +1033,15 @@ async function run() {
     await admin.query(
       "UPDATE public.closure_notices SET unverified_at = now() WHERE id = ANY ($1::uuid[])",
       [[noticeA, noticeB]]
+    );
+    // volatile, so it is never folded or inlined: each call writes its own scope
+    assert.equal(
+      (
+        await admin.query<{ volatility: string }>(
+          "SELECT provolatile AS volatility FROM pg_proc WHERE oid = 'public.closure_notice_owner_unverified(uuid,text)'::regprocedure"
+        )
+      ).rows[0]?.volatility,
+      "v"
     );
     for (const order of ["ASC", "DESC"]) {
       const answers = await admin.query<{ id: string; unverified: boolean }>(
