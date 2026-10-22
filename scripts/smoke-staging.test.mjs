@@ -120,16 +120,32 @@ describe("the staging smoke", () => {
     expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
   });
 
+  it("accepts the fixed staging web host and checks it like any other staging origin", async () => {
+    const web = "https://dash.araute.app";
+    const urls = [];
+    const fetchImpl = (url) => {
+      urls.push(url);
+      return fakeStaging()(url);
+    };
+    expect(await runSmoke({ ...origins, web }, fetchImpl, noPause)).toEqual([]);
+    expect(urls).toContain(`${web}/health`);
+  });
+
   it("refuses an origin that is not an https staging origin without a path, before any request", async () => {
     const fetchImpl = vi.fn();
     const refused = (key) => [
-      `${key}: the origin must be https://polaris-<app>-staging.…, without a path`,
+      `${key}: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path`,
     ];
     for (const web of [
       "http://polaris-web-staging.example.workers.dev",
       "https://polaris-web-staging.example.workers.dev/path",
       "https://user:pw@polaris-web-staging.example.workers.dev",
       "https://app.example.com",
+      "https://other.araute.app",
+      "http://dash.araute.app",
+      "https://dash.araute.app/path",
+      "https://user:pw@dash.araute.app",
+      "https://dash.araute.app.evil.example",
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
       expect(await runSmoke({ ...origins, web }, fetchImpl)).toEqual(
@@ -138,6 +154,10 @@ describe("the staging smoke", () => {
     }
     expect(
       await runSmoke({ ...origins, catalog: undefined }, fetchImpl)
+    ).toEqual(refused("catalog"));
+    // the fixed host belongs to the web only
+    expect(
+      await runSmoke({ ...origins, catalog: "https://dash.araute.app" }, fetchImpl)
     ).toEqual(refused("catalog"));
     expect(fetchImpl).not.toHaveBeenCalled();
   });

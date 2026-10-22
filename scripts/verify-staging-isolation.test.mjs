@@ -136,9 +136,71 @@ describe("the staging isolation check", () => {
       "web: env.staging: durable_objects is not used by staging",
       "web: env.staging: kv_namespaces is not used by staging",
       "web: env.staging: services is not used by staging",
-      "web: env.staging: staging has no routes, only workers.dev",
-      "web: env.staging: vars.BETTER_AUTH_BASE_URL must be the workers.dev URL of the staging Worker",
+      "web: env.staging: staging has no routes (the web Custom Domain is managed outside the config)",
+      "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
     ]);
+  });
+
+  it("accepts only the staging web host, exactly, with workers.dev off", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.BETTER_AUTH_BASE_URL).toBe("https://dash.araute.app");
+    expect(staging.workers_dev).toBe(false);
+    expect(findIsolationProblems(entries)).toEqual([]);
+    for (const url of [
+      "https://other.araute.app",
+      "https://dash.araute.app.evil.example",
+      "http://dash.araute.app",
+      "https://dash.araute.app/",
+      "https://dash.araute.app/path",
+      "https://user:pw@dash.araute.app",
+      "https://dash.araute.app:8443",
+      "https://DASH.araute.app",
+      "https://polaris-web-staging.polaris-pr11-gate.workers.dev",
+    ]) {
+      staging.vars.BETTER_AUTH_BASE_URL = url;
+      expect(findIsolationProblems(entries), url).toEqual([
+        "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
+      ]);
+    }
+  });
+
+  it("refuses workers.dev on for the staging web, since the origin check takes one origin", () => {
+    const entries = repositoryEntries();
+    entryOf(entries, "web").config.env.staging.workers_dev = true;
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: workers_dev must be false (the origin check accepts only https://dash.araute.app)",
+    ]);
+  });
+
+  it("keeps the catalog of staging on workers.dev only", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    for (const url of [
+      "https://dash.araute.app",
+      "https://polaris-catalog-staging.example.workers.dev/x",
+      "http://polaris-catalog-staging.example.workers.dev",
+    ]) {
+      staging.vars.CATALOG_ORIGIN = url;
+      expect(findIsolationProblems(entries), url).toEqual([
+        "web: env.staging: vars.CATALOG_ORIGIN must be the workers.dev URL of the staging catalog Worker",
+      ]);
+    }
+  });
+
+  it("refuses a production host equal to the staging one", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.BETTER_AUTH_BASE_URL = "https://dash.araute.app";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+    ]);
+    production.vars.BETTER_AUTH_BASE_URL = "https://DASH.araute.app:444/x";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+    ]);
+    production.vars.BETTER_AUTH_BASE_URL = "https://app.example.com";
+    expect(findIsolationProblems(entries)).toEqual([]);
   });
 
   it("accepts the empty binding lists a generated wrangler.json writes", () => {
@@ -187,7 +249,7 @@ describe("the staging isolation check", () => {
       { binding: "ADMIN_HYPERDRIVE", id: "abcdefabcdefabcdefabcdefabcdefab" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "admin: env.staging: staging has no routes, only workers.dev",
+      "admin: env.staging: staging has no routes (the web Custom Domain is managed outside the config)",
       "admin: env.staging: the Admin is not exposed in staging (workers_dev must be false)",
       "admin: env.staging: the Admin has no Access application in staging",
       "admin: env.staging: the Admin has no database binding in staging",

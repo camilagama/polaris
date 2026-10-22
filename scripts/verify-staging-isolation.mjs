@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or password sign-in is on;
+ * - the web of staging is not at exactly https://dash.araute.app with workers_dev off, or production uses a host of staging;
  * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
@@ -30,11 +31,21 @@ const STAGING_QUEUE = /^polaris-(critical|default|media|dlq)-staging$/;
 const ENVIRONMENT_SUFFIX = /-(local|staging)$/;
 const POOLER = /pooler/i;
 const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
+// The web of staging is served at this host by a Custom Domain created outside the config (ADR 0097):
+// an exact string, so another subdomain, http, a path or userinfo never matches. The catalog stays on workers.dev.
+export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
 const STAGING_URLS = {
-  BETTER_AUTH_BASE_URL:
-    /^https:\/\/polaris-web-staging\.[a-z0-9-]+\.workers\.dev$/,
-  CATALOG_ORIGIN:
-    /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/,
+  BETTER_AUTH_BASE_URL: {
+    accepts: (value) => value === STAGING_WEB_ORIGIN,
+    says: `exactly ${STAGING_WEB_ORIGIN}`,
+  },
+  CATALOG_ORIGIN: {
+    accepts: (value) =>
+      /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/.test(
+        value
+      ),
+    says: "the workers.dev URL of the staging catalog Worker",
+  },
 };
 // binding kinds staging does not use: any of them in env.staging (or in the build) could reach another resource
 const UNUSED_BINDING_KINDS = [
@@ -275,6 +286,11 @@ function checkStagingBlock(app, where, staging, problems) {
       `${where}: password sign-in must stay off in staging (EMAIL_PASSWORD_AUTH_ENABLED "false")`
     );
   }
+  if (app === "web" && staging.workers_dev !== false) {
+    problems.push(
+      `${where}: workers_dev must be false (the origin check accepts only ${STAGING_WEB_ORIGIN})`
+    );
+  }
   if (app === "admin") {
     checkAdminNotExposed(where, staging, problems);
   }
@@ -307,18 +323,14 @@ function checkStagingResources(where, staging, problems) {
     }
   }
   if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
-    problems.push(`${where}: staging has no routes, only workers.dev`);
+    problems.push(
+      `${where}: staging has no routes (the web Custom Domain is managed outside the config)`
+    );
   }
-  for (const [name, pattern] of Object.entries(STAGING_URLS)) {
+  for (const [name, rule] of Object.entries(STAGING_URLS)) {
     const value = staging.vars?.[name];
-    if (
-      value !== undefined &&
-      !PLACEHOLDER.test(value) &&
-      !pattern.test(value)
-    ) {
-      problems.push(
-        `${where}: vars.${name} must be the workers.dev URL of the staging Worker`
-      );
+    if (value !== undefined && !PLACEHOLDER.test(value) && !rule.accepts(value)) {
+      problems.push(`${where}: vars.${name} must be ${rule.says}`);
     }
   }
 }
@@ -458,6 +470,15 @@ export function findIsolationProblems(entries) {
   return problems;
 }
 
+/** The lowercase host of a URL, or undefined when the value is missing or not a URL. */
+function hostOf(value) {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 function checkProductionBlock(app, production, staging, problems) {
   const name = production.name ?? "";
   if (!name || STAGING_SUFFIX.test(name) || LOCAL_SUFFIX.test(name)) {
@@ -474,6 +495,19 @@ function checkProductionBlock(app, production, staging, problems) {
     if (production.vars?.[variable] === undefined) {
       problems.push(
         `${app}: env.production lacks vars.${variable}, which env.staging sets`
+      );
+    }
+  }
+  for (const name of Object.keys(STAGING_URLS)) {
+    const host = hostOf(production.vars?.[name]);
+    if (
+      host !== undefined &&
+      (host === hostOf(staging.vars?.[name]) ||
+        (name === "BETTER_AUTH_BASE_URL" &&
+          host === hostOf(STAGING_WEB_ORIGIN)))
+    ) {
+      problems.push(
+        `${app}: env.production vars.${name} must not use the host of staging`
       );
     }
   }
