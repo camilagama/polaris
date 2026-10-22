@@ -26,9 +26,9 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  *   (release checklist, item 3: a REVOKE by someone else is only a WARNING, without effect).
  * - `after-migrate`: the marker; the read-only part of the definer-hardening gate (ADR 0093); PUBLIC has no
  *   TEMPORARY; every `polaris_*_owner` role and every role a runtime role reaches (the `*_runtime` groups and what they
- *   can SET to or inherit, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
- *   NOREPLICATION and NOBYPASSRLS, with a floor on how many were looked at, and no `*_owner` role is a member of a
- *   privileged role (`owner-role-attributes.ts`); and every login other than the owner is a member of a
+ *   can SET to, inherit or administer with ADMIN OPTION, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
+ *   NOREPLICATION and NOBYPASSRLS, with a floor on how many were looked at, and no `*_owner` role is a member (INHERIT, SET or
+ *   ADMIN OPTION) of any role (`owner-role-attributes.ts`); and every login other than the owner is a member of a
  *   `polaris_*_runtime` group (item 15).
  *
  * The output lists names only: no URL, password or data.
@@ -125,7 +125,7 @@ async function checkHardening(client: Client) {
     "definer-hardening (read-only): no finding",
     "PUBLIC has no TEMPORARY on the database",
     `${roles.owners} polaris_*_owner roles and ${roles.reachable} roles a runtime role reaches: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
-    `the ${roles.owners} polaris_*_owner roles are members of no privileged role`,
+    `the ${roles.owners} polaris_*_owner roles are members of no role`,
     ...appLogins.map((row) => `login ${row.login}: ${row.groups.join(", ")}`),
   ];
 }

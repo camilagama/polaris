@@ -8,18 +8,21 @@ import { findReachableRoles } from "./definer-hardening-checks";
  * definer-hardening gate). Two sets, checked the same way:
  *
  * - every `polaris_*_owner` role: it owns SECURITY DEFINER functions and is only a target of ownership, never a login;
- * - every role a runtime role reaches (`findReachableRoles`: itself, or by SET or INHERIT, through groups and chains),
- *   the `*_runtime` groups and the roles they can become, such as `polaris_closed_export_reader`. A BYPASSRLS or
- *   CREATEROLE there would go over the RLS of every tenant. The logins of the app are runtime roles too, but a login
+ * - every role a runtime role reaches (`findReachableRoles`: itself, or by SET, INHERIT or ADMIN OPTION, through groups
+ *   and chains), the `*_runtime` groups and the roles they can become, such as `polaris_closed_export_reader`. A
+ *   BYPASSRLS or CREATEROLE there would go over the RLS of every tenant. The logins of the app are runtime roles too, but a login
  *   must be able to log in, so only its LOGIN is not asked of it (its other attributes are).
  *
  * Both must be NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOBYPASSRLS. No migration gives any
  * of them one of these (each `CREATE ROLE`/`ALTER ROLE` says NO…), so there is no exception; if one ever needs an
  * attribute, accept it here for that role only, with the reason.
  *
- * A `polaris_*_owner` role is also not a member (SET, INHERIT, or ADMIN OPTION, which can grant itself both) of a
- * privileged role: `neon_superuser`, the predefined roles that read or write data or files or run programs, any role
- * with SUPERUSER, BYPASSRLS or CREATEROLE, or the database owner.
+ * A `polaris_*_owner` role also has no edge out: it is a member (with INHERIT, SET or ADMIN OPTION, which can grant itself
+ * both) of no other role. An owner role is only a target; an edge from one would widen what the SECURITY DEFINER functions
+ * it owns can do, even if no runtime role reaches it. Today the only edge between `polaris_*` roles is
+ * `polaris_privacy_runtime` being a member of `polaris_closed_export_reader` (SET), and that one is not an owner's. This rule replaces any list
+ * of privileged roles for the owners. `pg_database_owner` does not count: it is implicit (the database owner by another
+ * name), so no edge into it can exist.
  */
 const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
 
@@ -53,25 +56,14 @@ const OWNER_ROLES_SQL = `SELECT rolname, rolcanlogin, rolsuper, rolcreaterole, r
   WHERE rolname LIKE '${OWNER_ROLE_LIKE}'
   ORDER BY 1`;
 
-// the owner reaches a privileged role when a role it can become with SET ROLE (itself included) inherits it, can SET to it or has ADMIN OPTION on it
-const OWNER_MEMBERSHIP_SQL = `SELECT DISTINCT o.rolname AS owner, t.rolname AS target
-   FROM pg_roles o
-   JOIN pg_roles via ON pg_has_role(o.oid, via.oid, 'SET')
-   JOIN pg_roles t ON t.oid <> via.oid
-    AND (t.oid = (SELECT datdba FROM pg_database WHERE datname = current_database())
-      OR t.rolname = 'neon_superuser'
-      OR t.rolsuper OR t.rolbypassrls OR t.rolcreaterole
-      OR t.rolname IN ('pg_execute_server_program', 'pg_read_server_files', 'pg_write_server_files', 'pg_read_all_data', 'pg_write_all_data'))
+// every edge that leaves an owner role with INHERIT, SET or ADMIN OPTION (a direct edge is enough: a chain starts with one)
+const OWNER_MEMBERSHIP_SQL = `SELECT o.rolname AS owner, t.rolname AS target
+   FROM pg_auth_members a
+   JOIN pg_roles o ON o.oid = a.member
+   JOIN pg_roles t ON t.oid = a.roleid
   WHERE o.rolname LIKE '${OWNER_ROLE_LIKE}'
-    AND NOT o.rolsuper
+    AND (a.inherit_option OR a.set_option OR a.admin_option)
     AND t.rolname <> 'pg_database_owner'
-    AND (pg_has_role(via.oid, t.oid, 'SET')
-      OR pg_has_role(via.oid, t.oid, 'USAGE')
-      OR EXISTS (
-        SELECT 1 FROM pg_auth_members a
-         WHERE a.roleid = t.oid AND a.admin_option
-           AND (pg_has_role(via.oid, a.member, 'SET') OR pg_has_role(via.oid, a.member, 'USAGE'))
-      ))
   ORDER BY 1, 2`;
 
 /** `role: ATTRIBUTE` for each attribute a role holds and must not; `skipLogin` names the roles that may log in. */
@@ -99,7 +91,7 @@ export function ownerAttributeFindings(
 }
 
 export interface RoleCheck {
-  /** `role: ATTRIBUTE` for the attributes held, then `owner->target` for the memberships */
+  /** `role: ATTRIBUTE` for the attributes held, then `owner->target` for each edge out of an owner role */
   findings: string[];
   owners: number;
   /** the reachable roles that are not owners or logins of the app, those that must exist */
@@ -154,7 +146,7 @@ export async function assertOwnerRolesClean(
   assert.deepEqual(
     check.findings,
     [],
-    "owner and runtime-reachable roles with an attribute they must not have (role: attribute) or a membership in a privileged role (owner->target)"
+    "owner and runtime-reachable roles with an attribute they must not have (role: attribute) or an edge out of an owner role (owner->target)"
   );
   return check;
 }
