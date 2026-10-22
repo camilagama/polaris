@@ -114,7 +114,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
         Organização
       </label>
       <select
-        className="focus-ring h-ctl-md w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm"
+        className="focus-ring h-ctl-md touch:h-12 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm"
         id="app-organization"
         onChange={handleChange}
         value={organization.id}
@@ -150,7 +150,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
       <SidebarHeader className="px-4 pt-4 pb-2">
         <a
-          className="focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
+          className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
           href="/"
         >
           <Logo />
@@ -223,7 +223,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
  * (the sidebar in a sheet). "Mais" carries the mark when the current screen is one of the rest.
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
-  const { openMobile, setOpenMobile } = useSidebar();
+  const { mobileTrigger, openMobile, setOpenMobile } = useSidebar();
   const openMore = useCallback(() => setOpenMobile(true), [setOpenMobile]);
   const moreCurrent = navId !== null && !inBottomBar(navId);
   const tab =
@@ -266,6 +266,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         aria-haspopup="dialog"
         className={`${tab} cursor-pointer border-0 bg-transparent ${moreCurrent ? "text-foreground" : "text-muted-foreground"}`}
         onClick={openMore}
+        ref={mobileTrigger}
         type="button"
       >
         {moreCurrent ? mark : null}
@@ -284,7 +285,7 @@ function MobileHeader({ onlineOnly }: { onlineOnly: boolean }) {
       data-ui=""
     >
       <a
-        className="focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
+        className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
         href="/"
       >
         <Logo className="size-5" />

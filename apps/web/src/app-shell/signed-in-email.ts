@@ -9,6 +9,8 @@ export function useSignedInEmail(): string | null {
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
+    // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
+    const timer = setTimeout(() => controller.abort(), 5000);
     fetch("/api/auth/get-session", {
       cache: "no-store",
       credentials: "same-origin",
@@ -19,8 +21,12 @@ export function useSignedInEmail(): string | null {
         const value = session?.user?.email;
         setEmail(typeof value === "string" && value !== "" ? value : null);
       })
-      .catch(() => undefined);
-    return () => controller.abort();
+      .catch(() => undefined)
+      .finally(() => clearTimeout(timer));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, []);
   return email;
 }

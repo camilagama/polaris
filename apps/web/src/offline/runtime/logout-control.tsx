@@ -1,5 +1,5 @@
 import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
@@ -145,6 +145,14 @@ export function LogoutControl({
     reason ? logoutDestination({ reason, returnTo }) : "/"
   );
   const { blocked, busy, message } = logout;
+  const blockedRef = useRef<HTMLDivElement>(null);
+  // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
+  useEffect(() => {
+    if (shell && blocked) {
+      blockedRef.current?.scrollIntoView({ block: "nearest" });
+      blockedRef.current?.focus();
+    }
+  }, [blocked, shell]);
   if (!runtime) {
     return null;
   }
@@ -179,15 +187,17 @@ export function LogoutControl({
         </p>
       ) : null}
       {blocked ? (
-        <LogoutDialog
-          blocked={blocked}
-          busy={busy}
-          errorMessage={null}
-          onCancel={logout.cancel}
-          onDiscard={logout.discard}
-          onRetry={logout.start}
-          onShowAttention={logout.showAttention}
-        />
+        <div className="outline-none" ref={blockedRef} tabIndex={-1}>
+          <LogoutDialog
+            blocked={blocked}
+            busy={busy}
+            errorMessage={null}
+            onCancel={logout.cancel}
+            onDiscard={logout.discard}
+            onRetry={logout.start}
+            onShowAttention={logout.showAttention}
+          />
+        </div>
       ) : null}
     </div>
   );

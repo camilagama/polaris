@@ -7,6 +7,7 @@ import {
   createContext,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
   useCallback,
   useContext,
   useEffect,
@@ -31,6 +32,8 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 
 interface SidebarContextProps {
   isMobile: boolean;
+  /** The control that opens the panel below 760 px (the "Mais" of the shell): the focus goes back to it. */
+  mobileTrigger: RefObject<HTMLButtonElement | null>;
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
 }
@@ -53,8 +56,15 @@ function SidebarProvider({
 }: ComponentProps<"div">) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = useState(false);
+  // the panel exists only below 760 px: crossing the line closes it, so it never comes back open by itself
+  useEffect(() => {
+    if (!isMobile) {
+      setOpenMobile(false);
+    }
+  }, [isMobile]);
+  const mobileTrigger = useRef<HTMLButtonElement>(null);
   const contextValue = useMemo<SidebarContextProps>(
-    () => ({ isMobile, openMobile, setOpenMobile }),
+    () => ({ isMobile, mobileTrigger, openMobile, setOpenMobile }),
     [isMobile, openMobile]
   );
   return (
@@ -90,17 +100,13 @@ function MobileSheet({
   title: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
+  const { mobileTrigger } = useSidebar();
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) {
       return;
     }
     if (open && !dialog.open) {
-      opener.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
       dialog.showModal();
     } else if (!open && dialog.open) {
       dialog.close();
@@ -108,8 +114,9 @@ function MobileSheet({
   }, [open]);
   const handleClose = useCallback(() => {
     onOpenChange(false);
-    opener.current?.focus();
-  }, [onOpenChange]);
+    // the trigger, not the element focused before: Safari does not focus a button on a click
+    mobileTrigger.current?.focus();
+  }, [mobileTrigger, onOpenChange]);
   // a click on the veil (the dialog box itself, outside the panel) closes it
   const handleClick = useCallback((event: MouseEvent<HTMLDialogElement>) => {
     if (event.target === event.currentTarget) {
@@ -132,17 +139,18 @@ function MobileSheet({
       ref={ref}
       style={{ "--sidebar-width": SIDEBAR_WIDTH_MOBILE } as CSSProperties}
     >
-      <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
-        {children}
-      </div>
+      {/* first in the order: the focus lands on it when the panel opens */}
       <button
-        className="touch-hit focus-ring absolute top-2 right-2 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent [&_svg]:size-3.5"
+        className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent [&_svg]:size-3.5"
         onClick={close}
         type="button"
       >
         <XIcon aria-hidden="true" />
         <span className="sr-only">Fechar</span>
       </button>
+      <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
+        {children}
+      </div>
     </dialog>
   );
 }
@@ -318,7 +326,7 @@ function SidebarMenuButton({
   return (
     <a
       className={cx(
-        "peer/menu-button focus-ring flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&>span:last-child]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
+        "peer/menu-button focus-ring flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
         className
       )}
       data-active={isActive ? "" : undefined}
