@@ -168,8 +168,22 @@ for (const width of [360, 320]) {
     const box = await page.locator(".sync-status").boundingBox();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
-    // and "Menu" is still reachable
-    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+    // "Menu" is on the same line as the chip, and the header stays one line tall
+    const menu = await page.getByRole("button", { name: "Menu" }).boundingBox();
+    expect(menu).not.toBeNull();
+    expect(box).not.toBeNull();
+    const chipMiddle = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+    expect(chipMiddle).toBeGreaterThan(menu?.y ?? 0);
+    expect(chipMiddle).toBeLessThan((menu?.y ?? 0) + (menu?.height ?? 0));
+    expect((menu?.x ?? 0) + (menu?.width ?? 0)).toBeLessThanOrEqual(width);
+    expect(box?.x ?? 0).toBeLessThan(menu?.x ?? 0);
+    const bar = await page.locator(".app-header-bar").boundingBox();
+    expect(bar?.height ?? 0).toBeLessThanOrEqual(72);
+    // the brand shows only its mark, and keeps its name
+    await expect(
+      page.getByRole("link", { name: "Polaris, início" })
+    ).toBeVisible();
+    await expect(page.locator(".app-brand-name")).toBeHidden();
   });
 }
 

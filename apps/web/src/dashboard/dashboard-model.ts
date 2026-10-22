@@ -183,7 +183,7 @@ const CHAIN_LINES: readonly ChainLine[] = [
   {
     id: "processingFees",
     kind: "line",
-    label: "(−) Taxas de processamento do cartão",
+    label: "(−) Taxas de processamento",
   },
   {
     id: "anticipationFees",

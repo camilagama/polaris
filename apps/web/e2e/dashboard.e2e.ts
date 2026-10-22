@@ -391,7 +391,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
     "(−) Custo das mercadorias vendidas (CMV)",
     "(=) Lucro bruto",
     "(+) Acréscimos e frete",
-    "(−) Taxas de processamento do cartão",
+    "(−) Taxas de processamento",
     "(−) Taxas de antecipação",
     "(−) Despesas ligadas à venda",
     "(=) Margem de contribuição",

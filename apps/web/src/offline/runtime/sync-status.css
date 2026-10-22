@@ -2,8 +2,8 @@
   .sync-status {
     position: relative;
     display: inline-flex;
-    /* never squeezed: when it does not fit the line, the bar wraps and "Menu" goes below (U-07) */
-    flex: 0 0 auto;
+    /* shrinks first when the line is short, so "Menu" stays on the same line (U-07) */
+    flex: 0 1 auto;
     gap: 0.45rem;
     align-items: center;
     min-width: 0;

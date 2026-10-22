@@ -110,7 +110,7 @@ function AppHeader({ navId, onlineOnly, organization }: AppHeaderProps) {
           <span aria-hidden="true" className="app-brand-mark">
             P
           </span>
-          <span>Polaris</span>
+          <span className="app-brand-name">Polaris</span>
         </a>
         <SyncStatus onlineOnly={onlineOnly} />
         <button
