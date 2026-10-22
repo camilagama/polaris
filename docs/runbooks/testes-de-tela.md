@@ -35,7 +35,7 @@ Um contexto que várias verificações usam é uma carga de página só: o teste
 # fonte (rápido, sem navegador)
 bunx vitest run --project node apps/web/scripts/ui-source-rules.test.ts
 
-# navegador (builda o pwa-e2e e serve em 4174; precisa do Node: ver a nota de máquina sem node)
+# navegador (builda o pwa-e2e e serve na porta de E2E_PWA_PORT, 4174 por padrão; precisa do Node: ver a nota de máquina sem node)
 cd apps/web
 bunx playwright test --config playwright.pwa.config.ts --project=chromium-desktop ui-guardrails
 # uma tela, um tema: -g "galeria · 360 px · com toque · tema escuro"
@@ -44,6 +44,24 @@ bunx playwright test --config playwright.pwa.config.ts --project=chromium-deskto
 ```
 
 Uma falha diz a verificação (`1. nada sai do contêiner`, `2. área de toque`, `3. axe`, `6. foco de 3 px`; a 7 diz o elemento, a propriedade e o valor com e sem a camada `legacy`), o elemento e a medida. A de movimento diz as poses (`transform`, `translate`, `scale`, `rotate`) por que a sobreposição passou.
+
+## Duas sessões ao mesmo tempo
+
+Os três configs de navegador de `apps/web` abrem o próprio servidor (build e serve). Duas sessões na mesma máquina, cada uma na sua árvore (`git worktree`), disputavam as portas fixas, e o servidor de uma era reaproveitado pela outra: o teste rodava contra o código errado e passava. Agora:
+
+- **Fora do CI, servidor que já escuta não é reaproveitado.** O Playwright recusa a porta ocupada (`... is already used`) em vez de testar contra ele. `E2E_REUSE_SERVER=1` (configs `offline-poc` e `pwa`; o `e2e-real` nunca reaproveita) liga o reaproveitamento de propósito (iterar na mesma árvore, sem rebuild); nunca use com duas árvores. No CI nunca se reaproveita.
+- **As portas vêm do ambiente, com o padrão de sempre** (o CI não muda):
+
+  | Variável | Config | Padrão |
+  |---|---|---|
+  | `E2E_OFFLINE_POC_PORT` | `playwright.offline-poc.config.ts` (`vite preview`) | 4173 |
+  | `E2E_PWA_PORT` | `playwright.pwa.config.ts` (`scripts/serve-static.mjs`) | 4174 |
+  | `E2E_REAL_PORT_ONLINE`, `E2E_REAL_PORT_RUNTIME` | `playwright.e2e-real.config.ts` | 4321, 4322 |
+
+  A segunda sessão escolhe portas livres, por exemplo `E2E_OFFLINE_POC_PORT=4273 E2E_PWA_PORT=4274 bun run test:offline-browser`. Os testes leem a mesma variável (`apps/web/e2e/run-settings.ts`), então a origem que eles conferem acompanha a porta. Os testes de atualização (`update*.e2e.ts`) não usam porta fixa: cada worker builda em `dist/pwa-e2e-update-<n>` e serve de um servidor em porta livre (`e2e-pwa/support.ts`).
+- Cada árvore tem o próprio `dist` e o próprio `node_modules`; o que as sessões ainda dividem é a CPU. Servidor que sobrou de uma execução interrompida (um `timeout` que matou o Playwright e deixou o `vite preview`) continua escutando e faz a próxima falhar com a mensagem acima: ache o PID com `ss -ltnp | grep :<porta>` e encerre só o seu.
+
+**Workers.** `E2E_WORKERS` define o número de workers dos configs `offline-poc` e `pwa`. Sem ela, no CI, é um por núcleo do runner (`pwa`: de 2 a 4; `offline-poc`: um núcleo a menos, de 2 a 3, por causa da memória do SQLite WASM), e a linha `playwright workers: N (X cores, Y GiB)` do log diz o que valeu; fora do CI, 1 no `offline-poc` e 2 no `pwa`. O Playwright só divide por arquivo: um arquivo com centenas de testes roda inteiro num worker, por isso `ui-guardrails.e2e.ts` declara `test.describe.configure({ mode: "parallel" })` (cada teste abre a própria página e não divide estado). As verificações de tela só leem o build `pwa-e2e` e os testes do `offline-poc` usam um contexto de navegador por teste (OPFS e armazenamento próprios). Só os testes de atualização escrevem num build, e escrevem no próprio. Num teste novo que mude arquivo, porta ou estado do servidor compartilhado, dê a ele diretório e servidor próprios, como o `support.ts`, em vez de voltar a `workers: 1`.
 
 ## Acrescentar uma tela
 

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { OFFLINE_POC_ORIGIN } from "./run-settings";
 
 /**
  * The password screens behind the flag (P9, ADR 0100; AC-7, 46, 50, 51, 53, 62, 71 to 76), with the server
@@ -24,7 +25,7 @@ const AUTH_ENTRY_PATHS = [
   "/redefinir-senha",
   "/confirmar-email",
 ];
-const APP_ORIGIN = "http://127.0.0.1:4173";
+const APP_ORIGIN = OFFLINE_POC_ORIGIN;
 const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const AT_SIGN_IN = /\/entrar$/;
 const LOGIN_TOKEN = /^tt-login-\d+$/;

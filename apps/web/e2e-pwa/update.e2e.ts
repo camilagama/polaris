@@ -1,17 +1,14 @@
 /// <reference lib="dom" />
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
-  buildVersion,
   checkForUpdate,
   openControlled,
   runningVersion,
+  test,
 } from "./support";
 
-test.afterAll(() => {
-  buildVersion("1");
-});
-
 test("uma nova versão aparece como aviso, sem recarregar sozinha, e só troca quando a pessoa pede", async ({
+  buildVersion,
   page,
 }) => {
   buildVersion("1");
@@ -53,6 +50,7 @@ test("uma nova versão aparece como aviso, sem recarregar sozinha, e só troca q
 });
 
 test("a primeira instalação não é anunciada como atualização", async ({
+  buildVersion,
   page,
 }) => {
   buildVersion("1");

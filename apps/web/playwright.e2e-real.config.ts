@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_REAL_PORTS as PORTS } from "./e2e/run-settings";
 import {
   ensureRunEnvironment,
   ownerDatabaseUrl,
@@ -18,7 +19,6 @@ const run = ensureRunEnvironment();
 const owner = process.env.POLARIS_E2E_DATABASE_URL
   ? ownerDatabaseUrl()
   : undefined;
-const PORTS = { online: 4321, "runtime-ligado": 4322 } as const;
 const origin = (project: keyof typeof PORTS) =>
   `http://127.0.0.1:${PORTS[project]}`;
 // `E2E_RETRIES=0` for the 10 runs without retry that come before the job is required.
