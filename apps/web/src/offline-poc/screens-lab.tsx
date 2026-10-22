@@ -1,12 +1,14 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import {
   type ChangeEvent,
+  type ComponentType,
   useCallback,
   useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
 import { ProductsPage } from "../catalog/products-page";
+import { PublicCatalogPage } from "../catalog/public-catalog-page";
 import { CustomersPage } from "../customers/customers-page";
 import { DashboardPage } from "../dashboard/dashboard-page";
 import { ExpensesPage } from "../expenses/expenses-page";
@@ -22,6 +24,7 @@ import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
+import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
@@ -58,7 +61,9 @@ type LabScreen =
   | "dashboard"
   | "expenses"
   | "history"
+  | "payment-profiles"
   | "products"
+  | "public-catalog"
   | "sale"
   | "stock";
 
@@ -68,6 +73,8 @@ function labScreen(): LabScreen {
     screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
+    screen === "payment-profiles" ||
+    screen === "public-catalog" ||
     screen === "sale" ||
     screen === "stock" ||
     screen === "history"
@@ -112,6 +119,24 @@ function legalAcceptanceRefusal(): Error {
     },
     status: 403,
   });
+}
+
+const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
+  "change-password": ChangePasswordPage,
+  customers: CustomersPage,
+  dashboard: DashboardPage,
+  expenses: ExpensesPage,
+  history: SaleHistoryPage,
+  "payment-profiles": PaymentProfilesPage,
+  products: ProductsPage,
+  "public-catalog": PublicCatalogPage,
+  sale: SalePage,
+  stock: InventoryPage,
+};
+
+function LabScreenPage({ screen }: { screen: LabScreen }) {
+  const Page = LAB_PAGES[screen];
+  return <Page />;
 }
 
 export function ScreensLab() {
@@ -268,7 +293,11 @@ export function ScreensLab() {
           <div data-lab-chrome="">
             <h1>Laboratório das telas offline</h1>
             <p data-testid="message">{message}</p>
-            <SyncStatus />
+            <SyncStatus
+              onlineOnly={
+                screen === "payment-profiles" || screen === "public-catalog"
+              }
+            />
             <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>
               <label>
                 Usuário
@@ -309,16 +338,7 @@ export function ScreensLab() {
               <span data-testid="server-records">{serverRecords}</span>
             </p>
           </div>
-          {started && screen === "change-password" ? (
-            <ChangePasswordPage />
-          ) : null}
-          {started && screen === "customers" ? <CustomersPage /> : null}
-          {started && screen === "products" ? <ProductsPage /> : null}
-          {started && screen === "sale" ? <SalePage /> : null}
-          {started && screen === "stock" ? <InventoryPage /> : null}
-          {started && screen === "history" ? <SaleHistoryPage /> : null}
-          {started && screen === "expenses" ? <ExpensesPage /> : null}
-          {started && screen === "dashboard" ? <DashboardPage /> : null}
+          {started ? <LabScreenPage screen={screen} /> : null}
         </main>
       </StaticOrganizationProvider>
     </RuntimeContext.Provider>

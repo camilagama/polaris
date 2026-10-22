@@ -12,12 +12,17 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import { publicCatalogErrorMessage } from "./public-catalog-errors";
+import {
+  type ProfileFieldError,
+  profileFieldError,
+  publicCatalogErrorMessage,
+} from "./public-catalog-errors";
 import {
   draftFromProfile,
   hasProfileChanges,
   inBatches,
   type PublicProfileDraft,
+  profileDraftProblem,
   profileRequest,
   visibilityOf,
 } from "./public-catalog-model";
@@ -31,6 +36,30 @@ interface LoadedState {
 
 type Action = Parameters<typeof publicCatalogErrorMessage>[1];
 
+/** What a command said, and the command it came from: it shows next to that command's button (U-49). */
+interface Feedback {
+  error: string | null;
+  notice: string | null;
+  /** `load` is the page itself: its message stays at the top. */
+  where: Action;
+}
+
+const NO_FEEDBACK = { error: null, notice: null } as const;
+const FIELD_PROBLEM_SUMMARY =
+  "O perfil não foi salvo. Corrija o campo indicado acima.";
+const INPUT_OF_FIELD = {
+  description: "public-description",
+  instagram: "public-instagram",
+  publicName: "public-name",
+  slug: "public-slug",
+  whatsapp: "public-whatsapp",
+} as const;
+
+/** The feedback of one command, or nothing when the last message came from another. */
+function feedbackOf(feedback: Feedback | null, where: Action) {
+  return feedback?.where === where ? feedback : NO_FEEDBACK;
+}
+
 export function PublicCatalogPage() {
   const { organizationId } = useCurrentOrganization();
   const [loaded, setLoaded] = useState<LoadedState | null>(null);
@@ -40,8 +69,8 @@ export function PublicCatalogPage() {
   const [slugEdited, setSlugEdited] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [problem, setProblem] = useState<ProfileFieldError | null>(null);
   useReportUnsentWork(
     loaded !== null && hasProfileChanges(draft, loaded.setup.profile)
   );
@@ -60,7 +89,11 @@ export function PublicCatalogPage() {
           setSlugEdited(setup.profile !== null);
         }
       } catch (loadError) {
-        setError(publicCatalogErrorMessage(loadError, "load"));
+        setFeedback({
+          error: publicCatalogErrorMessage(loadError, "load"),
+          notice: null,
+          where: "load",
+        });
       } finally {
         setLoading(false);
       }
@@ -72,6 +105,13 @@ export function PublicCatalogPage() {
     load(false).catch(() => undefined);
   }, [load]);
 
+  // the field with the error gets the focus once the form is enabled again (a disabled input takes no focus)
+  useEffect(() => {
+    if (problem && !pending) {
+      document.getElementById(INPUT_OF_FIELD[problem.field])?.focus();
+    }
+  }, [problem, pending]);
+
   /** Runs a command, then reloads so the screen shows what the server holds. */
   const run = useCallback(
     async (
@@ -81,17 +121,36 @@ export function PublicCatalogPage() {
       keepDraft: boolean
     ) => {
       setPending(true);
-      setError(null);
-      setNotice(null);
+      setFeedback(null);
+      setProblem(null);
+      let failed = false;
       try {
         await command();
-        setNotice(success);
+        setFeedback({ error: null, notice: success, where: action });
       } catch (commandError) {
-        setError(publicCatalogErrorMessage(commandError, action));
+        failed = true;
+        const fieldError =
+          action === "profile" ? profileFieldError(commandError) : null;
+        if (fieldError) {
+          // under its field, with the summary beside the button; what was typed stays as it is
+          setProblem(fieldError);
+          setFeedback({
+            error: FIELD_PROBLEM_SUMMARY,
+            notice: null,
+            where: action,
+          });
+        } else {
+          setFeedback({
+            error: publicCatalogErrorMessage(commandError, action),
+            notice: null,
+            where: action,
+          });
+        }
       } finally {
         setPending(false);
       }
-      await load(keepDraft).catch(() => undefined);
+      // a refused command never takes the typed form back to what the server holds (U-48)
+      await load(keepDraft || failed).catch(() => undefined);
     },
     [load]
   );
@@ -110,10 +169,25 @@ export function PublicCatalogPage() {
   const changed = hasProfileChanges(draft, profile);
 
   const handleSlugEdited = useCallback(() => setSlugEdited(true), []);
+  const handleDraftChange = useCallback((next: PublicProfileDraft) => {
+    setDraft(next);
+    setProblem(null);
+  }, []);
 
   const saveProfile = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      // the same check the server runs, before the trip: the address is refused under its own field
+      const refused = profileDraftProblem(draft);
+      if (refused) {
+        setProblem(refused);
+        setFeedback({
+          error: FIELD_PROBLEM_SUMMARY,
+          notice: null,
+          where: "profile",
+        });
+        return;
+      }
       run(
         "profile",
         () =>
@@ -182,14 +256,9 @@ export function PublicCatalogPage() {
           </p>
         </div>
       </section>
-      {error ? (
+      {feedback?.where === "load" && feedback.error ? (
         <p className="public-catalog-message is-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p className="public-catalog-message is-success" role="status">
-          {notice}
+          {feedback.error}
         </p>
       ) : null}
       {loading && !loaded ? <p role="status">Carregando…</p> : null}
@@ -206,15 +275,18 @@ export function PublicCatalogPage() {
             changed={changed}
             disabled={planBlocks}
             draft={draft}
-            onChange={setDraft}
+            feedback={feedbackOf(feedback, "profile")}
+            onChange={handleDraftChange}
             onSlugEdited={handleSlugEdited}
             onSubmit={saveProfile}
             pending={pending}
+            problem={problem}
             publicOrigin={setup.publicOrigin}
             slugEdited={slugEdited}
           />
           <SwitchCard
             changed={changed}
+            feedback={feedbackOf(feedback, "switch")}
             onToggle={toggleCatalog}
             pending={pending}
             planBlocks={planBlocks}
@@ -223,6 +295,7 @@ export function PublicCatalogPage() {
             visibility={visibility}
           />
           <ProductsCard
+            feedback={feedbackOf(feedback, "products")}
             onChange={changeProducts}
             pending={pending}
             planBlocks={planBlocks}

@@ -1,6 +1,8 @@
 import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  duplicateSkuMessage,
+  isDuplicateSkuError,
   MAX_VARIANTS,
   optionLabel,
   optionValuesError,
@@ -212,9 +214,24 @@ describe("mensagens de erro das variantes", () => {
     );
   });
 
-  it("o conflito do SKU fala do SKU; os outros erros seguem a regra geral", () => {
-    expect(variantSkuErrorMessage(refusal("CONFLICT"))).toContain(
-      "O SKU já está em uso"
+  it("SKU repetido é dito no campo, com o SKU, e nunca se confunde com o produto que mudou (U-14)", () => {
+    const duplicate = refusal("CONFLICT", "duplicate_sku");
+    expect(isDuplicateSkuError(duplicate)).toBe(true);
+    expect(
+      isDuplicateSkuError(refusal("CONFLICT", "product_version_conflict"))
+    ).toBe(false);
+    expect(isDuplicateSkuError(refusal("CONFLICT"))).toBe(false);
+    expect(isDuplicateSkuError(refusal("BAD_REQUEST", "duplicate_sku"))).toBe(
+      false
+    );
+    expect(duplicateSkuMessage("  CAM-001 ")).toBe(
+      "O SKU CAM-001 já está em uso por outra variante. Use outro código."
+    );
+  });
+
+  it("o conflito de versão fala do produto; os outros erros seguem a regra geral", () => {
+    expect(variantSkuErrorMessage(refusal("CONFLICT"))).toBe(
+      "O produto mudou. Atualize as variantes antes de tentar novamente."
     );
     expect(variantSkuErrorMessage(refusal("NOT_FOUND"))).toBe(
       variantErrorMessage(refusal("NOT_FOUND"))

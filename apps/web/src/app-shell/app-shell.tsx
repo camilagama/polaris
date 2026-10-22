@@ -78,11 +78,13 @@ function OrganizationSwitcher({ current }: OrganizationSwitcherProps) {
 }
 
 interface AppHeaderProps {
+  /** The screen works only with a connection: the state chip says so while offline (U-54). */
+  onlineOnly: boolean;
   navId: NavId | null;
   organization: CurrentOrganization | null;
 }
 
-function AppHeader({ navId, organization }: AppHeaderProps) {
+function AppHeader({ navId, onlineOnly, organization }: AppHeaderProps) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
@@ -108,9 +110,9 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
           <span aria-hidden="true" className="app-brand-mark">
             P
           </span>
-          <span>Polaris</span>
+          <span className="app-brand-name">Polaris</span>
         </a>
-        <SyncStatus />
+        <SyncStatus onlineOnly={onlineOnly} />
         <button
           aria-controls="app-navigation"
           aria-expanded={open}
@@ -127,7 +129,7 @@ function AppHeader({ navId, organization }: AppHeaderProps) {
         className={open ? "app-nav-wrap is-open" : "app-nav-wrap"}
         id="app-navigation"
       >
-        <SyncStatusMenuLine />
+        <SyncStatusMenuLine onlineOnly={onlineOnly} />
         <nav aria-label="Principal">
           <ul className="app-nav-list">
             {[
@@ -164,7 +166,9 @@ function SessionEndedGate({ atOpen }: { atOpen: boolean }) {
   const runtime = useOfflineRuntime();
   useEffect(() => {
     if (atOpen) {
-      leaveSessionOver(runtime, currentReturnPath(window.location));
+      leaveSessionOver(runtime, currentReturnPath(window.location), {
+        atOpen: true,
+      });
     }
   }, [atOpen, runtime]);
   return atOpen ? (
@@ -263,6 +267,8 @@ function OrganizationGate({ children }: { children: ReactNode }) {
 interface AppShellProps {
   children: ReactNode;
   navId: NavId | null;
+  /** The screen works only online (no copy on the device): the state chip says so while offline. */
+  onlineOnly?: boolean;
   /** Pages that need data of an organization wait for it to be resolved. */
   requiresOrganization?: boolean;
 }
@@ -275,6 +281,7 @@ interface AppShellProps {
 export function AppShell({
   children,
   navId,
+  onlineOnly = false,
   requiresOrganization = true,
 }: AppShellProps) {
   const { load, select } = useOrganizationLoad();
@@ -307,7 +314,11 @@ export function AppShell({
       <a className="app-skip-link" href="#conteudo">
         Ir para o conteúdo
       </a>
-      <AppHeader navId={navId} organization={organization} />
+      <AppHeader
+        navId={navId}
+        onlineOnly={onlineOnly}
+        organization={organization}
+      />
       <main className="categories-content" id="conteudo">
         {showNotice ? <SessionEndedNotice /> : null}
         {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}

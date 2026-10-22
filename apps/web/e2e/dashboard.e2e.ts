@@ -391,7 +391,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
     "(−) Custo das mercadorias vendidas (CMV)",
     "(=) Lucro bruto",
     "(+) Acréscimos e frete",
-    "(−) Taxas de processamento do cartão",
+    "(−) Taxas de processamento",
     "(−) Taxas de antecipação",
     "(−) Despesas ligadas à venda",
     "(=) Margem de contribuição",
@@ -439,10 +439,10 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
     "2 linhas de itens vendidos sem custo conhecido: o custo delas não entrou no CMV."
   );
   await expect(banner).toContainText(
-    "1 venda sem taxa de processamento conhecida: ela não entrou no resultado."
+    "1 venda sem taxa de processamento conhecida: a venda entra nos totais, mas a taxa dela ficou fora do cálculo."
   );
   await expect(banner).toContainText(
-    "1 venda com antecipação sem taxa conhecida: ela não entrou no resultado."
+    "1 venda com antecipação sem taxa conhecida: a venda entra nos totais, mas a taxa dela ficou fora do cálculo."
   );
   await expect(banner).toContainText(
     "Nenhuma despesa registrada neste período: o resultado pode estar acima do real."

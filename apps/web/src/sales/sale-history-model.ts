@@ -405,6 +405,21 @@ function returnsHistory(
 }
 
 /**
+ * What the page offers for cancelling the whole sale. Right after a success (a return) the page still holds the
+ * old detail until the new one is read: it must not offer a second "Cancelar venda" for a state that is already
+ * gone, so it waits (U-20).
+ */
+export function cancelOffer(
+  view: Pick<SaleDetailView, "canCancel">,
+  refreshing: boolean
+): "none" | "panel" | "waiting" {
+  if (!view.canCancel) {
+    return "none";
+  }
+  return refreshing ? "waiting" : "panel";
+}
+
+/**
  * Display model of a sale, its cancellation and its returns. The confirmed
  * snapshot is never changed. A cancelled sale takes no returns, and a sale
  * with returns cannot be cancelled as a whole.

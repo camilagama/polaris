@@ -105,6 +105,11 @@
     border-radius: 0.5rem;
   }
 
+  /* the message of a command sits under its own button */
+  .public-catalog-card .public-catalog-message {
+    margin: 0.75rem 0 0;
+  }
+
   .public-catalog-message.is-error {
     color: var(--ui-danger-strong);
     background: var(--ui-danger-soft);

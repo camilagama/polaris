@@ -2,10 +2,12 @@
   .sync-status {
     position: relative;
     display: inline-flex;
+    /* shrinks first when the line is short, so "Menu" stays on the same line (U-07) */
     flex: 0 1 auto;
     gap: 0.45rem;
     align-items: center;
     min-width: 0;
+    max-width: 100%;
     padding: 0.25rem 0.7rem;
     margin: 0;
     font-size: 0.82rem;
@@ -25,7 +27,7 @@
     content: "";
   }
 
-  /* one line: the short text gives way with an ellipsis before it pushes the brand or "Menu" */
+  /* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow (large text) */
   .sync-status-short {
     min-width: 0;
     overflow: hidden;

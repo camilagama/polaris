@@ -73,6 +73,13 @@ export function offlineCopyNotice(
   };
 }
 
+/** The sale is in the totals (its revenue counts); only its unknown fee is left out of the calculation. */
+function feeLeftOut(count: number): string {
+  return count === 1
+    ? "a venda entra nos totais, mas a taxa dela ficou fora do cálculo."
+    : "as vendas entram nos totais, mas as taxas delas ficaram fora do cálculo.";
+}
+
 function missingMessage(
   code: PeriodQuality["missing"][number],
   quality: PeriodQuality
@@ -86,11 +93,11 @@ function missingMessage(
     }
     case "unknown_processing_fee": {
       const count = quality.processingFeesUnknown;
-      return `${count} ${plural(count, "venda sem taxa de processamento conhecida", "vendas sem taxa de processamento conhecida")}: ${plural(count, "ela", "elas")} não ${plural(count, "entrou", "entraram")} no resultado.`;
+      return `${count} ${plural(count, "venda sem taxa de processamento conhecida", "vendas sem taxa de processamento conhecida")}: ${feeLeftOut(count)}`;
     }
     case "unknown_anticipation_fee": {
       const count = quality.anticipationFeesUnknown;
-      return `${count} ${plural(count, "venda com antecipação sem taxa conhecida", "vendas com antecipação sem taxa conhecida")}: ${plural(count, "ela", "elas")} não ${plural(count, "entrou", "entraram")} no resultado.`;
+      return `${count} ${plural(count, "venda com antecipação sem taxa conhecida", "vendas com antecipação sem taxa conhecida")}: ${feeLeftOut(count)}`;
     }
     default:
       return "Nenhuma despesa registrada neste período: o resultado pode estar acima do real.";
@@ -176,7 +183,7 @@ const CHAIN_LINES: readonly ChainLine[] = [
   {
     id: "processingFees",
     kind: "line",
-    label: "(−) Taxas de processamento do cartão",
+    label: "(−) Taxas de processamento",
   },
   {
     id: "anticipationFees",

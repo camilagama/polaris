@@ -278,6 +278,7 @@ class Server {
   }
 }
 
+const SIGNED_OUT_URL = /\/entrar\?motivo=saiu(&|$)/;
 const chip = (page: Page) => page.locator(".sync-status");
 const deviceItems = (page: Page) =>
   page.getByRole("list", { name: "Aparelhos" }).getByRole("listitem");
@@ -341,6 +342,12 @@ test("sair com conexão revoga este aparelho com o id dele, e o login seguinte r
 
   await clickSair(page);
   await signedOut(page);
+  // the screen after "Sair" says the person left, not that the session ended (U-01: the flow wrote the `saiu` mark)
+  await page.waitForURL(SIGNED_OUT_URL);
+  await expect(
+    page.getByText("Você saiu. Entre de novo quando quiser.", { exact: true })
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("sessão acabou");
   expect(server.log.filter((line) => line !== "check")).toEqual([
     "register",
     `revokeCurrent ${deviceId}`,

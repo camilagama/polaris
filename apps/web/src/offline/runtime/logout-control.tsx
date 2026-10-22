@@ -3,7 +3,7 @@ import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
 import type { BlockedWorkspace } from "../logout-guard";
-import { type LeavePath, leaveTo } from "./leave-browser";
+import { type LeavePath, leaveAfterSignOut } from "./leave-browser";
 import {
   discardAndLeave,
   type LogoutFlowDependencies,
@@ -63,7 +63,7 @@ export function useLogout(destination: LeavePath) {
               isOnline: () => navigator.onLine,
               revoke: revokeCurrentDevice,
             },
-            leave: () => leaveTo(destination),
+            leave: () => leaveAfterSignOut(destination),
             signOut: signOutOnServer,
             workspaces,
           }

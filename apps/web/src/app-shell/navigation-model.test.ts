@@ -67,8 +67,32 @@ describe("resolveRoute", () => {
       id: "dashboard",
       kind: "page",
       navId: "dashboard",
+      onlineOnly: false,
       title: "Resultado",
     });
+  });
+
+  it("marks the screens that work only online, and not the ones that work from the device (U-54)", () => {
+    for (const path of [
+      "/public-catalog",
+      "/payment-profiles",
+      "/expenses",
+      "/categories",
+      "/sales/detail",
+      "/conta/seguranca",
+    ]) {
+      expect(resolveRoute(path)).toMatchObject({ onlineOnly: true });
+    }
+    for (const path of [
+      "/sales",
+      "/sales/history",
+      "/inventory",
+      "/products",
+      "/customers",
+      "/dashboard",
+    ]) {
+      expect(resolveRoute(path)).toMatchObject({ onlineOnly: false });
+    }
   });
 
   it("ignores trailing slashes", () => {

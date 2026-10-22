@@ -203,6 +203,10 @@
   .payment-empty p {
     color: var(--payment-muted);
   }
+  /* clear of the 3 px focus ring (+ 3 px offset) of the percentage field above, so the ring never strikes the text (U-29, as U-28) */
+  .payment-form .field-error {
+    margin: 0.5rem 0 0.45rem;
+  }
   .payment-message {
     padding: 0.8rem 1rem;
     border-radius: 0.6rem;

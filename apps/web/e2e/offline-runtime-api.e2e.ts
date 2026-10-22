@@ -467,12 +467,15 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(
       page.getByText("Sua sessão acabou. Entre de novo para continuar.").first()
     ).toBeVisible({ timeout: 20_000 });
-    expect(await stored(page, leaseKey(user))).toBeNull();
-    expect(await stored(page, SESSION_USER_KEY)).toBeNull();
-    expect(await collectionFiles(page)).toBe(0);
+    // the notice and the drop of the local copy are not one step: wait for the copy to go, then check the rest
+    await expect.poll(() => stored(page, leaseKey(user))).toBeNull();
+    await expect.poll(() => stored(page, SESSION_USER_KEY)).toBeNull();
+    await expect.poll(() => collectionFiles(page)).toBe(0);
     expect(await outboxCommands(page)).toEqual(queued);
     // the copy of the organizations goes with the session, even if the person only closes the tab
-    expect(await stored(page, "polaris.offline.organizations")).toBeNull();
+    await expect
+      .poll(() => stored(page, "polaris.offline.organizations"))
+      .toBeNull();
   });
 
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({

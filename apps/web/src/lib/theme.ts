@@ -60,3 +60,30 @@ export function applyTheme(theme: Theme) {
     themeIsDark(theme, systemDarkQuery().matches)
   );
 }
+
+/** The part of a `MediaQueryList` that follows the system; a test gives its own. */
+interface SystemQuery {
+  addEventListener: (type: "change", listener: () => void) => void;
+  matches: boolean;
+  removeEventListener: (type: "change", listener: () => void) => void;
+}
+
+/**
+ * Keeps the `dark` class in step with the system while the page is open (U-40): `theme-init.js` reads the
+ * system once, at load, so a system that went back to light would leave the class on and the screen half
+ * dark. Reads the stored choice again at each change, so "claro" and "escuro" stay as chosen. Returns
+ * the function that stops listening.
+ */
+export function followSystemTheme(
+  query: SystemQuery = systemDarkQuery(),
+  storage: Pick<Storage, "getItem"> | undefined = browserStorage(),
+  root: Pick<Element, "classList"> = document.documentElement
+): () => void {
+  const follow = () =>
+    root.classList.toggle(
+      "dark",
+      themeIsDark(readTheme(storage), query.matches)
+    );
+  query.addEventListener("change", follow);
+  return () => query.removeEventListener("change", follow);
+}
