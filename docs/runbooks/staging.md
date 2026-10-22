@@ -101,7 +101,7 @@ Criar ou recriar (a zona `araute.app` está na mesma conta; usar credencial com 
 3. **Curinga:** a zona tem um registro `*.araute.app` com proxy, que sozinho responde 525. O registro específico do Custom Domain prevalece sobre ele; não apague o curinga por causa disto, e não espere que outro subdomínio sem Custom Domain responda.
 4. **Google:** em **Clients** do projeto `polaris-staging`, o URI de redirecionamento autorizado é `https://dash.araute.app/api/auth/callback/google` (seção 4). Sem ele o login falha com `redirect_uri_mismatch`.
 5. **GitHub:** a variável `STAGING_WEB_URL` do Environment `staging` passa a `https://dash.araute.app` (o smoke a lê e aceita esse host ou um `polaris-<app>-staging.<conta>.workers.dev`). Com `workers_dev: false`, o `workers.dev` do web deixa de servir no primeiro deploy deste PR, e o smoke que ainda apontar para ele fica vermelho: mude a variável logo antes do merge ou, mudando depois, reexecute o run do deploy.
-6. **Turnstile:** com `AUTH_ABUSE_PROTECTION_ENABLED` desligado no staging nada muda. Se ligar, o widget precisa do hostname `dash.araute.app` (o hostname esperado vem de `BETTER_AUTH_BASE_URL`, ver [auth-abuse-protection](./auth-abuse-protection.md)).
+6. **Turnstile:** com `AUTH_ABUSE_PROTECTION_ENABLED` desligado e a senha ligada, as rotas de senha respondem 503 (ver a pendência da seção 5). Ao ligar, o widget precisa do hostname `dash.araute.app` (o hostname esperado vem de `BETTER_AUTH_BASE_URL`, ver [auth-abuse-protection](./auth-abuse-protection.md)).
 7. Quem estava logado pelo `workers.dev` entra de novo: o cookie é de outro host.
 
 ## 4. Cliente OAuth do Google (responsável)
@@ -120,11 +120,24 @@ Quem cria é o usuário ou o Arrascaeta, num projeto do Google Cloud só do stag
 
 **O limite do controle.** A allowlist vive no Google, fora do repositório: nenhum teste prova que o modo Testing continua ligado. Se o app for publicado no Google, qualquer conta Google entra e cria organização no staging. Por isso o status de publicação não muda nunca, e uma allowlist também no código é um acompanhamento proposto (ADR 0097).
 
-O login por senha fica desligado (`EMAIL_PASSWORD_AUTH_ENABLED: "false"`), e a verificação de isolamento falha se ele for ligado. Sem Cloudflare Access. O Admin não é exposto.
+O login por senha fica **ligado** no staging, aberto, por decisão do usuário de 22/10 (ADR 0097, emenda): `EMAIL_PASSWORD_AUTH_ENABLED: "true"` e `AUTH_EMAIL_FROM` em `@araute.app`, e a verificação de isolamento falha se ele ligar com um remetente de outro domínio. Sem Cloudflare Access. O Admin não é exposto.
 
 ## 5. Segredos do Worker `polaris-web-staging` (responsável)
 
 `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SYNC_PAYLOAD_HASH_SECRET`, `OFFLINE_LEASE_SECRET` e `BILLING_PAYER_KEY` (a chave do pagador do Pix, 32 caracteres ou mais, gerada uma vez e nunca rodada por rotina: ver o [runbook de provedores](./billing-providers.md)), com `wrangler secret put <NOME> --env staging`. Os `*_PREVIOUS_*` ficam vazios até a primeira rotação. Nenhum segredo de staging é reaproveitado na produção. As chaves de sandbox do Asaas e da Woovi só entram no Gate 7. O catálogo não tem segredo.
+
+**`RESEND_API_KEY` (senha ligada, 22/10).** Chave do Resend só de envio ("Sending access"), presa ao domínio `araute.app` (já verificado no Resend) e usada só no staging. Para recriar (a chave vazou, foi revogada ou o Resend a recusou: o log do Worker mostra falha de envio com 401 ou 403):
+
+1. No painel do Resend, **API Keys → Create API Key**, permissão **Sending access**, domínio `araute.app`. Copiar a chave uma vez, sem colar em arquivo do repositório, chat, PR nem log.
+2. Em `apps/web`, gravar o segredo com `wrangler secret put RESEND_API_KEY --env staging` e colar a chave no prompt (a chave não vai na linha de comando).
+3. Revogar a chave antiga no painel do Resend. O segredo vale na hora, sem novo deploy.
+4. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true` (prova só que a tela mostra o formulário; o cadastro de ponta a ponta depende do Turnstile, abaixo). Sem o segredo, `emailPassword` volta `false` e a senha some da tela de entrada.
+
+`AUTH_EMAIL_FROM` não é segredo: fica no `wrangler.jsonc` (`Polaris (staging) <nao-responda@araute.app>`). Os links dos e-mails de confirmação e de troca de senha saem de `BETTER_AUTH_BASE_URL` (`https://dash.araute.app`).
+
+**Antes de ligar a senha no deploy:** a migration 0094 no banco de staging e o alerta em `auth_verification_link_record_failed` ([email-auth](./email-auth.md#ordem-de-implantação-da-gravação-do-link-e-alerta-antes-da-flag-da-senha)). O Resend passa a enviar e-mail a terceiros pelo `araute.app` com limite só por IP: confira a cota diária do Resend antes de ligar o Turnstile e a prova manual da 0098 (a RLS forçada em `user`, `account` e `verification`) no staging.
+
+**Pendência (Turnstile).** A senha só funciona de ponta a ponta com `AUTH_ABUSE_PROTECTION_ENABLED: "true"`; desligada, cadastro, entrada, "esqueci a senha" e reenvio respondem 503 ([auth-abuse-protection](./auth-abuse-protection.md)). Ligar pede um widget do Turnstile para o hostname `dash.araute.app`, o segredo `TURNSTILE_SECRET_KEY` (`wrangler secret put TURNSTILE_SECRET_KEY --env staging`) e a var pública `TURNSTILE_SITE_KEY` em `env.staging.vars`.
 
 ## 6. GitHub (responsável)
 

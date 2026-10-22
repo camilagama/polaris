@@ -16,7 +16,7 @@ Faltam cinco peças de servidor, além de todo o lado do cliente: o limitador do
 
 ### 1. Tudo atrás das flags que já existem
 
-A senha só liga com `EMAIL_PASSWORD_AUTH_ENABLED=true`, `RESEND_API_KEY` e `AUTH_EMAIL_FROM` (`isEmailPasswordAuthEnabled`). Um endpoint público, `GET /api/auth-methods` (`no-store`), devolve `{ google, emailPassword, turnstileSiteKey | null }` e é o que o cliente usa para decidir o que mostrar. O botão "Continuar com o Google", com o G nas cores originais, funciona sem Turnstile e sem e-mail. Staging e produção ficam só com Google até existir um domínio de envio verificado (pergunta ao usuário); o código da senha pode ser mesclado desligado. `TURNSTILE_SITE_KEY` passa a ser var pública do Worker, entregue pelo endpoint de métodos, no lugar de `VITE_TURNSTILE_SITE_KEY`; o hostname continua conferido no servidor contra `BETTER_AUTH_BASE_URL`.
+A senha só liga com `EMAIL_PASSWORD_AUTH_ENABLED=true`, `RESEND_API_KEY` e `AUTH_EMAIL_FROM` (`isEmailPasswordAuthEnabled`). Um endpoint público, `GET /api/auth-methods` (`no-store`), devolve `{ google, emailPassword, turnstileSiteKey | null }` e é o que o cliente usa para decidir o que mostrar. O botão "Continuar com o Google", com o G nas cores originais, funciona sem Turnstile e sem e-mail. Staging e produção ficam só com Google até existir um domínio de envio verificado (pergunta ao usuário); o código da senha pode ser mesclado desligado. *O staging mudou na emenda de 22/10/2026 (fim do arquivo).* `TURNSTILE_SITE_KEY` passa a ser var pública do Worker, entregue pelo endpoint de métodos, no lugar de `VITE_TURNSTILE_SITE_KEY`; o hostname continua conferido no servidor contra `BETTER_AUTH_BASE_URL`.
 
 ### 2. Bloqueio de conta no PostgreSQL (T-a)
 
@@ -123,7 +123,7 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
 - A sessão nova da troca de senha derruba o vínculo `device_sessions` antigo, que volta no próximo uso.
 - A produção fica travada pelo `[preencher]` e pelo aviso de rascunho até os dados da empresa e a revisão jurídica (U1 a U5, com o usuário).
 - Até o P10, quem pré-cadastra o e-mail de outra pessoa mantém o Google da vítima travado pela conta nunca verificada; por isso a senha só liga depois dele ou com esse risco aceito por escrito.
-- A senha continua desligada em staging e produção até haver domínio de envio verificado; o Google não depende de e-mail.
+- A senha continua desligada em staging e produção até haver domínio de envio verificado; o Google não depende de e-mail. *No staging, ver a emenda de 22/10/2026.*
 
 ## Alternativas rejeitadas
 
@@ -137,3 +137,5 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
 - **Toda versão nova exige novo aceite, sem piso:** incomodaria quem já aceitou ao trocar só a redação.
 
 **Emenda de 21/10/2026 (prazo do aceite).** A guarda do aceite do lojista passa de 10 para 5 anos depois do fim do contrato, e o aceite de quem nunca confirmou o e-mail fica 6 meses mais 30 dias depois do apagamento, como o registro de acesso. Base legal, risco aceito e o resto estão na emenda de 21/10/2026 do [ADR 0079](0079-retencao-por-classe-de-dado.md). O desenho do aceite (tabela só de acrescentar, fim do contrato em `legal_acceptance_contract_end`) não muda.
+
+**Emenda de 22/10/2026 (senha ligada no staging).** O usuário decidiu ligar o login por senha **só no staging**, aberto, para os testes não dependerem do SMS do Google, inclusive no BrowserStack; aceitou o risco de qualquer pessoa criar conta, porque os dados do staging são fictícios. O domínio de envio `araute.app` está verificado no Resend, e o `env.staging` do web passa a ter `EMAIL_PASSWORD_AUTH_ENABLED: "true"` e `AUTH_EMAIL_FROM` em `@araute.app` (a verificação de isolamento reprova outro domínio). A produção segue desligada, até o domínio de envio dela. O Turnstile (`AUTH_ABUSE_PROTECTION_ENABLED`) continua desligado no staging até existir o widget, e nesse estado as rotas de senha respondem 503; detalhes e a pendência estão na [emenda do ADR 0097](0097-staging-fixo-e-producao-em-conta-separada.md#emenda-22102026-login-por-senha-ligado-no-staging).
