@@ -47,15 +47,15 @@
   ],
   "env": {
     // The fixed staging of this account (ADR 0097): only the synthetic organization of the seed is
-    // published. PLACEHOLDER values are filled in by the responsible; the isolation check refuses them.
+    // published. The ids are those of the staging resources; the isolation check refuses a PLACEHOLDER.
     "staging": {
       "name": "polaris-catalog-staging",
-      "account_id": "PLACEHOLDER-staging-account-id",
+      "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": true,
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
-        "CATALOG_ORIGIN": "https://polaris-catalog-staging.PLACEHOLDER-workers-subdomain.workers.dev"
+        "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev"
       },
       "observability": {
         "enabled": true,
@@ -72,7 +72,7 @@
       "hyperdrive": [
         {
           "binding": "CATALOG_HYPERDRIVE",
-          "id": "PLACEHOLDER-staging-hyperdrive-catalog"
+          "id": "c37cc43ef6d24ce09cb21634a71ef8fd"
         }
       ]
     },

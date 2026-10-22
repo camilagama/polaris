@@ -7,9 +7,6 @@ import {
   WORKERS,
 } from "./verify-staging-isolation.mjs";
 
-const PLACEHOLDER = /PLACEHOLDER/;
-const PLACEHOLDER_GLOBAL = /PLACEHOLDER[-a-z]*/g;
-
 const readConfig = (app) =>
   parseJsonc(
     readFileSync(
@@ -18,64 +15,27 @@ const readConfig = (app) =>
     )
   );
 
-// a fake 32-hex id, distinct per placeholder, so the filled-in config is what the responsible would write
-const fakeId = (text) => {
-  let hash = 0;
-  for (const char of text) {
-    hash = (hash * 31 + char.charCodeAt(0)) % 0xff_ff_ff;
-  }
-  return hash.toString(16).padStart(6, "0").repeat(6).slice(0, 32);
-};
-
-const fill = (value) => {
-  if (typeof value === "string") {
-    if (!PLACEHOLDER.test(value)) {
-      return value;
-    }
-    return value.startsWith("https://")
-      ? value.replace(PLACEHOLDER_GLOBAL, "example")
-      : fakeId(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(fill);
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, fill(item)])
-    );
-  }
-  return value;
-};
-
-/** The repository configs with the staging placeholders filled in, as after the responsible's step. */
+/** The repository configs as they are: staging filled in with the ids of the real resources. */
 const filledEntries = () =>
-  WORKERS.map((app) => {
-    const config = readConfig(app);
-    config.env.staging = fill(config.env.staging);
-    return { app, config };
-  });
+  WORKERS.map((app) => ({ app, config: readConfig(app) }));
 
 const entryOf = (entries, app) => entries.find((entry) => entry.app === app);
 
 describe("the staging isolation check", () => {
-  it("refuses the repository config while the staging values are placeholders", () => {
-    const problems = findIsolationProblems(
-      WORKERS.map((app) => ({ app, config: readConfig(app) }))
-    );
-    expect(problems.length).toBeGreaterThan(0);
-    expect(problems.every((problem) => problem.includes("placeholder"))).toBe(
-      true
-    );
-    expect(problems).toContain(
-      "web: env.staging: account_id is still a placeholder"
-    );
-    expect(problems).toContain(
-      "catalog: env.staging: hyperdrive[0].id is still a placeholder"
-    );
+  it("passes on the repository config: no staging value is a placeholder", () => {
+    expect(findIsolationProblems(filledEntries())).toEqual([]);
   });
 
-  it("passes once every staging placeholder is a real value", () => {
-    expect(findIsolationProblems(filledEntries())).toEqual([]);
+  it("refuses a staging value that goes back to a placeholder", () => {
+    const entries = filledEntries();
+    entryOf(entries, "web").config.env.staging.account_id =
+      "PLACEHOLDER-staging-account-id";
+    entryOf(entries, "catalog").config.env.staging.hyperdrive[0].id =
+      "PLACEHOLDER-staging-hyperdrive-catalog";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: account_id is still a placeholder",
+      "catalog: env.staging: hyperdrive[0].id is still a placeholder",
+    ]);
   });
 
   it("refuses a top level that could deploy something", () => {
