@@ -46,18 +46,21 @@ export function smokeChecks({ catalog, web }) {
   ];
 }
 
-const STAGING_HOST = /^polaris-[a-z]+-staging\./;
+const STAGING_HOST = /^polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev$/;
+// the web of staging is served at this host by a Custom Domain (ADR 0097)
+const STAGING_WEB_HOST = "dash.araute.app";
 const ATTEMPTS = 3;
 const TIMEOUT_MS = 10_000;
 
-/** An https origin of a staging Worker, with no path, query or credentials. */
-function isStagingOrigin(origin) {
+/** An https origin of a staging Worker (workers.dev or the fixed web host), with no path, query or credentials. */
+function isStagingOrigin(key, origin) {
   try {
     const url = new URL(origin);
     return (
       url.protocol === "https:" &&
       url.origin === origin &&
-      STAGING_HOST.test(url.hostname)
+      (STAGING_HOST.test(url.host) ||
+        (key === "web" && url.host === STAGING_WEB_HOST))
     );
   } catch {
     return false;
@@ -105,9 +108,9 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 /** Runs every check (none stops the others) and returns the failures. */
 export async function runSmoke(origins, fetchImpl = fetch, pause = wait) {
   for (const [key, origin] of Object.entries(origins)) {
-    if (!isStagingOrigin(origin)) {
+    if (!isStagingOrigin(key, origin)) {
       return [
-        `${key}: the origin must be https://polaris-<app>-staging.…, without a path`,
+        `${key}: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path`,
       ];
     }
   }
