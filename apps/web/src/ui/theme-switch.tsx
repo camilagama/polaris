@@ -1,17 +1,9 @@
 import MonitorIcon from "lucide-react/dist/esm/icons/monitor";
 import MoonIcon from "lucide-react/dist/esm/icons/moon";
 import SunIcon from "lucide-react/dist/esm/icons/sun";
-import { useCallback, useEffect, useState } from "react";
-import {
-  applyTheme,
-  browserStorage,
-  parseTheme,
-  readTheme,
-  saveTheme,
-  systemDarkQuery,
-  THEMES,
-  type Theme,
-} from "@/lib/theme";
+import { useCallback } from "react";
+import { parseTheme, THEMES, type Theme } from "@/lib/theme";
+import { useTheme } from "@/lib/use-theme";
 import { Button } from "@/ui/button";
 import {
   DropdownMenu,
@@ -29,26 +21,6 @@ const LABEL: Record<Theme, string> = {
   sistema: "Automático",
 };
 const ICON = { claro: SunIcon, escuro: MoonIcon, sistema: MonitorIcon };
-
-/** The chosen theme, kept in localStorage and applied to `<html>`; "sistema" follows the system live. */
-function useTheme(): [Theme, (theme: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(() => readTheme(browserStorage()));
-  useEffect(() => {
-    applyTheme(theme);
-    if (theme !== "sistema") {
-      return;
-    }
-    const query = systemDarkQuery();
-    const follow = () => applyTheme("sistema");
-    query.addEventListener("change", follow);
-    return () => query.removeEventListener("change", follow);
-  }, [theme]);
-  const choose = useCallback((next: Theme) => {
-    saveTheme(browserStorage(), next);
-    setTheme(next);
-  }, []);
-  return [theme, choose];
-}
 
 /** The appearance menu (Automático, Claro, Escuro): an icon button that opens a radio menu. */
 export function ThemeSwitch() {

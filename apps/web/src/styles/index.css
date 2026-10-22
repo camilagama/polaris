@@ -26,6 +26,10 @@
 @source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files; the images panel and the categories are still old. */
 @source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section}.tsx";
+/* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
+   only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
+@source "../{main,app-shell/app,app-shell/app-shell}.tsx";
+@source "../offline/runtime/{sync-status,logout-control,devices-page}.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
 
@@ -71,12 +75,30 @@
   }
 }
 
+/* Below 760 px the shell has the bar of destinations fixed at the bottom (52 px and the safe area): the content
+   ends above it, a sticky bar of a screen sits on it (`--app-bottom-bar`) and what gets the focus scrolls above it. */
+@layer base {
+  @media (max-width: 759.98px) {
+    :root:has([data-bottom-bar]) {
+      --app-bottom-bar: calc(3.25rem + env(safe-area-inset-bottom));
+      scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
+    }
+  }
+}
+
+/* The page under the shell has the color of its frame, not the old canvas of `.ui-root` (ui.css leaves it out). */
+@layer base {
+  body:has(.app-shell-root) {
+    background: var(--background);
+  }
+}
+
 /* A page with the sticky submit bar (the sale, below 900 px): what gets the focus scrolls above the bar, which is
-   about 4.5 rem tall and grows with the text size and the zoom, as `rem` does (U-19). */
+   about 4.5 rem tall and grows with the text size and the zoom, as `rem` does (U-19), and above the shell's. */
 @layer base {
   @media (max-width: 899.98px) {
     :root:has([data-submit-bar]) {
-      scroll-padding-bottom: 8rem;
+      scroll-padding-bottom: calc(8rem + var(--app-bottom-bar, 0rem));
     }
   }
 }

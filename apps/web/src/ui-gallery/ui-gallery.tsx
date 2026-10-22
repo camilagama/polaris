@@ -54,6 +54,7 @@ import {
   InputGroupTextarea,
 } from "@/ui/input-group";
 import { Label } from "@/ui/label";
+import { Logo } from "@/ui/logo";
 import {
   Popover,
   PopoverContent,
@@ -74,7 +75,16 @@ import {
   SelectValue,
 } from "@/ui/select";
 import { Separator } from "@/ui/separator";
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/ui/sidebar";
 import { Textarea } from "@/ui/textarea";
+import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { ToastProvider, toastManager } from "@/ui/toast";
 import {
@@ -497,6 +507,46 @@ export function UiGallery() {
                 </Field>
               </CardContent>
             </Card>
+          </Section>
+
+          <Section title="Shell">
+            <div className="flex flex-wrap items-start gap-6">
+              <p className="m-0 flex items-center gap-2.5 font-semibold tracking-tight">
+                <Logo />
+                Polaris
+              </p>
+              <div className="w-60">
+                <ThemeSegmented />
+              </div>
+            </div>
+            {/* the parts of the sidebar that are not fixed to the window (the column itself is in the shell) */}
+            <div className="w-60 rounded-lg bg-sidebar text-sidebar-foreground">
+              <SidebarGroup>
+                <SidebarGroupLabel>Catálogo</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton href="#estoque">
+                        <span>Estoque</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        aria-current="page"
+                        href="#produtos"
+                        isActive
+                      >
+                        <span>Produtos</span>
+                        <span
+                          aria-hidden="true"
+                          className="ml-auto size-1.5 shrink-0 rounded-full bg-mark"
+                        />
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </div>
           </Section>
 
           <Section title="Área de rolagem">

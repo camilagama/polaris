@@ -76,7 +76,7 @@ export function DeviceItem({
       {row.isCurrent ? (
         <p className="device-meta">
           Para tirar este aparelho, use o botão <strong>Sair</strong>: no
-          celular ele está no Menu; em tela grande, no alto da página.
+          celular ele está em Mais; em tela grande, no pé da barra lateral.
         </p>
       ) : null}
       {!row.isCurrent && confirming ? (

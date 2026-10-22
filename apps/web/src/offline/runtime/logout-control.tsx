@@ -1,3 +1,4 @@
+import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
 import { useCallback, useState } from "react";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
@@ -111,9 +112,15 @@ interface LogoutControlProps {
   reason?: SignInReason;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
   returnTo?: string;
+  /** In the sidebar of the shell (v5.1): the look of the outline button of the interface, as wide as the column. */
+  shell?: boolean;
 }
 
-export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
+export function LogoutControl({
+  reason,
+  returnTo,
+  shell = false,
+}: LogoutControlProps = {}) {
   const runtime = useOfflineRuntime();
   const logout = useLogout(
     reason ? logoutDestination({ reason, returnTo }) : "/"
@@ -123,17 +130,32 @@ export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
     return null;
   }
   return (
-    <div className="app-logout">
-      <button
-        className="secondary-button"
-        disabled={busy}
-        onClick={logout.start}
-        type="button"
-      >
-        Sair
-      </button>
+    <div className={shell ? "grid gap-2" : "app-logout"}>
+      {shell ? (
+        <button
+          className="touch-hit focus-ring inline-flex h-ctl-md w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:bg-secondary/60 dark:hover:bg-accent [&_svg]:size-4"
+          disabled={busy}
+          onClick={logout.start}
+          type="button"
+        >
+          <LogOutIcon aria-hidden="true" />
+          Sair
+        </button>
+      ) : (
+        <button
+          className="secondary-button"
+          disabled={busy}
+          onClick={logout.start}
+          type="button"
+        >
+          Sair
+        </button>
+      )}
       {message ? (
-        <p className="app-logout-message" role="alert">
+        <p
+          className={shell ? "m-0 text-destructive text-support" : undefined}
+          role="alert"
+        >
           {message}
         </p>
       ) : null}

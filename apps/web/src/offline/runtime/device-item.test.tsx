@@ -113,7 +113,7 @@ describe("a device row", () => {
   it("says where Sair is: in the Menu on a phone, or at the top of the page on a big screen", () => {
     const html = render({ row: row({ isCurrent: true }) });
     expect(html).toContain("use o botão <strong>Sair</strong>");
-    expect(html).toContain("no celular ele está no Menu");
-    expect(html).toContain("em tela grande, no alto da página");
+    expect(html).toContain("no celular ele está em Mais");
+    expect(html).toContain("em tela grande, no pé da barra lateral");
   });
 });

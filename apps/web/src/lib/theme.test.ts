@@ -8,6 +8,7 @@ import {
   readTheme,
   saveTheme,
   THEME_STORAGE_KEY,
+  themeColorMedia,
   themeIsDark,
 } from "./theme";
 
@@ -152,6 +153,21 @@ describe("theme (ADR 0103, Tema e CSP)", () => {
     expect(initScript.match(/getItem\("([^"]+)"\)/g)).toEqual([
       `getItem("${THEME_STORAGE_KEY}")`,
     ]);
+  });
+});
+
+describe("themeColorMedia", () => {
+  it("each meta follows its scheme with the system, and only the chosen one applies otherwise", () => {
+    expect(themeColorMedia("sistema", "claro")).toBe(
+      "(prefers-color-scheme: light)"
+    );
+    expect(themeColorMedia("sistema", "escuro")).toBe(
+      "(prefers-color-scheme: dark)"
+    );
+    expect(themeColorMedia("escuro", "escuro")).toBe("all");
+    expect(themeColorMedia("escuro", "claro")).toBe("not all");
+    expect(themeColorMedia("claro", "claro")).toBe("all");
+    expect(themeColorMedia("claro", "escuro")).toBe("not all");
   });
 });
 
