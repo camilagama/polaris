@@ -25,6 +25,7 @@ import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
+import { ProductsLabServer } from "./products-lab-server";
 import { SaleLabServer } from "./sale-lab-server";
 
 /**
@@ -74,9 +75,13 @@ function labScreen(): LabScreen {
     : "customers";
 }
 
+/** `&catalog=seeded`: the products screen with a small catalog already on the simulated server. */
+const seededCatalog = () =>
+  new URLSearchParams(window.location.search).get("catalog") === "seeded";
+
 function newServer(screen: LabScreen) {
   if (screen === "products") {
-    return new FakeCatalogServer();
+    return seededCatalog() ? new ProductsLabServer() : new FakeCatalogServer();
   }
   return screen === "sale" || screen === "stock" || screen === "history"
     ? new SaleLabServer()

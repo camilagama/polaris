@@ -22,14 +22,19 @@ test("produto: categoria, produto e preço de tabela aparecem na lista e na vend
   ).toBeVisible();
 
   await page.goto("/products");
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill(productName);
-  await page.getByLabel("Categoria").selectOption({ label: categoryName });
+  await page.getByRole("combobox", { exact: true, name: "Categoria" }).click();
+  await page.getByRole("option", { exact: true, name: categoryName }).click();
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
   await expect(
-    page.getByRole("heading", { level: 3, name: productName })
+    page.locator("[data-product-id]", { hasText: productName })
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Variantes" }).click();
+  await page
+    .getByRole("button", { name: `Mais ações para ${productName}` })
+    .click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
   await page.getByLabel("Preço de tabela — Variante padrão").fill(price);
   await page.getByRole("button", { name: "Salvar preço" }).click();
   await expect
