@@ -12,8 +12,9 @@ import type { Page } from "@playwright/test";
  */
 
 /**
- * What an old rule would change on a control or on text: box, border, padding, type, color, focus, position. The used
- * values (`width`, `height`, `margin`) stay out: they follow the container, which the old sheets do change.
+ * What an old rule would change on a control or on text: box, border, margin, padding, type, color, focus, position.
+ * The used values (`width`, `height`) stay out: they follow the container, which the old sheets do change. A margin
+ * side that comes from `auto` is the same: its used value follows the container, so it is read as `auto` (see `read`).
  */
 const PROPERTIES = [
   "accent-color",
@@ -49,6 +50,10 @@ const PROPERTIES = [
   "letter-spacing",
   "line-height",
   "column-gap",
+  "margin-bottom",
+  "margin-left",
+  "margin-right",
+  "margin-top",
   "max-height",
   "max-width",
   "min-height",
@@ -156,10 +161,16 @@ export async function legacyLayerOnAndOff(
     }
     function read(element: Element, pseudo?: string) {
       const style = getComputedStyle(element, pseudo);
+      // `getComputedStyle` gives the used value of an `auto` margin (it follows the width of the container);
+      // the computed value keeps the keyword, so a side that is `auto` with and without the layer reads the same
+      const computed = pseudo ? undefined : element.computedStyleMap();
       return Object.fromEntries(
         properties.map((property) => [
           property,
-          style.getPropertyValue(property),
+          property.startsWith("margin-") &&
+          String(computed?.get(property)) === "auto"
+            ? "auto"
+            : style.getPropertyValue(property),
         ])
       );
     }

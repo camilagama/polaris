@@ -24,6 +24,7 @@ import {
   ActionFeedback,
   isProductListStatus,
   LoadErrorNotice,
+  OFFLINE_NOTICE_ID,
   OfflineNotice,
   ProductSearch,
   ProductStatusNav,
@@ -375,6 +376,7 @@ export function ProductsPage() {
           onUndo={undoProduct ? handleUndoArchive : undefined}
           regionRef={feedbackRef}
           undoDisabled={isOffline || pendingAction !== null}
+          undoReasonId={isOffline ? OFFLINE_NOTICE_ID : undefined}
         />
 
         {formOpen ? (
