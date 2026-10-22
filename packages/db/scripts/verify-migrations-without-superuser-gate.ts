@@ -31,8 +31,8 @@ import {
  * a replay in a second database would find the `polaris_*` roles in place, skip their `CREATE ROLE` and fail on the
  * `ALTER ROLE` of a role it does not administer, which is not what Neon does on a first run. So the gate parks the
  * existing `polaris_*` roles under another name (`ALTER ROLE … RENAME`; the objects follow by OID), replays in a
- * scratch database, drops the scratch database and the roles the replay made, and gives the names back. It runs
- * last in the suite for that reason, and it needs a cluster of its own for the time it runs (the CI job's service
+ * scratch database, drops the scratch database and the roles the replay made, and gives the names back, so the
+ * gates after it find the cluster as it was. It needs a cluster of its own for the time it runs (the CI job's service
  * container; locally, no other task on the same Postgres). A run that dies without its `finally` (SIGKILL, the
  * runner's timeout) is repaired by the next one: it drops the scratch databases and the owner it left and
  * gives back the parked names (they carry a fixed prefix). Local Postgres only: it needs a real superuser.
