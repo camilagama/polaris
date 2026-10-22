@@ -707,17 +707,17 @@ async function run() {
         "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, 'x', $2)",
         [newOrganization, TIMEZONE]
       );
-      await client.query(
-        "INSERT INTO public.memberships (organization_id, user_id) VALUES ($1, $2)",
-        [newOrganization, userB]
-      );
       assert.equal(
         await scalar<string>(
           "SELECT count(*)::text AS value FROM public.organizations WHERE id = $1",
           [newOrganization]
         ),
         "1",
-        "the onboarding owner reads back the organization it created in this transaction, by the scope on its id (control of the next probe)"
+        "the onboarding owner reads back the organization it created in this transaction, by the scope on its id (no membership yet: only the branch by id admits the row; control of the next probe)"
+      );
+      await client.query(
+        "INSERT INTO public.memberships (organization_id, user_id) VALUES ($1, $2)",
+        [newOrganization, userB]
       );
     });
     for (const [label, sql, params] of [

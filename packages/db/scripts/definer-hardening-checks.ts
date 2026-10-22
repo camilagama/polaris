@@ -290,6 +290,8 @@ export async function findViolations(client: Client): Promise<Findings> {
 interface PolicySettingsRow {
   /** every role of the policy is a `polaris_*_owner` role */
   allOwnerRoles: boolean;
+  /** some role of the policy is a `polaris_*_owner` role (the others may be runtimes: the policy holds for the owner too) */
+  anyOwnerRole: boolean;
   /** some `polaris_*_owner` role holds a privilege on the table of the policy */
   ownerOnTable: boolean;
   policy: string;
@@ -309,7 +311,7 @@ const isRuntimeSetting = (name: string) =>
 const isCustomSettingOutsideApp = (name: string) =>
   name.includes(".") && !name.startsWith(RUNTIME_SETTING_PREFIX);
 
-/** what a policy of owner roles, or one TO PUBLIC on a table an owner uses, reads of the runtime beyond what its owner may */
+/** what a policy that names an owner role, or one TO PUBLIC on a table an owner uses, reads of the runtime beyond what its owner may */
 function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
   const runtime = row.settings.filter(isRuntimeSetting);
   if (runtime.length === 0) {
@@ -318,7 +320,7 @@ function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
   if (row.roles.includes("public") && row.ownerOnTable) {
     return `a policy TO PUBLIC, on a table an owner role uses, reads the runtime setting ${runtime.join(", ")}`;
   }
-  if (!row.allOwnerRoles) {
+  if (!row.anyOwnerRole) {
     return;
   }
   const allowed = OWNER_POLICIES_READING_RUNTIME_SETTINGS.get(row.policy);
@@ -349,7 +351,7 @@ function customSettingFindings(label: string, settings: string[]): string[] {
  *   or `TO` a runtime, would let the runtime set the scope itself), every policy that reads the same setting is `TO` that
  *   same role (a scope belongs to one owner: another owner's function would find it left in the transaction), and it reads
  *   no setting of the runtime (any other `app.*`);
- * - a policy of owner roles reads no setting of the runtime, but for the one setting of each owner named in
+ * - a policy that names an owner role (alone, or with a runtime) reads no setting of the runtime, but for the one setting of each owner named in
  *   OWNER_POLICIES_READING_RUNTIME_SETTINGS, and neither does a policy TO PUBLIC on a table some owner role holds a privilege on
  *   (PUBLIC includes the owners).
  * - no policy, of any role, reads a custom setting outside `app.` (a name with a dot under another prefix): the runtime
@@ -367,6 +369,7 @@ export async function findOwnerScopeViolations(
                         FROM regexp_matches(coalesce(pol.qual, '') || ' ' || coalesce(pol.with_check, ''),
                                             'current_setting\\(''([^'']+)''', 'g') AS m), '{}'::text[]) AS settings,
             NOT EXISTS (SELECT 1 FROM unnest(pol.roles) AS r(name) WHERE r.name NOT LIKE '${OWNER_ROLE_LIKE}') AS "allOwnerRoles",
+            EXISTS (SELECT 1 FROM unnest(pol.roles) AS r(name) WHERE r.name LIKE '${OWNER_ROLE_LIKE}') AS "anyOwnerRole",
             EXISTS (SELECT 1 FROM pg_roles o
                      WHERE o.rolname LIKE '${OWNER_ROLE_LIKE}'
                        AND (has_table_privilege(o.oid, c.oid, 'SELECT,INSERT,UPDATE,DELETE')

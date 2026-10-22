@@ -374,6 +374,16 @@ async function run() {
           "public.device_sessions.probe ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id",
         ]
       );
+      // the owner and a runtime in the same policy: it holds for the owner too, and the exception is only for the owner alone
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_device_session_owner, polaris_pr11_runtime",
+          userSetting
+        ),
+        [
+          `${label("polaris_device_session_owner,polaris_pr11_runtime")}: a policy of an owner role reads the runtime setting app.user_id`,
+        ]
+      );
       // every runtime setting lives under app.: a policy of any role that reads another custom prefix is reported, a setting of
       // PostgreSQL (no dot) is not, and the name is not case sensitive
       const outsideApp = (roles: string) =>
@@ -454,7 +464,7 @@ async function run() {
     });
     assertClean(await findViolations(client));
     tests.push(
-      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too), a third policy of polaris_device_session_owner that reads app.user_id (new table, or devices or device_sessions), a policy of any role that reads a custom setting outside app. and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, the two real policies of polaris_device_session_owner, a PostgreSQL setting without a dot and a policy TO PUBLIC on a table no owner uses are not"
+      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too), a third policy of polaris_device_session_owner that reads app.user_id (new table, or devices or device_sessions, or together with a runtime in the same TO), a policy of any role that reads a custom setting outside app. and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, the two real policies of polaris_device_session_owner, a PostgreSQL setting without a dot and a policy TO PUBLIC on a table no owner uses are not"
     );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)

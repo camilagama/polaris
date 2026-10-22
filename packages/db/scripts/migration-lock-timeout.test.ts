@@ -10,7 +10,8 @@ const drizzleDirectory = path.join(
 );
 const comment = /--[^\n]*/g;
 // the migrator runs every pending migration in ONE transaction, so a SET LOCAL of a migration holds for the next ones
-const setLocal = /\bSET\s+LOCAL\s+lock_timeout\b/gi;
+const setLocal =
+  /\bSET\s+(?:LOCAL\s+|SESSION\s+)?lock_timeout\b|\bset_config\s*\(\s*'lock_timeout'/gi;
 const reset = /\bRESET\s+lock_timeout\b/gi;
 
 /** `set` or `reset`, in the order of the statements of the file, for every change of lock_timeout */
@@ -30,31 +31,48 @@ function lockTimeoutChanges(sql: string): ("set" | "reset")[] {
     .map((change) => change.kind);
 }
 
+// 0095 is the one that leaked it (merged before this check); 0096 repeats the timeout for itself and resets it
+const LAST_LEAKING = 95;
+const migrationNumber = /^(\d{4})_/;
+
 describe("lock_timeout across the migrations of one run", () => {
-  it("is not left set by the last migration that sets it", () => {
-    const files = readdirSync(drizzleDirectory)
-      .filter((name) => name.endsWith(".sql"))
-      .sort();
+  const files = readdirSync(drizzleDirectory)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
+  it("is reset by every migration after 0095 that sets it, and by the end of the chain", () => {
     let state: "default" | "set" = "default";
-    let setBy = "";
+    const leaking: string[] = [];
     for (const name of files) {
-      for (const change of lockTimeoutChanges(
+      const changes = lockTimeoutChanges(
         readFileSync(path.join(drizzleDirectory, name), "utf8")
-      )) {
+      );
+      const number = Number(migrationNumber.exec(name)?.[1]);
+      if (number > LAST_LEAKING && changes.at(-1) === "set") {
+        leaking.push(name);
+      }
+      for (const change of changes) {
         state = change === "set" ? "set" : "default";
-        setBy = change === "set" ? name : "";
       }
     }
     expect(
+      leaking,
+      "these migrations set lock_timeout and do not end with RESET lock_timeout: it would hold for the migrations of the same run"
+    ).toEqual([]);
+    expect(
       state,
-      `${setBy} sets lock_timeout and no migration after it resets it: it would hold for the migrations of the same run (end with RESET lock_timeout)`
+      "the last migration of the chain leaves lock_timeout set"
     ).toBe("default");
   });
 
-  it("sees a SET LOCAL without a RESET, and ignores comments", () => {
+  it("sees a SET LOCAL without a RESET, a session SET and set_config, and ignores comments", () => {
     expect(lockTimeoutChanges("SET LOCAL lock_timeout = '10s';")).toEqual([
       "set",
     ]);
+    expect(lockTimeoutChanges("SET lock_timeout TO '1s';")).toEqual(["set"]);
+    expect(
+      lockTimeoutChanges("SELECT set_config('lock_timeout', '1s', true);")
+    ).toEqual(["set"]);
     expect(
       lockTimeoutChanges(
         "-- SET LOCAL lock_timeout = '1s'\nSET LOCAL lock_timeout = '10s';\nRESET lock_timeout;"
