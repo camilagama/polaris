@@ -33,11 +33,13 @@ import {
   STOCK_FIELD_ORDER,
   type StockAction,
   type StockCall,
+  type StockFailure,
   type StockFieldName,
   type StockResult,
   startStockCommand,
   stockActionBlock,
   stockFailed,
+  stockFieldRefusal,
   stockQueueFailed,
   stockSubmitLabel,
   stockSucceeded,
@@ -237,7 +239,7 @@ export function StockCommandPanel({
       setState((current) => retargetStock(current, balance));
       onBalance(balance, null);
     } catch {
-      // The message already says to revise; the list keeps its last read.
+      // The field keeps saying to revise, without a number; the list keeps its last read.
     }
   }, [onBalance, organizationId, target.variantId]);
 
@@ -257,9 +259,31 @@ export function StockCommandPanel({
         local.runtime.syncNow().catch(() => undefined);
       } catch (error) {
         setState((current) => stockQueueFailed(current, error));
+        if (
+          error instanceof Error &&
+          error.name === "InsufficientLocalStockError"
+        ) {
+          focusLater(() => focus("quantity"));
+        }
       }
     },
-    [local]
+    [focus, local]
+  );
+
+  const afterFailure = useCallback(
+    (failure: StockFailure) => {
+      if (failure.field !== null) {
+        const { field } = failure;
+        focusLater(() => focus(field));
+      }
+      if (failure.refreshBalance) {
+        refreshBalance().catch(() => undefined);
+      }
+      if (failure.reloadList) {
+        onReloadList();
+      }
+    },
+    [focus, onReloadList, refreshBalance]
   );
 
   const handleConfirm = useCallback(async () => {
@@ -300,25 +324,11 @@ export function StockCommandPanel({
       );
     } catch (error) {
       setState((current) => stockFailed(current, error));
-      const failure = mapStockError(state.action, error);
-      if (failure.refreshBalance) {
-        refreshBalance().catch(() => undefined);
-      }
-      if (failure.reloadList) {
-        onReloadList();
-      }
+      afterFailure(mapStockError(state.action, error));
     } finally {
       inFlight.current = false;
     }
-  }, [
-    confirmOnDevice,
-    local,
-    onBalance,
-    onReloadList,
-    organizationId,
-    refreshBalance,
-    state,
-  ]);
+  }, [afterFailure, confirmOnDevice, local, onBalance, organizationId, state]);
   const handleConfirmEvent = useCallback(() => {
     handleConfirm().catch(() => undefined);
   }, [handleConfirm]);
@@ -337,6 +347,11 @@ export function StockCommandPanel({
   const block = stockActionBlock(action, state.target);
   const issues = visibleStockIssues(state);
   const errors: Partial<Record<StockFieldName, string>> = {};
+  // one message per field: a refusal that belongs to a field replaces the local check there
+  const refusal = stockFieldRefusal(state);
+  if (refusal !== null) {
+    errors[refusal.field] = refusal.message;
+  }
   for (const found of issues) {
     errors[found.field] ??= found.message;
   }
@@ -344,6 +359,13 @@ export function StockCommandPanel({
   const locked = submission.phase === "locked";
   const confirming = state.step === "confirming" || locked;
   const submitting = submission.phase === "submitting";
+  const blocked = block !== null;
+  useEffect(() => {
+    // The balance read after a refusal can leave nothing to act on: the field turns off, so focus moves to the panel.
+    if (blocked) {
+      panelRef.current?.focus();
+    }
+  }, [blocked]);
 
   if (submission.phase === "success") {
     return (
@@ -425,7 +447,7 @@ export function StockCommandPanel({
           />
         </FieldSet>
         {confirming ? <Confirmation state={state} /> : null}
-        {submission.phase === "failed" ? (
+        {submission.phase === "failed" && submission.failure.field === null ? (
           <FailureNotice failure={submission.failure} />
         ) : null}
         {submission.phase === "locked" ? (

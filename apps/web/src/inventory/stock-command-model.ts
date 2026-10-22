@@ -11,6 +11,7 @@ import {
   normalizeWriteOffStockInput,
   type WriteOffReasonCode,
 } from "@polaris/domain/inventory/write-off-stock";
+import { DecimalAmount } from "@polaris/domain/money/money";
 import { isCalendarDate } from "../lib/dates";
 import { isDraftChanged } from "../lib/unsent-work";
 import {
@@ -291,6 +292,9 @@ export interface StockValidation {
 
 const MAX_QUANTITY_TEXT = formatQuantity(MAX_INVENTORY_QUANTITY);
 
+const COST_BLOCK_MESSAGE =
+  "Sem custo conhecido, não dá para receber. Faça antes uma contagem com o custo unitário.";
+
 /** Why the action cannot be started on this variant, or null when it can. */
 export function stockActionBlock(
   action: StockAction,
@@ -302,7 +306,7 @@ export function stockActionBlock(
     target.movingAverageCost === null &&
     !target.costUnavailable
   ) {
-    return "O recebimento está bloqueado: este saldo não tem custo conhecido, e o servidor não inventa um. Faça antes uma contagem informando o custo unitário (valoração).";
+    return COST_BLOCK_MESSAGE;
   }
   if (action === "write_off" && target.quantity === 0) {
     return "Não há saldo para baixar: esta variante está com saldo 0.";
@@ -580,9 +584,11 @@ function receiveCostLine(
       receivedQuantity: body.quantity,
       unitCost: body.unitCost,
     });
+    // The model keeps six places; the screen shows centavos, rounded half-up (money.md).
+    const shown = DecimalAmount.from(average).toMoneyHalfUp().toString();
     return {
       label: "Custo médio previsto",
-      value: `${formatBrlAmount(average)} (o servidor recalcula)`,
+      value: `${formatBrlAmount(shown)}, aproximado; o servidor recalcula`,
     };
   } catch {
     return null;
@@ -667,7 +673,7 @@ export function stockSummary(
 export function stockConsequence(action: StockAction): string {
   switch (action) {
     case "receive":
-      return "O recebimento entra no histórico e muda o custo médio; não pode ser editado depois, e um erro se corrige com uma contagem ou uma baixa.";
+      return "Entra no histórico e muda o custo médio. Não dá para editar; um erro se corrige com contagem ou baixa.";
     case "count":
       return "A contagem substitui o saldo pela quantidade contada e fica no histórico, mesmo sem diferença; ela falha se o saldo mudar enquanto você confirma.";
     default:
@@ -680,8 +686,12 @@ export function stockConsequence(action: StockAction): string {
 /* -------------------------------------------------------------------------- */
 
 export interface StockFailure {
+  /** The balance the field message quotes was read again (until then, and if the read fails, it says so without a number). */
+  balanceRead: boolean;
   /** The attempt cannot be resent as is: the next confirm gets a fresh one. */
   discardAttempt: boolean;
+  /** The field the refusal is about: the message sits there, not in the alert at the foot of the panel. */
+  field: StockFieldName | null;
   message: string;
   reason: string | null;
   /** The balance moved or was read stale: read it again. */
@@ -694,6 +704,7 @@ export interface StockFailure {
 
 interface ReasonOutcome {
   discardAttempt?: boolean;
+  field?: StockFieldName;
   message: string;
   refreshBalance?: boolean;
   reloadList?: boolean;
@@ -710,8 +721,9 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "insufficient_stock",
     {
-      message:
-        "Estoque insuficiente: a baixa deixaria o saldo abaixo de zero. Atualizamos o saldo; reduza a quantidade.",
+      // the field says the new balance once it is read; this is what it says when the read fails
+      field: "quantity",
+      message: "O servidor recusou: o saldo mudou. Reduza a quantidade.",
       refreshBalance: true,
     },
   ],
@@ -724,8 +736,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "inventory_cost_unavailable",
     {
-      message:
-        "Este saldo não tem custo conhecido, então o recebimento está bloqueado. Faça uma contagem informando o custo unitário (valoração) e tente de novo.",
+      message: COST_BLOCK_MESSAGE,
       refreshBalance: true,
     },
   ],
@@ -799,6 +810,7 @@ function stockFailure(
   message: string,
   options: {
     discardAttempt?: boolean;
+    field?: StockFieldName;
     reason?: string | null;
     refreshBalance?: boolean;
     reloadList?: boolean;
@@ -806,7 +818,9 @@ function stockFailure(
   } = {}
 ): StockFailure {
   return {
+    balanceRead: false,
     discardAttempt: options.discardAttempt ?? false,
+    field: options.field ?? null,
     message,
     reason: options.reason ?? null,
     refreshBalance: options.refreshBalance ?? false,
@@ -860,8 +874,10 @@ export function mapStockError(
   const reason = refinable ? (rpcErrorReason(error) ?? null) : null;
   const outcome = reason === null ? undefined : reasonOutcomes.get(reason);
   if (outcome) {
+    const { field } = outcome;
     return stockFailure(outcome.message, {
       discardAttempt: outcome.discardAttempt ?? false,
+      ...(field === undefined ? {} : { field }),
       reason,
       refreshBalance: outcome.refreshBalance ?? false,
       reloadList: outcome.reloadList ?? false,
@@ -968,7 +984,52 @@ export function editStockField(
     return state;
   }
   const draft = { ...state.draft, [field]: value } as StockDraft;
-  return { ...state, draft };
+  // editing the field a refusal is about retires that refusal: the local check takes over
+  const { submission } = state;
+  const refusedHere =
+    submission.phase === "failed" && submission.failure.field === field;
+  return refusedHere
+    ? { ...state, draft, submission: { phase: "idle" } }
+    : { ...state, draft };
+}
+
+/** The server's or the device's refusal that belongs to a field, once it can be said (the balance is read). */
+export function stockFieldRefusal(
+  state: StockCommandState
+): { field: StockFieldName; message: string } | null {
+  const { submission } = state;
+  if (submission.phase !== "failed") {
+    return null;
+  }
+  const { failure } = submission;
+  // a balance read as 0 leaves nothing to reduce: the block notice says it, alone
+  if (
+    failure.field === null ||
+    stockActionBlock(state.action, state.target) !== null
+  ) {
+    return null;
+  }
+  return {
+    field: failure.field,
+    message:
+      failure.reason === "insufficient_stock" && failure.balanceRead
+        ? `O servidor recusou: o saldo agora é ${formatQuantity(state.target.quantity)}. Reduza a quantidade.`
+        : failure.message,
+  };
+}
+
+/** The balance came back: a refusal about a field quotes it from now on. */
+function markBalanceRead(state: StockCommandState): StockCommandState {
+  const { submission } = state;
+  return submission.phase === "failed" && submission.failure.field !== null
+    ? {
+        ...state,
+        submission: {
+          ...submission,
+          failure: { ...submission.failure, balanceRead: true },
+        },
+      }
+    : state;
 }
 
 /** Format errors always show; "not filled in yet" ones only after a review try. */
@@ -1008,7 +1069,7 @@ export function retargetStock(
     return state;
   }
   return {
-    ...state,
+    ...markBalanceRead(state),
     step: state.submission.phase === "locked" ? state.step : "editing",
     target: retarget(state.target, balance),
   };
@@ -1249,11 +1310,13 @@ export function stockQueueFailed(
   error: unknown
 ): StockCommandState {
   const name = error instanceof Error ? error.name : "";
+  let field: StockFieldName | undefined;
   let message =
     "Não foi possível guardar neste aparelho. Confira a validade da autorização offline e o espaço do aparelho, e tente de novo. Nada foi guardado.";
   if (name === "InsufficientLocalStockError") {
     message =
       "Estoque insuficiente neste aparelho: a baixa deixaria o saldo abaixo de zero. Reduza a quantidade.";
+    field = "quantity";
   } else if (name === "StaleLocalCountError") {
     message =
       "O saldo deste aparelho mudou depois que você abriu a contagem (uma venda ou um movimento guardado, ou uma atualização). Feche e abra a contagem de novo para revisar a quantidade.";
@@ -1261,7 +1324,10 @@ export function stockQueueFailed(
   return {
     ...state,
     step: "editing",
-    submission: { failure: stockFailure(message), phase: "failed" },
+    submission: {
+      failure: stockFailure(message, field === undefined ? {} : { field }),
+      phase: "failed",
+    },
   };
 }
 

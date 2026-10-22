@@ -22,12 +22,14 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import {
-  STOCK_ACTION_LABELS,
-  STOCK_ACTIONS,
-  type StockAction,
-} from "./stock-command-model";
+import { STOCK_ACTIONS, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
+import {
+  PANEL_OPEN_REASON,
+  PANEL_OPEN_REASON_ID,
+  RowActions,
+  triggerId,
+} from "./stock-row-actions";
 import {
   STOCK_FILTERS,
   type StockFilter,
@@ -50,9 +52,6 @@ const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 /** A link on a line of its own: it gets the 48 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
-
-const triggerId = (variantId: string, action: StockAction) =>
-  `stock-trigger-${variantId}-${action}`;
 
 function isStockFilter(value: string | undefined): value is StockFilter {
   return STOCK_FILTERS.some(([filter]) => filter === value);
@@ -77,39 +76,6 @@ function OfflineStockNotice() {
         ). O custo médio só aparece com conexão.
       </AlertDescription>
     </Alert>
-  );
-}
-
-interface RowActionsProps {
-  disabled: boolean;
-  onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
-  row: StockRow;
-}
-
-/** The three commands of a variant, glued into one control: their touch areas are one piece. */
-function RowActions({ disabled, onOpen, row }: RowActionsProps) {
-  return (
-    <ButtonGroup
-      aria-label={`Movimentos de ${row.productName}, ${row.variantText}`}
-      className="w-full md:w-fit"
-    >
-      {STOCK_ACTIONS.map((action) => (
-        <Button
-          aria-label={`${STOCK_ACTION_LABELS[action].trigger} estoque de ${row.productName}, ${row.variantText}`}
-          className="flex-1 md:flex-none"
-          data-stock-action={action}
-          data-variant-id={row.id}
-          disabled={disabled}
-          id={triggerId(row.id, action)}
-          key={action}
-          onClick={onOpen}
-          type="button"
-          variant="outline"
-        >
-          {STOCK_ACTION_LABELS[action].trigger}
-        </Button>
-      ))}
-    </ButtonGroup>
   );
 }
 
@@ -300,8 +266,7 @@ export function InventoryPage() {
       <header className="grid gap-1">
         <h1 className="text-title">Estoque</h1>
         <p className="text-muted-foreground text-support">
-          O saldo muda por recebimento, contagem ou baixa, e cada um fica no
-          histórico; venda, cancelamento e devolução movem sozinhos.
+          Receba, conte ou baixe. Venda e devolução movem o saldo sozinhas.
         </p>
       </header>
 
@@ -366,6 +331,16 @@ export function InventoryPage() {
       >
         {state.status === "ready" ? stockCountText(state) : " "}
       </p>
+
+      {view.kind === "ready" ? (
+        // always there, so the list does not drop a line when a panel opens
+        <p
+          className="min-h-5 text-muted-foreground text-support"
+          id={PANEL_OPEN_REASON_ID}
+        >
+          {open === null ? null : PANEL_OPEN_REASON}
+        </p>
+      ) : null}
 
       {view.kind === "loading" ? (
         <StateCard role="status">{view.message}</StateCard>

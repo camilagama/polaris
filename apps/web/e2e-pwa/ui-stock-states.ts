@@ -232,7 +232,7 @@ export const stockStates = {
   async receiveBlocked(page: Page) {
     await openList(page);
     await openCommand(page, "Receber", "Camiseta do teste");
-    await page.getByText("O recebimento está bloqueado").waitFor();
+    await page.getByText("Sem custo conhecido, não dá para receber").waitFor();
     await showScreenAlone(page);
   },
 
@@ -366,7 +366,7 @@ export const stockStates = {
     );
     await review(page).click();
     await confirm(page).click();
-    await page.getByText("Estoque insuficiente").waitFor();
+    await page.getByText("O servidor recusou: o saldo agora é 2").waitFor();
     await showScreenAlone(page);
   },
 };
