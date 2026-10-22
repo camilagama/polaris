@@ -3,6 +3,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
   browserStorage,
+  followSystemTheme,
   parseTheme,
   readTheme,
   saveTheme,
@@ -151,5 +152,66 @@ describe("theme (ADR 0103, Tema e CSP)", () => {
     expect(initScript.match(/getItem\("([^"]+)"\)/g)).toEqual([
       `getItem("${THEME_STORAGE_KEY}")`,
     ]);
+  });
+});
+
+describe("followSystemTheme (U-40)", () => {
+  function fakeSystem(startsDark: boolean) {
+    const listeners = new Set<() => void>();
+    const classes = new Set<string>(startsDark ? ["dark"] : []);
+    const query = {
+      addEventListener: (_type: string, listener: () => void) =>
+        listeners.add(listener),
+      matches: startsDark,
+      removeEventListener: (_type: string, listener: () => void) =>
+        listeners.delete(listener),
+    };
+    const root = {
+      classList: {
+        toggle: (name: string, on: boolean) =>
+          on ? classes.add(name) : classes.delete(name),
+      },
+    } as unknown as Pick<Element, "classList">;
+    return {
+      classes,
+      listeners,
+      query,
+      root,
+      setSystemDark(dark: boolean) {
+        query.matches = dark;
+        for (const listener of listeners) {
+          listener();
+        }
+      },
+    };
+  }
+
+  it("takes the dark class off when the system goes back to light, and puts it back", () => {
+    const system = fakeSystem(true);
+    followSystemTheme(system.query, memoryStorage(), system.root);
+    system.setSystemDark(false);
+    expect(system.classes.has("dark")).toBe(false);
+    system.setSystemDark(true);
+    expect(system.classes.has("dark")).toBe(true);
+  });
+
+  it("keeps a chosen theme whatever the system does", () => {
+    const system = fakeSystem(false);
+    followSystemTheme(system.query, memoryStorage("escuro"), system.root);
+    system.setSystemDark(true);
+    system.setSystemDark(false);
+    expect(system.classes.has("dark")).toBe(true);
+    const light = fakeSystem(true);
+    followSystemTheme(light.query, memoryStorage("claro"), light.root);
+    light.setSystemDark(true);
+    expect(light.classes.has("dark")).toBe(false);
+  });
+
+  it("stops listening when asked", () => {
+    const system = fakeSystem(false);
+    const stop = followSystemTheme(system.query, memoryStorage(), system.root);
+    expect(system.listeners.size).toBe(1);
+    stop();
+    expect(system.listeners.size).toBe(0);
   });
 });

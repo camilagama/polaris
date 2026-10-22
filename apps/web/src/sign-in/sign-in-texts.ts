@@ -30,6 +30,7 @@ export const SIGN_IN_OFFLINE = "Sem conexão. Conecte-se para entrar.";
 export const SIGN_IN_BACK_ONLINE = "Conexão de volta. Você já pode entrar.";
 
 export const SESSION_ENDED_REASON = "Sua sessão acabou. Entre de novo.";
+export const SIGNED_OUT_REASON = "Você saiu. Entre de novo quando quiser.";
 export const RECENT_LOGIN_REASON =
   "Por segurança, entre de novo para confirmar que é você.";
 
@@ -41,6 +42,9 @@ export const NEW_TAB_HINT = "abre em outra aba";
 export function reasonText(reason: SignInReason | undefined): string | null {
   if (reason === "sessao") {
     return SESSION_ENDED_REASON;
+  }
+  if (reason === "saiu") {
+    return SIGNED_OUT_REASON;
   }
   if (reason === "recente") {
     return RECENT_LOGIN_REASON;

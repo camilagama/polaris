@@ -28,6 +28,7 @@ import { orpcClient } from "./orpc";
 import { clearPaymentProfileCaches } from "./payment-profile-cache";
 import { clearPeriodSummaryCaches } from "./period-summary-cache";
 import { rpcErrorCode } from "./rpc-error";
+import { writeSessionMarker } from "./session-marker";
 import { isSigningOut } from "./sign-out";
 
 interface OrganizationContextValue {
@@ -66,6 +67,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         if (request === latestRequest.current) {
           opened.current = true;
           fromCache.current = false;
+          if (!isSigningOut()) {
+            writeSessionMarker("ativa");
+          }
           if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
             writeOrganizationsCache(browserStorage(), organizations);
           }

@@ -26,6 +26,7 @@ import {
   SALES_PAGE_SIZE,
   saleCustomerHref,
   saleDetailHref,
+  cancelOffer,
   saleDetailView,
 } from "./sale-history-model";
 
@@ -459,6 +460,25 @@ describe("sale detail", () => {
       "Data da venda",
       "Confirmada no servidor",
     ]);
+  });
+
+  it("never offers a second cancellation while the detail is read again after a return (U-20)", () => {
+    const open = saleDetailView(detail(null));
+    expect(cancelOffer(open, false)).toBe("panel");
+    expect(cancelOffer(open, true)).toBe("waiting");
+    const cancelled = saleDetailView(
+      detail({
+        cancelledAt: "2026-05-02T12:00:00.000Z",
+        cancelledBy: "user_1",
+        commandId: id(80),
+        id: id(81),
+        reasonCode: "other",
+        reasonNote: null,
+        saleId: id(70),
+      })
+    );
+    expect(cancelOffer(cancelled, false)).toBe("none");
+    expect(cancelOffer(cancelled, true)).toBe("none");
   });
 
   it("shows the cancellation, keeps the snapshot and stops offering to cancel", () => {

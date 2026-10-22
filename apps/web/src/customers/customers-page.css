@@ -158,6 +158,12 @@
     border-top: 1px solid var(--ui-line);
   }
 
+  /* beside the save button, over both columns of the form (U-24) */
+  .customer-form .customer-contact-error {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
   .customer-form-actions {
     display: flex;
     justify-content: flex-end;

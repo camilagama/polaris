@@ -6,6 +6,30 @@ import {
 
 export type PublicCatalogAction = "load" | "products" | "profile" | "switch";
 
+/** The fields of the profile form that can carry their own error. */
+export type ProfileField =
+  | "description"
+  | "instagram"
+  | "publicName"
+  | "slug"
+  | "whatsapp";
+
+/** A refusal that belongs to one field of the form: its text goes under the field. */
+export interface ProfileFieldError {
+  field: ProfileField;
+  message: string;
+}
+
+const FIELD_OF_REASON: Readonly<Record<string, ProfileField>> = {
+  invalid_description: "description",
+  invalid_instagram: "instagram",
+  invalid_name: "publicName",
+  invalid_slug: "slug",
+  invalid_whatsapp: "whatsapp",
+  public_catalog_slug_taken: "slug",
+  reserved_slug: "slug",
+};
+
 const REFUSALS: Readonly<Record<string, string>> = {
   invalid_description:
     "A descrição pode ter no máximo 280 caracteres e não aceita caracteres ocultos.",
@@ -20,11 +44,33 @@ const REFUSALS: Readonly<Record<string, string>> = {
   reserved_slug: "Este endereço é reservado. Escolha outro.",
 };
 
+/** The text of a refusal of the profile, by the reason the server (or the domain check) gives. */
+export function profileRefusalText(reason: string): string | undefined {
+  return REFUSALS[reason];
+}
+
 function fallback(action: PublicCatalogAction): string {
   if (action === "load") {
     return "Não foi possível carregar o catálogo público. Tente novamente.";
   }
   return "Não foi possível concluir a operação. Tente novamente.";
+}
+
+/**
+ * The field a refused save is about, with the text for it (U-48), or null when the refusal is not about one
+ * field (the plan, the version, the connection). The same reasons the server answers with.
+ */
+export function profileFieldError(error: unknown): ProfileFieldError | null {
+  const reason = rpcErrorReason(error);
+  const field = reason ? FIELD_OF_REASON[reason] : undefined;
+  if (!(reason && field)) {
+    return null;
+  }
+  const code = rpcErrorCode(error);
+  if (code !== "BAD_REQUEST" && code !== "CONFLICT") {
+    return null;
+  }
+  return { field, message: publicCatalogErrorMessage(error, "profile") };
 }
 
 /** Portuguese text for a failed public catalog request. */
@@ -65,7 +111,7 @@ function publicCatalogRefusalMessage(
       return "Este endereço já está em uso por outra loja. Escolha outro.";
     }
     if (reason === "public_catalog_version_conflict") {
-      return "O perfil mudou em outra solicitação. A tela foi atualizada; confira e salve de novo.";
+      return "O perfil mudou em outra solicitação. O que você digitou foi mantido; confira e salve de novo.";
     }
     if (reason === "public_catalog_profile_missing") {
       return "Salve o perfil público antes de ligar o catálogo.";

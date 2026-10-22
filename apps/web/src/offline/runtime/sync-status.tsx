@@ -79,7 +79,18 @@ function notReadyLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   };
 }
 
-export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
+/** What the label says about the screen being open, not about the device (U-54). */
+export interface SyncStatusScreen {
+  /** The screen works only with a connection (it reads and saves on the server): offline it says so. */
+  onlineOnly?: boolean;
+}
+
+const NEEDS_INTERNET = "esta tela precisa de internet";
+
+export function syncStatusLabel(
+  snapshot: RuntimeSnapshot,
+  screen: SyncStatusScreen = {}
+): SyncStatusLabel {
   const { counts } = snapshot;
   const waiting = waitingOperations(snapshot);
   if (snapshot.legalAcceptanceRequired && snapshot.online) {
@@ -100,10 +111,7 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
     return {
       attention: false,
       short: waiting > 0 ? `Offline · ${waiting}` : "Offline",
-      text:
-        waiting > 0
-          ? `Sem conexão · ${plural(waiting, "operação guardada", "operações guardadas")}`
-          : "Sem conexão · tudo guardado neste aparelho",
+      text: offlineText(waiting, screen.onlineOnly === true),
       tone: "offline",
     };
   }
@@ -137,8 +145,29 @@ export function syncStatusLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
   };
 }
 
-export function SyncStatusView({ snapshot }: { snapshot: RuntimeSnapshot }) {
-  const label = syncStatusLabel(snapshot);
+/**
+ * The sentence when there is no connection. "Tudo guardado neste aparelho" is true only for what the device keeps:
+ * on a screen that works only online it would promise the opposite, so it says the screen needs internet.
+ */
+function offlineText(waiting: number, onlineOnly: boolean): string {
+  const kept =
+    waiting > 0
+      ? plural(waiting, "operação guardada", "operações guardadas")
+      : null;
+  if (onlineOnly) {
+    return ["Sem conexão", kept, NEEDS_INTERNET].filter(Boolean).join(" · ");
+  }
+  return `Sem conexão · ${kept ?? "tudo guardado neste aparelho"}`;
+}
+
+export function SyncStatusView({
+  screen,
+  snapshot,
+}: {
+  screen?: SyncStatusScreen;
+  snapshot: RuntimeSnapshot;
+}) {
+  const label = syncStatusLabel(snapshot, screen);
   const content = (
     <>
       <span aria-hidden="true" className="sync-status-dot" />
@@ -175,11 +204,13 @@ export function SyncStatusView({ snapshot }: { snapshot: RuntimeSnapshot }) {
  * `title`). It is hidden from assistive technology: the chip already says the same thing.
  */
 export function SyncStatusMenuLineView({
+  screen,
   snapshot,
 }: {
+  screen?: SyncStatusScreen;
   snapshot: RuntimeSnapshot;
 }) {
-  const label = syncStatusLabel(snapshot);
+  const label = syncStatusLabel(snapshot, screen);
   return (
     <p
       aria-hidden="true"
@@ -192,13 +223,17 @@ export function SyncStatusMenuLineView({
   );
 }
 
-export function SyncStatusMenuLine() {
+export function SyncStatusMenuLine(screen: SyncStatusScreen) {
   const snapshot = useRuntimeSnapshot();
-  return snapshot ? <SyncStatusMenuLineView snapshot={snapshot} /> : null;
+  return snapshot ? (
+    <SyncStatusMenuLineView screen={screen} snapshot={snapshot} />
+  ) : null;
 }
 
 /** The header chip; renders nothing when the offline runtime is not enabled. */
-export function SyncStatus() {
+export function SyncStatus(screen: SyncStatusScreen) {
   const snapshot = useRuntimeSnapshot();
-  return snapshot ? <SyncStatusView snapshot={snapshot} /> : null;
+  return snapshot ? (
+    <SyncStatusView screen={screen} snapshot={snapshot} />
+  ) : null;
 }

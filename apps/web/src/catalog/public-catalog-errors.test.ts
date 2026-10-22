@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { publicCatalogErrorMessage } from "./public-catalog-errors";
+import {
+  profileFieldError,
+  publicCatalogErrorMessage,
+} from "./public-catalog-errors";
 
 const rpcError = (code: string, reason?: string) => ({
   code,
@@ -59,5 +62,40 @@ describe("publicCatalogErrorMessage", () => {
     expect(publicCatalogErrorMessage(rpcError("UNAUTHORIZED"), "profile")).toBe(
       "A alteração do catálogo público não foi salva."
     );
+  });
+});
+
+describe("profileFieldError (U-48)", () => {
+  it("says which field a refused save is about", () => {
+    expect(
+      profileFieldError(rpcError("BAD_REQUEST", "invalid_slug"))
+    ).toMatchObject({
+      field: "slug",
+    });
+    expect(
+      profileFieldError(rpcError("BAD_REQUEST", "reserved_slug"))
+    ).toMatchObject({
+      field: "slug",
+    });
+    expect(
+      profileFieldError(rpcError("CONFLICT", "public_catalog_slug_taken"))
+    ).toMatchObject({
+      field: "slug",
+      message: expect.stringContaining("em uso"),
+    });
+    expect(
+      profileFieldError(rpcError("BAD_REQUEST", "invalid_name"))
+    ).toMatchObject({
+      field: "publicName",
+    });
+  });
+
+  it("leaves what is not about one field to the message beside the button", () => {
+    expect(profileFieldError(rpcError("BAD_REQUEST"))).toBeNull();
+    expect(
+      profileFieldError(rpcError("CONFLICT", "entitlement_denied"))
+    ).toBeNull();
+    expect(profileFieldError(rpcError("SERVICE_UNAVAILABLE"))).toBeNull();
+    expect(profileFieldError(new Error("offline"))).toBeNull();
   });
 });

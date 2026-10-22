@@ -8,6 +8,13 @@ import { blankProfileDraft } from "./public-catalog-model";
 import { ProductsCard, ProfileForm, SwitchCard } from "./public-catalog-panels";
 
 const none = () => undefined;
+const MARKED_SLUG = /<input[^>]*aria-invalid="true"[^>]*id="public-slug"/;
+const DESCRIBED_SLUG =
+  /<input[^>]*aria-describedby="public-slug-error"[^>]*id="public-slug"/;
+const MARKED_NAME = /<input[^>]*aria-invalid[^>]*id="public-name"/;
+const SAVED_IN_STATUS = /<div role="status"><p[^>]*>Perfil salvo\./;
+const REFUSED_IN_ALERT = /<div role="alert"><p[^>]*>O perfil não foi salvo\./;
+const noFeedback = { error: null, notice: null };
 const DISABLED_TURN_ON = /disabled=""[^>]*>Ligar catálogo/;
 const DISABLED_SAVE = /disabled=""[^>]*>Salvar perfil/;
 const profile: PublicCatalogProfileReadModel = {
@@ -38,6 +45,7 @@ describe("the catalog switch", () => {
     renderToStaticMarkup(
       <SwitchCard
         changed={false}
+        feedback={noFeedback}
         onToggle={none}
         pending={false}
         planBlocks={false}
@@ -86,6 +94,7 @@ describe("the product list", () => {
   ) =>
     renderToStaticMarkup(
       <ProductsCard
+        feedback={noFeedback}
         onChange={none}
         pending={false}
         planBlocks={false}
@@ -116,10 +125,12 @@ describe("the profile form", () => {
         changed={false}
         disabled={false}
         draft={{ ...blankProfileDraft, slug: "loja-da-ana" }}
+        feedback={noFeedback}
         onChange={none}
         onSlugEdited={none}
         onSubmit={none}
         pending={false}
+        problem={null}
         publicOrigin="https://catalogo.example"
         slugEdited
       />
@@ -127,5 +138,74 @@ describe("the profile form", () => {
     expect(html).toContain("https://catalogo.example/loja-da-ana");
     expect(html).toMatch(DISABLED_SAVE);
     expect(html).toContain("280 caracteres");
+  });
+
+  const renderForm = (
+    overrides: Partial<Parameters<typeof ProfileForm>[0]> = {}
+  ) =>
+    renderToStaticMarkup(
+      <ProfileForm
+        changed
+        disabled={false}
+        draft={{ ...blankProfileDraft, publicName: "Loja", slug: "a" }}
+        feedback={noFeedback}
+        onChange={none}
+        onSlugEdited={none}
+        onSubmit={none}
+        pending={false}
+        problem={null}
+        publicOrigin="https://catalogo.example"
+        slugEdited
+        {...overrides}
+      />
+    );
+
+  it("puts the error of the address under the address and ties it to the field (U-48)", () => {
+    const html = renderForm({
+      problem: { field: "slug", message: "Endereço inválido." },
+    });
+    expect(html).toContain('id="public-slug-error"');
+    expect(html).toContain("Endereço inválido.");
+    expect(html).toMatch(MARKED_SLUG);
+    expect(html).toMatch(DESCRIBED_SLUG);
+    // the name is not marked
+    expect(html).not.toMatch(MARKED_NAME);
+  });
+
+  it("shows the message of the save under the save button, in live regions that are always there (U-49)", () => {
+    const quiet = renderForm();
+    expect(quiet).toContain('<div role="status"></div>');
+    expect(quiet).toContain('<div role="alert"></div>');
+    const saved = renderForm({
+      feedback: { error: null, notice: "Perfil salvo." },
+    });
+    expect(saved.indexOf("Salvar perfil")).toBeLessThan(
+      saved.indexOf("Perfil salvo.")
+    );
+    expect(saved).toMatch(SAVED_IN_STATUS);
+    const refused = renderForm({
+      feedback: { error: "O perfil não foi salvo.", notice: null },
+    });
+    expect(refused).toMatch(REFUSED_IN_ALERT);
+  });
+});
+
+describe("the messages of the switch and of the products", () => {
+  it("sit next to their own button, not at the top of the page (U-49)", () => {
+    const html = renderToStaticMarkup(
+      <SwitchCard
+        changed={false}
+        feedback={{ error: null, notice: "Catálogo ligado." }}
+        onToggle={none}
+        pending={false}
+        planBlocks={false}
+        profile={profile}
+        publicOrigin="https://catalogo.example"
+        visibility="live"
+      />
+    );
+    expect(html.indexOf("Desligar catálogo")).toBeLessThan(
+      html.indexOf("Catálogo ligado.")
+    );
   });
 });

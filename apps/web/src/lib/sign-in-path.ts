@@ -1,13 +1,14 @@
 import { isSafeAuthCallbackPath, parseReturnPath } from "./return-path";
 
 /** Why the sign-in screen is opened: the login is only old, or the session is already gone. */
-export type SignInReason = "recente" | "sessao";
+export type SignInReason = "recente" | "saiu" | "sessao";
 /** What went wrong on the way back from Google; each one has its own line on the screen. */
 export type SignInError = "google" | "indisponivel" | "limite";
 
 const SIGN_IN_PATH = "/entrar";
 const reasons: readonly string[] = [
   "recente",
+  "saiu",
   "sessao",
 ] satisfies SignInReason[];
 const errors: readonly string[] = [
@@ -29,20 +30,23 @@ function encodeForAddress(value: string): string {
   return encodeURIComponent(value).replace(/%2F/gi, "/");
 }
 
-export type SignInPath = `/entrar?${string}`;
+export type SignInPath = "/entrar" | `/entrar?${string}`;
 
 /**
  * The sign-in screen with a reason and the place to come back to. `returnTo` goes through the same
  * validation as the screen applies when it reads `voltar`; a destination that does not pass is left out.
  */
 export function signInPath(options: {
-  reason: SignInReason;
+  /** Left out when the browser never had a session: the screen then says nothing about one. */
+  reason?: SignInReason | undefined;
   returnTo?: string | undefined;
 }): SignInPath {
   const destination = parseReturnPath(options.returnTo);
-  return destination
-    ? `${SIGN_IN_PATH}?motivo=${options.reason}&voltar=${encodeForAddress(destination)}`
-    : `${SIGN_IN_PATH}?motivo=${options.reason}`;
+  const query = [
+    ...(options.reason ? [`motivo=${options.reason}`] : []),
+    ...(destination ? [`voltar=${encodeForAddress(destination)}`] : []),
+  ].join("&");
+  return query ? `${SIGN_IN_PATH}?${query}` : SIGN_IN_PATH;
 }
 
 /** Where "Sair" goes once the session ended: the sign-in screen with a valid destination, otherwise the start. */

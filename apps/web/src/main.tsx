@@ -8,6 +8,7 @@ import { App } from "./app-shell/app";
 import "./styles.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
+import { followSystemTheme } from "./lib/theme";
 import { initSentry } from "./observability/sentry";
 import {
   browserRegisterEnvironment,
@@ -24,6 +25,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     VITE_SENTRY_RELEASE: import.meta.env.VITE_SENTRY_RELEASE,
   }).catch(() => undefined);
 }
+
+// The system can go from dark to light with the page open: the `dark` class follows it (U-40).
+followSystemTheme();
 
 const rootElement = document.getElementById("root");
 

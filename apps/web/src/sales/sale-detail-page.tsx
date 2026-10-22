@@ -17,6 +17,7 @@ import {
   detailLoadErrorMessage,
   type SaleDetailView,
   saleCustomerHref,
+  cancelOffer,
   saleDetailView,
 } from "./sale-history-model";
 import { SaleIdForm } from "./sale-id-form";
@@ -34,6 +35,8 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
     status: "loading",
   });
   const [notice, setNotice] = useState<SaleNotice | null>(null);
+  // the sale changed and the detail is being read again: what the page offers is still the old state
+  const [refreshing, setRefreshing] = useState(false);
   const sequence = useRef<RequestSequence>({ current: 0 });
 
   const loadDetail = useCallback(async () => {
@@ -63,7 +66,11 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   const handleSaleChanged = useCallback(
     (next: SaleNotice) => {
       setNotice(next);
-      loadDetail().catch(() => undefined);
+      // only after a success, whose panel is done: a failure keeps the panel mounted, with its locked attempt
+      setRefreshing(next.ok);
+      loadDetail()
+        .catch(() => undefined)
+        .then(() => setRefreshing(false));
     },
     [loadDetail]
   );
@@ -103,6 +110,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
           detail={load.value}
           onSaleChanged={handleSaleChanged}
           organizationId={organizationId}
+          refreshing={refreshing}
           saleId={saleId}
         />
       ) : null}
@@ -168,6 +176,8 @@ interface ReadyDetailProps {
   detail: SaleDetailReadModel;
   onSaleChanged: (notice: SaleNotice) => void;
   organizationId: string;
+  /** The detail is being read again after a change: cancelling waits for the new state (U-20). */
+  refreshing: boolean;
   saleId: string;
 }
 
@@ -175,9 +185,11 @@ function ReadyDetail({
   detail,
   onSaleChanged,
   organizationId,
+  refreshing,
   saleId,
 }: ReadyDetailProps) {
   const view = saleDetailView(detail);
+  const offer = cancelOffer(view, refreshing);
   return (
     <>
       <section aria-labelledby="sale-detail-title" className="sale-detail">
@@ -222,7 +234,12 @@ function ReadyDetail({
           {view.cancelBlockedReason}
         </p>
       ) : null}
-      {view.canCancel ? (
+      {offer === "waiting" ? (
+        <p className="sale-status" role="status">
+          Atualizando a venda…
+        </p>
+      ) : null}
+      {offer === "panel" ? (
         <SaleCancelPanel
           key={saleId}
           onSaleChanged={onSaleChanged}

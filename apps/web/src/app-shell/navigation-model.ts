@@ -119,9 +119,29 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   },
 };
 
+/**
+ * Screens that read and save on the server and have no copy on the device: offline they cannot work, so the
+ * state chip says that instead of "tudo guardado neste aparelho" (U-54). The ones that work from the device
+ * (sale, history, stock, products, customers, result) are not here.
+ */
+const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
+  "categories",
+  "expenses",
+  "payment-profiles",
+  "public-catalog",
+  "sale-customer",
+  "sale-detail",
+];
+
 export type ResolvedRoute =
   | { kind: "not-found"; title: string }
-  | { id: RouteId; kind: "page"; navId: NavId | null; title: string };
+  | {
+      id: RouteId;
+      kind: "page";
+      navId: NavId | null;
+      onlineOnly: boolean;
+      title: string;
+    };
 
 const trailingSlashes = /\/+$/;
 
@@ -132,7 +152,13 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     ? ROUTES[normalized]
     : undefined;
   return route
-    ? { id: route.id, kind: "page", navId: route.navId, title: route.title }
+    ? {
+        id: route.id,
+        kind: "page",
+        navId: route.navId,
+        onlineOnly: ONLINE_ONLY_ROUTES.includes(route.id),
+        title: route.title,
+      }
     : { kind: "not-found", title: "Página não encontrada" };
 }
 

@@ -10,6 +10,19 @@ import {
 
 const BODY_CHARACTERS = /^[\w\-.+/=&%@?]*$/;
 
+describe("signInPath without a reason (U-01)", () => {
+  it("opens the plain screen when the browser never had a session", () => {
+    expect(signInPath({})).toBe("/entrar");
+    expect(signInPath({ returnTo: "/sales" })).toBe("/entrar?voltar=/sales");
+  });
+
+  it("carries the reason 'saiu' after 'Sair' and reads it back", () => {
+    const path = signInPath({ reason: "saiu", returnTo: "/sales" });
+    expect(path).toBe("/entrar?motivo=saiu&voltar=/sales");
+    expect(parseSignInSearch(path.slice("/entrar".length)).reason).toBe("saiu");
+  });
+});
+
 describe("buildSocialSignInRequest", () => {
   it("sends the plain start as the destination when there is none", () => {
     expect(buildSocialSignInRequest()).toEqual({
