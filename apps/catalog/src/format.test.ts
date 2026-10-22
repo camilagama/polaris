@@ -50,6 +50,20 @@ describe("the WhatsApp link", () => {
   });
 });
 
+describe("the question a visitor sends", () => {
+  it("cuts a very long name by code point and keeps the address whole", () => {
+    const page = "https://catalogo.example/loja/p/1";
+    const name = `${"🎉".repeat(300)}`;
+    const text = productQuestion(name, page);
+    expect(Array.from(text).length).toBeLessThan(200);
+    expect(text.endsWith(`…: ${page}`)).toBe(true);
+    expect(() => encodeURIComponent(text)).not.toThrow();
+    expect(productQuestion("Camiseta", page)).toBe(
+      `Olá! Tenho uma pergunta sobre Camiseta: ${page}`
+    );
+  });
+});
+
 describe("the price pieces", () => {
   it("splits the symbol from the amount, and says nothing about what is not a price", () => {
     expect(priceParts("1234.5")).toEqual({ amount: "1.234,50", symbol: "R$" });

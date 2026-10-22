@@ -36,6 +36,15 @@ const VAZIA: PublicCatalogProfile = {
   whatsapp: null,
 };
 
+/** A store whose texts are as long as the rules allow, with words nobody can break at a space. */
+const NOME_LONGO: PublicCatalogProfile = {
+  description: `Veja tudo em https://exemplo.com.br/${"catalogo-completo-".repeat(8)} e fale com a gente.`,
+  instagram: "loja.nome.longo",
+  name: "Loja de Artigos Diversos para Casa, Jardim, Escritório e Presentes Criativos",
+  slug: "nome-longo",
+  whatsapp: "5593912345678",
+};
+
 const id = (n: number) =>
   `0199a0a0-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
@@ -43,6 +52,8 @@ const id = (n: number) =>
 export const PRODUCT_WITH_PHOTOS = id(1);
 /** One photo and a long name with characters that break a careless link. */
 export const PRODUCT_WITH_ONE_PHOTO = id(2);
+/** A name of 300 characters with no space, and a variant label of 60. */
+export const PRODUCT_WITH_LONG_TEXT = id(4);
 /** No photo, every variant without a price. */
 export const PRODUCT_WITHOUT_PHOTO = id(3);
 
@@ -68,6 +79,13 @@ const PRODUCTS: PublicCatalogProduct[] = [
     media: [photo(id(104))],
     name: `Camisa "Tom & Jerry" #1 🎉 ${"edição limitada ".repeat(20).trim()}`,
     variants: [{ id: id(205), label: null, price: "139.90" }],
+  },
+  {
+    description: "x".repeat(280),
+    id: PRODUCT_WITH_LONG_TEXT,
+    media: [photo(id(105))],
+    name: "N".repeat(300),
+    variants: [{ id: id(208), label: "L".repeat(60), price: "10.00" }],
   },
   {
     description: "Sem foto ainda.",
@@ -119,6 +137,7 @@ const STORES: Record<
   { products: PublicCatalogPage["products"]; profile: PublicCatalogProfile }
 > = {
   "loja-horizonte": { products: horizonteProducts, profile: HORIZONTE },
+  "nome-longo": { products: horizonteProducts, profile: NOME_LONGO },
   "sem-contato": { products: horizonteProducts, profile: SEM_CONTATO },
   vazia: { products: [], profile: VAZIA },
 };

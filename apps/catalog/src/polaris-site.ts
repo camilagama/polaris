@@ -10,7 +10,8 @@ export function polarisSiteHref(
   if (typeof value !== "string" || value === "" || value !== value.trim()) {
     return null;
   }
-  // anything the URL parser would silently drop or fix (tabs, line breaks, backslashes) is refused as written
+  // anything the URL parser would silently drop or fix (tabs, line breaks, backslashes, invisible or non-ASCII
+  // characters: a host in Unicode is given in punycode) is refused as written
   if (hasUnsafeCharacter(value) || value.includes("#")) {
     return null;
   }
@@ -34,7 +35,7 @@ export function polarisSiteHref(
 function hasUnsafeCharacter(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) ?? 0;
-    if (code <= 0x20 || code === 0x7f || character === "\\") {
+    if (code <= 0x20 || code >= 0x7f || character === "\\") {
       return true;
     }
   }

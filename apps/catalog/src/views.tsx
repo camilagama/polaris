@@ -203,7 +203,8 @@ export function ProductView({
         </Link>
       </nav>
       {product.media.length > 0 ? (
-        <div className="gallery">
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: the strip scrolls sideways on a phone; without focus a keyboard (Safari does not focus a scroller by itself) cannot reach the other photos
+        <section aria-label="Fotos do produto" className="gallery" tabIndex={0}>
           {product.media.map((image, index) => (
             <img
               alt=""
@@ -214,7 +215,7 @@ export function ProductView({
               width={image.width}
             />
           ))}
-        </div>
+        </section>
       ) : null}
       <h1>{product.name}</h1>
       {product.description ? <p>{product.description}</p> : null}
@@ -277,7 +278,7 @@ export function HomeView({ footerHref }: { footerHref: string | null }) {
 
 export function NotFoundView({ footerHref }: { footerHref: string | null }) {
   return (
-    <Notice footerHref={footerHref} title="Loja não encontrada">
+    <Notice footerHref={footerHref} title="Página não encontrada">
       Confira o endereço com quem passou o link. Se a loja desligou o catálogo,
       ele volta quando ela ligar de novo.
     </Notice>

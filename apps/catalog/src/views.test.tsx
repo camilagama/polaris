@@ -260,8 +260,10 @@ describe("Perguntar no WhatsApp on the product page (A1)", () => {
       view(profile, { ...product, name: "x".repeat(300) }),
       null
     );
+    // the page shows the whole name; only the message of the chat is cut
     expect(html).toContain("x".repeat(300));
-    expect(html).toContain("Perguntar no WhatsApp");
+    const href = WA_HREF.exec(html)?.[1] ?? "";
+    expect(href.length).toBeLessThan(900);
   });
 });
 
@@ -428,7 +430,7 @@ describe("the states of the pages (AC-6)", () => {
     ).toContain("Não foi possível carregar esta página agora.");
     expect(
       await render((href) => <NotFoundView footerHref={href} />, null)
-    ).toContain("Loja não encontrada");
+    ).toContain("Página não encontrada");
   });
 });
 

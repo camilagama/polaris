@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect, type Page, test } from "@playwright/test";
 import {
+  PRODUCT_WITH_LONG_TEXT,
   PRODUCT_WITH_ONE_PHOTO,
   PRODUCT_WITH_PHOTOS,
   PRODUCT_WITHOUT_PHOTO,
@@ -26,6 +27,11 @@ const PAGES = [
   ["a loja", STORE],
   ["a loja sem contato", `${FIXTURE}/sem-contato`],
   ["a loja vazia", `${FIXTURE}/vazia`],
+  ["a loja com nome e descrição no limite", `${FIXTURE}/nome-longo`],
+  [
+    "o produto de loja com nome longo, nome de 300 letras sem espaço e rótulo de 60",
+    `${FIXTURE}/nome-longo/p/${PRODUCT_WITH_LONG_TEXT}`,
+  ],
   ["o produto com fotos", PRODUCT],
   [
     "o produto com uma foto e nome longo",
@@ -43,23 +49,26 @@ async function open(page: Page, url: string) {
   await expect(page.locator("main.page h1")).toBeVisible();
 }
 
-/** The link the pointer would hit at a point `offset` px above the top edge of `locator`. */
-async function hitsLinkAbove(page: Page, selector: string, offset: number) {
-  return await page.evaluate(
-    ({ offset: distance, selector: query }) => {
-      const element = document.querySelector(query);
-      if (!element) {
-        return false;
-      }
-      const box = element.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        box.left + box.width / 2,
-        box.top - distance
-      );
-      return hit === element;
-    },
-    { offset, selector }
-  );
+/** Whether the pointer hits the element 21 px above, below, left and right of its center: a touch area of 44 px. */
+async function hasTouchArea(page: Page, selector: string) {
+  return await page.evaluate((query) => {
+    const element = document.querySelector(query);
+    if (!element) {
+      return false;
+    }
+    const box = element.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    return [
+      [x, y - 21],
+      [x, y + 21],
+      [x - 21, y],
+      [x + 21, y],
+    ].every(([pointX, pointY]) => {
+      const hit = document.elementFromPoint(pointX ?? 0, pointY ?? 0);
+      return hit === element || element.contains(hit);
+    });
+  }, selector);
 }
 
 for (const size of SIZES) {
@@ -130,12 +139,12 @@ for (const size of SIZES) {
       const box = await button.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
       // the touch area (the ::before of the button) reaches 44 px even where the button is 36
-      expect(await hitsLinkAbove(page, "a.btn[target=_blank]", 5)).toBe(true);
+      expect(await hasTouchArea(page, "a.btn[target=_blank]")).toBe(true);
     });
 
     test("o rodapé tem área de toque de 44 px", async ({ page }) => {
       await open(page, `${FIXTURE}/`);
-      expect(await hitsLinkAbove(page, "footer.foot a", 10)).toBe(true);
+      expect(await hasTouchArea(page, "footer.foot a")).toBe(true);
     });
 
     test("a variante sem preço diz 'Preço sob consulta' e a loja sem contato, 'Preço não informado'", async ({

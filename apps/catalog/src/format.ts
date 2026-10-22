@@ -25,6 +25,7 @@ export function priceParts(
   return text === price ? null : { amount: text.slice(3), symbol: "R$" };
 }
 
+const QUESTION_NAME_LIMIT = 120;
 const WHATSAPP_NUMBER = /^[0-9]{10,15}$/;
 
 /**
@@ -42,7 +43,13 @@ export function whatsappLink(digits: string, text?: string): string | null {
 
 /** The message a visitor sends from a product page: the name and the address of the page, nothing about price or stock. */
 export function productQuestion(name: string, pageUrl: string): string {
-  return `Olá! Tenho uma pergunta sobre ${name}: ${pageUrl}`;
+  // by code point, so a cut never splits a surrogate pair (encodeURIComponent throws on a lone one)
+  const points = Array.from(name);
+  const shown =
+    points.length > QUESTION_NAME_LIMIT
+      ? `${points.slice(0, QUESTION_NAME_LIMIT).join("")}…`
+      : name;
+  return `Olá! Tenho uma pergunta sobre ${shown}: ${pageUrl}`;
 }
 
 interface Contacts {

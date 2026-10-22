@@ -18,6 +18,7 @@ function listFiles(directory: string): string[] {
 }
 
 const FONT_URL = /^\.\/fonts\/[a-z0-9-]+\.woff2$/;
+const IMPORTED = /(?:from|import)\s+["']([^"']+)["']/g;
 const AT_IMPORT = /@import/i;
 const DARK_CLASS = /:root\.dark|\.dark\b/;
 const HEX_COLOR = /#[0-9a-f]{3,8}\b/i;
@@ -32,8 +33,6 @@ const TEST_OR_TYPES = /\.(?:test|d)\.(?:ts|tsx)$/;
 const FOOTER_CALL = /<Footer href=\{footerHref\} \/>/g;
 const FOOTER_WITHOUT_HREF = /<Footer\b(?![^>]*\bhref=\{footerHref\})/;
 const FOOTER_FROM_PROFILE = /footerHref=\{[^}]*profile/;
-const PROFILE_TYPE = /export interface PublicCatalogProfile \{([^}]*)\}/;
-const FIELD = /^\s*(\w+)\??:/gm;
 const LINE_COMMENT = /^\s*\/\/.*$/gm;
 const TRAILING_COMMA = /,(\s*[}\]])/g;
 
@@ -199,7 +198,7 @@ describe("the components and routes of the catalog", () => {
 
   it("imports no Tailwind, Base UI, icon library or font package", () => {
     const found = files.flatMap((path) =>
-      [...readFileSync(path, "utf8").matchAll(/from\s+["']([^"']+)["']/g)]
+      [...readFileSync(path, "utf8").matchAll(IMPORTED)]
         .map((match) => match[1] ?? "")
         .filter((name) => FORBIDDEN_PACKAGES.some((rule) => rule.test(name)))
         .map((name) => `${relative(root, path)}: ${name}`)
@@ -276,19 +275,49 @@ describe("the footer cannot be switched off (AC-10)", () => {
     expect(views).not.toMatch(FOOTER_FROM_PROFILE);
   });
 
-  it("has no field of the public profile that could switch it off", () => {
+  it("has no field of the public profile that could switch it off, and the public shapes do not grow (AC-2)", () => {
     const reader = readFileSync(
       join(root, "../../packages/db/src/public-catalog-reader.ts"),
       "utf8"
     );
-    const body = PROFILE_TYPE.exec(reader)?.[1] ?? "";
-    const fields = [...body.matchAll(FIELD)].map((match) => match[1]);
-    expect(fields.sort()).toEqual([
-      "description",
-      "instagram",
-      "name",
-      "slug",
-      "whatsapp",
+    const members = (name: string) => {
+      const body =
+        new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(
+          reader
+        )?.[1] ?? "";
+      return body
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(
+          (line) =>
+            line !== "" && !line.startsWith("/**") && !line.startsWith("*")
+        );
+    };
+    // every member, as written: a new field of any of the four public shapes shows up here
+    expect(members("PublicCatalogProfile")).toEqual([
+      "description: string | null;",
+      "instagram: string | null;",
+      "name: string;",
+      "slug: string;",
+      "whatsapp: string | null;",
+    ]);
+    expect(members("PublicCatalogProductSummary")).toEqual([
+      "coverAssetId: string | null;",
+      "description: string | null;",
+      "id: string;",
+      "name: string;",
+      "priceFrom: string | null;",
+    ]);
+    expect(members("PublicCatalogPage")).toEqual([
+      "next: string | null;",
+      "products: PublicCatalogProductSummary[];",
+    ]);
+    expect(members("PublicCatalogProduct")).toEqual([
+      "description: string | null;",
+      "id: string;",
+      "media: { assetId: string; height: number; width: number }[];",
+      "name: string;",
+      "variants: { id: string; label: string | null; price: string | null }[];",
     ]);
   });
 });

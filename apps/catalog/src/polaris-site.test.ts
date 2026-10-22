@@ -30,6 +30,9 @@ describe("the address of the Polaris site in the footer", () => {
     ["a line break inside", "https://polaris.\nexample"],
     ["a backslash", "https:\\\\polaris.example"],
     ["no host", "https://"],
+    ["a soft hyphen in the host", "https://exam\u00adple.com"],
+    ["a non-ASCII host", "https://polaris.exemplo.com.br/ação"],
+    ["a zero-width space", "https://polaris\u200b.example"],
   ])("is no link for %s", (_name, value) => {
     expect(polarisSiteHref(value)).toBeNull();
   });

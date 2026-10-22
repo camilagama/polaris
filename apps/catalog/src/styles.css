@@ -454,3 +454,26 @@ a {
     transform: none;
   }
 }
+
+/* Nomes, descrições e rótulos de qualquer tamanho nunca alargam a página (360 px sem rolagem lateral). */
+.store-header h1,
+.page > h1,
+.product > h1,
+.store-header p,
+.product > p,
+.card-name,
+.variants li > span,
+.notice h1,
+.notice p,
+.empty {
+  overflow-wrap: anywhere;
+}
+.crumbs .btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.variants li > span:first-child {
+  min-width: 0;
+}
