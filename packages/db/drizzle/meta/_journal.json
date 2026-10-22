@@ -666,6 +666,13 @@
       "when": 1792664599887,
       "tag": "0095_donos_das_funcoes_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1792670480610,
+      "tag": "0096_escopo_do_select_de_organizations_do_onboarding",
+      "breakpoints": true
     }
   ]
 }

@@ -283,21 +283,22 @@ async function run() {
     assertClean(await findViolations(client));
 
     // the scope of the owners: a policy that reads app.owner_scope.* is TO one owner role and reads no runtime setting, and an owner's
-    // policy reads no runtime setting (polaris_device_session_owner aside, by name); policies on a throwaway table, rolled back
+    // policy reads no runtime setting (the two policies of polaris_device_session_owner aside, by name); policies on a throwaway table, rolled back
     await inRolledBackTransaction(async () => {
       const table = `${probe}_scope`;
       await client.query(`CREATE TABLE public.${table} (id integer)`);
       const scopeFindings = async (
         roles: string,
         expression: string,
-        before: string[] = []
+        before: string[] = [],
+        onTable = table
       ) => {
         await client.query("SAVEPOINT scope_probe");
         for (const statement of before) {
           await client.query(statement);
         }
         await client.query(
-          `CREATE POLICY probe ON public.${table} AS PERMISSIVE FOR SELECT ${roles} USING (${expression})`
+          `CREATE POLICY probe ON public.${onTable} AS PERMISSIVE FOR SELECT ${roles} USING (${expression})`
         );
         const found = (await findViolations(client)).ownerScope;
         await client.query("ROLLBACK TO SAVEPOINT scope_probe");
@@ -312,10 +313,8 @@ async function run() {
         await scopeFindings("TO polaris_pr11_runtime", userSetting),
         []
       );
-      assert.deepEqual(
-        await scopeFindings("TO polaris_device_session_owner", userSetting),
-        []
-      );
+      // (the two real policies of polaris_device_session_owner are the control of the exception by policy: the database is clean
+      // before and after every probe, with them in place)
       // the probes
       const notOneOwner =
         "reads app.owner_scope.probe_id and is not TO one polaris_*_owner role";
@@ -343,6 +342,74 @@ async function run() {
         [
           `${label(CONTROL_OWNER)}: reads app.owner_scope.probe_id, which a policy of another role reads too`,
           `public.${table}.probe_other ({polaris_onboarding_owner}): reads app.owner_scope.probe_id, which a policy of another role reads too`,
+        ]
+      );
+      // the exception of polaris_device_session_owner is the fixed set of its two policies (table.policy), not the owner and the
+      // setting: the same expression in a new policy, on a table of its own or on one of the two tables, is reported
+      assert.deepEqual(
+        await scopeFindings("TO polaris_device_session_owner", userSetting),
+        [
+          `${label("polaris_device_session_owner")}: a policy of an owner role reads the runtime setting app.user_id`,
+        ]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_device_session_owner",
+          "user_id = current_setting('app.user_id', true)",
+          [],
+          "devices"
+        ),
+        [
+          "public.devices.probe ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id",
+        ]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_device_session_owner",
+          "user_id = current_setting('app.user_id', true)",
+          [],
+          "device_sessions"
+        ),
+        [
+          "public.device_sessions.probe ({polaris_device_session_owner}): a policy of an owner role reads the runtime setting app.user_id",
+        ]
+      );
+      // every runtime setting lives under app.: a policy of any role that reads another custom prefix is reported, a setting of
+      // PostgreSQL (no dot) is not, and the name is not case sensitive
+      const outsideApp = (roles: string) =>
+        `${label(roles)}: reads the custom setting foo.bar, outside app.`;
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_pr11_runtime",
+          "current_setting('foo.bar', true) = 'x'"
+        ),
+        [outsideApp("polaris_pr11_runtime")]
+      );
+      assert.deepEqual(
+        await scopeFindings("", "current_setting('Foo.Bar', true) = 'x'"),
+        [outsideApp("public")]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          `TO ${CONTROL_OWNER}`,
+          "current_setting('foo.bar', true) = 'x'"
+        ),
+        [outsideApp(CONTROL_OWNER)]
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          "TO polaris_pr11_runtime",
+          "current_setting('transaction_read_only') = 'off'"
+        ),
+        []
+      );
+      assert.deepEqual(
+        await scopeFindings(
+          `TO ${CONTROL_OWNER}`,
+          "current_setting('APP.User_Id', true) = 'x'"
+        ),
+        [
+          `${label(CONTROL_OWNER)}: a policy of an owner role reads the runtime setting app.user_id`,
         ]
       );
       // the owner named in the check may read app.user_id and nothing else of the runtime
@@ -387,7 +454,7 @@ async function run() {
     });
     assertClean(await findViolations(client));
     tests.push(
-      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too) and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, polaris_device_session_owner's on app.user_id and a policy TO PUBLIC on a table no owner uses are not"
+      "a policy that reads app.owner_scope.* TO a runtime, TO no role (PUBLIC) or TO two owner roles, or together with app.user_id, two policies of two owners on the same scope, an owner's policy that reads app.organization_id (polaris_device_session_owner's too), a third policy of polaris_device_session_owner that reads app.user_id (new table, or devices or device_sessions), a policy of any role that reads a custom setting outside app. and a policy TO PUBLIC that reads app.user_id on a table an owner uses are reported in ownerScope; an owner's policy on its own scope, a runtime's on app.user_id, the two real policies of polaris_device_session_owner, a PostgreSQL setting without a dot and a policy TO PUBLIC on a table no owner uses are not"
     );
 
     // the gate can fail: PUBLIC with TEMPORARY or CREATE (every runtime role inherits it)

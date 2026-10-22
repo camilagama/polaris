@@ -21,15 +21,26 @@ export const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
  */
 export const OWNER_SCOPE_PREFIX = "app.owner_scope.";
 /**
- * The owner roles whose policies read a setting of the runtime, by name, with the one setting each may read and the reason;
- * any other is a finding. `polaris_device_session_owner` (0078) ends the sessions of the device the current user revoked:
- * its two SELECT policies (`devices_session_owner_select`, `device_sessions_session_owner_select`) read `app.user_id`, the
- * user the runtime proved from the verified session (the trust of the runtime's own policies), and its function checks that
- * the acting session is a live one of that user. It acts for the caller by design; moving it to `app.owner_scope.*` is a
- * decision of its own.
+ * The policies of owner roles that read a setting of the runtime, by `schema.table.policy`, with the one setting each may
+ * read; any other policy of an owner is a finding, and so is a third policy of the same owner. `polaris_device_session_owner`
+ * (0078) ends the sessions of the device the current user revoked: its two SELECT policies read `app.user_id`, the user the
+ * runtime proved from the verified session (the trust of the runtime's own policies), and its function checks that the acting
+ * session is a live one of that user. It acts for the caller by design; moving it to `app.owner_scope.*` is a decision of
+ * its own. The exception is the fixed set of these two policies, not the pair role + setting: a new policy of that owner that
+ * reads `app.user_id` is reported.
  */
-const OWNERS_READING_RUNTIME_SETTINGS: ReadonlyMap<string, string> = new Map([
-  ["polaris_device_session_owner", "app.user_id"],
+const OWNER_POLICIES_READING_RUNTIME_SETTINGS: ReadonlyMap<
+  string,
+  { owner: string; setting: string }
+> = new Map([
+  [
+    "public.devices.devices_session_owner_select",
+    { owner: "polaris_device_session_owner", setting: "app.user_id" },
+  ],
+  [
+    "public.device_sessions.device_sessions_session_owner_select",
+    { owner: "polaris_device_session_owner", setting: "app.user_id" },
+  ],
 ]);
 // fewer definer functions than the migrations create means the database is not the migrated one
 export const MIN_DEFINER_FUNCTIONS = 88;
@@ -286,8 +297,17 @@ interface PolicySettingsRow {
   settings: string[];
 }
 
+/**
+ * Every GUC of the runtime lives under `app.` (ADR 0093): the policies read `app.user_id`, `app.organization_id` and the like,
+ * and none reads a custom setting under another prefix. A name with a dot that is not `app.` is a custom setting
+ * (`foo.bar`), not a PostgreSQL one (those have no dot), and `findOwnerScopeViolations` reports a policy that reads it.
+ */
+const RUNTIME_SETTING_PREFIX = "app.";
 const isRuntimeSetting = (name: string) =>
-  name.startsWith("app.") && !name.startsWith(OWNER_SCOPE_PREFIX);
+  name.startsWith(RUNTIME_SETTING_PREFIX) &&
+  !name.startsWith(OWNER_SCOPE_PREFIX);
+const isCustomSettingOutsideApp = (name: string) =>
+  name.includes(".") && !name.startsWith(RUNTIME_SETTING_PREFIX);
 
 /** what a policy of owner roles, or one TO PUBLIC on a table an owner uses, reads of the runtime beyond what its owner may */
 function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
@@ -301,15 +321,26 @@ function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
   if (!row.allOwnerRoles) {
     return;
   }
+  const allowed = OWNER_POLICIES_READING_RUNTIME_SETTINGS.get(row.policy);
   const extra = runtime.filter(
     (name) =>
-      !row.roles.every(
-        (role) => OWNERS_READING_RUNTIME_SETTINGS.get(role) === name
+      !(
+        allowed?.setting === name &&
+        row.roles.length === 1 &&
+        row.roles[0] === allowed.owner
       )
   );
   return extra.length > 0
     ? `a policy of an owner role reads the runtime setting ${extra.join(", ")}`
     : undefined;
+}
+
+/** a policy of any role that reads a custom setting under a prefix other than `app.` */
+function customSettingFindings(label: string, settings: string[]): string[] {
+  const outside = settings.filter(isCustomSettingOutsideApp);
+  return outside.length > 0
+    ? [`${label}: reads the custom setting ${outside.join(", ")}, outside app.`]
+    : [];
 }
 
 /**
@@ -319,10 +350,12 @@ function runtimeSettingFinding(row: PolicySettingsRow): string | undefined {
  *   same role (a scope belongs to one owner: another owner's function would find it left in the transaction), and it reads
  *   no setting of the runtime (any other `app.*`);
  * - a policy of owner roles reads no setting of the runtime, but for the one setting of each owner named in
- *   OWNERS_READING_RUNTIME_SETTINGS, and neither does a policy TO PUBLIC on a table some owner role holds a privilege on
+ *   OWNER_POLICIES_READING_RUNTIME_SETTINGS, and neither does a policy TO PUBLIC on a table some owner role holds a privilege on
  *   (PUBLIC includes the owners).
- * The settings come from the text of the expressions (`current_setting('…')`); one read inside a function the policy calls
- * is not seen.
+ * - no policy, of any role, reads a custom setting outside `app.` (a name with a dot under another prefix): the runtime
+ *   settings all live under `app.`, and a policy that read `foo.bar` would be a runtime setting these rules do not see.
+ * The settings come from the text of the expressions (`current_setting('…')`), in lower case (a custom setting is not case
+ * sensitive: `APP.user_id` is `app.user_id`); one read inside a function the policy calls is not seen.
  */
 export async function findOwnerScopeViolations(
   client: Client
@@ -330,7 +363,7 @@ export async function findOwnerScopeViolations(
   const { rows } = await client.query<PolicySettingsRow>(
     `SELECT pol.schemaname || '.' || pol.tablename || '.' || pol.policyname AS policy,
             pol.roles::text[] AS roles,
-            coalesce((SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
+            coalesce((SELECT array_agg(DISTINCT lower(m[1]) ORDER BY lower(m[1]))
                         FROM regexp_matches(coalesce(pol.qual, '') || ' ' || coalesce(pol.with_check, ''),
                                             'current_setting\\(''([^'']+)''', 'g') AS m), '{}'::text[]) AS settings,
             NOT EXISTS (SELECT 1 FROM unnest(pol.roles) AS r(name) WHERE r.name NOT LIKE '${OWNER_ROLE_LIKE}') AS "allOwnerRoles",
@@ -375,6 +408,7 @@ export async function findOwnerScopeViolations(
         `${label}: reads ${shared.join(", ")}, which a policy of another role reads too`
       );
     }
+    findings.push(...customSettingFindings(label, row.settings));
     const runtimeFinding =
       scoped.length > 0 && runtime.length > 0
         ? `reads ${scoped.join(", ")} and the runtime setting ${runtime.join(", ")}`
