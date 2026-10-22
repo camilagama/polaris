@@ -70,6 +70,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 - Critério: cada item do [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) que a promoção toca está marcado com leitura de volta: bindings Hyperdrive com query caching desabilitado, segredos, namespaces de rate limit, bucket de mídia e demais itens do trecho que se aplica; para as filas e os crons, o [checklist das filas](./queues.md#checklist-de-go-live-do-despachante-responsável) e o [Antes de ligar dos jobs agendados](./scheduled-jobs.md#antes-de-ligar-responsável). Itens que a promoção não toca ficam listados como não aplicáveis, com o motivo.
 - **Proposta, pendente de decisão:** este item bloqueia **toda** promoção enquanto houver item tocado aberto no go-live, e não só a primeira exposição pública. A alternativa é bloquear só a primeira.
+- Marcador de ambiente: o banco de produção tem o comentário `polaris.environment=production` (`COMMENT ON DATABASE`, pelo dono; o Neon não dá superusuário para o `ALTER DATABASE … SET`), como no [go-live](./README.md#checklist-de-go-live-cloudflare-e-neon); sem ele o executor dos gates não recusa a URL direta da produção. Leitura de volta: `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();`.
 - Segredos: só nomes e data de criação, nunca valores.
 - Evidência: lista dos itens tocados com a leitura de volta, a data e quem leu.
 

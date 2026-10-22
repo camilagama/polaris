@@ -1,4 +1,10 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  declaredEnvironment,
+  type EnvironmentReadings,
+  hasMarkerText,
+  readsAsEnvironment,
+} from "../../../packages/db/scripts/environment-marker";
 
 /**
  * The guards of the Gate 7 script (ADR 0101): it runs only against the Asaas
@@ -69,37 +75,22 @@ export function assertGate7DatabaseUrl(connectionString: string): URL {
   return url;
 }
 
-/** The two readings of `polaris.environment`, as in `packages/db/scripts/gate-target.ts`. */
-export interface EnvironmentMarkers {
-  /** What the session sees (`current_setting`). */
-  current: string | null;
-  /** What `ALTER DATABASE … SET` wrote (`pg_db_role_setting`). */
-  stored: string | null;
-}
-
 const PROTECTED = ["production", "restore-drill"];
 
 /**
- * The billing database must be staging (`ALTER DATABASE … SET
- * polaris.environment = 'staging'`, the stored marker) or a local one with no
- * marker at all: never production, never a remote database without the
- * marker, because sandbox references would be mixed with real ones.
+ * The billing database must be staging (the database comment `polaris.environment=staging`, or the old stored
+ * setting) or a local one with no marker at all: never production, never a remote database without the
+ * marker, because sandbox references would be mixed with real ones. The readings are those of
+ * `packages/db/scripts/environment-marker.ts`.
  */
 export function assertGate7Database(
   connectionString: string,
-  markers: EnvironmentMarkers
+  readings: EnvironmentReadings
 ): void {
   const url = assertGate7DatabaseUrl(connectionString);
-  const current = (markers.current ?? "").trim().toLowerCase();
-  const stored = (markers.stored ?? "").trim().toLowerCase();
-  const staging =
-    stored === "staging" && (current === "" || current === "staging");
-  const local =
-    LOCAL_HOSTS.includes(url.hostname) && current === "" && stored === "";
-  if (PROTECTED.includes(current) || PROTECTED.includes(stored)) {
-    throw new Gate7RefusedError("gate7_database_not_staging");
-  }
-  if (!(staging || local)) {
+  const staging = declaredEnvironment(readings) === "staging";
+  const local = LOCAL_HOSTS.includes(url.hostname) && !hasMarkerText(readings);
+  if (readsAsEnvironment(readings, PROTECTED) || !(staging || local)) {
     throw new Gate7RefusedError("gate7_database_not_staging");
   }
 }

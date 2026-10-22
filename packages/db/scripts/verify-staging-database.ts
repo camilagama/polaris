@@ -6,12 +6,19 @@ import {
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
+import {
+  declaredEnvironment,
+  ENVIRONMENT_MARKER_SQL,
+  type EnvironmentReadings,
+  markerComment,
+} from "./environment-marker";
 import { poolerPattern, sqlState } from "./sales-gate-support";
 
 /**
  * The staging database check (ADR 0097), read-only: it changes nothing. It runs with the owner's direct URL
  * (`STAGING_MIGRATOR_DATABASE_URL`), never through the pooler, and refuses any database whose marker
- * (`ALTER DATABASE … SET polaris.environment = 'staging'`, set once by the responsible) is not `staging`,
+ * (the database comment `polaris.environment=staging`, written once by the owner: Neon gives no superuser, see
+ * `environment-marker.ts`) is not `staging`,
  * so a wrong URL never migrates or reads another environment.
  *
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
@@ -27,22 +34,16 @@ const PLATFORM_ROLE = /^(cloud_admin|neon_superuser|neon_service|pg_.*)$/;
 
 type Phase = "after-migrate" | "before-migrate";
 
-// The marker is read from what ALTER DATABASE stored (role 0 = every role), not from current_setting():
-// a connection option or a role setting could fake that one.
+// The marker is the exact database comment (or the old stored form, for a superuser's database), never
+// current_setting() alone: a connection option could fake that one.
 async function checkMarker(client: Client) {
-  const marker = await client.query<{ setting: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM pg_db_role_setting s
-         JOIN pg_database d ON d.oid = s.setdatabase
-        WHERE d.datname = current_database() AND s.setrole = 0
-          AND $1 = ANY (s.setconfig)
-     ) AS setting`,
-    [`polaris.environment=${STAGING}`]
+  const { rows } = await client.query<EnvironmentReadings>(
+    ENVIRONMENT_MARKER_SQL
   );
   assert.equal(
-    marker.rows[0]?.setting,
-    true,
-    "the database marker polaris.environment is not 'staging': refusing to touch this database"
+    rows[0] ? declaredEnvironment(rows[0]) : null,
+    STAGING,
+    `the database marker ${markerComment(STAGING)} is missing or different: refusing to touch this database`
   );
 }
 
@@ -147,7 +148,7 @@ async function run() {
   await client.connect();
   try {
     await checkMarker(client);
-    const results = [`marker polaris.environment = ${STAGING}`];
+    const results = [`marker ${markerComment(STAGING)}`];
     results.push(
       ...(phase === "before-migrate"
         ? await checkOwner(client)

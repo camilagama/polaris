@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { EnvironmentReadings } from "../../../packages/db/scripts/environment-marker";
 import {
   assertAsaasSandbox,
   assertGate7Database,
@@ -14,6 +15,13 @@ const sandbox = {
   ASAAS_API_KEY: "$aact_hmlg_000000000000000000000000",
   ASAAS_BASE_URL: "https://api-sandbox.asaas.com/v3",
 };
+
+const markers = (readings: Partial<EnvironmentReadings>) => ({
+  comment: null,
+  current: null,
+  stored: null,
+  ...readings,
+});
 
 function refusal(action: () => void): Gate7RefusedError {
   try {
@@ -84,27 +92,133 @@ describe("assertGate7Database", () => {
   const remote = "postgresql://user:pw@ep-fake.sa-east-1.aws.neon.tech/neondb";
   const local = "postgresql://postgres@localhost:5432/polaris_gate";
 
+  it("accepts the database comment `polaris.environment=staging`, the marker Neon allows", () => {
+    expect(() =>
+      assertGate7Database(
+        remote,
+        markers({ comment: "polaris.environment=staging" })
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertGate7Database(
+        remote,
+        markers({ comment: "polaris.environment=staging", current: "staging" })
+      )
+    ).not.toThrow();
+  });
+
+  it.each([
+    ["another environment", "polaris.environment=preview"],
+    ["a name that only starts like staging", "polaris.environment=staging-x"],
+    ["a trailing space", "polaris.environment=staging "],
+    ["a leading space", " polaris.environment=staging"],
+    ["a capital letter", "polaris.environment=Staging"],
+    ["a capital in the key", "Polaris.environment=staging"],
+    ["a space around the equal sign", "polaris.environment = staging"],
+    ["a line break", "polaris.environment=staging\n"],
+    ["other text", "staging"],
+    ["an empty comment", ""],
+  ])("refuses a comment with %s on a remote host", (_label, comment) => {
+    expect(
+      refusal(() => assertGate7Database(remote, markers({ comment }))).code
+    ).toBe("gate7_database_not_staging");
+  });
+
+  it("refuses a comment that says production or restore-drill, even on localhost, and when the session says staging", () => {
+    for (const value of ["production", "restore-drill"]) {
+      for (const url of [remote, local]) {
+        expect(
+          refusal(() =>
+            assertGate7Database(
+              url,
+              markers({
+                comment: `polaris.environment=${value}`,
+                current: "staging",
+              })
+            )
+          ).code
+        ).toBe("gate7_database_not_staging");
+      }
+    }
+  });
+
+  it("refuses a comment that contradicts the stored setting, or a session that contradicts the comment", () => {
+    expect(
+      refusal(() =>
+        assertGate7Database(
+          remote,
+          markers({
+            comment: "polaris.environment=staging",
+            stored: "preview",
+          })
+        )
+      ).code
+    ).toBe("gate7_database_not_staging");
+    expect(
+      refusal(() =>
+        assertGate7Database(
+          remote,
+          markers({
+            comment: "polaris.environment=staging",
+            current: "preview",
+          })
+        )
+      ).code
+    ).toBe("gate7_database_not_staging");
+  });
+
+  it("accepts a local database with a comment that has nothing to do with the marker, refuses one that looks like it", () => {
+    expect(() =>
+      assertGate7Database(
+        local,
+        markers({ comment: "default administrative connection database" })
+      )
+    ).not.toThrow();
+    expect(
+      refusal(() =>
+        assertGate7Database(
+          local,
+          markers({ comment: "polaris.environment=staging-x" })
+        )
+      ).code
+    ).toBe("gate7_database_not_staging");
+  });
+
   it("accepts a database marked staging", () => {
     expect(() =>
-      assertGate7Database(remote, { current: null, stored: "staging" })
+      assertGate7Database(remote, markers({ current: null, stored: "staging" }))
     ).not.toThrow();
     expect(() =>
-      assertGate7Database(remote, { current: "staging", stored: " Staging " })
+      assertGate7Database(
+        remote,
+        markers({ current: "staging", stored: "staging" })
+      )
     ).not.toThrow();
+    expect(
+      refusal(() =>
+        assertGate7Database(remote, markers({ stored: " Staging " }))
+      ).code
+    ).toBe("gate7_database_not_staging");
   });
 
   it.each(["localhost", "127.0.0.1"])("accepts %s without a marker", (host) => {
     expect(() =>
-      assertGate7Database(`postgres://postgres@${host}:5432/db`, {
-        current: null,
-        stored: null,
-      })
+      assertGate7Database(
+        `postgres://postgres@${host}:5432/db`,
+        markers({
+          current: null,
+          stored: null,
+        })
+      )
     ).not.toThrow();
     expect(() =>
-      assertGate7Database(`postgres://postgres@${host}:5432/db`, {
-        current: "",
-        stored: "",
-      })
+      assertGate7Database(
+        `postgres://postgres@${host}:5432/db`,
+        markers({
+          current: "",
+          stored: "",
+        })
+      )
     ).not.toThrow();
   });
 
@@ -112,7 +226,10 @@ describe("assertGate7Database", () => {
     for (const url of [remote, local]) {
       expect(
         refusal(() =>
-          assertGate7Database(url, { current: null, stored: "production" })
+          assertGate7Database(
+            url,
+            markers({ current: null, stored: "production" })
+          )
         ).code
       ).toBe("gate7_database_not_staging");
     }
@@ -121,7 +238,7 @@ describe("assertGate7Database", () => {
   it("refuses a remote host without a marker", () => {
     expect(
       refusal(() =>
-        assertGate7Database(remote, { current: null, stored: null })
+        assertGate7Database(remote, markers({ current: null, stored: null }))
       ).code
     ).toBe("gate7_database_not_staging");
   });
@@ -129,7 +246,10 @@ describe("assertGate7Database", () => {
   it("refuses any other marker", () => {
     expect(
       refusal(() =>
-        assertGate7Database(remote, { current: null, stored: "preview" })
+        assertGate7Database(
+          remote,
+          markers({ current: null, stored: "preview" })
+        )
       ).code
     ).toBe("gate7_database_not_staging");
   });
@@ -142,14 +262,17 @@ describe("assertGate7Database", () => {
   ])("refuses %j, which is not a PostgreSQL URL", (url) => {
     expect(
       refusal(() =>
-        assertGate7Database(url, { current: null, stored: "staging" })
+        assertGate7Database(url, markers({ current: null, stored: "staging" }))
       ).code
     ).toBe("gate7_database_url_invalid");
   });
 
   it("does not put the connection string in the error", () => {
     const error = refusal(() =>
-      assertGate7Database(remote, { current: null, stored: "production" })
+      assertGate7Database(
+        remote,
+        markers({ current: null, stored: "production" })
+      )
     );
 
     expect(error.message).not.toContain("pw");
@@ -185,20 +308,29 @@ describe("the database checks before connecting", () => {
   it("refuses a staging marker of the session alone, and a session that hides a protected one", () => {
     expect(
       refusal(() =>
-        assertGate7Database(remote, { current: "staging", stored: null })
+        assertGate7Database(
+          remote,
+          markers({ current: "staging", stored: null })
+        )
       ).code
     ).toBe("gate7_database_not_staging");
     expect(
       refusal(() =>
-        assertGate7Database(remote, { current: "", stored: "production" })
+        assertGate7Database(
+          remote,
+          markers({ current: "", stored: "production" })
+        )
       ).code
     ).toBe("gate7_database_not_staging");
     expect(
       refusal(() =>
-        assertGate7Database("postgres://postgres@localhost/db", {
-          current: "",
-          stored: "staging-old",
-        })
+        assertGate7Database(
+          "postgres://postgres@localhost/db",
+          markers({
+            current: "",
+            stored: "staging-old",
+          })
+        )
       ).code
     ).toBe("gate7_database_not_staging");
   });

@@ -28,6 +28,10 @@ import { createDatabase } from "@polaris/db/client";
 import { withAuthorizedTenantTransaction } from "@polaris/db/tenant-transaction";
 import { describeError } from "@polaris/observability/wide-event";
 import {
+  ENVIRONMENT_MARKER_SQL,
+  type EnvironmentReadings,
+} from "../../../packages/db/scripts/environment-marker";
+import {
   cancelRenewal,
   checkoutPriceOf,
   type OperatorCommandDependencies,
@@ -76,17 +80,6 @@ function print(result: Record<string, unknown>): void {
 
 const environment = process.env;
 
-// the same two readings as packages/db/scripts/gate-target.ts: a session option
-// can hide the stored marker, never add to a refusal
-const MARKERS_SQL = `SELECT current_setting('polaris.environment', true) AS current,
-       (SELECT substring(c FROM '^polaris\\.environment=(.*)$')
-          FROM pg_db_role_setting s
-          JOIN pg_database d ON d.oid = s.setdatabase,
-               unnest(s.setconfig) AS c
-         WHERE d.datname = current_database() AND s.setrole = 0
-           AND c LIKE 'polaris.environment=%'
-         LIMIT 1) AS stored`;
-
 /**
  * Checks a database before it is used: the URL first, before any connection
  * (host overrides and session options refused), then its environment marker.
@@ -103,11 +96,11 @@ async function checkedDatabaseUrl(
   );
   const { pool } = createDatabase(url, { maxConnections: 1 });
   try {
-    const { rows } = await pool.query<{
-      current: string | null;
-      stored: string | null;
-    }>(MARKERS_SQL);
+    const { rows } = await pool.query<EnvironmentReadings>(
+      ENVIRONMENT_MARKER_SQL
+    );
     assertGate7Database(url, {
+      comment: rows[0]?.comment ?? null,
       current: rows[0]?.current ?? null,
       stored: rows[0]?.stored ?? null,
     });
