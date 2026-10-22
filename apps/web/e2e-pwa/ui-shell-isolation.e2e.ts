@@ -27,6 +27,8 @@ const json = (body: unknown) => ({
   contentType: "application/json",
 });
 
+const RPC_PREFIX = /^.*\/rpc\//;
+
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
   await page.evaluate(() => document.fonts.ready);
@@ -45,7 +47,8 @@ const settle = async (page: Page) => {
 async function openInShell(
   page: Page,
   path: string,
-  ready: () => Promise<void>
+  ready: () => Promise<void>,
+  answers: Readonly<Record<string, unknown>> = {}
 ) {
   await page.route("**/api/auth-methods", (route) =>
     route.fulfill(
@@ -55,13 +58,19 @@ async function openInShell(
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill(json({ session: { id: "s" }, user: { id: "u" } }))
   );
-  await page.route("**/rpc/**", (route) =>
-    new URL(route.request().url()).pathname.endsWith("/organization/listMine")
-      ? route.fulfill(
-          json({ json: { organizations: [ORGANIZATION] }, meta: [] })
-        )
-      : route.abort("internetdisconnected")
-  );
+  await page.route("**/rpc/**", (route) => {
+    const procedure = new URL(route.request().url()).pathname.replace(
+      RPC_PREFIX,
+      ""
+    );
+    const answer =
+      procedure === "organization/listMine"
+        ? { organizations: [ORGANIZATION] }
+        : answers[procedure];
+    return answer === undefined
+      ? route.abort("internetdisconnected")
+      : route.fulfill(json({ json: answer, meta: [] }));
+  });
   await page.goto(path);
   await expect(page.locator(".ui-root.app-shell-root")).toBeVisible();
   await ready();
@@ -84,8 +93,146 @@ const CHANGE_PASSWORD = {
     ),
 };
 
+const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
+const product = (n: number, name: string, description: string | null) => ({
+  archivedAt: null,
+  categoryId: null,
+  createdAt: "2026-10-14T12:00:00.000Z",
+  deletedAt: null,
+  description,
+  id: id(20 + n),
+  name,
+  organizationId: ORGANIZATION.id,
+  status: "active",
+  updatedAt: "2026-10-14T12:00:00.000Z",
+  version: 1,
+});
+const PRODUCTS = [
+  product(1, "Camiseta do teste", "Algodão, corte reto, azul."),
+  product(
+    2,
+    "Cinto de couro legítimo com fivela dourada, tamanho único ajustável",
+    null
+  ),
+];
+const VARIANTS = {
+  configured: false,
+  optionValues: [],
+  productId: id(21),
+  productVersion: 1,
+  variants: [
+    {
+      id: id(31),
+      isDefault: true,
+      listPrice: "50.00",
+      sku: "CAM-001",
+      values: [],
+      version: 1,
+    },
+  ],
+};
+
+/** The real route `/products` (server mode, the API answered here), then a state of the screen the check can mount. */
+const openProducts = (
+  page: Page,
+  products: unknown[],
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/products",
+    async () => {
+      await expect(
+        page.getByRole("heading", { exact: true, name: "Produtos" })
+      ).toBeVisible();
+      await then(page);
+    },
+    {
+      "category/list": { categories: [] },
+      "product/getVariants": VARIANTS,
+      "product/list": { products },
+    }
+  );
+const openMenu = (page: Page) =>
+  page.getByRole("button", { name: "Mais ações para Camiseta do teste" });
+
+const PRODUCTS_LIST = {
+  name: "Produtos no shell: lista",
+  open: (page: Page) =>
+    openProducts(page, PRODUCTS, () =>
+      expect(page.getByText("Camiseta do teste")).toBeVisible()
+    ),
+};
+
+const PRODUCTS_SCREENS = [
+  PRODUCTS_LIST,
+  {
+    name: "Produtos no shell: menu de ações aberto",
+    open: (page: Page) =>
+      openProducts(page, PRODUCTS, async () => {
+        await openMenu(page).click();
+        await expect(
+          page.getByRole("menuitem", { name: "Variantes" })
+        ).toBeVisible();
+      }),
+  },
+  {
+    name: "Produtos no shell: sem produto",
+    open: (page: Page) =>
+      openProducts(page, [], () =>
+        expect(page.getByText("Cadastre o primeiro para vender.")).toBeVisible()
+      ),
+  },
+  {
+    name: "Produtos no shell: formulário novo",
+    open: (page: Page) =>
+      openProducts(page, PRODUCTS, async () => {
+        await page
+          .getByRole("button", { name: "Novo produto" })
+          .first()
+          .click();
+        await expect(page.getByLabel("Nome do produto")).toBeFocused();
+      }),
+  },
+  {
+    name: "Produtos no shell: formulário com erro no nome",
+    open: (page: Page) =>
+      openProducts(page, PRODUCTS, async () => {
+        await page
+          .getByRole("button", { name: "Novo produto" })
+          .first()
+          .click();
+        await page.getByRole("button", { name: "Cadastrar produto" }).click();
+        await expect(
+          page.getByText("Informe o nome do produto.")
+        ).toBeVisible();
+      }),
+  },
+  {
+    name: "Produtos no shell: busca sem resultado",
+    open: (page: Page) =>
+      openProducts(page, PRODUCTS, async () => {
+        await expect(page.getByText("Camiseta do teste")).toBeVisible();
+        await page.getByLabel("Buscar produto").fill("zzz");
+        await expect(page.getByText("Nenhum produto com “zzz”.")).toBeVisible();
+      }),
+  },
+  {
+    name: "Produtos no shell: variantes",
+    open: (page: Page) =>
+      openProducts(page, PRODUCTS, async () => {
+        await openMenu(page).click();
+        await page.getByRole("menuitem", { name: "Variantes" }).click();
+        await expect(
+          page.getByRole("heading", { level: 3, name: "SKU das variantes" })
+        ).toBeVisible();
+      }),
+  },
+];
+
 const SCREENS = [
   CHANGE_PASSWORD,
+  ...PRODUCTS_SCREENS,
   {
     name: "Venda no shell",
     open: (page: Page) =>
@@ -188,6 +335,21 @@ test.describe("controle: a verificação pega a regra legacy que vaza", () => {
       ).toBe(true);
     });
   }
+
+  test("Produtos: a regra antiga do campo de busca é vista na tela de Produtos", async ({
+    page,
+  }) => {
+    await PRODUCTS_LIST.open(page);
+    await addLegacyRule(page, ".ui-root input { text-transform: uppercase; }");
+    const found = leaks(await legacyLayerOnAndOff(page));
+    expect(
+      found.some(
+        (line) =>
+          line.startsWith('input[input-group-control] "Buscar produto"') &&
+          line.includes("text-transform uppercase (com legacy)")
+      )
+    ).toBe(true);
+  });
 
   test("o que transiciona também é visto (a leitura não pega o começo da transição)", async ({
     page,
