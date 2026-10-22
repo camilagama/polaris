@@ -18,7 +18,7 @@ A fila de comandos do aparelho é a única cópia do trabalho que o servidor ain
 
 ## Consequências
 
-- Quando o app tiver tela de conta, o botão "Sair" chama `attemptLogout` com um `LogoutWorkspace` por organização (outbox, `syncOutbox` como `trySync`, `purgeNamespace`) e só então o `signOut` do servidor.
+- Quando o app tiver tela de conta, o botão "Sair" chama `attemptLogout` com um `LogoutWorkspace` por organização (outbox, `syncOutbox` como `trySync`, `purgeNamespace`) e só então o `signOut` do servidor. Desde 22/10/2026, entre os dois, com conexão, o Sair revoga este aparelho (`device.revokeCurrent`); o purge deixa de apagar o id do aparelho, que só é esquecido no fim, e uma falha da revogação não impede sair nem toca a fila ([ADR 0048](0048-tela-de-aparelhos.md), emenda de 22/10/2026).
 - Sem rede, a pessoa que precisa mesmo sair tem o caminho explícito do descarte; o texto avisa o que se perde.
 - Trocar de usuário no mesmo navegador usa o mesmo guarda, porque cada usuário e organização tem seu próprio namespace (ADR 0015).
 

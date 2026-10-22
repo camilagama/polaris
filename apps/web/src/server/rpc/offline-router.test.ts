@@ -3,6 +3,7 @@ import { RPCLink } from "@orpc/client/fetch";
 import {
   DeviceLimitError,
   DeviceNotFoundError,
+  DeviceNotOwnedError,
   DeviceRevokedError,
   DeviceSessionEndedError,
   FreshSessionRequiredError,
@@ -56,14 +57,15 @@ interface DeviceView {
 
 function createClient(
   overrides: Record<string, unknown>,
-  workerBindings: WorkerBindings = bindings
+  workerBindings: WorkerBindings = bindings,
+  headers: Record<string, string> = {}
 ) {
   const app = createServerApp({
     rpcRouter: createRpcRouter(overrides as unknown as Overrides),
   });
   const link = new RPCLink({
     fetch: (request) => Promise.resolve(app.fetch(request, workerBindings)),
-    headers: { origin: "https://polaris.example.invalid" },
+    headers: { origin: "https://polaris.example.invalid", ...headers },
     method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
   });
@@ -77,6 +79,11 @@ function createClient(
         endedCurrentSession: boolean;
         endedSessionCount: number;
         revokedGrantIds: string[];
+      }>;
+      revokeCurrent: (input: unknown) => Promise<{
+        alreadyRevoked: boolean;
+        endedCurrentSession: boolean;
+        revokedGrantCount: number;
       }>;
     };
     offline: {
@@ -283,9 +290,35 @@ describe("device procedures", () => {
       userId: "someone-else",
     });
     expect(touchDevice).toHaveBeenCalledWith({}, "session-user-17", deviceId, {
+      freshSession: true,
       sessionId,
     });
     expect(result.device.id).toBe(deviceId);
+  });
+
+  it("check tells the repository a session signed in 16 minutes ago is not fresh (no promotion to its own device)", async () => {
+    const touchDevice = vi.fn(() => Promise.resolve(record()));
+    const client = createClient({
+      touchDevice,
+      withAuthenticatedRequestContext: (input: {
+        operation: (database: unknown, current: unknown) => Promise<unknown>;
+      }) =>
+        input.operation(
+          {},
+          {
+            ...session,
+            session: {
+              createdAt: new Date(Date.now() - 16 * 60 * 1000),
+              id: sessionId,
+            },
+          }
+        ),
+    });
+    await client.device.check({ deviceId });
+    expect(touchDevice).toHaveBeenCalledWith({}, "session-user-17", deviceId, {
+      freshSession: false,
+      sessionId,
+    });
   });
 
   it("check answers CONFLICT for a revoked device and NOT_FOUND for an unknown one", async () => {
@@ -352,6 +385,368 @@ describe("device procedures", () => {
       // biome-ignore lint/performance/noAwaitInLoops: each mapping is verified on its own
       await expect(client.device.register({})).rejects.toMatchObject({ code });
     }
+  });
+});
+
+describe("device.register names a device the person did not name (U-51)", () => {
+  const chromeOnAndroid = {
+    "sec-ch-ua":
+      '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"',
+    "user-agent":
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+  };
+
+  it.each([
+    ["null", null],
+    ["absent", undefined],
+    ["blank", "   "],
+  ])(
+    "with the label %s, keeps the browser and the system from the closed table",
+    async (_name, label) => {
+      const registerDevice = vi.fn(() => Promise.resolve(record()));
+      const client = createClient(
+        { registerDevice, withAuthenticatedRequestContext: authenticated() },
+        bindings,
+        chromeOnAndroid
+      );
+      await client.device.register(label === undefined ? {} : { label });
+      expect(registerDevice).toHaveBeenCalledWith({}, "session-user-17", {
+        label: "Chrome no Android",
+        sessionId,
+      });
+    }
+  );
+
+  it("keeps the name the person typed", async () => {
+    const registerDevice = vi.fn(() => Promise.resolve(record()));
+    const client = createClient(
+      { registerDevice, withAuthenticatedRequestContext: authenticated() },
+      bindings,
+      chromeOnAndroid
+    );
+    await client.device.register({ label: "Caixa da loja" });
+    expect(registerDevice).toHaveBeenCalledWith({}, "session-user-17", {
+      label: "Caixa da loja",
+      sessionId,
+    });
+  });
+});
+
+describe("device.revokeCurrent (Sair revokes this device)", () => {
+  const requestId = "5f0a6c1e-3b9d-4f5e-8a7b-1c2d3e4f5a6b";
+  const clientIp = "203.0.113.7";
+  const authConnection = { query: vi.fn() };
+  const ownResult = {
+    alreadyRevoked: false,
+    endedCurrentSession: true,
+    revokedGrantCount: 2,
+  };
+  /** The real context hands the operation its authentication connection; the fake does the same. */
+  const withAuthentication =
+    (current: typeof session = session) =>
+    (input: {
+      operation: (
+        database: unknown,
+        value: typeof session,
+        connection: unknown
+      ) => Promise<unknown>;
+    }) =>
+      input.operation({}, current, authConnection);
+  const staleSession = {
+    ...session,
+    session: {
+      createdAt: new Date(Date.now() - 16 * 60 * 1000),
+      id: sessionId,
+    },
+  };
+
+  function revokeCurrentClient(overrides: Record<string, unknown>) {
+    return createClient(overrides, bindings, {
+      "cf-connecting-ip": clientIp,
+      "x-request-id": requestId,
+    });
+  }
+
+  it("revokes the session's own device without a fresh session, never ending the other sessions", async () => {
+    const revokeOwnDevice = vi.fn(() => Promise.resolve(ownResult));
+    const revokeDevice = vi.fn();
+    const client = revokeCurrentClient({
+      accessLogWriter: () => () => Promise.resolve(true),
+      revokeDevice,
+      revokeOwnDevice,
+      withAuthenticatedRequestContext: withAuthentication(staleSession),
+    });
+    await expect(client.device.revokeCurrent({ deviceId })).resolves.toEqual(
+      ownResult
+    );
+    expect(revokeOwnDevice).toHaveBeenCalledWith(
+      {},
+      "session-user-17",
+      deviceId,
+      { actingSessionId: sessionId, requestId }
+    );
+    expect(revokeDevice).not.toHaveBeenCalled();
+  });
+
+  it("ignores a user id or an endOtherSessions smuggled in the input", async () => {
+    const revokeOwnDevice = vi.fn(() => Promise.resolve(ownResult));
+    const client = revokeCurrentClient({
+      accessLogWriter: () => () => Promise.resolve(true),
+      revokeOwnDevice,
+      withAuthenticatedRequestContext: withAuthentication(),
+    });
+    await client.device.revokeCurrent({
+      deviceId,
+      endOtherSessions: true,
+      userId: "someone-else",
+    });
+    expect(revokeOwnDevice).toHaveBeenCalledWith(
+      {},
+      "session-user-17",
+      deviceId,
+      { actingSessionId: sessionId, requestId }
+    );
+  });
+
+  it("another device of the user is FORBIDDEN with not_current_device, even for a recent session, and the refusal is counted without the device or the user", async () => {
+    const { logger } = await import("@polaris/observability/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const accessLog = vi.fn(() => Promise.resolve(true));
+    try {
+      const client = revokeCurrentClient({
+        accessLogWriter: () => accessLog,
+        revokeOwnDevice: () => Promise.reject(new DeviceNotOwnedError()),
+        withAuthenticatedRequestContext: withAuthentication(),
+      });
+      await expect(
+        client.device.revokeCurrent({ deviceId })
+      ).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        data: { reason: "not_current_device" },
+      });
+      expect(warn).toHaveBeenCalledWith("device_revoke_current_refused", {
+        reason: "not_current_device",
+      });
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).not.toContain(deviceId);
+      expect(logged).not.toContain("session-user-17");
+      expect(logged).not.toContain(sessionId);
+      expect(accessLog).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("an unknown device (or another user's) is NOT_FOUND, a malformed id BAD_REQUEST, and no session 401", async () => {
+    const notFound = revokeCurrentClient({
+      revokeOwnDevice: () => Promise.reject(new DeviceNotFoundError()),
+      withAuthenticatedRequestContext: withAuthentication(),
+    });
+    await expect(
+      notFound.device.revokeCurrent({ deviceId })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const revokeOwnDevice = vi.fn();
+    const malformed = revokeCurrentClient({
+      revokeOwnDevice,
+      withAuthenticatedRequestContext: withAuthentication(),
+    });
+    await expect(
+      malformed.device.revokeCurrent({ deviceId: "not-a-uuid" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const signedOut = revokeCurrentClient({
+      revokeOwnDevice,
+      withAuthenticatedRequestContext: () =>
+        Promise.reject(new TenantRequestContextError("session_required")),
+    });
+    await expect(
+      signedOut.device.revokeCurrent({ deviceId })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(revokeOwnDevice).not.toHaveBeenCalled();
+  });
+
+  it("a repetition answers alreadyRevoked and stays harmless", async () => {
+    const client = revokeCurrentClient({
+      accessLogWriter: () => () => Promise.resolve(true),
+      revokeOwnDevice: () =>
+        Promise.resolve({
+          alreadyRevoked: true,
+          endedCurrentSession: false,
+          revokedGrantCount: 0,
+        }),
+      withAuthenticatedRequestContext: withAuthentication(),
+    });
+    await expect(client.device.revokeCurrent({ deviceId })).resolves.toEqual({
+      alreadyRevoked: true,
+      endedCurrentSession: false,
+      revokedGrantCount: 0,
+    });
+  });
+
+  it("records the logout once, on the authentication connection, with the session user, the whole IP and the request id of the audit", async () => {
+    const accessLog = vi.fn(() => Promise.resolve(true));
+    const accessLogWriter = vi.fn(() => accessLog);
+    const revokeOwnDevice = vi.fn(() => Promise.resolve(ownResult));
+    const client = revokeCurrentClient({
+      accessLogWriter,
+      revokeOwnDevice,
+      withAuthenticatedRequestContext: withAuthentication(staleSession),
+    });
+    await client.device.revokeCurrent({ deviceId });
+    expect(accessLogWriter).toHaveBeenCalledWith(authConnection);
+    expect(accessLog).toHaveBeenCalledTimes(1);
+    expect(accessLog).toHaveBeenCalledWith({
+      event: "logout",
+      ip: clientIp,
+      requestId,
+      userId: "session-user-17",
+    });
+    expect(revokeOwnDevice).toHaveBeenCalledWith(
+      {},
+      "session-user-17",
+      deviceId,
+      expect.objectContaining({ requestId })
+    );
+  });
+
+  it("records nothing when the session did not end with the device (the sign-out records it)", async () => {
+    const accessLog = vi.fn(() => Promise.resolve(true));
+    const client = revokeCurrentClient({
+      accessLogWriter: () => accessLog,
+      revokeOwnDevice: () =>
+        Promise.resolve({ ...ownResult, endedCurrentSession: false }),
+      withAuthenticatedRequestContext: withAuthentication(),
+    });
+    await client.device.revokeCurrent({ deviceId });
+    expect(accessLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["rejects", () => Promise.reject(new Error("pool down"))],
+    [
+      "throws",
+      () => {
+        throw new Error("broken writer");
+      },
+    ],
+    ["answers false", () => Promise.resolve(false)],
+  ])("a writer that %s never fails the command", async (_name, write) => {
+    const { logger } = await import("@polaris/observability/logger");
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      const client = revokeCurrentClient({
+        accessLogWriter: () => write,
+        revokeOwnDevice: () => Promise.resolve(ownResult),
+        withAuthenticatedRequestContext: withAuthentication(),
+      });
+      await expect(client.device.revokeCurrent({ deviceId })).resolves.toEqual(
+        ownResult
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("the default writer gives up after 300 ms on a connection that never answers, and the command still succeeds", async () => {
+    const { logger } = await import("@polaris/observability/logger");
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const hanging = { query: vi.fn(() => new Promise(() => undefined)) };
+    try {
+      const client = revokeCurrentClient({
+        revokeOwnDevice: () => Promise.resolve(ownResult),
+        withAuthenticatedRequestContext: (input: {
+          operation: (
+            database: unknown,
+            value: typeof session,
+            connection: unknown
+          ) => Promise<unknown>;
+        }) => input.operation({}, session, hanging),
+      });
+      const started = Date.now();
+      await expect(client.device.revokeCurrent({ deviceId })).resolves.toEqual(
+        ownResult
+      );
+      const elapsed = Date.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(290);
+      expect(elapsed).toBeLessThan(2000);
+      expect(hanging.query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query_timeout: 300,
+          values: ["logout", "session-user-17", clientIp, requestId],
+        })
+      );
+      expect(error).toHaveBeenCalledWith(
+        "auth_access_log_write_failed",
+        expect.objectContaining({ reason: "timeout" })
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("a request from another origin is refused before the handler (CSRF)", async () => {
+    const revokeOwnDevice = vi.fn(() => Promise.resolve(ownResult));
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        revokeOwnDevice,
+        withAuthenticatedRequestContext: withAuthentication(),
+      } as unknown as Overrides),
+    });
+    const response = await app.fetch(
+      new Request("https://polaris.example.invalid/rpc/device/revokeCurrent", {
+        body: JSON.stringify({ json: { deviceId } }),
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example",
+        },
+        method: "POST",
+      }),
+      bindings
+    );
+    expect(response.status).toBe(403);
+    expect(revokeOwnDevice).not.toHaveBeenCalled();
+  });
+
+  it("counts against the same rate limit as device.revoke", async () => {
+    const keys: string[] = [];
+    const limiter = {
+      limit: vi.fn((input: { key: string }) => {
+        keys.push(input.key);
+        return Promise.resolve({ success: false });
+      }),
+    };
+    const revokeOwnDevice = vi.fn(() => Promise.resolve(ownResult));
+    const revokeDevice = vi.fn();
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        revokeDevice,
+        revokeOwnDevice,
+        withAuthenticatedRequestContext: withAuthentication(),
+      } as unknown as Overrides),
+    });
+    const call = (procedure: string) =>
+      app.fetch(
+        new Request(`https://polaris.example.invalid/rpc/device/${procedure}`, {
+          body: JSON.stringify({ json: { deviceId } }),
+          headers: {
+            "cf-connecting-ip": "203.0.113.9",
+            "content-type": "application/json",
+            origin: "https://polaris.example.invalid",
+          },
+          method: "POST",
+        }),
+        { ...bindings, RPC_MUTATION_RATE_LIMIT: limiter }
+      );
+    const current = await call("revokeCurrent");
+    const other = await call("revoke");
+    expect(current.status).toBe(429);
+    expect(other.status).toBe(429);
+    // the same bucket of the same scope: one key per call, and the same key for both procedures
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    expect(revokeOwnDevice).not.toHaveBeenCalled();
+    expect(revokeDevice).not.toHaveBeenCalled();
   });
 });
 

@@ -17,6 +17,7 @@ import {
 } from "./auth/redirect-target-test-cases";
 import { withSocialRateLimit } from "./auth/social-rate-limit-test-support";
 import type { WorkerBindings } from "./environment";
+import { createRpcRouter } from "./rpc/router";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";
@@ -1185,6 +1186,106 @@ describe("Google OAuth and security audit", () => {
       { event: "login_failed", userId: null },
     ]);
   });
+
+  it.each([
+    ["ends the session with the device", true],
+    ["leaves the session to the sign-out", false],
+  ])(
+    "the whole 'Sair' records exactly one logout: the revocation that %s, then the sign-out",
+    async (_name, endsSession) => {
+      const entries: { event: string; userId: string | null }[] = [];
+      const writer: AccessLogWriter = (entry) => {
+        entries.push({ event: entry.event, userId: entry.userId });
+        return Promise.resolve(true);
+      };
+      const { app: authApp, auth } = createGoogleTestApp(writer);
+      stubGoogleTokenExchange();
+      const login = await beginGoogleLogin(authApp);
+      const callback = await authApp.request(
+        "/api/auth/callback/google?code=fake-code&state=" +
+          encodeURIComponent(login.state),
+        { headers: { cookie: login.cookies } },
+        testBindings
+      );
+      const cookie = cookieHeader(callback.headers);
+      // step 2: device.revokeCurrent, through the router, with the session this cookie carries; the device's
+      // revocation deletes the session (as end_device_sessions does) and the handler records the logout
+      const sessionApp = createServerApp({
+        authHandler: (request) => auth.handler(request),
+        rpcRouter: createRpcRouter({
+          accessLogWriter: () => writer,
+          revokeOwnDevice: async () => {
+            if (endsSession) {
+              const context = (await auth.$context) as unknown as {
+                internalAdapter: {
+                  deleteSession: (token: string) => Promise<void>;
+                };
+              };
+              const current = await auth.api.getSession({
+                headers: new Headers({ cookie }),
+              });
+              await context.internalAdapter.deleteSession(
+                current?.session.token ?? ""
+              );
+            }
+            return {
+              alreadyRevoked: false,
+              endedCurrentSession: endsSession,
+              revokedGrantCount: 0,
+            };
+          },
+          withAuthenticatedRequestContext: async (input: {
+            operation: (
+              database: unknown,
+              session: unknown,
+              connection: unknown
+            ) => Promise<unknown>;
+            request: Request;
+          }) => {
+            const current = await auth.api.getSession({
+              headers: input.request.headers,
+            });
+            return input.operation({}, current, {});
+          },
+        } as unknown as Parameters<typeof createRpcRouter>[0]),
+      });
+      const revoked = await sessionApp.request(
+        "/rpc/device/revokeCurrent",
+        {
+          body: JSON.stringify({
+            json: { deviceId: "0199c2d0-0000-7000-8000-0000000000d1" },
+          }),
+          headers: {
+            "cf-connecting-ip": "203.0.113.7",
+            "content-type": "application/json",
+            cookie,
+            origin: testBaseURL,
+          },
+          method: "POST",
+        },
+        testBindings
+      );
+      expect(revoked.status).toBe(200);
+      // step 3: the sign-out, always
+      await sessionApp.request(
+        "/api/auth/sign-out",
+        {
+          headers: {
+            "cf-connecting-ip": "203.0.113.7",
+            cookie,
+            origin: testBaseURL,
+          },
+          method: "POST",
+        },
+        testBindings
+      );
+
+      const logouts = entries.filter((entry) => entry.event === "logout");
+      expect(logouts).toHaveLength(1);
+      expect(logouts[0]?.userId).toEqual(expect.any(String));
+      expect(logouts[0]?.userId).not.toBe("");
+    }
+  );
 
   it("rejects an invalid state without exchanging the code or creating a session", async () => {
     const { app: testApp, auditEvents, auth } = createGoogleTestApp();

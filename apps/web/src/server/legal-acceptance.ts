@@ -30,9 +30,12 @@ export interface LegalAcceptanceQueryable {
 /**
  * The procedures that answer without the acceptance of the versions in force, and why. Only these
  * (decision of 19/10/2026): the acceptance itself, the requests of the data subject (the copy of the
- * data) and the list of devices. NEVER sync, lease or any other write. A test walks the whole router
- * and fails on a name that does not exist, on an exempt sync, lease or write, and on a new procedure
- * nobody decided about.
+ * data) and the list of devices; and (22/10/2026) the revocation of this installation by "Sair"
+ * (`device.revokeCurrent`), a write that only takes access away, so a person held by the acceptance
+ * still leaves without a copy of the device behind. NEVER sync, lease, `device.revoke`,
+ * `device.register`, `device.check` or any other write. A test walks the whole router and fails on a
+ * name that does not exist, on an exempt sync, lease or write, and on a new procedure nobody decided
+ * about.
  */
 export const LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES = Object.freeze({
   "account.acceptLegal": "acceptance",
@@ -42,6 +45,7 @@ export const LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES = Object.freeze({
   "dataExport.request": "privacy_request",
   "dataExport.requestClosed": "privacy_request",
   "device.list": "devices_screen",
+  "device.revokeCurrent": "logout",
 } as const);
 
 /** The `/api/*` routes with the same exemption: the download of the copies asked for above. */
