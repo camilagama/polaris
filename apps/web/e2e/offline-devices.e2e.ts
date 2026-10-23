@@ -984,7 +984,10 @@ test("depois do 401 no envio, o início offline seguinte recusa: ninguém é lem
   expect(await rememberedUser(page)).not.toBeNull();
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   // the 401 on the send: the runtime forgets the lease and who was signed in
-  await expect.poll(() => state.pushRefused).toBeGreaterThan(0);
+  // the return goes through the probe and the sync ~1 s (±20%) after it
+  await expect
+    .poll(() => state.pushRefused, { timeout: 15_000 })
+    .toBeGreaterThan(0);
   await expect.poll(() => leaseKeys(page)).toEqual([]);
   await expect.poll(() => rememberedUser(page)).toBeNull();
 
