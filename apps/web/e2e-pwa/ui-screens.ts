@@ -3,6 +3,7 @@
 import type { BrowserContext, Page } from "@playwright/test";
 import { entryStates } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
+import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
@@ -231,6 +232,34 @@ async function exerciseStockReason(page: Page) {
   );
 }
 
+/** The files of the payment profiles screen on the new interface (the draft and the fee model have no markup). */
+const PAYMENT_SOURCES = [
+  "src/payment-profiles/payment-profile-form.tsx",
+  "src/payment-profiles/payment-profile-list.tsx",
+  "src/payment-profiles/payment-profiles-page.tsx",
+];
+
+/** One state of the payment profiles screen (`ui-payment-states.ts`). */
+const paymentScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `perfis de pagamento ${name}`,
+  open,
+  sourceDirs: PAYMENT_SOURCES,
+  status: "migrated",
+});
+
+async function exercisePaymentMethod(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Método", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
@@ -404,4 +433,7 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  paymentScreen("lista", paymentStates.list),
+  paymentScreen("edição", paymentStates.edit, exercisePaymentMethod),
+  paymentScreen("erros nos campos", paymentStates.errors),
 ];
