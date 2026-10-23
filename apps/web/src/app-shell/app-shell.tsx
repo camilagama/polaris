@@ -449,7 +449,7 @@ interface AppShellProps {
   onlineOnly?: boolean;
   /** Pages that need data of an organization wait for it to be resolved. */
   requiresOrganization?: boolean;
-  /** The new-version notice (ADR 0039), at the top of the content, beside the sidebar and never under it. */
+  /** The new-version notice (ADR 0041), at the top of the content, beside the sidebar and never under it. */
   updateNotice?: ReactNode;
 }
 
