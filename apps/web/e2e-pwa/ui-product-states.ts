@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of the products screen the interface guardrails measure: the screen in the lab of the screens
@@ -19,8 +19,8 @@ const PRODUCT_ID = id(21);
 
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const DEFAULT_CONFIGURATION = {
@@ -51,6 +51,7 @@ const menuOf = (page: Page, name: string) =>
 /** Starts the lab's runtime and waits for the screen. */
 async function openProductsLab(page: Page) {
   await serveVariants(page, DEFAULT_CONFIGURATION);
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=products&catalog=seeded");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

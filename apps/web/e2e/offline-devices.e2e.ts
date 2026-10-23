@@ -786,7 +786,10 @@ test("login antigo com 2 operações na fila: o diálogo do Sair protege o traba
   await serve(page, state);
   await queueCustomers(page, 2);
   await page.goto("/devices");
-  await expect(chip(page)).toContainText("2 operações guardadas");
+  // the runtime of the page before may still be on the send it scheduled for the return of the connection
+  await expect(chip(page)).toContainText("2 operações guardadas", {
+    timeout: 15_000,
+  });
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
   await page.getByRole("button", { name: "Entrar de novo" }).click();
@@ -887,7 +890,10 @@ async function revokeAndLeave(
   await serve(page, state);
   await queueCustomers(page, 2);
   await page.goto("/devices");
-  await expect(chip(page)).toContainText("2 operações guardadas");
+  // the runtime of the page before may still be on the send it scheduled for the return of the connection
+  await expect(chip(page)).toContainText("2 operações guardadas", {
+    timeout: 15_000,
+  });
   await expect(deviceItems(page)).toHaveCount(2);
   expect(state.listCalls).toBeGreaterThan(0);
   // what the real storage (IndexedDB, where the queue lives) holds before the session ends

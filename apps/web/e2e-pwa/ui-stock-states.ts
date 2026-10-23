@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Locator, Page, Route } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of the stock screen the interface guardrails measure (t194): the screen in the lab of the screens
@@ -15,8 +15,8 @@ const SUBMITTED =
 
 const rpc = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 
@@ -121,6 +121,7 @@ export async function serveStockRows(page: Page) {
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
 async function openStockLab(page: Page, list: ServedList) {
   await serveList(page, list);
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=stock");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -230,14 +231,6 @@ export const stockStates = {
     await showScreenAlone(page);
   },
 
-  /** The receipt of a variant with balance and no known cost is blocked: the notice, and "Revisar" off. */
-  async receiveBlocked(page: Page) {
-    await openList(page);
-    await openCommand(page, "Receber", "Camiseta do teste");
-    await page.getByText("Sem custo conhecido, não dá para receber").waitFor();
-    await showScreenAlone(page);
-  },
-
   /** A search with nothing found. */
   async noResult(page: Page) {
     await openStockLab(page, {
@@ -276,6 +269,14 @@ export const stockStates = {
       .getByRole("status")
       .filter({ hasText: "Recebimento guardado neste aparelho" })
       .waitFor({ timeout: 15_000 });
+    await showScreenAlone(page);
+  },
+
+  /** The receipt of a variant with balance and no known cost is blocked: the notice, and "Revisar" off. */
+  async receiveBlocked(page: Page) {
+    await openList(page);
+    await openCommand(page, "Receber", "Camiseta do teste");
+    await page.getByText("Sem custo conhecido, não dá para receber").waitFor();
     await showScreenAlone(page);
   },
 
