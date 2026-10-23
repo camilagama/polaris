@@ -119,7 +119,7 @@ test("com uma operação recusada não há botão de atualizar: a atualização 
     name: "Atualização do aplicativo",
   });
   await expect(banner).toContainText("O servidor recusou 1 operação");
-  await expect(banner).toContainText("Operações que precisam");
+  await expect(banner).toContainText("Pendências");
   await expect(banner.getByRole("button")).toHaveCount(0);
   await page.waitForTimeout(1500);
   expect(await runningVersion(page)).toBe("1");

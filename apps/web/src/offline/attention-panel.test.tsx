@@ -40,7 +40,7 @@ describe("the attention panel", () => {
       const html = render(summary);
       expect(html).toContain('data-ui=""');
       expect(html.match(/<h1[ >]/g)).toHaveLength(1);
-      expect(html).toContain("Operações que precisam de atenção</h1>");
+      expect(html).toContain("Pendências</h1>");
     }
   });
 

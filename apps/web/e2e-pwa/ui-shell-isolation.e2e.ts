@@ -303,7 +303,7 @@ const SCREENS = [
         expect(
           page.getByRole("heading", {
             level: 1,
-            name: "Operações que precisam de atenção",
+            name: "Pendências",
           })
         ).toBeVisible()
       ),

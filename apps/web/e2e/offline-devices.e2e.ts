@@ -520,7 +520,7 @@ test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancel
   await confirmButton(page, CONFIRM_ALL).click();
   await expect(
     page.getByText(
-      "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro."
+      "Não conseguimos confirmar se o aparelho foi revogado. Feche este aviso e olhe a lista. Se o aparelho ainda aparecer, revogue de novo. Repetir é seguro."
     )
   ).toBeVisible();
   await expect(page.getByText("Aparelho revogado")).toHaveCount(0);
@@ -1211,7 +1211,7 @@ test("cancelar a confirmação depois de um resultado incerto não deixa no topo
   await page.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("toque em Sim de novo")).toHaveCount(0);
+  await expect(page.getByText("revogue de novo")).toHaveCount(0);
 });
 
 test("o resultado incerto de uma revogação que valeu não se perde quando a linha sai da lista: o aviso vai para o topo", async ({

@@ -71,7 +71,7 @@ export function AttentionFrame({ children }: { children: ReactNode }) {
     >
       <header className="grid gap-1">
         <h1 className="text-title" id="attention-title">
-          Operações que precisam de atenção
+          Pendências
         </h1>
       </header>
       {children}
