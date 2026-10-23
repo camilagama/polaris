@@ -15,7 +15,9 @@ import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
   type ChangeEvent,
   type ComponentType,
+  lazy,
   type ReactNode,
+  Suspense,
   useCallback,
   useEffect,
 } from "react";
@@ -60,7 +62,6 @@ import {
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
-import { OrganizationSetup } from "../organization/organization-setup";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
   BOTTOM_BAR_IDS,
@@ -75,6 +76,13 @@ import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
 import { useSignedInEmail } from "./signed-in-email";
 import { StatePanel } from "./state-panel";
+
+/** The first access is its own chunk, kept by the service worker: only a person with no organization opens it. */
+const OrganizationSetup = lazy(() =>
+  import("../organization/organization-setup").then((module) => ({
+    default: module.OrganizationSetup,
+  }))
+);
 
 /** The icon of each destination (lucide, one module each). */
 const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
@@ -446,7 +454,8 @@ function OrganizationGate({ children }: { children: ReactNode }) {
     );
   }
   if (load.status === "empty") {
-    return <OrganizationSetup onOpened={reload} />;
+    // `AppShell` shows the first access on a page of its own, with no menu: this is only for the types
+    return null;
   }
   // Remounts the page when another organization is chosen, so no screen keeps
   // data of the previous one.
@@ -476,7 +485,7 @@ export function AppShell({
   requiresOrganization = true,
   updateNotice,
 }: AppShellProps) {
-  const { load, select } = useOrganizationLoad();
+  const { load, reload, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
   // the remembered organizations only draw the screen: with the offline access expired they are hidden, not deleted
   const accessExpired = useOfflineAccessExpired();
@@ -501,6 +510,29 @@ export function AppShell({
           select,
         }
       : null;
+  // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
+  if (requiresOrganization && load.status === "empty" && !accessExpired) {
+    return (
+      <>
+        {updateNotice}
+        {showNotice || showAcceptanceNotice ? (
+          // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
+          <div
+            className="flow-root bg-background px-(--gutter) pt-4"
+            data-ui=""
+          >
+            <div className="mx-auto max-w-[420px]">
+              {showNotice ? <SessionEndedNotice alone /> : null}
+              {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
+            </div>
+          </div>
+        ) : null}
+        <Suspense fallback={<PageLoading fullPage />}>
+          <OrganizationSetup onOpened={reload} />
+        </Suspense>
+      </>
+    );
+  }
   return (
     <SidebarProvider className="ui-root app-shell-root bg-background">
       <a
