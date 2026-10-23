@@ -1,3 +1,5 @@
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import type { OperationSubmission } from "./sale-cancellation-model";
 
 interface OperationFailureNoticeProps {
@@ -22,50 +24,45 @@ export function OperationFailureNotice({
 }: OperationFailureNoticeProps) {
   if (submission.phase === "failed") {
     return (
-      <p className="sale-message is-error" role="alert">
-        {submission.failure.message}
-      </p>
+      <Alert variant="destructive">
+        <AlertDescription>{submission.failure.message}</AlertDescription>
+      </Alert>
     );
   }
   if (submission.phase !== "locked") {
     return null;
   }
   return (
-    <div className="sale-message is-error sale-locked" role="alert">
-      <p>{submission.failure.message}</p>
-      {submission.confirmingDiscard ? (
-        <>
-          <p>
-            <strong>{warning}</strong> Descartar esta tentativa não desfaz o que
-            já tenha sido feito. Depois de descartar, recarregue a venda para
-            conferir o estado.
-          </p>
-          <div className="sale-actions">
-            <button
-              className="danger-button"
-              onClick={onDiscardConfirm}
-              type="button"
-            >
-              Sim, descartar esta tentativa
-            </button>
-            <button
-              className="quiet-button"
-              onClick={onDiscardCancel}
-              type="button"
-            >
-              Voltar
-            </button>
-          </div>
-        </>
-      ) : (
-        <button
-          className="quiet-button"
-          onClick={onDiscardRequest}
-          type="button"
-        >
-          Descartar esta tentativa
-        </button>
-      )}
-    </div>
+    <Alert variant="destructive">
+      <AlertDescription className="grid justify-items-start gap-3 [&_p:not(:last-child)]:mb-0">
+        <p>{submission.failure.message}</p>
+        {submission.confirmingDiscard ? (
+          <>
+            <p>
+              <strong>{warning}</strong> Descartar esta tentativa não desfaz o
+              que já tenha sido feito. Depois de descartar, recarregue a venda
+              para conferir o estado.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                className="h-auto min-h-ctl-md whitespace-normal py-1.5"
+                onClick={onDiscardConfirm}
+                type="button"
+                variant="destructive"
+              >
+                Sim, descartar esta tentativa
+              </Button>
+              <Button onClick={onDiscardCancel} type="button" variant="outline">
+                Voltar
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Button onClick={onDiscardRequest} type="button" variant="outline">
+            Descartar esta tentativa
+          </Button>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

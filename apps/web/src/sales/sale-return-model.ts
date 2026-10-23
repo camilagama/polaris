@@ -137,6 +137,13 @@ export function returnNoteCounterText(draft: ReturnDraft): string {
   return `${noteLength(draft.reasonNote)}/${MAX_RETURN_NOTE_CODE_POINTS}`;
 }
 
+/** What the person can still return: one unit, or a range, whole numbers only. */
+function returnedRangeError(available: number): string {
+  return available === 1
+    ? "Só resta 1 para devolver."
+    : `Informe de 1 a ${available}, sem vírgula.`;
+}
+
 function validateLine(line: ReturnLineDraft): {
   errors: ReturnLineErrors;
   item: ReturnInput["items"][number] | null;
@@ -153,14 +160,14 @@ function validateLine(line: ReturnLineDraft): {
     errors.returned =
       returnedText === ""
         ? "Informe quantos foram devolvidos."
-        : `Use um número inteiro de 1 a ${line.available}.`;
+        : returnedRangeError(line.available);
   }
   const restocked = restockedText === "" ? null : parseCount(restockedText);
   if (restocked === null || (returned !== null && restocked > returned)) {
     errors.restocked =
       restockedText === ""
         ? "Informe quantos voltam ao estoque (0 se nenhum)."
-        : "Use um número inteiro de 0 até a quantidade devolvida.";
+        : "Informe de 0 até o devolvido, sem vírgula.";
   }
   if (
     errors.returned ||

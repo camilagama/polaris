@@ -55,8 +55,8 @@ interface CustomerDisclosureProps {
 }
 
 /**
- * Optional, collapsed entry point shown after a sale is confirmed. The panel inside still has the look of the
- * "Cliente da venda" screen (sale-customer-panel.css), which migrates in its own pull request.
+ * Optional, collapsed entry point shown after a sale is confirmed: the "Cliente da venda" panel of the detail,
+ * without its own card (it is already inside the card of the confirmed sale).
  */
 function CustomerDisclosure({
   organizationId,
@@ -81,6 +81,7 @@ function CustomerDisclosure({
       <div className="w-full" hidden={!open} id="sale-customer-region">
         {open ? (
           <SaleCustomerPanel
+            framed={false}
             headingLevel={3}
             key={saleId}
             organizationId={organizationId}

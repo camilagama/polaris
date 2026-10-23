@@ -9,9 +9,9 @@ import {
   editReturnNote,
   editReturnReason,
   initialReturnState,
+  isReturnDraftChanged,
   isReturnLocked,
   mapReturnError,
-  isReturnDraftChanged,
   openReturn,
   prepareReturnSubmission,
   RETURN_EXPLANATION,
@@ -218,7 +218,32 @@ describe("validation", () => {
       );
       expect(validated.input, text).toBeNull();
       expect(validated.errors.lines[0]?.returned, text).toBe(
-        "Use um número inteiro de 1 a 2."
+        "Informe de 1 a 2, sem vírgula."
+      );
+    }
+  });
+
+  it("says 'only one is left' when one unit can be returned", () => {
+    const lastUnit = returnTableRows(
+      [
+        {
+          availableToReturn: 1,
+          position: 0,
+          restockedQuantity: 0,
+          returnedQuantity: 1,
+          sold: 2,
+        },
+      ],
+      new Map([[0, "Calça jeans — 42"]])
+    );
+    for (const text of ["0", "2", "1,5"]) {
+      const validated = validateReturnDraft(
+        draftOf(
+          editReturned(openReturn(initialReturnState(), lastUnit), 0, text)
+        )
+      );
+      expect(validated.errors.lines[0]?.returned, text).toBe(
+        "Só resta 1 para devolver."
       );
     }
   });
@@ -228,7 +253,9 @@ describe("validation", () => {
       draftOf(editRestocked(editReturned(editing(), 0, "2"), 0, "3"))
     );
     expect(over.input).toBeNull();
-    expect(over.errors.lines[0]?.restocked).toContain("0 até a quantidade");
+    expect(over.errors.lines[0]?.restocked).toBe(
+      "Informe de 0 até o devolvido, sem vírgula."
+    );
     const zero = validateReturnDraft(
       draftOf(editRestocked(editReturned(editing(), 0, "2"), 0, "0"))
     );

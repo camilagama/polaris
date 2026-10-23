@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { resultAnswers } from "./ui-result-states";
@@ -29,8 +30,8 @@ const ORGANIZATION = {
 const WRITE_OFF_SHIRT = /^Baixar estoque de Camiseta/;
 const json = (body: unknown) => ({
   body: JSON.stringify(body),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const RPC_PREFIX = /^.*\/rpc\//;
@@ -386,7 +387,6 @@ const LOT2_SCREENS = [
   },
 ];
 
-const SALE_ID = id(70);
 const historyEntry = (n: number, overrides: Record<string, unknown> = {}) => ({
   cancelledAt: null,
   confirmedAt: "2026-10-14T12:00:01.000Z",
@@ -435,116 +435,63 @@ const HISTORY = {
     ),
 };
 
-/** The real route `/sales/detail`: the receipt, a return made, and under them the old panels (outside `data-ui`). */
-const SALE_DETAIL = {
-  name: "Detalhe da venda no shell",
-  open: (page: Page) =>
-    openInShell(
-      page,
-      `/sales/detail?saleId=${SALE_ID}`,
-      async () => {
-        await expect(
-          page.getByRole("heading", { level: 1, name: "Detalhe da venda" })
-        ).toBeVisible();
-        await expect(
+/** The real route `/sales/detail`, the API answered here: the receipt, a return made and the three panels in cards. */
+const openSaleDetail = (
+  page: Page,
+  withReturn: boolean,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    `/sales/detail?saleId=${DETAIL_SALE_ID}`,
+    async () => {
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Detalhe da venda" })
+      ).toBeVisible();
+      await expect(page.getByText("Ângela Souza").first()).toBeVisible();
+      await then(page);
+    },
+    saleDetailAnswers({ withReturn })
+  );
+
+const SALE_DETAIL_SCREENS = [
+  {
+    name: "Detalhe da venda no shell",
+    open: (page: Page) =>
+      openSaleDetail(page, true, () =>
+        expect(
           page.getByRole("heading", { level: 2, name: "Devoluções" })
+        ).toBeVisible()
+      ),
+  },
+  {
+    // the return and the cancellation open: the table with its fields, the choice lists and the notes
+    name: "Detalhe da venda no shell: devolução e cancelamento abertos",
+    open: (page: Page) =>
+      openSaleDetail(page, false, async () => {
+        await page.getByRole("button", { name: "Registrar devolução" }).click();
+        await page.getByRole("button", { name: "Cancelar venda" }).click();
+        await expect(
+          page.getByRole("button", { name: "Revisar cancelamento" })
         ).toBeVisible();
-      },
-      {
-        "sale/get": {
-          cancellation: null,
-          customer: { customerId: null, version: 0 },
-          returnSummary: [
-            {
-              availableToReturn: 1,
-              position: 0,
-              restockedQuantity: 0,
-              returnedQuantity: 1,
-              sold: 2,
-            },
-          ],
-          returns: [
-            {
-              commandId: id(80),
-              id: id(81),
-              items: [
-                { position: 0, restockedQuantity: 0, returnedQuantity: 1 },
-              ],
-              reasonCode: "defective",
-              reasonNote: "Rasgada",
-              returnedAt: "2026-10-15T12:00:00.000Z",
-              returnedBy: "user_1",
-              saleId: SALE_ID,
-            },
-          ],
-          sale: {
-            adjustments: [
-              {
-                amount: "10.00",
-                kind: "discount",
-                percentage: null,
-                position: 0,
-                valueType: "fixed",
-              },
-            ],
-            items: [
-              {
-                chargedUnitPrice: "114.95",
-                listedUnitPrice: "139.90",
-                position: 0,
-                productId: id(21),
-                productLabel: "Calça jeans — 42",
-                quantity: 2,
-                unitCost: null,
-                variantId: id(31),
-              },
-            ],
-            payment: {
-              amount: "219.90",
-              anticipationFee: {
-                amount: "0.00",
-                fixedAmount: null,
-                mode: "not_applicable",
-                percentage: null,
-              },
-              anticipationRequested: false,
-              expectedSettlementDays: null,
-              installmentPlan: null,
-              installments: null,
-              method: "pix",
-              paymentProfileId: null,
-              paymentProfileName: null,
-              paymentProfileRuleId: null,
-              paymentProfileVersion: null,
-              processingFee: {
-                amount: null,
-                fixedAmount: null,
-                mode: "unknown",
-                percentage: null,
-              },
-            },
-            sale: {
-              commandId: id(82),
-              confirmedAt: "2026-10-14T12:00:01.000Z",
-              currency: "BRL",
-              id: SALE_ID,
-              occurredAt: "2026-10-14T12:00:00.000Z",
-              occurredOn: "2026-10-14",
-              recordedAt: null,
-            },
-            totals: {
-              discountTotal: "10.00",
-              freightTotal: "0.00",
-              paymentSurchargeTotal: "0.00",
-              subtotal: "229.90",
-              surchargeTotal: "0.00",
-              totalDue: "219.90",
-            },
-          },
+      }),
+  },
+  {
+    name: "Cliente da venda no shell",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        `/sales/customer?saleId=${DETAIL_SALE_ID}`,
+        async () => {
+          await expect(
+            page.getByRole("button", { name: "Remover cliente" })
+          ).toBeVisible();
         },
-      }
-    ),
-};
+        saleDetailAnswers({ withReturn: true })
+      ),
+  },
+];
+
 const fee = (mode: string, percentage: string | null) => ({
   fixedAmount: null,
   mode,
@@ -783,7 +730,7 @@ const SCREENS = [
   ...PRODUCTS_SCREENS,
   ...LOT2_SCREENS,
   HISTORY,
-  SALE_DETAIL,
+  ...SALE_DETAIL_SCREENS,
   ...PAYMENT_SCREENS,
   {
     name: "Venda no shell",
