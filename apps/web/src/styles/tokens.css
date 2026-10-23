@@ -1,8 +1,9 @@
 @layer legacy {
   /*
    * Shared design tokens (see DESIGN.md). Light is the default and dark follows
-   * the system setting. Components read these variables; they never hard-code
-   * colors.
+   * the `dark` class of `<html>`, like the new interface: the system by default
+   * (theme-init.js), or the theme chosen in the shell. Components read these
+   * variables; they never hard-code colors.
    */
   :root {
     --ui-canvas: #f4f2eb;
@@ -23,24 +24,23 @@
     color-scheme: light;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ui-canvas: #111915;
-      --ui-surface: #1b2520;
-      --ui-surface-muted: #202d27;
-      --ui-ink: #e8f0eb;
-      --ui-muted: #a0b0a6;
-      --ui-line: #35453c;
-      --ui-accent: #7fc7a5;
-      --ui-accent-strong: #a3dfbf;
-      --ui-accent-soft: #243d31;
-      --ui-warning: #dfc57d;
-      --ui-warning-soft: #3d3623;
-      --ui-danger: #f09a8e;
-      --ui-danger-strong: #ffb4a7;
-      --ui-danger-soft: #452b2a;
-      --ui-shadow: 0 18px 52px rgb(0 0 0 / 22%);
-      color-scheme: dark;
-    }
+  /* by attribute, so no old class is named like the `dark` variant of the new interface */
+  :root[class~="dark"] {
+    --ui-canvas: #111915;
+    --ui-surface: #1b2520;
+    --ui-surface-muted: #202d27;
+    --ui-ink: #e8f0eb;
+    --ui-muted: #a0b0a6;
+    --ui-line: #35453c;
+    --ui-accent: #7fc7a5;
+    --ui-accent-strong: #a3dfbf;
+    --ui-accent-soft: #243d31;
+    --ui-warning: #dfc57d;
+    --ui-warning-soft: #3d3623;
+    --ui-danger: #f09a8e;
+    --ui-danger-strong: #ffb4a7;
+    --ui-danger-soft: #452b2a;
+    --ui-shadow: 0 18px 52px rgb(0 0 0 / 22%);
+    color-scheme: dark;
   }
 }

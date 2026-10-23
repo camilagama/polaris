@@ -462,11 +462,13 @@ test("cancelar não chama o servidor, devolve o foco a Revogar, e só há uma co
   await openDevices(page, state);
 
   await askRevoke(page, "Celular da Ana").click();
-  await expect(page.getByRole("group")).toBeFocused();
+  await expect(page.getByRole("main").getByRole("group")).toBeFocused();
   // asking for another device moves the confirmation
   await askRevoke(page, "Tablet do estoque").click();
   await expect(confirmButton(page)).toHaveCount(1);
-  await expect(page.getByRole("group")).toContainText("Não dá para desfazer");
+  await expect(page.getByRole("main").getByRole("group")).toContainText(
+    "Não dá para desfazer"
+  );
 
   await page.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByText("Não dá para desfazer")).toHaveCount(0);
@@ -537,7 +539,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "use o botão Sair: no celular ele está no Menu; em tela grande, no alto da página"
+    "use o botão Sair: no celular ele está em Mais; em tela grande, no pé da barra lateral"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();
@@ -1135,7 +1137,7 @@ test("o resultado incerto aparece dentro da confirmação, acima dos botões, e 
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
 
-  const confirmation = page.getByRole("group");
+  const confirmation = page.getByRole("main").getByRole("group");
   const alert = confirmation.getByRole("alert");
   await expect(alert).toContainText("Não conseguimos confirmar se o aparelho");
   await expect(page.getByRole("alert")).toHaveCount(1); // only the one inside
@@ -1164,12 +1166,12 @@ test("cancelar a confirmação depois de um resultado incerto não deixa no topo
   await openDevices(page, state);
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
-  await expect(page.getByRole("group").getByRole("alert")).toContainText(
-    "Não conseguimos confirmar se o aparelho"
-  );
+  await expect(
+    page.getByRole("main").getByRole("group").getByRole("alert")
+  ).toContainText("Não conseguimos confirmar se o aparelho");
 
   await page.getByRole("button", { name: "Cancelar" }).click();
-  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("toque em Sim de novo")).toHaveCount(0);
 });
@@ -1186,7 +1188,7 @@ test("o resultado incerto de uma revogação que valeu não se perde quando a li
   await confirmButton(page).click();
 
   await expect(deviceItems(page)).toHaveCount(1); // the list was read again: the device is gone
-  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText(
     "Não conseguimos confirmar se o aparelho foi revogado"
   );
@@ -1204,7 +1206,7 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
-  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 
@@ -1284,15 +1286,15 @@ test("o menu oferece Aparelhos quando o runtime offline está ligado", async ({
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
   await page.goto("/");
-  // narrow screens keep the menu closed until it is opened
-  const toggle = page.getByRole("button", { name: "Menu" });
-  if (await toggle.isVisible()) {
-    await toggle.click();
+  // on the phone the rest of the menu is under "Mais"
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  if (await more.isVisible()) {
+    await more.click();
   }
   await expect(page.getByRole("link", { name: "Aparelhos" })).toBeVisible();
 });
 
-test("a 360 px o chip é de uma linha e o menu aberto abre com a frase do estado; no desktop a frase fica no title", async ({
+test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desktop a frase fica no title", async ({
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
@@ -1308,11 +1310,12 @@ test("a 360 px o chip é de uma linha e o menu aberto abre com a frase do estado
   ).toBe(true);
   const line = page.locator(".sync-status-menu-line");
   await expect(line).toBeHidden();
-  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
   await expect(line).toBeVisible();
   await expect(line).toHaveText("Tudo sincronizado");
+  await page.keyboard.press("Escape");
 
   await page.setViewportSize({ height: 800, width: 1280 });
-  await expect(line).toBeHidden();
+  await expect(line).toHaveCount(0);
   await expect(chip(page)).toHaveAttribute("title", "Tudo sincronizado");
 });

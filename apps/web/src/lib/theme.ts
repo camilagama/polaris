@@ -54,11 +54,33 @@ export function browserStorage(): Storage | undefined {
 
 export const systemDarkQuery = () => window.matchMedia(DARK_QUERY);
 
+const SYSTEM_MEDIA = {
+  claro: "(prefers-color-scheme: light)",
+  escuro: DARK_QUERY,
+} as const;
+
+/**
+ * The media of each `theme-color` meta of index.html (`data-tema`): with the system, each follows its scheme; with a
+ * theme chosen, only its own applies, so the bar of the browser has the color of the page.
+ */
+export function themeColorMedia(theme: Theme, meta: "claro" | "escuro") {
+  if (theme === "sistema") {
+    return SYSTEM_MEDIA[meta];
+  }
+  return theme === meta ? "all" : "not all";
+}
+
 export function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle(
     "dark",
     themeIsDark(theme, systemDarkQuery().matches)
   );
+  for (const meta of document.querySelectorAll<HTMLMetaElement>(
+    'meta[name="theme-color"][data-tema]'
+  )) {
+    const own = meta.dataset.tema === "escuro" ? "escuro" : "claro";
+    meta.media = themeColorMedia(theme, own);
+  }
 }
 
 /** The part of a `MediaQueryList` that follows the system; a test gives its own. */

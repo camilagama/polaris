@@ -11,15 +11,20 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
  *   them to the production build (until then it is zero: no screen uses them);
  * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
- *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB over the precache
- *   before the base, the baseline of the same kind of build. The build prints the interface infrastructure
+ *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (46 KB for now, see
+ *   below) over the precache before the base, the baseline of the same kind of build. The build prints the interface infrastructure
  *   and the screen (the rest of the growth over the baseline) apart, so a review sees what a screen costs.
  * The production build fails past any line. Going past needs a reason in the pull request and the approval of
  * the Arrascaeta; raising a ceiling without that is not allowed.
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
-export const REST_GROWTH_BUDGET_GZIP_BYTES = 40_000;
+/**
+ * 46 KB while the old screens and the shell v5.1 live together: the shell is interface infrastructure paid once
+ * (it replaces the old shell, about +5.1 KB gzip), approved by the Arrascaeta on 22/10 (ADR 0103, section 4).
+ * Back to 40_000 in batch 6 of the migration, which deletes the legacy layer.
+ */
+export const REST_GROWTH_BUDGET_GZIP_BYTES = 46_000;
 
 /**
  * The rest of the precache before the UI base, one number per kind of production build, since the switch of

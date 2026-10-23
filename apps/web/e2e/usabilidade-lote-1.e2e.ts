@@ -136,7 +136,7 @@ test("U-01: a sessão que existia e acabou continua dizendo 'Sua sessão acabou'
 });
 
 /* -------------------------------------------------------------------------- */
-/* U-07: o chip do estado não é cortado a 360 nem a 320 px                     */
+/* U-07: o chip do estado não é cortado a 360 nem a 320 px (cabeçalho v5.1)    */
 /* -------------------------------------------------------------------------- */
 
 for (const width of [360, 320]) {
@@ -168,22 +168,18 @@ for (const width of [360, 320]) {
     const box = await page.locator(".sync-status").boundingBox();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
-    // "Menu" is on the same line as the chip, and the header stays one line tall
-    const menu = await page.getByRole("button", { name: "Menu" }).boundingBox();
-    expect(menu).not.toBeNull();
+    // the brand and the chip share the one line of the header of the phone (v5.1), and it stays 48 px tall
+    const brand = await page
+      .getByRole("link", { exact: true, name: "Polaris" })
+      .boundingBox();
+    expect(brand).not.toBeNull();
     expect(box).not.toBeNull();
     const chipMiddle = (box?.y ?? 0) + (box?.height ?? 0) / 2;
-    expect(chipMiddle).toBeGreaterThan(menu?.y ?? 0);
-    expect(chipMiddle).toBeLessThan((menu?.y ?? 0) + (menu?.height ?? 0));
-    expect((menu?.x ?? 0) + (menu?.width ?? 0)).toBeLessThanOrEqual(width);
-    expect(box?.x ?? 0).toBeLessThan(menu?.x ?? 0);
-    const bar = await page.locator(".app-header-bar").boundingBox();
-    expect(bar?.height ?? 0).toBeLessThanOrEqual(72);
-    // the brand shows only its mark, and keeps its name
-    await expect(
-      page.getByRole("link", { name: "Polaris, início" })
-    ).toBeVisible();
-    await expect(page.locator(".app-brand-name")).toBeHidden();
+    expect(chipMiddle).toBeGreaterThan(brand?.y ?? 0);
+    expect(chipMiddle).toBeLessThan((brand?.y ?? 0) + (brand?.height ?? 0));
+    expect((brand?.x ?? 0) + (brand?.width ?? 0)).toBeLessThan(box?.x ?? 0);
+    const header = await page.locator("header").first().boundingBox();
+    expect(header?.height ?? 0).toBeLessThanOrEqual(49);
   });
 }
 

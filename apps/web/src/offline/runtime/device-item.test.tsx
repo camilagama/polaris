@@ -113,11 +113,11 @@ describe("a device row", () => {
     expect(html).not.toContain(">Sim, revogar este aparelho<");
   });
 
-  it("says where Sair is: in the Menu on a phone, or at the top of the page on a big screen", () => {
+  it("says where Sair is: under Mais on a phone, or at the foot of the sidebar on a big screen", () => {
     const html = render({ row: row({ isCurrent: true }) });
     expect(html).toContain("use o botão <strong>Sair</strong>");
-    expect(html).toContain("no celular ele está no Menu");
-    expect(html).toContain("em tela grande, no alto da página");
+    expect(html).toContain("no celular ele está em Mais");
+    expect(html).toContain("em tela grande, no pé da barra lateral");
   });
 
   it("this device, without a connection: says Sair will not take it off the list until it leaves online", () => {
