@@ -18,7 +18,7 @@ import { formatMonthLabel, isMonthValue, shiftMonth } from "./expense-model";
    The month is written by the screen, never by the browser's locale: the native month field sits invisible over
    the text, so a tap or a click opens the browser's own picker and the keyboard types into it, while the person
    reads "Outubro de 2026". A browser with no month field (Firefox, Safari on the desktop) would show an invisible
-   text box there: it gets the text alone, and the arrows. With the keyboard (focus-visible) the field shows itself
+   text box there: it gets the text alone, and the arrows. With the keyboard the field shows itself
    in place of the text, so what is typed is seen; the mouse and the touch keep the invisible field. */
 
 function monthFieldSupported(): boolean {
@@ -55,6 +55,12 @@ export function MonthPicker({
   // typed text can be half a month for a moment: only a whole month is applied
   const [monthText, setMonthText] = useState(month);
   useEffect(() => setMonthText(month), [month]);
+
+  // :focus-visible also matches a click or a tap on a field like this one: the field shows itself only after a key
+  // (the Tab that lands on it), and goes back under the words with a pointer or when it loses the focus
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  const handleKey = useCallback(() => setKeyboardFocus(true), []);
+  const handleLeave = useCallback(() => setKeyboardFocus(false), []);
 
   const previous = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
@@ -119,16 +125,20 @@ export function MonthPicker({
           <InputGroup className="w-auto min-w-40 flex-1 cursor-pointer justify-center bg-card shadow-xs dark:bg-secondary/60">
             <span
               aria-hidden="true"
-              className="px-3 font-medium group-has-[[data-slot=input-group-control]:focus-visible]/input-group:opacity-0"
+              className="px-3 font-medium group-has-[[data-keyboard=true]]/input-group:opacity-0"
             >
               {capitalized(formatMonthLabel(month))}
             </span>
             <input
-              className="absolute inset-0 size-full cursor-pointer rounded-md bg-card px-3 opacity-0 outline-none focus-visible:opacity-100 dark:bg-secondary"
+              className="absolute inset-0 size-full cursor-pointer rounded-md bg-card px-3 text-center opacity-0 outline-none data-[keyboard=true]:opacity-100 dark:bg-transparent"
+              data-keyboard={keyboardFocus}
               data-slot="input-group-control"
               id={id}
+              onBlur={handleLeave}
               onChange={handleMonth}
               onClick={handleOpen}
+              onKeyUp={handleKey}
+              onPointerDown={handleLeave}
               type="month"
               value={monthText}
             />

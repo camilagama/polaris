@@ -704,6 +704,13 @@ test("com o teclado o campo do mês aparece no lugar do texto e aceita o mês di
   await expect(field).toHaveCSS("opacity", "0");
   await expect(words).toHaveCSS("opacity", "1");
 
+  // the mouse (and the touch) keep the field invisible under the words, even focused
+  await field.click({ force: true });
+  await expect(field).toBeFocused();
+  await expect(field).toHaveCSS("opacity", "0");
+  await expect(words).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Escape");
+
   // Tab from the previous-month arrow lands on the field, and it shows itself instead of the words
   await page.getByRole("button", { name: "Mês anterior" }).focus();
   await page.keyboard.press("Tab");
