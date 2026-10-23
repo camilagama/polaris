@@ -1,12 +1,17 @@
 /*
  * Public catalog (apps/catalog), v5.1 direction, in plain CSS.
  * No Tailwind, no Base UI, no external font or stylesheet (ADR 0103, security condition 7).
- * OKLCH only. Light by default, dark by the system setting (prefers-color-scheme) and nothing else.
+ * No color is written here: every color is a var(--…) of tokens.generated.css (imported below; the build inlines
+ * it, so the page still gets one file), which is generated from the one source, apps/web/src/styles/theme.css
+ * (DESIGN.md, "Changing a color"). Light by default, dark by the system setting (prefers-color-scheme) and nothing
+ * else.
  *
  * The font is the latin subset of Geist, vendored in ./fonts (the Vite build serves it from /assets):
  * @fontsource-variable/geist@5.3.0, files/geist-latin-wght-normal.woff2,
  * SHA-256 19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1; license (OFL-1.1) in ./fonts/LICENSE.
  */
+
+@import "./tokens.generated.css";
 
 @font-face {
   font-family: "Geist";
@@ -17,19 +22,6 @@
 }
 
 :root {
-  --background: oklch(0.985 0.004 85);
-  --foreground: oklch(0.2 0.005 85);
-  --card: oklch(1 0 0);
-  --muted: oklch(0.962 0.005 85);
-  --muted-foreground: oklch(0.43 0.005 85);
-  --accent: oklch(0.945 0.006 85);
-  --border: oklch(0.915 0.005 85);
-  --input: oklch(0.64 0.005 85);
-  --ring: oklch(0.585 0.115 165);
-  --mark: oklch(0.6 0.125 165);
-  --card-ring: oklch(0.2 0.005 85 / 0.06);
-  --card-glow: oklch(1 0 0 / 0);
-  --shadow-xs: 0 1px 2px 0 oklch(0.28 0.012 85 / 0.05);
   --radius-md: 0.55rem; /* controle */
   --radius-lg: 0.65rem; /* bloco */
   --radius-xl: 0.875rem; /* painel */
@@ -40,19 +32,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.2 0.0035 85);
-    --foreground: oklch(0.945 0.005 85);
-    --card: oklch(0.235 0.0035 85);
-    --muted: oklch(0.3 0.0035 85);
-    --muted-foreground: oklch(0.79 0.004 85);
-    --accent: oklch(0.33 0.0035 85);
-    --border: oklch(0.32 0.0035 85);
-    --input: oklch(0.55 0.0035 85);
-    --ring: oklch(0.64 0.134 165);
-    --mark: oklch(0.74 0.14 165);
-    --card-ring: oklch(0.945 0.005 85 / 0.06);
-    --card-glow: oklch(1 0 0 / 0.04);
-    --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.12);
     color-scheme: dark;
   }
 }
@@ -474,9 +453,9 @@ a {
 }
 .crumbs .btn {
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
   text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .variants li > span:first-child {
   min-width: 0;
