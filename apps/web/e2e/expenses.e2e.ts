@@ -684,6 +684,44 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e aceita o 
   );
 });
 
+test("com o teclado o campo do mês aparece no lugar do texto e aceita o mês digitado", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  const months: string[] = [];
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      const body = route.request().postDataJSON() as {
+        json?: { from?: string };
+      };
+      months.push(String(body.json?.from ?? "").slice(0, 7));
+      await route.fallback();
+    })
+  );
+  const field = page.getByLabel("Mês de competência");
+  const words = page.locator("#expense-month").locator("..").locator("span");
+  await expect(field).toHaveCSS("opacity", "0");
+  await expect(words).toHaveCSS("opacity", "1");
+
+  // Tab from the previous-month arrow lands on the field, and it shows itself instead of the words
+  await page.getByRole("button", { name: "Mês anterior" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveCSS("opacity", "1");
+  await expect(words).toHaveCSS("opacity", "0");
+
+  // typing the digits of the month into the visible field: the list follows
+  await page.keyboard.type("112026");
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue("2026-11");
+  await expect.poll(() => months.at(-1)).toBe("2026-11");
+  await expect(
+    page.getByText("Total do período").locator("../..")
+  ).toContainText("novembro de 2026");
+  await expect(words).toHaveText("Novembro de 2026");
+});
+
 test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nunca a lista vazia", async ({
   page,
 }) => {

@@ -18,7 +18,8 @@ import { formatMonthLabel, isMonthValue, shiftMonth } from "./expense-model";
    The month is written by the screen, never by the browser's locale: the native month field sits invisible over
    the text, so a tap or a click opens the browser's own picker and the keyboard types into it, while the person
    reads "Outubro de 2026". A browser with no month field (Firefox, Safari on the desktop) would show an invisible
-   text box there: it gets the text alone, and the arrows. */
+   text box there: it gets the text alone, and the arrows. With the keyboard (focus-visible) the field shows itself
+   in place of the text, so what is typed is seen; the mouse and the touch keep the invisible field. */
 
 function monthFieldSupported(): boolean {
   if (typeof document === "undefined") {
@@ -116,11 +117,14 @@ export function MonthPicker({
         {supported ? (
           // the group gives the field its 48 px band with touch and the halo of the focus, as every text field
           <InputGroup className="w-auto min-w-40 flex-1 cursor-pointer justify-center bg-card shadow-xs dark:bg-secondary/60">
-            <span aria-hidden="true" className="px-3 font-medium">
+            <span
+              aria-hidden="true"
+              className="px-3 font-medium group-has-[[data-slot=input-group-control]:focus-visible]/input-group:opacity-0"
+            >
               {capitalized(formatMonthLabel(month))}
             </span>
             <input
-              className="absolute inset-0 size-full cursor-pointer opacity-0"
+              className="absolute inset-0 size-full cursor-pointer rounded-md bg-card px-3 opacity-0 outline-none focus-visible:opacity-100 dark:bg-secondary"
               data-slot="input-group-control"
               id={id}
               onChange={handleMonth}
