@@ -8,6 +8,7 @@ import {
 } from "./ui-account-states";
 import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates, settle } from "./ui-entry-states";
+import { expenseStates } from "./ui-expense-states";
 import { historyStates } from "./ui-history-states";
 import {
   catalogStates,
@@ -278,6 +279,40 @@ async function exerciseSalePayment(page: Page) {
   await openAndClose(
     page,
     { name: "Perfil de pagamento", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
+/** The files of the expenses screen on the new interface (the old "feedback-message" is Resultado's, still old). */
+const EXPENSE_SOURCES = [
+  "src/expenses/collapsible-section.tsx",
+  "src/expenses/expense-categories-panel.tsx",
+  "src/expenses/expense-fields.tsx",
+  "src/expenses/expense-form.tsx",
+  "src/expenses/expense-list.tsx",
+  "src/expenses/expense-rule-form.tsx",
+  "src/expenses/expense-rules-panel.tsx",
+  "src/expenses/expenses-page.tsx",
+  "src/expenses/month-picker.tsx",
+];
+
+/** One state of the expenses screen (`ui-expense-states.ts`). */
+const expenseScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `despesas ${name}`,
+  open,
+  sourceDirs: EXPENSE_SOURCES,
+  status: "migrated",
+});
+
+async function exerciseExpenseCategoryFilter(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Categoria", role: "combobox" },
     { role: "listbox" }
   );
 }
@@ -632,6 +667,9 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
+  expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("erros nos campos", expenseStates.errors),
+  expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
   historyScreen("lista", historyStates.list),
   historyScreen("sem conexão", historyStates.offline),
   historyScreen("período invertido", historyStates.periodError),

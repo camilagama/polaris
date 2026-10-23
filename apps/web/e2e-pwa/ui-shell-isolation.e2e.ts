@@ -620,6 +620,117 @@ const PAYMENT_SCREENS = [
   },
 ];
 
+const NOW = "2026-10-14T12:00:00.000Z";
+const expenseCategory = (n: number, groupKey: string, name: string) => ({
+  archivedAt: null,
+  createdAt: NOW,
+  groupKey,
+  id: id(50 + n),
+  name,
+  organizationId: ORGANIZATION.id,
+  status: "active",
+  systemKey: null,
+  updatedAt: NOW,
+  version: 1,
+});
+const EXPENSE_CATEGORIES = [
+  expenseCategory(1, "operational", "Aluguel"),
+  expenseCategory(2, "commercial", "Marketing"),
+];
+const EXPENSE = {
+  amount: "1500.50",
+  categoryGroup: "operational",
+  categoryId: id(51),
+  categoryName: "Aluguel",
+  competenceOn: "2026-10-01",
+  createdAt: NOW,
+  description: "Aluguel de outubro",
+  id: id(61),
+  organizationId: ORGANIZATION.id,
+  payee: "Imobiliária Centro",
+  recurringRuleId: id(71),
+  saleId: null,
+  status: "active",
+  updatedAt: NOW,
+  version: 1,
+  voidedAt: null,
+};
+const EXPENSE_RULE = {
+  amount: "1500.50",
+  archivedAt: null,
+  categoryGroup: "operational",
+  categoryId: id(51),
+  categoryName: "Aluguel",
+  createdAt: NOW,
+  description: "Aluguel de outubro",
+  endsOn: null,
+  frequency: "monthly",
+  generatedCount: 4,
+  id: id(71),
+  nextOccurrenceOn: "2026-11-01",
+  organizationId: ORGANIZATION.id,
+  payee: null,
+  startsOn: "2026-07-01",
+  status: "active",
+  updatedAt: NOW,
+  version: 1,
+};
+
+/** The real route `/expenses`, the API answered here (the same answer for any month), then a state to mount. */
+const openExpenses = (
+  page: Page,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/expenses",
+    async () => {
+      await expect(page.getByText("Aluguel de outubro").first()).toBeVisible();
+      await then(page);
+    },
+    {
+      "expense/list": {
+        count: 1,
+        expenses: [EXPENSE],
+        nextCursor: null,
+        total: "1500.50",
+      },
+      "expense/listCategories": { categories: EXPENSE_CATEGORIES },
+      "expense/listRules": { rules: [EXPENSE_RULE] },
+    }
+  );
+
+const EXPENSE_SCREENS = [
+  {
+    // the form with its errors, the month picker, the category filter, the tabs, the total and a row
+    name: "Despesas no shell: lista e erros do formulário",
+    open: (page: Page) =>
+      openExpenses(page, async () => {
+        await page.getByRole("button", { name: "Registrar despesa" }).click();
+        await expect(page.locator("#expense-description-error")).toBeVisible();
+      }),
+  },
+  {
+    // both closed sections open: the checkboxes, a rule row, the form of a new rule and the categories
+    name: "Despesas no shell: recorrentes e categorias",
+    open: (page: Page) =>
+      openExpenses(page, async () => {
+        await page
+          .getByRole("button", { name: "Despesas recorrentes" })
+          .click();
+        await page
+          .getByRole("button", { name: "Categorias de despesa" })
+          .click();
+        await page
+          .getByRole("button", { name: "Nova despesa recorrente" })
+          .click();
+        await expect(
+          page.getByLabel("Valor de cada ocorrência (R$)")
+        ).toBeVisible();
+      }),
+  },
+];
+
 const device = (n: number, label: string | null, lastSeenAt: string) => ({
   createdAt: "2026-10-01T12:00:00.000Z",
   id: id(40 + n),
@@ -668,6 +779,7 @@ const SCREENS = [
       );
     },
   },
+  ...EXPENSE_SCREENS,
   {
     // the list read from the (answered) server, the runtime not ready: the rows, the line that says why the buttons are off
     name: "Aparelhos no shell",

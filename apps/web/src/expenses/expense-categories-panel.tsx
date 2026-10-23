@@ -7,16 +7,23 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
+import { InputGroup, InputGroupInput } from "@/ui/input-group";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { SelectField } from "../sales/sale-fields";
+import { CollapsibleSection } from "./collapsible-section";
+import { ActionNotice, ExpenseTextField, ListNote } from "./expense-fields";
 import {
   EXPENSE_GROUP_ORDER,
   type ExpenseGroupKey,
   groupCategories,
 } from "./expense-model";
-import { FeedbackMessage } from "./feedback-message";
-import type { ExpenseCategoriesState } from "./use-expense-categories";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
+import type { ExpenseCategoriesState } from "./use-expense-categories";
 
 interface ExpenseCategoriesPanelProps {
   onReload: () => Promise<void>;
@@ -78,59 +85,67 @@ function CategoryRow({
 
   if (renaming) {
     return (
-      <form className="expense-category-rename" onSubmit={handleSubmit}>
-        <label className="visually-hidden" htmlFor={nameFieldId}>
-          Novo nome da categoria {category.name}
-        </label>
-        <input
-          autoComplete="off"
-          disabled={isBusy}
-          id={nameFieldId}
-          maxLength={MAX_EXPENSE_CATEGORY_NAME_LENGTH}
-          onChange={handleName}
-          required
-          value={name}
-        />
-        <button className="primary-button" disabled={isBusy} type="submit">
-          Salvar
-        </button>
-        <button
-          className="quiet-button"
-          disabled={isBusy}
-          onClick={handleCancel}
-          type="button"
-        >
-          Cancelar
-        </button>
+      <form
+        className="flex flex-wrap items-center gap-2 py-2"
+        onSubmit={handleSubmit}
+      >
+        <InputGroup className="min-w-0 flex-[1_1_12rem]">
+          <InputGroupInput
+            aria-label={`Novo nome da categoria ${category.name}`}
+            autoComplete="off"
+            disabled={isBusy}
+            id={nameFieldId}
+            maxLength={MAX_EXPENSE_CATEGORY_NAME_LENGTH}
+            onChange={handleName}
+            required
+            value={name}
+          />
+        </InputGroup>
+        <div className="flex gap-2">
+          <Button disabled={isBusy} size="sm" type="submit">
+            Salvar
+          </Button>
+          <Button
+            disabled={isBusy}
+            onClick={handleCancel}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Cancelar
+          </Button>
+        </div>
       </form>
     );
   }
 
   return (
-    <div className="expense-category-row">
-      <span className="expense-category-name">{category.name}</span>
-      {archived ? (
-        <span className="category-status status-archived">Arquivada</span>
-      ) : null}
-      <span className="expense-category-actions">
-        <button
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+      <span className="flex min-w-0 flex-[1_1_10rem] flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
+        {category.name}
+        {archived ? <Badge variant="warning">Arquivada</Badge> : null}
+      </span>
+      <span className="flex gap-2">
+        <Button
           aria-label={`Renomear categoria ${category.name}`}
-          className="quiet-button"
           disabled={isBusy}
           onClick={handleStart}
+          size="sm"
           type="button"
+          variant="outline"
         >
           Renomear
-        </button>
-        <button
+        </Button>
+        <Button
           aria-label={`${archived ? "Restaurar" : "Arquivar"} categoria ${category.name}`}
-          className="quiet-button"
           disabled={isBusy}
           onClick={handleToggle}
+          size="sm"
           type="button"
+          variant="outline"
         >
           {archived ? "Restaurar" : "Arquivar"}
-        </button>
+        </Button>
       </span>
     </div>
   );
@@ -141,16 +156,19 @@ interface NewCategoryFormProps {
   onCreate: (group: ExpenseGroupKey, name: string) => Promise<boolean>;
 }
 
+const GROUP_OPTIONS = EXPENSE_GROUP_ORDER.map((item) => ({
+  id: item.key,
+  label: item.label,
+}));
+
 function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   const [group, setGroup] = useState<ExpenseGroupKey>("operational");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   useReportUnsentWork(name.trim() !== "");
 
-  const handleGroup = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    const match = EXPENSE_GROUP_ORDER.find(
-      (item) => item.key === event.currentTarget.value
-    );
+  const handleGroup = useCallback((value: string) => {
+    const match = EXPENSE_GROUP_ORDER.find((item) => item.key === value);
     if (match) {
       setGroup(match.key);
     }
@@ -174,48 +192,37 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   );
 
   return (
-    <form className="expense-category-form" noValidate onSubmit={handleSubmit}>
-      <div className="expense-field">
-        <label className="field-label" htmlFor="expense-new-category-group">
-          Grupo
-        </label>
-        <select
-          className="expense-select"
-          disabled={busy}
-          id="expense-new-category-group"
-          onChange={handleGroup}
-          value={group}
-        >
-          {EXPENSE_GROUP_ORDER.map((item) => (
-            <option key={item.key} value={item.key}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="expense-field">
-        <label className="field-label" htmlFor="expense-new-category-name">
-          Nome da categoria
-        </label>
-        <input
-          aria-describedby={error ? "expense-new-category-error" : undefined}
-          aria-invalid={error ? true : undefined}
-          autoComplete="off"
-          disabled={busy}
-          id="expense-new-category-name"
-          maxLength={MAX_EXPENSE_CATEGORY_NAME_LENGTH}
-          onChange={handleName}
-          value={name}
-        />
-        {error ? (
-          <p className="field-error" id="expense-new-category-error">
-            {error}
-          </p>
-        ) : null}
-      </div>
-      <button className="primary-button" disabled={busy} type="submit">
+    <form
+      className="grid gap-4 border-t pt-4 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] md:items-start"
+      noValidate
+      onSubmit={handleSubmit}
+    >
+      <SelectField
+        disabled={busy}
+        id="expense-new-category-group"
+        label="Grupo"
+        onChange={handleGroup}
+        options={GROUP_OPTIONS}
+        placeholder="Escolha o grupo"
+        value={group}
+      />
+      <ExpenseTextField
+        disabled={busy}
+        error={error ?? undefined}
+        id="expense-new-category-name"
+        label="Nome da categoria"
+        maxLength={MAX_EXPENSE_CATEGORY_NAME_LENGTH}
+        onChange={handleName}
+        value={name}
+      />
+      {/* aligned with the fields, below their labels (the label line is 20 px plus the 6 px gap) */}
+      <Button
+        className="justify-self-start md:mt-[1.625rem]"
+        disabled={busy}
+        type="submit"
+      >
         Adicionar categoria
-      </button>
+      </Button>
     </form>
   );
 }
@@ -321,41 +328,37 @@ export function ExpenseCategoriesPanel({
       ),
     [showArchived, state.categories]
   );
-  const handleShowArchived = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      setShowArchived(event.currentTarget.checked),
-    []
-  );
 
   return (
-    <details className="expense-panel expense-categories">
-      <summary>
-        <span className="categories-eyebrow">Organização</span>
-        <span className="expense-categories-title">Categorias de despesa</span>
-      </summary>
-      <div className="expense-categories-body" aria-busy={state.isLoading}>
-        <FeedbackMessage feedback={feedback} />
-        <label className="expense-checkbox">
-          <input
-            checked={showArchived}
-            onChange={handleShowArchived}
-            type="checkbox"
-          />
+    <CollapsibleSection id="expense-categories" title="Categorias de despesa">
+      <ActionNotice feedback={feedback} />
+      <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+        <Checkbox
+          checked={showArchived}
+          id="expense-categories-archived"
+          onCheckedChange={setShowArchived}
+        />
+        <FieldLabel htmlFor="expense-categories-archived">
           Mostrar categorias arquivadas
-        </label>
+        </FieldLabel>
+      </Field>
+      <div aria-busy={state.isLoading} className="grid gap-4">
         {state.isLoading && state.categories.length === 0 ? (
-          <p className="expense-empty-state" role="status">
-            Carregando categorias…
-          </p>
+          <ListNote loading>Carregando categorias…</ListNote>
         ) : null}
         {sections.map((section) => (
           <section
             aria-labelledby={`expense-group-${section.key}`}
-            className="expense-category-group"
+            className="grid gap-1"
             key={section.key}
           >
-            <h3 id={`expense-group-${section.key}`}>{section.label}</h3>
-            <ul>
+            <h3
+              className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+              id={`expense-group-${section.key}`}
+            >
+              {section.label}
+            </h3>
+            <ul className="divide-y border-t">
               {section.items.map((category) => (
                 <li key={category.id}>
                   <CategoryRow
@@ -369,8 +372,8 @@ export function ExpenseCategoriesPanel({
             </ul>
           </section>
         ))}
-        <NewCategoryForm busy={busy !== null} onCreate={create} />
       </div>
-    </details>
+      <NewCategoryForm busy={busy !== null} onCreate={create} />
+    </CollapsibleSection>
   );
 }

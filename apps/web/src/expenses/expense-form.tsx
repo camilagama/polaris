@@ -14,9 +14,11 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Button } from "@/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { focusLater } from "../lib/focus";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import { ExpenseCategorySelect } from "./expense-category-select";
+import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
 import {
   EXPENSE_DRAFT_FIELDS,
   type ExpenseDraft,
@@ -68,6 +70,8 @@ function isDraftField(name: string): name is ExpenseDraftField {
   return (EXPENSE_DRAFT_FIELDS as readonly string[]).includes(name);
 }
 
+const FORM_TITLE_ID = "expense-form-title";
+
 function fieldId(field: ExpenseDraftField): string {
   return `expense-${field}`;
 }
@@ -77,32 +81,6 @@ function submitLabel(saving: boolean, editing: boolean): string {
     return "Salvando…";
   }
   return editing ? "Salvar alterações" : "Registrar despesa";
-}
-
-interface FieldErrorProps {
-  errors: ExpenseDraftErrors;
-  field: ExpenseDraftField;
-}
-
-function FieldError({ errors, field }: FieldErrorProps) {
-  const message = errors[field];
-  return message ? (
-    <p className="field-error" id={`${fieldId(field)}-error`}>
-      {message}
-    </p>
-  ) : null;
-}
-
-function describedBy(
-  errors: ExpenseDraftErrors,
-  field: ExpenseDraftField,
-  helpId?: string
-): string | undefined {
-  const ids = [
-    helpId,
-    errors[field] ? `${fieldId(field)}-error` : undefined,
-  ].filter(Boolean);
-  return ids.length > 0 ? ids.join(" ") : undefined;
 }
 
 /**
@@ -140,20 +118,13 @@ export function ExpenseForm({
     [categories, keptCategoryId]
   );
 
-  const handleChange = useCallback(
-    (
-      event: ChangeEvent<
-        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-      >
-    ) => {
-      const { name, value } = event.currentTarget;
-      if (isDraftField(name)) {
-        setDraft((current) => ({ ...current, [name]: value }));
-        setErrors((current) => ({ ...current, [name]: undefined }));
-      }
-    },
-    []
-  );
+  const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.currentTarget;
+    if (isDraftField(name)) {
+      setDraft((current) => ({ ...current, [name]: value }));
+      setErrors((current) => ({ ...current, [name]: undefined }));
+    }
+  }, []);
 
   const handleCategory = useCallback((categoryId: string) => {
     setDraft((current) => ({ ...current, categoryId }));
@@ -180,132 +151,96 @@ export function ExpenseForm({
   );
 
   return (
-    <section aria-labelledby="expense-form-heading" className="expense-panel">
-      <div className="expense-panel-heading">
-        <div>
-          <p className="categories-eyebrow">
-            {editing ? "Atualização" : "Lançamento"}
-          </p>
-          <h2 id="expense-form-heading">
-            {editing ? "Editar despesa" : "Nova despesa"}
-          </h2>
-        </div>
+    <Card aria-labelledby={FORM_TITLE_ID} role="region">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <CardTitle aria-level={2} id={FORM_TITLE_ID} role="heading">
+          {editing ? "Editar despesa" : "Nova despesa"}
+        </CardTitle>
         {editing ? (
-          <button
-            className="quiet-button"
+          <Button
             disabled={disabled}
             onClick={onCancel}
+            size="sm"
             type="button"
+            variant="outline"
           >
             Cancelar edição
-          </button>
+          </Button>
         ) : null}
-      </div>
-
-      <form className="expense-form" noValidate onSubmit={handleSubmit}>
-        <div className="expense-field">
-          <label className="field-label" htmlFor={fieldId("amount")}>
-            Valor (R$)
-          </label>
-          <input
-            aria-describedby={describedBy(errors, "amount")}
-            aria-invalid={errors.amount ? true : undefined}
-            autoComplete="off"
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4 md:grid-cols-2"
+          noValidate
+          onSubmit={handleSubmit}
+        >
+          <ExpenseTextField
             disabled={disabled}
+            error={errors.amount}
             id={fieldId("amount")}
             inputMode="decimal"
+            label="Valor (R$)"
             name="amount"
             onChange={handleChange}
             placeholder="0,00"
             value={draft.amount}
           />
-          <FieldError errors={errors} field="amount" />
-        </div>
-
-        <div className="expense-field">
-          <label className="field-label" htmlFor={fieldId("categoryId")}>
-            Categoria
-          </label>
           <ExpenseCategorySelect
             categories={selectable}
-            describedBy={describedBy(errors, "categoryId")}
             disabled={disabled}
+            error={errors.categoryId}
             id={fieldId("categoryId")}
-            invalid={Boolean(errors.categoryId)}
+            label="Categoria"
             onChange={handleCategory}
             placeholder="Escolha uma categoria"
             value={draft.categoryId}
           />
-          <FieldError errors={errors} field="categoryId" />
-        </div>
-
-        <div className="expense-field">
-          <label className="field-label" htmlFor={fieldId("competenceOn")}>
-            Data de competência
-          </label>
-          <input
-            aria-describedby={describedBy(
-              errors,
-              "competenceOn",
-              "expense-competence-help"
-            )}
-            aria-invalid={errors.competenceOn ? true : undefined}
+          <ExpenseTextField
             disabled={disabled}
+            error={errors.competenceOn}
+            hint="O mês a que a despesa se refere, não o dia do pagamento."
             id={fieldId("competenceOn")}
+            label="Data de competência"
             min={EARLIEST_EXPENSE_COMPETENCE}
             name="competenceOn"
             onChange={handleChange}
             type="date"
             value={draft.competenceOn}
           />
-          <p className="field-help" id="expense-competence-help">
-            O período a que a despesa pertence, não o dia do pagamento.
-          </p>
-          <FieldError errors={errors} field="competenceOn" />
-        </div>
-
-        <div className="expense-field">
-          <label className="field-label" htmlFor={fieldId("payee")}>
-            Favorecido <span className="field-optional">Opcional</span>
-          </label>
-          <input
-            aria-describedby={describedBy(errors, "payee")}
-            aria-invalid={errors.payee ? true : undefined}
-            autoComplete="off"
+          <ExpenseTextField
             disabled={disabled}
+            error={errors.payee}
             id={fieldId("payee")}
+            label="Favorecido"
             maxLength={MAX_EXPENSE_PAYEE_LENGTH}
             name="payee"
             onChange={handleChange}
+            optional
             value={draft.payee}
           />
-          <FieldError errors={errors} field="payee" />
-        </div>
-
-        <div className="expense-field expense-field-wide">
-          <label className="field-label" htmlFor={fieldId("description")}>
-            Descrição
-          </label>
-          <input
-            aria-describedby={describedBy(errors, "description")}
-            aria-invalid={errors.description ? true : undefined}
-            autoComplete="off"
+          <ExpenseTextField
+            className="md:col-span-2"
             disabled={disabled}
+            error={errors.description}
+            hint="Compra de estoque e taxas já registradas na venda não entram aqui."
             id={fieldId("description")}
+            label="Descrição"
             maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
             name="description"
             onChange={handleChange}
             value={draft.description}
           />
-          <FieldError errors={errors} field="description" />
-        </div>
-
-        <div className="expense-form-actions">
-          <button className="primary-button" disabled={disabled} type="submit">
-            {submitLabel(saving, editing !== null)}
-          </button>
-        </div>
-      </form>
-    </section>
+          <div className="flex justify-end md:col-span-2">
+            <Button
+              className="h-auto min-h-ctl-md whitespace-normal"
+              disabled={disabled}
+              type="submit"
+            >
+              {submitLabel(saving, editing !== null)}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
