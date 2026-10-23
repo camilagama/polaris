@@ -404,12 +404,88 @@ const SALE_DETAIL = {
       }
     ),
 };
+const fee = (mode: string, percentage: string | null) => ({
+  fixedAmount: null,
+  mode,
+  percentage,
+});
+const PAYMENT_PROFILE = {
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  id: id(41),
+  name: "Maquininha da loja",
+  organizationId: ORGANIZATION.id,
+  rules: [
+    {
+      anticipationFee: fee("unknown", null),
+      expectedSettlementDays: 30,
+      id: "rule-1",
+      installmentPlan: "merchant",
+      installments: 3,
+      method: "credit_card",
+      processingFee: fee("percentage", "3.000000"),
+    },
+  ],
+  status: "active",
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version: 1,
+};
+
+/** The real route `/payment-profiles`, the API answered here, then a state of the screen the check can mount. */
+const openPaymentProfiles = (
+  page: Page,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/payment-profiles",
+    async () => {
+      await expect(page.getByText("Maquininha da loja").first()).toBeVisible();
+      await then(page);
+    },
+    { "paymentProfile/list": { profiles: [PAYMENT_PROFILE] } }
+  );
+
+const PAYMENT_SCREENS = [
+  {
+    name: "Perfis de pagamento no shell: lista e formulário novo",
+    open: (page: Page) => openPaymentProfiles(page),
+  },
+  {
+    // the form filled by an edit: selects, a fee with a percentage, and the hint of the unknown fee
+    name: "Perfis de pagamento no shell: edição",
+    open: (page: Page) =>
+      openPaymentProfiles(page, async () => {
+        await page
+          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+          .click();
+        await expect(page.getByLabel("Nome do perfil")).toBeFocused();
+      }),
+  },
+  {
+    name: "Perfis de pagamento no shell: percentual inválido",
+    open: (page: Page) =>
+      openPaymentProfiles(page, async () => {
+        await page
+          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+          .click();
+        await page
+          .getByLabel("Percentual efetivo sobre o total devido")
+          .fill("150");
+        await page.getByRole("button", { name: "Salvar alterações" }).click();
+        await expect(
+          page.getByText("Informe um percentual de 0 a 100", { exact: false })
+        ).toBeVisible();
+      }),
+  },
+];
 
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
   HISTORY,
   SALE_DETAIL,
+  ...PAYMENT_SCREENS,
   {
     name: "Venda no shell",
     open: (page: Page) =>
