@@ -63,8 +63,14 @@ const rpc = (body: unknown) => ({
 });
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
-async function openHistoryLab(page: Page, answers: boolean) {
-  if (answers) {
+async function openHistoryLab(page: Page, answers: boolean, hold = false) {
+  if (hold) {
+    // the server never answers: the list stays loading
+    await page.route(
+      "**/rpc/sale/list",
+      () => new Promise<void>(() => undefined)
+    );
+  } else if (answers) {
     await page.route("**/rpc/sale/list", (route: Route) =>
       route.fulfill(rpc({ hasMore: true, sales: SALES }))
     );
@@ -109,6 +115,16 @@ export const historyStates = {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
     await page.getByRole("button", { name: "Carregar mais" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The list on its way: three rows of skeleton in the card, and the line for the screen reader (P-14). */
+  async loading(page: Page) {
+    await openHistoryLab(page, false, true);
+    await page
+      .getByRole("status")
+      .getByText("Carregando vendas…")
+      .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
 

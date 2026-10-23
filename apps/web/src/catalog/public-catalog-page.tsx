@@ -213,6 +213,8 @@ export function PublicCatalogPage() {
   const handleDraftChange = useCallback((next: PublicProfileDraft) => {
     setDraft(next);
     setProblem(null);
+    // what was said about the last save is old news once a field changes (U-56)
+    setFeedback((current) => (current?.where === "profile" ? null : current));
   }, []);
 
   const saveProfile = useCallback(

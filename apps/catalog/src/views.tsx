@@ -199,7 +199,7 @@ export function ProductView({
     <main className="page product">
       <nav className="crumbs">
         <Link className="btn btn-sm" params={{ slug }} to="/$slug">
-          <ChevronLeftIcon /> {profile.name}
+          <ChevronLeftIcon /> <span>{profile.name}</span>
         </Link>
       </nav>
       {product.media.length > 0 ? (

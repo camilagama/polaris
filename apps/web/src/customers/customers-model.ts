@@ -23,6 +23,26 @@ export const CONTACT_REQUIRED_TEXT =
   "Informe ao menos um telefone ou email para o cliente.";
 export const NAME_REQUIRED_TEXT = "Informe o nome do cliente.";
 
+const ONLY_DIGITS = /^[0-9]+$/;
+
+/**
+ * The phone as the list shows it: 11 digits as "(11) 90000-0003", 10 as "(11) 3000-0003". Any other size, or
+ * anything with more than digits (typed with its own marks), stays as it was typed.
+ */
+export function formatCustomerPhone(phone: string): string {
+  const digits = phone.trim();
+  if (!ONLY_DIGITS.test(digits)) {
+    return phone;
+  }
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
+
 export function hasCustomerContact(draft: CustomerDraft): boolean {
   return Boolean(draft.phone.trim() || draft.email.trim());
 }

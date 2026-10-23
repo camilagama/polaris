@@ -231,6 +231,9 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
             </div>
           ) : null}
           <LogoutControl onAttention={showLogoutAttention} shell />
+          {isMobile ? null : (
+            <LegalLinks className="gap-x-4 gap-y-1 text-muted-foreground text-xs" />
+          )}
         </div>
       </SidebarFooter>
     </Sidebar>
@@ -384,37 +387,47 @@ function LegalAcceptanceGate({ atOpen }: { atOpen: boolean }) {
   );
 }
 
-/** The two legal pages are linked from every screen of the app (AC-70); they open in another tab. */
-function AppFooter() {
+/** The two legal pages, linked from every screen of the app (AC-70); they open in another tab. */
+function LegalLinks({ className }: { className: string }) {
   const link =
     "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
+    <ul className={`m-0 flex list-none flex-wrap p-0 ${className}`}>
+      <li>
+        <a
+          className={link}
+          href={LEGAL_PATHS.terms}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Termos de Uso
+        </a>
+      </li>
+      <li>
+        <a
+          className={link}
+          href={LEGAL_PATHS.privacy}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Política de Privacidade
+        </a>
+      </li>
+    </ul>
+  );
+}
+
+/**
+ * The legal links under the content, on the phone only: from 760 px they are at the foot of the sidebar
+ * (`AppSidebar`), once.
+ */
+function AppFooter() {
+  return (
     <footer
-      className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm"
+      className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm md:hidden"
       data-ui=""
     >
-      <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-2 p-0">
-        <li>
-          <a
-            className={link}
-            href={LEGAL_PATHS.terms}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Termos de Uso
-          </a>
-        </li>
-        <li>
-          <a
-            className={link}
-            href={LEGAL_PATHS.privacy}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Política de Privacidade
-          </a>
-        </li>
-      </ul>
+      <LegalLinks className="gap-x-5 gap-y-2" />
     </footer>
   );
 }

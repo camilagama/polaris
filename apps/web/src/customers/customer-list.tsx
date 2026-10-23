@@ -20,6 +20,7 @@ import {
   type CustomerAction,
   type CustomerListStatus,
   customerStatusLabel,
+  formatCustomerPhone,
   lockedReasonFor,
   syncStateLabel,
 } from "./customers-model";
@@ -190,7 +191,12 @@ function CustomerRow({
   const shownState = syncState ?? updateState;
   const lockedReason = lockedReasonFor(syncState, updateState);
   const pendingLabel = pendingLabelFor(pendingAction, customer.id);
-  const contacts = [customer.phone, customer.email].filter(Boolean).join(" · ");
+  const contacts = [
+    customer.phone ? formatCustomerPhone(customer.phone) : null,
+    customer.email,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const handleAsk = useCallback(() => setConfirming(true), []);
   const handleCancel = useCallback(() => setConfirming(false), []);

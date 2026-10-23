@@ -472,11 +472,15 @@ a {
 .empty {
   overflow-wrap: anywhere;
 }
+/* "Voltar" with a long store name stays on one line and ends in an ellipsis; the arrow keeps its place */
 .crumbs .btn {
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-align: left;
+}
+.crumbs .btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .variants li > span:first-child {
   min-width: 0;

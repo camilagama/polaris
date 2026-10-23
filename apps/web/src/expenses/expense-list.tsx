@@ -6,6 +6,8 @@ import { type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel, formatMonthLabel } from "./expense-model";
@@ -150,11 +152,18 @@ function ExpenseCard({
 }: ExpenseCardProps) {
   const voided = expense.status === "voided";
   const handleEdit = useCallback(() => onEdit(expense), [expense, onEdit]);
-  const handleVoid = useCallback(() => onVoid(expense), [expense, onVoid]);
-  const handleRestore = useCallback(
-    () => onRestore(expense),
-    [expense, onRestore]
-  );
+  const online = useConnectionOnline();
+  // offline nothing leaves: the button says why (aria-describedby on the notice)
+  const handleVoid = useCallback(() => {
+    if (online) {
+      onVoid(expense);
+    }
+  }, [expense, online, onVoid]);
+  const handleRestore = useCallback(() => {
+    if (online) {
+      onRestore(expense);
+    }
+  }, [expense, online, onRestore]);
   const isBusy = busyKey !== null;
   const thisBusy = busyKey?.endsWith(expense.id) ?? false;
 
@@ -197,6 +206,7 @@ function ExpenseCard({
         <div className="flex gap-2">
           {voided ? (
             <Button
+              {...connectionControlProps(online)}
               aria-label={`Reativar despesa ${expense.description}`}
               disabled={isBusy}
               onClick={handleRestore}
@@ -219,6 +229,7 @@ function ExpenseCard({
                 Editar
               </Button>
               <Button
+                {...connectionControlProps(online)}
                 aria-label={`Anular despesa ${expense.description}`}
                 disabled={isBusy}
                 onClick={handleVoid}

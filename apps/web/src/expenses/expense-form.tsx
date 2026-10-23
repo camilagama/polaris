@@ -16,6 +16,8 @@ import {
 } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
@@ -105,6 +107,7 @@ export function ExpenseForm({
     draftFrom(editing, today)
   );
   useReportUnsentWork(isExpenseDraftChanged(draft, initialDraft));
+  const online = useConnectionOnline();
 
   // Active categories only; the one the edited expense already has stays
   // selectable even when it was archived since.
@@ -134,6 +137,10 @@ export function ExpenseForm({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (!online) {
+        return;
+      }
       const result = validateExpenseDraft(draft);
       if (result.input === null) {
         setErrors(result.errors);
@@ -147,7 +154,7 @@ export function ExpenseForm({
       }
       await onSave(result.input);
     },
-    [draft, onSave]
+    [draft, online, onSave]
   );
 
   return (
@@ -232,6 +239,7 @@ export function ExpenseForm({
           />
           <div className="flex justify-end md:col-span-2">
             <Button
+              {...connectionControlProps(online)}
               className="h-auto min-h-ctl-md whitespace-normal"
               disabled={disabled}
               type="submit"

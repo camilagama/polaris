@@ -12,6 +12,8 @@ import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
@@ -65,13 +67,19 @@ function CategoryRow({
       setName(event.currentTarget.value),
     []
   );
-  const handleToggle = useCallback(
-    () => onToggle(category),
-    [category, onToggle]
-  );
+  const online = useConnectionOnline();
+  // offline nothing leaves: the buttons say why (aria-describedby on the notice)
+  const handleToggle = useCallback(() => {
+    if (online) {
+      onToggle(category);
+    }
+  }, [category, online, onToggle]);
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (!online) {
+        return;
+      }
       if (name.trim() === category.name) {
         setRenaming(false);
         return;
@@ -80,7 +88,7 @@ function CategoryRow({
         setRenaming(false);
       }
     },
-    [category, name, onRename]
+    [category, name, online, onRename]
   );
 
   if (renaming) {
@@ -102,7 +110,12 @@ function CategoryRow({
           />
         </InputGroup>
         <div className="flex gap-2">
-          <Button disabled={isBusy} size="sm" type="submit">
+          <Button
+            {...connectionControlProps(online)}
+            disabled={isBusy}
+            size="sm"
+            type="submit"
+          >
             Salvar
           </Button>
           <Button
@@ -137,6 +150,7 @@ function CategoryRow({
           Renomear
         </Button>
         <Button
+          {...connectionControlProps(online)}
           aria-label={`${archived ? "Restaurar" : "Arquivar"} categoria ${category.name}`}
           disabled={isBusy}
           onClick={handleToggle}
@@ -166,6 +180,7 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   useReportUnsentWork(name.trim() !== "");
+  const online = useConnectionOnline();
 
   const handleGroup = useCallback((value: string) => {
     const match = EXPENSE_GROUP_ORDER.find((item) => item.key === value);
@@ -180,6 +195,10 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (!online) {
+        return;
+      }
       if (name.trim() === "") {
         setError("Informe o nome da categoria.");
         return;
@@ -188,7 +207,7 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
         setName("");
       }
     },
-    [group, name, onCreate]
+    [group, name, online, onCreate]
   );
 
   return (
@@ -217,6 +236,7 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
       />
       {/* aligned with the fields, below their labels (the label line is 20 px plus the 6 px gap) */}
       <Button
+        {...connectionControlProps(online)}
         className="justify-self-start md:mt-[1.625rem]"
         disabled={busy}
         type="submit"

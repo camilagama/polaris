@@ -1268,6 +1268,8 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await confirmButton(page).click();
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // the confirmation that held the focus is gone: the focus goes to the heading, not to the body
+  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 

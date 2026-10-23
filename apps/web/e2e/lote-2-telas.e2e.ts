@@ -405,7 +405,9 @@ test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e de
   await name.fill("Bia Souza");
   await page.getByLabel("Telefone").fill("11900000002");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-  await expect(page.getByText("Cliente cadastrado.").first()).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Cliente cadastrado." })
+  ).toBeVisible();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
 });

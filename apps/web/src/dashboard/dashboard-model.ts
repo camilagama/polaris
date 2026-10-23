@@ -121,7 +121,7 @@ export function qualityMessages(quality: PeriodQuality): string[] {
   return quality.missing.map((code) => missingMessage(code, quality));
 }
 
-type QualityTone = "complete" | "empty" | "partial";
+type QualityTone = "complete" | "partial";
 
 export interface QualityView {
   messages: string[];
@@ -129,15 +129,11 @@ export interface QualityView {
   tone: QualityTone;
 }
 
-/** What the quality banner says: complete is quiet, partial warns, no data is an empty state. */
+/**
+ * What the quality banner says: complete is quiet, partial warns. A period with no data never gets here: the
+ * screen says it with its own empty state (`dashboard-page.tsx`).
+ */
 export function qualityView(quality: PeriodQuality): QualityView {
-  if (quality.level === "no_data") {
-    return {
-      messages: qualityMessages(quality),
-      title: "Sem dados neste período",
-      tone: "empty",
-    };
-  }
   if (quality.level === "partial") {
     return {
       messages: qualityMessages(quality),

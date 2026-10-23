@@ -292,9 +292,9 @@ test("no primeiro acesso sem aceite, o app vai sozinho a /aceite com a tela de d
   ).toBe("kept");
 });
 
-test("o rodapé do app tem os links das duas páginas legais, em outra aba (AC-70)", async ({
-  page,
-}) => {
+/** Opens Categorias as someone signed in sees it, at the width given. */
+async function openCategories(page: Page, width: number) {
+  await page.setViewportSize({ height: 800, width });
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
@@ -313,6 +313,33 @@ test("o rodapé do app tem os links das duas páginas legais, em outra aba (AC-7
     return route.abort("internetdisconnected");
   });
   await page.goto("/categories");
+}
+
+test("na lateral (a partir de 760 px), os links das duas páginas legais ficam no pé, uma vez, em outra aba (AC-70, P-23)", async ({
+  page,
+}) => {
+  await openCategories(page, 1280);
+  const sidebarFoot = page.locator("[data-sidebar=footer]");
+  const terms = page.getByRole("link", { name: "Termos de Uso" });
+  const privacy = page.getByRole("link", { name: "Política de Privacidade" });
+  await expectNewTabLink(
+    sidebarFoot.getByRole("link", { name: "Termos de Uso" }),
+    "/termos"
+  );
+  await expectNewTabLink(
+    sidebarFoot.getByRole("link", { name: "Política de Privacidade" }),
+    "/privacidade"
+  );
+  // once each, and nothing under the content
+  await expect(terms).toHaveCount(1);
+  await expect(privacy).toHaveCount(1);
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+});
+
+test("no celular, os links das duas páginas legais ficam sob o conteúdo, em outra aba (AC-70, P-23)", async ({
+  page,
+}) => {
+  await openCategories(page, 360);
   const footer = page.getByRole("contentinfo");
   await expectNewTabLink(
     footer.getByRole("link", { name: "Termos de Uso" }),
@@ -321,6 +348,9 @@ test("o rodapé do app tem os links das duas páginas legais, em outra aba (AC-7
   await expectNewTabLink(
     footer.getByRole("link", { name: "Política de Privacidade" }),
     "/privacidade"
+  );
+  await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
+    1
   );
 });
 
