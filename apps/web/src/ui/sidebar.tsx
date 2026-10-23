@@ -186,6 +186,7 @@ function Sidebar({
       className="group peer hidden text-sidebar-foreground md:block"
       data-side={side}
       data-slot="sidebar"
+      data-ui=""
     >
       {/* the gap the fixed column leaves in the flow */}
       <div className="relative w-(--sidebar-width)" data-slot="sidebar-gap" />

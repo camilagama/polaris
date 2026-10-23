@@ -164,6 +164,15 @@ test.describe("desktop (1280 px)", () => {
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("Produtos");
     await expect(current).toHaveAttribute("href", "/products");
+    // the sidebar is on the new interface (data-ui): no bullets, no underline, no link color of the browser
+    await expect(nav.locator("li").first()).toHaveCSS(
+      "list-style-type",
+      "none"
+    );
+    await expect(current).toHaveCSS("text-decoration-line", "none");
+    await expect(
+      page.getByRole("link", { exact: true, name: "Polaris" })
+    ).toHaveCSS("text-decoration-line", "none");
 
     // the top of the sidebar: the mark and "Polaris"; the foot: the theme, the store, the e-mail and "Sair"
     await expect(
