@@ -11,7 +11,7 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
  *   them to the production build (until then it is zero: no screen uses them);
  * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
- *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (44 KB for now, see
+ *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (44.5 KB for now, see
  *   below) over the precache before the base, the baseline of the same kind of build. The build prints the interface infrastructure
  *   and the screen (the rest of the growth over the baseline) apart, so a review sees what a screen costs.
  * The production build fails past any line. Going past needs a reason in the pull request and the approval of

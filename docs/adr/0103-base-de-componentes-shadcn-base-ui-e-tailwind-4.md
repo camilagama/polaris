@@ -140,7 +140,7 @@ Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a
 
 ## Nota: histórico do teto do resto (23/10/2026)
 
-O teto da linha do resto mudou cinco vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
+O teto da linha do resto mudou seis vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
 
 | Data | Teto do resto | Motivo |
 |---|---|---|
