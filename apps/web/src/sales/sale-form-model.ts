@@ -491,7 +491,7 @@ export function reconcileProfileReload(
     ...form,
     profile: {
       choice,
-      reviewNotice: `O perfil “${profile.name}” mudou da versão ${seenVersion} para a versão ${profile.version}. Revise a prévia de taxas e prazo abaixo e confirme a revisão para continuar.`,
+      reviewNotice: `O perfil “${profile.name}” mudou desde a última venda. Revise a prévia de taxas e prazo e confirme para continuar.`,
       seenVersion,
     },
   };
@@ -582,7 +582,7 @@ export function profilesView(
     .filter((profile) => profile.status === "active")
     .map((profile) => ({
       id: profile.id,
-      label: `${profile.name} (versão ${profile.version})`,
+      label: profile.name,
     }))
     .sort((left, right) => left.label.localeCompare(right.label, "pt-BR"));
   if (options.length === 0) {
@@ -774,7 +774,7 @@ export interface FeeLine {
 export function describeFee(fee: SalePaymentFeeSnapshot): FeeLine {
   if (fee.mode === "not_applicable") {
     return {
-      text: "não aplicável (custo estimado R$ 0,00)",
+      text: "não se aplica",
       tone: "not_applicable",
     };
   }
@@ -871,9 +871,7 @@ function buildFeePreview(
     return {
       anticipation: describeFee(snapshot.anticipationFee),
       processing: describeFee(snapshot.processingFee),
-      profileText: profile
-        ? `${profile.name} (versão ${profile.version})`
-        : "Sem perfil de pagamento",
+      profileText: profile ? profile.name : "Sem perfil de pagamento",
       ruleMatched,
       ruleText,
       settlementText: describeSettlementDays(snapshot.expectedSettlementDays),
@@ -1474,7 +1472,7 @@ function profileSummary(
     return "Perfil de pagamento ainda não escolhido";
   }
   if (resolution.kind === "profile") {
-    return `${resolution.profile.name} (versão ${resolution.profile.version})`;
+    return resolution.profile.name;
   }
   if (selection.choice === NO_PROFILE_CHOICE) {
     return "Sem perfil de pagamento (taxas e prazo desconhecidos)";
@@ -2038,7 +2036,7 @@ function confirmedPaymentDetails(
   const profile =
     payment.paymentProfileName === null
       ? "Sem perfil de pagamento"
-      : `${payment.paymentProfileName} (versão ${payment.paymentProfileVersion ?? "?"})`;
+      : payment.paymentProfileName;
   const rule =
     payment.paymentProfileRuleId === null
       ? "Nenhuma regra exata aplicada"

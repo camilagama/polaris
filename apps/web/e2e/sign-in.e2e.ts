@@ -509,7 +509,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     );
   });
 
-  test("com o Google desligado há um 'Tentar de novo' que consulta de novo e, com o Google de volta, habilita o botão", async ({
+  test("com o Google desligado há um 'Tentar novamente' que consulta de novo e, com o Google de volta, habilita o botão", async ({
     page,
   }) => {
     const server = newServer({
@@ -520,11 +520,11 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await expect(googleButton(page)).toBeDisabled();
 
     server.methods = { emailPassword: false, google: true };
-    await page.getByRole("button", { name: "Tentar de novo" }).click();
+    await page.getByRole("button", { name: "Tentar novamente" }).click();
     await expect(googleButton(page)).toBeEnabled();
     await expect(alertBox(page)).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Tentar de novo" })
+      page.getByRole("button", { name: "Tentar novamente" })
     ).toHaveCount(0);
   });
 

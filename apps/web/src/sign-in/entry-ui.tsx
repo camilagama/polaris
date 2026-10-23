@@ -323,7 +323,7 @@ export function BackToSignIn() {
   );
 }
 
-/** "Tentar de novo" under an alert of the page: an outline button, since the alert is what the person must read. */
+/** "Tentar novamente" under an alert of the page: an outline button, since the alert is what the person must read. */
 export function EntryRetry({ onClick }: { onClick: () => void }) {
   return (
     <Button
@@ -624,7 +624,7 @@ export function Progressive({
 /**
  * Where the Turnstile widget draws itself, and what the screen says about it (V5): nothing while idle, a line
  * while it checks, a line above it when it asks the person for an action, and with the script blocked an alert
- * and "Tentar de novo", which asks for the script again without reloading what was typed.
+ * and "Tentar novamente", which asks for the script again without reloading what was typed.
  */
 export function ChallengeArea({
   alertId,

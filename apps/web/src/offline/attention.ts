@@ -178,9 +178,9 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
-      return "O plano desta loja não permite mais estes registros. Regularize o plano e use Tentar de novo: o registro é enviado como está. Nada foi perdido.";
+      return "O plano desta loja não permite mais estes registros. Regularize o plano e use Tentar novamente: o registro é enviado como está. Nada foi perdido.";
     case "session_changed":
-      return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar de novo.";
+      return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar novamente.";
     case "authorization_revoked":
       return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Entre de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
     default:

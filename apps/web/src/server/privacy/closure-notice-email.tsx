@@ -34,9 +34,13 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
 });
 
-/** A calendar date (YYYY-MM-DD) as "18 de janeiro de 2027". */
+const FIRST_OF_MONTH = /^1 de /;
+
+/** A calendar date (YYYY-MM-DD) as "18 de janeiro de 2027"; the first of the month is ordinal in pt-BR, "1º de fevereiro de 2027". */
 export function formatCalendarDate(date: string): string {
-  return dateFormatter.format(new Date(`${date}T12:00:00.000Z`));
+  return dateFormatter
+    .format(new Date(`${date}T12:00:00.000Z`))
+    .replace(FIRST_OF_MONTH, "1º de ");
 }
 
 function formatTime(instant: Date, timeZone: string): string {
@@ -54,7 +58,8 @@ export function closureNoticePanelUrl(appOrigin: string): string {
 }
 
 export interface ClosureNoticeContent {
-  actionLabel: string;
+  /** The button to the panel; null when there is nothing to open (from the deletion day on). */
+  actionLabel: string | null;
   heading: string;
   paragraphs: string[];
   preview: string;
@@ -90,6 +95,8 @@ export function closureNoticeContent(
   delivery: ClosureNoticeDelivery
 ): ClosureNoticeContent {
   const store = delivery.organizationName;
+  // a subject is one line: a name with a line break must not break the header
+  const subjectStore = store.replaceAll(/\s+/g, " ").trim();
   const requested = formatCalendarDate(
     localDate(delivery.requestedAt, delivery.timeZone)
   );
@@ -103,6 +110,9 @@ export function closureNoticeContent(
   const beforeDeletionDay =
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
   const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua loja)`;
+  // The panel of a closed store is not on the app yet, so from D on there is nothing to open: no button, and no link
+  // that would only lead to the sign-in.
+  const panelLabel = beforeDeletionDay ? "Abrir o painel" : null;
   const copyLine = beforeDeletionDay
     ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${copyLimit}.`
     : `O prazo para pedir uma cópia dos dados terminou em ${copyLimit}. Depois de apagados, os dados não podem ser recuperados.`;
@@ -120,7 +130,7 @@ export function closureNoticeContent(
           `${signIn} Se você não reconhece este pedido, entre e desfaça o encerramento.`,
         ],
         preview: `O pedido de encerramento da loja ${store} foi recebido.`,
-        subject: "Recebemos o pedido de encerramento da sua loja no Polaris",
+        subject: `Recebemos o pedido de encerramento da sua loja ${subjectStore} no Polaris`,
       };
     case "d30":
       return {
@@ -132,11 +142,11 @@ export function closureNoticeContent(
           signIn,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
-        subject: `Os dados da sua loja no Polaris podem ser apagados a partir de ${deletionDay}`,
+        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
       };
     case "d7":
       return {
-        actionLabel: "Abrir o painel",
+        actionLabel: panelLabel,
         heading: "Faltam 7 dias para os dados da loja poderem ser apagados",
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}.${beforeDeletionDay ? " Depois de apagados, não podem ser recuperados." : ""}`,
@@ -144,11 +154,11 @@ export function closureNoticeContent(
           signIn,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: `Os dados da sua loja no Polaris podem ser apagados a partir de ${firstDay}`,
+        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
       };
     case "deletion_day":
       return {
-        actionLabel: "Abrir o painel",
+        actionLabel: panelLabel,
         heading: "Os dados da loja podem ser apagados a partir de hoje",
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a qualquer momento a partir de hoje, ${deletionDay}.`,
@@ -156,12 +166,11 @@ export function closureNoticeContent(
           signIn,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de hoje.`,
-        subject:
-          "Os dados da sua loja no Polaris podem ser apagados a partir de hoje",
+        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de hoje`,
       };
     case "rescheduled":
       return {
-        actionLabel: "Abrir o painel",
+        actionLabel: panelLabel,
         heading: "Nova data para o apagamento dos dados",
         paragraphs: [
           `O apagamento dos dados da loja ${store}, encerrada em ${requested}, foi adiado. Agora eles podem ser apagados a partir de ${firstDay}.`,
@@ -169,7 +178,7 @@ export function closureNoticeContent(
           signIn,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: "Nova data para o apagamento dos dados da sua loja no Polaris",
+        subject: `Nova data para o apagamento dos dados da sua loja ${subjectStore} no Polaris`,
       };
     default:
       throw new RangeError("closure_notice_milestone_unknown");
@@ -211,25 +220,33 @@ function ClosureNoticeEmail({
               {paragraph}
             </Text>
           ))}
-          <Button
-            href={panelUrl}
-            style={{
-              backgroundColor: "#111827",
-              borderRadius: "4px",
-              boxSizing: "border-box",
-              color: "#ffffff",
-              display: "inline-block",
-              padding: "12px 20px",
-              textDecoration: "none",
-            }}
-          >
-            {content.actionLabel}
-          </Button>
-          <Text
-            style={{ color: "#374151", fontSize: "14px", lineHeight: "21px" }}
-          >
-            Se o botão não funcionar, abra este endereço: {panelUrl}
-          </Text>
+          {content.actionLabel === null ? null : (
+            <>
+              <Button
+                href={panelUrl}
+                style={{
+                  backgroundColor: "#111827",
+                  borderRadius: "4px",
+                  boxSizing: "border-box",
+                  color: "#ffffff",
+                  display: "inline-block",
+                  padding: "12px 20px",
+                  textDecoration: "none",
+                }}
+              >
+                {content.actionLabel}
+              </Button>
+              <Text
+                style={{
+                  color: "#374151",
+                  fontSize: "14px",
+                  lineHeight: "21px",
+                }}
+              >
+                Se o botão não funcionar, abra este endereço: {panelUrl}
+              </Text>
+            </>
+          )}
           <Text
             style={{ color: "#4b5563", fontSize: "14px", lineHeight: "21px" }}
           >

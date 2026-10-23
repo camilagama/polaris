@@ -259,7 +259,7 @@ export const passwordStates = {
   },
   forgotBlocked: async (page: Page) => {
     await openForgot(page, "blocked");
-    await page.getByRole("button", { name: "Tentar de novo" }).waitFor();
+    await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
     await settle(page);
   },
   forgotIncompleteEmail: async (page: Page) => {

@@ -152,8 +152,8 @@ async function useEveryControl(page: Page) {
   await chooseOption(page, method, "Cartão de crédito");
   await chooseOption(
     page,
-    page.getByRole("combobox", { name: "Responsável pelo parcelamento" }),
-    "Emissor"
+    page.getByRole("combobox", { name: "Quem parcela" }),
+    "Emissor (banco)"
   );
   const mode = page.getByRole("combobox", { name: "Como a taxa é informada" });
   await chooseOption(page, mode.nth(1), "Fixo e percentual");

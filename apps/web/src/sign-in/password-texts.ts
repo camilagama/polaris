@@ -67,8 +67,8 @@ export const TOO_MANY_EMAILS = "Muitos pedidos. Espere alguns minutos.";
 export const PAGE_LOADING = "Carregando…";
 export const PAGE_UNAVAILABLE =
   "Não conseguimos abrir esta página agora. Tente de novo em instantes.";
-export const TRY_AGAIN = "Tentar de novo";
-export const TRYING_AGAIN = "Tentando…";
+export const TRY_AGAIN = "Tentar novamente";
+export const TRYING_AGAIN = "Tentando novamente…";
 
 const minutesText = (minutes: number) =>
   minutes === 1 ? "1 minuto" : `${minutes} minutos`;

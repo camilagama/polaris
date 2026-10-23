@@ -43,7 +43,7 @@ const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
-  retry: "Tentar de novo",
+  retry: "Tentar novamente",
   review_account: "Revisar acesso e plano",
 };
 

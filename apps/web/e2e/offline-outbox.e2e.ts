@@ -91,7 +91,7 @@ test("um comando rejeitado bloqueia a fila até ser tratado", async ({
   await expect(list(page).nth(0)).toHaveText(rejectedPattern);
   await click(page, "Enviar", "nada para enviar");
 
-  await click(page, "Tentar de novo", "Tentar de novo: ok");
+  await click(page, "Tentar novamente", "Tentar novamente: ok");
   await click(page, "Enviar", "Enviar: ok");
   await click(page, "Confirmar", "Confirmar: ok");
   await expect(list(page)).toHaveCount(1);

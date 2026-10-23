@@ -93,7 +93,7 @@ describe("a device row", () => {
   it("this device, without a connection: says Sair will not take it off the list until it leaves online", () => {
     const html = render({ online: false, row: row({ isCurrent: true }) });
     expect(html).toContain(
-      "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho."
+      "Sair sem internet não tira este aparelho da lista. Ele sai quando você sair conectado, ou pode ser revogado de outro aparelho."
     );
     expect(html).not.toContain("Para tirar este aparelho");
     const connected = render({ online: true, row: row({ isCurrent: true }) });
