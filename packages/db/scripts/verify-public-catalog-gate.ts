@@ -683,6 +683,95 @@ async function run() {
       "the pictures in order"
     );
     assert.ok(!JSON.stringify(detail).includes("SEGREDO"));
+    // a list price of 0,00 is a price not informed (AC-12): the list and the page agree, and the data stays as the ERP wrote it
+    const lowestPriceOnPage = async (productId: string) => {
+      const page = (await productOf(slugA, productId)) as typeof detail;
+      const prices = page.variants
+        .map((variant) => variant.price)
+        .filter((price): price is string => price !== null)
+        .map(Number);
+      return prices.length === 0 ? null : Math.min(...prices);
+    };
+    const expectListAgreesWithPages = async (why: string) => {
+      const current = (await productsOf(slugA)) as typeof list;
+      assert.ok(current.products.length > 0);
+      for (const product of current.products) {
+        // biome-ignore lint/performance/noAwaitInLoops: One page per product shown.
+        const onPage = await lowestPriceOnPage(product.id);
+        assert.equal(
+          product.priceFrom === null ? null : Number(product.priceFrom),
+          onPage,
+          `${why}: the list says "a partir de" what the page of ${product.name} says`
+        );
+      }
+      return new Map(current.products.map((product) => [product.id, product]));
+    };
+    await expectListAgreesWithPages("as the prices were typed");
+    const setPrices = (productId: string, prices: string[]) =>
+      admin.pool.query(
+        `UPDATE public.product_variants AS variant
+            SET list_price = prices.price
+           FROM (
+             SELECT id, (ARRAY[${prices.map((_, index) => `$${index + 2}::numeric`).join(", ")}])[row_number() OVER (ORDER BY position NULLS LAST, id)] AS price
+               FROM public.product_variants
+              WHERE product_id = $1
+           ) AS prices
+          WHERE variant.id = prices.id`,
+        [productId, ...prices]
+      );
+    // 0,00 and 49,90: the list says from 49,90 and the page shows the 0,00 variant with no price
+    await setPrices(p1.id, ["0.00", "49.90"]);
+    const zeroAndPriced = await expectListAgreesWithPages("0,00 and 49,90");
+    assert.equal(zeroAndPriced.get(p1.id)?.priceFrom, "49.90");
+    const zeroAndPricedPage = (await productOf(slugA, p1.id)) as typeof detail;
+    assert.deepEqual(
+      zeroAndPricedPage.variants.map((variant) => [
+        variant.label,
+        variant.price,
+      ]),
+      [
+        ["Azul", null],
+        ["Preto", "49.90"],
+      ],
+      "a variant at 0,00 shows no price; the other keeps its own"
+    );
+    // only 0,00: no price at all, in the list and in the page (the product with one variant and the one with two)
+    await setPrices(p1.id, ["0.00", "0.00"]);
+    await setPrices(p5.id, ["0.00"]);
+    const onlyZero = await expectListAgreesWithPages("only 0,00");
+    assert.equal(onlyZero.get(p1.id)?.priceFrom, null);
+    assert.equal(onlyZero.get(p5.id)?.priceFrom, null);
+    assert.deepEqual(
+      ((await productOf(slugA, p1.id)) as typeof detail).variants.map(
+        (variant) => variant.price
+      ),
+      [null, null]
+    );
+    assert.deepEqual(
+      ((await productOf(slugA, p5.id)) as typeof detail).variants.map(
+        (variant) => variant.price
+      ),
+      [null]
+    );
+    // the data is untouched: the ERP, the sale and the export still read 0.00
+    const stored = await admin.pool.query<{ list_price: string }>(
+      "SELECT list_price::text FROM public.product_variants WHERE product_id = ANY($1::uuid[])",
+      [[p1.id, p5.id]]
+    );
+    assert.deepEqual(
+      stored.rows.map((row) => row.list_price),
+      ["0.00", "0.00", "0.00"],
+      "product_variants keeps the 0.00"
+    );
+    // back to the prices the later checks expect
+    await setPrices(p1.id, ["129.90", "149.90"]);
+    await setPrices(p5.id, ["49.00"]);
+    const restored = await expectListAgreesWithPages("prices restored");
+    assert.equal(restored.get(p1.id)?.priceFrom, "129.90");
+    assert.equal(restored.get(p5.id)?.priceFrom, "49.00");
+    tests.push(
+      "a list price of 0,00 is not informed in the public catalog: with 0,00 and 49,90 the list says from 49,90 and the page shows the 0,00 variant with no price; with only 0,00 both say none; the data keeps the 0,00; and for every product of the list priceFrom equals the lowest price of its page"
+    );
     // media: only a picture of a product that is shown
     const media = (await mediaOf(slugA, p1.id, p1Image1)) as {
       byteSize: number;
