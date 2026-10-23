@@ -36,7 +36,7 @@
 /* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
 @source "../{main,app-shell/app,app-shell/app-shell}.tsx";
-@source "../offline/runtime/{sync-status,logout-control,devices-page}.tsx";
+@source "../offline/runtime/{sync-status,logout-control}.tsx";
 /* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
 @source "../organization/organization-setup.tsx";
 @source "../legal/{legal-app,legal-frame,legal-page}.tsx";
@@ -55,6 +55,10 @@
 /* The expenses screen (v5.1): the page, the form, the list, the two closed sections and the month picker; the old
    "feedback-message" stays out (Resultado, still old, uses it). */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,collapsible-section,month-picker}.tsx";
+/* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
+   attention page are in the list of the pieces above). */
+@source "../offline/attention-panel.tsx";
+@source "../offline/runtime/{devices-page,device-item}.tsx";
 /* The sales history and the sale detail (v5.1): their files; the return, cancellation and customer panels, and the
    form of the sale identifier, are still old (they migrate in the next pull request). */
 @source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";

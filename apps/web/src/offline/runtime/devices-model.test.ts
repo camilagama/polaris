@@ -159,7 +159,7 @@ describe("the failures", () => {
     ]) {
       expect(revokeFailure(unknown)).toEqual({
         kind: "message",
-        text: "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro.",
+        text: "Não conseguimos confirmar se o aparelho foi revogado. Feche este aviso e olhe a lista. Se o aparelho ainda aparecer, revogue de novo. Repetir é seguro.",
         uncertain: true,
       });
     }

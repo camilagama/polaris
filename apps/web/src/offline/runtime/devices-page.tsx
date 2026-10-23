@@ -1,8 +1,18 @@
 import type { DeviceReadModel } from "@polaris/contracts";
+import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button, buttonVariants } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { orpcClient } from "../../lib/orpc";
+import { signInPath } from "../../lib/sign-in-path";
+import { loadAuthMethods } from "../../sign-in/sign-in-model";
 import { LogoutDialog } from "../logout-dialog";
-import { DeviceItem } from "./device-item";
+import { DEVICES_HEADING_ID, DeviceItem } from "./device-item";
 import {
   type DeviceRow,
   deviceRows,
@@ -24,9 +34,6 @@ import {
   type SignInAgainPanel,
   signInAgainPanel,
 } from "./devices-model";
-import "./devices-page.css";
-import { signInPath } from "../../lib/sign-in-path";
-import { loadAuthMethods } from "../../sign-in/sign-in-model";
 import { forgetSessionCaches } from "./leave-browser";
 import { useLogout } from "./logout-control";
 import type { RuntimeSnapshot } from "./offline-runtime";
@@ -39,6 +46,10 @@ import {
 import { leaveSessionOver } from "./session-over";
 
 const DEVICES_PATH = "/devices";
+/** The lines of the screen that say why the buttons of the rows are off. */
+const OFFLINE_NOTICE_ID = "devices-offline";
+const RECOGNITION_ID = "devices-recognizing";
+const SESSION_GONE_ID = "devices-session-gone";
 /** A live but old login: "Sair" with the reason `recente`, then back to this screen. */
 const DEVICES_SIGN_IN_AGAIN = signInPath({
   reason: "recente",
@@ -46,9 +57,9 @@ const DEVICES_SIGN_IN_AGAIN = signInPath({
 });
 
 /**
- * "Trocar senha" lives under the devices, in a "Segurança" section of its own, as a 44 px secondary button
- * (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with the password
- * on (ADR 0100, AC-46).
+ * "Trocar senha" lives under the devices, in a "Segurança" section of its own, as an outline button with the
+ * 48 px touch area (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with
+ * the password on (ADR 0100, AC-46).
  */
 function SecuritySection() {
   const [passwordOn, setPasswordOn] = useState(false);
@@ -68,13 +79,13 @@ function SecuritySection() {
   return passwordOn ? (
     <section
       aria-labelledby="device-security-title"
-      className="device-security"
+      className="grid justify-items-start gap-2"
     >
-      <h2 className="device-security-title" id="device-security-title">
+      <h2 className="text-section" id="device-security-title">
         Segurança
       </h2>
       <a
-        className="secondary-button device-security-button"
+        className={buttonVariants({ variant: "outline" })}
         href="/conta/seguranca"
       >
         Trocar senha
@@ -103,35 +114,32 @@ function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
   }, [logout, panel.kind, runtime]);
   return (
     <>
-      <section
+      <Card
         aria-labelledby="devices-sign-in-title"
-        className="device-panel"
+        className="gap-3 px-(--card-spacing)"
         role="alert"
       >
-        <h2 id="devices-sign-in-title">{panel.title}</h2>
+        <h2 className="text-section" id="devices-sign-in-title">
+          {panel.title}
+        </h2>
         <p>{panel.body}</p>
         {logout.message ? <p>{logout.message}</p> : null}
-        <div className="device-actions">
-          <button
-            className="primary-button"
-            disabled={logout.busy}
-            onClick={handleSignIn}
-            type="button"
-          >
+        <div className="flex flex-wrap gap-3">
+          <Button disabled={logout.busy} onClick={handleSignIn} type="button">
             Entrar de novo
-          </button>
+          </Button>
           {panel.kind === "session_old" ? (
-            <button
-              className="quiet-button"
+            <Button
               disabled={logout.busy}
               onClick={onDismiss}
               type="button"
+              variant="outline"
             >
               Agora não
-            </button>
+            </Button>
           ) : null}
         </div>
-      </section>
+      </Card>
       {logout.blocked ? (
         <LogoutDialog
           blocked={logout.blocked}
@@ -155,20 +163,22 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
     [runtime]
   );
   return (
-    <section
+    <Card
       aria-labelledby="devices-left-title"
-      className="device-panel"
+      className="gap-3 px-(--card-spacing)"
       role="alert"
     >
-      <h2 id="devices-left-title">{SESSION_ENDED_PANEL.title}</h2>
+      <h2 className="text-section" id="devices-left-title">
+        {SESSION_ENDED_PANEL.title}
+      </h2>
       <p>{SESSION_ENDED_PANEL.body}</p>
       {keptWork ? <p>{SESSION_ENDED_PANEL.keptWork}</p> : null}
-      <div className="device-actions">
-        <button className="primary-button" onClick={handleSignIn} type="button">
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={handleSignIn} type="button">
           Entrar de novo
-        </button>
+        </Button>
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -201,15 +211,20 @@ function useRecognition(
 function RecognitionLine({ state }: { state: Recognition }) {
   if (state === "waiting") {
     return (
-      <p className="device-recognizing" role="status">
+      <p className="text-muted-foreground" id={RECOGNITION_ID} role="status">
         {RECOGNIZING_TEXT}
       </p>
     );
   }
   return (
-    <p className="categories-message is-error" role="status">
-      {state === "slow" ? RECOGNIZING_SLOW_TEXT : RECOGNIZING_UNAVAILABLE_TEXT}
-    </p>
+    <Alert id={RECOGNITION_ID} variant="warning">
+      <TriangleAlertIcon aria-hidden="true" />
+      <AlertDescription>
+        {state === "slow"
+          ? RECOGNIZING_SLOW_TEXT
+          : RECOGNIZING_UNAVAILABLE_TEXT}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -258,45 +273,65 @@ function ListSection({
   // an unsure answer is said inside the open confirmation; if the row left the list meanwhile, it is said here
   const errorInsideRow =
     confirming !== null && rows.some((row) => row.id === confirming);
+  let reasonId: string | undefined;
+  if (!online) {
+    reasonId = OFFLINE_NOTICE_ID;
+  } else if (sessionGone) {
+    reasonId = SESSION_GONE_ID;
+  } else if (recognition) {
+    reasonId = RECOGNITION_ID;
+  }
   return (
     <>
       {panel ? <SignInAgain onDismiss={onDismiss} panel={panel} /> : null}
       {loading ? (
-        <p aria-busy="true" className="device-loading" role="status">
-          {LOADING_TEXT}
-        </p>
+        <Card
+          aria-busy="true"
+          className="items-center px-(--card-spacing) text-center"
+          role="status"
+        >
+          <p className="text-muted-foreground">{LOADING_TEXT}</p>
+        </Card>
       ) : null}
       {loadFailed && online && !panel ? (
-        <p className="categories-message is-error" role="alert">
-          {loadFailed}{" "}
-          <button className="quiet-button" onClick={onRetry} type="button">
-            Tentar novamente
-          </button>
-        </p>
+        <Alert variant="destructive">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {loadFailed}
+            <Button onClick={onRetry} size="sm" type="button" variant="link">
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
       {actionError && !errorInsideRow ? (
-        <p className="categories-message is-error" role="alert">
-          {actionError}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
       ) : null}
       {notice ? (
-        <p className="categories-message is-success" role="status">
-          {notice}
-        </p>
+        <Alert>
+          <CircleCheckIcon aria-hidden="true" />
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
       ) : null}
       {devices && rows.length === 0 && !loadFailed ? (
-        <p className="category-empty-state">{EMPTY_TEXT}</p>
+        <Card className="items-center px-(--card-spacing) text-center">
+          <p className="text-muted-foreground">{EMPTY_TEXT}</p>
+        </Card>
       ) : null}
       {devices && recognition && !sessionGone ? (
         <RecognitionLine state={recognition} />
       ) : null}
       {devices && sessionGone ? (
-        <p className="device-session-gone" role="status">
+        <p className="text-muted-foreground" id={SESSION_GONE_ID} role="status">
           {SESSION_GONE_LIST_TEXT}
         </p>
       ) : null}
       {devices ? (
-        <ul aria-label="Aparelhos" className="device-list">
+        <ul aria-label="Aparelhos" className="grid gap-3">
           {rows.map((row) => (
             <DeviceItem
               actionError={confirming === row.id ? actionError : null}
@@ -304,6 +339,7 @@ function ListSection({
               key={row.id}
               offline={offline || sessionGone}
               online={online}
+              reasonId={reasonId}
               row={row}
               sessionGone={sessionGone}
               {...shared}
@@ -487,24 +523,30 @@ export function DevicesPage() {
   const rows = devices ? deviceRows(devices, currentDeviceId) : [];
   const loading = devices === null && loadFailed === null && !sessionOver;
   return (
-    <div className="devices-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Segurança</p>
-          <h1 ref={headingRef} tabIndex={-1}>
-            Aparelhos
-          </h1>
-          <p className="categories-intro-copy">
-            Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
-            ou computador, revogue o aparelho: o servidor deixa de aceitar o que
-            ele enviar.
-          </p>
-        </div>
-      </section>
-      {online ? null : (
-        <p className="categories-message is-error" role="status">
-          {OFFLINE_TEXT}
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <header className="grid gap-1">
+        <h1
+          className="text-title outline-none"
+          id={DEVICES_HEADING_ID}
+          ref={headingRef}
+          tabIndex={-1}
+        >
+          Aparelhos
+        </h1>
+        <p className="text-muted-foreground text-support">
+          Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
+          ou computador, revogue o aparelho: o servidor deixa de aceitar o que
+          ele enviar.
         </p>
+      </header>
+      {online ? null : (
+        <Alert id={OFFLINE_NOTICE_ID} variant="warning">
+          <CloudOffIcon aria-hidden="true" />
+          <AlertDescription>{OFFLINE_TEXT}</AlertDescription>
+        </Alert>
       )}
       {endedHere ? (
         <BrowserLeft keptWork={endedHere.keptWork} />
