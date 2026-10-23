@@ -1,7 +1,9 @@
+import type { PaymentFeeConfigurationReadModel } from "@polaris/contracts";
 import {
   MAX_RATE_PERCENTAGE_POINTS,
   Percentage,
 } from "@polaris/domain/money/money";
+import { formatBrlAmount } from "../lib/format";
 
 const TRAILING_ZEROS = /0+$/;
 const TRAILING_DOT = /\.$/;
@@ -61,4 +63,37 @@ export function percentageFieldText(value: string | null): string {
     return value;
   }
   return value.replace(TRAILING_ZEROS, "").replace(TRAILING_DOT, "");
+}
+
+/** The settlement of a rule as the list says it: "1 dia", "30 dias", or "não informado" when it was left empty. */
+export function settlementText(days: number | null): string {
+  if (days === null) {
+    return "não informado";
+  }
+  return `${days} ${days === 1 ? "dia" : "dias"}`;
+}
+
+export interface FeeText {
+  text: string;
+  /** The fee was never told: it is shown apart, and never as zero. */
+  unknown: boolean;
+}
+
+/** A fee as the list says it: the fixed amount in reais with the comma ("R$ 0,50"), the percentage, or both. */
+export function describeFee(fee: PaymentFeeConfigurationReadModel): FeeText {
+  if (fee.mode === "unknown") {
+    return { text: "desconhecida (não é zero)", unknown: true };
+  }
+  if (fee.mode === "none") {
+    return { text: "nenhuma", unknown: false };
+  }
+  return {
+    text: [
+      fee.fixedAmount === null ? null : formatBrlAmount(fee.fixedAmount),
+      fee.percentage === null ? null : formatFeePercentage(fee.percentage),
+    ]
+      .filter(Boolean)
+      .join(" + "),
+    unknown: false,
+  };
 }

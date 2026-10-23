@@ -1,3 +1,4 @@
+import type { PaymentProfileReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   blankDraft,
@@ -11,6 +12,7 @@ import {
   NAME_ID,
   NAME_REQUIRED,
   type ProfileDraft,
+  profileDraft,
   profileDraftKey,
   type RuleDraft,
   ruleFieldId,
@@ -165,6 +167,75 @@ describe("ruleInput, settlement", () => {
       ruleInput({ ...blankRule(), expectedSettlementDays: " 0 " })
         .expectedSettlementDays
     ).toBe(0);
+  });
+});
+
+describe("the fixed amount of a fee", () => {
+  const saved: PaymentProfileReadModel = {
+    archivedAt: null,
+    createdAt: "2026-10-01T12:00:00.000Z",
+    id: "0199c2d0-0000-7000-8000-0000000000c1",
+    name: "Maquininha",
+    organizationId: "0199c2d0-0000-7000-8000-00000000a001",
+    rules: [
+      {
+        anticipationFee: { fixedAmount: null, mode: "none", percentage: null },
+        expectedSettlementDays: 1,
+        id: "rule-1",
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        processingFee: {
+          fixedAmount: "0.50",
+          mode: "fixed",
+          percentage: null,
+        },
+      },
+    ],
+    status: "active",
+    updatedAt: "2026-10-01T12:00:00.000Z",
+    version: 1,
+  };
+
+  it("fills the field with the comma when a saved profile is edited, and sends the point back", () => {
+    const draft = profileDraft(saved);
+    const [rule] = draft.rules;
+    expect(rule?.processingFee.fixedAmount).toBe("0,50");
+    expect(rule && ruleInput(rule).processingFee.fixedAmount).toBe("0.50");
+  });
+
+  it("accepts what the person types with the comma, and sends it with the point", () => {
+    const rule = blankRule();
+    const typed = {
+      ...rule,
+      processingFee: {
+        ...blankFee(),
+        fixedAmount: "1,5",
+        mode: "fixed" as const,
+      },
+    };
+    expect(draftProblems(named("A", typed))).toEqual({});
+    expect(ruleInput(typed).processingFee.fixedAmount).toBe("1.5");
+  });
+
+  it("does not take the thousands separator as the comma", () => {
+    const rule = blankRule();
+    const typed = {
+      ...rule,
+      processingFee: {
+        ...blankFee(),
+        fixedAmount: "1.500,50",
+        mode: "fixed" as const,
+      },
+    };
+    expect(draftProblems(named("A", typed))).toEqual({
+      [ruleFieldId(rule, "processing-fixed")]: FIXED_RULE_TEXT,
+    });
+  });
+
+  it("does not count the saved profile as changed, so the screen does not warn about unsent work", () => {
+    const draft = profileDraft(saved);
+    expect(profileDraftKey(draft)).toBe(profileDraftKey(profileDraft(saved)));
   });
 });
 

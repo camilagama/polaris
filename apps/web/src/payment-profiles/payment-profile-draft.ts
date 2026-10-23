@@ -3,6 +3,7 @@ import type {
   PaymentProfileReadModel,
   PaymentProfileRuleInput,
 } from "@polaris/contracts";
+import { moneyInputText } from "../expenses/expense-model";
 import { percentageFieldText, percentageProblem } from "./payment-fee-model";
 
 /* The form of a payment profile as the person fills it: text in every field, converted to the contract only when
@@ -74,7 +75,7 @@ export function decimalInputValue(value: string): string {
 
 function feeDraft(fee: PaymentFeeConfigurationReadModel): FeeDraft {
   return {
-    fixedAmount: fee.fixedAmount ?? "",
+    fixedAmount: moneyInputText(fee.fixedAmount ?? ""),
     mode: fee.mode,
     percentage: percentageFieldText(fee.percentage),
   };
@@ -106,7 +107,9 @@ export function profileDraftKey(draft: ProfileDraft): string {
 function feeInput(fee: FeeDraft): PaymentFeeConfigurationReadModel {
   return {
     fixedAmount:
-      hasFixed(fee) && fee.fixedAmount.trim() ? fee.fixedAmount.trim() : null,
+      hasFixed(fee) && fee.fixedAmount.trim()
+        ? decimalInputValue(fee.fixedAmount.trim())
+        : null,
     mode: fee.mode,
     percentage:
       hasPercentage(fee) && fee.percentage.trim()
@@ -141,7 +144,7 @@ function wholeNumberProblem(text: string, minimum: number): boolean {
 }
 
 function fixedProblem(text: string): boolean {
-  const value = text.trim();
+  const value = decimalInputValue(text.trim());
   return value === "" || !Number.isFinite(Number(value)) || Number(value) < 0;
 }
 

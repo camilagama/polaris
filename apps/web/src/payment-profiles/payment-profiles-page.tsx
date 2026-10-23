@@ -34,7 +34,15 @@ import { PaymentProfileList } from "./payment-profile-list";
 const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
 
-function errorText(error: unknown, subject?: string): string {
+const GENERIC_ERROR_TEXT =
+  "Não foi possível concluir a operação. Revise os dados e tente novamente.";
+const LOAD_ERROR_TEXT = "Não foi possível carregar os perfis. Tente novamente.";
+
+function errorText(
+  error: unknown,
+  subject?: string,
+  fallback = GENERIC_ERROR_TEXT
+): string {
   const unaccepted = legalAcceptanceMessage(error, subject);
   if (unaccepted !== undefined) {
     return unaccepted;
@@ -58,7 +66,7 @@ function errorText(error: unknown, subject?: string): string {
   if (code === "NOT_FOUND") {
     return "Este perfil não existe mais nesta organização.";
   }
-  return "Não foi possível concluir a operação. Revise os dados e tente novamente.";
+  return fallback;
 }
 
 interface FeedbackProps {
@@ -139,7 +147,7 @@ export function PaymentProfilesPage() {
       setProfiles(result.profiles);
       readOnce.current = true;
     } catch (cause) {
-      setLoadError(errorText(cause, "os perfis de pagamento"));
+      setLoadError(errorText(cause, "os perfis de pagamento", LOAD_ERROR_TEXT));
     } finally {
       setLoading(false);
     }
@@ -322,7 +330,7 @@ export function PaymentProfilesPage() {
         <header className="grid gap-1">
           <h1 className="text-title">Perfis de pagamento</h1>
           <p className="text-muted-foreground text-support">
-            Organize métodos, parcelamento, prazo de liquidação e taxas por
+            Organize métodos, parcelamento, prazo de recebimento e taxas por
             perfil.
           </p>
         </header>

@@ -57,8 +57,7 @@ function FeeFields({ errors, id, label, onChange, value }: FeeFieldsProps) {
     [onChange, value]
   );
   const handleFixed = useCallback(
-    (text: string) =>
-      onChange({ ...value, fixedAmount: decimalInputValue(text) }),
+    (fixedAmount: string) => onChange({ ...value, fixedAmount }),
     [onChange, value]
   );
   const handlePercentage = useCallback(
@@ -199,7 +198,7 @@ function RuleEditor({
         ) : null}
         <TextField
           error={errors[ruleFieldId(rule, "settlement")]}
-          hint="É uma estimativa em dias; não representa uma confirmação de liquidação."
+          hint="Estimativa em dias. Não confirma o recebimento."
           id={ruleFieldId(rule, "settlement")}
           inputMode="numeric"
           label="Prazo esperado de recebimento (dias)"

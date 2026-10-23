@@ -11,36 +11,13 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
-import { formatFeePercentage } from "./payment-fee-model";
+import { describeFee, settlementText } from "./payment-fee-model";
 import { methods } from "./payment-profile-form";
 
 /* The list of the profiles on the components of src/ui (ADR 0103): one card, one row per profile, and in each row
    a block per rule. A fee that is not known is never shown as zero: italic, dashed and in the warning color. */
 
 const LIST_TITLE_ID = "payment-list-title";
-
-interface FeeText {
-  text: string;
-  unknown: boolean;
-}
-
-function feeText(fee: PaymentFeeConfigurationReadModel): FeeText {
-  if (fee.mode === "unknown") {
-    return { text: "desconhecida (não é zero)", unknown: true };
-  }
-  if (fee.mode === "none") {
-    return { text: "nenhuma", unknown: false };
-  }
-  return {
-    text: [
-      fee.fixedAmount === null ? null : `R$ ${fee.fixedAmount}`,
-      fee.percentage === null ? null : formatFeePercentage(fee.percentage),
-    ]
-      .filter(Boolean)
-      .join(" + "),
-    unknown: false,
-  };
-}
 
 function Figure({ children, label }: { children: ReactNode; label: string }) {
   return (
@@ -58,7 +35,7 @@ function FeeFigure({
   fee: PaymentFeeConfigurationReadModel;
   label: string;
 }) {
-  const { text, unknown } = feeText(fee);
+  const { text, unknown } = describeFee(fee);
   return (
     <Figure label={label}>
       <span
@@ -148,9 +125,7 @@ function ProfileRow({
             <p className="font-medium">{ruleTitle(rule)}</p>
             <dl className="grid gap-x-3 gap-y-2 text-support min-[30rem]:grid-cols-3">
               <Figure label="Recebimento">
-                {rule.expectedSettlementDays === null
-                  ? "não informado"
-                  : `${rule.expectedSettlementDays} dias`}
+                {settlementText(rule.expectedSettlementDays)}
               </Figure>
               <FeeFigure fee={rule.processingFee} label="Processamento" />
               <FeeFigure fee={rule.anticipationFee} label="Antecipação" />

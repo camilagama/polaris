@@ -155,7 +155,7 @@ async function useEveryControl(page: Page) {
   const mode = page.getByRole("combobox", { name: "Como a taxa é informada" });
   await chooseOption(page, mode.nth(1), "Fixo e percentual");
   await page.getByLabel("Valor fixo por pagamento").fill("0,50");
-  await expect(page.getByLabel("Valor fixo por pagamento")).toHaveValue("0.50");
+  await expect(page.getByLabel("Valor fixo por pagamento")).toHaveValue("0,50");
 
   // a second rule: the cursor goes to its method; removing it takes the cursor to "Adicionar regra"
   await page.getByRole("button", { name: "Adicionar regra" }).click();
@@ -479,4 +479,60 @@ test("os campos da tela não herdam a borda nem a altura do CSS antigo do shell 
     return { border: computed.borderTopWidth, minHeight: computed.minHeight };
   });
   expect(style).toEqual({ border: "0px", minHeight: "auto" });
+});
+
+test("o valor fixo aparece com vírgula na lista e no campo, e vai ao servidor com ponto; o prazo de 1 dia fica no singular", async ({
+  page,
+}) => {
+  const pix = {
+    ...MACHINE,
+    rules: [
+      {
+        anticipationFee: fee("none", null),
+        expectedSettlementDays: 1,
+        id: "rule-pix",
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        processingFee: { fixedAmount: "0.50", mode: "fixed", percentage: null },
+      },
+      {
+        anticipationFee: fee("none", null),
+        expectedSettlementDays: null,
+        id: "rule-cash",
+        installmentPlan: null,
+        installments: null,
+        method: "cash",
+        processingFee: fee("none", null),
+      },
+    ],
+  };
+  let sent: {
+    json?: { rules?: { processingFee?: { fixedAmount?: string } }[] };
+  } = {};
+  await openServerScreen(page, {
+    lists: [answer([pix])],
+    others: {
+      "paymentProfile/update": (route) => {
+        sent = route.request().postDataJSON();
+        return route.fulfill(rpc(pix));
+      },
+    },
+  });
+  const row = page.locator("li[data-profile-id]");
+  await expect(row).toContainText("R$ 0,50");
+  await expect(row).not.toContainText("0.50");
+  await expect(row).toContainText("1 dia");
+  await expect(row).not.toContainText("1 dias");
+  // the rule with no settlement said so
+  await expect(row).toContainText("não informado");
+
+  await page
+    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+    .click();
+  await expect(page.getByLabel("Valor fixo por pagamento")).toHaveValue("0,50");
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect
+    .poll(() => sent.json?.rules?.[0]?.processingFee?.fixedAmount)
+    .toBe("0.50");
 });
