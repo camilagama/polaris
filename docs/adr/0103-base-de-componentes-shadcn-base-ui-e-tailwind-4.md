@@ -138,6 +138,23 @@ Cada componente tem teste de componente (papel e rótulo), entrada na galeria e 
 
 Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a cópia escopada), `styles.css`, `tokens.css` e `ui.css` saem, a entrada passa a `@import "tailwindcss" source(none)` (o preflight original, na camada `base`, e a ordem `theme, base, components, utilities`), e os padrões da página vão para o `body`. Nenhum elemento leva mais `data-ui` nem `.ui-root`. A prova de isolamento do shell (t193), que comparava a tela com e sem a `legacy`, vira a prova de que toda regra da página está nas camadas do Tailwind (fora delas, só `@font-face`, `@keyframes`, `@property` e regras que só põem tokens), com casos de controle. A lista de `@source` continua arquivo por arquivo; trocá-la por um glob de `src` é decisão à parte. O orçamento do resto fica em +44 000 B (ver a seção 4).
 
+## Nota: histórico do teto do resto (23/10/2026)
+
+O teto da linha do resto mudou cinco vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
+
+| Data | Teto do resto | Motivo |
+|---|---|---|
+| 20/10 | +40 000 B | base de interface, a referência da seção 4 |
+| 22/10 | +46 000 B | shell v5.1 (cerca de +5,1 KB gzip, paga uma vez) |
+| 23/10, 01h45 | +47 000 B | runtime offline da F7 (cerca de +3,9 KB gzip) |
+| 23/10, 07h30 | +48 000 B | estouro de 747 B causado pelo crescimento da main; a fatia da F7 ficou igual |
+| 23/10, entre 07h30 e 14h40 | +50 000 B | crescimento da main com o Histórico e o Detalhe da venda; temporário até o lote 6 |
+| 23/10, 14h40 | +44 000 B | lote 6 (PR #266) apaga a camada legacy, que liberou só cerca de 1,3 KB; o resto do crescimento é JS das telas |
+
+O retorno a +40 000 B previsto no lote 6 não aconteceu: o lote fechou em +44 000 B. Voltar a +42 000 B exige cortar JS das telas, em tarefa separada.
+
+Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas e gráficos pesados sob demanda), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale o teto de +44 000 B, e cada subida exige justificativa no PR e aprovação do Arrascaeta.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.

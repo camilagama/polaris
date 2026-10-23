@@ -37,6 +37,35 @@ Resultado da revisão completa PR01–PR47 ([`revisao-checkpoint-gate4.md`](revi
 - **Integração.** A cadeia de PRs é integrada por fase, antes da Fase 5; nenhum merge foi feito nesta rodada.
 - **Fase 8 antes do Gate 7 (16/10/2026, [ADR 0068](../docs/adr/0068-fase-8-antes-do-gate-7.md)).** O Gate 7 depende das contas sandbox do provedor (PR77, PR78, PR80) e continua sendo o gate de saída do billing, executado quando elas existirem e antes de qualquer cobrança real. A Fase 8 não depende do provedor e é implementada antes, em quatro pull requests: 8A (PR87 e PR88: perfil, publicação e leitura pública por funções, [ADR 0069](../docs/adr/0069-catalogo-publico-leitura-por-funcoes.md)), 8B (PR86 e PR90: aplicação e SEO), 8C (PR89 e PR91: rota pública de mídia e despublicação) e 8D (interface do ERP). A despublicação do PR91 é a leitura do plano a cada pedido, sem purge externo; o cache das imagens é de no máximo um minuto.
 
+# Emenda de 23/10/2026: registro desde 20/10 e ordem de execução
+
+Esta emenda registra o que entrou depois de 20/10 e a ordem de execução que o usuário aprovou em 23/10. Ela não reescreve as decisões anteriores. Onde a ordem abaixo diferir da sequência das fases, vale esta emenda. Os PRs citados estão na `main` (`a4c00ed`, 23/10 17:00).
+
+**Registro desde 20/10** (cada item tem o PR que o entregou):
+- **Migração v5.1 ([ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)):** lotes 0 a 6, do PR #213 (lote 0, 20/10) ao PR #266 (lote 6, 23/10). O lote 6 apaga a camada legacy e o escopo `[data-ui]`.
+- **Staging no ar (22/10):** configuração do staging (PR #234) e o web publicado nele (PR #245). Decisão no [ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md).
+- **Login com senha no staging (22/10, PR #247)** e **Turnstile e proteção contra abuso no staging (23/10, PR #251)**. Valem só no staging; a produção segue sem eles.
+- **F7, estado de conexão com prova:** falhou no Pixel 6 (aparelho de nuvem, BrowserStack) em 22/10, com três bloqueios (U-57, U-59 e U-61). A correção está no PR #252 (23/10). **Reteste no Pixel 6: sem resultado registrado; pendente.**
+- **Preço zero no catálogo:** preço de tabela 0,00 conta como não informado no catálogo público (PR #260, 23/10; AC-12). O catálogo sem valor veio no PR #249 (22/10).
+- **Vocabulário:** "organização" passa a "loja" no texto visível ao lojista (PR #262, 23/10; o PR #267 completa os textos). "horário" substitui "fuso" nos textos, e `apps/web/src` da `main` não tem mais "fuso".
+
+**Ordem de execução a partir de 23/10.** Aprovada pelo usuário em 23/10, com seis fases. F1 e F2 rodam em paralelo: a receita no dev interno e o Início e a ativação no externo.
+- **F0 Fundação:** spikes de bytes e de gráficos, modelo de orçamento em duas camadas (F0.3, do Filipe Luís), cortes e wireframes, e a fonte única de cor.
+- **F1 Receita:** Assinatura, cancelar, termos v1, Gate 7 no sandbox, e-mails do ciclo e limites que levam ao Pro. Roda em paralelo com a F2.
+- **F2 Início e ativação:** Início em `/`, no lugar da Venda; checklist de ativação; produto com estoque inicial; funil; importação de planilha; Resultado com gráficos. Roda em paralelo com a F1.
+- **F3 Navegação e componentes:** abas, esqueleto e Dialog de tela inteira pelo shadcn; Produto em abas; menu de oito destinos.
+- **F4 Distribuição:** site mínimo e os 10 primeiros convites.
+- **F5 Go-live técnico:** t208, backup e ensaio de restauração, Gate 5 no BrowserStack, Access e MFA do Admin, e a flag offline só depois do Gate 5.
+
+**Decisões do usuário de 23/10** (`preferencias-usuario.md`, seção 23/10):
+- Receita primeiro, no dev interno, com o Início e a ativação em paralelo, no externo.
+- Gráficos: biblioteca de gráficos a decidir em ADR (F0.3). Até lá, cores só dos tokens, movimento que respeita `prefers-reduced-motion` e números legíveis sem o gráfico.
+- shadcn primeiro: componente que o registro tem entra uma vez em `src/ui`; nada de cópia à mão nas telas.
+- Uma fonte de cor: o `theme.css`.
+- Início em `/`, no lugar da Venda.
+
+Até a F0.3 ser aprovada, valem os tetos de bytes do ADR 0103, com o histórico na nota dele.
+
 ---
 
 
