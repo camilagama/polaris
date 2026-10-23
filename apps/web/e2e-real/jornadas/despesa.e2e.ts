@@ -3,18 +3,17 @@ import { addDays, extremeTimeZone, localDate, monthStart } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
 import { chainValue } from "../pages/resultado";
+import { choose } from "../pages/venda";
 
 const BRL_VALUE = /R\$/;
 const EXPENSES_OF_PERIOD = "(−) Despesas do período (sem venda)";
 
 async function addCategory(page: Page, categoryName: string): Promise<void> {
-  await page.getByText("Categorias de despesa").click();
-  const categories = page
-    .getByRole("group")
-    .filter({ hasText: "Categorias de despesa" });
-  await categories
-    .getByLabel("Grupo")
-    .selectOption({ label: "Operacional/Administrativa" });
+  await page.getByRole("button", { name: "Categorias de despesa" }).click();
+  const categories = page.getByRole("region", {
+    name: "Categorias de despesa",
+  });
+  await choose(page, categories, "Grupo", "Operacional/Administrativa");
   await categories.getByLabel("Nome da categoria").fill(categoryName);
   await categories.getByRole("button", { name: "Adicionar categoria" }).click();
   await expect(
@@ -51,7 +50,7 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
     description: string
   ) => {
     await form.getByLabel("Valor (R$)").fill(amount);
-    await form.getByLabel("Categoria").selectOption({ label: categoryName });
+    await choose(page, form, "Categoria", categoryName);
     await form.getByLabel("Data de competência").fill(competenceOn);
     await form.getByLabel("Descrição").fill(description);
     await form.getByRole("button", { name: "Registrar despesa" }).click();
@@ -114,10 +113,8 @@ test("despesa recorrente: a que começa hoje no fuso da organização é lançad
   await page.goto("/expenses");
   await addCategory(page, categoryName);
 
-  await page.getByText("Despesas recorrentes", { exact: true }).click();
-  const rules = page
-    .getByRole("group")
-    .filter({ hasText: "Despesas recorrentes" });
+  await page.getByRole("button", { name: "Despesas recorrentes" }).click();
+  const rules = page.getByRole("region", { name: "Despesas recorrentes" });
   const create = async (
     amount: string,
     startsOn: string,
@@ -127,8 +124,8 @@ test("despesa recorrente: a que começa hoje no fuso da organização é lançad
       .getByRole("button", { name: "Nova despesa recorrente" })
       .click();
     await rules.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
-    await rules.getByLabel("Categoria").selectOption({ label: categoryName });
-    await rules.getByLabel("Frequência").selectOption({ label: "Todo mês" });
+    await choose(page, rules, "Categoria", categoryName);
+    await choose(page, rules, "Frequência", "Todo mês");
     await rules.getByLabel("Começa em").fill(startsOn);
     await rules.getByLabel("Descrição").fill(description);
     await rules

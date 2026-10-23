@@ -1,6 +1,6 @@
 import type { Feedback } from "./use-command-runner";
 
-/** A success note (`status`) or an error (`alert`), or nothing. */
+/** A success note (`status`) or an error (`alert`), or nothing: the old markup, for Resultado until it migrates. */
 export function FeedbackMessage({ feedback }: { feedback: Feedback | null }) {
   if (!feedback) {
     return null;

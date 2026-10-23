@@ -2,15 +2,14 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseReadModel,
 } from "@polaris/contracts";
-import { type ChangeEvent, useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback } from "react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
-import { ExpenseCategorySelect } from "./expense-category-select";
-import {
-  expenseGroupLabel,
-  formatMonthLabel,
-  isMonthValue,
-  shiftMonth,
-} from "./expense-model";
+import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
+import { expenseGroupLabel, formatMonthLabel } from "./expense-model";
+import { MonthPicker } from "./month-picker";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -22,27 +21,10 @@ const statusTabs: ReadonlyArray<readonly [ExpenseStatusFilter, string]> = [
   ["voided", "Anuladas"],
 ];
 
-interface StatusTabProps {
-  current: ExpenseStatusFilter;
-  label: string;
-  onSelect: (value: ExpenseStatusFilter) => void;
-  value: ExpenseStatusFilter;
-}
-
-function StatusTab({ current, label, onSelect, value }: StatusTabProps) {
-  const handleClick = useCallback(() => onSelect(value), [onSelect, value]);
-  return (
-    <button
-      aria-pressed={current === value}
-      className={
-        current === value ? "category-tab is-selected" : "category-tab"
-      }
-      onClick={handleClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
+function isStatusFilter(
+  value: string | undefined
+): value is ExpenseStatusFilter {
+  return value === "active" || value === "voided";
 }
 
 interface ExpenseFiltersBarProps {
@@ -58,35 +40,18 @@ export function ExpenseFiltersBar({
   onChange,
 }: ExpenseFiltersBarProps) {
   const { categoryId, month, status } = filters;
-  // typed text can be half a month for a moment: only a whole month is applied
-  const [monthText, setMonthText] = useState(month);
-  useEffect(() => setMonthText(month), [month]);
 
-  const previous = shiftMonth(month, -1);
-  const next = shiftMonth(month, 1);
-
-  const handlePrevious = useCallback(() => {
-    if (previous) {
-      onChange({ ...filters, month: previous });
-    }
-  }, [filters, onChange, previous]);
-  const handleNext = useCallback(() => {
-    if (next) {
-      onChange({ ...filters, month: next });
-    }
-  }, [filters, next, onChange]);
   const handleMonth = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { value } = event.currentTarget;
-      setMonthText(value);
-      if (isMonthValue(value) && value !== month) {
-        onChange({ ...filters, month: value });
-      }
-    },
-    [filters, month, onChange]
+    (value: string) => onChange({ ...filters, month: value }),
+    [filters, onChange]
   );
   const handleStatus = useCallback(
-    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
+    (event: MouseEvent<HTMLButtonElement>) => {
+      const value = event.currentTarget.dataset.expenseStatus;
+      if (isStatusFilter(value)) {
+        onChange({ ...filters, status: value });
+      }
+    },
     [filters, onChange]
   );
   const handleCategory = useCallback(
@@ -95,67 +60,39 @@ export function ExpenseFiltersBar({
   );
 
   return (
-    <div className="expense-filters">
-      <div className="expense-month-filter">
-        <label className="field-label" htmlFor="expense-month">
-          Mês de competência
-        </label>
-        <div className="expense-month-controls">
-          <button
-            aria-label="Mês anterior"
-            className="quiet-button"
-            disabled={previous === null}
-            onClick={handlePrevious}
-            type="button"
-          >
-            ‹
-          </button>
-          <input
-            id="expense-month"
-            onChange={handleMonth}
-            pattern="\d{4}-\d{2}"
-            placeholder="AAAA-MM"
-            type="month"
-            value={monthText}
-          />
-          <button
-            aria-label="Próximo mês"
-            className="quiet-button"
-            disabled={next === null}
-            onClick={handleNext}
-            type="button"
-          >
-            ›
-          </button>
-        </div>
-      </div>
-
-      <div className="expense-category-filter">
-        <label className="field-label" htmlFor="expense-category-filter">
-          Categoria
-        </label>
+    <div className="grid gap-4">
+      <div className="grid gap-4 min-[30rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:items-end">
+        <MonthPicker
+          id="expense-month"
+          label="Mês de competência"
+          month={month}
+          onChange={handleMonth}
+        />
         <ExpenseCategorySelect
+          allLabel="Todas as categorias"
           categories={categories}
-          disabled={false}
           id="expense-category-filter"
+          label="Categoria"
           onChange={handleCategory}
-          placeholder="Todas as categorias"
           value={categoryId}
         />
       </div>
-
+      {/* Active or voided: a line under the selected one, the buttons say which is pressed (as in Produtos) */}
       <nav
         aria-label="Situação das despesas"
-        className="category-tabs expense-status-tabs"
+        className="flex gap-4 border-border border-b"
       >
         {statusTabs.map(([value, label]) => (
-          <StatusTab
-            current={status}
+          <button
+            aria-pressed={status === value}
+            className="focus-ring touch-hit relative -mb-px inline-flex h-ctl-lg items-center border-transparent border-b-2 font-medium text-muted-foreground transition-colors hover:text-foreground aria-pressed:border-foreground aria-pressed:text-foreground"
+            data-expense-status={value}
             key={value}
-            label={label}
-            onSelect={handleStatus}
-            value={value}
-          />
+            onClick={handleStatus}
+            type="button"
+          >
+            {label}
+          </button>
         ))}
       </nav>
     </div>
@@ -175,17 +112,20 @@ interface ExpenseSummaryProps {
 export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
   const showTotal = !state.isLoading || state.expenses.length > 0;
   return (
-    <div aria-live="polite" className="expense-summary">
-      <div>
-        <p className="expense-summary-label">
+    <div
+      aria-live="polite"
+      className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-3 py-2.5"
+    >
+      <div className="grid gap-0.5">
+        <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>
-        <p className="expense-summary-total">
+        <p className="font-semibold text-value-lg tabular-nums">
           {showTotal ? formatBrlAmount(state.total) : "…"}
         </p>
       </div>
-      <p className="expense-summary-meta">
+      <p className="text-muted-foreground text-support">
         {formatMonthLabel(filters.month)}
         {showTotal ? ` · ${countLabel(state.count)}` : ""}
       </p>
@@ -219,68 +159,78 @@ function ExpenseCard({
   const thisBusy = busyKey?.endsWith(expense.id) ?? false;
 
   return (
-    <article className={voided ? "expense-card is-voided" : "expense-card"}>
-      <div className="expense-card-main">
-        <div className="expense-card-title-row">
-          <h3>{expense.description}</h3>
-          {voided ? (
-            <span className="category-status status-deleted">Anulada</span>
-          ) : null}
+    <article className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center">
+      <div className="grid min-w-0 gap-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h3
+            className={cn(
+              "font-medium [overflow-wrap:anywhere]",
+              voided && "text-muted-foreground"
+            )}
+          >
+            {expense.description}
+          </h3>
+          {voided ? <Badge variant="warning">Anulada</Badge> : null}
           {expense.recurringRuleId ? (
-            <span
-              className="category-status status-active"
-              title="Lançada automaticamente por uma despesa recorrente"
-            >
+            <Badge title="Lançada automaticamente por uma despesa recorrente">
               Recorrente
-            </span>
+            </Badge>
           ) : null}
         </div>
-        <p className="expense-card-meta">
-          {expense.categoryName}
-          <span className="expense-card-group">
-            {" "}
-            · {expenseGroupLabel(expense.categoryGroup)}
-          </span>
+        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+          {expense.categoryName} · {expenseGroupLabel(expense.categoryGroup)}
         </p>
-        <p className="expense-card-meta">
+        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
           Competência {formatCalendarDate(expense.competenceOn)}
           {expense.payee ? ` · ${expense.payee}` : ""}
         </p>
       </div>
-      <p className="expense-card-amount">{formatBrlAmount(expense.amount)}</p>
-      <div className="expense-card-actions">
-        {voided ? (
-          <button
-            aria-label={`Reativar despesa ${expense.description}`}
-            className="quiet-button"
-            disabled={isBusy}
-            onClick={handleRestore}
-            type="button"
-          >
-            {thisBusy ? "Reativando…" : "Reativar"}
-          </button>
-        ) : (
-          <>
-            <button
-              aria-label={`Editar despesa ${expense.description}`}
-              className="quiet-button"
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-[30rem]:justify-end">
+        <p
+          className={cn(
+            "whitespace-nowrap font-semibold text-value-md tabular-nums",
+            voided && "text-muted-foreground line-through"
+          )}
+        >
+          {formatBrlAmount(expense.amount)}
+        </p>
+        <div className="flex gap-2">
+          {voided ? (
+            <Button
+              aria-label={`Reativar despesa ${expense.description}`}
               disabled={isBusy}
-              onClick={handleEdit}
+              onClick={handleRestore}
+              size="sm"
               type="button"
+              variant="outline"
             >
-              Editar
-            </button>
-            <button
-              aria-label={`Anular despesa ${expense.description}`}
-              className="quiet-button"
-              disabled={isBusy}
-              onClick={handleVoid}
-              type="button"
-            >
-              {thisBusy ? "Anulando…" : "Anular"}
-            </button>
-          </>
-        )}
+              {thisBusy ? "Reativando…" : "Reativar"}
+            </Button>
+          ) : (
+            <>
+              <Button
+                aria-label={`Editar despesa ${expense.description}`}
+                disabled={isBusy}
+                onClick={handleEdit}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Editar
+              </Button>
+              <Button
+                aria-label={`Anular despesa ${expense.description}`}
+                disabled={isBusy}
+                onClick={handleVoid}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {thisBusy ? "Anulando…" : "Anular"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -291,8 +241,8 @@ interface ExpenseListProps {
   filters: ExpenseFilters;
   onEdit: (expense: ExpenseReadModel) => void;
   onLoadMore: () => void;
-  onRetry: () => void;
   onRestore: (expense: ExpenseReadModel) => void;
+  onRetry: () => void;
   onVoid: (expense: ExpenseReadModel) => void;
   state: ExpenseListState;
 }
@@ -316,32 +266,24 @@ export function ExpenseList({
 }: ExpenseListProps) {
   const { expenses, isLoading } = state;
   return (
-    <div aria-busy={isLoading}>
+    <div aria-busy={isLoading} className="grid gap-2">
       {state.error ? (
-        <p className="categories-message is-error" role="alert">
-          {state.error}{" "}
-          <button
-            className="quiet-button"
-            disabled={isLoading || state.isLoadingMore}
-            onClick={onRetry}
-            type="button"
-          >
-            Tentar de novo
-          </button>
-        </p>
+        <LoadError
+          busy={isLoading || state.isLoadingMore}
+          message={state.error}
+          onRetry={onRetry}
+        />
       ) : null}
       {isLoading && expenses.length === 0 ? (
-        <p className="expense-empty-state" role="status">
-          Carregando despesas…
-        </p>
+        <ListNote loading>Carregando despesas…</ListNote>
       ) : null}
       {!isLoading && expenses.length === 0 && state.error === null ? (
-        <p className="expense-empty-state">{emptyText(filters)}</p>
+        <ListNote>{emptyText(filters)}</ListNote>
       ) : null}
       {expenses.length > 0 ? (
-        <ul className="expense-list">
+        <ul className="divide-y">
           {expenses.map((expense) => (
-            <li className="expense-list-item" key={expense.id}>
+            <li key={expense.id}>
               <ExpenseCard
                 busyKey={busyKey}
                 expense={expense}
@@ -354,15 +296,15 @@ export function ExpenseList({
         </ul>
       ) : null}
       {state.nextCursor === null ? null : (
-        <div className="expense-more">
-          <button
-            className="quiet-button"
+        <div className="flex justify-center pt-2">
+          <Button
             disabled={state.isLoadingMore || busyKey !== null}
             onClick={onLoadMore}
             type="button"
+            variant="outline"
           >
             {state.isLoadingMore ? "Carregando…" : "Carregar mais"}
-          </button>
+          </Button>
         </div>
       )}
     </div>
