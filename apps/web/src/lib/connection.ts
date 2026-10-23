@@ -51,14 +51,9 @@ export function classifyResponse(response: Response): ResponseVerdict {
 
 /** A response that did not come from the Worker: the same as no response at all. */
 export class NoWorkerAnswerError extends Error {
-  readonly verdict: ResponseVerdict;
-  readonly status: number;
-
-  constructor(verdict: ResponseVerdict, status: number) {
+  constructor(verdict: ResponseVerdict) {
     super(`no_worker_answer_${verdict}`);
     this.name = "NoWorkerAnswerError";
-    this.verdict = verdict;
-    this.status = status;
   }
 }
 
@@ -257,7 +252,7 @@ export class Connection {
       return response;
     }
     this.doubt();
-    throw new NoWorkerAnswerError(verdict, response.status);
+    throw new NoWorkerAnswerError(verdict);
   };
 
   /** "Tentar agora": one probe right now, whatever the interval; the state it ends in. */
@@ -290,15 +285,19 @@ export class Connection {
         this.clearProbe(); // nothing with the page hidden; the return looks again
       }
     };
-    target.addEventListener("offline", onOffline);
-    target.addEventListener("online", onMaybeBack);
-    target.addEventListener("pageshow", onMaybeBack);
-    page.addEventListener("visibilitychange", onVisibility);
+    const listeners = [
+      [target, "offline", onOffline],
+      [target, "online", onMaybeBack],
+      [target, "pageshow", onMaybeBack],
+      [page, "visibilitychange", onVisibility],
+    ] as const;
+    for (const [on, type, listener] of listeners) {
+      on.addEventListener(type, listener);
+    }
     return () => {
-      target.removeEventListener("offline", onOffline);
-      target.removeEventListener("online", onMaybeBack);
-      target.removeEventListener("pageshow", onMaybeBack);
-      page.removeEventListener("visibilitychange", onVisibility);
+      for (const [on, type, listener] of listeners) {
+        on.removeEventListener(type, listener);
+      }
       this.clearProbe();
     };
   }

@@ -84,6 +84,13 @@ export function isConnectionFailure(error: unknown): boolean {
   return isNoAnswer(error);
 }
 
+/**
+ * A change whose answer the connection cut: it may have been saved, so the text never says it was not. The
+ * screen reads again when the connection returns, and never sends the change again by itself.
+ */
+export const CHANGE_OUTCOME_UNKNOWN =
+  "A conexão caiu antes da resposta. Não sabemos se a alteração foi salva. Quando a internet voltar, a tela é atualizada: confira antes de tentar de novo.";
+
 /** Message for a failed read, by the oRPC code alone. */
 export function readErrorMessage(error: unknown, subject: string): string {
   const code = rpcErrorCode(error);

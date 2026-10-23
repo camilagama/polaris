@@ -2016,7 +2016,7 @@ describe("conexão com prova (F7)", () => {
       const w = world();
       const runtime = await readyWithQueue(w);
       const lease = w.keyValues.read(leaseKeyName);
-      w.failures.pushError = new NoWorkerAnswerError("intercepted", 403);
+      w.failures.pushError = new NoWorkerAnswerError("intercepted");
 
       await runtime.syncNow();
 
@@ -2170,7 +2170,7 @@ describe("conexão com prova (F7)", () => {
       const w = world();
       const runtime = await readyWithQueue(w);
       const workspace = runtime.logoutWorkspace();
-      w.failures.pushError = new NoWorkerAnswerError("unproven", 200);
+      w.failures.pushError = new NoWorkerAnswerError("unproven");
 
       await expect(workspace?.trySync()).rejects.toThrow("offline");
     });

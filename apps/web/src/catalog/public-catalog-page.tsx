@@ -14,7 +14,7 @@ import { useConnectionNoticeForm } from "../app-shell/connection-required-notice
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import { isConnectionFailure } from "../lib/rpc-error";
+import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   type ProfileFieldError,
@@ -49,9 +49,6 @@ interface Feedback {
 }
 
 const NO_FEEDBACK = { error: null, notice: null } as const;
-/** A command whose answer the connection cut: it may have been saved, so it never says it was not. */
-export const CATALOG_OUTCOME_UNKNOWN =
-  "A conexão caiu antes da resposta. Não sabemos se a alteração foi salva. Quando a internet voltar, a página é atualizada: confira antes de salvar de novo.";
 const FIELD_PROBLEM_SUMMARY =
   "O perfil não foi salvo. Corrija o campo indicado acima.";
 const INPUT_OF_FIELD = {
@@ -163,7 +160,7 @@ export function PublicCatalogPage() {
         if (isConnectionFailure(commandError)) {
           setStale(true);
           setFeedback({
-            error: CATALOG_OUTCOME_UNKNOWN,
+            error: CHANGE_OUTCOME_UNKNOWN,
             notice: null,
             where: action,
           });
@@ -317,9 +314,9 @@ export function PublicCatalogPage() {
             draft={draft}
             feedback={feedbackOf(feedback, "profile")}
             onChange={handleDraftChange}
+            online={online}
             onSlugEdited={handleSlugEdited}
             onSubmit={saveProfile}
-            online={online}
             pending={pending}
             problem={problem}
             publicOrigin={setup.publicOrigin}
@@ -328,8 +325,8 @@ export function PublicCatalogPage() {
           <SwitchCard
             changed={changed}
             feedback={feedbackOf(feedback, "switch")}
-            onToggle={toggleCatalog}
             online={online}
+            onToggle={toggleCatalog}
             pending={pending}
             planBlocks={planBlocks}
             profile={profile}

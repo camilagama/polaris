@@ -96,7 +96,7 @@ describe("a call that got no answer from the Worker", () => {
   it("is a connection failure for a network error, no Worker answer, a timeout, an abort or a cause of those", () => {
     expect(isConnectionFailure(new TypeError("Failed to fetch"))).toBe(true);
     expect(
-      isConnectionFailure(new NoWorkerAnswerError("intercepted", 403))
+      isConnectionFailure(new NoWorkerAnswerError("intercepted"))
     ).toBe(true);
     expect(
       isConnectionFailure(new DOMException("timeout", "TimeoutError"))
@@ -135,7 +135,7 @@ describe("a call that got no answer from the Worker", () => {
       "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
     );
     expect(
-      readErrorMessage(new NoWorkerAnswerError("unproven", 200), "o estoque")
+      readErrorMessage(new NoWorkerAnswerError("unproven"), "o estoque")
     ).toBe(
       "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
     );

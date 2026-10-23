@@ -16,7 +16,11 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { isConnectionFailure, legalAcceptanceMessage } from "../lib/rpc-error";
+import {
+  CHANGE_OUTCOME_UNKNOWN,
+  isConnectionFailure,
+  legalAcceptanceMessage,
+} from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   formatFeePercentage,
@@ -176,8 +180,6 @@ export const PROFILES_NOT_LOADED =
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
 export const SAVE_OUTCOME_UNKNOWN =
   "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo.";
-const LIFECYCLE_OUTCOME_UNKNOWN =
-  "A conexão caiu antes da resposta. Não sabemos se o perfil foi alterado. Quando a internet voltar, a lista é atualizada: confira antes de tentar de novo.";
 
 function errorText(error: unknown, subject?: string): string {
   if (
@@ -826,7 +828,7 @@ export function PaymentProfilesPage() {
         await loadProfiles();
       } catch (actionError) {
         if (isConnectionFailure(actionError)) {
-          setUncertain({ message: LIFECYCLE_OUTCOME_UNKNOWN, name: null });
+          setUncertain({ message: CHANGE_OUTCOME_UNKNOWN, name: null });
         } else {
           setError(errorText(actionError));
         }
