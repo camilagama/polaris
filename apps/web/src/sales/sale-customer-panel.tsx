@@ -7,7 +7,6 @@ import {
 } from "react";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import "../catalog/categories-page.css";
 import "./sale-legacy.css";
 import "./sale-customer-panel.css";
 import {

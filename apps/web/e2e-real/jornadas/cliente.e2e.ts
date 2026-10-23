@@ -27,7 +27,7 @@ test("cliente: cadastro, lista e escolha na venda", async ({
     .fill(`maria.${journey.name}@exemplo.com.br`);
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   await expect(
-    page.getByRole("button", { name: `Editar cliente ${name}` })
+    page.getByRole("button", { name: `Mais ações para ${name}` })
   ).toBeVisible();
 
   const customers = async () =>
