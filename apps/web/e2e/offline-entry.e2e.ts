@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 const ORIGINAL = [
   {
@@ -47,6 +48,7 @@ async function serveListing(page: Page, listing: () => Listing) {
           },
           meta: [],
         }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
         status,
       });
@@ -55,6 +57,7 @@ async function serveListing(page: Page, listing: () => Listing) {
     if (state === "empty") {
       await route.fulfill({
         body: JSON.stringify({ json: { organizations: [] }, meta: [] }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
       });
       return;
@@ -71,6 +74,7 @@ async function serveListing(page: Page, listing: () => Listing) {
           },
           meta: [],
         }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
         status: 401,
       });
@@ -81,6 +85,7 @@ async function serveListing(page: Page, listing: () => Listing) {
         json: { organizations },
         meta: [],
       }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     });
   });

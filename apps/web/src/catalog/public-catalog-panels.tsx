@@ -1,3 +1,4 @@
+import { connectionControlProps } from "../app-shell/connection-required-notice";
 import type {
   ProductReadModel,
   PublicCatalogProfileReadModel,
@@ -74,6 +75,8 @@ function problemAttributes(
 
 interface ProfileFormProps {
   changed: boolean;
+  /** Offline the commands send nothing and say why (the connection notice). */
+  online: boolean;
   disabled: boolean;
   draft: PublicProfileDraft;
   feedback: ActionFeedback;
@@ -200,6 +203,7 @@ export function ProfileForm(props: ProfileFormProps) {
       />
       <FieldProblem field="instagram" problem={problem} />
       <button
+        {...connectionControlProps(props.online)}
         className="primary-button"
         disabled={props.pending || props.disabled || !props.changed}
         type="submit"
@@ -213,6 +217,7 @@ export function ProfileForm(props: ProfileFormProps) {
 
 interface SwitchCardProps {
   changed: boolean;
+  online: boolean;
   feedback: ActionFeedback;
   onToggle: () => void;
   pending: boolean;
@@ -236,6 +241,7 @@ export function SwitchCard(props: SwitchCardProps) {
       </p>
       {profile ? (
         <button
+          {...connectionControlProps(props.online)}
           className={profile.published ? "quiet-button" : "primary-button"}
           disabled={
             props.pending ||
@@ -272,12 +278,19 @@ export function SwitchCard(props: SwitchCardProps) {
 
 interface ProductRowProps {
   disabled: boolean;
+  online: boolean;
   onToggle: (productId: string, show: boolean) => void;
   product: ProductReadModel;
   shown: boolean;
 }
 
-function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
+function ProductRow({
+  disabled,
+  onToggle,
+  online,
+  product,
+  shown,
+}: ProductRowProps) {
   const handleClick = useCallback(
     () => onToggle(product.id, !shown),
     [onToggle, product.id, shown]
@@ -286,6 +299,7 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
     <li>
       <span>{product.name}</span>
       <button
+        {...connectionControlProps(online)}
         aria-pressed={shown}
         className={shown ? "quiet-button" : "primary-button"}
         disabled={disabled}
@@ -300,6 +314,7 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
 
 interface ProductsCardProps {
   feedback: ActionFeedback;
+  online: boolean;
   onChange: (productIds: string[], show: boolean) => void;
   pending: boolean;
   planBlocks: boolean;
@@ -344,6 +359,7 @@ export function ProductsCard(props: ProductsCardProps) {
         <h2 id="catalog-products">Produtos</h2>
         <div className="public-catalog-bulk">
           <button
+            {...connectionControlProps(props.online)}
             className="quiet-button"
             disabled={
               props.pending ||
@@ -356,6 +372,7 @@ export function ProductsCard(props: ProductsCardProps) {
             Mostrar todos
           </button>
           <button
+            {...connectionControlProps(props.online)}
             className="quiet-button"
             disabled={props.pending || shownCount === 0}
             onClick={handleHideAll}
@@ -380,6 +397,7 @@ export function ProductsCard(props: ProductsCardProps) {
               <ProductRow
                 disabled={props.pending || (props.planBlocks && !isShown)}
                 key={product.id}
+                online={props.online}
                 onToggle={handleToggle}
                 product={product}
                 shown={isShown}

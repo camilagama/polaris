@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The stock screen on the components of src/ui (ADR 0103, t194), in the lab of the offline screens:
@@ -28,6 +29,7 @@ const THEMES = [
 
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
 });
 

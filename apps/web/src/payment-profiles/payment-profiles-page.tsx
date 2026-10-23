@@ -8,12 +8,18 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
+import {
+  isConnectionFailure,
+  legalAcceptanceMessage,
+} from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   formatFeePercentage,
@@ -167,6 +173,15 @@ function percentageProblems(rules: RuleDraft[]): Record<string, string> {
   }
   return problems;
 }
+/** The list was not read (no connection): it is not an empty list (U-60). */
+export const PROFILES_NOT_LOADED =
+  "Os perfis não carregaram. Eles aparecem quando a conexão voltar.";
+/** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
+export const SAVE_OUTCOME_UNKNOWN =
+  "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo.";
+const LIFECYCLE_OUTCOME_UNKNOWN =
+  "A conexão caiu antes da resposta. Não sabemos se o perfil foi alterado. Quando a internet voltar, a lista é atualizada: confira antes de tentar de novo.";
+
 function errorText(error: unknown, subject?: string): string {
   if (
     error instanceof Error &&
@@ -455,6 +470,7 @@ function RuleEditor({
 interface ProfileCardProps {
   onChangeLifecycle: (profile: PaymentProfileReadModel) => Promise<void>;
   onEdit: (profile: PaymentProfileReadModel) => void;
+  online: boolean;
   pending: boolean;
   profile: PaymentProfileReadModel;
 }
@@ -462,13 +478,17 @@ interface ProfileCardProps {
 function ProfileCard({
   onChangeLifecycle,
   onEdit,
+  online,
   pending,
   profile,
 }: ProfileCardProps) {
   const handleEdit = useCallback(() => onEdit(profile), [onEdit, profile]);
   const handleLifecycle = useCallback(() => {
-    onChangeLifecycle(profile).catch(() => undefined);
-  }, [onChangeLifecycle, profile]);
+    // offline nothing leaves: the button says why (aria-describedby on the notice)
+    if (online) {
+      onChangeLifecycle(profile).catch(() => undefined);
+    }
+  }, [onChangeLifecycle, online, profile]);
   const statusLabel = profile.status === "active" ? "Ativo" : "Arquivado";
   const lifecycleLabel = profile.status === "active" ? "Arquivar" : "Restaurar";
   return (
@@ -518,6 +538,7 @@ function ProfileCard({
           </button>
         )}
         <button
+          {...connectionControlProps(online)}
           className="category-button"
           disabled={pending}
           onClick={handleLifecycle}
@@ -532,21 +553,33 @@ function ProfileCard({
 
 interface ProfileListContentProps {
   loading: boolean;
+  /** The list could not be read for lack of a connection: never shown as "no profile". */
+  notLoaded: boolean;
   onChangeLifecycle: (profile: PaymentProfileReadModel) => Promise<void>;
   onEdit: (profile: PaymentProfileReadModel) => void;
+  online: boolean;
   pending: boolean;
   profiles: PaymentProfileReadModel[];
 }
 
 function ProfileListContent({
   loading,
+  notLoaded,
   onChangeLifecycle,
   onEdit,
+  online,
   pending,
   profiles,
 }: ProfileListContentProps) {
   if (loading) {
     return <p role="status">Carregando perfis…</p>;
+  }
+  if (notLoaded) {
+    return (
+      <p className="payment-empty" role="status">
+        {PROFILES_NOT_LOADED}
+      </p>
+    );
   }
   if (profiles.length === 0) {
     return (
@@ -563,6 +596,7 @@ function ProfileListContent({
           key={profile.id}
           onChangeLifecycle={onChangeLifecycle}
           onEdit={onEdit}
+          online={online}
           pending={pending}
           profile={profile}
         />
@@ -584,11 +618,22 @@ export function PaymentProfilesPage() {
   const [canRetry, setCanRetry] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const online = useConnectionOnline();
+  // the list was not read for lack of a connection (not an empty list); read again when it returns
+  const [notLoaded, setNotLoaded] = useState(false);
+  // a save the connection cut: amber, the form stays; `name` is looked for in the list read on the return
+  const [uncertain, setUncertain] = useState<{
+    message: string;
+    name: string | null;
+  } | null>(null);
+  const uncertainRef = useRef(uncertain);
+  uncertainRef.current = uncertain;
   useReportUnsentWork(
     !pending &&
       profileDraftKey(draft) !==
         profileDraftKey(editing ? profileDraft(editing) : blankDraft())
   );
+  // only a read: a save whose answer was cut is never sent again from here
   const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -599,9 +644,25 @@ export function PaymentProfilesPage() {
         status: "all",
       });
       setProfiles(result.profiles);
+      setNotLoaded(false);
+      const cut = uncertainRef.current;
+      if (cut) {
+        const saved =
+          cut.name !== null &&
+          result.profiles.some((profile) => profile.name === cut.name);
+        setUncertain(null);
+        if (saved) {
+          setNotice(`O perfil “${cut.name}” foi salvo.`);
+          setDraft(blankDraft());
+        }
+      }
     } catch (loadError) {
-      setError(errorText(loadError, "os perfis de pagamento"));
-      setCanRetry(true);
+      if (isConnectionFailure(loadError)) {
+        setNotLoaded(true);
+      } else {
+        setError(errorText(loadError, "os perfis de pagamento"));
+        setCanRetry(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -609,6 +670,15 @@ export function PaymentProfilesPage() {
   useEffect(() => {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
+  // the connection came back: the list that did not load, or that a cut save may have changed, is read again
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (cameBack && (notLoaded || uncertainRef.current)) {
+      loadProfiles().catch(() => undefined);
+    }
+  }, [loadProfiles, notLoaded, online]);
   const handleRetry = useCallback(() => {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
@@ -656,7 +726,8 @@ export function PaymentProfilesPage() {
   const saveProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!draft.rules.length) {
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (!(online && draft.rules.length)) {
         return;
       }
       const problems = percentageProblems(draft.rules);
@@ -673,6 +744,7 @@ export function PaymentProfilesPage() {
       setError(null);
       setCanRetry(false);
       setNotice(null);
+      setUncertain(null);
       try {
         const ruleKeys = draft.rules.map((rule) =>
           [
@@ -708,12 +780,23 @@ export function PaymentProfilesPage() {
         setDraft(blankDraft());
         await loadProfiles();
       } catch (saveError) {
-        setError(errorText(saveError));
+        if (isConnectionFailure(saveError)) {
+          const name = draft.name.trim();
+          // a name already on the list before would prove nothing on the return
+          const provable =
+            !editing && !profiles.some((profile) => profile.name === name);
+          setUncertain({
+            message: SAVE_OUTCOME_UNKNOWN,
+            name: provable ? name : null,
+          });
+        } else {
+          setError(errorText(saveError));
+        }
       } finally {
         setPending(false);
       }
     },
-    [draft, editing, loadProfiles, organizationId]
+    [draft, editing, loadProfiles, online, organizationId, profiles]
   );
   const editProfile = useCallback((profile: PaymentProfileReadModel) => {
     setEditing(profile);
@@ -728,6 +811,7 @@ export function PaymentProfilesPage() {
       setError(null);
       setCanRetry(false);
       setNotice(null);
+      setUncertain(null);
       try {
         const input = {
           expectedVersion: profile.version,
@@ -743,7 +827,11 @@ export function PaymentProfilesPage() {
         }
         await loadProfiles();
       } catch (actionError) {
-        setError(errorText(actionError));
+        if (isConnectionFailure(actionError)) {
+          setUncertain({ message: LIFECYCLE_OUTCOME_UNKNOWN, name: null });
+        } else {
+          setError(errorText(actionError));
+        }
       } finally {
         setPending(false);
       }
@@ -781,6 +869,11 @@ export function PaymentProfilesPage() {
       {notice && (
         <p className="payment-message is-success" role="status">
           {notice}
+        </p>
+      )}
+      {uncertain && (
+        <p className="payment-message is-warning" role="status">
+          {uncertain.message}
         </p>
       )}
       <section className="payment-workspace">
@@ -828,6 +921,7 @@ export function PaymentProfilesPage() {
             />
           ))}
           <button
+            {...connectionControlProps(online)}
             className="category-button is-primary"
             disabled={pending}
             type="submit"
@@ -848,9 +942,11 @@ export function PaymentProfilesPage() {
             </label>
           </div>
           <ProfileListContent
-            loading={loading}
+            loading={loading && online}
+            notLoaded={notLoaded || (loading && !online)}
             onChangeLifecycle={changeLifecycle}
             onEdit={editProfile}
+            online={online}
             pending={pending}
             profiles={visibleProfiles}
           />

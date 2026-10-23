@@ -7,10 +7,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { isConnectionFailure } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   type ProfileFieldError,
@@ -45,6 +49,9 @@ interface Feedback {
 }
 
 const NO_FEEDBACK = { error: null, notice: null } as const;
+/** A command whose answer the connection cut: it may have been saved, so it never says it was not. */
+export const CATALOG_OUTCOME_UNKNOWN =
+  "A conexão caiu antes da resposta. Não sabemos se a alteração foi salva. Quando a internet voltar, a página é atualizada: confira antes de salvar de novo.";
 const FIELD_PROBLEM_SUMMARY =
   "O perfil não foi salvo. Corrija o campo indicado acima.";
 const INPUT_OF_FIELD = {
@@ -71,9 +78,14 @@ export function PublicCatalogPage() {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [problem, setProblem] = useState<ProfileFieldError | null>(null);
+  const online = useConnectionOnline();
+  // read again when the connection returns: the page that did not load, or what a cut command changed
+  const [stale, setStale] = useState(false);
   useReportUnsentWork(
     loaded !== null && hasProfileChanges(draft, loaded.setup.profile)
   );
+  // offline the notice says the typed text stays only when there is a form (it shows once the page loaded)
+  useConnectionNoticeForm(loaded !== null);
 
   const load = useCallback(
     async (keepDraft: boolean) => {
@@ -84,16 +96,21 @@ export function PublicCatalogPage() {
           orpcClient.product.list({ organizationId, status: "active" }),
         ]);
         setLoaded({ products: products.products, setup });
+        setStale(false);
         if (!keepDraft) {
           setDraft(draftFromProfile(setup.profile));
           setSlugEdited(setup.profile !== null);
         }
       } catch (loadError) {
-        setFeedback({
-          error: publicCatalogErrorMessage(loadError, "load"),
-          notice: null,
-          where: "load",
-        });
+        if (isConnectionFailure(loadError)) {
+          setStale(true); // the connection notice says it; the page loads by itself on the return
+        } else {
+          setFeedback({
+            error: publicCatalogErrorMessage(loadError, "load"),
+            notice: null,
+            where: "load",
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -104,6 +121,17 @@ export function PublicCatalogPage() {
   useEffect(() => {
     load(false).catch(() => undefined);
   }, [load]);
+
+  const wasOnline = useRef(online);
+  const hasLoaded = loaded !== null;
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (cameBack && stale) {
+      // what was typed before the cut stays
+      load(hasLoaded).catch(() => undefined);
+    }
+  }, [hasLoaded, load, online, stale]);
 
   // the field with the error gets the focus once the form is enabled again (a disabled input takes no focus)
   useEffect(() => {
@@ -120,6 +148,9 @@ export function PublicCatalogPage() {
       success: string,
       keepDraft: boolean
     ) => {
+      if (!online) {
+        return; // nothing leaves offline; the button says why
+      }
       setPending(true);
       setFeedback(null);
       setProblem(null);
@@ -129,6 +160,15 @@ export function PublicCatalogPage() {
         setFeedback({ error: null, notice: success, where: action });
       } catch (commandError) {
         failed = true;
+        if (isConnectionFailure(commandError)) {
+          setStale(true);
+          setFeedback({
+            error: CATALOG_OUTCOME_UNKNOWN,
+            notice: null,
+            where: action,
+          });
+          return;
+        }
         const fieldError =
           action === "profile" ? profileFieldError(commandError) : null;
         if (fieldError) {
@@ -152,7 +192,7 @@ export function PublicCatalogPage() {
       // a refused command never takes the typed form back to what the server holds (U-48)
       await load(keepDraft || failed).catch(() => undefined);
     },
-    [load]
+    [load, online]
   );
 
   const setup = loaded?.setup ?? null;
@@ -261,7 +301,7 @@ export function PublicCatalogPage() {
           {feedback.error}
         </p>
       ) : null}
-      {loading && !loaded ? <p role="status">Carregando…</p> : null}
+      {loading && !loaded && online ? <p role="status">Carregando…</p> : null}
       {planBlocks ? (
         <p className="public-catalog-message is-warning" role="status">
           O catálogo público faz parte do plano Pro. Você pode ver o que já está
@@ -279,6 +319,7 @@ export function PublicCatalogPage() {
             onChange={handleDraftChange}
             onSlugEdited={handleSlugEdited}
             onSubmit={saveProfile}
+            online={online}
             pending={pending}
             problem={problem}
             publicOrigin={setup.publicOrigin}
@@ -288,6 +329,7 @@ export function PublicCatalogPage() {
             changed={changed}
             feedback={feedbackOf(feedback, "switch")}
             onToggle={toggleCatalog}
+            online={online}
             pending={pending}
             planBlocks={planBlocks}
             profile={profile}
@@ -297,6 +339,7 @@ export function PublicCatalogPage() {
           <ProductsCard
             feedback={feedbackOf(feedback, "products")}
             onChange={changeProducts}
+            online={online}
             pending={pending}
             planBlocks={planBlocks}
             products={loaded.products}

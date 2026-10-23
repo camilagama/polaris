@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const ORGANIZATIONS = [
@@ -42,6 +43,7 @@ const device = (n: number, label: string | null, lastSeen: string) => ({
 const json = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const rpcError = (status: number, code: string, reason?: string) =>
@@ -115,6 +117,7 @@ const inputOf = (route: { request: () => { postDataJSON: () => unknown } }) =>
  */
 async function serve(page: Page, state: Scenario) {
   const refused = () => rpcError(401, "UNAUTHORIZED");
+  await serveHealth(page, () => state.down);
   // everything else the offline runtime asks for is unreachable here
   await page.route("**/rpc/**", (route) => route.abort("internetdisconnected"));
   await page.route("**/rpc/organization/listMine", (route) =>
@@ -178,17 +181,26 @@ async function serve(page: Page, state: Scenario) {
     if (state.sessionDead && state.sessionLookup === "unreachable") {
       await route.abort("internetdisconnected");
     } else if (state.sessionDead) {
-      await route.fulfill({ body: "null", contentType: "application/json" });
+      await route.fulfill({
+        body: "null",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
     } else {
       await route.fulfill({
         body: JSON.stringify({ user: { id: USER_ID } }),
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
       });
     }
   });
   await page.route("**/api/auth/sign-out", (route) => {
     state.signOutCalls += 1;
-    return route.fulfill({ body: "{}", contentType: "application/json" });
+    return route.fulfill({
+      body: "{}",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    });
   });
   await page.route("**/rpc/device/register", (route) =>
     route.fulfill(json({ device: twoDevices()[0] }))
@@ -248,7 +260,8 @@ async function serve(page: Page, state: Scenario) {
       state.pushRefused += 1;
       return route.fulfill(refused());
     }
-    return route.abort("internetdisconnected");
+    // the Worker answers that it cannot take the push now: the connection is proven, the queue waits
+    return route.fulfill(rpcError(503, "SERVICE_UNAVAILABLE"));
   });
 }
 
@@ -348,6 +361,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
         turnstileSiteKey: null,
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await openDevices(page, state);

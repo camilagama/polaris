@@ -157,7 +157,11 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
   }
   const Page = pages[route.id];
   return (
-    <AppShell navId={route.navId} onlineOnly={route.onlineOnly}>
+    <AppShell
+      connectionForm={route.connectionForm}
+      navId={route.navId}
+      onlineOnly={route.onlineOnly}
+    >
       <ErrorBoundary>
         <Suspense
           fallback={

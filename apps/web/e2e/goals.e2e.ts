@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The goals panel of the result screen in a real browser, over a small
@@ -365,6 +366,7 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
       status: answer.status,
     });

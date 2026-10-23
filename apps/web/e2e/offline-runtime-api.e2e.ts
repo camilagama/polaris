@@ -8,6 +8,7 @@ import {
   signOfflineLease,
 } from "../src/lib/offline-lease-token";
 import { SaleLabServer } from "../src/offline-poc/sale-lab-server";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The app as it runs in production: the real screens, the real offline runtime
@@ -74,6 +75,7 @@ class RpcServer {
     return route.fulfill({
       body: JSON.stringify({ json, meta: [] }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     });
   }
 
@@ -90,11 +92,13 @@ class RpcServer {
         meta: [],
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status,
     });
   }
 
   async install(page: Page) {
+    await serveHealth(page);
     await page.route("**/api/auth/get-session", (route) =>
       this.connection === "down"
         ? route.abort("internetdisconnected")
@@ -117,16 +121,25 @@ class RpcServer {
       return;
     }
     if (this.sessionAnswer === "throttled") {
-      await route.fulfill({ body: "slow down", status: 429 });
+      await route.fulfill({
+        body: "slow down",
+        headers: { ...WORKER_MARK },
+        status: 429,
+      });
       return;
     }
     if (this.sessionAnswer === "unauthorized" || user === null) {
-      await route.fulfill({ body: "{}", status: 401 });
+      await route.fulfill({
+        body: "{}",
+        headers: { ...WORKER_MARK },
+        status: 401,
+      });
       return;
     }
     await route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: user } }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     });
   }
 
@@ -419,7 +432,11 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     let signOutCalls = 0;
     await page.route("**/api/auth/sign-out", (route) => {
       signOutCalls += 1;
-      return route.fulfill({ body: "{}", contentType: "application/json" });
+      return route.fulfill({
+        body: "{}",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
     });
     await openSales(page, server);
     await queueSales(page, 2);

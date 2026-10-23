@@ -64,6 +64,7 @@ describe("resolveRoute", () => {
 
   it("opens the period result at /dashboard, titled Resultado", () => {
     expect(resolveRoute("/dashboard")).toEqual({
+      connectionForm: true,
       id: "dashboard",
       kind: "page",
       navId: "dashboard",
@@ -92,6 +93,16 @@ describe("resolveRoute", () => {
       "/dashboard",
     ]) {
       expect(resolveRoute(path)).toMatchObject({ onlineOnly: false });
+    }
+  });
+
+  it("tells the connection notice which online-only screens hold a form to type in", () => {
+    for (const path of ["/payment-profiles", "/expenses", "/categories"]) {
+      expect(resolveRoute(path)).toMatchObject({ connectionForm: true });
+    }
+    // the catalog declares its form once it loaded; the sale detail is read first
+    for (const path of ["/public-catalog", "/sales/detail"]) {
+      expect(resolveRoute(path)).toMatchObject({ connectionForm: false });
     }
   });
 

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * Correções de usabilidade do staging, lote 1 (t213; U-NN são os achados do Diego e do Petković de 22/10).
@@ -20,6 +21,7 @@ const NOT_STORED_ON_DEVICE = /tudo guardado neste aparelho/;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -64,7 +66,11 @@ async function openLab(
 
 async function openWithoutSession(page: Page) {
   await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({ body: "null", contentType: "application/json" })
+    route.fulfill({
+      body: "null",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
   );
   await page.route("**/api/auth-methods", (route) =>
     route.fulfill({
@@ -73,6 +79,7 @@ async function openWithoutSession(page: Page) {
         google: true,
         turnstileSiteKey: null,
       }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -153,6 +160,7 @@ for (const width of [360, 320]) {
     await page.route("**/api/auth/get-session", (route) =>
       route.fulfill({
         body: JSON.stringify({ user: { id: "u" } }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
       })
     );

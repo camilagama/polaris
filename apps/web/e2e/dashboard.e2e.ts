@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The real period result screen in a real browser, over a small in-memory
@@ -305,6 +306,7 @@ async function installServer(page: Page, server: FakeReportServer) {
     const answer = await server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
       status: answer.status,
     });

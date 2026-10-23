@@ -1,5 +1,6 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it, vi } from "vitest";
+import { NoWorkerAnswerError } from "../../lib/connection";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { attemptLogout } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
@@ -12,6 +13,7 @@ import {
   OfflineRuntime,
   type OpenedStores,
   type RuntimeApi,
+  type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
 
@@ -42,7 +44,13 @@ function world(options: { leaseHours?: number } = {}) {
   const server = new FakeCatalogServer();
   const network = { online: true };
   let clock = new Date("2026-10-14T12:00:00.000Z");
-  const calls = { issueLease: 0, push: 0, registerDevice: 0, sessionUser: 0 };
+  const calls = {
+    issueLease: 0,
+    pull: 0,
+    push: 0,
+    registerDevice: 0,
+    sessionUser: 0,
+  };
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   const session: { signedIn: boolean; user: string } = {
@@ -58,6 +66,8 @@ function world(options: { leaseHours?: number } = {}) {
     sessionUser?: Error;
     issueLease: Error[];
     push: boolean;
+    /** What the failing push throws as is (a network failure, a response that was not the Worker's). */
+    pushError?: Error | undefined;
     /** The oRPC code the failing push carries (UNAUTHORIZED, FORBIDDEN...), if any. */
     pushCode?: string | undefined;
     /** The `data` the failing push carries (the domain reason), if any. */
@@ -78,6 +88,10 @@ function world(options: { leaseHours?: number } = {}) {
     issueLease?: Promise<void> | undefined;
     /** Opening stores fails this many more times. */
     openStoresFailures?: number;
+    /** Makes every pull wait for this promise. */
+    pull?: Promise<void> | undefined;
+    /** Makes every push wait for this promise. */
+    push?: Promise<void> | undefined;
   } = {};
   const keyValues = memoryKeyValues();
   const stores = new Map<string, { outbox: Outbox; writer: FakeWriter }>();
@@ -134,6 +148,13 @@ function world(options: { leaseHours?: number } = {}) {
       lease,
     };
   };
+  // the server as a source of pulls, counting them and able to make them wait
+  const countedSource = Object.create(server) as FakeCatalogServer;
+  countedSource.pull = async (cursor, limit) => {
+    calls.pull += 1;
+    await gates.pull;
+    return server.pull(cursor, limit);
+  };
   const api: RuntimeApi = {
     deviceIsMine: (deviceId) => {
       if (failures.deviceIsMineError) {
@@ -151,8 +172,12 @@ function world(options: { leaseHours?: number } = {}) {
       await gate;
       return failure ? Promise.reject(failure) : issue(deviceId, org);
     },
-    push: () => (input) => {
+    push: () => async (input) => {
       calls.push += 1;
+      await gates.push;
+      if (failures.pushError) {
+        throw failures.pushError;
+      }
       if (failures.push) {
         return Promise.reject(
           Object.assign(new Error("server down"), {
@@ -192,9 +217,12 @@ function world(options: { leaseHours?: number } = {}) {
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
-    source: () => server,
+    source: () => countedSource,
   };
-  const make = (deviceLabel: string | null = null) =>
+  const make = (
+    deviceLabel: string | null = null,
+    extra: Partial<RuntimeDependencies> = {}
+  ) =>
     new OfflineRuntime({
       api,
       deviceLabel,
@@ -255,6 +283,7 @@ function world(options: { leaseHours?: number } = {}) {
         wiped.push(namespace.key);
         return Promise.resolve();
       },
+      ...extra,
     });
   return {
     advance: (hours: number) => {
@@ -1929,5 +1958,384 @@ describe("a server that waits for the legal acceptance", () => {
     w.failures.pushCode = undefined;
     w.failures.pushData = undefined;
     await expect(runtime.workSource().sync()).resolves.toBeUndefined();
+  });
+});
+
+describe("conexão com prova (F7)", () => {
+  const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+  /** Starts proven online, with one command queued; then the connection can be flipped. */
+  async function readyThenFlip(
+    w: ReturnType<typeof world>,
+    flags: { proven: boolean; mayTry: boolean }
+  ) {
+    const runtime = await readyWithQueue(w, {
+      isOnline: () => flags.proven,
+      mayTry: () => flags.mayTry,
+    });
+    return runtime;
+  }
+
+  async function readyWithQueue(
+    w: ReturnType<typeof world>,
+    extra: Partial<RuntimeDependencies> = {}
+  ) {
+    const runtime = w.make(null, extra);
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    return runtime;
+  }
+
+  /** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
+  function sharedLock() {
+    const held = new Set<string>();
+    return async (name: string, task: () => Promise<void>) => {
+      if (held.has(name)) {
+        return false;
+      }
+      held.add(name);
+      try {
+        await task();
+        return true;
+      } finally {
+        held.delete(name);
+      }
+    };
+  }
+
+  function deferred() {
+    let release: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  }
+
+  describe("an answer that did not come from the Worker is no refusal", () => {
+    it("a 403 without the mark keeps the copy, the lease and the session", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const lease = w.keyValues.read(leaseKeyName);
+      w.failures.pushError = new NoWorkerAnswerError("intercepted", 403);
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: null,
+        sessionRefused: false,
+      });
+      expect(w.wiped).toEqual([]);
+      expect(w.purged).toEqual([]);
+      expect(w.keyValues.read(leaseKeyName)).toBe(lease);
+      expect(runtime.context()).not.toBeNull();
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+    });
+
+    it("an oRPC FORBIDDEN from the Worker drops the copy, as before", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+      });
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        sessionRefused: true,
+      });
+      expect(w.wiped).toEqual([scopeOf()]);
+      expect(w.keyValues.read(leaseKeyName)).toBeNull();
+    });
+
+    it("a FORBIDDEN for the legal acceptance is an acceptance, never a refused session", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        data: { reason: "legal_acceptance_required" },
+      });
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        legalAcceptanceRequired: true,
+        phase: "ready",
+        reason: "legal_acceptance_required",
+        sessionRefused: false,
+      });
+      expect(w.wiped).toEqual([]);
+      expect(w.keyValues.read(leaseKeyName)).not.toBeNull();
+    });
+
+    function scopeOf() {
+      return `${userId}-${organizationId}`;
+    }
+  });
+
+  describe("how a failed sync ends", () => {
+    it("a network failure is no 'sync_failed': reason stays null and online follows the connection", async () => {
+      const w = world();
+      let proven = true;
+      const runtime = await readyWithQueue(w, {
+        isOnline: () => proven,
+        mayTry: () => true,
+      });
+      w.failures.pushError = new TypeError("Failed to fetch");
+      // the connection decides the state while the try is on its way
+      w.gates.push = Promise.resolve().then(() => {
+        proven = false;
+      });
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        online: false,
+        reason: null,
+        syncing: false,
+      });
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+    });
+
+    it("a network failure with the connection still proven keeps online true", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = new TypeError("Failed to fetch");
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        online: true,
+        reason: null,
+      });
+    });
+
+    it("a server failure (5xx) is 'sync_failed'", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = Object.assign(new Error("boom"), {
+        code: "INTERNAL_SERVER_ERROR",
+      });
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        reason: "sync_failed",
+        sessionRefused: false,
+      });
+    });
+  });
+
+  describe("the state never stops the real try", () => {
+    it("with the connection not proven but the browser able, the sync pushes for real", async () => {
+      const w = world();
+      const flags = { mayTry: true, proven: true };
+      const runtime = await readyThenFlip(w, flags);
+      flags.proven = false;
+      const before = w.calls.push;
+
+      await runtime.syncNow();
+
+      expect(w.calls.push).toBeGreaterThan(before);
+      expect(runtime.getSnapshot().counts.pending).toBe(0);
+    });
+
+    it("when nothing may leave, the push is not called and the sync ends as no answer", async () => {
+      const w = world();
+      const flags = { mayTry: true, proven: true };
+      const runtime = await readyThenFlip(w, flags);
+      flags.proven = false;
+      flags.mayTry = false;
+
+      await runtime.syncNow();
+
+      expect(w.calls.push).toBe(0);
+      expect(runtime.getSnapshot()).toMatchObject({ online: false });
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+    });
+  });
+
+  describe("'Sair' tries the send for real", () => {
+    it("rejects with 'offline' when the push got no answer", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const workspace = runtime.logoutWorkspace();
+      w.failures.pushError = new TypeError("Failed to fetch");
+
+      await expect(workspace?.trySync()).rejects.toThrow("offline");
+    });
+
+    it("rejects with 'offline' when the answer was not the Worker's", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const workspace = runtime.logoutWorkspace();
+      w.failures.pushError = new NoWorkerAnswerError("unproven", 200);
+
+      await expect(workspace?.trySync()).rejects.toThrow("offline");
+    });
+
+    it("does not reject when the server answered, even with a failure", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const workspace = runtime.logoutWorkspace();
+      w.failures.pushError = Object.assign(new Error("boom"), {
+        code: "INTERNAL_SERVER_ERROR",
+      });
+
+      await expect(workspace?.trySync()).resolves.toBeUndefined();
+    });
+
+    it("sends with the connection not proven when the browser may try", async () => {
+      const w = world();
+      const flags = { mayTry: true, proven: true };
+      const runtime = await readyThenFlip(w, flags);
+      flags.proven = false;
+
+      await expect(runtime.logoutWorkspace()?.trySync()).resolves.toBe(
+        undefined
+      );
+      expect(w.calls.push).toBeGreaterThan(0);
+    });
+
+    it("rejects with 'offline' without trying when nothing may leave", async () => {
+      const w = world();
+      const flags = { mayTry: true, proven: true };
+      const runtime = await readyThenFlip(w, flags);
+      flags.proven = false;
+      flags.mayTry = false;
+
+      await expect(runtime.logoutWorkspace()?.trySync()).rejects.toThrow(
+        "offline"
+      );
+      expect(w.calls.push).toBe(0);
+    });
+  });
+
+  it("never sends the queue of user A under the session of user B", async () => {
+    const w = world();
+    const runtime = await readyWithQueue(w);
+    w.session.user = "user-2";
+
+    await runtime.syncNow();
+
+    expect(w.calls.push).toBe(0);
+    expect(w.server.executions).toBe(0);
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "session_changed",
+    });
+  });
+
+  describe("one pull after the push", () => {
+    it("pulls once per sync with the cursor ready, with or without a queue", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.calls.pull = 0;
+
+      await runtime.syncNow(); // sends the product, then catches up
+      expect(w.calls.pull).toBe(1);
+
+      await runtime.syncNow(); // nothing queued
+      expect(w.calls.pull).toBe(2);
+    });
+
+    it("counts the queue as soon as the push answered, before the pull ends", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+      const gate = deferred();
+      w.gates.pull = gate.promise;
+      w.calls.pull = 0;
+
+      const sync = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.pull).toBe(1));
+
+      expect(runtime.getSnapshot().counts.pending).toBe(0);
+      expect(runtime.getSnapshot().syncing).toBe(true);
+      gate.release();
+      await sync;
+      expect(runtime.getSnapshot().syncing).toBe(false);
+    });
+  });
+
+  it("across two runtimes sharing a lock, one sync runs and the other does not push", async () => {
+    const w = world();
+    const exclusive = sharedLock();
+    const first = await readyWithQueue(w, { exclusive });
+    const second = w.make(null, { exclusive });
+    await second.start(organizationId);
+    const gate = deferred();
+    w.gates.push = gate.promise;
+
+    const running = first.syncNow();
+    await vi.waitFor(() => expect(w.calls.push).toBe(1));
+    await second.syncNow();
+
+    expect(w.calls.push).toBe(1);
+    gate.release();
+    await running;
+    expect(w.calls.push).toBe(1);
+    expect(first.getSnapshot().counts.pending).toBe(0);
+  });
+
+  it("marks the phases of a sync in order", async () => {
+    const w = world();
+    const marks: string[] = [];
+    const runtime = await readyWithQueue(w, { mark: (m) => marks.push(m) });
+    marks.length = 0;
+
+    await runtime.syncNow();
+
+    expect(marks[0]).toBe("sync:start");
+    expect(marks.at(-1)).toBe("sync:done");
+    const order = [
+      "sync:start",
+      "sync:phase:sessao",
+      "sync:phase:lease",
+      "sync:phase:push",
+      "sync:phase:contagens",
+      "sync:phase:catchUp",
+      "sync:done",
+    ];
+    expect(order.map((name) => marks.indexOf(name))).toEqual(
+      [...order.map((name) => marks.indexOf(name))].sort((a, b) => a - b)
+    );
+    expect(order.every((name) => marks.includes(name))).toBe(true);
+  });
+
+  it("marks a plain pull when nothing was sent", async () => {
+    const w = world();
+    const marks: string[] = [];
+    const runtime = w.make(null, { mark: (m) => marks.push(m) });
+    await runtime.start(organizationId);
+    marks.length = 0;
+
+    await runtime.syncNow();
+
+    expect(marks).toContain("sync:phase:pull");
+    expect(marks).not.toContain("sync:phase:catchUp");
+  });
+
+  it("connectionChanged puts the connection state in the snapshot and tells the screens", async () => {
+    const w = world();
+    let proven = true;
+    const runtime = w.make(null, { isOnline: () => proven });
+    await runtime.start(organizationId);
+    const heard = vi.fn();
+    runtime.subscribe(heard);
+    expect(runtime.getSnapshot().online).toBe(true);
+
+    proven = false;
+    runtime.connectionChanged();
+    expect(runtime.getSnapshot().online).toBe(false);
+    expect(heard).toHaveBeenCalledTimes(1);
+
+    runtime.connectionChanged(); // nothing changed: nobody is told
+    expect(heard).toHaveBeenCalledTimes(1);
+
+    proven = true;
+    runtime.connectionChanged();
+    expect(runtime.getSnapshot().online).toBe(true);
   });
 });

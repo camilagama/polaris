@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
 const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
@@ -564,6 +565,7 @@ async function serveSaleReadsOnly(page: Page) {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill({
       body: JSON.stringify({ json: { profiles: [] }, meta: [] }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -573,6 +575,7 @@ async function serveSaleReadsOnly(page: Page) {
         json: { entries: [SHIRT_ENTRY], nextCursor: null },
         meta: [],
       }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -792,6 +795,7 @@ const LEGAL_REFUSAL = {
     },
     meta: [],
   }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status: 403,
 };

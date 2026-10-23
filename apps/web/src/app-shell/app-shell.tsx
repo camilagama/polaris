@@ -33,6 +33,7 @@ import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { NAV_ITEMS, type NavId, OFFLINE_NAV_ITEMS } from "./navigation-model";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { ConnectionRequiredSlot } from "./connection-required-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import { SessionEndedNotice } from "./session-ended-notice";
 
@@ -266,6 +267,8 @@ function OrganizationGate({ children }: { children: ReactNode }) {
 
 interface AppShellProps {
   children: ReactNode;
+  /** An online-only screen with a form: offline, the notice says the typed text stays. */
+  connectionForm?: boolean;
   navId: NavId | null;
   /** The screen works only online (no copy on the device): the state chip says so while offline. */
   onlineOnly?: boolean;
@@ -280,6 +283,7 @@ interface AppShellProps {
  */
 export function AppShell({
   children,
+  connectionForm = true,
   navId,
   onlineOnly = false,
   requiresOrganization = true,
@@ -322,6 +326,9 @@ export function AppShell({
       <main className="categories-content" id="conteudo">
         {showNotice ? <SessionEndedNotice /> : null}
         {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
+        {onlineOnly && !sessionOver ? (
+          <ConnectionRequiredSlot form={connectionForm} />
+        ) : null}
         <OfflineAccessGate>
           {requiresOrganization ? (
             <OrganizationGate>{children}</OrganizationGate>

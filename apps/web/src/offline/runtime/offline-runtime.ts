@@ -1,5 +1,6 @@
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
 import {
+  isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   rpcErrorCode,
@@ -37,8 +38,9 @@ import { leaseStanding, leaseTimerDelay } from "./lease-standing";
  * 5. the figures the screens show (online, queued, refused, last sync).
  *
  * It never decides WHEN to sync: the host calls syncNow (on start, on reconnect,
- * on a timer, after queueing). It is framework-free and takes every outside
- * thing as a dependency, so it is tested without a browser.
+ * on a timer, after queueing) and reads the outcome (offline, or `sync_failed`
+ * to try again later). It is framework-free and takes every outside thing as a
+ * dependency, so it is tested without a browser.
  */
 export interface KeyValueStore {
   /** Every key held, when the store can list them (used to sweep keys of an older layout). */
@@ -106,7 +108,25 @@ export interface DataChannel {
 export interface RuntimeDependencies {
   api: RuntimeApi;
   deviceLabel?: string | null;
+  /**
+   * Runs the sync only if no other tab of this browser is running one for the same namespace
+   * (`navigator.locks`, `ifAvailable`); false when it did not run. Without it the sync always runs.
+   */
+  exclusive?: (name: string, task: () => Promise<void>) => Promise<boolean>;
+  /**
+   * Whether the connection is proven (an answer of the Worker, emenda do ADR 0043): what the screens are
+   * told (`online`) and what decides asking the server instead of trusting the device (the session, the
+   * device, a lease renewal, the bootstrap).
+   */
   isOnline: () => boolean;
+  /** Timeline marks per phase of a sync (`performance.mark` in the browser); nothing is sent. */
+  mark?: (name: string) => void;
+  /**
+   * Whether a call may leave at all (`navigator.onLine`); `isOnline` when not given. A sync and the sends
+   * of "Sair" try for real whenever it is true, even with the connection not proven: an answer of the
+   * Worker is what proves it again, and a state must never stop the real try.
+   */
+  mayTry?: () => boolean;
   keyValues: KeyValueStore;
   namespaceFor: (
     userId: string,
@@ -188,11 +208,20 @@ export interface RuntimeContext {
   writer: LocalWriter & LocalInventoryReader & LocalVariantReader;
 }
 
-/** The server said the session is over or the account may not do this. */
+/**
+ * The server said the session is over or the account may not do this. Only the Worker says it: a 401 or
+ * 403 without its mark (a WAF, a portal) reaches here as a connection failure, never as a refusal.
+ */
 function isSessionRefusal(error: unknown): boolean {
+  if (isConnectionFailure(error)) {
+    return false;
+  }
   const code = rpcErrorCode(error);
   return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
+
+/** How the last sync ended, for "Sair": a try that got no answer blocks it as offline (ADR 0039). */
+type SyncOutcome = "answered" | "no_answer" | "not_run";
 
 const DEVICE_KEY = "polaris.offline.device";
 const NAMESPACES_KEY = "polaris.offline.namespaces";
@@ -294,6 +323,7 @@ export class OfflineRuntime {
   private deviceId: string | null = null;
   private lease: string | null = null;
   private inFlight: Promise<void> | null = null;
+  private lastOutcome: SyncOutcome = "not_run";
   /** When the server last confirmed the session user of the open namespace; null forces a new look. */
   private sessionConfirmedAt: number | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
@@ -353,10 +383,7 @@ export class OfflineRuntime {
         return this.snapshot.counts;
       },
       sync: async () => {
-        if (!this.dependencies.isOnline()) {
-          throw new Error("offline");
-        }
-        await this.syncNow();
+        await this.trySend();
         if (this.snapshot.reason === "sync_failed") {
           throw new Error("sync_failed");
         }
@@ -366,6 +393,32 @@ export class OfflineRuntime {
         }
       },
     };
+  }
+
+  /**
+   * The real try of "Sair" and of the update cycle: it sends whatever the connection state says, and only
+   * then a send that got no answer counts as offline (ADR 0039). Rejects with `offline` in that case.
+   */
+  private async trySend(): Promise<void> {
+    if (!this.mayTry()) {
+      throw new Error("offline");
+    }
+    await this.syncNow();
+    if (this.lastOutcome === "no_answer") {
+      throw new Error("offline");
+    }
+  }
+
+  private mayTry(): boolean {
+    return (this.dependencies.mayTry ?? this.dependencies.isOnline)();
+  }
+
+  /** The connection state changed: the screens are told at once (the sync, if any, follows from the host). */
+  connectionChanged(): void {
+    const online = this.dependencies.isOnline();
+    if (online !== this.snapshot.online) {
+      this.set({ ...this.snapshot, online });
+    }
   }
 
   /**
@@ -405,12 +458,7 @@ export class OfflineRuntime {
         this.forgetSessionCopy();
         this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
       },
-      trySync: async () => {
-        if (!this.dependencies.isOnline()) {
-          throw new Error("offline");
-        }
-        await this.syncNow();
-      },
+      trySync: () => this.trySend(),
     };
   }
 
@@ -616,7 +664,7 @@ export class OfflineRuntime {
     if (this.inFlight) {
       return this.inFlight;
     }
-    const run = this.runSync().finally(() => {
+    const run = this.runExclusive().finally(() => {
       this.inFlight = null;
     });
     this.inFlight = run;
@@ -651,6 +699,24 @@ export class OfflineRuntime {
   }
 
   // ------------------------------------------------------------- internals
+  /** One sync per namespace across the tabs: another tab sending the same queue now makes this one wait for the next. */
+  private async runExclusive(): Promise<void> {
+    const { exclusive } = this.dependencies;
+    if (!exclusive) {
+      await this.runSync();
+      return;
+    }
+    const name = `polaris-sync:${this.namespace?.coordinatorName ?? "none"}`;
+    const ran = await exclusive(name, () => this.runSync());
+    if (!ran) {
+      this.lastOutcome = "not_run";
+    }
+  }
+
+  private mark(name: string) {
+    this.dependencies.mark?.(name);
+  }
+
   private now(): Date {
     return (this.dependencies.now ?? (() => new Date()))();
   }
@@ -1006,6 +1072,8 @@ export class OfflineRuntime {
       }
       if (
         !this.dependencies.isOnline() ||
+        // no answer is not a refusal: the remembered device is not somebody else's for that
+        isConnectionFailure(error) ||
         (error instanceof Error && error.message === "no_lease_offline") ||
         isPlanRefusal(error) ||
         // the device is not somebody else's: the server only waits for the acceptance
@@ -1205,7 +1273,11 @@ export class OfflineRuntime {
     if (!(deviceId && organizationId)) {
       return false;
     }
-    this.set({ ...this.snapshot, online: true, syncing: true });
+    this.set({
+      ...this.snapshot,
+      online: this.dependencies.isOnline(),
+      syncing: true,
+    });
     let lease: string;
     try {
       lease = await this.ensureLease(run.userId, organizationId, deviceId);
@@ -1390,8 +1462,9 @@ export class OfflineRuntime {
     if (!(namespace && stores && userId)) {
       return false;
     }
-    if (!this.dependencies.isOnline()) {
+    if (!this.mayTry()) {
       this.sessionConfirmedAt = null;
+      this.lastOutcome = "no_answer";
       this.set({ ...this.snapshot, online: false });
       return false;
     }
@@ -1401,7 +1474,11 @@ export class OfflineRuntime {
       stores,
       userId,
     };
-    this.set({ ...this.snapshot, online: true, syncing: true });
+    this.set({
+      ...this.snapshot,
+      online: this.dependencies.isOnline(),
+      syncing: true,
+    });
     if (await this.sessionChangedHands(run)) {
       return false;
     }
@@ -1451,6 +1528,16 @@ export class OfflineRuntime {
   }
 
   private async runSync(): Promise<void> {
+    this.lastOutcome = "not_run";
+    this.mark("sync:start");
+    try {
+      await this.runSyncSteps();
+    } finally {
+      this.mark("sync:done");
+    }
+  }
+
+  private async runSyncSteps(): Promise<void> {
     if (this.snapshot.phase === "ready" && this.openLeaseEnded()) {
       this.expireNow(); // the timer has not fired yet (a tab in the background): the sync looks itself
     }
@@ -1470,81 +1557,115 @@ export class OfflineRuntime {
       stores,
       userId,
     };
-    if (!this.dependencies.isOnline()) {
+    if (!this.mayTry()) {
       this.sessionConfirmedAt = null; // whoever is signed in when the network returns is looked at again
+      this.lastOutcome = "no_answer";
       this.set({ ...this.snapshot, online: false });
       return;
     }
-    this.set({ ...this.snapshot, online: true, reason: null, syncing: true });
+    // a try with the connection not proven is a real try: the screens stay as they are until it answers
+    this.set({
+      ...this.snapshot,
+      online: this.dependencies.isOnline(),
+      reason: null,
+      syncing: true,
+    });
+    this.mark("sync:phase:sessao");
     if (await this.sessionChangedHands(run)) {
+      this.lastOutcome = "answered";
       return;
     }
     try {
+      this.mark("sync:phase:lease");
       const lease = await this.ensureLease(userId, organizationId, deviceId);
       if (!this.adoptLease(run, lease)) {
         return;
       }
       const source = this.dependencies.api.source(organizationId);
+      this.mark("sync:phase:push");
+      // the catch-up comes below, once: the chip counts what is left as soon as the push answered
       const summary = await syncOutbox({
         outbox: stores.outbox,
-        pull: { source, writer: stores.writer },
         push: this.dependencies.api.push(organizationId),
       });
       if (
         summary.rejected > 0 &&
         summary.blockedBy?.rejection?.code === AUTHORIZATION_REVOKED
       ) {
+        this.lastOutcome = "answered";
         await this.dropLocalCopy(run, { forgetDevice: true });
         return;
       }
+      this.mark("sync:phase:contagens");
+      await this.refreshCounts();
       const meta = await stores.writer.readMeta();
       if (isLocalStoreReady(meta) && meta?.cursor) {
+        // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
+        const caughtUp = summary.accepted > 0 || summary.discarded > 0;
+        this.mark(caughtUp ? "sync:phase:catchUp" : "sync:phase:pull");
         await pullLocalChanges(source, stores.writer, meta.cursor);
       } else {
+        this.mark("sync:phase:pull");
         await bootstrapLocalStore(source, stores.writer);
       }
+      this.lastOutcome = "answered";
       this.set({
         ...this.snapshot,
         bootstrapped: true,
         dataVersion: this.snapshot.dataVersion + 1,
         lastSyncAt: this.now().toISOString(),
         legalAcceptanceRequired: false,
+        online: this.dependencies.isOnline(),
         reason: null,
         sessionRefused: false,
         syncing: false,
       });
       this.channel?.post();
     } catch (error) {
-      // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
-      // waiting, nothing was rejected, and the collections, the lease and the device stay (ADR 0100)
-      if (isLegalAcceptanceRefusal(error)) {
-        this.set({
-          ...this.snapshot,
-          dataVersion: this.snapshot.dataVersion + 1,
-          legalAcceptanceRequired: true,
-          reason: "legal_acceptance_required",
-          sessionRefused: false,
-          syncing: false,
-        });
-        this.channel?.post();
-        await this.refreshCounts();
-        return;
-      }
-      if (isSessionRefusal(error)) {
-        this.dependencies.keyValues.remove(SESSION_USER_KEY);
-        await this.dropLocalCopy(run, { forgetDevice: false });
-        return;
-      }
-      // a partial sync may still have changed rows (accepted commands, pulled pages)
+      await this.syncFailed(run, error);
+      return;
+    }
+    await this.refreshCounts(); // what was queued while the pull ran
+  }
+
+  /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
+  private async syncFailed(run: RunScope, error: unknown): Promise<void> {
+    // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
+    // waiting, nothing was rejected, and the collections, the lease and the device stay (ADR 0100)
+    if (isLegalAcceptanceRefusal(error)) {
+      this.lastOutcome = "answered";
       this.set({
         ...this.snapshot,
         dataVersion: this.snapshot.dataVersion + 1,
-        reason: "sync_failed",
+        legalAcceptanceRequired: true,
+        reason: "legal_acceptance_required",
         sessionRefused: false,
         syncing: false,
       });
       this.channel?.post();
+      await this.refreshCounts();
+      return;
     }
+    if (isSessionRefusal(error)) {
+      this.lastOutcome = "answered";
+      this.dependencies.keyValues.remove(SESSION_USER_KEY);
+      await this.dropLocalCopy(run, { forgetDevice: false });
+      return;
+    }
+    const noAnswer = isConnectionFailure(error);
+    this.lastOutcome = noAnswer ? "no_answer" : "answered";
+    // a partial sync may still have changed rows (accepted commands, pulled pages). No answer is not
+    // "Envio falhou": the connection state says offline (its probe decides) and the queue waits for it
+    this.set({
+      ...this.snapshot,
+      dataVersion: this.snapshot.dataVersion + 1,
+      online: this.dependencies.isOnline(),
+      reason: noAnswer ? null : "sync_failed",
+      sessionRefused: false,
+      syncing: false,
+    });
+    this.channel?.post();
+    this.mark("sync:phase:contagens");
     await this.refreshCounts();
   }
 }

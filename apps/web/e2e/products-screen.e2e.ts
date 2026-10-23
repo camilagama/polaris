@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The products screen on the components of src/ui (v5.1, third migrated screen):
@@ -33,6 +34,7 @@ const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -251,6 +253,7 @@ async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );

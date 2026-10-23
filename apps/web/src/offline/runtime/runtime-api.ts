@@ -24,7 +24,11 @@ function isDeviceRefusal(error: unknown): boolean {
  * the session cookie authorizes every call, the organization is only the
  * requested context, and the server revalidates all of it (ADR 0033).
  */
-export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
+export function createRpcRuntimeApi(
+  client: PolarisRpcClient,
+  // the connection's fetch in the browser: a 401 or 403 that is not the Worker's is no answer, not "no session"
+  fetchSession: typeof fetch = (input, init) => fetch(input, init)
+): RuntimeApi {
   return {
     // `device.check` also links this session to the device, so revoking the
     // device ends this session even if it never syncs (called at every online
@@ -56,7 +60,7 @@ export function createRpcRuntimeApi(client: PolarisRpcClient): RuntimeApi {
     sessionUserId: async () => {
       let response: Response;
       try {
-        response = await fetch("/api/auth/get-session", {
+        response = await fetchSession("/api/auth/get-session", {
           cache: "no-store",
           credentials: "same-origin",
           signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),

@@ -47,6 +47,7 @@ describe("the catalog switch", () => {
         changed={false}
         feedback={noFeedback}
         onToggle={none}
+        online
         pending={false}
         planBlocks={false}
         profile={profile}
@@ -96,6 +97,7 @@ describe("the product list", () => {
       <ProductsCard
         feedback={noFeedback}
         onChange={none}
+        online
         pending={false}
         planBlocks={false}
         products={products}
@@ -129,6 +131,7 @@ describe("the profile form", () => {
         onChange={none}
         onSlugEdited={none}
         onSubmit={none}
+        online
         pending={false}
         problem={null}
         publicOrigin="https://catalogo.example"
@@ -152,6 +155,7 @@ describe("the profile form", () => {
         onChange={none}
         onSlugEdited={none}
         onSubmit={none}
+        online
         pending={false}
         problem={null}
         publicOrigin="https://catalogo.example"
@@ -197,6 +201,7 @@ describe("the messages of the switch and of the products", () => {
         changed={false}
         feedback={{ error: null, notice: "Catálogo ligado." }}
         onToggle={none}
+        online
         pending={false}
         planBlocks={false}
         profile={profile}

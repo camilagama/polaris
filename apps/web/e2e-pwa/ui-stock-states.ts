@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Locator, Page, Route } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of the stock screen the interface guardrails measure (t194): the screen in the lab of the screens
@@ -14,6 +15,7 @@ const SUBMITTED =
 
 const rpc = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });

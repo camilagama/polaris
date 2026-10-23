@@ -219,6 +219,12 @@
     color: var(--payment-accent);
     background: var(--payment-accent-soft);
   }
+  /* the answer of a save that the connection cut: not an error, not a success */
+  .payment-message.is-warning {
+    color: var(--ui-ink);
+    background: var(--ui-warning-soft);
+    border-left: 0.3rem solid var(--ui-warning);
+  }
   .payment-message button {
     margin-left: 0.5rem;
     font: inherit;

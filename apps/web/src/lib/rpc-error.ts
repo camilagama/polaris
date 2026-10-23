@@ -1,3 +1,5 @@
+import { isNoAnswer } from "./connection";
+
 /** The oRPC error code (BAD_REQUEST, CONFLICT, ...), when the error has one. */
 export function rpcErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -74,6 +76,14 @@ export function isDefiniteRpcRejection(error: unknown): boolean {
   return code !== undefined && definiteCodes.has(code);
 }
 
+/**
+ * The call got no answer from the Worker: no network, a timeout, or a response that was not the Worker's
+ * (a captive portal, a proxy). Never a refusal: nothing about the session or the lease follows from it.
+ */
+export function isConnectionFailure(error: unknown): boolean {
+  return isNoAnswer(error);
+}
+
 /** Message for a failed read, by the oRPC code alone. */
 export function readErrorMessage(error: unknown, subject: string): string {
   const code = rpcErrorCode(error);
@@ -87,6 +97,9 @@ export function readErrorMessage(error: unknown, subject: string): string {
   }
   if (code === "FORBIDDEN") {
     return "Sua conta não tem acesso a esta organização ou ação.";
+  }
+  if (isConnectionFailure(error)) {
+    return `Não foi possível carregar ${subject}: a conexão falhou. Tente novamente.`;
   }
   return `Não foi possível carregar ${subject}. Tente novamente.`;
 }

@@ -1,4 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import {
+  addConnectionTry,
+  browserConnection,
+  lockInBrowser,
+  markInBrowser,
+} from "../../lib/browser-connection";
 import { useOrganizationLoad } from "../../lib/current-organization";
 import {
   isLegalAcceptanceRequired,
@@ -16,23 +22,25 @@ import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
 import { openRuntimeStores } from "./runtime-stores";
 import { isSessionOver } from "./session-ended";
+import { startSyncScheduler } from "./sync-scheduler";
 
 /**
  * Starts the offline runtime for the organization the person is working in and
- * keeps it syncing: when it starts, when the network comes back, when the person
- * returns to the app and every minute while it is in front. Behind a build flag
+ * keeps it syncing (`startSyncScheduler`: at start, when the connection comes
+ * back, when the person returns to the app, every minute while it is in front,
+ * and again after a failed send). Behind a build flag
  * (VITE_OFFLINE_RUNTIME_ENABLED) that stays off in production until the physical
  * device checklist of Gate 5 is done: with it off nothing here runs, registers a
- * device or touches the disk.
+ * device or touches the disk. The connection state of the tab listens to the
+ * browser either way: the screens that need a connection say so without it.
  */
-const SYNC_EVERY_MS = 60_000;
-
 function createBrowserRuntime(): OfflineRuntime {
   return new OfflineRuntime({
-    api: createRpcRuntimeApi(orpcClient),
+    api: createRpcRuntimeApi(orpcClient, browserConnection.fetch),
     // No label: a User-Agent string is long and personal, and the server accepts at most 80 characters.
     deviceLabel: null,
-    isOnline: () => navigator.onLine,
+    exclusive: lockInBrowser,
+    isOnline: browserConnection.isOnline,
     keyValues: {
       keys: () => {
         try {
@@ -59,6 +67,8 @@ function createBrowserRuntime(): OfflineRuntime {
         window.localStorage.setItem(key, value);
       },
     },
+    mark: markInBrowser,
+    mayTry: () => navigator.onLine,
     namespaceFor: localNamespace,
     openDataChannel: openBrowserDataChannel,
     openStores: openRuntimeStores,
@@ -69,6 +79,21 @@ function createBrowserRuntime(): OfflineRuntime {
   });
 }
 
+function browserSchedule(callback: () => void, delayMs: number): () => void {
+  const timer = setTimeout(callback, delayMs);
+  return () => clearTimeout(timer);
+}
+
+function onPageVisible(listener: () => void): () => void {
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") {
+      listener();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => document.removeEventListener("visibilitychange", onVisibility);
+}
+
 export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
   const { load, reload } = useOrganizationLoad();
   const organizationId = load.status === "ready" ? load.current.id : null;
@@ -77,38 +102,41 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // the browser's signals (offline, online, pageshow, the return to the page) feed the connection state
+  useEffect(() => browserConnection.attach(window, document), []);
+
   useEffect(() => {
     if (!(runtime && organizationId)) {
       return;
     }
-    const sync = () => {
-      runtime.syncNow().catch(() => undefined);
-    };
+    let scheduler: ReturnType<typeof startSyncScheduler> | null = null;
+    let stopped = false;
     runtime
       .start(organizationId)
       .then(() => {
+        if (stopped) {
+          return;
+        }
         getUpdateStore()?.setWorkSource(runtime.workSource());
-        sync();
+        scheduler = startSyncScheduler({
+          connection: browserConnection,
+          isVisible: () => document.visibilityState === "visible",
+          onVisible: onPageVisible,
+          random: Math.random,
+          runtime,
+          schedule: browserSchedule,
+        });
+        scheduler.syncNow().catch(() => undefined);
       })
       .catch(() => undefined);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        sync();
-      }
-    };
-    window.addEventListener("online", sync);
-    window.addEventListener("offline", sync);
-    document.addEventListener("visibilitychange", onVisible);
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        sync();
-      }
-    }, SYNC_EVERY_MS);
+    // "Tentar agora" of the notices: the same real try as the timer's
+    const removeTry = addConnectionTry(
+      () => scheduler?.syncNow() ?? Promise.resolve()
+    );
     return () => {
-      window.removeEventListener("online", sync);
-      window.removeEventListener("offline", sync);
-      document.removeEventListener("visibilitychange", onVisible);
-      clearInterval(timer);
+      stopped = true;
+      removeTry();
+      scheduler?.stop();
       runtime.stop().catch(() => undefined);
     };
   }, [organizationId, runtime]);
