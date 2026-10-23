@@ -1,12 +1,16 @@
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useMemo, useState } from "react";
+import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
+import { LoadError } from "../expenses/expense-fields";
 import { formatMonthLabel, monthOfDay } from "../expenses/expense-model";
+import { MonthPicker } from "../expenses/month-picker";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
 import { waitingOperations } from "../offline/runtime/sync-status";
-import { formatUpdatedUntil } from "./dashboard-model";
+import { formatLastConfirmed, formatUpdatedUntil } from "./dashboard-model";
 import { GoalsPanel } from "./goals-panel";
-import { MonthSelector } from "./month-selector";
 import { OfflineCopyNotice } from "./offline-copy-notice";
 import { QualityBanner } from "./quality-banner";
 import { ResultCards } from "./result-cards";
@@ -15,22 +19,16 @@ import {
   type PeriodSummaryState,
   usePeriodSummary,
 } from "./use-period-summary";
-import "./dashboard-page.css";
 
 function Heading() {
   return (
-    <section className="categories-heading">
-      <div>
-        <p className="categories-eyebrow">Visão do período</p>
-        <h1>Resultado</h1>
-        <p className="categories-intro-copy">
-          O resultado operacional é uma estimativa a partir das vendas
-          confirmadas e das despesas do mês. Não é lucro líquido nem dinheiro já
-          recebido. Custos e taxas que ainda não são conhecidos ficam de fora
-          das contas, e o aviso abaixo diz o quanto.
-        </p>
-      </div>
-    </section>
+    <header className="grid gap-1">
+      <h1 className="text-title">Resultado</h1>
+      <p className="text-muted-foreground text-support">
+        Estimativa com as vendas confirmadas e as despesas do mês. Não é lucro
+        líquido nem dinheiro recebido.
+      </p>
+    </header>
   );
 }
 
@@ -42,6 +40,23 @@ interface ToolbarProps {
   timezone: string;
 }
 
+/** Which read the line beside the month talks about: the server's, or the copy the device kept. */
+function updatedText(
+  state: PeriodSummaryState,
+  timezone: string
+): string | null {
+  const { isLoading, source, summary } = state;
+  if (isLoading) {
+    return "Atualizando…";
+  }
+  if (!summary) {
+    return null;
+  }
+  return source === "server"
+    ? formatUpdatedUntil(summary.generatedAt, timezone)
+    : formatLastConfirmed(summary.generatedAt, timezone);
+}
+
 function Toolbar({
   month,
   onMonthChange,
@@ -49,27 +64,59 @@ function Toolbar({
   state,
   timezone,
 }: ToolbarProps) {
-  const { isLoading, source, summary } = state;
   return (
-    <div className="dashboard-toolbar">
-      <MonthSelector month={month} onChange={onMonthChange} />
-      <div className="dashboard-refresh">
-        <p aria-live="polite" className="dashboard-updated">
-          {isLoading ? "Atualizando…" : null}
-          {!isLoading && summary && source === "server"
-            ? formatUpdatedUntil(summary.generatedAt, timezone)
-            : null}
-        </p>
-        <button
-          className="quiet-button"
-          disabled={isLoading}
-          onClick={onRefresh}
-          type="button"
-        >
-          Atualizar
-        </button>
-      </div>
+    <div className="flex flex-wrap items-end gap-x-4 gap-y-4">
+      <MonthPicker
+        id="dashboard-month"
+        label="Mês"
+        month={month}
+        onChange={onMonthChange}
+      />
+      <Button
+        disabled={state.isLoading}
+        onClick={onRefresh}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+        Atualizar
+      </Button>
+      <p
+        aria-live="polite"
+        className="basis-full self-center text-muted-foreground text-support md:basis-auto"
+        id="dashboard-updated"
+      >
+        {updatedText(state, timezone)}
+      </p>
     </div>
+  );
+}
+
+/** A line of text in a card: the read in progress, or a month with nothing in it. */
+function CardNote({
+  children,
+  description,
+  loading,
+}: {
+  children: string;
+  description?: string;
+  loading?: boolean;
+}) {
+  return (
+    <Card>
+      <CardContent
+        className="grid gap-1 text-center"
+        role={loading ? "status" : undefined}
+      >
+        <p className={loading ? "text-muted-foreground" : "font-medium"}>
+          {children}
+        </p>
+        {description ? (
+          <p className="text-muted-foreground text-support">{description}</p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -82,20 +129,14 @@ function Content({ month, state }: ContentProps) {
   const { summary } = state;
   if (summary === null) {
     return state.isLoading ? (
-      <p className="dashboard-empty-state" role="status">
-        Carregando o resultado…
-      </p>
+      <CardNote loading>Carregando o resultado…</CardNote>
     ) : null;
   }
   if (summary.quality.level === "no_data") {
     return (
-      <>
-        <QualityBanner quality={summary.quality} />
-        <p className="dashboard-empty-state">
-          Não há vendas nem despesas em {formatMonthLabel(month)}. Escolha outro
-          mês ou registre vendas e despesas para ver o resultado.
-        </p>
-      </>
+      <CardNote description="Escolha outro mês ou registre vendas e despesas.">
+        {`Sem vendas nem despesas em ${formatMonthLabel(month)}`}
+      </CardNote>
     );
   }
   return (
@@ -123,7 +164,10 @@ export function DashboardPage() {
   const snapshot = useRuntimeSnapshot();
 
   return (
-    <div className="dashboard-page">
+    <div
+      className="grid gap-5 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
       <Heading />
       <Toolbar
         month={month}
@@ -140,19 +184,13 @@ export function DashboardPage() {
         />
       ) : null}
       {state.error ? (
-        <p className="categories-message is-error" role="alert">
-          {state.error}{" "}
-          <button
-            className="quiet-button"
-            disabled={state.isLoading}
-            onClick={refresh}
-            type="button"
-          >
-            Tentar de novo
-          </button>
-        </p>
+        <LoadError
+          busy={state.isLoading}
+          message={state.error}
+          onRetry={refresh}
+        />
       ) : null}
-      <div aria-busy={state.isLoading}>
+      <div aria-busy={state.isLoading} className="grid gap-5">
         <Content month={month} state={state} />
       </div>
       <GoalsPanel

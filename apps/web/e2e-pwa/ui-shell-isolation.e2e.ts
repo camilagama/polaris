@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
+import { resultAnswers } from "./ui-result-states";
 import {
   addLegacyRule,
   addPageRule,
@@ -731,6 +732,39 @@ const EXPENSE_SCREENS = [
   },
 ];
 
+/** The real route `/dashboard`, the month and the goals answered here, then a state to mount. */
+const openResult = (
+  page: Page,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/dashboard",
+    async () => {
+      await expect(page.getByText("Outubro forte").first()).toBeVisible();
+      await then(page);
+    },
+    resultAnswers
+  );
+
+const RESULT_SCREENS = [
+  {
+    // the month picker, the warning, the badges, the cards, the chain, and the cards of the goals
+    name: "Resultado e Metas no shell: mês incompleto e metas",
+    open: (page: Page) => openResult(page),
+  },
+  {
+    // the form of a new goal with its error: select, date fields and the amount with its "R$"
+    name: "Resultado e Metas no shell: nova meta com erro",
+    open: (page: Page) =>
+      openResult(page, async () => {
+        await page.getByRole("button", { name: "Nova meta" }).click();
+        await page.getByRole("button", { name: "Criar meta" }).click();
+        await expect(page.locator("#goal-create-target-error")).toBeVisible();
+      }),
+  },
+];
+
 const device = (n: number, label: string | null, lastSeenAt: string) => ({
   createdAt: "2026-10-01T12:00:00.000Z",
   id: id(40 + n),
@@ -780,6 +814,7 @@ const SCREENS = [
     },
   },
   ...EXPENSE_SCREENS,
+  ...RESULT_SCREENS,
   {
     // the list read from the (answered) server, the runtime not ready: the rows, the line that says why the buttons are off
     name: "Aparelhos no shell",

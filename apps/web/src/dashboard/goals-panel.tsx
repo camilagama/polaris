@@ -1,6 +1,11 @@
 import type { GoalReadModel } from "@polaris/contracts";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
+import TargetIcon from "lucide-react/dist/esm/icons/target";
 import { useCallback, useMemo, useState } from "react";
-import { FeedbackMessage } from "../expenses/feedback-message";
+import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
+import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
 import { ActiveGoalCard, SettledGoalCard } from "./goal-card";
 import { GoalCreateForm } from "./goal-form";
@@ -11,7 +16,6 @@ import {
 } from "./goal-model";
 import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
 import { type GoalsState, useGoals } from "./use-goals";
-import "./goals-panel.css";
 
 interface GoalsPanelProps {
   /** The month on screen (YYYY-MM): a new goal starts as that whole month. */
@@ -23,17 +27,7 @@ interface GoalsPanelProps {
   today: string;
 }
 
-function GoalsIntro() {
-  return (
-    <p className="goal-intro">
-      Uma meta mede, no período escolhido, as vendas líquidas, o resultado
-      operacional estimado ou o número de vendas, com os mesmos números dos
-      cartões acima, e por isso também é uma estimativa. Ao alcançar o alvo, a
-      meta fica concluída e continua concluída, mesmo que devoluções posteriores
-      reduzam os números. Se o período acabar antes, ela fica como não atingida.
-    </p>
-  );
-}
+const HEADING_ID = "goals-heading";
 
 interface GoalListProps {
   busyKey: string | null;
@@ -47,8 +41,17 @@ interface GoalListProps {
   today: string;
 }
 
-const EMPTY_GOALS_TEXT =
-  "Nenhuma meta ainda. Crie uma para acompanhar as vendas líquidas, o resultado estimado ou o número de vendas de um período.";
+/** The small caps label over a group of cards. */
+function GroupLabel({ children, id }: { children: string; id: string }) {
+  return (
+    <h3
+      className="mt-1 font-medium text-muted-foreground text-xs uppercase tracking-wide"
+      id={id}
+    >
+      {children}
+    </h3>
+  );
+}
 
 function GoalList({
   busyKey,
@@ -63,32 +66,43 @@ function GoalList({
 }: GoalListProps) {
   const groups = useMemo(() => groupGoals(goals), [goals]);
   return (
-    <div aria-busy={state.isLoading}>
+    <div aria-busy={state.isLoading} className="grid gap-3">
       {state.error ? (
-        <p className="categories-message is-error" role="alert">
-          {state.error}{" "}
-          <button
-            className="quiet-button"
-            disabled={state.isLoading}
-            onClick={onRetry}
-            type="button"
-          >
-            Tentar de novo
-          </button>
-        </p>
+        <LoadError
+          busy={state.isLoading}
+          message={state.error}
+          onRetry={onRetry}
+        />
       ) : null}
       {state.isLoading && goals.length === 0 ? (
-        <p className="goal-empty-state" role="status">
-          Carregando as metas…
-        </p>
+        <Card>
+          <CardContent>
+            <ListNote loading>Carregando as metas…</ListNote>
+          </CardContent>
+        </Card>
       ) : null}
       {!state.isLoading && goals.length === 0 && state.error === null ? (
-        <p className="goal-empty-state">{EMPTY_GOALS_TEXT}</p>
+        <Card>
+          <CardContent className="grid justify-items-center gap-1 text-center">
+            <TargetIcon
+              aria-hidden="true"
+              className="size-5 text-muted-foreground"
+            />
+            <p className="font-medium">Nenhuma meta ainda</p>
+            <p className="text-muted-foreground text-support">
+              Crie uma para acompanhar as vendas líquidas, o resultado estimado
+              ou o número de vendas de um período.
+            </p>
+          </CardContent>
+        </Card>
       ) : null}
       {groups.active.length > 0 ? (
-        <section aria-labelledby="goals-active-heading" className="goal-group">
-          <h3 id="goals-active-heading">Em andamento</h3>
-          <ul className="goal-list">
+        <>
+          <GroupLabel id="goals-active-heading">Em andamento</GroupLabel>
+          <ul
+            aria-labelledby="goals-active-heading"
+            className="grid gap-3 md:grid-cols-2"
+          >
             {groups.active.map((goal) => (
               <li key={goal.id}>
                 <ActiveGoalCard
@@ -103,12 +117,15 @@ function GoalList({
               </li>
             ))}
           </ul>
-        </section>
+        </>
       ) : null}
       {groups.settled.length > 0 ? (
-        <section aria-labelledby="goals-settled-heading" className="goal-group">
-          <h3 id="goals-settled-heading">Encerradas</h3>
-          <ul className="goal-list">
+        <>
+          <GroupLabel id="goals-settled-heading">Encerradas</GroupLabel>
+          <ul
+            aria-labelledby="goals-settled-heading"
+            className="grid gap-3 md:grid-cols-2"
+          >
             {groups.settled.map((goal) => (
               <li key={goal.id}>
                 <SettledGoalCard
@@ -120,13 +137,13 @@ function GoalList({
               </li>
             ))}
           </ul>
-        </section>
+        </>
       ) : null}
     </div>
   );
 }
 
-/** Goals of the organization: what to reach in a period, and how far along it is. */
+/** Goals of the organization: what to reach in a period, and how far along it is. Always open: hiding them saves nothing. */
 export function GoalsPanel({
   month,
   organizationId,
@@ -161,61 +178,76 @@ export function GoalsPanel({
     },
     [closeForm, create]
   );
+  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the heading
+  const handleCancel = useCallback(
+    async (goal: GoalReadModel) => {
+      const outcome = await cancel(goal);
+      // the dialog closes with any answer, and what happened is said right under the heading
+      focusLater(() => document.getElementById(HEADING_ID)?.focus());
+      return outcome;
+    },
+    [cancel]
+  );
 
   return (
-    <details className="goal-panel">
-      <summary>
-        <span className="categories-eyebrow">Acompanhamento</span>
-        <span className="goal-panel-title">Metas</span>
-      </summary>
-      <div className="goal-panel-body">
-        <GoalsIntro />
-        <FeedbackMessage feedback={feedback} />
-        <div className="goal-toolbar">
-          <button
-            className="quiet-button"
+    <section aria-labelledby={HEADING_ID} className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="grid gap-0.5">
+          <h2 className="text-section" id={HEADING_ID} tabIndex={-1}>
+            Metas
+          </h2>
+          <p className="text-muted-foreground text-support">
+            Também estimativas. Uma meta concluída continua concluída.
+          </p>
+        </div>
+        <div className="ml-auto flex gap-2">
+          <Button
+            aria-label="Atualizar metas"
             disabled={state.isLoading || busy !== null}
             onClick={handleRetry}
+            size="sm"
             type="button"
+            variant="ghost"
           >
-            {state.isLoading ? "Atualizando…" : "Atualizar metas"}
-          </button>
+            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+            <span className="max-sm:hidden">Atualizar</span>
+          </Button>
           {creating ? null : (
-            <button
-              className="primary-button"
+            <Button
               disabled={busy !== null}
               onClick={handleNew}
+              size="sm"
               type="button"
+              variant="outline"
             >
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
               Nova meta
-            </button>
+            </Button>
           )}
         </div>
-        {creating ? (
-          <div className="goal-form-wrap">
-            <h3>Nova meta</h3>
-            <GoalCreateForm
-              disabled={busy !== null}
-              key={formCount}
-              month={month}
-              onCancel={closeForm}
-              onSave={handleSave}
-              saving={busy === "create"}
-            />
-          </div>
-        ) : null}
-        <GoalList
-          busyKey={busy}
-          goals={state.goals}
-          onCancel={cancel}
-          onRetry={handleRetry}
-          onSave={update}
-          organizationId={organizationId}
-          state={state}
-          timezone={timezone}
-          today={today}
-        />
       </div>
-    </details>
+      <ActionNotice feedback={feedback} />
+      {creating ? (
+        <GoalCreateForm
+          disabled={busy !== null}
+          key={formCount}
+          month={month}
+          onCancel={closeForm}
+          onSave={handleSave}
+          saving={busy === "create"}
+        />
+      ) : null}
+      <GoalList
+        busyKey={busy}
+        goals={state.goals}
+        onCancel={handleCancel}
+        onRetry={handleRetry}
+        onSave={update}
+        organizationId={organizationId}
+        state={state}
+        timezone={timezone}
+        today={today}
+      />
+    </section>
   );
 }

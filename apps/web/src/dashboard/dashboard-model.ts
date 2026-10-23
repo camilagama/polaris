@@ -57,7 +57,19 @@ export function formatUpdatedUntil(
   return `Atualizado até ${date} ${time}`;
 }
 
-/** What the screen says when the figures come from the device's copy of the last confirmed result. */
+/** "Último resultado confirmado: 14/10/2026 12:30": the line beside the month when the figures are the device's copy. */
+export function formatLastConfirmed(
+  generatedAt: string,
+  timezone: string | null
+): string {
+  const { date, time } = readClock(generatedAt, timezone);
+  return `Último resultado confirmado: ${date} ${time}`;
+}
+
+/**
+ * What the screen says, under the title "Não foi possível falar com o servidor." (the server may be out, not only the network), when the figures come from the device's copy
+ * of the last confirmed result.
+ */
 export function offlineCopyNotice(
   generatedAt: string,
   timezone: string | null,
@@ -69,7 +81,7 @@ export function offlineCopyNotice(
       waitingOperations > 0
         ? `Há ${waitingOperations} ${plural(waitingOperations, "operação guardada", "operações guardadas")} neste aparelho que ainda não ${plural(waitingOperations, "entra", "entram")} no resultado.`
         : null,
-    summary: `Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de ${date} às ${time}. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.`,
+    summary: `Mostrando o último resultado confirmado, de ${date} às ${time}. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.`,
   };
 }
 
@@ -154,10 +166,10 @@ export interface ChainRow {
   id: keyof PeriodChain;
   kind: ChainRowKind;
   label: string;
-  /** What was left out of this line because it was unknown, when anything was. */
-  note: string | null;
   /** True for a negative exact amount, so a loss reads as one without relying on color. */
   negative: boolean;
+  /** What was left out of this line because it was unknown, when anything was. */
+  note: string | null;
   value: string;
 }
 

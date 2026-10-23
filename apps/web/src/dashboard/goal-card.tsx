@@ -1,19 +1,31 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import { Progress, ProgressValue } from "@/ui/progress";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
 import { GoalEditForm } from "./goal-form";
-import { GoalHistory } from "./goal-history";
+import { GoalHistoryBody, GoalHistoryToggle } from "./goal-history";
 import {
   formatGoalPercent,
   formatGoalValue,
   type GoalEditInput,
+  goalBadgeVariant,
   goalFinalDate,
   goalKindLabel,
   goalNotStarted,
   goalPeriodText,
   goalProgressWidth,
-  goalStatusClass,
   goalStatusLabel,
   goalTitle,
 } from "./goal-model";
@@ -31,27 +43,29 @@ interface GoalCardProps {
   today: string;
 }
 
+const MUTED = "text-muted-foreground text-support";
+
+/**
+ * The text actions of a card: 32 px with a 48 px area, bled out to the card's padding so the words align with the
+ * title. Between two lines of them the gap is 16 px, so the areas of 48 px do not meet.
+ */
+const ACTIONS = "-mx-2 -mb-1 flex flex-wrap gap-x-1 gap-y-4";
+
 function GoalHeader({ goal, today }: { goal: GoalReadModel; today: string }) {
   const waiting = goal.status === "active" && goalNotStarted(goal, today);
   return (
-    <div className="goal-card-header">
-      <div className="goal-card-title-row">
-        <h4>{goalTitle(goal)}</h4>
-        <span
-          className={`category-status ${goal.paused ? "status-archived" : goalStatusClass(goal.status)}`}
-        >
+    <div className="grid gap-0.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <h4 className="text-section">{goalTitle(goal)}</h4>
+        <Badge variant={goalBadgeVariant(goal.status, goal.paused)}>
           {goal.paused ? "Pausada pelo plano" : goalStatusLabel(goal.status)}
-        </span>
+        </Badge>
       </div>
-      <p className="goal-card-meta">
+      <p className={MUTED}>
         {goal.name ? `${goalKindLabel(goal.kind)} · ` : ""}
         {goalPeriodText(goal)}
+        {waiting ? ` · começa em ${formatCalendarDate(goal.startsOn)}` : ""}
       </p>
-      {waiting ? (
-        <p className="goal-card-meta goal-card-note">
-          Começa em {formatCalendarDate(goal.startsOn)}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -70,7 +84,7 @@ function GoalProgress({ goal }: { goal: GoalReadModel }) {
   const targetText = progressTargetText(goal);
   if (goal.paused) {
     return (
-      <p className="goal-card-meta">
+      <p className={MUTED}>
         Alvo: {targetText}. Seu plano permite menos metas em andamento do que
         você tem, então esta meta está pausada: ela não é medida nem pode ser
         editada, mas continua aqui. Você pode cancelá-la, ou ela volta quando o
@@ -80,7 +94,7 @@ function GoalProgress({ goal }: { goal: GoalReadModel }) {
   }
   if (progress === null) {
     return (
-      <p className="goal-card-meta">
+      <p className={MUTED}>
         Alvo: {targetText}. O progresso não está disponível agora; atualize as
         metas.
       </p>
@@ -90,23 +104,21 @@ function GoalProgress({ goal }: { goal: GoalReadModel }) {
   const valueText = formatGoalValue(goal.kind, progress.value);
   const percentText = formatGoalPercent(progress.percent);
   return (
-    <div className="goal-progress">
-      <p className="goal-progress-text">
-        <span className="goal-progress-value">{valueText}</span> de {targetText}
-        <span className="goal-progress-percent">{percentText}</span>
-      </p>
-      <div
-        aria-label={`Progresso de ${goalTitle(goal)}`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={width}
-        aria-valuetext={`${valueText} de ${targetText}, ${percentText}`}
-        className="goal-bar"
-        role="progressbar"
-      >
-        <div className="goal-bar-fill" style={{ width: `${width}%` }} />
-      </div>
-    </div>
+    <Progress
+      aria-label={`Progresso de ${goalTitle(goal)}`}
+      aria-valuetext={`${valueText} de ${targetText}, ${percentText}`}
+      value={width}
+    >
+      <span className="font-medium text-sm tabular-nums">
+        <span className="font-semibold">{valueText}</span>{" "}
+        <span className="font-normal text-muted-foreground">
+          de {targetText}
+        </span>
+      </span>
+      <ProgressValue className="font-medium text-foreground">
+        {() => percentText}
+      </ProgressValue>
+    </Progress>
   );
 }
 
@@ -125,141 +137,184 @@ function SettledResult({
       : formatGoalValue(goal.kind, goal.achievedValue);
   if (goal.status === "completed") {
     return (
-      <>
-        <p className="goal-card-meta">
-          Alvo de {targetText}
-          {achieved ? ` atingido com ${achieved}` : " atingido"} (conferido em{" "}
-          {date}).
-        </p>
-        <p className="goal-card-hint">
-          Uma meta concluída continua concluída, mesmo que devoluções
-          posteriores reduzam os números.
-        </p>
-      </>
+      <p className="text-muted-foreground text-support">
+        Alvo de {targetText}
+        {achieved ? ` atingido com ${achieved}` : " atingido"} (conferido em{" "}
+        {date}).
+      </p>
     );
   }
   if (goal.status === "missed") {
     return (
-      <p className="goal-card-meta">
+      <p className="text-muted-foreground text-support">
         O período terminou sem atingir o alvo de {targetText}
         {achieved ? `: o resultado foi ${achieved}` : ""}. Encerrada em {date}.
       </p>
     );
   }
   return (
-    <p className="goal-card-meta">
+    <p className="text-muted-foreground text-support">
       Alvo de {targetText}. Cancelada em {date}.
     </p>
   );
 }
 
-/** A goal that is over (completed, missed or cancelled): read only. */
+/** A goal that is over (completed, missed or cancelled): read only, on a flat tinted card. */
 export function SettledGoalCard({
   goal,
   organizationId,
   timezone,
   today,
 }: Pick<GoalCardProps, "goal" | "organizationId" | "timezone" | "today">) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
-    <article className="goal-card is-settled">
-      <GoalHeader goal={goal} today={today} />
-      <SettledResult goal={goal} timezone={timezone} />
-      <GoalHistory
-        goal={goal}
-        organizationId={organizationId}
-        timezone={timezone}
-      />
-    </article>
+    <Card className="bg-muted/30 shadow-none">
+      <CardContent className="grid gap-3">
+        <GoalHeader goal={goal} today={today} />
+        <SettledResult goal={goal} timezone={timezone} />
+        <div className={ACTIONS}>
+          <GoalHistoryToggle
+            goal={goal}
+            onToggle={handleHistory}
+            open={historyOpen}
+          />
+        </div>
+        <GoalHistoryBody
+          goal={goal}
+          open={historyOpen}
+          organizationId={organizationId}
+          timezone={timezone}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
 type Mode = "cancel" | "edit" | "idle";
 
-interface ActiveActionsProps {
+/** A button that is off for a reason keeps its place in the focus order (decision of 21/10). */
+const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+
+interface CancelDialogProps {
   busyKey: string | null;
   goal: GoalReadModel;
-  mode: Mode;
-  onCancelConfirm: () => void;
-  onMode: (mode: Mode) => void;
+  onConfirm: () => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
 }
 
-function CancelConfirmation({
+/** Cancelling is final, so it takes a second step: a dialog that says what happens before the button that does it. */
+function CancelDialog({
   busyKey,
   goal,
-  onCancelConfirm,
-  onMode,
-}: Omit<ActiveActionsProps, "mode">) {
-  const handleBack = useCallback(() => onMode("idle"), [onMode]);
+  onConfirm,
+  onOpenChange,
+  open,
+}: CancelDialogProps) {
+  const busy = busyKey !== null;
   const thisBusy = busyKey === `cancel:${goal.id}`;
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      // no way out while the command is on its way: the answer decides what the screen shows
+      if (!thisBusy) {
+        onOpenChange(next);
+      }
+    },
+    [onOpenChange, thisBusy]
+  );
+  const handleBack = useCallback(() => {
+    if (!busy) {
+      onOpenChange(false);
+    }
+  }, [busy, onOpenChange]);
   return (
-    <fieldset className="goal-confirmation">
-      <legend className="visually-hidden">
-        Confirmar o cancelamento de {goalTitle(goal)}
-      </legend>
-      <p>
-        Cancelar a meta a encerra: ela fica na lista só para leitura e isso não
-        poderá ser desfeito.
-      </p>
-      <div className="goal-actions">
-        <button
-          className="danger-button"
-          disabled={busyKey !== null}
-          onClick={onCancelConfirm}
-          type="button"
-        >
-          {thisBusy ? "Cancelando…" : "Confirmar cancelamento"}
-        </button>
-        <button
-          className="quiet-button"
-          disabled={busyKey !== null}
-          onClick={handleBack}
-          type="button"
-        >
-          Voltar
-        </button>
-      </div>
-    </fieldset>
+    <Dialog onOpenChange={handleOpenChange} open={open}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Cancelar a meta {goalTitle(goal)}?</DialogTitle>
+          <DialogDescription>
+            Cancelar a meta a encerra: ela fica na lista só para leitura e isso
+            não poderá ser desfeito.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-3">
+          <Button
+            aria-disabled={busy || undefined}
+            className={OFF}
+            onClick={handleBack}
+            type="button"
+            variant="outline"
+          >
+            Voltar
+          </Button>
+          <Button
+            aria-disabled={busy || undefined}
+            className={OFF}
+            onClick={busy ? undefined : onConfirm}
+            type="button"
+            variant="destructive"
+          >
+            {thisBusy ? "Cancelando…" : "Confirmar cancelamento"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function ActiveActions(props: ActiveActionsProps) {
-  const { busyKey, goal, mode, onMode } = props;
-  const handleEdit = useCallback(() => {
-    onMode("edit");
-    focusLater(() =>
-      document.getElementById(`goal-edit-${goal.id}-target`)?.focus()
-    );
-  }, [goal.id, onMode]);
-  const handleAskCancel = useCallback(() => onMode("cancel"), [onMode]);
-  if (mode === "cancel") {
-    return <CancelConfirmation {...props} />;
-  }
-  if (mode === "edit") {
-    return null;
-  }
+const CANCEL_TEXT = "text-destructive hover:bg-destructive/10";
+
+interface ActiveActionsProps {
+  busyKey: string | null;
+  goal: GoalReadModel;
+  historyOpen: boolean;
+  mode: Mode;
+  onAskCancel: () => void;
+  onEdit: () => void;
+  onHistory: () => void;
+}
+
+/** Editar, Histórico do alvo and Cancelar meta: text buttons. While the edit form is open, only the history stays. */
+function ActiveActions({
+  busyKey,
+  goal,
+  historyOpen,
+  mode,
+  onAskCancel,
+  onEdit,
+  onHistory,
+}: ActiveActionsProps) {
   const title = goalTitle(goal);
+  const editing = mode === "edit";
   return (
-    <div className="goal-actions">
-      {goal.paused ? null : (
-        <button
+    <div className={ACTIONS}>
+      {goal.paused || editing ? null : (
+        <Button
           aria-label={`Editar meta ${title}`}
-          className="quiet-button"
           disabled={busyKey !== null}
-          onClick={handleEdit}
+          onClick={onEdit}
+          size="sm"
           type="button"
+          variant="ghost"
         >
-          Editar meta
-        </button>
+          Editar
+        </Button>
       )}
-      <button
-        aria-label={`Cancelar meta ${title}`}
-        className="quiet-button"
-        disabled={busyKey !== null}
-        onClick={handleAskCancel}
-        type="button"
-      >
-        Cancelar meta
-      </button>
+      <GoalHistoryToggle goal={goal} onToggle={onHistory} open={historyOpen} />
+      {editing ? null : (
+        <Button
+          aria-label={`Cancelar meta ${title}`}
+          className={CANCEL_TEXT}
+          disabled={busyKey !== null}
+          onClick={onAskCancel}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Cancelar meta
+        </Button>
+      )}
     </div>
   );
 }
@@ -275,6 +330,7 @@ export function ActiveGoalCard({
   today,
 }: GoalCardProps) {
   const [mode, setMode] = useState<Mode>("idle");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const handleSave = useCallback(
     async (input: GoalEditInput) => {
@@ -286,40 +342,63 @@ export function ActiveGoalCard({
     },
     [goal, onSave]
   );
+  // whatever the answer, the dialog closes: what happened is said above the list, where the dialog would hide it
   const handleCancelConfirm = useCallback(async () => {
-    const outcome = await onCancel(goal);
-    if (outcome !== "failed") {
-      setMode("idle");
-    }
+    await onCancel(goal);
+    setMode("idle");
   }, [goal, onCancel]);
+  const handleEdit = useCallback(() => {
+    setMode("edit");
+    focusLater(() =>
+      document.getElementById(`goal-edit-${goal.id}-target`)?.focus()
+    );
+  }, [goal.id]);
+  const handleAskCancel = useCallback(() => setMode("cancel"), []);
+  const handleDialog = useCallback(
+    (open: boolean) => setMode(open ? "cancel" : "idle"),
+    []
+  );
   const handleCloseEdit = useCallback(() => setMode("idle"), []);
+  const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
 
   return (
-    <article className="goal-card">
-      <GoalHeader goal={goal} today={today} />
-      <GoalProgress goal={goal} />
-      {mode === "edit" ? (
-        <GoalEditForm
-          disabled={busyKey !== null}
+    <Card>
+      <CardContent className="grid gap-3">
+        <GoalHeader goal={goal} today={today} />
+        <GoalProgress goal={goal} />
+        {mode === "edit" ? (
+          <GoalEditForm
+            disabled={busyKey !== null}
+            goal={goal}
+            key={goal.version}
+            onCancel={handleCloseEdit}
+            onSave={handleSave}
+            saving={busyKey === `update:${goal.id}`}
+          />
+        ) : null}
+        <ActiveActions
+          busyKey={busyKey}
           goal={goal}
-          key={goal.version}
-          onCancel={handleCloseEdit}
-          onSave={handleSave}
-          saving={busyKey === `update:${goal.id}`}
+          historyOpen={historyOpen}
+          mode={mode}
+          onAskCancel={handleAskCancel}
+          onEdit={handleEdit}
+          onHistory={handleHistory}
         />
-      ) : null}
-      <ActiveActions
-        busyKey={busyKey}
-        goal={goal}
-        mode={mode}
-        onCancelConfirm={handleCancelConfirm}
-        onMode={setMode}
-      />
-      <GoalHistory
-        goal={goal}
-        organizationId={organizationId}
-        timezone={timezone}
-      />
-    </article>
+        <GoalHistoryBody
+          goal={goal}
+          open={historyOpen}
+          organizationId={organizationId}
+          timezone={timezone}
+        />
+        <CancelDialog
+          busyKey={busyKey}
+          goal={goal}
+          onConfirm={handleCancelConfirm}
+          onOpenChange={handleDialog}
+          open={mode === "cancel"}
+        />
+      </CardContent>
+    </Card>
   );
 }

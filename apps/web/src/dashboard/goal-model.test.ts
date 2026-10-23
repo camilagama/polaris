@@ -6,12 +6,12 @@ import {
   formatGoalPercent,
   formatGoalValue,
   type GoalDraft,
+  goalBadgeVariant,
   goalFinalDate,
   goalKindLabel,
   goalNotStarted,
   goalPeriodText,
   goalProgressWidth,
-  goalStatusClass,
   goalStatusLabel,
   goalTargetInputText,
   goalTitle,
@@ -60,11 +60,12 @@ describe("labels", () => {
     expect(goalStatusLabel("cancelled")).toBe("Cancelada");
   });
 
-  it("styles a status without leaning on color alone", () => {
-    expect(goalStatusClass("active")).toBe("status-active");
-    expect(goalStatusClass("completed")).toBe("status-active");
-    expect(goalStatusClass("missed")).toBe("status-archived");
-    expect(goalStatusClass("cancelled")).toBe("status-deleted");
+  it("picks the badge of a status: the text, not the variant, carries the meaning", () => {
+    expect(goalBadgeVariant("active", false)).toBe("secondary");
+    expect(goalBadgeVariant("active", true)).toBe("warning");
+    expect(goalBadgeVariant("completed", false)).toBe("ink");
+    expect(goalBadgeVariant("missed", false)).toBe("outline");
+    expect(goalBadgeVariant("cancelled", false)).toBe("outline");
   });
 
   it("titles a goal by its name, or by what it measures", () => {

@@ -180,7 +180,7 @@ test("cancelamento: o estoque das duas linhas volta inteiro e a venda sai do Res
   }).format(runT0());
   await page.goto("/dashboard");
   await expect(
-    page.getByText(`Não há vendas nem despesas em ${month}.`, { exact: false })
+    page.getByText(`Sem vendas nem despesas em ${month}`, { exact: false })
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Como chegamos a este resultado" })
