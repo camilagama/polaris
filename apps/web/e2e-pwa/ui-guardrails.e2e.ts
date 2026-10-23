@@ -76,10 +76,6 @@ async function openScreen(screen: UiScreen, page: Page) {
   await screen.open(page, page.context());
 }
 
-/** What the browser finds must be exactly what the screen lists as waiting for its migration (nothing, if migrated). */
-const expected = (screen: UiScreen, check: UiCheck) =>
-  [...(screen.known?.[check] ?? [])].sort();
-
 // a check with no context would vanish without a test or a warning (a green run that ran nothing)
 for (const [check, contexts] of Object.entries(CHECK_CONTEXTS)) {
   if (contexts.length === 0) {
@@ -109,7 +105,7 @@ for (const screen of SCREENS) {
               (await overflowFaults(page)).sort(),
               "1. nada sai do contêiner"
             )
-            .toEqual(expected(screen, "overflow"));
+            .toEqual([]);
         }
         if (runs("touch")) {
           expect
@@ -117,22 +113,22 @@ for (const screen of SCREENS) {
               (
                 await touchFaults(page, {
                   exemptInlineLinks: true,
-                  minimum: screen.status === "migrated" ? 48 : 44,
+                  minimum: 48,
                 })
               ).sort(),
               "2. área de toque"
             )
-            .toEqual(expected(screen, "touch"));
+            .toEqual([]);
         }
         if (runs("axe")) {
           expect
             .soft((await axeFaults(page)).sort(), "3. axe WCAG 2.2 A e AA")
-            .toEqual(expected(screen, "axe"));
+            .toEqual([]);
         }
         if (runs("focus")) {
           expect
             .soft((await focusFaults(page)).sort(), "6. foco de 3 px")
-            .toEqual(expected(screen, "focus"));
+            .toEqual([]);
         }
       });
     });
@@ -411,7 +407,6 @@ test.describe("controle: cada verificação pega a falha", () => {
     await openScreen(gallery, page);
     await page.evaluate(() => {
       const portal = document.createElement("div");
-      portal.setAttribute("data-ui", "");
       const fades = document.createElement("div");
       const grows = document.createElement("div");
       fades.textContent = "só desvanece";
@@ -439,7 +434,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(runningMotion(records).length).toBeGreaterThan(0);
   });
 
-  test("5. com reduce, uma animação fora da regra é pega e a da interface não", async ({
+  test("5. com reduce, uma animação que escapa da regra é pega e a comum não", async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -456,14 +451,19 @@ test.describe("controle: cada verificação pega a falha", () => {
         "@keyframes controle-pulso { from { opacity: 0.2 } to { opacity: 1 } } .controle-pulso { animation: controle-pulso 2s infinite }"
       );
       document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-      const outside = document.createElement("p");
-      outside.className = "controle-pulso";
-      outside.textContent = "fora da interface nova";
-      document.body.append(outside);
-      const inside = document.createElement("p");
-      inside.className = "controle-pulso";
-      inside.textContent = "dentro de [data-ui]";
-      document.querySelector("main")?.append(inside);
+      // the reduce rule of theme.css is global and `!important`: only an inline `!important` gets past it
+      const escapes = document.createElement("p");
+      escapes.textContent = "escapa do reduce";
+      escapes.style.setProperty(
+        "animation",
+        "controle-pulso 2s infinite",
+        "important"
+      );
+      document.querySelector("main")?.append(escapes);
+      const common = document.createElement("p");
+      common.className = "controle-pulso";
+      common.textContent = "animação comum";
+      document.querySelector("main")?.append(common);
     });
     await expect
       .poll(async () =>

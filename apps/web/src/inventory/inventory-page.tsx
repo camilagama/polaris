@@ -259,9 +259,7 @@ export function InventoryPage() {
   const handleReload = useCallback(() => reload(), [reload]);
 
   return (
-    <div
-      className="grid gap-4 font-sans text-foreground text-sm antialiased"
-    >
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <h1 className="text-title">Estoque</h1>
         <p className="text-muted-foreground text-support">

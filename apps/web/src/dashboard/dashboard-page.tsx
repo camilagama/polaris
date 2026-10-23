@@ -164,9 +164,7 @@ export function DashboardPage() {
   const snapshot = useRuntimeSnapshot();
 
   return (
-    <div
-      className="grid gap-5 font-sans text-foreground text-sm antialiased"
-    >
+    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <Heading />
       <Toolbar
         month={month}

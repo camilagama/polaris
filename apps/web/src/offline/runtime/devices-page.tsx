@@ -523,9 +523,7 @@ export function DevicesPage() {
   const rows = devices ? deviceRows(devices, currentDeviceId) : [];
   const loading = devices === null && loadFailed === null && !sessionOver;
   return (
-    <div
-      className="grid gap-4 font-sans text-foreground text-sm antialiased"
-    >
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <h1
           className="text-title outline-none"

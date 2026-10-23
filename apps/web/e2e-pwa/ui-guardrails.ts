@@ -604,8 +604,8 @@ export function startMotionRecorder() {
       if (!(effect && timing && target)) {
         continue;
       }
-      const portal = target.closest("body > [data-ui]");
-      const overlay = Boolean(portal && portal.id !== "root");
+      // a portal is a child of body other than the root of the app (the overlays of src/ui)
+      const overlay = Boolean(target.closest("body > :not(#root)"));
       const style = getComputedStyle(target);
       const pose = [style.transform, style.translate, style.scale, style.rotate]
         .map(plain)

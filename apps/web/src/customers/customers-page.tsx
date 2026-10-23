@@ -514,9 +514,7 @@ export function CustomersPage() {
   const showForm = status === "active" || editingCustomer !== null;
 
   return (
-    <div
-      className="grid gap-4 font-sans text-foreground text-sm antialiased"
-    >
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <CustomersHeader />
       {isOffline ? <OfflineNotice /> : null}
       <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />

@@ -306,9 +306,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
 /** The top of the phone: the brand and the state chip with its short text, on one line (U-07); the theme is in "Mais". */
 function MobileHeader({ onlineOnly }: { onlineOnly: boolean }) {
   return (
-    <header
-      className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden"
-    >
+    <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden">
       <a
         className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
         href="/"
@@ -327,9 +325,7 @@ function ShellChip({ onlineOnly }: { onlineOnly: boolean }) {
   return isMobile ? (
     <MobileHeader onlineOnly={onlineOnly} />
   ) : (
-    <div
-      className="relative mx-auto hidden w-[min(100%-2rem,76rem)] md:block"
-    >
+    <div className="relative mx-auto hidden w-[min(100%-2rem,76rem)] md:block">
       <div className="absolute top-4 right-0 flex">
         <SyncStatus onlineOnly={onlineOnly} />
       </div>
@@ -386,9 +382,7 @@ function AppFooter() {
   const link =
     "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
-    <footer
-      className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm"
-    >
+    <footer className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm">
       <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-2 p-0">
         <li>
           <a
@@ -536,9 +530,7 @@ export function AppShell({
         {updateNotice}
         {showNotice || showAcceptanceNotice ? (
           // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
-          <div
-            className="flow-root bg-background px-(--gutter) pt-4"
-          >
+          <div className="flow-root bg-background px-(--gutter) pt-4">
             <div className="mx-auto max-w-[420px]">
               {showNotice ? <SessionEndedNotice alone /> : null}
               {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}

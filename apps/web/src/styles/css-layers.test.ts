@@ -19,6 +19,7 @@ const BASE = new Set([
   "styles/shadcn-tailwind.css",
 ]);
 // the labs are no screens of the shop: their sheets are wholly inside `@layer components`, under the utilities
+const LEGACY_LAYER = /@layer\s+[^;{]*\blegacy\b/;
 const LAB_SHEETS = ["offline-poc/lab-page.css", "offline-poc/offline-poc.css"];
 const THEME_OUTSIDE_LAYER = [
   /^:root$/,
@@ -89,7 +90,7 @@ describe("no old CSS (ADR 0103, section 3)", () => {
     expect(
       files.filter(
         (file) =>
-          /@layer\s+[^;{]*\blegacy\b/.test(
+          LEGACY_LAYER.test(
             readFileSync(join(src, file), "utf8").replace(COMMENT, "")
           ) || !(BASE.has(file) || LAB_SHEETS.includes(file))
       )

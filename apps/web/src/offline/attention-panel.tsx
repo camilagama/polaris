@@ -65,9 +65,7 @@ const discardButtonId = (item: AttentionItem) =>
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="grid gap-4 font-sans text-foreground text-sm antialiased"
-    >
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <h1 className="text-title" id="attention-title">
           Pendências

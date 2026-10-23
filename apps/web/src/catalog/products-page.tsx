@@ -359,9 +359,7 @@ export function ProductsPage() {
 
   return (
     <div className="products-page" ref={rootRef}>
-      <div
-        className="grid gap-4 font-sans text-foreground text-sm antialiased"
-      >
+      <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
         <ProductsHeader
           buttonRef={newButtonRef}
           onNew={handleNew}

@@ -79,9 +79,7 @@ type Notice =
 function UiBlock({ children }: { children: ReactNode }) {
   return (
     // the gap is the block's own padding, so a block that is not drawn leaves no gap behind
-    <div className="grid gap-4 pb-4 last:pb-0">
-      {children}
-    </div>
+    <div className="grid gap-4 pb-4 last:pb-0">{children}</div>
   );
 }
 

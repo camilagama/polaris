@@ -6,21 +6,16 @@ import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { resultAnswers } from "./ui-result-states";
-import {
-  addLegacyRule,
-  addPageRule,
-  addProbe,
-  leaks,
-  legacyLayerOnAndOff,
-} from "./ui-shell-isolation";
+import { addSheet, rulesOutsideTailwindLayers } from "./ui-shell-isolation";
 import { serveStockRows } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * The migrated screens inside the real shell (t193): nothing of `@layer legacy` may reach what is under `[data-ui]`
- * (ADR 0103, section 3; the break was `.ui-root input` giving the field of "Trocar senha" a border and a 2.8rem
- * height). The screens of the guardrails (`ui-screens.ts`) run in the lab, which has no `.ui-root`, so they do not see it.
- * How the proof works is in `ui-shell-isolation.ts`; the runbook is docs/runbooks/testes-de-tela.md.
+ * The screens inside the real shell and the pages outside it (t193; since batch 6, t256): every style rule on the page
+ * is in a layer of Tailwind, so nothing old or stray (a sheet with no layer, the old `@layer legacy`) can reach a
+ * screen. The break this used to catch was `.ui-root input` giving the field of "Trocar senha" a border and a 2.8rem
+ * height (ADR 0103, section 3). How the proof works is in `ui-shell-isolation.ts`; the runbook is
+ * docs/runbooks/testes-de-tela.md.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -38,16 +33,10 @@ const json = (body: unknown) => ({
 const RPC_PREFIX = /^.*\/rpc\//;
 
 /**
- * The fewest rules of `@layer legacy` that any measured screen has on the page (they are the sheets of the screens not
- * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
- * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
- * (135 and 156 on "Produtos" and "Venda"), and 57 on the first access, the acceptance and the legal texts after t239 deleted
- * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css, and 30 after t256 took the rules
- * with no user (the category tabs and badges, the messages, `.field-*`) out of ui.css and the images panel went to src/ui. The floor is below the measured minimum so that one more sheet leaving the
- * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
- * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
+ * The fewest style rules any measured page has (the CSS of the build is one sheet with every utility of every screen,
+ * about a thousand rules). Far above zero, so a page whose sheet did not load, or a walk that reads nothing, fails.
  */
-const LEGACY_RULES_FLOOR = 20;
+const STYLE_RULES_FLOOR = 500;
 
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
@@ -95,7 +84,7 @@ async function openInShell(
   // after the catch-all above: the last route registered is the first asked
   await serve?.(page);
   await page.goto(path);
-  await expect(page.locator(".ui-root.app-shell-root")).toBeVisible();
+  await expect(page.locator(".app-shell-root")).toBeVisible();
   await ready();
   await settle(page);
 }
@@ -911,147 +900,84 @@ const SCREENS = [
 ];
 
 for (const screen of SCREENS) {
-  test(`${screen.name}: a camada legacy não muda nada sob [data-ui]`, async ({
+  test(`${screen.name}: toda regra da página está nas camadas do Tailwind`, async ({
     page,
   }) => {
     await screen.open(page);
-    await addProbe(page);
-    const state = await legacyLayerOnAndOff(page);
-    const names = Object.keys(state.on.snapshot);
-    // the check is not vacuous: the layer was on the page and came off, there was something to measure, the probe
-    // was measured, and so was the focus (Tab put the page in keyboard mode and some control took the ring)
-    expect(state.off.removed).toBeGreaterThan(LEGACY_RULES_FLOOR);
-    expect(names.length).toBeGreaterThan(20);
-    expect(
-      names.some((name) => name.startsWith('input "sonda com erro"'))
-    ).toBe(true);
-    expect(names.some((name) => name.endsWith(":focus-visible"))).toBe(true);
-    expect(leaks(state)).toEqual([]);
+    const rules = await rulesOutsideTailwindLayers(page);
+    expect(rules.styleRules).toBeGreaterThan(STYLE_RULES_FLOOR);
+    expect(rules.outside).toEqual([]);
   });
 }
 
-test.describe("controle: a verificação pega a regra legacy que vaza", () => {
-  // each rule is the fault in the shape it had, injected in the layer; `found` is what the check must print for it
-  const LEAKS = [
-    // the real fault of "Trocar senha": the field of the group takes the border of the old input
+test.describe("controle: a verificação pega a regra fora das camadas do Tailwind", () => {
+  // each sheet is a fault in the shape it would come; `found` is the line the check must print for it
+  const FAULTS = [
+    // the real fault of "Trocar senha", in the layer of the old sheets
     {
-      css: ".ui-root input { border: 1px solid rgb(255 0 0); }",
-      found:
-        'input[input-group-control] "Senha atual": border-top-color rgb(255, 0, 0) (com legacy)',
-      name: ".ui-root input (a regra do ui.css antes da correção)",
+      css: "@layer legacy { .app-shell-root input { border: 1px solid rgb(255 0 0); } }",
+      found: "@layer legacy: .app-shell-root input",
+      name: "uma camada que não é do Tailwind (a antiga legacy)",
     },
-    // a rule of the old sheets for every button of the page, with no `.ui-root` to say where it is meant for
     {
       css: "button { text-transform: uppercase; }",
-      found: ": text-transform uppercase (com legacy)",
-      from: 'button[button] "Mostrar',
-      name: "button sem escopo",
+      found: "sem camada: button",
+      name: "uma regra sem camada",
     },
     {
-      css: ".ui-root :focus-visible { outline: 3px solid rgb(255 0 0); }",
-      found: ":focus-visible: outline-color rgb(255, 0, 0) (com legacy)",
-      name: ".ui-root :focus-visible (o contorno do campo e do título)",
-    },
-    // the rules of ui.css that the open screens do not show, on the probe
-    {
-      css: '.ui-root input[aria-invalid="true"] { border-color: rgb(255 0 0); }',
-      found:
-        'input "sonda com erro": border-top-color rgb(255, 0, 0) (com legacy)',
-      name: '.ui-root input[aria-invalid="true"]',
+      css: "@media (min-width: 1px) { :focus-visible { outline: 3px solid rgb(255 0 0); } }",
+      found: "sem camada: :focus-visible",
+      name: "sem camada dentro de @media",
     },
     {
-      css: ".ui-root input::placeholder { color: rgb(255 0 0); }",
-      found:
-        'input "sonda com texto de apoio" ::placeholder: color rgb(255, 0, 0) (com legacy)',
-      name: ".ui-root input::placeholder",
+      css: "@layer { input::placeholder { color: rgb(255 0 0); } }",
+      found: "@layer anônima: input::placeholder",
+      name: "uma camada anônima",
+    },
+    // a token rule with one property that is not a token is no longer only tokens
+    {
+      css: ":root { --sonda: 1px; color: rgb(255 0 0); }",
+      found: "sem camada: :root",
+      name: "regra de tokens com uma propriedade comum",
     },
     {
-      css: ".ui-root select { box-sizing: content-box; }",
-      found: 'select "sonda de lista": box-sizing content-box (com legacy)',
-      name: ".ui-root select",
-    },
-    // the margin of the probe: a side the layer gives to a control is a leak
-    {
-      css: ".ui-root select { margin-top: 7px; }",
-      found: 'select "sonda de lista": margin-top 7px (com legacy)',
-      name: ".ui-root select (margem)",
-    },
-    {
-      css: ".ui-root textarea { box-sizing: content-box; }",
-      found: 'textarea "sonda de texto": box-sizing content-box (com legacy)',
-      name: ".ui-root textarea",
+      css: ".app-shell-root { & select { box-sizing: content-box; } }",
+      found: "sem camada: & select",
+      name: "regra aninhada sem camada",
     },
   ];
-  for (const leak of LEAKS) {
-    test(leak.name, async ({ page }) => {
+  for (const fault of FAULTS) {
+    test(fault.name, async ({ page }) => {
       await CHANGE_PASSWORD.open(page);
-      await addProbe(page);
-      await addLegacyRule(page, leak.css);
-      const found = leaks(await legacyLayerOnAndOff(page));
-      expect(
-        found.some(
-          (line) =>
-            line.startsWith(leak.from ?? "") && line.includes(leak.found)
-        )
-      ).toBe(true);
+      await addSheet(page, fault.css);
+      const { outside } = await rulesOutsideTailwindLayers(page);
+      expect(outside).toContain(fault.found);
     });
   }
 
-  test("Produtos: a regra antiga do campo de busca é vista na tela de Produtos", async ({
+  test("Produtos: a mesma falha é vista na tela de Produtos", async ({
     page,
   }) => {
     await PRODUCTS_LIST.open(page);
-    await addLegacyRule(page, ".ui-root input { text-transform: uppercase; }");
-    const found = leaks(await legacyLayerOnAndOff(page));
-    expect(
-      found.some(
-        (line) =>
-          line.startsWith('input[input-group-control] "Buscar produto"') &&
-          line.includes("text-transform uppercase (com legacy)")
-      )
-    ).toBe(true);
-  });
-
-  test("o que transiciona também é visto (a leitura não pega o começo da transição)", async ({
-    page,
-  }) => {
-    await CHANGE_PASSWORD.open(page);
-    await addPageRule(page, "[data-ui] input { transition: border-color 5s; }");
-    await addLegacyRule(page, ".ui-root input { border-color: rgb(255 0 0); }");
-    const found = leaks(await legacyLayerOnAndOff(page));
-    expect(
-      found.some((line) =>
-        line.includes(
-          'input[input-group-control] "Senha atual": border-top-color rgb(255, 0, 0)'
-        )
-      )
-    ).toBe(true);
-  });
-
-  test("a margem auto que acompanha o contêiner não reprova", async ({
-    page,
-  }) => {
-    await CHANGE_PASSWORD.open(page);
-    await addProbe(page);
-    await addPageRule(
+    await addSheet(
       page,
-      '[data-ui] select[aria-label="sonda de lista"] { display: block; width: 10rem; margin-inline: auto; }'
+      "@layer legacy { .app-shell-root input { text-transform: uppercase; } }"
     );
-    // the old layer changes the width of the shell, so the used value of the `auto` margins changes
-    await addLegacyRule(page, ".ui-root { padding-left: 40px; }");
-    expect(leaks(await legacyLayerOnAndOff(page))).toEqual([]);
+    const { outside } = await rulesOutsideTailwindLayers(page);
+    expect(outside).toEqual(["@layer legacy: .app-shell-root input"]);
   });
 
-  test("uma regra legacy só para o que é antigo não reprova", async ({
+  test("uma regra nas camadas do Tailwind, mesmo aninhada, não reprova", async ({
     page,
   }) => {
     await CHANGE_PASSWORD.open(page);
-    await addProbe(page);
-    // the frame of the shell is new since v5.1 (t225): what is old is `main` itself, where the old screens live
-    await addLegacyRule(
+    await addSheet(
       page,
-      ".app-shell-root main { outline: 2px solid rgb(255 0 0); background: rgb(255 0 0); }"
+      "@layer components { .sonda { color: red; } @layer interna { .sonda-2 { color: red; } } } " +
+        "@layer utilities { @media (min-width: 1px) { .sonda-3 { color: red; } } } " +
+        "@font-face { font-family: sonda; src: local(Arial); } @keyframes sonda { to { opacity: 0; } } " +
+        ".dark { --sonda: 1px; color-scheme: dark; }"
     );
-    expect(leaks(await legacyLayerOnAndOff(page))).toEqual([]);
+    expect((await rulesOutsideTailwindLayers(page)).outside).toEqual([]);
   });
 });
