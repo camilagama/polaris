@@ -5,6 +5,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { getFooterHref } from "../server/site";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -17,7 +18,10 @@ export const Route = createRootRoute({
       { title: "Catálogo Polaris" },
     ],
   }),
+  // The footer's link is the same on every page and for every visitor: read once, not on each navigation.
+  loader: () => getFooterHref(),
   shellComponent: Shell,
+  staleTime: Number.POSITIVE_INFINITY,
 });
 
 function Shell({ children }: { children: ReactNode }) {

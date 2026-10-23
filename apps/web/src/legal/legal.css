@@ -4,6 +4,33 @@
    * scrolls sideways at 360 px, tables that become one card per row, 44 px targets in the summary.
    * Colors come from the shared tokens, so the dark theme follows the system with no rule of its own.
    */
+  /* the brand of the legal pages (it was the shell's until the shell moved to v5.1) */
+  .app-brand {
+    display: inline-flex;
+    flex: none;
+    gap: 0.7rem;
+    align-items: center;
+    min-height: 2.75rem;
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: var(--ui-ink);
+    letter-spacing: -0.025em;
+    text-decoration: none;
+  }
+
+  .app-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--ui-surface);
+    background: var(--ui-accent);
+    border-radius: 0.55rem;
+  }
+
   .legal-topbar {
     display: flex;
     align-items: center;

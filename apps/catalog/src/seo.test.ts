@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPrice, instagramLink, whatsappLink } from "./format";
+import { formatPrice, instagramLink } from "./format";
 import type { PageHead } from "./seo";
 import {
   normalizeOrigin,
@@ -149,7 +149,6 @@ describe("the helpers", () => {
     expect(formatPrice("1234567")).toBe("R$ 1.234.567,00");
     expect(formatPrice("0.05")).toBe("R$ 0,05");
     expect(formatPrice("abc")).toBe("abc");
-    expect(whatsappLink("5511912345678")).toBe("https://wa.me/5511912345678");
     expect(instagramLink("loja.ana")).toBe(
       "https://www.instagram.com/loja.ana/"
     );

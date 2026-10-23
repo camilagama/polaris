@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
@@ -126,46 +127,89 @@ export function useLogout(destination: LeavePath) {
 }
 
 interface LogoutControlProps {
+  /**
+   * Called when the warning of the pending queue or a message appears, so a closed "Mais" sheet of the phone opens
+   * again: the answer may arrive after the person closed it.
+   */
+  onAttention?: () => void;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
   reason?: SignInReason;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
   returnTo?: string;
+  /** In the sidebar of the shell (v5.1): the look of the outline button of the interface, as wide as the column. */
+  shell?: boolean;
 }
 
-export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
+export function LogoutControl({
+  onAttention,
+  reason,
+  returnTo,
+  shell = false,
+}: LogoutControlProps = {}) {
   const runtime = useOfflineRuntime();
   const logout = useLogout(
     reason ? logoutDestination({ reason, returnTo }) : "/"
   );
   const { blocked, busy, message } = logout;
+  const blockedRef = useRef<HTMLDivElement>(null);
+  const needsAttention = blocked !== null || message !== null;
+  useEffect(() => {
+    if (needsAttention) {
+      onAttention?.();
+    }
+  }, [needsAttention, onAttention]);
+  // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
+  useEffect(() => {
+    if (shell && blocked) {
+      blockedRef.current?.scrollIntoView({ block: "nearest" });
+      blockedRef.current?.focus();
+    }
+  }, [blocked, shell]);
   if (!runtime) {
     return null;
   }
   return (
-    <div className="app-logout">
-      <button
-        className="secondary-button"
-        disabled={busy}
-        onClick={logout.start}
-        type="button"
-      >
-        Sair
-      </button>
+    <div className={shell ? "grid gap-2" : "app-logout"}>
+      {shell ? (
+        <button
+          className="touch-hit focus-ring inline-flex h-ctl-md w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:bg-secondary/60 dark:hover:bg-accent [&_svg]:size-4"
+          disabled={busy}
+          onClick={logout.start}
+          type="button"
+        >
+          <LogOutIcon aria-hidden="true" />
+          Sair
+        </button>
+      ) : (
+        <button
+          className="secondary-button"
+          disabled={busy}
+          onClick={logout.start}
+          type="button"
+        >
+          Sair
+        </button>
+      )}
       {message ? (
-        <p className="app-logout-message" role="alert">
+        <p
+          className={shell ? "m-0 text-destructive text-support" : undefined}
+          role="alert"
+        >
           {message}
         </p>
       ) : null}
       {blocked ? (
-        <LogoutDialog
-          blocked={blocked}
-          busy={busy}
-          errorMessage={null}
-          onCancel={logout.cancel}
-          onDiscard={logout.discard}
-          onRetry={logout.start}
-          onShowAttention={logout.showAttention}
-        />
+        <div className="outline-none" ref={blockedRef} tabIndex={-1}>
+          <LogoutDialog
+            blocked={blocked}
+            busy={busy}
+            errorMessage={null}
+            onCancel={logout.cancel}
+            onDiscard={logout.discard}
+            onRetry={logout.start}
+            onShowAttention={logout.showAttention}
+          />
+        </div>
       ) : null}
     </div>
   );

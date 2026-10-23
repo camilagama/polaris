@@ -139,7 +139,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     ).toBeVisible();
     await expect(googleButton(page)).toBeEnabled();
     await expect(page.getByRole("navigation")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mais" })).toHaveCount(0);
     // the only way in is Google: no field at all (nothing to type, no PIN, no code)
     await expect(page.locator("input, textarea, select")).toHaveCount(0);
     expect(

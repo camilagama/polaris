@@ -28,28 +28,48 @@ export type RouteId =
   | "sale-detail"
   | "sale-history";
 
+/** The group of the sidebar an item is in; the first one has no label. */
+export type NavGroup = "Catálogo" | "Configurações" | "Resultado" | null;
+
 export interface NavItem {
+  group: NavGroup;
   href: string;
   id: NavId;
   label: string;
 }
 
-/** The main menu, in the order of the daily workflow. */
+/** The main menu, in the order of the daily workflow, by group of the sidebar (DESIGN.md, shell v5.1). */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/sales", id: "sale", label: "Vender" },
-  { href: "/sales/history", id: "history", label: "Histórico" },
-  { href: "/inventory", id: "inventory", label: "Estoque" },
-  { href: "/products", id: "products", label: "Produtos" },
-  { href: "/categories", id: "categories", label: "Categorias" },
-  { href: "/customers", id: "customers", label: "Clientes" },
-  { href: "/expenses", id: "expenses", label: "Despesas" },
-  { href: "/dashboard", id: "dashboard", label: "Resultado" },
+  { group: null, href: "/sales", id: "sale", label: "Vender" },
+  { group: null, href: "/sales/history", id: "history", label: "Histórico" },
+  { group: "Catálogo", href: "/inventory", id: "inventory", label: "Estoque" },
+  { group: "Catálogo", href: "/products", id: "products", label: "Produtos" },
   {
+    group: "Catálogo",
+    href: "/categories",
+    id: "categories",
+    label: "Categorias",
+  },
+  { group: "Catálogo", href: "/customers", id: "customers", label: "Clientes" },
+  { group: "Resultado", href: "/expenses", id: "expenses", label: "Despesas" },
+  {
+    group: "Resultado",
+    href: "/dashboard",
+    id: "dashboard",
+    label: "Resultado",
+  },
+  {
+    group: "Configurações",
     href: "/payment-profiles",
     id: "payment-profiles",
     label: "Perfis de pagamento",
   },
-  { href: "/public-catalog", id: "public-catalog", label: "Catálogo público" },
+  {
+    group: "Configurações",
+    href: "/public-catalog",
+    id: "public-catalog",
+    label: "Catálogo público",
+  },
 ];
 
 /**
@@ -57,8 +77,61 @@ export const NAV_ITEMS: readonly NavItem[] = [
  * registered only then), so they are not part of the main menu above.
  */
 export const OFFLINE_NAV_ITEMS: readonly NavItem[] = [
-  { href: "/devices", id: "devices", label: "Aparelhos" },
+  {
+    group: "Configurações",
+    href: "/devices",
+    id: "devices",
+    label: "Aparelhos",
+  },
 ];
+
+/** The destinations of the bottom bar of the phone, in order; every other item is under "Mais". */
+export type BottomBarId = "dashboard" | "history" | "inventory" | "sale";
+export const BOTTOM_BAR_IDS: readonly BottomBarId[] = [
+  "sale",
+  "history",
+  "inventory",
+  "dashboard",
+];
+
+export function inBottomBar(id: NavId): id is BottomBarId {
+  return (BOTTOM_BAR_IDS as readonly NavId[]).includes(id);
+}
+
+/**
+ * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose
+ * area it is in (Estoque for Produtos, Categorias and Clientes; Resultado for Despesas), as in the reference of
+ * the shell v5.1. "more" for the items of no destination of the bar, which "Mais" marks.
+ */
+const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
+  categories: "inventory",
+  customers: "inventory",
+  expenses: "dashboard",
+  products: "inventory",
+};
+
+export function bottomBarMark(id: NavId): BottomBarId | "more" {
+  if (inBottomBar(id)) {
+    return id;
+  }
+  return BOTTOM_BAR_AREA[id] ?? "more";
+}
+
+/** The items in their groups, in the order of the list; a group with no item is left out. */
+export function navGroups(
+  items: readonly NavItem[]
+): { items: NavItem[]; label: NavGroup }[] {
+  const groups: { items: NavItem[]; label: NavGroup }[] = [];
+  for (const item of items) {
+    const last = groups.at(-1);
+    if (last && last.label === item.group) {
+      last.items.push(item);
+    } else {
+      groups.push({ items: [item], label: item.group });
+    }
+  }
+  return groups;
+}
 
 interface RouteDefinition {
   id: RouteId;

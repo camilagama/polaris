@@ -458,7 +458,7 @@ interface SubmitBarProps {
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
     <div
-      className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden"
+      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden"
       data-submit-bar=""
     >
       <div className="grid min-w-0 shrink-0">

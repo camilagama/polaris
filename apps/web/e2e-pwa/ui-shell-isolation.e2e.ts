@@ -418,9 +418,10 @@ test.describe("controle: a verificação pega a regra legacy que vaza", () => {
   }) => {
     await CHANGE_PASSWORD.open(page);
     await addProbe(page);
+    // the frame of the shell is new since v5.1 (t225): what is old is `main` itself, where the old screens live
     await addLegacyRule(
       page,
-      ".app-shell-root header, .app-shell-root footer, .app-shell-root nav { border: 2px solid rgb(255 0 0); padding: 9px; }"
+      ".app-shell-root main { outline: 2px solid rgb(255 0 0); background: rgb(255 0 0); }"
     );
     expect(leaks(await legacyLayerOnAndOff(page))).toEqual([]);
   });

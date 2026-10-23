@@ -3,10 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { resolveRoute } from "../../app-shell/navigation-model";
 import { signOfflineLease } from "../../lib/offline-lease-token";
+import { logoutDestination } from "../../lib/sign-in-path";
 import type { LogoutWorkspace } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
-import { logoutDestination } from "../../lib/sign-in-path";
 import { discardAndLeave, startLogout } from "./logout-flow";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import {
@@ -14,6 +14,9 @@ import {
   SyncStatusView,
   syncStatusLabel,
 } from "./sync-status";
+
+const SHORT_TEXT = /<span aria-hidden="true" class="sync-status-short[^"]*">/;
+const HIDDEN_ICON = /<svg[^>]*aria-hidden="true"/;
 
 const snapshot = (
   overrides: Partial<RuntimeSnapshot> = {}
@@ -23,8 +26,8 @@ const snapshot = (
   dataVersion: 0,
   expiredWhileOpen: false,
   lastSyncAt: null,
-  legalAcceptanceRequired: false,
   leaseExpiresAt: null,
+  legalAcceptanceRequired: false,
   online: true,
   phase: "ready",
   reason: null,
@@ -157,12 +160,11 @@ describe("the sync status in the header", () => {
       expect(label.short.length).toBeLessThan(label.text.length);
       const html = renderToStaticMarkup(<SyncStatusView snapshot={item} />);
       expect(html).toContain(`title="${label.text}"`);
-      expect(html).toContain(
-        `<span class="visually-hidden">${label.text}</span>`
-      );
-      expect(html).toContain(
-        `<span aria-hidden="true" class="sync-status-short">${label.short}</span>`
-      );
+      expect(html).toContain(`<span class="sr-only">${label.text}</span>`);
+      expect(html).toContain(`>${label.short}</span>`);
+      expect(html).toMatch(SHORT_TEXT);
+      // never only color: an icon goes with the text
+      expect(html).toMatch(HIDDEN_ICON);
     }
     expect(
       syncStatusLabel(
@@ -222,8 +224,8 @@ describe("the sync status while the send waits for the legal acceptance", () => 
   });
 });
 
-describe("the sync status line in the open menu", () => {
-  it("shows the whole sentence of the state with the colour dot, hidden from assistive technology", () => {
+describe("the sync status line at the top of Mais", () => {
+  it("shows the whole sentence of the state with its icon, hidden from assistive technology", () => {
     const cases = [
       snapshot({ counts: counts({ pending: 3 }), online: false }),
       snapshot({ reason: "sync_failed" }),
@@ -238,7 +240,7 @@ describe("the sync status line in the open menu", () => {
       );
       expect(html).toContain('aria-hidden="true"');
       expect(html).toContain(`data-tone="${label.tone}"`);
-      expect(html).toContain('<span class="sync-status-dot"></span>');
+      expect(html).toContain("<svg");
       expect(html).toContain(label.text);
     }
   });

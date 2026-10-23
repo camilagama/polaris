@@ -1,19 +1,22 @@
+import CheckIcon from "lucide-react/dist/esm/icons/check";
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { useRuntimeSnapshot } from "./runtime-context";
-import "./sync-status.css";
 
 /**
  * The state of the offline work, in the header (Phase 5 wiring): whether the
  * device is online, how much is waiting to be sent and whether something needs a
  * person. A refused operation turns the chip into a link to the attention panel.
  * The visible text is short and the whole sentence is the accessible name, so the
- * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). With the
- * menu open, the same sentence is the first line of the menu (`SyncStatusMenuLine`),
+ * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). On the
+ * phone, the same sentence is the first line of "Mais" (`SyncStatusMenuLine`),
  * because a tooltip does not show on touch.
  */
 export interface SyncStatusLabel {
   attention: boolean;
-  /** One short line for the header chip (it has to fit next to the brand and "Menu" at 360 px). */
+  /** One short line for the chip (on the phone it has to fit next to the brand and the theme button at 320 px). */
   short: string;
   /** The whole sentence: the accessible name and the tooltip of the chip. */
   text: string;
@@ -159,6 +162,25 @@ function offlineText(waiting: number, onlineOnly: boolean): string {
     .join(" · ");
 }
 
+/* v5.1 (the SyncChip of the design): a 20 px pill. Synced and sending are neutral; only what asks for attention has
+   color, and never only color: an icon and the text go with it. */
+const TONE_CLASS: Record<SyncStatusLabel["tone"], string> = {
+  attention: "bg-destructive/10 text-destructive dark:bg-destructive/15",
+  busy: "border-border bg-card text-foreground",
+  offline: "border-warning/30 bg-warning/10 text-warning",
+  ok: "border-border bg-card text-foreground",
+};
+
+const TONE_ICON = {
+  attention: TriangleAlertIcon,
+  busy: RefreshCwIcon,
+  offline: CloudOffIcon,
+  ok: CheckIcon,
+};
+
+const CHIP =
+  "sync-status inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
+
 export function SyncStatusView({
   screen,
   snapshot,
@@ -167,18 +189,23 @@ export function SyncStatusView({
   snapshot: RuntimeSnapshot;
 }) {
   const label = syncStatusLabel(snapshot, screen);
+  const Icon = TONE_ICON[label.tone];
   const content = (
     <>
-      <span aria-hidden="true" className="sync-status-dot" />
-      <span aria-hidden="true" className="sync-status-short">
+      <Icon aria-hidden="true" />
+      {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow */}
+      <span
+        aria-hidden="true"
+        className="sync-status-short min-w-0 overflow-hidden text-ellipsis"
+      >
         {label.short}
       </span>
-      <span className="visually-hidden">{label.text}</span>
+      <span className="sr-only">{label.text}</span>
     </>
   );
   return label.attention ? (
     <a
-      className="sync-status"
+      className={`${CHIP} touch-hit focus-ring ${TONE_CLASS[label.tone]}`}
       data-tone={label.tone}
       href="/attention"
       title={label.text}
@@ -187,7 +214,7 @@ export function SyncStatusView({
     </a>
   ) : (
     <p
-      className="sync-status"
+      className={`${CHIP} m-0 ${TONE_CLASS[label.tone]}`}
       data-tone={label.tone}
       role="status"
       title={label.text}
@@ -197,10 +224,17 @@ export function SyncStatusView({
   );
 }
 
+const LINE_TONE_CLASS: Record<SyncStatusLabel["tone"], string> = {
+  attention: "bg-destructive/10 text-destructive",
+  busy: "bg-muted text-foreground",
+  offline: "bg-warning/10 text-warning",
+  ok: "bg-muted text-foreground",
+};
+
 /**
- * The whole sentence of the state as the first line of the open menu, with the colour dot of the
- * chip. Narrow screens only (the CSS hides it from 1100 px, where the chip keeps the sentence in its
- * `title`). It is hidden from assistive technology: the chip already says the same thing.
+ * The whole sentence of the state as the first line of "Mais", on the phone (a `title` does not show on touch;
+ * on the desktop the sentence is the `title` of the chip). Hidden from assistive technology: the chip already
+ * says the same thing.
  */
 export function SyncStatusMenuLineView({
   screen,
@@ -210,13 +244,14 @@ export function SyncStatusMenuLineView({
   snapshot: RuntimeSnapshot;
 }) {
   const label = syncStatusLabel(snapshot, screen);
+  const Icon = TONE_ICON[label.tone];
   return (
     <p
       aria-hidden="true"
-      className="sync-status-menu-line"
+      className={`sync-status-menu-line m-0 flex items-center gap-2 rounded-md px-3 py-2 font-medium text-sm [overflow-wrap:anywhere] [&>svg]:size-4 [&>svg]:shrink-0 ${LINE_TONE_CLASS[label.tone]}`}
       data-tone={label.tone}
     >
-      <span className="sync-status-dot" />
+      <Icon />
       {label.text}
     </p>
   );
