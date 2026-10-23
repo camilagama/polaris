@@ -300,6 +300,36 @@ export async function protectAuthLinkRequest(
   return undefined;
 }
 
+/**
+ * The setup of the gate of `protectAuthRequest` that answers `auth_abuse_protection_unavailable`: the flag, the
+ * Turnstile secret, the base URL and, for the actions that send e-mail, the e-mail limiter. The one list of
+ * what "ready" means; the IP limiter has its own 503 in `checkRateLimit`.
+ */
+function abuseProtectionSetUp(
+  bindings: WorkerBindings,
+  emailSending: boolean
+): boolean {
+  return (
+    bindings.AUTH_ABUSE_PROTECTION_ENABLED === "true" &&
+    Boolean(
+      bindings.TURNSTILE_SECRET_KEY?.trim() &&
+        bindings.BETTER_AUTH_BASE_URL?.trim() &&
+        (!emailSending || bindings.AUTH_EMAIL_RATE_LIMITER)
+    )
+  );
+}
+
+/**
+ * True when no action of the password form gets a configuration 503 from `protectAuthRequest` (the form has
+ * sign-up, which sends e-mail, so the e-mail limiter counts, and so does the IP limiter). `authMethods` uses
+ * it to offer the form only when it can answer something else than 503.
+ */
+export function abuseProtectionConfigured(bindings: WorkerBindings): boolean {
+  return (
+    abuseProtectionSetUp(bindings, true) && Boolean(bindings.AUTH_RATE_LIMITER)
+  );
+}
+
 export const protectAuthRequest: AuthAbuseProtector = async (
   request: Request,
   bindings: WorkerBindings,
@@ -313,11 +343,13 @@ export const protectAuthRequest: AuthAbuseProtector = async (
 
   const secret = bindings.TURNSTILE_SECRET_KEY?.trim();
   const baseURL = bindings.BETTER_AUTH_BASE_URL?.trim();
+  // `secret` and `baseURL` are tested again here only to narrow their types for the code below.
   if (
-    bindings.AUTH_ABUSE_PROTECTION_ENABLED !== "true" ||
-    !secret ||
-    !baseURL ||
-    (emailSendingActions.has(action) && !bindings.AUTH_EMAIL_RATE_LIMITER)
+    !(
+      secret &&
+      baseURL &&
+      abuseProtectionSetUp(bindings, emailSendingActions.has(action))
+    )
   ) {
     return jsonError(503, "auth_abuse_protection_unavailable", requestId);
   }

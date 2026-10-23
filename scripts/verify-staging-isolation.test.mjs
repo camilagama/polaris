@@ -268,7 +268,7 @@ describe("the staging isolation check", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     const problem =
-      "web: env.staging: password sign-in in staging needs vars.AUTH_EMAIL_FROM on @araute.app";
+      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags";
     for (const sender of [
       "Polaris <nao-responda@example.com>",
       "nao-responda@evil-araute.app",
@@ -314,7 +314,7 @@ describe("the staging isolation check", () => {
   it("refuses a reply-to of staging outside araute.app", () => {
     const entries = repositoryEntries();
     const problem =
-      "web: env.staging: password sign-in in staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app";
+      "web: env.staging: staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app, whatever the flags";
     for (const replyTo of [
       "ajuda@example.com",
       "ajuda@evil-araute.app",
@@ -329,12 +329,71 @@ describe("the staging isolation check", () => {
     }
   });
 
-  it("does not check the reply-to while the password is off in staging", () => {
+  it("checks the sender and the reply-to whatever the flags say", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    const fromProblem =
+      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags";
+    const replyToProblem =
+      "web: env.staging: staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app, whatever the flags";
+    for (const password of ["true", "false"]) {
+      for (const notices of ["true", "false"]) {
+        staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = password;
+        staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = notices;
+        const label = `password ${password}, notices ${notices}`;
+        staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@araute.app>";
+        setReplyTo(entries, "ajuda@araute.app");
+        expect(findIsolationProblems(entries), label).toEqual([]);
+        staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@example.com>";
+        expect(findIsolationProblems(entries), label).toEqual([fromProblem]);
+        staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@araute.app>";
+        setReplyTo(entries, "ajuda@example.com");
+        expect(findIsolationProblems(entries), label).toEqual([replyToProblem]);
+      }
+    }
+  });
+
+  it("refuses the password off, the notices on and a sender of another domain", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "false";
-    setReplyTo(entries, "ajuda@example.com");
+    staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = "true";
+    staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@example.com>";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
+    ]);
+    staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@araute.app>";
     expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("accepts an empty sender only while the password is off", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.vars.AUTH_EMAIL_FROM = "";
+    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "false";
+    expect(findIsolationProblems(entries)).toEqual([]);
+    staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = "true";
+    expect(findIsolationProblems(entries)).toEqual([]);
+    staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "true";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
+    ]);
+  });
+
+  it("accepts the closure notices flag in staging only as true or false", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("false");
+    for (const value of ["true", "false"]) {
+      staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = value;
+      expect(findIsolationProblems(entries), value).toEqual([]);
+    }
+    for (const value of ["TRUE", "1", "yes", "", " true", undefined]) {
+      staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = value;
+      expect(findIsolationProblems(entries), String(value)).toEqual([
+        'web: env.staging: vars.CLOSURE_NOTICE_EMAIL_ENABLED must be "true" or "false"',
+      ]);
+    }
   });
 
   it("accepts staging with the password off and refuses a value that is neither true nor false", () => {
