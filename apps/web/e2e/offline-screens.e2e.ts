@@ -659,7 +659,9 @@ test.describe("histórico de vendas", () => {
     await page.getByLabel("Rede disponível").uncheck();
 
     await expect(
-      page.getByText("Estas são as vendas mais recentes guardadas neste aparelho")
+      page.getByText(
+        "Estas são as vendas mais recentes guardadas neste aparelho"
+      )
     ).toBeVisible();
     const list = page.getByRole("list", { name: "Vendas" });
     await expect(list.getByRole("listitem")).toHaveCount(3);

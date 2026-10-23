@@ -206,6 +206,7 @@ async function exerciseSalePayment(page: Page) {
 
 /** The files of the sales history and of the sale detail on the new interface: the panels of the detail are still old. */
 const HISTORY_SOURCES = [
+  "src/sales/confirmed-sale-parts.tsx",
   "src/sales/sale-detail-page.tsx",
   "src/sales/sale-history-list.tsx",
   "src/sales/sale-history-page.tsx",

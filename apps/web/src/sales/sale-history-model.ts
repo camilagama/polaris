@@ -260,12 +260,14 @@ function rowCustomerText(sale: SaleListEntryReadModel): string {
   return sale.customerName ?? "Cliente indisponível";
 }
 
+const NAME_SPACES = /\s+/u;
+
 function rowCustomerInitials(sale: SaleListEntryReadModel): string {
-  const initials = Array.from((sale.customerName ?? "").trim())
-    .slice(0, 2)
-    .join("")
-    .toLocaleUpperCase("pt-BR");
-  return initials === "" ? "—" : initials;
+  const words = (sale.customerName ?? "").trim().split(NAME_SPACES);
+  const [first] = words;
+  const last = words.length > 1 ? words.at(-1) : undefined;
+  const letters = [first, last].map((word) => Array.from(word ?? "")[0] ?? "");
+  return letters.join("").toLocaleUpperCase("pt-BR") || "—";
 }
 
 export function historyRows(state: HistoryState): HistoryRow[] {

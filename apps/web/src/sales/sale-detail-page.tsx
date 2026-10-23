@@ -135,11 +135,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
           </Alert>
         ) : null}
         {load.status === "ready" ? (
-          <ReadyDetailTop
-            detail={load.value}
-            refreshing={refreshing}
-            saleId={saleId}
-          />
+          <ReadyDetailTop detail={load.value} refreshing={refreshing} />
         ) : null}
       </div>
       {load.status === "ready" ? (
@@ -199,11 +195,10 @@ function ReturnsHistory({ view }: { view: SaleDetailView }) {
 interface ReadyDetailTopProps {
   detail: SaleDetailReadModel;
   refreshing: boolean;
-  saleId: string;
 }
 
 /** What the detail shows on the new interface: the receipt, the returns made, and the notes about what is offered. */
-function ReadyDetailTop({ detail, refreshing, saleId }: ReadyDetailTopProps) {
+function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
   const view = saleDetailView(detail);
   const offer = cancelOffer(view, refreshing);
   return (
@@ -253,11 +248,6 @@ function ReadyDetailTop({ detail, refreshing, saleId }: ReadyDetailTopProps) {
           Atualizando a venda…
         </p>
       ) : null}
-      <p>
-        <a className={LINK} href={saleCustomerHref(saleId)}>
-          Abrir o ajuste de cliente em uma página própria
-        </a>
-      </p>
     </>
   );
 }
@@ -282,31 +272,40 @@ function ReadyDetailPanels({
   const view = saleDetailView(detail);
   const offer = cancelOffer(view, refreshing);
   return (
-    <div className="sale-page">
-      {view.canReturn ? (
-        <SaleReturnPanel
-          key={view.returnPanelKey}
-          onSaleChanged={onSaleChanged}
-          organizationId={organizationId}
-          rows={view.returnRows}
-          saleId={saleId}
-        />
-      ) : null}
-      {offer === "panel" ? (
-        <SaleCancelPanel
+    <>
+      <div className="sale-page">
+        {view.canReturn ? (
+          <SaleReturnPanel
+            key={view.returnPanelKey}
+            onSaleChanged={onSaleChanged}
+            organizationId={organizationId}
+            rows={view.returnRows}
+            saleId={saleId}
+          />
+        ) : null}
+        {offer === "panel" ? (
+          <SaleCancelPanel
+            key={saleId}
+            onSaleChanged={onSaleChanged}
+            organizationId={organizationId}
+            saleId={saleId}
+          />
+        ) : null}
+        <SaleCustomerPanel
+          headingLevel={2}
           key={saleId}
-          onSaleChanged={onSaleChanged}
           organizationId={organizationId}
           saleId={saleId}
         />
-      ) : null}
-      <SaleCustomerPanel
-        headingLevel={2}
-        key={saleId}
-        organizationId={organizationId}
-        saleId={saleId}
-      />
-    </div>
+      </div>
+      <div className={UI_ROOT} data-ui="">
+        <p>
+          <a className={LINK} href={saleCustomerHref(saleId)}>
+            Abrir o ajuste de cliente em uma página própria
+          </a>
+        </p>
+      </div>
+    </>
   );
 }
 

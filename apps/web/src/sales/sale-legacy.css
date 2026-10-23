@@ -103,6 +103,10 @@
     border-color: color-mix(in srgb, var(--ui-warning) 32%, transparent);
   }
 
+  .sale-empty a {
+    color: var(--ui-accent-strong);
+  }
+
   .sale-link-button {
     display: inline-flex;
     align-items: center;
