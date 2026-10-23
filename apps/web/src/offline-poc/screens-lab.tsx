@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { CategoriesPage } from "../catalog/categories-page";
 import { ProductsPage } from "../catalog/products-page";
 import { PublicCatalogPage } from "../catalog/public-catalog-page";
 import { CustomersPage } from "../customers/customers-page";
@@ -56,6 +57,7 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
+  | "categories"
   | "change-password"
   | "customers"
   | "dashboard"
@@ -70,6 +72,7 @@ type LabScreen =
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
   return screen === "change-password" ||
+    screen === "categories" ||
     screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
@@ -122,6 +125,7 @@ function legalAcceptanceRefusal(): Error {
 }
 
 const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
+  categories: CategoriesPage,
   "change-password": ChangePasswordPage,
   customers: CustomersPage,
   dashboard: DashboardPage,
@@ -295,7 +299,9 @@ export function ScreensLab() {
             <p data-testid="message">{message}</p>
             <SyncStatus
               onlineOnly={
-                screen === "payment-profiles" || screen === "public-catalog"
+                screen === "categories" ||
+                screen === "payment-profiles" ||
+                screen === "public-catalog"
               }
             />
             <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>

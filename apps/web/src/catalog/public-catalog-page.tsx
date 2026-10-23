@@ -9,9 +9,11 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { OnlineOnlyNotice } from "../offline/runtime/online-only-notice";
 import {
   type ProfileFieldError,
   profileFieldError,
@@ -26,8 +28,14 @@ import {
   profileRequest,
   visibilityOf,
 } from "./public-catalog-model";
-import { ProductsCard, ProfileForm, SwitchCard } from "./public-catalog-panels";
-import "./public-catalog-page.css";
+import {
+  PLAN_NOTICE_ID,
+  ProductsCard,
+  ProfileForm,
+  SwitchCard,
+} from "./public-catalog-panels";
+import { LoadErrorNotice } from "./products-page-parts";
+import { ListNotice } from "./screen-parts";
 
 interface LoadedState {
   products: ProductReadModel[];
@@ -243,34 +251,47 @@ export function PublicCatalogPage() {
     [organizationId, run]
   );
 
+  const handleRetry = useCallback(() => {
+    setFeedback(null);
+    load(false).catch(() => undefined);
+  }, [load]);
+
   return (
-    <div className="public-catalog-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Vitrine</p>
-          <h1>Catálogo público</h1>
-          <p className="categories-intro-copy">
-            Mostre produtos a quem não tem conta, num endereço só seu. Só o que
-            você escolher aparece: nome, descrição, fotos e preço de tabela.
-            Custo, estoque e SKU nunca saem.
-          </p>
-        </div>
-      </section>
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <div className="grid gap-1">
+        <h1 className="text-title">Catálogo público</h1>
+        <p className="text-muted-foreground text-support">
+          Mostre produtos a quem não tem conta, num endereço só seu. Só o que
+          você escolher aparece: nome, descrição, fotos e preço de tabela.
+          Custo, estoque e SKU nunca saem.
+        </p>
+      </div>
+      <OnlineOnlyNotice />
       {feedback?.where === "load" && feedback.error ? (
-        <p className="public-catalog-message is-error" role="alert">
-          {feedback.error}
-        </p>
+        <LoadErrorNotice message={feedback.error} onRetry={handleRetry} />
       ) : null}
-      {loading && !loaded ? <p role="status">Carregando…</p> : null}
+      {loading && !loaded ? (
+        <ListNotice>
+          <p className="text-muted-foreground" role="status">
+            Carregando…
+          </p>
+        </ListNotice>
+      ) : null}
       {planBlocks ? (
-        <p className="public-catalog-message is-warning" role="status">
-          O catálogo público faz parte do plano Pro. Você pode ver o que já está
-          guardado, mas só poderá salvar o perfil e escolher produtos quando o
-          plano incluir.
-        </p>
+        <Alert id={PLAN_NOTICE_ID} variant="warning">
+          <AlertTitle>Seu plano não inclui o catálogo público.</AlertTitle>
+          <AlertDescription>
+            O catálogo público faz parte do plano Pro. Você pode ver o que já
+            está guardado, mas só poderá salvar o perfil e escolher produtos
+            quando o plano incluir.
+          </AlertDescription>
+        </Alert>
       ) : null}
       {loaded && setup ? (
-        <div className="public-catalog-workspace">
+        <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
           <ProfileForm
             changed={changed}
             disabled={planBlocks}
@@ -294,14 +315,16 @@ export function PublicCatalogPage() {
             publicOrigin={setup.publicOrigin}
             visibility={visibility}
           />
-          <ProductsCard
-            feedback={feedbackOf(feedback, "products")}
-            onChange={changeProducts}
-            pending={pending}
-            planBlocks={planBlocks}
-            products={loaded.products}
-            shown={shown}
-          />
+          <div className="md:col-span-2">
+            <ProductsCard
+              feedback={feedbackOf(feedback, "products")}
+              onChange={changeProducts}
+              pending={pending}
+              planBlocks={planBlocks}
+              products={loaded.products}
+              shown={shown}
+            />
+          </div>
         </div>
       ) : null}
     </div>

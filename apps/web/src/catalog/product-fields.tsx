@@ -37,19 +37,30 @@ function LabelText({
 interface ProductTextFieldProps extends FieldBaseProps {
   /** Text beside the control, as the "R$" of a price. */
   addon?: string | undefined;
+  /** An address or a handle is typed in lowercase: the keyboard does not capitalize. */
+  autoCapitalize?: "none" | undefined;
+  /** What the browser may fill in; the default is nothing ("off"). */
+  autoComplete?: string | undefined;
   /**
    * The error is drawn by the caller (`<FieldError id="{id}-error">`), not under the field: a field beside a button
    * keeps both on the same line.
    */
   errorOutside?: boolean | undefined;
   inputMode?: ComponentProps<"input">["inputMode"];
+  maxLength?: number | undefined;
   onChange: (value: string) => void;
   placeholder?: string | undefined;
+  /** False for an address or a handle: no red line under what is not a word. */
+  spellCheck?: boolean | undefined;
+  /** The keyboard of a phone or an e-mail; the default is text. */
+  type?: "email" | "tel" | "text" | undefined;
   value: string;
 }
 
 export function ProductTextField({
   addon,
+  autoCapitalize,
+  autoComplete = "off",
   className,
   disabled,
   error,
@@ -58,9 +69,12 @@ export function ProductTextField({
   id,
   inputMode,
   label,
+  maxLength,
   onChange,
   optional,
   placeholder,
+  spellCheck,
+  type,
   value,
 }: ProductTextFieldProps) {
   const handleChange = useCallback(
@@ -77,12 +91,16 @@ export function ProductTextField({
         <InputGroupInput
           aria-describedby={describedBy(id, error, hint)}
           aria-invalid={error ? true : undefined}
-          autoComplete="off"
+          autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
           disabled={disabled}
           id={id}
           inputMode={inputMode}
+          maxLength={maxLength}
           onChange={handleChange}
           placeholder={placeholder}
+          spellCheck={spellCheck}
+          type={type}
           value={value}
         />
       </InputGroup>
@@ -96,6 +114,7 @@ export function ProductTextField({
 }
 
 interface ProductTextAreaFieldProps extends FieldBaseProps {
+  maxLength?: number | undefined;
   onChange: (value: string) => void;
   rows?: number | undefined;
   value: string;
@@ -108,6 +127,7 @@ export function ProductTextAreaField({
   hint,
   id,
   label,
+  maxLength,
   onChange,
   optional,
   rows = 3,
@@ -127,6 +147,7 @@ export function ProductTextAreaField({
         aria-invalid={error ? true : undefined}
         disabled={disabled}
         id={id}
+        maxLength={maxLength}
         onChange={handleChange}
         rows={rows}
         value={value}

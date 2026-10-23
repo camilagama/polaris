@@ -274,11 +274,11 @@ async function registerCustomer(browser: Browser, name: string, phone: string) {
 
 const cardState = (browser: Browser, name: string) =>
   browser.execute((customer) => {
-    const card = [...document.querySelectorAll(".customer-card")].find(
+    const card = [...document.querySelectorAll("[data-customer-id]")].find(
       (candidate) => candidate.textContent?.includes(customer)
     );
     return card
-      ? (card.querySelector(".customer-sync-state")?.textContent?.trim() ?? "")
+      ? (card.querySelector("[data-sync-state]")?.textContent?.trim() ?? "")
       : null;
   }, name);
 
@@ -420,11 +420,11 @@ async function customersFlow(
     "Conferir: tudo sincronizado e a edição liberada",
     async () => {
       await waitForText(browser, "Tudo sincronizado");
-      const enabled = await (
-        await browser.$("button[aria-label='Editar cliente Bia Souza']")
-      ).isEnabled();
-      if (!enabled) {
-        throw new Error("o botão de editar continua desabilitado");
+      // the actions of a customer are in the menu of its row
+      await click(browser, "button[aria-label='Mais ações para Bia Souza']");
+      const edit = await browser.$("[role='menuitem']*=Editar");
+      if ((await edit.getAttribute("aria-disabled")) === "true") {
+        throw new Error("o item de editar continua desabilitado");
       }
     }
   );
