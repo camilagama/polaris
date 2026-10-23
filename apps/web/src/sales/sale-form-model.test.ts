@@ -724,7 +724,7 @@ describe("loading and empty states", () => {
       "Não foi possível carregar produtos."
     );
     expect(loadErrorMessage({ code: "FORBIDDEN" }, "o estoque")).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(loadErrorMessage(new Error("x"), "produtos")).toBe(
       "Não foi possível carregar produtos. Tente novamente."

@@ -62,11 +62,11 @@ function conflictMessage(action: ExpenseAction): string {
 function notFoundMessage(action: ExpenseAction): string {
   const subject = subjectOf(action);
   if (subject === "category") {
-    return "A categoria não existe mais nesta organização.";
+    return "A categoria não existe mais nesta loja.";
   }
   return subject === "rule"
-    ? "A despesa recorrente não existe mais nesta organização."
-    : "A despesa não existe mais nesta organização.";
+    ? "A despesa recorrente não existe mais nesta loja."
+    : "A despesa não existe mais nesta loja.";
 }
 
 function fallbackMessage(action: ExpenseAction): string {
@@ -119,7 +119,7 @@ export function expenseErrorMessage(
     return unauthorizedText(action);
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (code === "BAD_REQUEST") {
     return badRequestMessage(action) ?? fallbackMessage(action);

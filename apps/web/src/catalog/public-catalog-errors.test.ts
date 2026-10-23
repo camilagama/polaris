@@ -54,7 +54,7 @@ describe("publicCatalogErrorMessage", () => {
       "Não foi possível concluir a operação. Tente novamente."
     );
     expect(publicCatalogErrorMessage(rpcError("FORBIDDEN"), "load")).toContain(
-      "não pode gerir"
+      "não pode mexer"
     );
     expect(publicCatalogErrorMessage(rpcError("UNAUTHORIZED"), "load")).toBe(
       "Não foi possível carregar o catálogo público."

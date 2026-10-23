@@ -1,3 +1,5 @@
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { offlineCopyNotice } from "./dashboard-model";
 
 interface OfflineCopyNoticeProps {
@@ -25,9 +27,13 @@ export function OfflineCopyNotice({
     waitingOperations
   );
   return (
-    <div className="categories-message is-warning" role="status">
-      <p className="dashboard-copy-notice">{summary}</p>
-      {pending ? <p className="dashboard-copy-notice">{pending}</p> : null}
-    </div>
+    <Alert variant="warning">
+      <CloudOffIcon aria-hidden="true" />
+      <AlertTitle>Não foi possível falar com o servidor.</AlertTitle>
+      <AlertDescription>
+        <p>{summary}</p>
+        {pending ? <p>{pending}</p> : null}
+      </AlertDescription>
+    </Alert>
   );
 }

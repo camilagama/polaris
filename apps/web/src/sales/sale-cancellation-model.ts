@@ -157,7 +157,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "sale_not_found",
     {
       message:
-        "Esta venda não foi encontrada nesta organização. Confira o identificador da venda.",
+        "Esta venda não foi encontrada nesta loja. Confira o identificador da venda.",
     },
   ],
   [
@@ -193,7 +193,7 @@ function genericOperationFailure(code: string | undefined): OperationFailure {
       return operationFailure("A alteração da venda não foi feita.");
     case "FORBIDDEN":
       return operationFailure(
-        "Sua conta não tem acesso a esta organização ou ação."
+        "Sua conta não tem acesso a esta loja ou a esta ação."
       );
     case "BAD_REQUEST":
       return operationFailure(
@@ -201,7 +201,7 @@ function genericOperationFailure(code: string | undefined): OperationFailure {
       );
     case "NOT_FOUND":
       return operationFailure(
-        "A venda não existe nesta organização. Atualize os dados e tente de novo.",
+        "A venda não existe nesta loja. Atualize os dados e tente de novo.",
         { reloadDetail: true }
       );
     default:

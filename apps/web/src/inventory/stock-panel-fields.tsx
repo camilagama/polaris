@@ -223,7 +223,7 @@ export function EditFields({
       ) : null}
       <TextField
         error={errors.occurredOn}
-        hint="Dia do movimento, no calendário da organização."
+        hint="Dia do movimento, no horário da loja."
         id={id("occurredOn")}
         label="Data"
         onChange={handleDate}

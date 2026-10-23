@@ -257,10 +257,10 @@ export function organizationLoadErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   // the session notice says the rest; here only what did not happen
   if (code === "UNAUTHORIZED") {
-    return "Não foi possível carregar suas organizações.";
+    return "Não foi possível carregar suas lojas.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O Polaris está temporariamente indisponível. Tente novamente.";
   }
-  return "Não foi possível carregar suas organizações. Verifique a conexão e tente novamente.";
+  return "Não foi possível carregar suas lojas. Verifique a conexão e tente novamente.";
 }

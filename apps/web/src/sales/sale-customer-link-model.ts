@@ -190,7 +190,7 @@ export function linkLoadFailed(
 ): LinkPanelState {
   const message =
     rpcErrorReason(error) === "sale_not_found"
-      ? "Esta venda não foi encontrada nesta organização. Confira o identificador da venda."
+      ? "Esta venda não foi encontrada nesta loja. Confira o identificador da venda."
       : loadErrorMessage(error, "o cliente da venda");
   return { ...state, link: { message, status: "error" } };
 }
@@ -448,7 +448,7 @@ const reasonFailures = new Map<string, Omit<LinkFailure, "reason">>([
     "customer_not_found",
     {
       message:
-        "O cliente escolhido não existe mais nesta organização. Atualizamos a lista; escolha outro cliente.",
+        "O cliente escolhido não existe mais nesta loja. Atualizamos a lista; escolha outro cliente.",
       reloadCustomers: true,
       reloadLink: false,
     },
@@ -457,7 +457,7 @@ const reasonFailures = new Map<string, Omit<LinkFailure, "reason">>([
     "sale_not_found",
     {
       message:
-        "Esta venda não foi encontrada nesta organização. Confira o identificador da venda.",
+        "Esta venda não foi encontrada nesta loja. Confira o identificador da venda.",
       reloadCustomers: false,
       reloadLink: false,
     },
@@ -496,7 +496,7 @@ function codeFailure(code: string | undefined): Omit<LinkFailure, "reason"> {
     case "FORBIDDEN":
       return {
         ...plain,
-        message: "Sua conta não tem acesso a esta organização ou ação.",
+        message: "Sua conta não tem acesso a esta loja ou a esta ação.",
       };
     case "BAD_REQUEST":
       return {
@@ -508,7 +508,7 @@ function codeFailure(code: string | undefined): Omit<LinkFailure, "reason"> {
       return {
         ...plain,
         message:
-          "A venda ou o cliente não existe nesta organização. Atualize os dados e tente de novo.",
+          "A venda ou o cliente não existe nesta loja. Atualize os dados e tente de novo.",
         reloadCustomers: true,
         reloadLink: true,
       };

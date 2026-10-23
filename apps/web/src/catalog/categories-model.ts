@@ -69,10 +69,10 @@ export function categoryErrorMessage(
       : "A categoria não foi alterada.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (code === "CONFLICT" && (action === "create" || action === "rename")) {
-    return "Já existe uma categoria com esse nome nesta organização.";
+    return "Já existe uma categoria com esse nome nesta loja.";
   }
   if (code === "CONFLICT" && action === "restore") {
     return "Categorias removidas não podem ser restauradas.";
@@ -84,7 +84,7 @@ export function categoryErrorMessage(
     return "O estado da categoria mudou. Atualize a lista e tente novamente.";
   }
   if (code === "NOT_FOUND") {
-    return "A categoria não existe mais nesta organização.";
+    return "A categoria não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O catálogo está temporariamente indisponível. Tente novamente.";

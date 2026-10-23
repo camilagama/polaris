@@ -189,19 +189,19 @@ describe("mensagens de erro das variantes", () => {
       "Não foi possível carregar as variantes"
     );
     expect(variantErrorMessage(error)).not.toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
   });
 
   it("cada código tem a sua frase", () => {
     expect(variantErrorMessage(refusal("FORBIDDEN"))).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(variantErrorMessage(refusal("BAD_REQUEST"))).toBe(
       "Revise os valores e as combinações informadas."
     );
     expect(variantErrorMessage(refusal("NOT_FOUND"))).toBe(
-      "O produto não existe mais nesta organização."
+      "O produto não existe mais nesta loja."
     );
     expect(variantErrorMessage(refusal("CONFLICT"))).toContain(
       "Atualize a lista"

@@ -570,7 +570,7 @@ export class OfflineRuntime {
     return {
       label: options.stoppedRuntime
         ? item.organizationId
-        : `${item.organizationId} (outra organização)`,
+        : `${item.organizationId} (outra loja)`,
       outbox: stores.outbox,
       purge: async (purgeOptions) => {
         await release();

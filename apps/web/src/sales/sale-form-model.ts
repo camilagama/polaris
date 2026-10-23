@@ -541,7 +541,7 @@ export function loadErrorMessage(error: unknown, subject: string): string {
     return `Não foi possível carregar ${subject}.`;
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   return `Não foi possível carregar ${subject}. Tente novamente.`;
 }
@@ -1713,7 +1713,7 @@ interface ReasonOutcome {
 }
 
 const variantGoneMessage =
-  "Uma das variantes não existe mais nesta organização. Remova a linha, atualize os dados e revise a venda.";
+  "Uma das variantes não existe mais nesta loja. Remova a linha, atualize os dados e revise a venda.";
 
 const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
@@ -1751,7 +1751,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "product_not_found",
     {
       message:
-        "Um dos produtos não existe mais nesta organização. Remova a linha, atualize os dados e revise a venda.",
+        "Um dos produtos não existe mais nesta loja. Remova a linha, atualize os dados e revise a venda.",
       refreshData: true,
     },
   ],
@@ -1879,7 +1879,7 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
     case "FORBIDDEN":
       return failure(
         "forbidden",
-        "Sua conta não tem permissão para registrar vendas nesta organização."
+        "Sua conta não tem permissão para registrar vendas nesta loja."
       );
     case "BAD_REQUEST":
       return failure(
@@ -1889,7 +1889,7 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
     case "NOT_FOUND":
       return failure(
         "not_found",
-        "Um produto, uma variante ou o perfil de pagamento desta venda não existe mais nesta organização. Atualize os dados e revise a venda.",
+        "Um produto, uma variante ou o perfil de pagamento desta venda não existe mais nesta loja. Atualize os dados e revise a venda.",
         { refreshData: true }
       );
     case "CONFLICT":

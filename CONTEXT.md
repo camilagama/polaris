@@ -7,7 +7,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Usuário (user):** pessoa que possui uma identidade autenticada no Polaris.<br>
 **Evitar:** conta, quando o assunto for a pessoa autenticada.
 
-**Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor.<br>
+**Organização (organization):** unidade operacional que possui o catálogo, o estoque, as vendas e os registros do revendedor. Na interface, organização se chama **loja**: o lojista nunca lê "organização".<br>
 **Estado da organização (organization status):** `active` e `suspended` (operacionais) e `closing`, `closed`, `purge_pending` e `purged` (o encerramento); não representa o estado de billing.<br>
 **Encerramento (closure) e janela de recuperação:** o dono encerra a organização digitando o nome; o acesso acaba na hora e, por 30 dias (`closing`), ele pode desfazer; o purge só vem 90 dias depois do pedido de encerramento. Distinto da suspensão (medida da plataforma) e da exclusão física (purge).<br>
 **Data D (data a partir da qual os dados podem ser apagados):** 90 dias de calendário depois do pedido de encerramento, a partir do primeiro instante do dia local no fuso da organização. Até ela o dono pode pedir a cópia; a partir dela o purge pode apagar os dados ([ADR 0081](docs/adr/0081-purge-completo-da-organizacao-encerrada.md)).<br>

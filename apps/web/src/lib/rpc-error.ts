@@ -103,7 +103,7 @@ export function readErrorMessage(error: unknown, subject: string): string {
     return unaccepted;
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (isConnectionFailure(error)) {
     return `Não foi possível carregar ${subject}: a conexão falhou. Tente novamente.`;

@@ -51,13 +51,14 @@
 @source "../offline-poc/screens-lab-shell-pieces.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
-/* The expenses screen (v5.1): the page, the form, the list, the two closed sections and the month picker; the old
-   "feedback-message" stays out (Resultado, still old, uses it). */
+/* The expenses screen (v5.1): the page, the form, the list, the two closed sections and the month picker. */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,collapsible-section,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
    attention page are in the list of the pieces above). */
 @source "../offline/attention-panel.tsx";
 @source "../offline/runtime/{devices-page,device-item}.tsx";
+/* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
+@source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,result-cards,result-chain,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The sales history and the sale detail (v5.1): their files; the return, cancellation and customer panels, and the
    form of the sale identifier, are still old (they migrate in the next pull request). */
 @source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";

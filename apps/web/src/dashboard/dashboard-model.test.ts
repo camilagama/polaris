@@ -3,6 +3,7 @@ import { monthBounds, shiftMonth } from "../expenses/expense-model";
 import {
   chainRows,
   EMPTY_VALUE,
+  formatLastConfirmed,
   formatMoneyOrDash,
   formatPercentOrDash,
   formatUpdatedUntil,
@@ -109,6 +110,14 @@ describe("formatUpdatedUntil", () => {
   });
 });
 
+describe("formatLastConfirmed", () => {
+  it("says the date and time of the copy the device kept, in the organization's zone", () => {
+    expect(
+      formatLastConfirmed("2026-10-14T15:30:00.000Z", "America/Sao_Paulo")
+    ).toBe("Último resultado confirmado: 14/10/2026 12:30");
+  });
+});
+
 describe("offlineCopyNotice", () => {
   const readAt = "2026-10-14T15:30:00.000Z";
 
@@ -116,7 +125,7 @@ describe("offlineCopyNotice", () => {
     expect(offlineCopyNotice(readAt, "America/Sao_Paulo", 0)).toEqual({
       pending: null,
       summary:
-        "Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de 14/10/2026 às 12:30. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.",
+        "Mostrando o último resultado confirmado, de 14/10/2026 às 12:30. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.",
     });
   });
 

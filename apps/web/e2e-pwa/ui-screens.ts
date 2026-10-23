@@ -18,6 +18,7 @@ import {
 import { passwordStates } from "./ui-password-states";
 import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
+import { resultStates } from "./ui-result-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
 
@@ -283,7 +284,7 @@ async function exerciseSalePayment(page: Page) {
   );
 }
 
-/** The files of the expenses screen on the new interface (the old "feedback-message" is Resultado's, still old). */
+/** The files of the expenses screen on the new interface (the month picker is also Resultado's). */
 const EXPENSE_SOURCES = [
   "src/expenses/collapsible-section.tsx",
   "src/expenses/expense-categories-panel.tsx",
@@ -313,6 +314,47 @@ async function exerciseExpenseCategoryFilter(page: Page) {
   await openAndClose(
     page,
     { name: "Categoria", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
+/** The files of Resultado and Metas on the new interface (the month picker is Despesas'). */
+const RESULT_SOURCES = [
+  "src/dashboard/dashboard-page.tsx",
+  "src/dashboard/goal-card.tsx",
+  "src/dashboard/goal-form.tsx",
+  "src/dashboard/goal-history.tsx",
+  "src/dashboard/goals-panel.tsx",
+  "src/dashboard/offline-copy-notice.tsx",
+  "src/dashboard/quality-banner.tsx",
+  "src/dashboard/result-cards.tsx",
+  "src/dashboard/result-chain.tsx",
+];
+
+/** One state of Resultado and Metas (`ui-result-states.ts`). */
+const resultScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `resultado ${name}`,
+  open,
+  sourceDirs: RESULT_SOURCES,
+  status: "migrated",
+});
+
+/** The select of the indicator and the dialog that asks before cancelling a goal. */
+async function exerciseGoalOverlays(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Cancelar meta Outubro forte", role: "button" },
+    { role: "dialog" }
+  );
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  await openAndClose(
+    page,
+    { name: "Indicador", role: "combobox" },
     { role: "listbox" }
   );
 }
@@ -670,6 +712,14 @@ export const SCREENS: UiScreen[] = [
   expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
+  resultScreen(
+    "mês incompleto e metas",
+    resultStates.list,
+    exerciseGoalOverlays
+  ),
+  resultScreen("sem dados", resultStates.empty),
+  resultScreen("nova meta com erro", resultStates.newGoalErrors),
+  resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),
   historyScreen("sem conexão", historyStates.offline),
   historyScreen("período invertido", historyStates.periodError),

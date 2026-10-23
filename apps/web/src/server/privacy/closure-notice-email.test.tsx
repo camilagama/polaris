@@ -128,7 +128,7 @@ describe("the content of a closure notice", () => {
     ] as const) {
       const body = bodyOf(notice({ dueAt, milestone }));
       expect(body).toContain(
-        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua organização)."
+        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua loja)."
       );
       expect(body).not.toContain("terminou");
     }
@@ -149,7 +149,7 @@ describe("the content of a closure notice", () => {
     ]) {
       const body = bodyOf(delivery);
       expect(body).toContain(
-        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua organização)."
+        "Se quiser guardar uma cópia dos dados, peça pelo painel até 18 de janeiro de 2027, 00:00 (horário da sua loja)."
       );
       expect(body).not.toContain("terminou");
     }
@@ -192,7 +192,7 @@ describe("the content of a closure notice", () => {
     for (const delivery of over) {
       const body = bodyOf(delivery);
       expect(body).toContain(
-        "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00 (horário da sua organização). Depois de apagados, os dados não podem ser recuperados."
+        "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00 (horário da sua loja). Depois de apagados, os dados não podem ser recuperados."
       );
       expect(body).not.toContain("peça pelo painel até");
       expect(body.split("Depois de apagados").length).toBe(2);

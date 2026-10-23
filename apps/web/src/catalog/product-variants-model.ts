@@ -151,13 +151,13 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
     return "Não foi possível carregar ou salvar as variantes.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (code === "BAD_REQUEST") {
     return "Revise os valores e as combinações informadas.";
   }
   if (code === "NOT_FOUND") {
-    return "O produto não existe mais nesta organização.";
+    return "O produto não existe mais nesta loja.";
   }
   if (code === "CONFLICT") {
     return "O produto mudou ou as variantes já foram configuradas. Atualize a lista.";
