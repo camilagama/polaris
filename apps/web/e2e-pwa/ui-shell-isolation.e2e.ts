@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { mediaListBody, solidPng } from "../e2e/media-fixtures";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { resultAnswers } from "./ui-result-states";
@@ -29,8 +30,8 @@ const ORGANIZATION = {
 const WRITE_OFF_SHIRT = /^Baixar estoque de Camiseta/;
 const json = (body: unknown) => ({
   body: JSON.stringify(body),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const RPC_PREFIX = /^.*\/rpc\//;
@@ -40,11 +41,12 @@ const RPC_PREFIX = /^.*\/rpc\//;
  * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
  * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
  * (135 and 156 on "Produtos" and "Venda"), and 57 on the first access, the acceptance and the legal texts after t239 deleted
- * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css. The floor is below the measured minimum so that one more sheet leaving the
+ * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css, and 30 after t256 took the rules
+ * with no user (the category tabs and badges, the messages, `.field-*`) out of ui.css and the images panel went to src/ui. The floor is below the measured minimum so that one more sheet leaving the
  * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
  * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
  */
-const LEGACY_RULES_FLOOR = 40;
+const LEGACY_RULES_FLOOR = 20;
 
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
@@ -245,6 +247,98 @@ const PRODUCTS_SCREENS = [
         await page.getByRole("menuitem", { name: "Variantes" }).click();
         await expect(
           page.getByRole("heading", { level: 3, name: "SKU das variantes" })
+        ).toBeVisible();
+      }),
+  },
+];
+
+/** The images panel of a product (v5.1) inside the real shell: the list answered here, two images and the variants to tie one to. */
+const MEDIA_VARIANTS = {
+  ...VARIANTS,
+  configured: true,
+  variants: [
+    ...VARIANTS.variants,
+    ...[1, 2].map((n) => ({
+      id: id(60 + n),
+      isDefault: false,
+      listPrice: "50.00",
+      sku: null,
+      values: [
+        {
+          optionName: "color",
+          optionValueId: id(40 + n),
+          optionValueName: n === 1 ? "Azul" : "Preta",
+        },
+      ],
+    })),
+  ],
+};
+
+const serveMedia = async (page: Page) => {
+  await page.route("**/api/media/**", (route) =>
+    route.fulfill({
+      body: solidPng(96, 96, [150, 160, 170]),
+      contentType: "image/png",
+    })
+  );
+  await page.route("**/api/products/*/media**", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill(json(JSON.parse(mediaListBody(2))))
+      : route.abort("internetdisconnected")
+  );
+};
+
+const openMediaPanel = (
+  page: Page,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/products",
+    async () => {
+      await expect(
+        page.getByRole("heading", { exact: true, name: "Produtos" })
+      ).toBeVisible();
+      await openMenu(page).click();
+      await page.getByRole("menuitem", { name: "Imagens" }).click();
+      await expect(
+        page.getByRole("heading", { level: 3, name: "Imagens associadas" })
+      ).toBeVisible();
+      await expect(
+        page.getByRole("img", { name: "Camiseta do teste, imagem 2" })
+      ).toBeVisible();
+      await then(page);
+    },
+    {
+      "category/list": { categories: [] },
+      "product/getVariants": MEDIA_VARIANTS,
+      "product/list": { products: PRODUCTS },
+    },
+    serveMedia
+  );
+
+const CROP_AREA = /^Área de recorte/;
+
+const MEDIA_SCREENS = [
+  {
+    name: "Produtos no shell: painel de imagens, remoção pedindo confirmação",
+    open: (page: Page) =>
+      openMediaPanel(page, async () => {
+        await page.getByRole("button", { name: "Remover imagem 2" }).click();
+        await expect(page.getByRole("alertdialog")).toBeVisible();
+      }),
+  },
+  {
+    name: "Produtos no shell: painel de imagens, imagem escolhida e recorte",
+    open: (page: Page) =>
+      openMediaPanel(page, async () => {
+        await page.getByLabel("Escolher imagem").setInputFiles({
+          buffer: solidPng(480, 320),
+          mimeType: "image/png",
+          name: "foto.png",
+        });
+        await expect(
+          page.getByRole("button", { name: CROP_AREA })
         ).toBeVisible();
       }),
   },
@@ -781,6 +875,7 @@ const DEVICES = [
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
+  ...MEDIA_SCREENS,
   ...LOT2_SCREENS,
   HISTORY,
   SALE_DETAIL,
