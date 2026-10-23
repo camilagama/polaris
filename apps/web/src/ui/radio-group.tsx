@@ -11,7 +11,7 @@ function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
   return (
     <RadioGroupPrimitive
       className={cn(
-        "group/radio-group grid w-full gap-3 rounded-lg aria-invalid:outline-2 aria-invalid:outline-destructive/50 aria-invalid:outline-offset-4",
+        "group/radio-group grid w-full gap-3 rounded-lg aria-invalid:outline-2 aria-invalid:outline-destructive/50 aria-invalid:outline-offset-2",
         className
       )}
       data-slot="radio-group"

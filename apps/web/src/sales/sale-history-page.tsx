@@ -7,7 +7,7 @@ import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { PendingSalesCard } from "./offline-sale-panels";
+import { SavedSalesCard } from "./offline-sale-panels";
 import { HistoryFiltersBar } from "./sale-history-filters";
 import { SaleHistoryList } from "./sale-history-list";
 import { historyView, loadMoreView } from "./sale-history-model";
@@ -77,7 +77,7 @@ export function SaleHistoryPage() {
         </p>
       </header>
       {offline ? <OfflineHistoryNotice /> : null}
-      {workspace ? <PendingSalesCard workspace={workspace} /> : null}
+      <SavedSalesCard workspace={workspace} />
       <HistoryFiltersBar
         filters={filters}
         offline={offline}

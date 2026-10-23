@@ -39,7 +39,7 @@ function FieldLegend({
 }
 
 const fieldVariants = cva(
-  "group/field flex w-full gap-1.5 data-[invalid=true]:text-destructive",
+  "group/field flex w-full gap-1.5 data-[invalid=true]:text-foreground",
   {
     defaultVariants: {
       orientation: "vertical",

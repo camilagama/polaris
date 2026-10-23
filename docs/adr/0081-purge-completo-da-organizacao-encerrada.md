@@ -1,5 +1,5 @@
 ---
-status: proposto
+status: accepted
 ---
 
 # Purge completo da organização encerrada

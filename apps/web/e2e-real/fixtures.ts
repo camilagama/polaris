@@ -244,9 +244,8 @@ export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
         });
       }
       const addresses = await Promise.all(rpcAddresses.splice(0));
-      await Promise.all(
-        openContexts.splice(0).map((context) => context.close())
-      );
+      const contexts = openContexts.splice(0);
+      await Promise.all(contexts.map((context) => context.close()));
       if (testInfo.status === testInfo.expectedStatus) {
         const failures = addresses.filter(
           (address) => address !== null && "failure" in address
@@ -258,11 +257,14 @@ export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
         const read = addresses.filter(
           (address) => address !== null && "sent" in address
         );
-        // a journey that read none would pass the address check without checking anything
-        playwrightExpect(
-          read.length,
-          "at least one /rpc/ address of the browser was read"
-        ).toBeGreaterThan(0);
+        // a journey that read none would pass the address check without checking anything; a test that opened no
+        // browser context (the `pilha` project, over `request` and `rpcClient`) has no address to read
+        if (contexts.length > 0) {
+          playwrightExpect(
+            read.length,
+            "at least one /rpc/ address of the browser was read"
+          ).toBeGreaterThan(0);
+        }
         playwrightExpect(
           read.filter((address) => address.sent !== address.clientIp),
           "every /rpc/ of the browser carries the journey's client address"

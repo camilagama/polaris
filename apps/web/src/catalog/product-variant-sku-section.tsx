@@ -2,7 +2,14 @@ import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
-import { type FormEvent, useCallback, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
@@ -49,7 +56,14 @@ function SkuRow({
   variant,
 }: SkuRowProps) {
   const [sku, setSku] = useState(variant.sku ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
   useReportUnsentWork(sku !== (variant.sku ?? ""));
+  // the refused SKU is said at this field, and the focus goes to it (the row is disabled while the save is in flight)
+  useEffect(() => {
+    if (error) {
+      focusLater(() => inputRef.current?.focus());
+    }
+  }, [error]);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -85,7 +99,8 @@ function SkuRow({
         error={error}
         errorOutside
         id={`product-variant-sku-${variant.id}`}
-        label={`SKU — ${label}`}
+        inputRef={inputRef}
+        label={`SKU · ${label}`}
         onChange={handleChange}
         value={sku}
       />

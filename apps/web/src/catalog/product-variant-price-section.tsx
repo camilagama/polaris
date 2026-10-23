@@ -110,9 +110,9 @@ function PriceRow({
         errorOutside
         id={`product-variant-price-${variant.id}`}
         inputMode="decimal"
-        label={`Preço de tabela — ${label}`}
+        label={`Preço de tabela · ${label}`}
         onChange={handleChange}
-        placeholder="Sem preço de tabela"
+        placeholder="Ex.: 49,90"
         value={text}
       />
     </VariantFieldRow>

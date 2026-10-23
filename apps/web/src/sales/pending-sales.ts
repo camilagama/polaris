@@ -16,12 +16,18 @@ export const pendingStateLabels: Record<PendingSale["state"], string> = {
 };
 
 /** The sales this device still holds for the server, read again after any sync or change. */
-export function usePendingSales(workspace: LocalWorkspace): PendingSale[] {
+export function usePendingSales(
+  workspace: LocalWorkspace | null
+): PendingSale[] {
   const [sales, setSales] = useState<PendingSale[]>([]);
-  const { outbox } = workspace.stores;
-  const { dataVersion } = workspace;
+  const outbox = workspace?.stores.outbox;
+  const dataVersion = workspace?.dataVersion ?? 0;
 
   useEffect(() => {
+    if (!outbox) {
+      setSales([]);
+      return;
+    }
     let current = true;
     // dataVersion re-reads the queue after any sync or change
     pendingSales(outbox)

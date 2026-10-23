@@ -13,7 +13,7 @@ const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 
 const SHIRT_OPTION = /Camiseta do teste/;
 const JEANS_OPTION = /Calça jeans/;
-const LAB_SHIRT_OPTION = /Camiseta do laboratório — Azul/;
+const LAB_SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const PROFILE_OPTION = /Maquininha do balcão/;
 const CONFIRMED_REGION = /Venda confirmada/;
 const SUBMIT_NAME =

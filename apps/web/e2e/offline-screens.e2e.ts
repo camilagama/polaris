@@ -3,8 +3,9 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
-const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
-const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
+const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
+const SHIRT_WITH_THREE = /Camiseta do laboratório · Azul.*Saldo 3/;
+const MONEY = /R\$\s*[\d.]+,\d{2}/;
 
 async function openLab(
   page: Page,
@@ -418,9 +419,19 @@ test.describe("venda", () => {
         .filter({ hasText: "Venda guardada neste aparelho" })
     ).toBeVisible();
     await expect(
-      page.getByText("Vendas neste aparelho aguardando o servidor")
+      page.getByText("Vendas guardadas neste aparelho")
     ).toBeVisible();
     await expect(page.getByText("Aguardando envio")).toBeVisible();
+    // one card, one line: when, how many items, how much (P-3)
+    const saved = page.getByRole("region", {
+      name: "Vendas guardadas neste aparelho",
+    });
+    await expect(saved.getByRole("listitem")).toHaveCount(1);
+    await expect(saved.getByRole("listitem")).toContainText(MONEY);
+    await expect(saved.getByRole("listitem")).toContainText("1 item");
+    await expect(
+      page.getByText("Venda guardada neste aparelho.")
+    ).toBeVisible();
     await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
     await expect(page.getByTestId("server-records")).toHaveText("0");
 
@@ -436,14 +447,49 @@ test.describe("venda", () => {
     await expect(page.getByTestId("server-records")).toHaveText("1", {
       timeout: 20_000,
     });
-    await expect(
-      page.getByText("Vendas neste aparelho aguardando o servidor")
-    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText("Vendas guardadas neste aparelho")).toHaveCount(
+      0,
+      { timeout: 20_000 }
+    );
     // back online the form is the online one again
     await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Confirmar venda" })
     ).toBeVisible();
+  });
+
+  test("com duas vendas guardadas, a mais nova vem primeiro e destacada, e cada linha diz o valor", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 1);
+    await keepSale(page).click();
+    await expect(
+      page.getByText("Venda guardada neste aparelho.")
+    ).toBeVisible();
+    await fillShirtSale(page, 3);
+    await keepSale(page).click();
+
+    const saved = page.getByRole("region", {
+      name: "Vendas guardadas neste aparelho",
+    });
+    const lines = saved.getByRole("listitem");
+    await expect(lines).toHaveCount(2);
+    // the one kept just now is the first, and the only one that speaks as a status
+    await expect(lines.first()).toContainText("Venda guardada neste aparelho.");
+    await expect(lines.first()).toContainText(MONEY);
+    await expect(lines.nth(1)).toContainText(MONEY);
+    await expect(lines.nth(1)).not.toContainText("Venda guardada");
+    await expect(saved.getByRole("status")).toHaveCount(1);
+    // the supporting texts are said once
+    await expect(page.getByText("Acompanhar em Pendências")).toHaveCount(1);
+    await expect(
+      page.getByText("O formulário abaixo foi reiniciado")
+    ).toHaveCount(1);
+    await expect(chip(page)).toContainText(
+      "Sem conexão · 2 operações guardadas"
+    );
   });
 
   test("sem rede, avisa quando o estoque do aparelho não cobre, guarda mesmo assim, e a recusa do servidor fica à vista", async ({
@@ -503,7 +549,7 @@ test.describe("estoque", () => {
     await expect(
       page.getByText("O saldo é o do aparelho, com o que está na fila.")
     ).toBeVisible();
-    await expect(shirtRow(page)).toContainText("Com conexão");
+    await expect(shirtRow(page)).toContainText("Só com conexão");
     await expect(rowBalance(shirtRow(page))).toContainText("5");
 
     await page
@@ -614,6 +660,18 @@ test.describe("venda sem resposta do servidor", () => {
     await expect(
       page.getByText("Sem resposta do servidor, a venda pode ser guardada")
     ).toBeVisible();
+    // the safe retry is the button below the notice; the notice points at it and ends with the discard (P-13)
+    const notice = page.getByRole("alert").filter({
+      has: page.getByRole("button", {
+        name: "Guardar esta venda neste aparelho",
+      }),
+    });
+    await expect(
+      notice.getByText("toque em “Tentar novamente (seguro)”")
+    ).toBeVisible();
+    await expect(notice.getByRole("button").last()).toHaveText(
+      "Descartar esta venda e começar outra"
+    );
     // locked: nothing of the sale can change (Base UI's radio and checkbox are <span>s, which the
     // <fieldset disabled> alone would not turn off)
     for (const control of [
@@ -888,7 +946,7 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
     // the item and its quantity are still on the form, nothing was sent or queued
     await expect(
       page.getByRole("group", { exact: true, name: "Item 1" })
-    ).toContainText("Camiseta do laboratório — Azul");
+    ).toContainText("Camiseta do laboratório · Azul");
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
     await expect(page.getByTestId("server-records")).toHaveText("0");
     expect(new URL(page.url()).pathname).toBe("/offline-screens-lab");

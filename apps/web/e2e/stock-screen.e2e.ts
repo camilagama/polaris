@@ -244,6 +244,53 @@ test("a 320 px nada transborda: a lista, o painel aberto e a revisão", async ({
   await sideways();
 });
 
+test("sem resposta do servidor, o botão seguro vem primeiro e o descarte vem por último, de contorno (P-13)", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await page.route("**/rpc/inventory/receiveStock", (route) =>
+    route.abort("failed")
+  );
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await page.getByLabel("Quantidade recebida").fill("10");
+  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+
+  const retry = page.getByRole("button", { name: "Tentar novamente (seguro)" });
+  const discard = page.getByRole("button", {
+    name: "Descartar esta tentativa",
+  });
+  await expect(retry).toBeVisible();
+  await expect(discard).toBeVisible();
+  // the discard is not in the notice any more: it is in the row of actions, after the safe retry
+  await expect(
+    page.getByRole("alert").getByRole("button", { name: "Descartar" })
+  ).toHaveCount(0);
+  const buttons = await page
+    .locator("form")
+    .getByRole("button")
+    .allInnerTexts();
+  const retryAt = buttons.indexOf("Tentar novamente (seguro)");
+  expect(retryAt).toBeGreaterThanOrEqual(0);
+  expect(buttons.indexOf("Descartar esta tentativa")).toBeGreaterThan(retryAt);
+  expect(buttons.at(-1)).toBe("Descartar esta tentativa");
+  // an outline button, not the ink of the safe one
+  expect(
+    await retry.evaluate((node) => getComputedStyle(node).backgroundColor)
+  ).not.toBe(
+    await discard.evaluate((node) => getComputedStyle(node).backgroundColor)
+  );
+
+  // the discard still asks twice: the question replaces the button, and the retry stays
+  await discard.click();
+  await expect(
+    page.getByRole("button", { name: "Sim, descartar e recomeçar" })
+  ).toBeVisible();
+  await expect(discard).toHaveCount(0);
+  await expect(retry).toBeVisible();
+});
+
 test("a baixa sem motivo leva o foco à lista de motivos", async ({ page }) => {
   await openStockLab(page, "claro");
   await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();

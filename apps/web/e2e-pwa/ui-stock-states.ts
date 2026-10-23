@@ -253,7 +253,7 @@ export const stockStates = {
     await openList(page);
     await page.getByLabel("Rede disponível").uncheck();
     await page.getByText("Sem conexão.").waitFor();
-    await page.getByText("Com conexão").first().waitFor();
+    await page.getByText("Só com conexão").first().waitFor();
     await showScreenAlone(page);
   },
 

@@ -899,7 +899,7 @@ describe("summaries", () => {
     const byLabel = Object.fromEntries(
       lines.map((line) => [line.label, line.value])
     );
-    expect(byLabel.Variante).toBe("Camiseta Polaris — Azul / M");
+    expect(byLabel.Variante).toBe("Camiseta Polaris · Azul / M");
     expect(byLabel["Quantidade recebida"]).toBe("+10 unidades");
     expect(byLabel["Custo unitário"]).toBe("R$ 12,50");
     expect(byLabel["Data do recebimento"]).toBe("13/10/2026");

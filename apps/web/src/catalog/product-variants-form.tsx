@@ -320,7 +320,7 @@ export function ProductVariantConfigurationForm({
           criada sozinha.
         </p>
       </div>
-      {defaultVariantHasSku ? (
+      {defaultVariantHasSku && selectedOptions.length > 0 ? (
         <Alert variant="warning">
           <AlertDescription>
             Limpe o SKU da variante padrão antes de configurar opções: a

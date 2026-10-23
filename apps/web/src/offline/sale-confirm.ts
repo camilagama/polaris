@@ -6,7 +6,10 @@ import {
   type ConfirmSaleItemInput,
   normalizeConfirmSaleCommand,
 } from "@polaris/domain/sales/confirm-sale";
-import type { SaleAdjustmentInput } from "@polaris/domain/sales/sale-adjustments";
+import {
+  calculateSaleAdjustments,
+  type SaleAdjustmentInput,
+} from "@polaris/domain/sales/sale-adjustments";
 import type { SalePaymentInput } from "@polaris/domain/sales/sale-payment";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox } from "./outbox/outbox";
@@ -246,6 +249,8 @@ export interface PendingSale {
   itemCount: number;
   occurredAt: string;
   state: Exclude<OfflineSaleState, "confirmed">;
+  /** What the customer owes, as the server computes it from the same lines and adjustments; null if it cannot be computed. */
+  totalDue: string | null;
 }
 
 function isSalePayload(value: unknown): value is OfflineSalePayload {
@@ -254,6 +259,18 @@ function isSalePayload(value: unknown): value is OfflineSalePayload {
   }
   const row = value as Record<string, unknown>;
   return Array.isArray(row.items) && typeof row.occurredAt === "string";
+}
+
+function totalDueOf(payload: OfflineSalePayload): string | null {
+  try {
+    return calculateSaleAdjustments({
+      adjustments: payload.adjustments,
+      items: payload.items,
+    }).totalDue;
+  } catch {
+    // a payload the device kept but cannot price is shown without a value, never as zero
+    return null;
+  }
 }
 
 function stateOf(command: OutboxCommand): PendingSale["state"] {
@@ -280,6 +297,7 @@ export async function pendingSales(outbox: Outbox): Promise<PendingSale[]> {
             itemCount: command.payload.items.length,
             occurredAt: command.payload.occurredAt,
             state: stateOf(command),
+            totalDue: totalDueOf(command.payload),
           },
         ]
       : []
