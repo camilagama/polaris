@@ -21,9 +21,11 @@ function listFiles(directory: string): string[] {
 const FONT_URL = /^\.\/fonts\/[a-z0-9-]+\.woff2$/;
 const IMPORTED = /(?:from|import)\s+["']([^"']+)["']/g;
 const AT_IMPORT = /@import/i;
+// the one @import allowed: the tokens generated from theme.css (the build inlines it, the page gets one file)
+const TOKENS_IMPORT = /@import "\.\/tokens\.generated\.css";/g;
 const DARK_CLASS = /:root\.dark|\.dark\b/;
 const HEX_COLOR = /#[0-9a-f]{3,8}\b/i;
-const FUNCTION_COLOR = /\b(?:rgba?|hsla?)\(/i;
+const FUNCTION_COLOR = /\b(?:rgba?|hsla?|oklch)\(/i;
 const ABSOLUTE_ADDRESS = /https?:|\/\/|data:/i;
 const COMMENT = /\/\*[\s\S]*?\*\//g;
 const URL_CALL = /url\(\s*(['"]?)([^)'"]*)\1\s*\)/gi;
@@ -42,14 +44,16 @@ const TRAILING_COMMA = /,(\s*[}\]])/g;
 /** The problems of a stylesheet, as sentences. */
 function stylesheetProblems(css: string): string[] {
   const problems: string[] = [];
-  if (AT_IMPORT.test(css)) {
+  if (AT_IMPORT.test(css.replace(TOKENS_IMPORT, ""))) {
     problems.push("@import");
   }
   if (DARK_CLASS.test(css)) {
     problems.push("a .dark class (the app only follows prefers-color-scheme)");
   }
   if (HEX_COLOR.test(css) || FUNCTION_COLOR.test(css)) {
-    problems.push("a color that is not OKLCH");
+    problems.push(
+      "a color written by hand (it is a var(--…) of tokens.generated.css)"
+    );
   }
   if (ABSOLUTE_ADDRESS.test(css.replace(COMMENT, ""))) {
     problems.push("an absolute, protocol-relative or data: address");
@@ -114,18 +118,19 @@ function packageProblems(manifest: { [section: string]: unknown }): string[] {
 describe("the stylesheet of the catalog", () => {
   const css = readFileSync(join(root, "src/styles.css"), "utf8");
 
-  it("is static: no @import, no .dark, only OKLCH, only the local font by url()", () => {
+  it("is static: no @import but the generated tokens, no .dark, no color written by hand, only the local font by url()", () => {
     expect(stylesheetProblems(css)).toEqual([]);
     // the font is there, so the url() rule had something to look at
     expect(css).toMatch(LOCAL_FONT);
   });
 
-  it("is the one stylesheet: nothing else under src is CSS", () => {
+  it("is the one stylesheet, plus the tokens generated from theme.css: nothing else under src is CSS", () => {
     const sheets = listFiles(join(root, "src")).filter((path) =>
       STYLESHEET_FILE.test(path)
     );
     expect(sheets.map((path) => relative(root, path))).toEqual([
       "src/styles.css",
+      "src/tokens.generated.css",
     ]);
   });
 
@@ -145,12 +150,21 @@ describe("the stylesheet of the catalog", () => {
     expect(stylesheetProblems(":root.dark { color: red }").join()).toContain(
       ".dark"
     );
-    expect(stylesheetProblems("a { color: #fff }").join()).toContain("OKLCH");
+    expect(stylesheetProblems("a { color: #fff }").join()).toContain("by hand");
     expect(stylesheetProblems("a { color: rgb(0 0 0) }").join()).toContain(
-      "OKLCH"
+      "by hand"
     );
+    expect(
+      stylesheetProblems("a { color: oklch(0.2 0.005 85) }").join()
+    ).toContain("by hand");
+    expect(
+      stylesheetProblems(
+        '@import "./tokens.generated.css"; @import "./other.css";'
+      )
+    ).toContain("@import");
+    expect(stylesheetProblems('@import "./tokens.generated.css";')).toEqual([]);
     expect(stylesheetProblems("a { color: hsl(0 0% 0%) }").join()).toContain(
-      "OKLCH"
+      "by hand"
     );
     expect(
       stylesheetProblems(

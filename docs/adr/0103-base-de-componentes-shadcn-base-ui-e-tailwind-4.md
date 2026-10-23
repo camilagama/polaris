@@ -138,6 +138,10 @@ Cada componente tem teste de componente (papel e rótulo), entrada na galeria e 
 
 Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a cópia escopada), `styles.css`, `tokens.css` e `ui.css` saem, a entrada passa a `@import "tailwindcss" source(none)` (o preflight original, na camada `base`, e a ordem `theme, base, components, utilities`), e os padrões da página vão para o `body`. Nenhum elemento leva mais `data-ui` nem `.ui-root`. A prova de isolamento do shell (t193), que comparava a tela com e sem a `legacy`, vira a prova de que toda regra da página está nas camadas do Tailwind (fora delas, só `@font-face`, `@keyframes`, `@property` e regras que só põem tokens), com casos de controle. A lista de `@source` continua arquivo por arquivo; trocá-la por um glob de `src` é decisão à parte. O orçamento do resto fica em +44 000 B (ver a seção 4).
 
+## Nota: fonte única de cor (t265, 23/10/2026)
+
+A decisão 3 (tudo em OKLCH) ganha um corolário: o `apps/web/src/styles/theme.css` é a **única** fonte editada de cor. O catálogo público, que fica fora do Tailwind (condição de segurança 7), e os e-mails, cujos clientes não leem OKLCH nem variáveis CSS, não podem lê-lo em tempo de execução; recebem arquivos **gerados** dele (`apps/catalog/src/tokens.generated.css` e `apps/web/src/server/email-colors.generated.ts`, por `bun run tokens:generate`), e um teste falha se um deles estiver diferente do que o script escreveria agora. Outro teste reprova cor literal (`#hex`, `rgb(`, `hsl(`, `oklch(`) em `apps/web/src` e `apps/catalog/src` fora do `theme.css`, dos arquivos gerados, das máscaras de `shadcn-tailwind.css` e dos testes. A condição 7 não muda: a `styles.css` do catálogo importa o arquivo gerado, o build o embute (a página continua recebendo um arquivo de CSS só, sem `@import` no que é servido) e nada vem de fora. O "como mudar uma cor" está no DESIGN.md, em "Tokens".
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
