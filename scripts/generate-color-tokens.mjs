@@ -3,7 +3,9 @@
 //   - the public catalog (plain CSS, no Tailwind): apps/catalog/src/tokens.generated.css, the same variables, light and
 //     dark;
 //   - the e-mails (most clients read neither OKLCH nor CSS variables): apps/web/src/server/email-colors.generated.ts,
-//     the light theme as sRGB hex.
+//     the light theme as sRGB hex;
+//   - the web app manifest (apps/web/public/manifest.webmanifest): only `background_color` and `theme_color`, the light
+//     --background as hex (a manifest holds one value, so the dark theme stays with the metas of index.html).
 // Run `bun run tokens:generate` after changing a color in theme.css. `scripts/generate-color-tokens.test.mjs` fails
 // when a generated file differs from what this script would write now.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -13,6 +15,7 @@ const repo = new URL("../", import.meta.url);
 const THEME = "apps/web/src/styles/theme.css";
 export const CATALOG_OUTPUT = "apps/catalog/src/tokens.generated.css";
 export const EMAIL_OUTPUT = "apps/web/src/server/email-colors.generated.ts";
+export const MANIFEST_OUTPUT = "apps/web/public/manifest.webmanifest";
 const COMMAND = "bun run tokens:generate";
 
 // What the catalog stylesheet reads. `--shadow-xs` is the one that does not live in `:root`: it is in `@theme` of
@@ -213,9 +216,26 @@ ${lines.join("\n")}
 `;
 }
 
+/** The manifest with its two colors set to the light --background; every other field stays as it is. */
+export function renderManifest(css, manifestJson) {
+  const { light } = readTheme(css);
+  const hex = hexOf(
+    "background",
+    pick(light, ["background"], ":root").background
+  );
+  const manifest = JSON.parse(manifestJson);
+  manifest.background_color = hex;
+  manifest.theme_color = hex;
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
 export function expectedFiles() {
   const css = readFileSync(new URL(THEME, repo), "utf8");
   return {
+    [MANIFEST_OUTPUT]: renderManifest(
+      css,
+      readFileSync(new URL(MANIFEST_OUTPUT, repo), "utf8")
+    ),
     [CATALOG_OUTPUT]: renderCatalogTokens(css),
     [EMAIL_OUTPUT]: renderEmailColors(css),
   };

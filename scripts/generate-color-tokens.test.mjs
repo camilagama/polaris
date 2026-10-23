@@ -5,10 +5,12 @@ import {
   CATALOG_OUTPUT,
   EMAIL_OUTPUT,
   expectedFiles,
+  MANIFEST_OUTPUT,
   oklchToHex,
   readTheme,
   renderCatalogTokens,
   renderEmailColors,
+  renderManifest,
 } from "./generate-color-tokens.mjs";
 
 // One source of color: apps/web/src/styles/theme.css (DESIGN.md, "Changing a color"). The catalog and the e-mails
@@ -16,13 +18,16 @@ import {
 // anywhere else under apps/web/src or apps/catalog/src.
 const FOREGROUND_VALUE = /--foreground: oklch\([^)]*\);/;
 const DARK_RING_VALUE = /(\.dark \{[\s\S]*?)--ring: oklch\([^)]*\);/;
+const LIGHT_BACKGROUND_VALUE =
+  /(:root \{[\s\S]*?--background: )oklch\([^)]*\);/;
+const PLAIN_OKLCH = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/;
 const HEX = /^#[0-9a-f]{6}$/;
 const root = new URL("../", import.meta.url).pathname;
 
 describe("the files generated from theme.css", () => {
   const expected = expectedFiles();
 
-  it.each([CATALOG_OUTPUT, EMAIL_OUTPUT])(
+  it.each([CATALOG_OUTPUT, EMAIL_OUTPUT, MANIFEST_OUTPUT])(
     "%s is what the script writes now (bun run tokens:generate)",
     (path) => {
       expect(readFileSync(join(root, path), "utf8")).toBe(expected[path]);
@@ -30,7 +35,9 @@ describe("the files generated from theme.css", () => {
   );
 
   it("carries the generated header with the command", () => {
-    for (const content of Object.values(expected)) {
+    // the manifest is JSON: it has no comment to carry a header
+    for (const path of [CATALOG_OUTPUT, EMAIL_OUTPUT]) {
+      const content = expected[path];
       expect(content).toContain("Generated from apps/web/src/styles/theme.css");
       expect(content).toContain("Do not edit.");
       expect(content).toContain("bun run tokens:generate");
@@ -54,6 +61,26 @@ describe("the files generated from theme.css", () => {
     expect(catalog).toContain("--ring: oklch(0.7 0.1 200);");
     expect(catalog).not.toBe(expected[CATALOG_OUTPUT]);
     expect(renderEmailColors(changed)).not.toBe(expected[EMAIL_OUTPUT]);
+  });
+
+  it("a changed --background changes the colors of the manifest and nothing else (control)", () => {
+    const css = readFileSync(
+      join(root, "apps/web/src/styles/theme.css"),
+      "utf8"
+    );
+    const current = readFileSync(join(root, MANIFEST_OUTPUT), "utf8");
+    const changed = css.replace(LIGHT_BACKGROUND_VALUE, "$1oklch(0.5 0 0);");
+    expect(changed).not.toBe(css);
+    const before = JSON.parse(current);
+    const after = JSON.parse(renderManifest(changed, current));
+    expect(after.background_color).toBe("#636363");
+    expect(after.theme_color).toBe("#636363");
+    expect(after.background_color).not.toBe(before.background_color);
+    expect({ ...after, background_color: 0, theme_color: 0 }).toEqual({
+      ...before,
+      background_color: 0,
+      theme_color: 0,
+    });
   });
 
   it("the catalog has the light block and the dark block, and every token it reads", () => {
@@ -94,6 +121,21 @@ describe("the theme-color metas of index.html", () => {
       new RegExp(`content="([^"]+)"\\s+data-tema="${theme}"`).exec(html)?.[1];
     expect(content("claro")).toBe(light.background);
     expect(content("escuro")).toBe(dark.background);
+  });
+});
+
+describe("the colors of the manifest", () => {
+  it("are the light --background of theme.css, as hex", () => {
+    const { light } = readTheme(
+      readFileSync(join(root, "apps/web/src/styles/theme.css"), "utf8")
+    );
+    const manifest = JSON.parse(
+      readFileSync(join(root, MANIFEST_OUTPUT), "utf8")
+    );
+    const [, lightness, chroma, hue] = PLAIN_OKLCH.exec(light.background);
+    const hex = oklchToHex(Number(lightness), Number(chroma), Number(hue));
+    expect(manifest.background_color).toBe(hex);
+    expect(manifest.theme_color).toBe(hex);
   });
 });
 
