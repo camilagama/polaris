@@ -104,7 +104,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0078](adr/0078-exportacao-de-dados-da-organizacao.md) | Exportação de dados da organização: uma cópia a pedido do dono, feita em segundo plano | aceito |
 | [0079](adr/0079-retencao-por-classe-de-dado.md) | Retenção por classe de dado | aceito |
 | [0080](adr/0080-ledger-minimo-de-exclusoes.md) | Ledger mínimo de exclusões para restore | aceito |
-| [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | proposto |
+| [0081](adr/0081-purge-completo-da-organizacao-encerrada.md) | Purge completo da organização encerrada | aceito |
 | [0082](adr/0082-outbox-transacional.md) | Outbox transacional | aceito |
 | [0083](adr/0083-filas-cloudflare-e-consumidor-idempotente.md) | Filas Cloudflare e consumidor idempotente | aceito |
 | [0084](adr/0084-despachante-e-varredor-do-outbox.md) | Despachante e varredor do outbox | aceito |
@@ -125,7 +125,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | 0099 | Reservado (backup) | reservado |
 | [0100](adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) | Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta no banco e aceite legal registrado | aceito |
 | [0101](adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) | Adaptador Asaas: porta de saída, releitura do recurso e período pelo vencimento original | aceito |
-| [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | proposto |
+| [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | aceito |
 | [0103](adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) | Base de componentes: shadcn na variante Base UI com Tailwind 4 | aceito |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.

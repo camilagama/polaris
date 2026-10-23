@@ -142,6 +142,23 @@ Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a
 
 A decisão 3 (tudo em OKLCH) ganha um corolário: o `apps/web/src/styles/theme.css` é a **única** fonte editada de cor. O catálogo público, que fica fora do Tailwind (condição de segurança 7), e os e-mails, cujos clientes não leem OKLCH nem variáveis CSS, não podem lê-lo em tempo de execução; recebem arquivos **gerados** dele (`apps/catalog/src/tokens.generated.css` e `apps/web/src/server/email-colors.generated.ts`, por `bun run tokens:generate`), e um teste falha se um deles estiver diferente do que o script escreveria agora. Outro teste reprova cor literal (`#hex`, `rgb(`, `hsl(`, `oklch(`) em `apps/web/src` e `apps/catalog/src` fora do `theme.css`, dos arquivos gerados, das máscaras de `shadcn-tailwind.css` e dos testes. A condição 7 não muda: a `styles.css` do catálogo importa o arquivo gerado, o build o embute (a página continua recebendo um arquivo de CSS só, sem `@import` no que é servido) e nada vem de fora. O "como mudar uma cor" está no DESIGN.md, em "Tokens".
 
+## Nota: histórico do teto do resto (23/10/2026)
+
+O teto da linha do resto mudou cinco vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
+
+| Data | Teto do resto | Motivo |
+|---|---|---|
+| 20/10 | +40 000 B | base de interface, a referência da seção 4 |
+| 22/10 | +46 000 B | shell v5.1 (cerca de +5,1 KB gzip, paga uma vez) |
+| 23/10, 01h45 | +47 000 B | runtime offline da F7 (cerca de +3,9 KB gzip) |
+| 23/10, 07h30 | +48 000 B | estouro de 747 B causado pelo crescimento da main; a fatia da F7 ficou igual |
+| 23/10, entre 07h30 e 14h40 | +50 000 B | crescimento da main com o Histórico e o Detalhe da venda; temporário até o lote 6 |
+| 23/10, 14h40 | +44 000 B | lote 6 (PR #266) apaga a camada legacy, que liberou só cerca de 1,3 KB; o resto do crescimento é JS das telas |
+
+O retorno a +40 000 B previsto no lote 6 não aconteceu: o lote fechou em +44 000 B. Voltar a +42 000 B exige cortar JS das telas, em tarefa separada.
+
+Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas e gráficos pesados sob demanda), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale o teto de +44 000 B, e cada subida exige justificativa no PR e aprovação do Arrascaeta.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.

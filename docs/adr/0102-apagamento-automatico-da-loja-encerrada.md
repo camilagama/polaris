@@ -1,5 +1,5 @@
 ---
-status: proposto
+status: accepted
 ---
 
 # Apagamento automático da loja encerrada, sem caso de privacidade
