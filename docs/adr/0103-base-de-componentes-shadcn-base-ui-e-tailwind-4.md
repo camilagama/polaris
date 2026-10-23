@@ -140,7 +140,7 @@ Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a
 
 ## Nota: histórico do teto do resto (23/10/2026)
 
-O teto da linha do resto mudou cinco vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
+O teto da linha do resto mudou seis vezes entre 20/10 e 23/10. Cada mudança teve decisão do Arrascaeta, registrada no código (`apps/web/pwa/precache-budget.ts`) e na seção 4:
 
 | Data | Teto do resto | Motivo |
 |---|---|---|
@@ -150,10 +150,11 @@ O teto da linha do resto mudou cinco vezes entre 20/10 e 23/10. Cada mudança te
 | 23/10, 07h30 | +48 000 B | estouro de 747 B causado pelo crescimento da main; a fatia da F7 ficou igual |
 | 23/10, entre 07h30 e 14h40 | +50 000 B | crescimento da main com o Histórico e o Detalhe da venda; temporário até o lote 6 |
 | 23/10, 14h40 | +44 000 B | lote 6 (PR #266) apaga a camada legacy, que liberou só cerca de 1,3 KB; o resto do crescimento é JS das telas |
+| 23/10, tarde | +45 000 B | t259 (PR #271, estados offline, Clientes, catálogo e shell): a t258 deixou a main a 77 B do teto e a t259 custa +449 B (+480 B com o runtime ligado), sem funcionalidade a tirar; subida de 1 KB aprovada pelo Arrascaeta |
 
-O retorno a +40 000 B previsto no lote 6 não aconteceu: o lote fechou em +44 000 B. Voltar a +42 000 B exige cortar JS das telas, em tarefa separada.
+O retorno a +40 000 B previsto no lote 6 não aconteceu: o lote fechou em +44 000 B e a t259 o levou a +45 000 B. Voltar a +42 000 B exige cortar JS das telas, em tarefa separada.
 
-Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas e gráficos pesados sob demanda), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale o teto de +44 000 B, e cada subida exige justificativa no PR e aprovação do Arrascaeta.
+Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas e gráficos pesados sob demanda), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale o teto de +45 000 B, e cada subida exige justificativa no PR e aprovação do Arrascaeta.
 
 ## Consequências
 

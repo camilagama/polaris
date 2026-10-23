@@ -11,7 +11,7 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
  *   them to the production build (until then it is zero: no screen uses them);
  * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
- *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (44 KB for now, see
+ *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (45 KB for now, see
  *   below) over the precache before the base, the baseline of the same kind of build. The build prints the interface infrastructure
  *   and the screen (the rest of the growth over the baseline) apart, so a review sees what a screen costs.
  * The production build fails past any line. Going past needs a reason in the pull request and the approval of
@@ -20,14 +20,16 @@ import { listFiles, precacheList } from "./service-worker-plugin";
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
 /**
- * 44 000 no lote 6 (23/10); cortar JS das telas para voltar a 42 000 é trabalho separado.
+ * 45 000 desde a t259 (23/10); cortar JS das telas para voltar a 42 000 é trabalho separado.
  * Batch 6 took the old CSS out (t256): the shell v5.1 is interface infrastructure paid once (it replaced the old
  * shell, about +5.1 KB gzip) and the offline runtime of F7 (connection with proof, about +4.0 KB gzip) came after
  * the 40 KB of ADR 0103, section 4. Taking `@layer legacy` out freed only about 1.3 KB gzip (the CSS went from
  * 17 305 to 16 139 B); the rest of the growth is JS of the screens. The Arrascaeta set 44 KB on 23/10, with the
- * measure of the batch in its pull request.
+ * measure of the batch in its pull request. The Arrascaeta raised it to 45 KB on 23/10 for the t259 pull request: the t258
+ * had left the main 77 B under 44 KB, and the t259 (states, texts and tests of screens already migrated) costs +449 B
+ * (+480 B with the runtime on), with no feature to take out.
  */
-export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
+export const REST_GROWTH_BUDGET_GZIP_BYTES = 45_000;
 
 /**
  * The rest of the precache before the UI base, one number per kind of production build, since the switch of
