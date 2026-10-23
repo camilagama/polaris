@@ -14,7 +14,9 @@ import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
   type ChangeEvent,
   type ComponentType,
+  lazy,
   type ReactNode,
+  Suspense,
   useCallback,
   useEffect,
 } from "react";
@@ -58,7 +60,6 @@ import {
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
-import { OrganizationSetup } from "../organization/organization-setup";
 import "./app-shell.css";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
@@ -72,6 +73,13 @@ import {
 } from "./navigation-model";
 import { SessionEndedNotice } from "./session-ended-notice";
 import { useSignedInEmail } from "./signed-in-email";
+
+/** The first access is its own chunk, kept by the service worker: only a person with no organization opens it. */
+const OrganizationSetup = lazy(() =>
+  import("../organization/organization-setup").then((module) => ({
+    default: module.OrganizationSetup,
+  }))
+);
 
 /** The icon of each destination (lucide, one module each). */
 const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
@@ -502,7 +510,15 @@ export function AppShell({
     return (
       <>
         {updateNotice}
-        <OrganizationSetup onOpened={reload} />
+        <Suspense
+          fallback={
+            <p className="app-status" role="status">
+              Carregando…
+            </p>
+          }
+        >
+          <OrganizationSetup onOpened={reload} />
+        </Suspense>
       </>
     );
   }

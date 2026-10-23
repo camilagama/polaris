@@ -13,7 +13,6 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { documentTitle } from "../../app-shell/navigation-model";
@@ -28,6 +27,7 @@ import { IdleRuntimeProvider } from "../../offline/runtime/runtime-provider";
 import {
   EntryAlert,
   EntryLinkButton,
+  EntryRetry,
   EntryScreen,
   EntryStatus,
   EntrySuccess,
@@ -55,7 +55,6 @@ import {
   ACCEPTANCE_OPENING,
   ACCEPTANCE_READ_PRIVACY,
   ACCEPTANCE_READ_TERMS,
-  ACCEPTANCE_RETRY,
   ACCEPTANCE_SAVE_FAILED,
   ACCEPTANCE_SAVING,
   ACCEPTANCE_TITLE,
@@ -284,15 +283,7 @@ function AcceptanceBody({
         <EntryAlert>
           {load.offline ? ACCEPTANCE_OFFLINE : ACCEPTANCE_LOAD_FAILED}
         </EntryAlert>
-        <Button
-          className="w-full"
-          onClick={onRetry}
-          size="lg"
-          type="button"
-          variant="outline"
-        >
-          {ACCEPTANCE_RETRY}
-        </Button>
+        <EntryRetry onClick={onRetry} />
       </>
     );
   }

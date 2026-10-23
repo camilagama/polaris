@@ -81,7 +81,7 @@ function TableBlock({ block }: { block: Extract<Block, { kind: "table" }> }) {
             >
               {row.map((cell, column) => (
                 <td
-                  className="px-3 py-2 align-top max-sm:block max-sm:not-first:border-t max-sm:first:bg-muted/60 max-sm:first:font-medium max-sm:not-first:before:mb-0.5 max-sm:not-first:before:block max-sm:not-first:before:font-medium max-sm:not-first:before:text-muted-foreground max-sm:not-first:before:text-xs max-sm:not-first:before:content-[attr(data-label)]"
+                  className="px-3 py-2 align-top max-sm:block max-sm:first:bg-muted/60 max-sm:first:font-medium max-sm:not-first:before:block max-sm:not-first:before:text-muted-foreground max-sm:not-first:before:text-xs max-sm:not-first:before:content-[attr(data-label)]"
                   data-label={block.header[column]}
                   key={block.header[column]}
                 >
