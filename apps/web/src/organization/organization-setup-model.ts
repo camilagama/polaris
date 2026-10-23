@@ -89,12 +89,12 @@ export function validateSetup(draft: SetupDraft): {
     errors.name = `Use no máximo ${MAX_ORGANIZATION_NAME_LENGTH} caracteres.`;
   }
   if (timezone === "") {
-    errors.timezone = "Informe o fuso horário.";
+    errors.timezone = "Escolha o horário da loja.";
   } else if (timezone.length > MAX_TIMEZONE_LENGTH) {
     errors.timezone = `Use no máximo ${MAX_TIMEZONE_LENGTH} caracteres.`;
   } else if (!isValidTimezone(timezone)) {
     errors.timezone =
-      "Fuso horário desconhecido. Use um identificador IANA, como America/Sao_Paulo.";
+      "Horário não reconhecido. Escolha um da lista.";
   }
   return {
     errors,
@@ -123,7 +123,7 @@ export function setupErrorMessage(error: unknown): string {
     return "Confirme seu email antes de abrir a loja.";
   }
   if (code === "BAD_REQUEST") {
-    return "O nome ou o fuso horário foram recusados. Revise os campos.";
+    return "O nome ou o horário foram recusados. Revise os campos.";
   }
   if (code === "CONFLICT" || reason === "multiple_existing_organizations") {
     return "Sua conta já tem uma loja que não abriu sozinha. Fale com o suporte.";

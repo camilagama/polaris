@@ -29,7 +29,7 @@ describe("validateSetup", () => {
     const empty = validateSetup({ name: "   ", timezone: "" });
     expect(empty.input).toBeNull();
     expect(empty.errors.name).toContain("nome");
-    expect(empty.errors.timezone).toContain("fuso");
+    expect(empty.errors.timezone).toBe("Escolha o horário da loja.");
 
     const tooLong = validateSetup({
       name: "x".repeat(MAX_ORGANIZATION_NAME_LENGTH + 1),
@@ -39,7 +39,7 @@ describe("validateSetup", () => {
 
     expect(
       validateSetup({ name: "Loja", timezone: "Marte/Olympus" }).errors.timezone
-    ).toContain("desconhecido");
+    ).toBe("Horário não reconhecido. Escolha um da lista.");
   });
 
   it("counts the name in code points", () => {

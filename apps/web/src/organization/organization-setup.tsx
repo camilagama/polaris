@@ -145,7 +145,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           label="Horário da loja"
           onChange={setTimezone}
           options={BRAZIL_TIMEZONES}
-          placeholder="Escolha o fuso"
+          placeholder="Escolha o horário"
           value={timezone}
         />
         {failure ? (
