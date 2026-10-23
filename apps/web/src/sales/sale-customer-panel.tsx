@@ -1,14 +1,25 @@
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
-  type ChangeEvent,
+  type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import "./sale-legacy.css";
-import "./sale-customer-panel.css";
 import {
   type ActionState,
   availableActions,
@@ -39,6 +50,7 @@ import {
   submissionView,
   VALUES_UNCHANGED_NOTE,
 } from "./sale-customer-link-model";
+import { SelectField } from "./sale-fields";
 
 function sendCommand(command: LinkCommand): Promise<SaleCustomerLinkChange> {
   switch (command.action) {
@@ -53,25 +65,75 @@ function sendCommand(command: LinkCommand): Promise<SaleCustomerLinkChange> {
 
 interface ActionButtonProps {
   action: ActionState;
+  hintId: string;
   onAction: (action: LinkAction) => void;
 }
 
-function ActionButton({ action, onAction }: ActionButtonProps) {
+/** Associate or change: the main action of the panel. */
+function ActionButton({ action, hintId, onAction }: ActionButtonProps) {
   const handleClick = useCallback(
     () => onAction(action.action),
     [action.action, onAction]
   );
   return (
-    <button
-      className={
-        action.action === "unassign" ? "quiet-button" : "primary-button"
-      }
-      disabled={!action.enabled}
-      onClick={handleClick}
+    <Button
+      aria-describedby={!action.enabled && action.hint ? hintId : undefined}
+      aria-disabled={!action.enabled || undefined}
+      onClick={action.enabled ? handleClick : undefined}
       type="button"
     >
       {action.label}
-    </button>
+    </Button>
+  );
+}
+
+interface RemoveButtonProps {
+  action: ActionState;
+  hintId: string;
+  onAction: (action: LinkAction) => void;
+}
+
+/** Removing the customer is destructive: it asks first, in a dialog, whose confirm is the destructive button. */
+function RemoveButton({ action, hintId, onAction }: RemoveButtonProps) {
+  const [asking, setAsking] = useState(false);
+  const handleAsk = useCallback(() => setAsking(true), []);
+  const handleOpenChange = useCallback((open: boolean) => setAsking(open), []);
+  const handleCancel = useCallback(() => setAsking(false), []);
+  const handleConfirm = useCallback(() => {
+    setAsking(false);
+    onAction(action.action);
+  }, [action.action, onAction]);
+  return (
+    <>
+      <Button
+        aria-describedby={!action.enabled && action.hint ? hintId : undefined}
+        aria-disabled={!action.enabled || undefined}
+        onClick={action.enabled ? handleAsk : undefined}
+        type="button"
+        variant="outline"
+      >
+        {action.label}
+      </Button>
+      <Dialog onOpenChange={handleOpenChange} open={asking}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remover o cliente desta venda?</DialogTitle>
+            <DialogDescription>
+              A venda fica sem cliente. Os valores da venda não mudam e a
+              remoção fica no histórico de atribuição.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3">
+            <Button onClick={handleCancel} type="button" variant="outline">
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirm} type="button" variant="destructive">
+              Sim, remover cliente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -83,52 +145,61 @@ interface PickerProps {
 }
 
 function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onChange(event.target.value),
-    [onChange]
-  );
   if (view.kind === "loading") {
     return (
-      <p className="sale-status" role="status">
+      <p className="text-muted-foreground" role="status">
         {view.message}
       </p>
     );
   }
   if (view.kind === "error") {
     return (
-      <p className="sale-message is-error" role="alert">
-        {view.message}
-      </p>
+      <Alert variant="destructive">
+        <AlertDescription>{view.message}</AlertDescription>
+      </Alert>
     );
   }
   if (view.kind === "empty") {
     return (
-      <p className="sale-empty">
-        {view.message} <a href={view.href}>Abrir clientes</a>
+      <p className="text-muted-foreground">
+        {view.message}{" "}
+        <a
+          className="focus-ring rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+          href={view.href}
+        >
+          Abrir clientes
+        </a>
       </p>
     );
   }
   return (
-    <div className="sale-field">
-      <label htmlFor="sale-customer-select">Cliente</label>
-      <select
-        disabled={disabled}
-        id="sale-customer-select"
-        onChange={handleChange}
-        value={selectedId}
-      >
-        <option value="">Escolha um cliente ativo</option>
-        {view.options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <SelectField
+      disabled={disabled}
+      id="sale-customer-select"
+      label="Cliente"
+      onChange={onChange}
+      options={view.options}
+      placeholder="Escolha um cliente ativo"
+      value={selectedId}
+    />
+  );
+}
+
+function Frame({ children, framed }: { children: ReactNode; framed: boolean }) {
+  return framed ? (
+    <Card className="gap-0 py-0">
+      <CardContent className="grid gap-4 py-(--card-spacing)">
+        {children}
+      </CardContent>
+    </Card>
+  ) : (
+    <div className="grid gap-4">{children}</div>
   );
 }
 
 interface SaleCustomerPanelProps {
+  /** In its own card (the detail and the customer page); inside another card (the confirmed sale) it has none. */
+  framed?: boolean;
   headingLevel: 2 | 3;
   organizationId: string;
   saleId: string;
@@ -139,6 +210,7 @@ interface SaleCustomerPanelProps {
  * values: every change is a new version in a separate history.
  */
 export function SaleCustomerPanel({
+  framed = true,
   headingLevel,
   organizationId,
   saleId,
@@ -241,7 +313,9 @@ export function SaleCustomerPanel({
     loadCustomers().catch(() => undefined);
   }, [loadCustomers, loadLink]);
 
+  const hintId = useId();
   const Heading = headingLevel === 2 ? "h2" : "h3";
+  const SubHeading = headingLevel === 2 ? "h3" : "h4";
   const currentView = currentCustomerView(state);
   const actions = availableActions(state);
   const status = submissionView(state);
@@ -249,94 +323,127 @@ export function SaleCustomerPanel({
   const disabledHint = actions.find((action) => !action.enabled && action.hint);
   const ready = state.link.status === "ready";
   return (
-    <section aria-labelledby="sale-customer-title" className="sale-customer">
-      <Heading id="sale-customer-title">Cliente da venda</Heading>
-      <p className="sale-hint">{VALUES_UNCHANGED_NOTE}</p>
-      {currentView.kind === "error" ? (
-        <p className="sale-message is-error" role="alert">
-          {currentView.label}{" "}
-          <button
-            className="sale-link-button"
-            onClick={handleRetry}
-            type="button"
-          >
-            Tentar novamente
-          </button>
-        </p>
-      ) : (
-        <dl className="sale-details">
-          <div>
-            <dt>Cliente atual</dt>
-            <dd>{currentView.label}</dd>
-          </div>
-          {currentView.detail ? (
-            <div>
-              <dt>Situação</dt>
-              <dd>{currentView.detail}</dd>
+    <section aria-labelledby="sale-customer-title">
+      <Frame framed={framed}>
+        <div className="grid gap-1">
+          <Heading className="text-section" id="sale-customer-title">
+            Cliente da venda
+          </Heading>
+          <p className="text-muted-foreground text-support">
+            {VALUES_UNCHANGED_NOTE}
+          </p>
+        </div>
+        {currentView.kind === "error" ? (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {currentView.label}
+              <Button
+                onClick={handleRetry}
+                size="sm"
+                type="button"
+                variant="link"
+              >
+                <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+                Tentar novamente
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground text-support">
+                Cliente atual
+              </dt>
+              <dd className="font-medium [overflow-wrap:anywhere]">
+                {currentView.label}
+              </dd>
             </div>
-          ) : null}
-        </dl>
-      )}
-      {ready ? (
-        <>
-          <CustomerPicker
-            disabled={status.kind === "submitting"}
-            onChange={handleSelect}
-            selectedId={state.selectedCustomerId}
-            view={pickerView(state)}
-          />
-          <div className="sale-actions">
-            {actions.map((action) => (
-              <ActionButton
-                action={action}
-                key={action.action}
-                onAction={handleActionEvent}
-              />
-            ))}
+            {currentView.detail ? (
+              <div className="grid gap-0.5">
+                <dt className="text-muted-foreground text-support">Situação</dt>
+                <dd>{currentView.detail}</dd>
+              </div>
+            ) : null}
+          </dl>
+        )}
+        {ready ? (
+          <div className="grid gap-3">
+            <CustomerPicker
+              disabled={status.kind === "submitting"}
+              onChange={handleSelect}
+              selectedId={state.selectedCustomerId}
+              view={pickerView(state)}
+            />
+            <div className="flex flex-wrap gap-3">
+              {actions.map((action) =>
+                action.action === "unassign" ? (
+                  <RemoveButton
+                    action={action}
+                    hintId={hintId}
+                    key={action.action}
+                    onAction={handleActionEvent}
+                  />
+                ) : (
+                  <ActionButton
+                    action={action}
+                    hintId={hintId}
+                    key={action.action}
+                    onAction={handleActionEvent}
+                  />
+                )
+              )}
+            </div>
+            {disabledHint ? (
+              <p className="text-muted-foreground text-support" id={hintId}>
+                {disabledHint.hint}
+              </p>
+            ) : null}
           </div>
-          {disabledHint ? (
-            <p className="sale-hint">{disabledHint.hint}</p>
+        ) : null}
+        <div aria-live="polite" role="status">
+          {status.kind === "success" || status.kind === "submitting" ? (
+            <p
+              className={
+                status.kind === "success"
+                  ? "font-medium"
+                  : "text-muted-foreground"
+              }
+            >
+              {status.message}
+            </p>
           ) : null}
-        </>
-      ) : null}
-      <div aria-live="polite" role="status">
-        {status.kind === "success" || status.kind === "submitting" ? (
-          <p
-            className={
-              status.kind === "success"
-                ? "sale-message is-success"
-                : "sale-status"
-            }
-          >
-            {status.message}
+        </div>
+        {status.kind === "error" ? (
+          <Alert variant="destructive">
+            <AlertDescription>{status.message}</AlertDescription>
+          </Alert>
+        ) : null}
+        {history.length > 0 ? (
+          <div className="grid gap-2">
+            <SubHeading className="font-medium">
+              Histórico de atribuição
+            </SubHeading>
+            <ol className="grid gap-2">
+              {history.map((row) => (
+                <li
+                  className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 border-border border-t pt-2 text-support [overflow-wrap:anywhere] first:border-t-0 first:pt-0"
+                  key={row.key}
+                >
+                  <span>
+                    v{row.version} · {row.text}
+                  </span>
+                  <span className="text-muted-foreground">{row.dateText}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+        {ready && history.length === 0 ? (
+          <p className="text-muted-foreground text-support">
+            Ainda não há histórico: esta venda nunca teve cliente associado.
           </p>
         ) : null}
-      </div>
-      {status.kind === "error" ? (
-        <p className="sale-message is-error" role="alert">
-          {status.message}
-        </p>
-      ) : null}
-      {history.length > 0 ? (
-        <>
-          <h4>Histórico de atribuição</h4>
-          <ol className="sale-history">
-            {history.map((row) => (
-              <li key={row.key}>
-                <span>
-                  v{row.version} · {row.text}
-                </span>
-                <small>{row.dateText}</small>
-              </li>
-            ))}
-          </ol>
-        </>
-      ) : null}
-      {ready && history.length === 0 ? (
-        <p className="sale-hint">
-          Ainda não há histórico: esta venda nunca teve cliente associado.
-        </p>
-      ) : null}
+      </Frame>
     </section>
   );
 }

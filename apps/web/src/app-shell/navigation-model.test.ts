@@ -74,7 +74,7 @@ describe("main menu", () => {
     });
   });
 
-  it("does not offer the customer-of-a-sale page, which asks for an ID", () => {
+  it("does not offer the customer-of-a-sale page, which opens from a sale of the history", () => {
     expect(NAV_ITEMS.some((item) => item.href === "/sales/customer")).toBe(
       false
     );

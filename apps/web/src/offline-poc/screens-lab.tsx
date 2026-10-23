@@ -35,6 +35,8 @@ import {
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
+import { SaleCustomerPage } from "../sales/sale-customer-page";
+import { SaleDetailPage } from "../sales/sale-detail-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
@@ -79,6 +81,8 @@ type LabScreen =
   | "products"
   | "public-catalog"
   | "sale"
+  | "sale-customer"
+  | "sale-detail"
   | "stock";
 
 function labScreen(): LabScreen {
@@ -93,6 +97,8 @@ function labScreen(): LabScreen {
     screen === "payment-profiles" ||
     screen === "public-catalog" ||
     screen === "sale" ||
+    screen === "sale-customer" ||
+    screen === "sale-detail" ||
     screen === "stock" ||
     screen === "history"
     ? screen
@@ -163,6 +169,8 @@ const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
   products: ProductsPage,
   "public-catalog": PublicCatalogPage,
   sale: SalePage,
+  "sale-customer": SaleCustomerPage,
+  "sale-detail": SaleDetailPage,
   stock: InventoryPage,
 };
 
@@ -176,7 +184,9 @@ export function ScreensLab() {
   const onlineOnly =
     screen === "categories" ||
     screen === "payment-profiles" ||
-    screen === "public-catalog";
+    screen === "public-catalog" ||
+    screen === "sale-customer" ||
+    screen === "sale-detail";
   const [userId, setUserId] = useState("user-a");
   const [online, setOnline] = useState(true);
   const [started, setStarted] = useState(false);
@@ -420,7 +430,9 @@ export function ScreensLab() {
           {started && onlineOnly ? (
             // on the page's background, as in the shell: the lab's own page stays light in the dark theme
             <div style={{ background: "var(--background)" }}>
-              <ConnectionRequiredSlot form={screen !== "public-catalog"} />
+              <ConnectionRequiredSlot
+                form={screen !== "public-catalog" && screen !== "sale-detail"}
+              />
             </div>
           ) : null}
           {started ? <LabScreenPage screen={screen} /> : null}

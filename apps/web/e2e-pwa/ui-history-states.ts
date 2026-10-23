@@ -8,9 +8,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * (`/offline-screens-lab?screen=history`) over the real offline runtime, with the list answered by the test
  * (`page.route`) and synthetic data only. The lab's own controls are hidden at the end of each state, so what is
  * measured is the screen alone. Three states, for the reason the products screen gives (each one starts the
- * runtime of the lab); the detail of a sale has no state here: its cancel, return and customer panels are still
- * the old interface, and the screen is proved by the render test of `sale-receipt` and by the isolation check
- * (`ui-shell-isolation.e2e.ts`).
+ * runtime of the lab); the detail of a sale has its own states (`ui-sale-detail-states.ts`).
  */
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-000000001${String(n).padStart(3, "0")}`;

@@ -396,7 +396,8 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
     const legacy = legacyClasses(
       cssFiles(src).map((path) => readFileSync(path, "utf8"))
     );
-    // the old sheets shrink with the migration (the lot 6 empties them): while some stay, the guard must still find their classes
+    // the reader found the old sheets: the count falls with each migration (79 classes after t255 deleted the
+    // sheets of the sale detail panels), so the floor is a sanity check, not a measure
     expect(legacy.size).toBeGreaterThan(20);
     const isUtility = await appUtility(legacy);
     expect(isUtility("md:w-fit")).toBe(true);
