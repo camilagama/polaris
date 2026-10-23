@@ -6,8 +6,8 @@ interface OperationActionsProps {
   confirming: boolean;
   confirmLabel: string;
   /**
-   * Cancelling is destructive; registering a return is the main action. A locked attempt only resends the same
-   * command (safe), so its confirm is the main action too: the destructive one is "discard", in the notice.
+   * Cancelling is destructive; registering a return is the main action. A retry only resends the same command
+   * (safe), so its confirm is the main action too: the destructive one is "discard", in the notice.
    */
   destructive: boolean;
   locked: boolean;
@@ -15,6 +15,8 @@ interface OperationActionsProps {
   onClose: () => void;
   onConfirm: () => void;
   onReview: () => void;
+  /** The attempt is locked on an unknown outcome and the confirm sends the same command again. */
+  retrying: boolean;
   reviewLabel: string;
   submitting: boolean;
 }
@@ -33,6 +35,7 @@ export function OperationActions({
   onClose,
   onConfirm,
   onReview,
+  retrying,
   reviewLabel,
   submitting,
 }: OperationActionsProps) {
@@ -44,7 +47,7 @@ export function OperationActions({
             disabled={submitting}
             onClick={onConfirm}
             type="button"
-            variant={destructive && !locked ? "destructive" : "default"}
+            variant={destructive && !retrying ? "destructive" : "default"}
           >
             {confirmLabel}
           </Button>

@@ -63,7 +63,7 @@ export function SaleReturnPanel({
   const sectionRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const confirming = state.step === "confirming" || isReturnLocked(state);
-  useStepFocus(confirming, noticeRef, sectionRef);
+  const focusFirstField = useStepFocus(confirming, noticeRef, sectionRef);
 
   const handleOpen = useCallback(
     () => setState((current) => openReturn(current, rows)),
@@ -101,10 +101,10 @@ export function SaleReturnPanel({
     () => setState((current) => reviewReturn(current)),
     []
   );
-  const handleBack = useCallback(
-    () => setState((current) => backToReturnEditing(current)),
-    []
-  );
+  const handleBack = useCallback(() => {
+    setState((current) => backToReturnEditing(current));
+    focusFirstField();
+  }, [focusFirstField]);
   const handleDiscardRequest = useCallback(
     () => setState((current) => requestDiscardReturn(current)),
     []
@@ -246,6 +246,7 @@ export function SaleReturnPanel({
             onClose={handleClose}
             onConfirm={handleConfirmEvent}
             onReview={handleReview}
+            retrying={state.submission.phase === "locked"}
             reviewLabel="Revisar devolução"
             submitting={state.submission.phase === "submitting"}
           />

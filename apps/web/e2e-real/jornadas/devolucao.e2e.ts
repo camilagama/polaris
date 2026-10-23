@@ -103,7 +103,7 @@ test("devolução parcial da 2ª linha pelo detalhe: o estoque dela volta, venda
   await panel.getByLabel(RETURNED_BOTTLE).fill("4");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
   await expect(panel.getByRole("alert").first()).toHaveText(
-    "Use um número inteiro de 1 a 3."
+    "Informe de 1 a 3, sem vírgula."
   );
   // and by the server
   expect(

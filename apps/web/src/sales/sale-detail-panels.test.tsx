@@ -191,7 +191,7 @@ describe("SaleIdMissing", () => {
 });
 
 const renderActions = (
-  step: { confirming: boolean; locked: boolean },
+  step: { confirming: boolean; locked: boolean; retrying?: boolean },
   destructive = true
 ) =>
   renderToStaticMarkup(
@@ -205,6 +205,7 @@ const renderActions = (
       onClose={NOOP}
       onConfirm={NOOP}
       onReview={NOOP}
+      retrying={step.retrying ?? false}
       reviewLabel="Revisar cancelamento"
       submitting={false}
     />
@@ -232,9 +233,19 @@ describe("OperationActions", () => {
   });
 
   it("sends the same command again from a locked cancellation as the main action, not a destructive one", () => {
-    const html = renderActions({ confirming: true, locked: true });
+    const html = renderActions({
+      confirming: true,
+      locked: true,
+      retrying: true,
+    });
     expect(html).toContain("Confirmar cancelamento");
     expect(html).not.toContain(DESTRUCTIVE);
+  });
+
+  it("keeps the destructive confirm of a first send, which is in flight and locked but not a retry", () => {
+    expect(
+      renderActions({ confirming: true, locked: true, retrying: false })
+    ).toMatch(DESTRUCTIVE_CONFIRM);
   });
 
   it("keeps the confirm of a return as the main action, not a destructive one", () => {

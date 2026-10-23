@@ -58,7 +58,7 @@ export function SaleCancelPanel({
   const sectionRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const confirming = state.step === "confirming" || isCancelLocked(state);
-  useStepFocus(confirming, noticeRef, sectionRef);
+  const focusFirstField = useStepFocus(confirming, noticeRef, sectionRef);
 
   const handleOpen = useCallback(
     () => setState((current) => openCancel(current)),
@@ -86,10 +86,10 @@ export function SaleCancelPanel({
     () => setState((current) => reviewCancel(current)),
     []
   );
-  const handleBack = useCallback(
-    () => setState((current) => backToCancelEditing(current)),
-    []
-  );
+  const handleBack = useCallback(() => {
+    setState((current) => backToCancelEditing(current));
+    focusFirstField();
+  }, [focusFirstField]);
   const handleDiscardRequest = useCallback(
     () => setState((current) => requestDiscardCancel(current)),
     []
@@ -218,6 +218,7 @@ export function SaleCancelPanel({
             onClose={handleClose}
             onConfirm={handleConfirmEvent}
             onReview={handleReview}
+            retrying={state.submission.phase === "locked"}
             reviewLabel="Revisar cancelamento"
             submitting={submitting}
           />
