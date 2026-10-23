@@ -1,7 +1,7 @@
 /*
- * What is left of the old sale sheet for the sales screens not migrated yet (history, detail, cancellation,
- * return and the customer of a sale). The new sale screen (sale-page.tsx) has no CSS of its own (ADR 0103);
- * this sheet goes away with the last of those screens.
+ * What is left of the old sale sheet for the sales screens not migrated yet (cancellation, return and the customer
+ * of a sale, and the form that asks for a sale identifier, which the customer page shares). The migrated sales
+ * screens have no CSS of its own (ADR 0103); this sheet goes away with the last of those screens.
  */
 @layer legacy {
   .sale-section {
@@ -132,48 +132,12 @@
     cursor: wait;
   }
 
-  .sale-lines {
-    display: grid;
-    gap: 0.6rem;
-    padding: 0;
-    margin: 0 0 0.9rem;
-    list-style: none;
-  }
-
-  .sale-lines li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.15rem 0.75rem;
-    padding-bottom: 0.6rem;
-    font-size: 0.86rem;
-    border-bottom: 1px solid var(--ui-line);
-  }
-
-  .sale-line-label {
-    grid-column: 1 / -1;
-    font-weight: 700;
-    overflow-wrap: anywhere;
-  }
-
-  .sale-lines small {
-    grid-column: 1 / -1;
-    font-size: 0.76rem;
-    color: var(--ui-muted);
-  }
-
-  .sale-lines strong,
-  .sale-totals dd {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .sale-totals,
   .sale-details {
     display: grid;
     gap: 0.35rem;
     margin: 0 0 0.9rem;
   }
 
-  .sale-totals > div,
   .sale-details > div {
     display: flex;
     flex-wrap: wrap;
@@ -182,12 +146,10 @@
     font-size: 0.86rem;
   }
 
-  .sale-totals dt,
   .sale-details dt {
     color: var(--ui-muted);
   }
 
-  .sale-totals dd,
   .sale-details dd {
     margin: 0;
     font-weight: 650;
@@ -202,49 +164,6 @@
 
   .sale-details dd {
     text-align: left;
-  }
-
-  .sale-totals .is-discount dd {
-    color: var(--ui-accent-strong);
-  }
-
-  .sale-totals .is-total {
-    padding-top: 0.55rem;
-    margin-top: 0.2rem;
-    border-top: 1px solid var(--ui-line);
-  }
-
-  .sale-totals .is-total dt,
-  .sale-totals .is-total dd {
-    font-size: 1.1rem;
-    font-weight: 800;
-    color: var(--ui-ink);
-  }
-
-  .sale-fee {
-    display: inline-block;
-    padding: 0.15rem 0.5rem;
-    font-weight: 700;
-    border-radius: 0.4rem;
-  }
-
-  .sale-fee.is-known,
-  .sale-fee.is-zero {
-    color: var(--ui-accent-strong);
-    background: var(--ui-accent-soft);
-  }
-
-  .sale-fee.is-not_applicable {
-    padding-inline: 0;
-    font-weight: 650;
-    color: var(--ui-muted);
-  }
-
-  .sale-fee.is-unknown {
-    font-style: italic;
-    color: var(--ui-warning);
-    background: var(--ui-warning-soft);
-    border: 1px dashed var(--ui-warning);
   }
 
   .sale-link {

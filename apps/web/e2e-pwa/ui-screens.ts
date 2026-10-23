@@ -2,6 +2,7 @@
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
 import { entryStates } from "./ui-entry-states";
+import { historyStates } from "./ui-history-states";
 import { passwordStates } from "./ui-password-states";
 import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
@@ -135,6 +136,7 @@ async function exerciseGallery(page: Page) {
 
 /** The files of the sale screen on the new interface: the other screens of `src/sales` are still the old CSS. */
 const SALE_SOURCES = [
+  "src/sales/confirmed-sale-parts.tsx",
   "src/sales/offline-sale-panels.tsx",
   "src/sales/sale-confirmed-panel.tsx",
   "src/sales/sale-fields.tsx",
@@ -201,6 +203,25 @@ async function exerciseSalePayment(page: Page) {
     { role: "listbox" }
   );
 }
+
+/** The files of the sales history and of the sale detail on the new interface: the panels of the detail are still old. */
+const HISTORY_SOURCES = [
+  "src/sales/sale-detail-page.tsx",
+  "src/sales/sale-history-list.tsx",
+  "src/sales/sale-history-page.tsx",
+  "src/sales/sale-receipt.tsx",
+];
+
+/** One state of the sales history (`ui-history-states.ts`). */
+const historyScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `histórico ${name}`,
+  open,
+  sourceDirs: HISTORY_SOURCES,
+  status: "migrated",
+});
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
 const STOCK_SOURCES = [
@@ -401,6 +422,9 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
+  historyScreen("lista", historyStates.list),
+  historyScreen("sem conexão", historyStates.offline),
+  historyScreen("período invertido", historyStates.periodError),
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),

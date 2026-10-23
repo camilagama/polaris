@@ -659,7 +659,7 @@ test.describe("histórico de vendas", () => {
     await page.getByLabel("Rede disponível").uncheck();
 
     await expect(
-      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+      page.getByText("Estas são as vendas mais recentes guardadas neste aparelho")
     ).toBeVisible();
     const list = page.getByRole("list", { name: "Vendas" });
     await expect(list.getByRole("listitem")).toHaveCount(3);
@@ -667,9 +667,11 @@ test.describe("histórico de vendas", () => {
     await expect(list.getByRole("link")).toHaveCount(0);
     await expect(page.getByLabel("Busca")).toBeDisabled();
 
-    await page.getByLabel("Situação").selectOption({ label: "Canceladas" });
+    await page.getByRole("combobox", { name: "Situação" }).click();
+    await page.getByRole("option", { name: "Canceladas" }).click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
-    await page.getByLabel("Situação").selectOption({ label: "Todas" });
+    await page.getByRole("combobox", { name: "Situação" }).click();
+    await page.getByRole("option", { name: "Todas" }).click();
     await page.getByLabel("Cliente").fill("angela");
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("Ângela Souza");

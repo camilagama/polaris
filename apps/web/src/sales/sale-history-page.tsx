@@ -1,9 +1,14 @@
-import { type ChangeEvent, useCallback } from "react";
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
+import { type ReactNode, useCallback } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { PendingSalesPanel } from "./pending-sales-panel";
-import "./sale-legacy.css";
-import "./sale-history.css";
+import { PendingSalesCard } from "./offline-sale-panels";
+import { SelectField, TextField } from "./sale-fields";
+import { SaleHistoryList } from "./sale-history-list";
 import {
   activeFilterCount,
   HISTORY_STATUS_FILTERS,
@@ -13,6 +18,13 @@ import {
   loadMoreView,
 } from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
+
+/** The select has no empty value: "Todas" is "all" here and "" in the filters. */
+const ALL = "all";
+const STATUS_OPTIONS = HISTORY_STATUS_FILTERS.map(([value, label]) => ({
+  id: value === "" ? ALL : value,
+  label,
+}));
 
 function isStatusFilter(value: string): value is HistoryStatusFilter {
   return HISTORY_STATUS_FILTERS.some(([status]) => status === value);
@@ -36,113 +48,106 @@ function HistoryFiltersBar({
 }: FiltersProps) {
   const active = activeFilterCount(filters);
   const handleFrom = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ from: event.target.value }),
+    (from: string) => onChange({ from }),
     [onChange]
   );
-  const handleTo = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ to: event.target.value }),
-    [onChange]
-  );
+  const handleTo = useCallback((to: string) => onChange({ to }), [onChange]);
   const handleStatus = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const { value } = event.target;
-      onChange({ status: isStatusFilter(value) ? value : "" });
+    (value: string) => {
+      const status = value === ALL ? "" : value;
+      onChange({ status: isStatusFilter(status) ? status : "" });
     },
     [onChange]
   );
   const handleCustomer = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ customer: event.target.value }),
+    (customer: string) => onChange({ customer }),
     [onChange]
   );
   const handleQuery = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ query: event.target.value }),
+    (query: string) => onChange({ query }),
     [onChange]
   );
   return (
-    <search aria-label="Filtrar vendas" className="sale-filters">
-      <div className="sale-field">
-        <label htmlFor="history-from">De (data da venda)</label>
-        <input
-          aria-describedby={period ? "history-period-error" : undefined}
-          aria-invalid={period ? true : undefined}
+    <search aria-label="Filtrar vendas" className="grid gap-3">
+      <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <TextField
           id="history-from"
+          label="De (data da venda)"
           onChange={handleFrom}
           type="date"
           value={filters.from}
         />
-      </div>
-      <div className="sale-field">
-        <label htmlFor="history-to">Até (data da venda)</label>
-        <input
-          aria-describedby={period ? "history-period-error" : undefined}
-          aria-invalid={period ? true : undefined}
+        <TextField
+          error={period ?? undefined}
           id="history-to"
+          label="Até (data da venda)"
           onChange={handleTo}
           type="date"
           value={filters.to}
         />
-      </div>
-      <div className="sale-field">
-        <label htmlFor="history-status">Situação</label>
-        <select
+        <SelectField
           id="history-status"
+          label="Situação"
           onChange={handleStatus}
-          value={filters.status}
-        >
-          {HISTORY_STATUS_FILTERS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="sale-field">
-        <label htmlFor="history-customer">Cliente</label>
-        <input
-          autoComplete="off"
+          options={STATUS_OPTIONS}
+          placeholder="Todas"
+          value={filters.status === "" ? ALL : filters.status}
+        />
+        <TextField
           id="history-customer"
+          label="Cliente"
           onChange={handleCustomer}
           placeholder="Nome do cliente"
-          type="search"
           value={filters.customer}
         />
-      </div>
-      <div className="sale-field">
-        <label htmlFor="history-query">Busca</label>
-        <input
-          autoComplete="off"
+        <TextField
           disabled={offline}
           id="history-query"
+          label="Busca"
           onChange={handleQuery}
           placeholder={offline ? "Só com conexão" : "Produto vendido"}
-          type="search"
           value={filters.query}
         />
       </div>
-      <div className="sale-filters-actions">
-        <button
-          className="quiet-button"
-          disabled={active === 0}
-          onClick={onReset}
-          type="button"
-        >
-          Limpar filtros{active > 0 ? ` (${active})` : ""}
-        </button>
-      </div>
-      {period ? (
-        <p
-          className="sale-error sale-filters-error"
-          id="history-period-error"
-          role="alert"
-        >
-          {period}
-        </p>
-      ) : null}
+      <Button
+        className="justify-self-start"
+        disabled={active === 0}
+        onClick={onReset}
+        type="button"
+        variant="outline"
+      >
+        Limpar filtros{active > 0 ? ` (${active})` : ""}
+      </Button>
     </search>
+  );
+}
+
+function OfflineHistoryNotice() {
+  return (
+    <Alert variant="warning">
+      <CloudOffIcon aria-hidden="true" />
+      <AlertTitle>Sem conexão.</AlertTitle>
+      <AlertDescription>
+        Estas são as vendas mais recentes guardadas neste aparelho (as últimas
+        100 que o servidor confirmou); detalhes, busca por item e vendas mais
+        antigas só com conexão.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** A line of text in a card, for loading and empty: the same card the products and the stock use. */
+function StateCard({
+  children,
+  role,
+}: {
+  children: ReactNode;
+  role?: "status";
+}) {
+  return (
+    <Card className="items-center px-(--card-spacing) text-center" role={role}>
+      <p className="text-muted-foreground">{children}</p>
+    </Card>
   );
 }
 
@@ -161,26 +166,19 @@ export function SaleHistoryPage() {
   const more = loadMoreView(state);
 
   return (
-    <div className="sale-page">
-      <section className="categories-heading">
-        <div>
-          <p className="categories-eyebrow">Vendas</p>
-          <h1>Histórico de vendas</h1>
-          <p className="categories-intro-copy">
-            Vendas confirmadas e canceladas, da mais recente para a mais antiga.
-            Abra uma venda para ver o registro completo, devolver, cancelar ou
-            ajustar o cliente.
-          </p>
-        </div>
-      </section>
-      {offline ? (
-        <p className="sale-message is-warning" role="status">
-          Sem conexão. Estas são as vendas mais recentes guardadas neste
-          aparelho (as últimas 100 que o servidor confirmou); detalhes, busca
-          por item e vendas mais antigas só com conexão.
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <header className="grid gap-1">
+        <h1 className="text-title">Histórico de vendas</h1>
+        <p className="text-muted-foreground text-support">
+          Da mais recente para a mais antiga. Abra uma venda para ver o
+          registro, devolver, cancelar ou ajustar o cliente.
         </p>
-      ) : null}
-      {workspace ? <PendingSalesPanel workspace={workspace} /> : null}
+      </header>
+      {offline ? <OfflineHistoryNotice /> : null}
+      {workspace ? <PendingSalesCard workspace={workspace} /> : null}
       <HistoryFiltersBar
         filters={filters}
         offline={offline}
@@ -189,90 +187,58 @@ export function SaleHistoryPage() {
         period={period}
       />
       {view.kind === "loading" && period === null ? (
-        <p className="sale-status" role="status">
-          {view.message}
-        </p>
+        <StateCard role="status">{view.message}</StateCard>
       ) : null}
       {view.kind === "error" ? (
-        <p className="sale-message is-error" role="alert">
-          {view.message}{" "}
-          <button className="sale-link-button" onClick={reload} type="button">
-            Tentar novamente
-          </button>
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {view.message}
+            <Button onClick={reload} size="sm" type="button" variant="link">
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <p className="sale-empty">
-          {view.message}{" "}
-          {view.href ? <a href={view.href}>Registrar uma venda</a> : null}
-        </p>
+        <StateCard>
+          {view.message}
+          {view.href ? (
+            <>
+              {" "}
+              <a
+                className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+                href={view.href}
+              >
+                Registrar uma venda
+              </a>
+            </>
+          ) : null}
+        </StateCard>
       ) : null}
       {view.kind === "ready" ? (
-        <ul aria-label="Vendas" className="sale-history-list">
-          {view.rows.map((row) => (
-            <li key={row.id}>
-              <div className="sale-history-main">
-                {offline ? (
-                  <span>
-                    {row.dateText}
-                    {row.timeText ? (
-                      <span className="sale-history-time">
-                        {" "}
-                        · {row.timeText}
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  <a href={row.detailHref}>
-                    {row.dateText}
-                    {row.timeText ? (
-                      <span className="sale-history-time">
-                        {" "}
-                        · {row.timeText}
-                      </span>
-                    ) : null}
-                  </a>
-                )}
-                <span className={`sale-badge is-${row.statusTone}`}>
-                  {row.statusLabel}
-                </span>
-                {row.returnsBadge ? (
-                  <span className="sale-badge is-returns">
-                    {row.returnsBadge}
-                  </span>
-                ) : null}
-                {row.backdated ? (
-                  <span className="sale-badge is-backdated">Retroativa</span>
-                ) : null}
-              </div>
-              <strong>{row.totalText}</strong>
-              <p className="sale-history-meta">
-                {row.methodText} · {row.itemCountText}
-              </p>
-              <p className="sale-history-meta">Cliente: {row.customerText}</p>
-            </li>
-          ))}
-        </ul>
+        <SaleHistoryList offline={offline} rows={view.rows} />
       ) : null}
       <div aria-live="polite" role="status">
         {more.busy ? (
-          <p className="sale-status">Carregando mais vendas…</p>
+          <p className="text-muted-foreground">Carregando mais vendas…</p>
         ) : null}
       </div>
       {more.error ? (
-        <p className="sale-message is-error" role="alert">
-          {more.error}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{more.error}</AlertDescription>
+        </Alert>
       ) : null}
       {more.visible ? (
-        <button
-          className="quiet-button sale-history-more"
+        <Button
+          className="justify-self-start"
           disabled={more.busy}
           onClick={loadMore}
           type="button"
+          variant="outline"
         >
           {more.label}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
