@@ -87,7 +87,7 @@ describe("list load states", () => {
     });
     expect(historyView(state)).toEqual({
       kind: "error",
-      message: "Sua conta não tem acesso a esta organização ou ação.",
+      message: "Sua conta não tem acesso a esta loja ou a esta ação.",
     });
   });
 
@@ -669,7 +669,7 @@ describe("sale detail", () => {
       })
     ).toContain("não foi encontrada");
     expect(detailLoadErrorMessage({ code: "FORBIDDEN" })).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(detailLoadErrorMessage(new Error("x"))).toContain(
       "Não foi possível carregar"

@@ -196,7 +196,7 @@ test("Categorias: nome repetido é dito junto do campo de cima e o que foi digit
   await page.getByLabel("Nova categoria").fill("Camisetas");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Já existe uma categoria com esse nome nesta organização."
+    "Já existe uma categoria com esse nome nesta loja."
   );
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Camisetas");
 });

@@ -980,7 +980,7 @@ describe("what the rest of the app plugs into", () => {
     const workspaces = await runtime.logoutWorkspaces();
     expect(workspaces.map((workspace) => workspace.label)).toEqual([
       "org-2",
-      "org-1 (outra organização)",
+      "org-1 (outra loja)",
     ]);
     expect(await attemptLogout(workspaces)).toEqual({ status: "ready" });
     expect(w.purged).toHaveLength(2);
@@ -994,7 +994,7 @@ describe("what the rest of the app plugs into", () => {
     const w = world();
     const runtime = w.make();
     await runtime.start("org-1");
-    await queueProduct(runtime, "Na outra organização", 1);
+    await queueProduct(runtime, "Na outra loja", 1);
     await runtime.start("org-2");
     const workspaces = await runtime.logoutWorkspaces();
 
@@ -1003,7 +1003,7 @@ describe("what the rest of the app plugs into", () => {
     expect(outcome).toMatchObject({ status: "blocked" });
     if (outcome.status === "blocked") {
       expect(outcome.blocked.map((item) => item.label)).toEqual([
-        "org-1 (outra organização)",
+        "org-1 (outra loja)",
       ]);
     }
     expect(w.purged).toEqual([]);

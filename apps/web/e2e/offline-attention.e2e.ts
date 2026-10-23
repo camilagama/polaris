@@ -95,7 +95,7 @@ test("uma mudança de direito leva à revisão da conta, sem reenviar nem descar
 }) => {
   await openLab(page, `user-${crypto.randomUUID()}`);
   await click(page, "Criar venda recusada por direito", "Direito alterado: ok");
-  await expect(items(page).first()).toContainText("plano desta organização");
+  await expect(items(page).first()).toContainText("plano desta loja");
   await expect(
     page.getByRole("button", { name: "Reenviar venda" })
   ).toHaveCount(0);

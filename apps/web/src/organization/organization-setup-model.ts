@@ -84,7 +84,7 @@ export function validateSetup(draft: SetupDraft): {
   const timezone = draft.timezone.trim();
   const errors: SetupErrors = {};
   if (name === "") {
-    errors.name = "Informe o nome da organização.";
+    errors.name = "Informe o nome da loja.";
   } else if ([...name].length > MAX_ORGANIZATION_NAME_LENGTH) {
     errors.name = `Use no máximo ${MAX_ORGANIZATION_NAME_LENGTH} caracteres.`;
   }
@@ -117,19 +117,19 @@ export function setupErrorMessage(error: unknown): string {
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);
   if (code === "UNAUTHORIZED") {
-    return "A organização não foi aberta.";
+    return "A loja não foi aberta.";
   }
   if (code === "FORBIDDEN") {
-    return "Verifique seu email antes de criar ou abrir uma organização.";
+    return "Confirme seu email antes de abrir a loja.";
   }
   if (code === "BAD_REQUEST") {
     return "O nome ou o fuso horário foram recusados. Revise os campos.";
   }
   if (code === "CONFLICT" || reason === "multiple_existing_organizations") {
-    return "Sua conta já tem uma organização que não pôde ser aberta automaticamente. Fale com o suporte.";
+    return "Sua conta já tem uma loja que não abriu sozinha. Fale com o suporte.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O Polaris está temporariamente indisponível. Tente novamente.";
   }
-  return "Não foi possível criar ou abrir a organização. Tente novamente.";
+  return "Não foi possível abrir a loja. Tente novamente.";
 }

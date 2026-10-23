@@ -359,7 +359,7 @@ describe("error mapping", () => {
       data: { reason: "sale_already_cancelled" },
     });
     expect(forbidden.message).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(forbidden.reason).toBeNull();
   });

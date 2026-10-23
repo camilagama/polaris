@@ -145,7 +145,7 @@ describe("load states", () => {
       code: "FORBIDDEN",
     });
     expect(currentCustomerView(forbidden).label).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(availableActions(missing)).toEqual([]);
   });
@@ -154,7 +154,7 @@ describe("load states", () => {
     const state = customersLoadFailed(neverAssigned(), { code: "FORBIDDEN" });
     expect(pickerView(state)).toEqual({
       kind: "error",
-      message: "Sua conta não tem acesso a esta organização ou ação.",
+      message: "Sua conta não tem acesso a esta loja ou a esta ação.",
     });
   });
 
@@ -461,7 +461,7 @@ describe("error mapping", () => {
       data: { reason: "sale_customer_archived" },
     });
     expect(forbidden.message).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(forbidden.reason).toBeNull();
     expect(forbidden.reloadCustomers).toBe(false);

@@ -115,7 +115,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   if (organizations.length < 2) {
     return (
       <p className="m-0 truncate font-medium text-sm">
-        <span className="sr-only">Organização: </span>
+        <span className="sr-only">Loja: </span>
         <span>{organization.name}</span>
       </p>
     );
@@ -123,7 +123,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   return (
     <div className="grid gap-1.5">
       <label className="text-xs" htmlFor="app-organization">
-        Organização
+        Loja
       </label>
       <select
         className="focus-ring h-ctl-md touch:h-12 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm"
@@ -422,7 +422,7 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   const { load, reload } = useOrganizationLoad();
 
   if (load.status === "loading") {
-    return <PageLoading label="Carregando sua organização…" />;
+    return <PageLoading label="Carregando sua loja…" />;
   }
   if (load.status === "session_ended") {
     return <SessionEndedGate atOpen={load.atOpen} />;

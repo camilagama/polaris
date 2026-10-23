@@ -86,7 +86,7 @@ export function readErrorMessage(error: unknown, subject: string): string {
     return unaccepted;
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   return `Não foi possível carregar ${subject}. Tente novamente.`;
 }

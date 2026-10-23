@@ -73,7 +73,7 @@ export function customerErrorMessage(
     return unauthorizedText(action);
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (
     code === "BAD_REQUEST" &&
@@ -85,7 +85,7 @@ export function customerErrorMessage(
     return "Os dados do cliente mudaram em outra solicitação. Atualize a lista e tente novamente.";
   }
   if (code === "NOT_FOUND") {
-    return "O cliente não existe mais nesta organização.";
+    return "O cliente não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE" && action === "duplicate-check") {
     return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";

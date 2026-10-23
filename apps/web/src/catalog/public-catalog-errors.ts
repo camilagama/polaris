@@ -98,7 +98,7 @@ function publicCatalogRefusalMessage(
       : "A alteração do catálogo público não foi salva.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não pode gerir o catálogo público desta organização.";
+    return "Sua conta não pode gerir o catálogo público desta loja.";
   }
   if (code === "BAD_REQUEST") {
     return (reason && REFUSALS[reason]) ?? "Confira os dados informados.";

@@ -711,7 +711,7 @@ interface ReasonOutcome {
 }
 
 const variantGoneMessage =
-  "Esta variante não existe mais nesta organização. Atualizamos a lista.";
+  "Esta variante não existe mais nesta loja. Atualizamos a lista.";
 const invalidDataMessage =
   "O servidor recusou os dados na validação. Revise quantidade, data e demais campos.";
 const incompatibleMessage =
@@ -835,7 +835,7 @@ function genericFailure(code: string | undefined): StockFailure {
       return stockFailure("O movimento de estoque não foi registrado.");
     case "FORBIDDEN":
       return stockFailure(
-        "Sua conta não tem permissão para alterar o estoque nesta organização."
+        "Sua conta não tem permissão para alterar o estoque nesta loja."
       );
     case "BAD_REQUEST":
       return stockFailure(invalidDataMessage);

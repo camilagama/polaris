@@ -1,5 +1,6 @@
 # Organização e acesso
 
+- **Vocabulário.** No código, nos contratos e nesta documentação o conceito segue "organização" (`organization`). No texto que o lojista lê (telas, avisos, e-mails), a mesma coisa se chama "loja"; renomear identificadores não faz parte dessa regra.
 - A organização é dona do catálogo, estoque, clientes, vendas e registros operacionais. Usuário e organização são entidades diferentes.
 - No onboarding V1, uma regra de domínio limita o usuário a uma organização; a chave de membership é `(organization_id, user_id)` e o modelo permite múltiplas organizações no futuro.
 - A criação de organização exige email verificado e valida essa condição no servidor; ver [authentication.md](authentication.md).

@@ -76,7 +76,7 @@ describe("SubmitButton with the challenge script blocked (N-1)", () => {
 describe("EntryScreen outside the entry pages (t239)", () => {
   const screen = (props: Partial<Parameters<typeof EntryScreen>[0]> = {}) =>
     renderToStaticMarkup(
-      <EntryScreen title="Abra a sua organização" {...props}>
+      <EntryScreen title="Abra a sua loja" {...props}>
         <p>conteúdo</p>
       </EntryScreen>
     );

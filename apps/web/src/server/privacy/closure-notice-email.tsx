@@ -102,7 +102,7 @@ export function closureNoticeContent(
   // format, and invites no request: the server refuses it, so the text does too.
   const beforeDeletionDay =
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
-  const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua organização)`;
+  const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua loja)`;
   const copyLine = beforeDeletionDay
     ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${copyLimit}.`
     : `O prazo para pedir uma cópia dos dados terminou em ${copyLimit}. Depois de apagados, os dados não podem ser recuperados.`;

@@ -46,13 +46,13 @@ describe("mensagem de erro de produto", () => {
 
   it("os demais códigos e o erro sem código", () => {
     expect(productErrorMessage(refusal("FORBIDDEN"))).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
     expect(productErrorMessage(refusal("BAD_REQUEST"), "create")).toBe(
       "Informe um nome de produto válido."
     );
     expect(productErrorMessage(refusal("NOT_FOUND"), "update")).toBe(
-      "O produto não existe mais nesta organização."
+      "O produto não existe mais nesta loja."
     );
     expect(productErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
       "temporariamente indisponível"

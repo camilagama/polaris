@@ -32,7 +32,7 @@ import {
   validateSetup,
 } from "./organization-setup-model";
 
-const TITLE = "Abra a sua organização";
+const TITLE = "Abra a sua loja";
 
 interface OrganizationSetupProps {
   /** Called once the organization exists (created or already there). */
@@ -111,7 +111,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
 
   return (
     <EntryScreen
-      support="Dê um nome à sua organização. Dá para mudar depois."
+      support="Dê um nome à sua loja. Dá para mudar depois."
       title={TITLE}
     >
       <form
@@ -121,9 +121,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
         onSubmit={handleSubmitEvent}
       >
         <Field data-invalid={errors.name ? true : undefined}>
-          <FieldLabel htmlFor="organization-name">
-            Nome da organização
-          </FieldLabel>
+          <FieldLabel htmlFor="organization-name">Nome da loja</FieldLabel>
           <Input
             aria-describedby={
               errors.name ? "organization-name-error" : undefined
@@ -144,7 +142,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           error={errors.timezone}
           hint="É o horário que o Polaris usa nas datas das vendas."
           id="organization-timezone"
-          label="Fuso horário da organização"
+          label="Horário da loja"
           onChange={setTimezone}
           options={BRAZIL_TIMEZONES}
           placeholder="Escolha o fuso"
@@ -162,7 +160,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           </EntryLinkButton>
         ) : null}
         <SubmitButton pending={pending} pendingText="Abrindo…">
-          Criar ou abrir organização
+          Abrir loja
         </SubmitButton>
       </form>
       <LogoutControl shell />
