@@ -49,20 +49,20 @@ Esta emenda registra o que entrou depois de 20/10 e a ordem de execução que o 
 - **Preço zero no catálogo:** preço de tabela 0,00 conta como não informado no catálogo público (PR #260, 23/10; AC-12). O catálogo sem valor veio no PR #249 (22/10).
 - **Vocabulário:** "organização" passa a "loja" no texto visível ao lojista (PR #262, 23/10; o PR #267 completa os textos). "horário" substitui "fuso" nos textos, e `apps/web/src` da `main` não tem mais "fuso".
 
-**Ordem de execução a partir de 23/10.** O plano de execução (`PLANO-EXECUCAO.md`, na pasta compartilhada da análise de 23/10, fora deste repositório) tem seis fases:
+**Ordem de execução a partir de 23/10.** Aprovada pelo usuário em 23/10, com seis fases. F1 e F2 rodam em paralelo: a receita no dev interno e o Início e a ativação no externo.
 - **F0 Fundação:** spikes de bytes e de gráficos, modelo de orçamento em duas camadas (F0.3, do Filipe Luís), cortes e wireframes, e a fonte única de cor.
-- **F1 Receita:** Assinatura, cancelar, termos v1, Gate 7 no sandbox, e-mails do ciclo e limites que levam ao Pro. Vem antes do polimento.
-- **F2 Início e ativação:** Início em `/`, no lugar da Venda; checklist de ativação; produto com estoque inicial; funil; importação de planilha; Resultado com gráficos.
+- **F1 Receita:** Assinatura, cancelar, termos v1, Gate 7 no sandbox, e-mails do ciclo e limites que levam ao Pro. Roda em paralelo com a F2.
+- **F2 Início e ativação:** Início em `/`, no lugar da Venda; checklist de ativação; produto com estoque inicial; funil; importação de planilha; Resultado com gráficos. Roda em paralelo com a F1.
 - **F3 Navegação e componentes:** abas, esqueleto e Dialog de tela inteira pelo shadcn; Produto em abas; menu de oito destinos.
 - **F4 Distribuição:** site mínimo e os 10 primeiros convites.
 - **F5 Go-live técnico:** t208, backup e ensaio de restauração, Gate 5 no BrowserStack, Access e MFA do Admin, e a flag offline só depois do Gate 5.
 
 **Decisões do usuário de 23/10** (`preferencias-usuario.md`, seção 23/10):
-- Receita primeiro.
-- Gráficos com o Bklit UI (MIT), copiados para `src/ui/charts` e adaptados: cores só dos tokens, movimento que respeita `prefers-reduced-motion` e números legíveis sem o gráfico.
+- Receita primeiro, no dev interno, com o Início e a ativação em paralelo, no externo.
+- Gráficos: biblioteca de gráficos a decidir em ADR (F0.3). Até lá, cores só dos tokens, movimento que respeita `prefers-reduced-motion` e números legíveis sem o gráfico.
 - shadcn primeiro: componente que o registro tem entra uma vez em `src/ui`; nada de cópia à mão nas telas.
 - Uma fonte de cor: o `theme.css`.
-- Início em `/` é a proposta da F2, aprovada junto com a análise que a originou.
+- Início em `/`, no lugar da Venda.
 
 Até a F0.3 ser aprovada, valem os tetos de bytes do ADR 0103, com o histórico na nota dele.
 
