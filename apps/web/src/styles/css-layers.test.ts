@@ -4,23 +4,23 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Every old sheet of apps/web/src lives in `@layer legacy` (ADR 0103, section 3): CSS outside a layer wins over
- * every layer, the utilities included, so one unwrapped sheet would beat the new components on a screen. Only
- * the files of Tailwind and the theme listed here may have rules outside a layer, and the entry must declare
- * the order of the layers before anything else.
+ * The old CSS is gone (ADR 0103, section 3; t256): no file of apps/web/src is in `@layer legacy`. CSS outside a layer
+ * wins over every layer, the utilities included, so one unwrapped sheet would beat the components on a screen: only
+ * the files of Tailwind and the theme listed here may have rules outside a layer, and the entry imports Tailwind
+ * first, which declares the order of its layers (theme, base, components, utilities) before anything else.
  */
 const src = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = "styles/index.css";
-const OUTSIDE_LEGACY = new Set([
+const BASE = new Set([
   ENTRY,
   // the shadcn tokens and the Tailwind theme of the v5.1
   "styles/theme.css",
   // copy of shadcn/tailwind.css (variants, keyframes, utilities)
   "styles/shadcn-tailwind.css",
-  // Tailwind's preflight, imported into the base layer by the entry
-  "styles/preflight.css",
 ]);
-const LAYER_ORDER = "@layer theme, base, components, legacy, utilities;";
+const LEGACY_LAYER = /@layer\s+[^;{]*\blegacy\b/;
+// the labs are no screens of the shop: their sheets are wholly inside `@layer components`, under the utilities
+const LAB_SHEETS = ["offline-poc/lab-page.css", "offline-poc/offline-poc.css"];
 const THEME_OUTSIDE_LAYER = [
   /^:root$/,
   /^\.dark$/,
@@ -70,37 +70,44 @@ function topLevelStatements(css: string): string[] {
   return statements;
 }
 
-/** What in a sheet is not inside `@layer legacy { … }`. */
-function outsideLegacy(css: string): string[] {
+/** What in a sheet is not inside `@layer <name> { … }`. */
+function outsideLayer(css: string, layer: string): string[] {
   return topLevelStatements(css).filter(
-    (statement) => statement !== "@layer legacy"
+    (statement) => statement !== `@layer ${layer}`
   );
 }
 
-describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
+describe("no old CSS (ADR 0103, section 3)", () => {
   const files = cssFiles(src);
 
-  it("finds the old sheets and the files of the base", () => {
-    expect(
-      files.filter((file) => !OUTSIDE_LEGACY.has(file)).length
-    ).toBeGreaterThan(0);
-    for (const file of OUTSIDE_LEGACY) {
+  it("finds the files of the base and of the labs", () => {
+    for (const file of [...BASE, ...LAB_SHEETS]) {
       expect(files).toContain(file);
     }
   });
 
-  it.each(files.filter((file) => !OUTSIDE_LEGACY.has(file)))(
-    "%s is wholly inside @layer legacy",
-    (file) => {
-      expect(outsideLegacy(readFileSync(join(src, file), "utf8"))).toEqual([]);
-    }
-  );
+  it("no file is in @layer legacy: every sheet is of the base or of a lab", () => {
+    expect(
+      files.filter(
+        (file) =>
+          LEGACY_LAYER.test(
+            readFileSync(join(src, file), "utf8").replace(COMMENT, "")
+          ) || !(BASE.has(file) || LAB_SHEETS.includes(file))
+      )
+    ).toEqual([]);
+  });
 
-  it("the entry declares the order of the layers before anything else, legacy under the utilities", () => {
-    const statements = topLevelStatements(
-      readFileSync(join(src, ENTRY), "utf8")
+  it.each(LAB_SHEETS)("%s is wholly inside @layer components", (file) => {
+    expect(
+      outsideLayer(readFileSync(join(src, file), "utf8"), "components")
+    ).toEqual([]);
+  });
+
+  it("the entry imports Tailwind before anything else, so the order of its layers comes first", () => {
+    const entry = readFileSync(join(src, ENTRY), "utf8").replace(COMMENT, "");
+    expect(entry.trim().split("\n")[0]).toBe(
+      '@import "tailwindcss" source(none);'
     );
-    expect(`${statements[0]};`).toBe(LAYER_ORDER);
   });
 
   it("theme.css has outside a layer only the tokens, the theme, the variants, the utilities and the touch block", () => {
@@ -123,16 +130,23 @@ describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
   });
 
   it("catches a rule outside the layer, a second layer and a stray @media", () => {
-    expect(outsideLegacy("@layer legacy { .a { color: red; } }")).toEqual([]);
+    const outsideComponents = (css: string) => outsideLayer(css, "components");
     expect(
-      outsideLegacy("/* x { } */ @layer legacy { .a{} @media (x){ .b{} } }")
+      outsideComponents("@layer components { .a { color: red; } }")
     ).toEqual([]);
-    expect(outsideLegacy(".a { color: red; }")).toEqual([".a"]);
     expect(
-      outsideLegacy("@layer legacy { .a {} }\n.b { content: '}' }")
+      outsideComponents(
+        "/* x { } */ @layer components { .a{} @media (x){ .b{} } }"
+      )
+    ).toEqual([]);
+    expect(outsideComponents(".a { color: red; }")).toEqual([".a"]);
+    expect(
+      outsideComponents("@layer components { .a {} }\n.b { content: '}' }")
     ).toEqual([".b"]);
-    expect(outsideLegacy("@layer base { .a {} }")).toEqual(["@layer base"]);
-    expect(outsideLegacy("@media (x) { .a {} }")).toEqual(["@media (x)"]);
-    expect(outsideLegacy('@import "./x.css";')).toEqual(['@import ""']);
+    expect(outsideComponents("@layer legacy { .a {} }")).toEqual([
+      "@layer legacy",
+    ]);
+    expect(outsideComponents("@media (x) { .a {} }")).toEqual(["@media (x)"]);
+    expect(outsideComponents('@import "./x.css";')).toEqual(['@import ""']);
   });
 });

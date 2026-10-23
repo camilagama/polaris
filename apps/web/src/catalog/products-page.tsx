@@ -31,7 +31,6 @@ import {
   ProductsHeader,
 } from "./products-page-parts";
 import { useProductsData } from "./use-products-data";
-import "./product-media-legacy.css";
 
 function countTextFor(shown: number, total: number, query: string): string {
   if (query.trim() !== "") {
@@ -63,7 +62,7 @@ export function ProductsPage() {
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const variantsHeadingRef = useRef<HTMLDivElement>(null);
-  const mediaRef = useRef<HTMLDivElement>(null);
+  const mediaHeadingRef = useRef<HTMLDivElement>(null);
 
   /**
    * The result of an action is said at the top of the screen, and a person far down the list is taken to it. The
@@ -249,7 +248,7 @@ export function ProductsPage() {
   }, [variantsProductId]);
   useEffect(() => {
     if (mediaProductId) {
-      focusLater(() => mediaRef.current?.focus());
+      focusLater(() => mediaHeadingRef.current?.focus());
     }
   }, [mediaProductId]);
 
@@ -360,10 +359,7 @@ export function ProductsPage() {
 
   return (
     <div className="products-page" ref={rootRef}>
-      <div
-        className="grid gap-4 font-sans text-foreground text-sm antialiased"
-        data-ui=""
-      >
+      <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
         <ProductsHeader
           buttonRef={newButtonRef}
           onNew={handleNew}
@@ -400,6 +396,15 @@ export function ProductsPage() {
             product={variantsProduct}
           />
         ) : null}
+        {mediaProduct ? (
+          <ProductMediaPanel
+            headingRef={mediaHeadingRef}
+            key={mediaProduct.id}
+            onClose={handleCloseMedia}
+            organizationId={organizationId}
+            product={mediaProduct}
+          />
+        ) : null}
 
         <ProductSearch onChange={handleQueryChange} value={query} />
         <ProductStatusNav onSelect={handleStatusClick} status={status} />
@@ -431,18 +436,6 @@ export function ProductsPage() {
           </p>
         ) : null}
       </div>
-
-      {/* The images panel is still the old interface (it migrates with its own screen): outside `data-ui`, as it was */}
-      {mediaProduct ? (
-        <div className="products-media-anchor" ref={mediaRef} tabIndex={-1}>
-          <ProductMediaPanel
-            key={mediaProduct.id}
-            onClose={handleCloseMedia}
-            organizationId={organizationId}
-            product={mediaProduct}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

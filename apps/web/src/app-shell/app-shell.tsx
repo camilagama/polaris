@@ -230,7 +230,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
               ) : null}
             </div>
           ) : null}
-          <LogoutControl onAttention={showLogoutAttention} shell />
+          <LogoutControl onAttention={showLogoutAttention} />
           {isMobile ? null : (
             <LegalLinks className="gap-x-4 gap-y-1 text-muted-foreground text-xs" />
           )}
@@ -265,7 +265,6 @@ function BottomBar({ navId }: { navId: NavId | null }) {
       aria-label="Destinos"
       className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
       data-bottom-bar=""
-      data-ui=""
     >
       {BOTTOM_BAR_IDS.map((id) => {
         const item = NAV_ITEMS.find((candidate) => candidate.id === id);
@@ -310,10 +309,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
 /** The top of the phone: the brand and the state chip with its short text, on one line (U-07); the theme is in "Mais". */
 function MobileHeader({ onlineOnly }: { onlineOnly: boolean }) {
   return (
-    <header
-      className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden"
-      data-ui=""
-    >
+    <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden">
       <a
         className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
         href="/"
@@ -332,10 +328,7 @@ function ShellChip({ onlineOnly }: { onlineOnly: boolean }) {
   return isMobile ? (
     <MobileHeader onlineOnly={onlineOnly} />
   ) : (
-    <div
-      className="relative mx-auto hidden w-[min(100%-2rem,76rem)] md:block"
-      data-ui=""
-    >
+    <div className="relative mx-auto hidden w-[min(100%-2rem,76rem)] md:block">
       <div className="absolute top-4 right-0 flex">
         <SyncStatus onlineOnly={onlineOnly} />
       </div>
@@ -423,10 +416,7 @@ function LegalLinks({ className }: { className: string }) {
  */
 function AppFooter() {
   return (
-    <footer
-      className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm md:hidden"
-      data-ui=""
-    >
+    <footer className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm md:hidden">
       <LegalLinks className="gap-x-5 gap-y-2" />
     </footer>
   );
@@ -511,8 +501,7 @@ interface AppShellProps {
 
 /**
  * The single frame of every screen (v5.1): the sidebar from 760 px, the header and the bottom bar below it, the
- * state chip, the organization and the main landmark. Old screens keep their own CSS inside `main`; only the
- * frame is on the new interface (`data-ui` on each of its parts, never on `main`).
+ * state chip, the organization and the main landmark.
  */
 export function AppShell({
   children,
@@ -554,10 +543,7 @@ export function AppShell({
         {updateNotice}
         {showNotice || showAcceptanceNotice ? (
           // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
-          <div
-            className="flow-root bg-background px-(--gutter) pt-4"
-            data-ui=""
-          >
+          <div className="flow-root bg-background px-(--gutter) pt-4">
             <div className="mx-auto max-w-[420px]">
               {showNotice ? <SessionEndedNotice alone /> : null}
               {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
@@ -571,10 +557,9 @@ export function AppShell({
     );
   }
   return (
-    <SidebarProvider className="ui-root app-shell-root bg-background">
+    <SidebarProvider className="app-shell-root bg-background">
       <a
         className="focus-ring not-focus:sr-only fixed top-2 left-2 z-50 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm no-underline"
-        data-ui=""
         href="#conteudo"
       >
         Ir para o conteúdo
@@ -586,7 +571,10 @@ export function AppShell({
       />
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
-        <main className="categories-content" id="conteudo">
+        <main
+          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
+          id="conteudo"
+        >
           {updateNotice}
           <ShellNotices
             acceptance={showAcceptanceNotice}

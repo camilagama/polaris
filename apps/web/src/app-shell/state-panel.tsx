@@ -45,7 +45,6 @@ export function StatePanel({
         "font-sans text-foreground text-sm antialiased",
         fullPage ? "min-h-dvh bg-background p-(--gutter)" : "py-2"
       )}
-      data-ui=""
     >
       <section
         aria-labelledby={titleId}

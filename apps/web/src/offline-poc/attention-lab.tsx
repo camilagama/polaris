@@ -15,6 +15,7 @@ import {
   type OutboxStore,
   openOutboxStore,
 } from "../offline/outbox/outbox-store";
+import "./lab-page.css";
 
 /**
  * Browser lab for the attention panel (PR58): the real panel over the real
@@ -35,8 +36,8 @@ const EMPTY: AttentionSummary = { items: [], waitingBehind: 0 };
 const noCollections: LocalWriter = {
   keys: () => Promise.resolve([]),
   readMeta: () => Promise.resolve(null),
-  remove: () => Promise.resolve(),
   recentSalesRows: () => Promise.resolve([]),
+  remove: () => Promise.resolve(),
   replaceRecentSales: () => Promise.resolve(),
   rows: () => Promise.resolve([]),
   upsert: () => Promise.resolve(),
