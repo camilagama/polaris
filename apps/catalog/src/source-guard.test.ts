@@ -33,6 +33,7 @@ const TEST_OR_TYPES = /\.(?:test|d)\.(?:ts|tsx)$/;
 const FOOTER_CALL = /<Footer href=\{footerHref\} \/>/g;
 const FOOTER_WITHOUT_HREF = /<Footer\b(?![^>]*\bhref=\{footerHref\})/;
 const FOOTER_FROM_PROFILE = /footerHref=\{[^}]*profile/;
+const EMPTY_OR_HTTPS_ORIGIN = /^$|^https:\/\/[^\s/?#@\\]+\/?$/;
 const LINE_COMMENT = /^\s*\/\/.*$/gm;
 const TRAILING_COMMA = /,(\s*[}\]])/g;
 
@@ -323,7 +324,7 @@ describe("the footer cannot be switched off (AC-10)", () => {
 });
 
 describe("POLARIS_SITE_URL by environment (AC-11)", () => {
-  it("is declared empty at the top level, in staging and in production", () => {
+  const configured = () => {
     const raw = readFileSync(join(root, "wrangler.jsonc"), "utf8");
     const config = JSON.parse(
       raw.replace(LINE_COMMENT, "").replace(TRAILING_COMMA, "$1")
@@ -334,8 +335,23 @@ describe("POLARIS_SITE_URL by environment (AC-11)", () => {
       };
       vars: Record<string, string>;
     };
-    expect(config.vars.POLARIS_SITE_URL).toBe("");
-    expect(config.env.staging.vars.POLARIS_SITE_URL).toBe("");
-    expect(config.env.production.vars.POLARIS_SITE_URL).toBe("");
+    return {
+      production: config.env.production.vars.POLARIS_SITE_URL,
+      staging: config.env.staging.vars.POLARIS_SITE_URL,
+      top: config.vars.POLARIS_SITE_URL,
+    };
+  };
+
+  it("is declared empty at the top level, in staging and in production", () => {
+    expect(configured()).toEqual({ production: "", staging: "", top: "" });
   });
+
+  // the day the site has an address, the value must be the origin and nothing else: no path, query or fragment
+  it.each(Object.entries(configured()))(
+    "is empty or a bare https origin in %s",
+    (_environment, value) => {
+      expect(typeof value).toBe("string");
+      expect(value).toMatch(EMPTY_OR_HTTPS_ORIGIN);
+    }
+  );
 });

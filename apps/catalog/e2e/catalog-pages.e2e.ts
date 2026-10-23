@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
   PRODUCT_WITH_LONG_TEXT,
   PRODUCT_WITH_ONE_PHOTO,
@@ -14,6 +14,7 @@ import { servePhotos } from "./photos";
  * variant without a price and the footer. The CSP side of the same pages is in csp.e2e.ts.
  */
 const FIXTURE = "http://127.0.0.1:5176";
+const LONG_NAME = "N".repeat(300);
 const WA_ME = /wa\.me/;
 const CARD = /card/;
 const PRICE_IN_TEXT = /49,90|49\.90|R\$/;
@@ -129,7 +130,7 @@ for (const size of SIZES) {
       await expect(button).toHaveAttribute("rel", "noopener noreferrer");
       const href = (await button.getAttribute("href")) ?? "";
       const url = new URL(href);
-      expect(url.origin + url.pathname).toBe("https://wa.me/5593912345678");
+      expect(url.origin + url.pathname).toBe("https://wa.me/5511000000000");
       const text = url.searchParams.get("text") ?? "";
       expect(text).toContain("Camiseta básica");
       expect(text).toContain(
@@ -140,6 +141,27 @@ for (const size of SIZES) {
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
       // the touch area (the ::before of the button) reaches 44 px even where the button is 36
       expect(await hasTouchArea(page, "a.btn[target=_blank]")).toBe(true);
+    });
+
+    test("o nome de 300 letras sem espaço fica em 3 linhas na grade e inteiro no DOM", async ({
+      page,
+    }) => {
+      await open(page, STORE);
+      const names = page.locator(".card-name");
+      const long = names.filter({ hasText: LONG_NAME });
+      await expect(long).toHaveText(LONG_NAME);
+      const lineHeight = await long.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).lineHeight)
+      );
+      const cardHeight = async (name: Locator) =>
+        (await name.locator("xpath=ancestor::a[1]").boundingBox())?.height ?? 0;
+      const short = names.filter({ hasText: "Camiseta básica" });
+      // a card with a short name (1 line) and 2 more lines of name is the most any name may take
+      const limit = (await cardHeight(short)) + 2 * lineHeight;
+      expect(await cardHeight(long)).toBeLessThanOrEqual(limit + 1);
+      expect(
+        await long.evaluate((element) => element.clientHeight)
+      ).toBeLessThanOrEqual(3 * lineHeight + 1);
     });
 
     test("o rodapé tem área de toque de 44 px", async ({ page }) => {

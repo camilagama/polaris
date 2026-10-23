@@ -14,10 +14,10 @@ import type {
 const HORIZONTE: PublicCatalogProfile = {
   description:
     "Roupas e acessórios no centro de Santarém. Retirada na loja ou entrega combinada pelo WhatsApp.",
-  instagram: "loja.horizonte",
+  instagram: "polaris_teste_fixture",
   name: "Loja Horizonte",
   slug: "loja-horizonte",
-  whatsapp: "5593912345678",
+  whatsapp: "5511000000000",
 };
 
 const SEM_CONTATO: PublicCatalogProfile = {
@@ -42,7 +42,7 @@ const NOME_LONGO: PublicCatalogProfile = {
   instagram: "loja.nome.longo",
   name: "Loja de Artigos Diversos para Casa, Jardim, Escritório e Presentes Criativos",
   slug: "nome-longo",
-  whatsapp: "5593912345678",
+  whatsapp: "5511000000000",
 };
 
 const id = (n: number) =>
