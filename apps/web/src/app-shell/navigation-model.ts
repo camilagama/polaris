@@ -149,7 +149,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/attention": {
     id: "attention",
     navId: null,
-    title: "Operações que precisam de atenção",
+    title: "Pendências",
   },
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
   // reached from Aparelhos, only with the password on (ADR 0100)

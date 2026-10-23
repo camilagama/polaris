@@ -24,6 +24,7 @@ import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
 import { localNamespace } from "../offline/namespace";
 import { openBrowserDataChannel } from "../offline/runtime/data-channel";
+import { DevicesPage } from "../offline/runtime/devices-page";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
@@ -37,6 +38,7 @@ import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
+import { AttentionLabPage } from "./notice-lab-pages";
 import { ProductsLabServer } from "./products-lab-server";
 import { SaleLabServer } from "./sale-lab-server";
 
@@ -65,10 +67,12 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
+  | "attention"
   | "categories"
   | "change-password"
   | "customers"
   | "dashboard"
+  | "devices"
   | "expenses"
   | "history"
   | "payment-profiles"
@@ -79,7 +83,9 @@ type LabScreen =
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "change-password" ||
+  return screen === "attention" ||
+    screen === "devices" ||
+    screen === "change-password" ||
     screen === "categories" ||
     screen === "products" ||
     screen === "dashboard" ||
@@ -145,10 +151,12 @@ function legalAcceptanceRefusal(): Error {
 }
 
 const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
+  attention: AttentionLabPage,
   categories: CategoriesPage,
   "change-password": ChangePasswordPage,
   customers: CustomersPage,
   dashboard: DashboardPage,
+  devices: DevicesPage,
   expenses: ExpensesPage,
   history: SaleHistoryPage,
   "payment-profiles": PaymentProfilesPage,

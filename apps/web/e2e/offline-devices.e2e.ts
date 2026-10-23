@@ -372,14 +372,19 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   const link = section.getByRole("link", { name: "Trocar senha" });
   await expect(link).toHaveAttribute("href", "/conta/seguranca");
   const box = await link.boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // the outline button of the interface: 32 px with a mouse (36 with touch), and the 48 px touch area is the
+  // guardrails' (check 2); it is still a button, not a link in a paragraph
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
   // after the list, not in the paragraph of the heading
   const listBox = await list.boundingBox();
   expect(box?.y ?? 0).toBeGreaterThan(
     (listBox?.y ?? 0) + (listBox?.height ?? 0)
   );
   await expect(
-    page.locator(".categories-heading").getByRole("link")
+    page
+      .getByRole("heading", { level: 1, name: "Aparelhos" })
+      .locator("..")
+      .getByRole("link")
   ).toHaveCount(0);
   const shots = process.env.T166_SHOTS;
   if (shots && test.info().project.name === "chromium-desktop") {
@@ -443,7 +448,7 @@ test("com a opção marcada, a chamada leva endOtherSessions verdadeiro e o resu
   await openDevices(page, state);
 
   await askRevoke(page, "Celular da Ana").click();
-  const box = page.getByLabel(OTHER_SESSIONS);
+  const box = page.getByRole("checkbox", { name: OTHER_SESSIONS });
   await expect(box).not.toBeChecked();
   await expect(
     page.getByText("Quem estiver usando sua conta em outro aparelho")
@@ -469,26 +474,41 @@ test("com a opção marcada, a chamada leva endOtherSessions verdadeiro e o resu
   ]);
 });
 
-test("cancelar não chama o servidor, devolve o foco a Revogar, e só há uma confirmação por vez", async ({
+test("cancelar não chama o servidor, devolve o foco a Revogar, e a confirmação aberta é a única coisa ao alcance", async ({
   page,
 }) => {
   const state = scenario({ devices: threeDevices() });
   await openDevices(page, state);
 
   await askRevoke(page, "Celular da Ana").click();
-  await expect(page.getByRole("main").getByRole("group")).toBeFocused();
-  // asking for another device moves the confirmation
-  await askRevoke(page, "Tablet do estoque").click();
+  const dialog = page.getByRole("dialog", {
+    name: "Revogar este aparelho? (Celular da Ana)",
+  });
+  await expect(dialog).toContainText("Não dá para desfazer");
+  // the focus went into the dialog, and the rest of the page is out of reach: one confirmation at a time
+  await expect(dialog.locator(":focus")).toHaveCount(1);
+  await expect(askRevoke(page, "Tablet do estoque")).toHaveCount(0);
   await expect(confirmButton(page)).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("group")).toContainText(
-    "Não dá para desfazer"
-  );
 
   await page.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByText("Não dá para desfazer")).toHaveCount(0);
-  await expect(askRevoke(page, "Tablet do estoque")).toBeFocused();
+  await expect(askRevoke(page, "Celular da Ana")).toBeFocused();
   expect(state.revokeBodies).toHaveLength(0);
   expect(state.devices).toHaveLength(3);
+});
+
+test("Esc fecha a confirmação como o Cancelar: nada é revogado e o foco volta a Revogar", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await openDevices(page, state);
+
+  await askRevoke(page, "Celular da Ana").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(askRevoke(page, "Celular da Ana")).toBeFocused();
+  expect(state.revokeBodies).toHaveLength(0);
 });
 
 test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancelar, de erro e de revogar outro", async ({
@@ -499,7 +519,7 @@ test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancel
     devices: threeDevices(),
   });
   await openDevices(page, state);
-  const box = page.getByLabel(OTHER_SESSIONS);
+  const box = page.getByRole("checkbox", { name: OTHER_SESSIONS });
 
   // after cancelling
   await askRevoke(page, "Celular da Ana").click();
@@ -514,7 +534,7 @@ test("a caixa vem desmarcada toda vez que a confirmação abre: depois de cancel
   await confirmButton(page, CONFIRM_ALL).click();
   await expect(
     page.getByText(
-      "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro."
+      "Não conseguimos confirmar se o aparelho foi revogado. Feche este aviso e olhe a lista. Se o aparelho ainda aparecer, revogue de novo. Repetir é seguro."
     )
   ).toBeVisible();
   await expect(page.getByText("Aparelho revogado")).toHaveCount(0);
@@ -549,7 +569,9 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(list.getByRole("listitem").first()).toContainText(
     "Este aparelho"
   );
-  await expect(page.getByLabel(OTHER_SESSIONS)).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", { name: OTHER_SESSIONS })
+  ).toHaveCount(0);
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
@@ -641,7 +663,12 @@ test("falhar ao revogar não esconde a lista já carregada", async ({ page }) =>
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
   await expect(page.getByRole("alert")).toContainText("Repetir é seguro");
-  await expect(deviceItems(page)).toHaveCount(2);
+  // the confirmation is a modal: the list stays under its veil, in place, and is only out of reach
+  await expect(
+    page
+      .getByRole("list", { includeHidden: true, name: "Aparelhos" })
+      .getByRole("listitem", { includeHidden: true })
+  ).toHaveCount(2);
 });
 
 test("um 4xx definitivo diz o motivo sem prometer repetir", async ({
@@ -693,31 +720,40 @@ test("sem conexão: um único aviso, tudo desabilitado, a confirmação aberta e
     timeout: 20_000,
   });
   await askRevoke(page, "Celular da Ana").click();
-  await page.getByLabel(OTHER_SESSIONS).check();
+  await page.getByRole("checkbox", { name: OTHER_SESSIONS }).check();
   const before = await queuedOperations(page);
+  // the confirmation is open and modal: the list stays under its veil, in place, only out of reach
+  const firstDevice = page
+    .getByRole("list", { includeHidden: true, name: "Aparelhos" })
+    .getByRole("listitem", { includeHidden: true })
+    .first();
 
   await page.context().setOffline(true);
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(1);
   // this device's card stops promising that Sair takes it off the list
-  await expect(
-    page.getByRole("list", { name: "Aparelhos" }).getByRole("listitem").first()
-  ).toContainText("Sem conexão, Sair não tira este aparelho da lista");
+  await expect(firstDevice).toContainText(
+    "Sem conexão, Sair não tira este aparelho da lista"
+  );
   await expect(
     page.getByText("Não foi possível carregar os aparelhos")
   ).toHaveCount(0);
   await expect(page.getByText("Não dá para desfazer")).toBeVisible();
-  await expect(page.getByLabel(OTHER_SESSIONS)).toBeChecked();
-  await expect(page.getByLabel(OTHER_SESSIONS)).toBeDisabled();
+  await expect(
+    page.getByRole("checkbox", { name: OTHER_SESSIONS })
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: OTHER_SESSIONS })
+  ).toBeDisabled();
   await expect(confirmButton(page, CONFIRM_ALL)).toBeDisabled();
   expect(state.revokeBodies).toHaveLength(0);
   expect(await queuedOperations(page)).toBe(before);
 
   await page.context().setOffline(false);
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(0);
+  await expect(firstDevice).toContainText("use o botão Sair");
   await expect(
-    page.getByRole("list", { name: "Aparelhos" }).getByRole("listitem").first()
-  ).toContainText("use o botão Sair");
-  await expect(page.getByLabel(OTHER_SESSIONS)).toBeChecked();
+    page.getByRole("checkbox", { name: OTHER_SESSIONS })
+  ).toBeChecked();
   await expect(confirmButton(page, CONFIRM_ALL)).toBeEnabled();
 });
 
@@ -1046,7 +1082,7 @@ test("depois de voltar à tela (a volta pelo login só será provada com a tela 
   });
   await openDevices(page, state);
   await askRevoke(page, "Celular da Ana").click();
-  await page.getByLabel(OTHER_SESSIONS).check();
+  await page.getByRole("checkbox", { name: OTHER_SESSIONS }).check();
   await confirmButton(page, CONFIRM_ALL).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "Nada foi revogado" })
@@ -1057,7 +1093,9 @@ test("depois de voltar à tela (a volta pelo login só será provada com a tela 
   await expect(deviceItems(page)).toHaveCount(2);
   expect(state.revokeBodies).toHaveLength(1);
   await askRevoke(page, "Celular da Ana").click();
-  await expect(page.getByLabel(OTHER_SESSIONS)).not.toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: OTHER_SESSIONS })
+  ).not.toBeChecked();
 });
 
 const RECOGNIZING =
@@ -1160,7 +1198,7 @@ test("o resultado incerto aparece dentro da confirmação, acima dos botões, e 
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
 
-  const confirmation = page.getByRole("main").getByRole("group");
+  const confirmation = page.getByRole("dialog");
   const alert = confirmation.getByRole("alert");
   await expect(alert).toContainText("Não conseguimos confirmar se o aparelho");
   await expect(page.getByRole("alert")).toHaveCount(1); // only the one inside
@@ -1189,14 +1227,14 @@ test("cancelar a confirmação depois de um resultado incerto não deixa no topo
   await openDevices(page, state);
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
-  await expect(
-    page.getByRole("main").getByRole("group").getByRole("alert")
-  ).toContainText("Não conseguimos confirmar se o aparelho");
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Não conseguimos confirmar se o aparelho"
+  );
 
   await page.getByRole("button", { name: "Cancelar" }).click();
-  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("toque em Sim de novo")).toHaveCount(0);
+  await expect(page.getByText("revogue de novo")).toHaveCount(0);
 });
 
 test("o resultado incerto de uma revogação que valeu não se perde quando a linha sai da lista: o aviso vai para o topo", async ({
@@ -1211,7 +1249,7 @@ test("o resultado incerto de uma revogação que valeu não se perde quando a li
   await confirmButton(page).click();
 
   await expect(deviceItems(page)).toHaveCount(1); // the list was read again: the device is gone
-  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText(
     "Não conseguimos confirmar se o aparelho foi revogado"
   );
@@ -1229,7 +1267,7 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
-  await expect(page.getByRole("main").getByRole("group")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 
@@ -1252,7 +1290,9 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   ).toBeVisible();
 });
 
-test("os alvos de toque têm 44 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
+// the 48 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
+// the design gives a control with touch (36 px) and that nothing scrolls sideways in the dialog and the panel
+test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
   page,
 }) => {
   const state = scenario({
@@ -1272,29 +1312,33 @@ test("os alvos de toque têm 44 px e nada rola na horizontal, a 360 px e no iPho
     await expect(deviceItems(page)).toHaveCount(2);
     expect(
       await heightOf(askRevoke(page, "Celular da Ana"))
-    ).toBeGreaterThanOrEqual(44);
+    ).toBeGreaterThanOrEqual(36);
     await askRevoke(page, "Celular da Ana").click();
     expect(
-      await heightOf(page.getByLabel(OTHER_SESSIONS).locator("xpath=.."))
-    ).toBeGreaterThanOrEqual(44);
-    expect(await heightOf(confirmButton(page))).toBeGreaterThanOrEqual(44);
+      await heightOf(
+        page
+          .getByRole("checkbox", { name: OTHER_SESSIONS })
+          .locator("xpath=ancestor::*[@data-slot='field'][1]")
+      )
+    ).toBeGreaterThanOrEqual(36);
+    expect(await heightOf(confirmButton(page))).toBeGreaterThanOrEqual(36);
     expect(
       await heightOf(page.getByRole("button", { name: "Cancelar" }))
-    ).toBeGreaterThanOrEqual(44);
-    await page.getByLabel(OTHER_SESSIONS).check();
+    ).toBeGreaterThanOrEqual(36);
+    await page.getByRole("checkbox", { name: OTHER_SESSIONS }).check();
     expect(
       await heightOf(confirmButton(page, CONFIRM_ALL))
-    ).toBeGreaterThanOrEqual(44);
+    ).toBeGreaterThanOrEqual(36);
     await confirmButton(page, CONFIRM_ALL).click();
     await expect(
       page.getByRole("button", { name: "Entrar de novo" })
     ).toBeVisible();
     expect(
       await heightOf(page.getByRole("button", { name: "Entrar de novo" }))
-    ).toBeGreaterThanOrEqual(44);
+    ).toBeGreaterThanOrEqual(36);
     expect(
       await heightOf(page.getByRole("button", { name: "Agora não" }))
-    ).toBeGreaterThanOrEqual(44);
+    ).toBeGreaterThanOrEqual(36);
     const overflow = await page.evaluate(
       () =>
         (document.scrollingElement?.scrollWidth ?? 0) -
