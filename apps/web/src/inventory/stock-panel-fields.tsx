@@ -247,16 +247,18 @@ interface LockedNoticeProps {
   failure: StockFailure;
   onDiscardCancel: () => void;
   onDiscardConfirm: () => void;
-  onDiscardRequest: () => void;
 }
 
-/** The outcome is unknown: the attempt is locked and only a retry (same command ID) or a discard goes on. */
+/**
+ * The outcome is unknown: the attempt is locked and only a retry (same command ID) or a discard goes on. The notice
+ * says what happened; the safe retry and, last, the discard are buttons of the panel's row of actions, so the safe
+ * one is read and reached first. The second step of the discard (the question) is the notice's own.
+ */
 export function LockedNotice({
   confirmingDiscard,
   failure,
   onDiscardCancel,
   onDiscardConfirm,
-  onDiscardRequest,
 }: LockedNoticeProps) {
   return (
     <Alert variant="destructive">
@@ -282,11 +284,7 @@ export function LockedNotice({
               </Button>
             </div>
           </>
-        ) : (
-          <Button onClick={onDiscardRequest} type="button" variant="outline">
-            Descartar esta tentativa
-          </Button>
-        )}
+        ) : null}
       </AlertDescription>
     </Alert>
   );

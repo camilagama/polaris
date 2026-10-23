@@ -79,7 +79,7 @@ describe("pickerOptions", () => {
     const [option] = pickerOptions([entry(1)]);
     expect(option).toMatchObject({
       detail: "Saldo 3 · SKU CAM-AZ-M · custo médio R$ 12,34",
-      label: "Camiseta Polaris — Azul / M",
+      label: "Camiseta Polaris · Azul / M",
       tone: "ok",
     });
   });
@@ -159,7 +159,7 @@ describe("choosing a variant", () => {
   it("sets product, variant and label, and leaves prices and quantity alone", () => {
     const chosen = entry(7);
     expect(itemChangesForEntry(chosen)).toEqual({
-      label: "Camiseta Polaris — Azul / M",
+      label: "Camiseta Polaris · Azul / M",
       productId: chosen.productId,
       variantId: chosen.variantId,
     });
