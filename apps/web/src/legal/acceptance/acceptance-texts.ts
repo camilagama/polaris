@@ -21,7 +21,6 @@ export const ACCEPTANCE_VERSION_CHANGED =
   "Os termos mudaram enquanto esta tela estava aberta. Leia a versão nova e aceite de novo.";
 export const ACCEPTANCE_OFFLINE =
   "Sem conexão. O aceite precisa de internet para ser registrado.";
-export const ACCEPTANCE_RETRY = "Tentar de novo";
 export const ACCEPTANCE_DONE =
   "Tudo certo: você já aceitou os termos em vigor.";
 export const ACCEPTANCE_GO_ON = "Abrir o Polaris";

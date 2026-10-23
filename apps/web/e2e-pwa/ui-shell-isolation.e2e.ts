@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import {
   addLegacyRule,
@@ -35,11 +36,12 @@ const RPC_PREFIX = /^.*\/rpc\//;
  * The fewest rules of `@layer legacy` that any measured screen has on the page (they are the sheets of the screens not
  * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
  * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
- * (135 and 156 on "Produtos" and "Venda"). The floor is below the measured minimum so that one more sheet leaving the
+ * (135 and 156 on "Produtos" and "Venda"), and 57 on the first access, the acceptance and the legal texts after t239 deleted
+ * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css. The floor is below the measured minimum so that one more sheet leaving the
  * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
  * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
  */
-const LEGACY_RULES_FLOOR = 60;
+const LEGACY_RULES_FLOOR = 40;
 
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
@@ -245,6 +247,165 @@ const PRODUCTS_SCREENS = [
   },
 ];
 
+const SALE_ID = id(70);
+const historyEntry = (n: number, overrides: Record<string, unknown> = {}) => ({
+  cancelledAt: null,
+  confirmedAt: "2026-10-14T12:00:01.000Z",
+  customerId: null,
+  customerName: null,
+  hasReturns: false,
+  id: id(70 + n),
+  itemCount: 2,
+  occurredAt: "2026-10-14T12:00:00.000Z",
+  occurredOn: "2026-10-14",
+  paymentMethod: "pix",
+  status: "confirmed",
+  totalDue: "219.90",
+  ...overrides,
+});
+
+/** The real route `/sales/history` (server mode, the list answered here): every badge, a customer, "Carregar mais". */
+const HISTORY = {
+  name: "Histórico de vendas no shell",
+  open: (page: Page) =>
+    openInShell(
+      page,
+      "/sales/history",
+      async () => {
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Histórico de vendas" })
+        ).toBeVisible();
+        await expect(page.getByText("Ângela Souza")).toBeVisible();
+      },
+      {
+        "sale/list": {
+          hasMore: true,
+          sales: [
+            historyEntry(1, {
+              customerId: id(90),
+              customerName: "Ângela Souza",
+            }),
+            historyEntry(2, {
+              cancelledAt: "2026-10-13T12:00:00.000Z",
+              status: "cancelled",
+            }),
+            historyEntry(3, { hasReturns: true }),
+          ],
+        },
+      }
+    ),
+};
+
+/** The real route `/sales/detail`: the receipt, a return made, and under them the old panels (outside `data-ui`). */
+const SALE_DETAIL = {
+  name: "Detalhe da venda no shell",
+  open: (page: Page) =>
+    openInShell(
+      page,
+      `/sales/detail?saleId=${SALE_ID}`,
+      async () => {
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Detalhe da venda" })
+        ).toBeVisible();
+        await expect(
+          page.getByRole("heading", { level: 2, name: "Devoluções" })
+        ).toBeVisible();
+      },
+      {
+        "sale/get": {
+          cancellation: null,
+          customer: { customerId: null, version: 0 },
+          returnSummary: [
+            {
+              availableToReturn: 1,
+              position: 0,
+              restockedQuantity: 0,
+              returnedQuantity: 1,
+              sold: 2,
+            },
+          ],
+          returns: [
+            {
+              commandId: id(80),
+              id: id(81),
+              items: [
+                { position: 0, restockedQuantity: 0, returnedQuantity: 1 },
+              ],
+              reasonCode: "defective",
+              reasonNote: "Rasgada",
+              returnedAt: "2026-10-15T12:00:00.000Z",
+              returnedBy: "user_1",
+              saleId: SALE_ID,
+            },
+          ],
+          sale: {
+            adjustments: [
+              {
+                amount: "10.00",
+                kind: "discount",
+                percentage: null,
+                position: 0,
+                valueType: "fixed",
+              },
+            ],
+            items: [
+              {
+                chargedUnitPrice: "114.95",
+                listedUnitPrice: "139.90",
+                position: 0,
+                productId: id(21),
+                productLabel: "Calça jeans — 42",
+                quantity: 2,
+                unitCost: null,
+                variantId: id(31),
+              },
+            ],
+            payment: {
+              amount: "219.90",
+              anticipationFee: {
+                amount: "0.00",
+                fixedAmount: null,
+                mode: "not_applicable",
+                percentage: null,
+              },
+              anticipationRequested: false,
+              expectedSettlementDays: null,
+              installmentPlan: null,
+              installments: null,
+              method: "pix",
+              paymentProfileId: null,
+              paymentProfileName: null,
+              paymentProfileRuleId: null,
+              paymentProfileVersion: null,
+              processingFee: {
+                amount: null,
+                fixedAmount: null,
+                mode: "unknown",
+                percentage: null,
+              },
+            },
+            sale: {
+              commandId: id(82),
+              confirmedAt: "2026-10-14T12:00:01.000Z",
+              currency: "BRL",
+              id: SALE_ID,
+              occurredAt: "2026-10-14T12:00:00.000Z",
+              occurredOn: "2026-10-14",
+              recordedAt: null,
+            },
+            totals: {
+              discountTotal: "10.00",
+              freightTotal: "0.00",
+              paymentSurchargeTotal: "0.00",
+              subtotal: "229.90",
+              surchargeTotal: "0.00",
+              totalDue: "219.90",
+            },
+          },
+        },
+      }
+    ),
+};
 const fee = (mode: string, percentage: string | null) => ({
   fixedAmount: null,
   mode,
@@ -337,6 +498,8 @@ const DEVICES = [
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
+  HISTORY,
+  SALE_DETAIL,
   ...PAYMENT_SCREENS,
   {
     name: "Venda no shell",
@@ -394,6 +557,17 @@ const SCREENS = [
           )
         ).toBeVisible()
       ),
+  },
+  // the first access, the acceptance and a legal text stand outside the shell, on the entry card
+  { name: "Primeiro acesso", open: firstAccessStates.empty },
+  { name: "Aceite dos termos", open: acceptanceStates.first },
+  {
+    name: "/privacidade",
+    open: async (page: Page) => {
+      await page.goto("/privacidade");
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
+      await settle(page);
+    },
   },
   ...ENTRY_PAGES.map(({ heading, path }) => ({
     name: path,

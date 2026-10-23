@@ -4,14 +4,17 @@ import {
   LEGAL_PENDING_EFFECTIVE_FROM,
   type LegalDocumentId,
 } from "@polaris/domain/legal/legal-documents";
+import InfoIcon from "lucide-react/dist/esm/icons/info";
 import {
-  type ChangeEvent,
   type FormEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { documentTitle } from "../../app-shell/navigation-model";
 import {
   acceptanceReturnPath,
@@ -21,6 +24,16 @@ import { orpcClient } from "../../lib/orpc";
 import { signInPath } from "../../lib/sign-in-path";
 import { LogoutControl } from "../../offline/runtime/logout-control";
 import { IdleRuntimeProvider } from "../../offline/runtime/runtime-provider";
+import {
+  EntryAlert,
+  EntryLinkButton,
+  EntryRetry,
+  EntryScreen,
+  EntryStatus,
+  EntrySuccess,
+  SubmitButton,
+  TEXT_LINK,
+} from "../../sign-in/entry-ui";
 import { LEGAL_PAGE_TITLES } from "../legal-routes";
 import {
   type AcceptanceLoad,
@@ -42,7 +55,6 @@ import {
   ACCEPTANCE_OPENING,
   ACCEPTANCE_READ_PRIVACY,
   ACCEPTANCE_READ_TERMS,
-  ACCEPTANCE_RETRY,
   ACCEPTANCE_SAVE_FAILED,
   ACCEPTANCE_SAVING,
   ACCEPTANCE_TITLE,
@@ -50,8 +62,6 @@ import {
   ACCEPTANCE_WHAT_CHANGED,
   NEW_TAB_HINT,
 } from "./acceptance-texts";
-import "../../sign-in/sign-in.css";
-import "./acceptance.css";
 
 const READ_LINK_TEXT: Readonly<Record<LegalDocumentId, string>> = {
   privacy: ACCEPTANCE_READ_PRIVACY,
@@ -69,16 +79,17 @@ function versionLine(item: PendingLegalDocument): string {
 /** Both pages are linked, always, and open in another tab so the box keeps its state (AC-70, L1). */
 function ReadLinks() {
   return (
-    <ul className="acceptance-links">
+    <ul className="m-0 flex list-none flex-wrap gap-x-6 p-0 text-sm">
       {(["terms", "privacy"] as const).map((document) => (
-        <li key={document}>
+        <li className="flex min-h-8 touch:min-h-12 items-center" key={document}>
           <a
+            className={TEXT_LINK}
             href={LEGAL_PATHS[document]}
             rel="noopener noreferrer"
             target="_blank"
           >
             {READ_LINK_TEXT[document]}
-            <span className="visually-hidden"> ({NEW_TAB_HINT})</span>
+            <span className="sr-only"> ({NEW_TAB_HINT})</span>
           </a>
         </li>
       ))}
@@ -92,20 +103,23 @@ function PendingList({
   pending: readonly PendingLegalDocument[];
 }) {
   return (
-    <ul className="acceptance-documents">
+    <ul className="m-0 grid list-none gap-3 p-0">
       {pending.map((item) => (
-        <li key={item.document}>
-          <p className="acceptance-document-title">
-            {LEGAL_PAGE_TITLES[item.document]}
-          </p>
-          <p className="acceptance-document-version">{versionLine(item)}</p>
+        <li className="grid gap-1.5" key={item.document}>
+          <div className="grid">
+            <p className="font-medium">{LEGAL_PAGE_TITLES[item.document]}</p>
+            <p className="text-muted-foreground text-support">
+              {versionLine(item)}
+            </p>
+          </div>
           {item.changes ? (
-            <div className="acceptance-changes">
-              <p className="acceptance-changes-title">
-                {ACCEPTANCE_WHAT_CHANGED}
-              </p>
-              <p>{item.changes}</p>
-            </div>
+            <Alert className="bg-muted/60 text-foreground">
+              <InfoIcon aria-hidden="true" className="text-muted-foreground" />
+              <AlertTitle>{ACCEPTANCE_WHAT_CHANGED}</AlertTitle>
+              <AlertDescription className="text-foreground">
+                {item.changes}
+              </AlertDescription>
+            </Alert>
           ) : null}
         </li>
       ))}
@@ -137,19 +151,11 @@ function AcceptanceForm({
   const [error, setError] = useState<string | null>(
     versionChanged ? ACCEPTANCE_VERSION_CHANGED : null
   );
-  const checkboxRef = useRef<HTMLInputElement>(null);
-  const errorRef = useRef<HTMLParagraphElement>(null);
+  const checkboxRef = useRef<HTMLSpanElement>(null);
 
-  // the missing box takes the focus itself (the alert is still announced); any other error takes it
-  useEffect(() => {
-    if (error && error !== ACCEPTANCE_CHECKBOX_MISSING) {
-      errorRef.current?.focus();
-    }
-  }, [error]);
-
-  const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setChecked(event.target.checked);
-    if (event.target.checked) {
+  const handleChange = useCallback((value: boolean) => {
+    setChecked(value);
+    if (value) {
       setError(null);
     }
   }, []);
@@ -199,43 +205,49 @@ function AcceptanceForm({
     [checked, onAccepted, onSessionRequired, onVersionChanged, pending, saving]
   );
 
+  // the missing box takes the focus itself and says so at the box; any other error is an alert of the page
+  const boxMissing = error === ACCEPTANCE_CHECKBOX_MISSING;
   return (
-    <form className="acceptance-form" noValidate onSubmit={handleSubmit}>
-      <div className="acceptance-check">
-        <input
-          aria-describedby={error ? "acceptance-error" : undefined}
-          aria-invalid={error === ACCEPTANCE_CHECKBOX_MISSING}
-          checked={checked}
-          id="acceptance-checkbox"
-          onChange={handleChange}
-          ref={checkboxRef}
-          type="checkbox"
-        />
-        <label htmlFor="acceptance-checkbox">
-          {acceptanceCheckboxLabel(pending)}
-        </label>
-      </div>
-      {error ? (
-        <p
-          className="sign-in-alert"
-          id="acceptance-error"
-          ref={errorRef}
-          role="alert"
-          tabIndex={-1}
-        >
-          <span aria-hidden="true" className="sign-in-alert-icon">
-            !
-          </span>
-          <span>{error}</span>
-        </p>
-      ) : null}
-      <button
-        aria-busy={saving}
-        className="primary-button acceptance-continue"
-        type="submit"
+    <form
+      aria-label={ACCEPTANCE_TITLE}
+      className="flex flex-col gap-5"
+      noValidate
+      onSubmit={handleSubmit}
+    >
+      <Field
+        className="items-start gap-4"
+        data-invalid={boxMissing || undefined}
+        orientation="horizontal"
       >
-        {saving ? ACCEPTANCE_SAVING : ACCEPTANCE_CONTINUE}
-      </button>
+        <Checkbox
+          aria-describedby={boxMissing ? "acceptance-error" : undefined}
+          aria-invalid={boxMissing || undefined}
+          checked={checked}
+          className="mt-0.5"
+          id="acceptance-checkbox"
+          onCheckedChange={handleChange}
+          ref={checkboxRef}
+        />
+        <div className="grid gap-1">
+          <FieldLabel
+            className="block font-normal leading-5"
+            htmlFor="acceptance-checkbox"
+          >
+            {acceptanceCheckboxLabel(pending)}
+          </FieldLabel>
+          {boxMissing ? (
+            <FieldError id="acceptance-error">{error}</FieldError>
+          ) : null}
+        </div>
+      </Field>
+      {error && !boxMissing ? (
+        <EntryAlert id="acceptance-error" key={error}>
+          {error}
+        </EntryAlert>
+      ) : null}
+      <SubmitButton pending={saving} pendingText={ACCEPTANCE_SAVING}>
+        {ACCEPTANCE_CONTINUE}
+      </SubmitButton>
     </form>
   );
 }
@@ -260,51 +272,31 @@ function AcceptanceBody({
   versionChanged: boolean;
 }) {
   if (load.status === "loading") {
-    return (
-      <p className="sign-in-status" role="status">
-        {ACCEPTANCE_LOADING}
-      </p>
-    );
+    return <EntryStatus>{ACCEPTANCE_LOADING}</EntryStatus>;
   }
   if (load.status === "session_required") {
-    return (
-      <p className="sign-in-status" role="status">
-        {ACCEPTANCE_OPENING}
-      </p>
-    );
+    return <EntryStatus>{ACCEPTANCE_OPENING}</EntryStatus>;
   }
   if (load.status === "error") {
     return (
       <>
-        <p className="sign-in-alert" role="alert">
-          <span aria-hidden="true" className="sign-in-alert-icon">
-            !
-          </span>
-          <span>
-            {load.offline ? ACCEPTANCE_OFFLINE : ACCEPTANCE_LOAD_FAILED}
-          </span>
-        </p>
-        <button className="sign-in-retry" onClick={onRetry} type="button">
-          {ACCEPTANCE_RETRY}
-        </button>
+        <EntryAlert>
+          {load.offline ? ACCEPTANCE_OFFLINE : ACCEPTANCE_LOAD_FAILED}
+        </EntryAlert>
+        <EntryRetry onClick={onRetry} />
       </>
     );
   }
   if (load.status === "done") {
     return (
       <>
-        <p className="sign-in-support" role="status">
-          {ACCEPTANCE_DONE}
-        </p>
-        <a className="primary-button acceptance-continue" href={returnTo}>
-          {ACCEPTANCE_GO_ON}
-        </a>
+        <EntrySuccess>{ACCEPTANCE_DONE}</EntrySuccess>
+        <EntryLinkButton href={returnTo}>{ACCEPTANCE_GO_ON}</EntryLinkButton>
       </>
     );
   }
   return (
     <>
-      <p className="sign-in-support">{acceptanceIntro(load.pending)}</p>
       <PendingList pending={load.pending} />
       {/* the reading comes before the box and the button: "li" has to be true */}
       <ReadLinks />
@@ -324,7 +316,7 @@ function AcceptanceBody({
 /**
  * `/aceite` (ADR 0100): outside the shell, with no menu and no organization. It reads what is still to
  * accept, records the acceptance and goes back to `voltar`. "Sair" stays, so a person who does not
- * accept can leave. Kept minimal on purpose: the visual redesign restyles it later.
+ * accept can leave. On the entry card of the interface v5.1.
  */
 export function AcceptancePage() {
   const [returnTo] = useState(() =>
@@ -400,41 +392,32 @@ export function AcceptancePage() {
   }, [returnTo]);
 
   return (
-    <div className="ui-root sign-in-root">
-      <main className="sign-in-main" id="conteudo">
-        <section
-          aria-labelledby="acceptance-title"
-          className="sign-in-card acceptance-card"
-        >
-          <p className="sign-in-brand">
-            <span aria-hidden="true" className="sign-in-brand-mark">
-              P
-            </span>
-            <span>Polaris</span>
-          </p>
-          <h1 id="acceptance-title">{ACCEPTANCE_TITLE}</h1>
-          {leaving ? (
-            <p className="sign-in-status" role="status">
-              {ACCEPTANCE_OPENING}
-            </p>
-          ) : (
-            <AcceptanceBody
-              load={load}
-              onAccepted={handleAccepted}
-              onRetry={handleRetry}
-              onSessionRequired={handleSessionRequired}
-              onVersionChanged={handleVersionChanged}
-              returnTo={returnTo}
-              round={round}
-              versionChanged={versionChanged}
-            />
-          )}
-          {leaving || load.status !== "pending" ? <ReadLinks /> : null}
-          <IdleRuntimeProvider>
-            <LogoutControl />
-          </IdleRuntimeProvider>
-        </section>
-      </main>
-    </div>
+    <EntryScreen
+      legalLinks={false}
+      support={
+        load.status === "pending" ? acceptanceIntro(load.pending) : undefined
+      }
+      title={ACCEPTANCE_TITLE}
+      width="wide"
+    >
+      {leaving ? (
+        <EntryStatus>{ACCEPTANCE_OPENING}</EntryStatus>
+      ) : (
+        <AcceptanceBody
+          load={load}
+          onAccepted={handleAccepted}
+          onRetry={handleRetry}
+          onSessionRequired={handleSessionRequired}
+          onVersionChanged={handleVersionChanged}
+          returnTo={returnTo}
+          round={round}
+          versionChanged={versionChanged}
+        />
+      )}
+      {leaving || load.status !== "pending" ? <ReadLinks /> : null}
+      <IdleRuntimeProvider>
+        <LogoutControl shell />
+      </IdleRuntimeProvider>
+    </EntryScreen>
   );
 }

@@ -32,6 +32,10 @@
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
 @source "../{main,app-shell/app,app-shell/app-shell}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
+/* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
+@source "../organization/organization-setup.tsx";
+@source "../legal/{legal-app,legal-frame,legal-page}.tsx";
+@source "../legal/acceptance/acceptance-page.tsx";
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session,
    the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
@@ -47,6 +51,9 @@
    attention page are in the list of the pieces above). */
 @source "../offline/attention-panel.tsx";
 @source "../offline/runtime/{devices-page,device-item}.tsx";
+/* The sales history and the sale detail (v5.1): their files; the return, cancellation and customer panels, and the
+   form of the sale identifier, are still old (they migrate in the next pull request). */
+@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 
 /*
  * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files
