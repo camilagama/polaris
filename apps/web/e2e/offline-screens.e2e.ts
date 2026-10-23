@@ -765,14 +765,12 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
 
     await fillShirtSale(page, 1);
     await payWith(page, "Débito");
-    await chooseProfile(page, "Maquininha do laboratório (versão 3)");
+    await chooseProfile(page, "Maquininha do laboratório");
     await expect(
       page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
-    ).toContainText("Maquininha do laboratório (versão 3)");
+    ).toContainText("Maquininha do laboratório");
     // the summary names the profile the sale is priced with
-    await expect(summary(page)).toContainText(
-      "Maquininha do laboratório (versão 3)"
-    );
+    await expect(summary(page)).toContainText("Maquininha do laboratório");
     await keepSale(page).click();
     await expect(
       page
@@ -795,7 +793,7 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     await page.getByLabel("Rede disponível").uncheck();
     await fillShirtSale(page, 1);
     await payWith(page, "Débito");
-    await chooseProfile(page, "Maquininha do laboratório (versão 2)");
+    await chooseProfile(page, "Maquininha do laboratório");
     await keepSale(page).click();
     await expect(
       page

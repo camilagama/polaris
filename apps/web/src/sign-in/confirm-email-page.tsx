@@ -172,7 +172,7 @@ function VerifyLink({
   }, [token]);
 
   useEffect(() => {
-    // one request per page load; "Tentar de novo" asks again
+    // one request per page load; "Tentar novamente" asks again
     if (!startedRef.current) {
       startedRef.current = true;
       verify();

@@ -495,7 +495,7 @@ describe("payment profile choice and fee preview", () => {
       expectedVersion: 3,
       id: profileId,
     });
-    expect(result.profileText).toBe("Maquininha Aurora (versão 3)");
+    expect(result.profileText).toBe("Maquininha Aurora");
   });
 
   it("without a profile, fees and settlement are unknown, not zero", () => {
@@ -580,14 +580,17 @@ describe("payment profile choice and fee preview", () => {
         mode: "not_applicable",
         percentage: null,
       }).text
-    ).toBe("não aplicável (custo estimado R$ 0,00)");
+    ).toBe("não se aplica");
   });
 
   it("requires a review when a reload changed the chosen profile version", () => {
     const form = creditCardForm();
     const reloaded = [profile(4)];
     const stale = reconcileProfileReload(form, reloaded);
-    expect(stale.profile.reviewNotice).toContain("versão 3 para a versão 4");
+    expect(stale.profile.reviewNotice).toBe(
+      "O perfil “Maquininha Aurora” mudou desde a última venda. Revise a prévia de taxas e prazo e confirme para continuar."
+    );
+    expect(stale.profile.reviewNotice).not.toContain("versão");
     const blocked = evaluate(stale, context({ profiles: reloaded }));
     expect(blocked.body).toBeNull();
     expect(blocked.errors[formFieldKeys.profile]).toContain("revisão");

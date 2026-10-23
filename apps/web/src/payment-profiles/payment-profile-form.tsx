@@ -39,8 +39,8 @@ const feeModeOptions: ReadonlyArray<{ id: FeeMode; label: string }> = [
   { id: "fixed_and_percentage", label: "Fixo e percentual" },
 ];
 const planOptions = [
-  { id: "merchant", label: "Estabelecimento" },
-  { id: "issuer", label: "Emissor" },
+  { id: "merchant", label: "Lojista (eu)" },
+  { id: "issuer", label: "Emissor (banco)" },
 ];
 
 interface FeeFieldsProps {
@@ -189,7 +189,7 @@ function RuleEditor({
             />
             <SelectField
               id={ruleFieldId(rule, "plan")}
-              label="Responsável pelo parcelamento"
+              label="Quem parcela"
               onChange={handlePlan}
               options={planOptions}
               placeholder="Escolha"

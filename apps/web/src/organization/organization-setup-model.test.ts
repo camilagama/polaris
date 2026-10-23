@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NoWorkerAnswerError } from "../lib/connection";
 import {
   BRASILIA_TIMEZONE,
   BRAZIL_TIMEZONES,
@@ -78,7 +79,16 @@ describe("setupErrorMessage", () => {
     expect(setupErrorMessage({ code: "SERVICE_UNAVAILABLE" })).toContain(
       "indisponível"
     );
-    expect(setupErrorMessage(new TypeError("x"))).toContain("Tente novamente");
+    expect(setupErrorMessage(new Error("boom"))).toContain("Tente novamente");
+  });
+
+  it("says there is no internet when the call got no answer", () => {
+    const text = "Sem internet. Conecte-se e tente de novo.";
+    expect(setupErrorMessage(new TypeError("Failed to fetch"))).toBe(text);
+    expect(setupErrorMessage(new NoWorkerAnswerError("intercepted"))).toBe(
+      text
+    );
+    expect(setupErrorMessage(new DOMException("t", "TimeoutError"))).toBe(text);
   });
 });
 

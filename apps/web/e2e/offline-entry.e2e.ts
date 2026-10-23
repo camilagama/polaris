@@ -270,6 +270,24 @@ test("401 ao abrir a loja: o aviso de sessão fica sobre o cartão e o erro leva
   await expect(again).toHaveAttribute("href", SIGN_IN_AGAIN_HREF);
 });
 
+test("sem rede ao abrir: texto de sem internet, com o foco no aviso e o nome mantido", async ({
+  page,
+}) => {
+  await serveListing(page, () => "empty");
+  await page.route("**/rpc/organization/createInitial", async (route) => {
+    await route.abort("internetdisconnected");
+  });
+  await page.goto("/");
+  await page.getByLabel("Nome da loja").fill("Loja do teste");
+  await page.getByRole("button", { name: "Abrir loja" }).click();
+  const alert = page.getByRole("alert").filter({ hasText: "Sem internet." });
+  await expect(alert).toHaveText("Sem internet. Conecte-se e tente de novo.");
+  await expect(alert).toBeFocused();
+  await expect(page.getByText("Não foi possível abrir a loja")).toHaveCount(0);
+  await expect(page.getByLabel("Nome da loja")).toHaveValue("Loja do teste");
+  await expect(page.getByRole("button", { name: "Abrir loja" })).toBeEnabled();
+});
+
 test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a loja abre", async ({
   page,
 }) => {

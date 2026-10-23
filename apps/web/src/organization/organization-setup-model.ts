@@ -1,4 +1,5 @@
 import {
+  isConnectionFailure,
   legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -112,6 +113,10 @@ export function setupErrorMessage(error: unknown): string {
   const unaccepted = legalAcceptanceMessage(error);
   if (unaccepted !== undefined) {
     return unaccepted;
+  }
+  // a call that got no answer is a lack of connection, never a refusal of the server
+  if (isConnectionFailure(error)) {
+    return "Sem internet. Conecte-se e tente de novo.";
   }
   const code = rpcErrorCode(error);
   const reason = rpcErrorReason(error);

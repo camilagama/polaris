@@ -235,7 +235,7 @@ test("sem sessão, vai à tela de entrada e volta ao aceite depois", async ({
   expect(voltar).toBe("/aceite?voltar=/sales");
 });
 
-test("uma falha ao carregar diz o que houve e oferece 'Tentar de novo'", async ({
+test("uma falha ao carregar diz o que houve e oferece 'Tentar novamente'", async ({
   page,
 }) => {
   const server = await serve(page);
@@ -245,7 +245,7 @@ test("uma falha ao carregar diz o que houve e oferece 'Tentar de novo'", async (
   await expect(page.getByRole("alert")).toContainText(
     "Não foi possível carregar os termos. Tente de novo."
   );
-  await page.getByRole("button", { name: "Tentar de novo" }).click();
+  await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(checkbox(page)).toBeVisible();
 });
 

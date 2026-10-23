@@ -8,7 +8,7 @@ import {
 import type { Challenge } from "./turnstile";
 
 /**
- * "Tentar de novo" of a blocked challenge script: it stays on the screen, with the focus on it, while the script
+ * "Tentar novamente" of a blocked challenge script: it stays on the screen, with the focus on it, while the script
  * is asked for again; when the script comes, the block goes away and the focus goes to the first field of the
  * form around `slotRef`.
  */

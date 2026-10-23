@@ -732,7 +732,7 @@ test("sem conexão: um único aviso, tudo desabilitado, a confirmação aberta e
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(1);
   // this device's card stops promising that Sair takes it off the list
   await expect(firstDevice).toContainText(
-    "Sem conexão, Sair não tira este aparelho da lista"
+    "Sair sem internet não tira este aparelho da lista."
   );
   await expect(
     page.getByText("Não foi possível carregar os aparelhos")

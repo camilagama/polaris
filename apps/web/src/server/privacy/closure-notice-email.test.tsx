@@ -15,6 +15,7 @@ import {
 } from "./closure-notice-email";
 
 const STORE = "Loja de Teste";
+const LINE_BREAK = /[\r\n]/;
 
 // what invites the owner to ask for a copy
 const COPY_INVITATION = /peça|cópia agora|guardar uma cópia|solicit/i;
@@ -67,7 +68,7 @@ describe("the content of a closure notice", () => {
   });
 
   for (const milestone of milestones) {
-    it(`has a subject, a heading and paragraphs for ${milestone}, names the store in the body only`, () => {
+    it(`has a subject, a heading and paragraphs for ${milestone}, names the store in the subject and in the body`, () => {
       const delivery = notice({
         milestone,
         purgeFrom: new Date("2027-02-03T03:00:00.000Z"),
@@ -78,7 +79,7 @@ describe("the content of a closure notice", () => {
       expect(content.heading.length).toBeGreaterThan(0);
       expect(content.paragraphs.length).toBeGreaterThan(0);
       expect(content.paragraphs.join(" ")).toContain(STORE);
-      expect(content.subject).not.toContain(STORE);
+      expect(content.subject).toContain(`da sua loja ${STORE} no Polaris`);
     });
 
     it(`says "a partir de" wherever ${milestone} names a deletion date`, () => {
@@ -118,6 +119,68 @@ describe("the content of a closure notice", () => {
 
   it("formats a calendar date in Portuguese", () => {
     expect(formatCalendarDate("2027-01-18")).toBe("18 de janeiro de 2027");
+  });
+
+  it("writes the first of the month as the ordinal, and no other day", () => {
+    expect(formatCalendarDate("2027-02-01")).toBe("1º de fevereiro de 2027");
+    expect(formatCalendarDate("2027-02-10")).toBe("10 de fevereiro de 2027");
+    expect(formatCalendarDate("2027-02-11")).toBe("11 de fevereiro de 2027");
+    const first = notice({
+      deletionDate: "2027-02-01",
+      milestone: "d30",
+      requestedAt: new Date("2026-11-03T12:00:00.000Z"),
+    });
+    expect(bodyOf(first)).toContain("a partir de 1º de fevereiro de 2027");
+    expect(closureNoticeContent(first).subject).toBe(
+      `Os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de 1º de fevereiro de 2027`
+    );
+  });
+
+  it("names the store in the five subjects, on one line", () => {
+    const subjects = milestones.map(
+      (milestone) =>
+        closureNoticeContent(
+          notice({
+            milestone,
+            organizationName: "  Loja\nAurora  ",
+            purgeFrom: new Date("2027-02-03T03:00:00.000Z"),
+          })
+        ).subject
+    );
+    for (const subject of subjects) {
+      expect(subject).toContain("da sua loja Loja Aurora no Polaris");
+      expect(subject).not.toMatch(LINE_BREAK);
+    }
+  });
+
+  it("has the button to the panel before D and none from D on", () => {
+    const before = [
+      notice({ milestone: "closure" }),
+      notice({ milestone: "d30" }),
+      notice({ milestone: "d7" }),
+    ];
+    const fromD = [
+      notice({
+        dueAt: new Date("2027-01-18T03:00:00.000Z"),
+        milestone: "deletion_day",
+      }),
+      notice({
+        dueAt: new Date("2027-01-20T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      }),
+      notice({
+        dueAt: new Date("2027-01-25T12:00:00.000Z"),
+        milestone: "rescheduled",
+        purgeFrom: new Date("2027-02-01T12:00:00.000Z"),
+      }),
+    ];
+    for (const delivery of before) {
+      expect(closureNoticeContent(delivery).actionLabel).toBe("Abrir o painel");
+    }
+    for (const delivery of fromD) {
+      expect(closureNoticeContent(delivery).actionLabel).toBeNull();
+    }
   });
 
   it("offers the copy until 00:00 of D, the limit the server applies, in the notices before D", () => {
@@ -350,7 +413,34 @@ describe("the rendered e-mail", () => {
     expect(message.text).toContain("https://app.example.invalid/");
     expect(message.html).not.toContain("token=x");
     expect(message.text).not.toContain("token=x");
-    expect(message.subject).not.toContain(STORE);
+    expect(message.subject).toContain(STORE);
+    expect(message.html).toContain("Abrir o painel");
+    expect(message.text).toContain("Abrir o painel");
+    expect(message.text).toContain("Se o botão não funcionar");
+    expect(message.text).toContain("Para abrir o painel, entre no Polaris");
+  });
+
+  it("from D on, renders no button and no link to the panel", async () => {
+    const message = await renderClosureNoticeEmail(
+      notice({
+        dueAt: new Date("2027-01-18T03:00:00.000Z"),
+        milestone: "deletion_day",
+      }),
+      "https://app.example.invalid"
+    );
+    for (const part of [message.html, message.text]) {
+      expect(part).not.toContain("Abrir o painel");
+      expect(part).not.toContain("Ver a loja encerrada");
+      expect(part).not.toContain("Para abrir o painel");
+      expect(part).not.toContain("Se o botão não funcionar");
+      expect(part).not.toContain("https://app.example.invalid");
+      // the copy line and the warning stay
+      expect(part).toContain("O prazo para pedir uma cópia dos dados terminou");
+    }
+    expect(message.html).not.toContain("<a ");
+    expect(message.subject).toBe(
+      `Os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de hoje`
+    );
   });
 
   it("escapes the store's name in the HTML", async () => {
