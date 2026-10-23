@@ -118,6 +118,8 @@ export function closureNoticeContent(
     : `O prazo para pedir uma cópia dos dados terminou em ${copyLimit}. Depois de apagados, os dados não podem ser recuperados.`;
   const signIn =
     "Para abrir o painel, entre no Polaris com a sua conta de dono da loja.";
+  // from D on there is no panel to open, so the sentence that sends the owner to it goes with the button
+  const signInParagraph = beforeDeletionDay ? [signIn] : [];
   switch (delivery.milestone) {
     case "closure":
       return {
@@ -139,7 +141,7 @@ export function closureNoticeContent(
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${deletionDay}.`,
           copyLine,
-          signIn,
+          ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
         subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
@@ -151,7 +153,7 @@ export function closureNoticeContent(
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}.${beforeDeletionDay ? " Depois de apagados, não podem ser recuperados." : ""}`,
           copyLine,
-          signIn,
+          ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
         subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
@@ -163,7 +165,7 @@ export function closureNoticeContent(
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a qualquer momento a partir de hoje, ${deletionDay}.`,
           copyLine,
-          signIn,
+          ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de hoje.`,
         subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de hoje`,
@@ -175,7 +177,7 @@ export function closureNoticeContent(
         paragraphs: [
           `O apagamento dos dados da loja ${store}, encerrada em ${requested}, foi adiado. Agora eles podem ser apagados a partir de ${firstDay}.`,
           copyLine,
-          signIn,
+          ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
         subject: `Nova data para o apagamento dos dados da sua loja ${subjectStore} no Polaris`,

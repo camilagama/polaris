@@ -417,6 +417,7 @@ describe("the rendered e-mail", () => {
     expect(message.html).toContain("Abrir o painel");
     expect(message.text).toContain("Abrir o painel");
     expect(message.text).toContain("Se o botão não funcionar");
+    expect(message.text).toContain("Para abrir o painel, entre no Polaris");
   });
 
   it("from D on, renders no button and no link to the panel", async () => {
@@ -430,6 +431,7 @@ describe("the rendered e-mail", () => {
     for (const part of [message.html, message.text]) {
       expect(part).not.toContain("Abrir o painel");
       expect(part).not.toContain("Ver a loja encerrada");
+      expect(part).not.toContain("Para abrir o painel");
       expect(part).not.toContain("Se o botão não funcionar");
       expect(part).not.toContain("https://app.example.invalid");
       // the copy line and the warning stay
