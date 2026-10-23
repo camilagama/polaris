@@ -53,7 +53,7 @@ describe("the _headers of the shell, as the static server of the browser checks 
     for (const page of pages) {
       for (const path of [page, `${page}/`]) {
         const directives = Object.fromEntries(
-          cspOf(path)
+          String(cspOf(path))
             .split(";")
             .map((directive) => directive.trim().split(WHITESPACE))
             .map(([name, ...sources]) => [name, sources])

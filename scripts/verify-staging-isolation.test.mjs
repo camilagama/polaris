@@ -7,6 +7,8 @@ import {
   WORKERS,
 } from "./verify-staging-isolation.mjs";
 
+const SITE_KEY = /^0x[A-Za-z0-9_-]+$/;
+
 const readConfig = (app) =>
   parseJsonc(
     readFileSync(
@@ -349,7 +351,7 @@ describe("the staging isolation check", () => {
   it("accepts the protection against abuse on in staging, with the public key of the widget", () => {
     const { staging } = entryOf(repositoryEntries(), "web").config.env;
     expect(staging.vars.AUTH_ABUSE_PROTECTION_ENABLED).toBe("true");
-    expect(staging.vars.TURNSTILE_SITE_KEY).toMatch(/^0x[A-Za-z0-9_-]+$/);
+    expect(staging.vars.TURNSTILE_SITE_KEY).toMatch(SITE_KEY);
     expect(findIsolationProblems(repositoryEntries())).toEqual([]);
   });
 
