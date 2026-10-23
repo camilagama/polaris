@@ -225,6 +225,16 @@ describe("alert signals", () => {
     }
   });
 
+  it("fire on a single missed verification link in a day, like the signup acceptance", () => {
+    for (const id of ["link-de-verificacao", "aceite-no-cadastro"]) {
+      const signal = alertSignals.find((candidate) => candidate.id === id);
+      expect(signal?.threshold).toEqual({ atLeast: 1, kind: "count" });
+      expect(signal?.windowMinutes).toBe(1440);
+      expect(signal?.notify).toBe("report");
+      expect(signal?.severity).toBe("warning");
+    }
+  });
+
   it("have a positive window and a threshold that can fire", () => {
     for (const signal of alertSignals) {
       expect(signal.windowMinutes).toBeGreaterThan(0);

@@ -59,8 +59,9 @@ const MOVES_A_BOX = /(?:^|:)-?(?:translate|scale|rotate)(?:-|$)/;
 const TOAST_SWIPE =
   /^data-\[ending-style\]:data-\[swipe-direction=(?:up|down|left|right)\]:-?translate-[xy]-\d+$/;
 const ANIMATE_UTILITY = /^(?:.*:)?animate-([a-z-]+)$/;
-// the fades the base allows: tw-animate-css's `in` and `out` (with `fade-in-0`, never with zoom or slide), none, and `rise`
-const FADES = new Set(["in", "out", "none", "rise"]);
+// the fades the base allows: tw-animate-css's `in` and `out` (with `fade-in-0`, never with zoom or slide), none, `rise`
+// and `pulse` (the skeleton of a page that loads; Tailwind's keyframes of it move only the opacity, which a test reads)
+const FADES = new Set(["in", "out", "none", "pulse", "rise"]);
 const SHIMMER = /(?:^|[\s"'`:])shimmer(?:-[a-z]+)?(?=[\s"'`]|$)/;
 // the sheets that may define animations: the tokens and the vendored shadcn sheet; the others only use the fades
 const ANIMATION_SHEETS = [TOKEN_SHEET, MASK_SHEET];
@@ -199,6 +200,24 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     expect([...properties].filter((name) => name !== "opacity")).toEqual([]);
   });
 
+  it("o `pulse` do esqueleto, do Tailwind, mexe só na opacidade", () => {
+    const sheet = readFileSync(
+      join(web, "node_modules/tailwindcss/theme.css"),
+      "utf8"
+    );
+    const pulse = [...sheet.matchAll(KEYFRAMES)].find(
+      (frames) => frames[1] === "pulse"
+    );
+    expect(pulse).toBeDefined();
+    const properties = new Set(
+      [...(pulse?.[2] ?? "").matchAll(DECLARED_PROPERTY)].map(
+        (property) => property[1]
+      )
+    );
+    expect(properties.has("opacity")).toBe(true);
+    expect([...properties].filter((name) => name !== "opacity")).toEqual([]);
+  });
+
   it("com prefers-reduced-motion: reduce a base zera animação e transição (a medida está em e2e-pwa)", () => {
     const sheet = withoutComments(read(TOKEN_SHEET));
     const block = sheet.slice(
@@ -281,6 +300,7 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       'className="data-open:fade-in-0 data-closed:fade-out-0 animate-in animate-out"',
       "src/ui/x.tsx",
     ],
+    ['className="animate-pulse rounded-md bg-muted"', "src/ui/x.tsx"],
     [
       'className="data-[ending-style]:data-[swipe-direction=right]:translate-x-6"',
       "src/ui/x.tsx",
