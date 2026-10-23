@@ -32,6 +32,32 @@ function render(
 }
 
 describe("the attention panel", () => {
+  it("is the page of the screen: one h1 with the title, in the root of the new interface, with or without items", () => {
+    for (const summary of [
+      { items: [], waitingBehind: 0 },
+      { items: [item()], waitingBehind: 0 },
+    ]) {
+      const html = render(summary);
+      expect(html).toContain('data-ui=""');
+      expect(html.match(/<h1[ >]/g)).toHaveLength(1);
+      expect(html).toContain("Pendências</h1>");
+    }
+  });
+
+  it("tells the cause of the account apart from the cause of the data without relying on color: an icon and the text", () => {
+    const html = render({
+      items: [
+        item({ cause: "entitlement_changed", code: "entitlement_changed" }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("lucide-circle-alert");
+    expect(html).toContain('aria-hidden="true"');
+    expect(render({ items: [item()], waitingBehind: 0 })).toContain(
+      "lucide-triangle-alert"
+    );
+  });
+
   it("says so when nothing needs attention", () => {
     const html = render({ items: [], waitingBehind: 0 });
     expect(html).toContain("Nada precisa de atenção");
@@ -99,6 +125,6 @@ describe("the attention panel", () => {
       }
     );
     expect(html).toContain("Não foi possível descartar.");
-    expect(html.match(/disabled=""/g)).toHaveLength(2);
+    expect(html.match(/ disabled=""/g)).toHaveLength(2);
   });
 });

@@ -1,11 +1,22 @@
-import { useCallback, useState } from "react";
+import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
 import {
   type AttentionAction,
   type AttentionItem,
   type AttentionSummary,
   discardWarning,
 } from "./attention";
-import "./attention-panel.css";
 
 /**
  * The panel of operations that need attention (plan PR58). It lists what the
@@ -36,29 +47,78 @@ const ACTION_LABEL: Record<AttentionAction, string> = {
   review_account: "Revisar acesso e plano",
 };
 
+/** The causes about the account or the plan, not about the data: they are said in the error tone. */
+const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
+  "authorization_revoked",
+  "entitlement_changed",
+  "session_changed",
+]);
+
+const isResubmission = (action: AttentionAction) =>
+  action === "resubmit" ||
+  action === "resubmit_without_profile" ||
+  action === "retry";
+
+const discardButtonId = (item: AttentionItem) =>
+  `attention-discard-${item.commandId}`;
+
+/** The frame of the page of attention: the title, then what the page has to say. */
+export function AttentionFrame({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
+      <header className="grid gap-1">
+        <h1 className="text-title" id="attention-title">
+          Pendências
+        </h1>
+      </header>
+      {children}
+    </div>
+  );
+}
+
+/** A state of the page that is one line in a card: empty, the offline mode off or still getting ready. */
+export function AttentionStateCard({
+  children,
+  role,
+}: {
+  children: ReactNode;
+  role?: "status" | undefined;
+}) {
+  return (
+    <Card className="items-center px-(--card-spacing) text-center" role={role}>
+      <p className="text-muted-foreground">{children}</p>
+    </Card>
+  );
+}
+
 interface ActionButtonProps {
   action: AttentionAction;
   busy: boolean;
+  item: AttentionItem;
   onAct: (action: AttentionAction) => void;
 }
 
-function ActionButton({ action, busy, onAct }: ActionButtonProps) {
+function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   const act = useCallback(() => onAct(action), [action, onAct]);
+  let variant: "default" | "destructive" | "outline" = "outline";
+  if (isResubmission(action)) {
+    variant = "default";
+  } else if (action === "discard") {
+    variant = "destructive";
+  }
   return (
-    <button
-      className={
-        action === "resubmit" ||
-        action === "resubmit_without_profile" ||
-        action === "retry"
-          ? "primary-button"
-          : "secondary-button"
-      }
+    <Button
       disabled={busy}
+      id={action === "discard" ? discardButtonId(item) : undefined}
       onClick={act}
       type="button"
+      variant={variant}
     >
       {ACTION_LABEL[action]}
-    </button>
+    </Button>
   );
 }
 
@@ -78,15 +138,24 @@ function ItemCard({
   onReviewAccount,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
+  const confirmRef = useRef<HTMLDivElement>(null);
+  const focusDiscardAgain = useRef<boolean>(false);
+  const account = ACCOUNT_CAUSES.has(item.cause);
+  const Icon = account ? CircleAlertIcon : TriangleAlertIcon;
+  // the confirmation takes the place of the buttons: focus goes to it, and back to "Descartar…" when it is kept
+  useEffect(() => {
+    if (confirming) {
+      confirmRef.current?.focus();
+    } else if (focusDiscardAgain.current) {
+      focusDiscardAgain.current = false;
+      document.getElementById(discardButtonId(item))?.focus();
+    }
+  }, [confirming, item]);
   const act = useCallback(
     (action: AttentionAction) => {
       if (action === "discard") {
         setConfirming(true);
-      } else if (
-        action === "resubmit" ||
-        action === "resubmit_without_profile" ||
-        action === "retry"
-      ) {
+      } else if (isResubmission(action)) {
         onResubmit(item);
       } else {
         onReviewAccount(item);
@@ -94,48 +163,75 @@ function ItemCard({
     },
     [item, onResubmit, onReviewAccount]
   );
-  const keep = useCallback(() => setConfirming(false), []);
+  const keep = useCallback(() => {
+    focusDiscardAgain.current = true;
+    setConfirming(false);
+  }, []);
   const confirmDiscard = useCallback(() => {
     setConfirming(false);
     onDiscard(item);
   }, [item, onDiscard]);
   return (
-    <li className="attention-item" data-cause={item.cause}>
-      <h3>{item.title}</h3>
-      {item.blocksQueue ? (
-        <p className="attention-blocking">
-          Este registro está parando a fila: o que vem depois espera por ele.
+    <li data-cause={item.cause}>
+      <Card className="gap-3 px-(--card-spacing)">
+        <div className="flex items-start gap-2">
+          <Icon
+            aria-hidden="true"
+            className={cn(
+              "mt-0.5 size-4 shrink-0",
+              account ? "text-destructive" : "text-warning"
+            )}
+          />
+          <h2 className="text-section [overflow-wrap:anywhere]">
+            {item.title}
+          </h2>
+        </div>
+        {item.blocksQueue ? (
+          <p className="font-medium text-support text-warning">
+            Este registro está parando a fila: o que vem depois espera por ele.
+          </p>
+        ) : null}
+        <p className="[overflow-wrap:anywhere]">{item.detail}</p>
+        <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
+          Código: {item.code}
         </p>
-      ) : null}
-      <p>{item.detail}</p>
-      <p className="attention-code">Código: {item.code}</p>
-      {confirming ? (
-        <div className="attention-confirm" role="alertdialog">
-          <p>{discardWarning(item)}</p>
-          <button
-            className="danger-button"
-            disabled={busy}
-            onClick={confirmDiscard}
-            type="button"
+        {confirming ? (
+          <div
+            aria-label={`Descartar ${item.title}`}
+            className="grid gap-3 rounded-lg bg-muted/50 p-3 outline-none ring-1 ring-destructive/30 focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
+            ref={confirmRef}
+            role="alertdialog"
+            tabIndex={-1}
           >
-            Confirmar descarte
-          </button>
-          <button className="secondary-button" onClick={keep} type="button">
-            Manter
-          </button>
-        </div>
-      ) : (
-        <div className="attention-actions">
-          {item.actions.map((action) => (
-            <ActionButton
-              action={action}
-              busy={busy}
-              key={action}
-              onAct={act}
-            />
-          ))}
-        </div>
-      )}
+            <p>{discardWarning(item)}</p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                disabled={busy}
+                onClick={confirmDiscard}
+                type="button"
+                variant="destructive"
+              >
+                Confirmar descarte
+              </Button>
+              <Button onClick={keep} type="button" variant="outline">
+                Manter
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {item.actions.map((action) => (
+              <ActionButton
+                action={action}
+                busy={busy}
+                item={item}
+                key={action}
+                onAct={act}
+              />
+            ))}
+          </div>
+        )}
+      </Card>
     </li>
   );
 }
@@ -150,16 +246,16 @@ export function AttentionPanel({
 }: AttentionPanelProps) {
   if (summary.items.length === 0) {
     return (
-      <section aria-labelledby="attention-title" className="attention-panel">
-        <h2 id="attention-title">Operações que precisam de atenção</h2>
-        <p>Nada precisa de atenção. Tudo o que foi feito offline foi aceito.</p>
-      </section>
+      <AttentionFrame>
+        <AttentionStateCard>
+          Nada precisa de atenção. Tudo o que foi feito offline foi aceito.
+        </AttentionStateCard>
+      </AttentionFrame>
     );
   }
   return (
-    <section aria-labelledby="attention-title" className="attention-panel">
-      <h2 id="attention-title">Operações que precisam de atenção</h2>
-      <p>
+    <AttentionFrame>
+      <p className="text-muted-foreground text-support">
         O servidor recusou{" "}
         {summary.items.length === 1
           ? "1 registro"
@@ -170,11 +266,12 @@ export function AttentionPanel({
           : ""}
       </p>
       {errorMessage ? (
-        <p className="attention-error" role="alert">
-          {errorMessage}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       ) : null}
-      <ul className="attention-list">
+      <ul className="grid gap-3">
         {summary.items.map((item) => (
           <ItemCard
             busy={busyCommandId === item.commandId}
@@ -186,6 +283,6 @@ export function AttentionPanel({
           />
         ))}
       </ul>
-    </section>
+    </AttentionFrame>
   );
 }

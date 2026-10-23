@@ -50,8 +50,7 @@ export function UpdateBannerView({ onApply, snapshot }: UpdateBannerViewProps) {
             O servidor recusou {plural(offer.rejected, "operação", "operações")}
             . A atualização espera até que{" "}
             {offer.rejected === 1 ? "ela seja" : "elas sejam"} resolvida
-            {offer.rejected === 1 ? "" : "s"} em “Operações que precisam de
-            atenção”. Nada foi perdido.
+            {offer.rejected === 1 ? "" : "s"} em “Pendências”. Nada foi perdido.
           </p>
         ) : null}
         {snapshot.message ? (

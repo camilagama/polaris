@@ -112,7 +112,7 @@ export const EMPTY_TEXT =
 export const OFFLINE_TEXT =
   "Sem conexão. Para revogar um aparelho ou encerrar sessões, conecte-se à internet. Nada fica guardado para depois.";
 const UNCERTAIN_TEXT =
-  "Não conseguimos confirmar se o aparelho foi revogado. Olhe a lista abaixo: se ele ainda aparece, toque em Sim de novo. Repetir é seguro.";
+  "Não conseguimos confirmar se o aparelho foi revogado. Feche este aviso e olhe a lista. Se o aparelho ainda aparecer, revogue de novo. Repetir é seguro.";
 export const REVOKING_LABEL = "Revogando…";
 
 function plural(count: number, one: string, many: string): string {

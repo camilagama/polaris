@@ -483,6 +483,8 @@ async function describeFocus() {
   ].filter((element): element is Element => element !== null);
   return {
     drawn: holders.some(draws),
+    // the sentinel Base UI puts at both ends of an open modal: it is no control, it hands the focus on
+    guard: active.hasAttribute("data-base-ui-focus-guard"),
     key: keyOf(active),
     label: labelOf(active),
   };
@@ -509,6 +511,14 @@ function tabbable(selector: string) {
  */
 export async function focusFaults(page: Page) {
   await page.evaluate(() => {
+    // an open modal has the focus inside it, and Tab goes round its controls: the walk starts at the popup
+    const popup = document.querySelector<HTMLElement>(
+      "[role=dialog][data-open]"
+    );
+    if (popup) {
+      popup.focus();
+      return;
+    }
     (document.activeElement as HTMLElement | null)?.blur();
     // Tab starts where the last click or focus was: a screen the test has filled in would skip what is above
     // that point. An element focused at the top of the page and then removed leaves the starting point there,
@@ -528,6 +538,9 @@ export async function focusFaults(page: Page) {
     // biome-ignore lint/performance/noAwaitInLoops: the real keyboard moves one stop at a time
     await page.keyboard.press("Tab");
     const stop = await inPage(page, describeFocus);
+    if (stop?.guard) {
+      continue;
+    }
     // the same element twice in a row is a control of several parts (the fields of a `datetime-local`): the
     // browser has not left it yet; the same element after others is the loop closing
     const insideSameControl = stop !== null && stop.key === previous;

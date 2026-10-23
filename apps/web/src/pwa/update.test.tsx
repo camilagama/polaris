@@ -343,7 +343,7 @@ describe("the update banner", () => {
       waiting: true,
       work: work({ rejected: 1 }),
     });
-    expect(html).toContain("Operações que precisam");
+    expect(html).toContain("Pendências");
     expect(html).toContain("Nada foi perdido");
     expect(html).not.toContain("<button");
   });
