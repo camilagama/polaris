@@ -86,7 +86,7 @@ test("401 numa ação da tela não navega sozinho: avisa, mantém o digitado e o
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toContainText(WARNING);
   await expect(
@@ -112,7 +112,7 @@ test("'Entrar de novo' com a sessão morta não chama o Sair, limpa as cópias e
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
   await page
-    .locator(".session-ended-notice")
+    .locator('[data-notice="session-ended"]')
     .getByRole("button", { name: "Entrar de novo" })
     .click();
 

@@ -159,7 +159,7 @@ test("venda: com o carrinho montado, o 401 diz 'A venda não foi registrada.' e 
     .click();
   await page.getByRole("button", { name: "Confirmar venda" }).click();
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toContainText(WARNING);
   // the failure notice of the sale does not take the focus the session notice took
@@ -217,7 +217,7 @@ test("aviso com um campo ativo não rola a página nem tira o foco do campo (V-3
   // Enter submits with the field still active: the person is typing
   await page.keyboard.press("Enter");
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(field).toBeFocused();
   await expect(field).toHaveValue("Acessórios");
@@ -241,7 +241,7 @@ test("aviso sem campo ativo rola até ele e recebe o foco (V-3)", async ({
   expect(before).toBeGreaterThan(300);
   await button.click();
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toBeFocused();
   await expect(notice).toBeInViewport();
@@ -284,7 +284,7 @@ test("preço de variante digitado e 401: o aviso diz que o digitado pode se perd
   await price.fill("59,90");
   await page.getByRole("button", { name: "Salvar preço" }).click();
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(notice).toContainText(WARNING);
   await expect(page.getByText("O preço não foi salvo.")).toBeVisible();
@@ -328,7 +328,7 @@ test("foto do produto: o 401 do upload mostra o aviso com 'Entrar de novo' e 'A 
   });
   await page.getByRole("button", { name: "Enviar imagem" }).click();
 
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(
     notice.getByRole("button", { name: "Entrar de novo" })
@@ -351,7 +351,7 @@ test("resultado: o 401 da leitura diz só 'Não foi possível carregar o resulta
       return route.fulfill(unauthorized);
     },
   });
-  const notice = page.locator(".session-ended-notice");
+  const notice = page.locator('[data-notice="session-ended"]');
   await expect(notice).toContainText(SENTENCE);
   await expect(
     page.getByText("Não foi possível carregar o resultado.")

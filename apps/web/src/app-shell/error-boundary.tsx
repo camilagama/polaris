@@ -1,8 +1,13 @@
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Button, buttonVariants } from "@/ui/button";
 import { reportRenderError } from "../observability/sentry";
+import { StatePanel } from "./state-panel";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  /** The failure of the whole app, outside the shell: the panel stands alone on the page. */
+  fullPage?: boolean;
   /** Shown above the actions; the technical error is never displayed. */
   message?: string;
 }
@@ -39,25 +44,36 @@ export class ErrorBoundary extends Component<
       return this.props.children;
     }
     return (
-      <section aria-labelledby="app-error-title" className="app-gate">
-        <h1 id="app-error-title">Algo deu errado nesta tela</h1>
-        <p role="alert">
+      <StatePanel
+        actions={
+          <>
+            <Button onClick={this.handleRetry} type="button">
+              Tentar novamente
+            </Button>
+            <a
+              className={buttonVariants({ variant: "outline" })}
+              data-slot="button"
+              href="/sales"
+            >
+              Ir para Vender
+            </a>
+          </>
+        }
+        fullPage={this.props.fullPage ?? false}
+        icon={
+          <TriangleAlertIcon
+            aria-hidden="true"
+            className="size-5 shrink-0 text-destructive"
+          />
+        }
+        title="Algo deu errado nesta tela"
+        titleId="app-error-title"
+      >
+        <p className="text-muted-foreground" role="alert">
           {this.props.message ??
             "Não foi possível exibir esta tela. Tente novamente; se continuar, recarregue a página."}
         </p>
-        <div className="app-actions">
-          <button
-            className="primary-button"
-            onClick={this.handleRetry}
-            type="button"
-          >
-            Tentar novamente
-          </button>
-          <a className="quiet-button" href="/sales">
-            Ir para Vender
-          </a>
-        </div>
-      </section>
+      </StatePanel>
     );
   }
 }

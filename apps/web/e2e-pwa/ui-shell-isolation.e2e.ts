@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import {
   addLegacyRule,
@@ -32,6 +33,17 @@ const json = (body: unknown) => ({
 });
 
 const RPC_PREFIX = /^.*\/rpc\//;
+
+/**
+ * The fewest rules of `@layer legacy` that any measured screen has on the page (they are the sheets of the screens not
+ * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
+ * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
+ * (135 and 156 on "Produtos" and "Venda"), and 57 on the first access, the acceptance and the legal texts after t239 deleted
+ * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css. The floor is below the measured minimum so that one more sheet leaving the
+ * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
+ * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
+ */
+const LEGACY_RULES_FLOOR = 40;
 
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
@@ -237,9 +249,86 @@ const PRODUCTS_SCREENS = [
   },
 ];
 
+const fee = (mode: string, percentage: string | null) => ({
+  fixedAmount: null,
+  mode,
+  percentage,
+});
+const PAYMENT_PROFILE = {
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  id: id(41),
+  name: "Maquininha da loja",
+  organizationId: ORGANIZATION.id,
+  rules: [
+    {
+      anticipationFee: fee("unknown", null),
+      expectedSettlementDays: 30,
+      id: "rule-1",
+      installmentPlan: "merchant",
+      installments: 3,
+      method: "credit_card",
+      processingFee: fee("percentage", "3.000000"),
+    },
+  ],
+  status: "active",
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version: 1,
+};
+
+/** The real route `/payment-profiles`, the API answered here, then a state of the screen the check can mount. */
+const openPaymentProfiles = (
+  page: Page,
+  then: (page: Page) => Promise<void> = async () => undefined
+) =>
+  openInShell(
+    page,
+    "/payment-profiles",
+    async () => {
+      await expect(page.getByText("Maquininha da loja").first()).toBeVisible();
+      await then(page);
+    },
+    { "paymentProfile/list": { profiles: [PAYMENT_PROFILE] } }
+  );
+
+const PAYMENT_SCREENS = [
+  {
+    name: "Perfis de pagamento no shell: lista e formulário novo",
+    open: (page: Page) => openPaymentProfiles(page),
+  },
+  {
+    // the form filled by an edit: selects, a fee with a percentage, and the hint of the unknown fee
+    name: "Perfis de pagamento no shell: edição",
+    open: (page: Page) =>
+      openPaymentProfiles(page, async () => {
+        await page
+          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+          .click();
+        await expect(page.getByLabel("Nome do perfil")).toBeFocused();
+      }),
+  },
+  {
+    name: "Perfis de pagamento no shell: percentual inválido",
+    open: (page: Page) =>
+      openPaymentProfiles(page, async () => {
+        await page
+          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+          .click();
+        await page
+          .getByLabel("Percentual efetivo sobre o total devido")
+          .fill("150");
+        await page.getByRole("button", { name: "Salvar alterações" }).click();
+        await expect(
+          page.getByText("Informe um percentual de 0 a 100", { exact: false })
+        ).toBeVisible();
+      }),
+  },
+];
+
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
+  ...PAYMENT_SCREENS,
   {
     name: "Venda no shell",
     open: (page: Page) =>
@@ -268,6 +357,17 @@ const SCREENS = [
       );
     },
   },
+  // the first access, the acceptance and a legal text stand outside the shell, on the entry card
+  { name: "Primeiro acesso", open: firstAccessStates.empty },
+  { name: "Aceite dos termos", open: acceptanceStates.first },
+  {
+    name: "/privacidade",
+    open: async (page: Page) => {
+      await page.goto("/privacidade");
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
+      await settle(page);
+    },
+  },
   ...ENTRY_PAGES.map(({ heading, path }) => ({
     name: path,
     open: async (page: Page) => {
@@ -291,7 +391,7 @@ for (const screen of SCREENS) {
     const names = Object.keys(state.on.snapshot);
     // the check is not vacuous: the layer was on the page and came off, there was something to measure, the probe
     // was measured, and so was the focus (Tab put the page in keyboard mode and some control took the ring)
-    expect(state.off.removed).toBeGreaterThan(100);
+    expect(state.off.removed).toBeGreaterThan(LEGACY_RULES_FLOOR);
     expect(names.length).toBeGreaterThan(20);
     expect(
       names.some((name) => name.startsWith('input "sonda com erro"'))

@@ -17,6 +17,11 @@ import {
 } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -63,6 +68,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/ui/popover";
+import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { ScrollArea } from "@/ui/scroll-area";
 import {
@@ -83,6 +89,17 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/ui/sidebar";
+import { Skeleton } from "@/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
@@ -546,6 +563,64 @@ export function UiGallery() {
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
+            </div>
+          </Section>
+
+          <Section title="Tabela, bloco que abre e progresso">
+            <Table>
+              <TableCaption>Metas do mês, dados de exemplo.</TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Meta</TableHead>
+                  <TableHead className="text-right">Realizado</TableHead>
+                  <TableHead className="text-right">Alvo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Vendas</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    R$ 4.200,00
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    R$ 6.000,00
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Margem</TableCell>
+                  <TableCell className="text-right tabular-nums">38%</TableCell>
+                  <TableCell className="text-right tabular-nums">40%</TableCell>
+                </TableRow>
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    R$ 4.200,00
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    R$ 6.000,00
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+            <Collapsible>
+              <CollapsibleTrigger
+                render={<Button size="sm" variant="outline" />}
+              >
+                Despesas recorrentes
+              </CollapsibleTrigger>
+              <CollapsiblePanel className="pt-2 text-muted-foreground">
+                Aluguel e internet, todo dia 5.
+              </CollapsiblePanel>
+            </Collapsible>
+            <Progress value={70}>
+              <ProgressLabel>Meta de vendas</ProgressLabel>
+              <ProgressValue />
+            </Progress>
+            <div aria-hidden="true" className="grid gap-2">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-1/3" />
             </div>
           </Section>
 

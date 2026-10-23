@@ -1,8 +1,14 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
-import { entryStates } from "./ui-entry-states";
+import {
+  acceptanceStates,
+  firstAccessStates,
+  legalStates,
+} from "./ui-account-states";
+import { entryStates, settle } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
+import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
@@ -231,12 +237,80 @@ async function exerciseStockReason(page: Page) {
   );
 }
 
+/** The files of the payment profiles screen on the new interface (the draft and the fee model have no markup). */
+const PAYMENT_SOURCES = [
+  "src/payment-profiles/payment-profile-form.tsx",
+  "src/payment-profiles/payment-profile-list.tsx",
+  "src/payment-profiles/payment-profiles-page.tsx",
+];
+
+/** One state of the payment profiles screen (`ui-payment-states.ts`). */
+const paymentScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `perfis de pagamento ${name}`,
+  open,
+  sourceDirs: PAYMENT_SOURCES,
+  status: "migrated",
+});
+
+async function exercisePaymentMethod(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Método", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
+/**
+ * The files of the pieces around the screens on the new interface: the 404, the failure of a screen, the loading,
+ * the notices of the session, the acceptance and the new version, "Sair" with work to lose and the expired access.
+ */
+const SHELL_PIECE_SOURCES = [
+  "src/app-shell/connection-required-notice.tsx",
+  "src/app-shell/error-boundary.tsx",
+  "src/app-shell/legal-acceptance-notice.tsx",
+  "src/app-shell/not-found-page.tsx",
+  "src/app-shell/page-loading.tsx",
+  "src/app-shell/session-ended-notice.tsx",
+  "src/app-shell/state-panel.tsx",
+  "src/offline/logout-dialog.tsx",
+  "src/offline/runtime/offline-access-expired.tsx",
+  "src/pwa/update-banner.tsx",
+  "src/offline-poc/screens-lab-shell-pieces.tsx",
+];
+
+/** One piece in its state, drawn by the gallery of the pieces (`/ui-pecas-do-shell?estado=…`), with synthetic data. */
+const shellPieceScreen = (
+  name: string,
+  state: string,
+  ready: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `peças do shell ${name}`,
+  open: async (page) => {
+    await page.goto(`/ui-pecas-do-shell?estado=${state}`);
+    await ready(page);
+    await page.evaluate(() => document.fonts.ready);
+  },
+  sourceDirs: SHELL_PIECE_SOURCES,
+  status: "migrated",
+});
+
+const headingOf =
+  (name: string, level = 1) =>
+  async (page: Page) => {
+    await page.getByRole("heading", { level, name }).waitFor();
+  };
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
   // the title shows while the text still loads: wait for the text
   await page.getByText("Versão 1. Em vigor desde:").waitFor();
-  await page.evaluate(() => document.fonts.ready);
+  await settle(page);
 }
 
 /** The files of the entry pages on the new interface (`/entrar` and the whole password family, "Trocar senha" too). */
@@ -260,11 +334,23 @@ const entryScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   status: "migrated",
 });
 
-// the brand link of the legal frame is named "Polaris, início" and shows "P Polaris": a voice command that says what
-// is on screen misses it. Fixed with the migration of the legal pages (their frame is legacy markup).
-const LEGAL_KNOWN: UiScreen["known"] = {
-  axe: ["label-content-name-mismatch: .app-brand"],
-};
+/** The files of the first access, the acceptance and the legal texts, which stand outside the shell on the entry card. */
+const ACCOUNT_SOURCES = [
+  "src/legal/acceptance/acceptance-page.tsx",
+  "src/legal/legal-app.tsx",
+  "src/legal/legal-frame.tsx",
+  "src/legal/legal-page.tsx",
+  "src/organization/organization-setup.tsx",
+  "src/sign-in/entry-ui.tsx",
+];
+
+/** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
+const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
+  name,
+  open,
+  sourceDirs: ACCOUNT_SOURCES,
+  status: "migrated",
+});
 
 export const SCREENS: UiScreen[] = [
   {
@@ -361,21 +447,29 @@ export const SCREENS: UiScreen[] = [
     "trocar senha conta do Google",
     passwordStates.changePasswordNoPassword
   ),
-  {
-    known: LEGAL_KNOWN,
-    name: "política de privacidade",
-    open: (page) =>
-      openLegalPage(page, "/privacidade", "Política de Privacidade"),
-    sourceDirs: [],
-    status: "legacy",
-  },
-  {
-    known: LEGAL_KNOWN,
-    name: "termos de uso",
-    open: (page) => openLegalPage(page, "/termos", "Termos de Uso"),
-    sourceDirs: [],
-    status: "legacy",
-  },
+  accountScreen("política de privacidade", (page) =>
+    openLegalPage(page, "/privacidade", "Política de Privacidade")
+  ),
+  accountScreen("termos de uso", (page) =>
+    openLegalPage(page, "/termos", "Termos de Uso")
+  ),
+  accountScreen("texto legal carregando", legalStates.loading),
+  accountScreen("texto legal não abriu", legalStates.failed),
+  accountScreen("primeiro acesso", firstAccessStates.empty),
+  accountScreen(
+    "primeiro acesso com erro no nome",
+    firstAccessStates.fieldErrors
+  ),
+  accountScreen("primeiro acesso abrindo", firstAccessStates.opening),
+  accountScreen("primeiro acesso recusado", firstAccessStates.failed),
+  accountScreen("aceite", acceptanceStates.first),
+  accountScreen("aceite de versão nova", acceptanceStates.newVersion),
+  accountScreen("aceite sem a caixa", acceptanceStates.boxMissing),
+  accountScreen("aceite registrando", acceptanceStates.saving),
+  accountScreen("aceite não registrou", acceptanceStates.saveFailed),
+  accountScreen("aceite carregando", acceptanceStates.loading),
+  accountScreen("aceite não carregou", acceptanceStates.loadFailed),
+  accountScreen("aceite já feito", acceptanceStates.done),
   saleScreen("vazia", saleStates.empty),
   saleScreen("com itens", saleStates.withItems),
   saleScreen("pagamento a crédito", saleStates.payment, exerciseSalePayment),
@@ -401,7 +495,43 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
+  shellPieceScreen("404", "nao-encontrada", headingOf("Página não encontrada")),
+  shellPieceScreen(
+    "falha da tela",
+    "erro",
+    headingOf("Algo deu errado nesta tela")
+  ),
+  shellPieceScreen("carregando", "carregando", async (page) => {
+    await page.getByRole("status").getByText("Carregando…").waitFor();
+  }),
+  shellPieceScreen(
+    "avisos de sessão, aceite e nova versão",
+    "avisos",
+    async (page) => {
+      await page.getByText("Sua sessão acabou.").first().waitFor();
+      await page.getByText("Há uma nova versão do Polaris").first().waitFor();
+    }
+  ),
+  shellPieceScreen(
+    "sair com trabalho a perder",
+    "sair",
+    headingOf("Há trabalho que ainda não foi enviado", 2)
+  ),
+  shellPieceScreen("sair confirmando o descarte", "sair", async (page) => {
+    await page.getByRole("button", { name: "Descartar e sair…" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Descartar e sair" })
+      .waitFor();
+  }),
+  shellPieceScreen(
+    "acesso sem internet vencido",
+    "acesso-vencido",
+    headingOf("O acesso sem internet venceu")
+  ),
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  paymentScreen("lista", paymentStates.list),
+  paymentScreen("edição", paymentStates.edit, exercisePaymentMethod),
+  paymentScreen("erros nos campos", paymentStates.errors),
 ];

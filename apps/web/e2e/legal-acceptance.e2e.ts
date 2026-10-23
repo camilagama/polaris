@@ -187,7 +187,9 @@ test("uma versão nova de um documento pede o aceite só dele e mostra o que mud
     page.getByText("Versão 2. Em vigor desde: 01/11/2026.")
   ).toBeVisible();
   await expect(
-    page.getByLabel("Li e aceito a Política de Privacidade.")
+    page.getByRole("checkbox", {
+      name: "Li e aceito a Política de Privacidade.",
+    })
   ).toBeVisible();
 
   await checkbox(page).check();
@@ -349,7 +351,7 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
 
-  const notice = page.locator(".legal-acceptance-notice");
+  const notice = page.locator('[data-notice="legal-acceptance"]');
   await expect(notice).toContainText(
     "Para continuar usando o Polaris, leia e aceite os Termos de Uso e a Política de Privacidade."
   );
@@ -357,9 +359,7 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
     notice.getByRole("link", { name: READ_AND_ACCEPT })
   ).toHaveAttribute("href", "/aceite?voltar=/categories");
   // it is not a refused session
-  await expect(
-    page.locator(".session-ended-notice:not(.legal-acceptance-notice)")
-  ).toHaveCount(0);
+  await expect(page.locator('[data-notice="session-ended"]')).toHaveCount(0);
   expect(new URL(page.url()).pathname).toBe("/categories");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
   // the error beside the button says what is missing, never "sua conta não tem acesso"

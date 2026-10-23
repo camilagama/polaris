@@ -12,6 +12,8 @@ const ORIGINAL = [
   },
 ];
 const CACHE_KEY = "polaris.offline.organizations";
+const OPENING_TITLE = /Abra a sua organização/;
+const SIGN_IN_AGAIN_HREF = /\/entrar\?motivo=sessao&voltar=/;
 
 let organizations = ORIGINAL;
 
@@ -208,4 +210,104 @@ test("o primeiro acesso de uma conta sem organização chega à tela de criar or
   await expect(
     page.getByRole("heading", { name: "Abra a sua organização" })
   ).toBeVisible();
+});
+
+test("o primeiro acesso não mostra o menu: só o cartão, a aba com o nome da tela e o Sair", async ({
+  page,
+}) => {
+  await serveListing(page, () => "empty");
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Abra a sua organização" })
+  ).toBeVisible();
+  await expect(page).toHaveTitle("Abra a sua organização · Polaris");
+  // nothing to go to yet: no sidebar, no bottom bar, no state chip
+  await expect(page.getByRole("navigation", { name: "Principal" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("navigation", { name: "Destinos" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("link", { name: "Vender" })).toHaveCount(0);
+  // a person who signed in with the wrong account can still leave
+  await expect(page.getByRole("button", { name: "Sair" })).toBeVisible();
+  // the two legal pages stay one tap away (AC-70)
+  await expect(page.getByRole("link", { name: "Termos de Uso" })).toBeVisible();
+});
+
+test("401 ao criar a organização: o aviso de sessão fica sobre o cartão e o erro leva a Entrar de novo", async ({
+  page,
+}) => {
+  await serveListing(page, () => "empty");
+  await page.route("**/rpc/organization/createInitial", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        json: {
+          code: "UNAUTHORIZED",
+          data: undefined,
+          defined: false,
+          message: "Unauthorized",
+          status: 401,
+        },
+        meta: [],
+      }),
+      contentType: "application/json",
+      status: 401,
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Nome da organização").fill("Loja do teste");
+  await page
+    .getByRole("button", { name: "Criar ou abrir organização" })
+    .click();
+  await expect(
+    page.getByText("Sua sessão acabou. Entre de novo.")
+  ).toBeVisible();
+  // the notice of the shell stays above the card, and the error offers the way back
+  await expect(
+    page.getByRole("alert", { name: "Sua sessão acabou" })
+  ).toBeVisible();
+  const again = page.getByRole("link", { name: "Entrar de novo" });
+  await expect(again).toHaveAttribute("href", SIGN_IN_AGAIN_HREF);
+});
+
+test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organização abre", async ({
+  page,
+}) => {
+  let created = false;
+  await serveListing(page, () => (created ? "ok" : "empty"));
+  await page.route("**/rpc/organization/createInitial", async (route) => {
+    created = true;
+    await route.fulfill({
+      body: JSON.stringify({
+        json: { organization: ORIGINAL[0] },
+        meta: [],
+      }),
+      contentType: "application/json",
+    });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Criar ou abrir organização" })
+    .click();
+  await expect(page.getByText("Informe o nome da organização.")).toBeVisible();
+  await expect(page.getByLabel("Nome da organização")).toBeFocused();
+  expect(created).toBe(false);
+
+  await page.getByLabel("Nome da organização").fill("Loja do teste");
+  await page
+    .getByRole("button", { name: "Criar ou abrir organização" })
+    .click();
+  // the app opens with its menu and the tab goes back to the name of the screen
+  // (the sidebar from 760 px, the bar of destinations below it: one of the two is on the page)
+  await expect(
+    page
+      .getByRole("navigation", { name: "Principal" })
+      .or(page.getByRole("navigation", { name: "Destinos" }))
+      .first()
+  ).toBeAttached();
+  await expect(
+    page.getByRole("heading", { name: "Abra a sua organização" })
+  ).toHaveCount(0);
+  await expect(page).not.toHaveTitle(OPENING_TITLE);
 });

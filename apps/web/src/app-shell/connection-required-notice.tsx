@@ -1,4 +1,7 @@
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import {
   tryConnectionNow,
   useConnectionOnline,
@@ -9,14 +12,17 @@ import {
  * shell while the tab does not reach the Worker (emenda do ADR 0043). Two forms: with a form on screen
  * the typed text stays (only in memory, while the page is open: nothing is written to the disk); without,
  * the screen loads by itself when the connection returns. A control that needs the connection points to
- * the sentence with `aria-describedby` (`CONNECTION_NOTICE_TEXT_ID`).
+ * the sentence with `aria-describedby` (`CONNECTION_NOTICE_TEXT_ID`). The notice is the v5.1 `Alert` (warning):
+ * any online-only screen takes it as `<ConnectionRequiredSlot form={connectionForm} />`, with the `connectionForm` of
+ * its route in `navigation-model.ts`.
  */
 const CONNECTION_NOTICE_TEXT_ID = "connection-required-text";
 
+const CONNECTION_NOTICE_TITLE = "Sem internet.";
 const CONNECTION_NOTICE_WITH_FORM =
-  "Sem internet. Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
+  "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
 const CONNECTION_NOTICE_WITHOUT_FORM =
-  "Sem internet. Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
+  "Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
 
 // ---------------------------------------------------- which form the screen shows
 let declaredForm: boolean | null = null;
@@ -57,19 +63,25 @@ function ConnectionRequiredNotice({ form }: { form: boolean }) {
     tryConnectionNow().finally(() => setTrying(false));
   }, [trying]);
   return (
-    <section aria-label="Sem internet" className="connection-required-notice">
-      <p id={CONNECTION_NOTICE_TEXT_ID} role="status">
-        {form ? CONNECTION_NOTICE_WITH_FORM : CONNECTION_NOTICE_WITHOUT_FORM}
-      </p>
-      <button
-        aria-busy={trying}
-        className="quiet-button"
-        onClick={handleTry}
-        type="button"
+    <Alert className="mb-4 font-sans" data-ui="" variant="warning">
+      <CloudOffIcon aria-hidden="true" />
+      <AlertTitle>{CONNECTION_NOTICE_TITLE}</AlertTitle>
+      <AlertDescription
+        className="grid justify-items-start gap-2"
+        id={CONNECTION_NOTICE_TEXT_ID}
       >
-        {trying ? "Tentando…" : "Tentar agora"}
-      </button>
-    </section>
+        {form ? CONNECTION_NOTICE_WITH_FORM : CONNECTION_NOTICE_WITHOUT_FORM}
+        <Button
+          aria-busy={trying}
+          onClick={handleTry}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {trying ? "Tentando…" : "Tentar agora"}
+        </Button>
+      </AlertDescription>
+    </Alert>
   );
 }
 

@@ -1,7 +1,11 @@
-import { extremeTimeZone, localDate } from "../calendar";
+import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 
-/** Journey 1: a user with no organization opens one on screen; the database has one, owned by the user, in the zone. */
+/**
+ * Journey 1: a user with no organization opens one on screen; the database has one, owned by the user, in the zone
+ * chosen on the screen. The screen offers the zones of Brazil; Fernando de Noronha is the one that is not the default.
+ * The extreme zones (+14 h, −11 h) are covered by the journeys that open the organization by the API.
+ */
 test("onboarding: abre a organização com nome e fuso, e repetir não duplica", async ({
   browser,
   sql,
@@ -10,7 +14,7 @@ test("onboarding: abre a organização com nome e fuso, e repetir não duplica",
     organization: false,
   });
   const { page } = journey;
-  const zone = extremeTimeZone(runT0());
+  const zone = "America/Noronha";
   console.log(
     `fuso da organização: ${zone} (data local ${localDate(runT0(), zone)}, UTC ${localDate(runT0(), "UTC")})`
   );
@@ -20,7 +24,12 @@ test("onboarding: abre a organização com nome e fuso, e repetir não duplica",
     page.getByRole("heading", { name: "Abra a sua organização" })
   ).toBeVisible();
   await page.getByLabel("Nome da organização").fill(journey.name);
-  await page.getByLabel("Fuso horário da organização").fill(zone);
+  await page
+    .getByRole("combobox", { name: "Fuso horário da organização" })
+    .click();
+  await page
+    .getByRole("option", { name: "Horário de Fernando de Noronha" })
+    .click();
   await page
     .getByRole("button", { name: "Criar ou abrir organização" })
     .click();

@@ -911,9 +911,9 @@ const healthRequests = (page: Page) => {
 };
 
 const WITH_FORM =
-  "Sem internet. Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
+  "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
 const WITHOUT_FORM =
-  "Sem internet. Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
+  "Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
 
 const rpcAnswer = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),

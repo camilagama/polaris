@@ -122,7 +122,9 @@ test("U-30: a taxa aparece como 3% e 2,5%, e o campo de edição vem sem os zero
   page,
 }) => {
   await openProfiles(page, [PROFILE]);
-  const card = page.locator("li", { hasText: "Maquininha da loja" });
+  const card = page.locator("li[data-profile-id]", {
+    hasText: "Maquininha da loja",
+  });
   await expect(card).toContainText("3%");
   await expect(card).toContainText("2,5%");
   await expect(card).not.toContainText("3.000000");
@@ -140,9 +142,10 @@ test("U-29: percentual inválido é dito no campo, com o limite aceito, sem 'Ten
   const calls = await openProfiles(page, []);
   await page.getByLabel("Nome do perfil").fill("Perfil novo");
   await page
-    .getByLabel("Como a taxa é informada")
+    .getByRole("combobox", { name: "Como a taxa é informada" })
     .first()
-    .selectOption("percentage");
+    .click();
+  await page.getByRole("option", { exact: true, name: "Percentual" }).click();
   const percentage = page.getByLabel("Percentual efetivo sobre o total devido");
   await percentage.fill("250");
   await page.getByRole("button", { name: "Criar perfil" }).click();
@@ -153,15 +156,21 @@ test("U-29: percentual inválido é dito no campo, com o limite aceito, sem 'Ten
   const describedBy = await percentage.getAttribute("aria-describedby");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
   await expect(percentage).toBeFocused();
-  // the 3 px focus ring plus its 3 px offset clear the message, so the ring does not strike its first line
-  const margin = await page
-    .locator(`[id="${describedBy}"]`)
-    .evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).marginTop)
+  // the 3 px ring of the field clears the message, so the ring does not strike its first line (U-28)
+  const gap = await percentage.evaluate((input) => {
+    const group = input.closest("[data-slot=input-group]");
+    const error = document.getElementById(
+      input.getAttribute("aria-describedby") ?? ""
     );
-  expect(margin).toBeGreaterThanOrEqual(6);
-  // nothing generic at the top of the page, and no retry for something the person has to fix
-  await expect(page.getByRole("alert")).toHaveCount(0);
+    return (
+      (error?.getBoundingClientRect().top ?? 0) -
+      (group?.getBoundingClientRect().bottom ?? 0)
+    );
+  });
+  expect(gap).toBeGreaterThanOrEqual(6);
+  // nothing generic at the top of the page: the only alert is the one of the field, and no retry for what the
+  // person has to fix
+  await expect(page.getByRole("alert")).toHaveCount(1);
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
@@ -195,10 +204,12 @@ test("U-29: só a leitura que falhou oferece 'Tentar novamente'; o erro de salva
   await page.getByLabel("Nome do perfil").fill("Perfil novo");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   await expect.poll(() => calls.creates).toBe(1);
-  await expect(page.getByRole("alert")).toContainText(
-    "Revise o método, as parcelas, o prazo e os valores das taxas."
-  );
-  await expect(
-    page.getByRole("button", { name: "Tentar novamente" })
-  ).toHaveCount(0);
+  const refused = page.getByRole("alert").filter({
+    hasText: "Revise o método, as parcelas, o prazo e os valores das taxas.",
+  });
+  await expect(refused).toBeVisible();
+  await expect(refused.locator("xpath=..")).toBeFocused();
+  await expect(refused.getByRole("button")).toHaveCount(0);
+  // the list still could not be read, and it still offers to read it again; it never shows as an empty list
+  await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
 });
