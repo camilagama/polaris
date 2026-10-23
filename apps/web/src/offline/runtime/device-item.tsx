@@ -132,7 +132,8 @@ export function RevokeForm({
         <Button
           aria-describedby={offline ? reasonId : undefined}
           aria-disabled={blocked || undefined}
-          className={OFF}
+          // the label is long ("…e encerrar as outras sessões"): it wraps, so it fits a 320 px dialog
+          className={`${OFF} h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center`}
           onClick={blocked ? undefined : onRevoke}
           type="button"
           variant="destructive"

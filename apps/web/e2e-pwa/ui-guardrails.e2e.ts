@@ -374,6 +374,24 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(await focusFaults(page)).toEqual([]);
   });
 
+  test("6. com um diálogo aberto a volta de Tab gira dentro dele, sem contar as sentinelas do Base UI; o que perde o contorno é pego", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.getByRole("button", { name: "Abrir diálogo" }).click();
+    await page.getByRole("dialog").waitFor();
+    expect(await focusFaults(page)).toEqual([]);
+    await page.evaluate(() => {
+      const bare = document.createElement("button");
+      bare.textContent = "Sem foco visível";
+      bare.style.outline = "none";
+      document.querySelector("[role=dialog]")?.append(bare);
+    });
+    expect(await focusFaults(page)).toEqual([
+      'button "Sem foco visível" não mostra o contorno de foco de 3 px',
+    ]);
+  });
+
   test("6. um controle que o teclado não alcança é pego", async ({ page }) => {
     await openScreen(gallery, page);
     await page.evaluate(() => {

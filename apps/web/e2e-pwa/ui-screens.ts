@@ -470,6 +470,7 @@ export const SCREENS: UiScreen[] = [
   deviceScreen("erro ao ler", deviceStates.error),
   deviceScreen("sem conexão", deviceStates.offline),
   deviceScreen("login antigo", deviceStates.sessionOld),
+  deviceScreen("confirmação aberta", deviceStates.revokeConfirming),
   attentionScreen("com itens", attentionStates.items),
   attentionScreen("descartando", attentionStates.discarding),
   attentionScreen("vazio", attentionStates.empty),

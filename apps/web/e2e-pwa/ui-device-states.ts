@@ -164,6 +164,29 @@ export const deviceStates = {
     await showScreenAlone(page);
   },
 
+  /**
+   * The confirmation of a revocation open, with the option ticked and the error of an unsure answer above the buttons:
+   * the dialog stays open, so the checks measure its controls (area of 48 px, contrast, overflow, focus).
+   */
+  async revokeConfirming(page: Page) {
+    await openDevicesLab(page, {
+      revoke: (route) => route.fulfill(failure(500, "INTERNAL_SERVER_ERROR")),
+    });
+    await page.getByText("Celular da Ana").waitFor();
+    await page.getByRole("button", { name: REVOKE_OTHER }).click();
+    await page
+      .getByRole("checkbox", { name: "Encerrar também as outras sessões" })
+      .click();
+    await page
+      .getByRole("button", {
+        exact: true,
+        name: "Sim, revogar e encerrar as outras sessões",
+      })
+      .click();
+    await page.getByText("Não conseguimos confirmar se o aparelho").waitFor();
+    await showScreenAlone(page);
+  },
+
   /** The login is too old to revoke: nothing was revoked, and the panel sends the person to sign in again. */
   async sessionOld(page: Page) {
     await openDevicesLab(page, {
