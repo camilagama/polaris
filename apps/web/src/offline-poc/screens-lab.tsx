@@ -410,7 +410,10 @@ export function ScreensLab() {
             </p>
           </div>
           {started && onlineOnly ? (
-            <ConnectionRequiredSlot form={screen !== "public-catalog"} />
+            // on the page's background, as in the shell: the lab's own page stays light in the dark theme
+            <div style={{ background: "var(--background)" }}>
+              <ConnectionRequiredSlot form={screen !== "public-catalog"} />
+            </div>
           ) : null}
           {started ? <LabScreenPage screen={screen} /> : null}
         </main>

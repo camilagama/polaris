@@ -509,6 +509,8 @@ test("U-54: numa tela que só funciona online, o chip sem conexão diz que a tel
   await serveCatalog(page, () => rpc({}));
   await openLab(page, "public-catalog");
   await page.getByLabel("Rede disponível").uncheck();
+  // the strip follows the proved connection of the tab (emenda do ADR 0043), not only the lab's runtime
+  await page.context().setOffline(true);
   const chip = page.locator(".sync-status");
   await expect(chip).toHaveAttribute(
     "title",
