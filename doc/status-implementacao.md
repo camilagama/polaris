@@ -2011,3 +2011,9 @@ Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisado
 | Posse pelo `device.check` | Em revisão | O `check` de uma sessão recente grava `register` só enquanto ela não tem aparelho próprio; um vínculo `use` nunca é promovido. Gate `device-sessions` (só no CI). |
 | Nome padrão | Em revisão | O `device.register` sem nome recebe "{navegador} no {sistema}" de uma tabela fechada (Client Hints de baixa entropia, depois o User-Agent; só os primeiros 512 caracteres; nunca o cabeçalho inteiro). Política de privacidade v1 ajustada no rascunho, sem versão nova. |
 | Duplicados que já existem | Fora do código | Sem script: o QA remove pela tela de Aparelhos no staging. Na produção não há dado. |
+
+### Estado de conexão com prova (F7, U-57 a U-62; emenda do ADR 0043, de 22/10/2026; sem migration)
+
+| Item | Estado | Notas |
+| --- | --- | --- |
+| Conexão com prova | Em revisão | `lib/connection.ts`: o app só fica online com uma resposta do Worker (o `X-Request-Id` UUID que ele põe em toda resposta, agora também nas respostas cruas das rotas); sonda `/health` só em dúvida, 2, 4, 8… s nos primeiros 10 min offline e 60 s depois, nunca online nem com a página escondida; 401 ou 403 sem a marca é sem resposta, nunca recusa de sessão. Agendador único no provedor, com nova tentativa depois de `sync_failed` (±20%, `Retry-After`) e trava entre abas. Uma só leitura do change log por sincronização. Faixa "Sem internet" nas telas só com conexão, Perfis com lista não carregada e gravação cortada, Catálogo público sem cópia offline. Provas: testes de unidade da conexão, do agendador, do runtime e do servidor; e2e `offline-screens.e2e.ts` nos modos offline e "mentindo". **Limite:** a reconferência no Pixel 6 (BrowserStack) é do QA. |
