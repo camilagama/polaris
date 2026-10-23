@@ -1,10 +1,12 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { useCallback, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
+import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, ExpenseList, ExpenseSummary } from "./expense-list";
 import {
@@ -13,11 +15,9 @@ import {
   monthOfDay,
 } from "./expense-model";
 import { ExpenseRulesPanel } from "./expense-rules-panel";
-import { FeedbackMessage } from "./feedback-message";
 import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
-import "./expenses-page.css";
 
 type StatusChange = "restore" | "void";
 
@@ -35,20 +35,16 @@ function savedMessage(
 
 function Heading() {
   return (
-    <section className="categories-heading">
-      <div>
-        <p className="categories-eyebrow">Resultado</p>
-        <h1>Despesas</h1>
-        <p className="categories-intro-copy">
-          Cada despesa pertence ao mês de competência, o período a que ela se
-          refere, e não à data do pagamento. Comprar estoque não é despesa: o
-          custo entra quando o produto é vendido. Taxas de cartão e de
-          antecipação já registradas na venda não devem ser lançadas de novo.
-        </p>
-      </div>
-    </section>
+    <header className="grid gap-1">
+      <h1 className="text-title">Despesas</h1>
+      <p className="text-muted-foreground text-support">
+        Cada despesa conta no mês de competência, não no dia do pagamento.
+      </p>
+    </header>
   );
 }
+
+const LIST_TITLE_ID = "expense-list-title";
 
 /** The expenses screen: online only, every figure comes from the server. */
 export function ExpensesPage() {
@@ -179,60 +175,61 @@ export function ExpensesPage() {
   const isSaving = busy === "create" || (busy?.startsWith("save:") ?? false);
 
   return (
-    <div className="expenses-page">
+    <div
+      className="grid gap-4 font-sans text-foreground text-sm antialiased"
+      data-ui=""
+    >
       <Heading />
-      <FeedbackMessage feedback={feedback} />
+      <ActionNotice feedback={feedback} />
       {categories.state.error ? (
-        <p className="categories-message is-error" role="alert">
-          {categories.state.error}{" "}
-          <button
-            className="quiet-button"
-            disabled={categories.state.isLoading}
-            onClick={handleCategoriesRetry}
-            type="button"
-          >
-            Tentar de novo
-          </button>
-        </p>
+        <LoadError
+          busy={categories.state.isLoading}
+          message={categories.state.error}
+          onRetry={handleCategoriesRetry}
+        />
       ) : null}
 
-      <ExpenseForm
-        categories={categories.state.categories}
-        disabled={busy !== null}
-        editing={editing}
-        key={editing ? `${editing.id}:${editing.version}` : `new:${formCount}`}
-        onCancel={resetForm}
-        onSave={handleSave}
-        saving={isSaving}
-        today={today}
-      />
+      {/* from 900 px, the form beside the list (as Perfis de pagamento); below, one column, the form first */}
+      <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+        <ExpenseForm
+          categories={categories.state.categories}
+          disabled={busy !== null}
+          editing={editing}
+          key={
+            editing ? `${editing.id}:${editing.version}` : `new:${formCount}`
+          }
+          onCancel={resetForm}
+          onSave={handleSave}
+          saving={isSaving}
+          today={today}
+        />
 
-      <section aria-labelledby="expense-list-heading" className="expense-panel">
-        <div className="expense-panel-heading">
-          <div>
-            <p className="categories-eyebrow">Registros da organização</p>
-            <h2 id="expense-list-heading">Despesas do período</h2>
-          </div>
-        </div>
-        <div className="expense-list-body">
-          <ExpenseFiltersBar
-            categories={categories.state.categories}
-            filters={filters}
-            onChange={setFilters}
-          />
-          <ExpenseSummary filters={filters} state={state} />
-          <ExpenseList
-            busyKey={busy}
-            filters={filters}
-            onEdit={handleEdit}
-            onLoadMore={loadMore}
-            onRestore={handleRestore}
-            onRetry={handleRetry}
-            onVoid={handleVoid}
-            state={state}
-          />
-        </div>
-      </section>
+        <Card aria-labelledby={LIST_TITLE_ID} role="region">
+          <CardHeader>
+            <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
+              Despesas do período
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <ExpenseFiltersBar
+              categories={categories.state.categories}
+              filters={filters}
+              onChange={setFilters}
+            />
+            <ExpenseSummary filters={filters} state={state} />
+            <ExpenseList
+              busyKey={busy}
+              filters={filters}
+              onEdit={handleEdit}
+              onLoadMore={loadMore}
+              onRestore={handleRestore}
+              onRetry={handleRetry}
+              onVoid={handleVoid}
+              state={state}
+            />
+          </CardContent>
+        </Card>
+      </div>
 
       <ExpenseRulesPanel
         categories={categories.state.categories}
