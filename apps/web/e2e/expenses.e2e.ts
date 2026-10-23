@@ -399,7 +399,7 @@ async function openExpenses(
   page: Page,
   server: FakeExpenseServer,
   /** Routes that answer before the fake server (the last route registered is the first asked). */
-  before?: (page: Page) => Promise<void>
+  before?: (page: Page) => Promise<unknown>
 ) {
   await installServer(page, server);
   await before?.(page);
