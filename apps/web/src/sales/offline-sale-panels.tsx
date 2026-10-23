@@ -10,7 +10,7 @@ import {
   pendingDateTime,
   pendingStateLabels,
   usePendingSales,
-} from "./pending-sales-panel";
+} from "./pending-sales";
 import type { QueuedSaleView } from "./sale-form-model";
 
 const LINK =
