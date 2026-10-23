@@ -14,6 +14,8 @@ import {
 // One source of color: apps/web/src/styles/theme.css (DESIGN.md, "Changing a color"). The catalog and the e-mails
 // read files generated from it; these tests fail when one of them is stale, and when a color is written by hand
 // anywhere else under apps/web/src or apps/catalog/src.
+const FOREGROUND_VALUE = /--foreground: oklch\([^)]*\);/;
+const DARK_RING_VALUE = /(\.dark \{[\s\S]*?)--ring: oklch\([^)]*\);/;
 const HEX = /^#[0-9a-f]{6}$/;
 const root = new URL("../", import.meta.url).pathname;
 
@@ -40,13 +42,13 @@ describe("the files generated from theme.css", () => {
       join(root, "apps/web/src/styles/theme.css"),
       "utf8"
     );
+    // whatever the current values are: the first --foreground (light) and the --ring of .dark (the last one)
     const changed = css
-      .replace(
-        "--foreground: oklch(0.2 0.005 85);",
-        "--foreground: oklch(0.3 0.04 250);"
-      )
-      .replace("--ring: oklch(0.64 0.134 165);", "--ring: oklch(0.7 0.1 200);");
+      .replace(FOREGROUND_VALUE, "--foreground: oklch(0.3 0.04 250);")
+      .replace(DARK_RING_VALUE, "$1--ring: oklch(0.7 0.1 200);");
     expect(changed).not.toBe(css);
+    expect(changed).toContain("--foreground: oklch(0.3 0.04 250);");
+    expect(changed).toContain("--ring: oklch(0.7 0.1 200);");
     const catalog = renderCatalogTokens(changed);
     expect(catalog).toContain("--foreground: oklch(0.3 0.04 250);");
     expect(catalog).toContain("--ring: oklch(0.7 0.1 200);");
@@ -82,6 +84,19 @@ describe("the files generated from theme.css", () => {
   });
 });
 
+describe("the theme-color metas of index.html", () => {
+  it("are the --background of each theme in theme.css", () => {
+    const { dark, light } = readTheme(
+      readFileSync(join(root, "apps/web/src/styles/theme.css"), "utf8")
+    );
+    const html = readFileSync(join(root, "apps/web/index.html"), "utf8");
+    const content = (theme) =>
+      new RegExp(`content="([^"]+)"\\s+data-tema="${theme}"`).exec(html)?.[1];
+    expect(content("claro")).toBe(light.background);
+    expect(content("escuro")).toBe(dark.background);
+  });
+});
+
 describe("OKLCH to sRGB hex", () => {
   it.each([
     [[1, 0, 0], "#ffffff"],
@@ -92,6 +107,10 @@ describe("OKLCH to sRGB hex", () => {
     [[0.452_014, 0.313_214, 264.052], "#0000ff"],
   ])("%j is %s", ([lightness, chroma, hue], hex) => {
     expect(oklchToHex(lightness, chroma, hue)).toBe(hex);
+  });
+
+  it("a real token: --foreground, oklch(0.2 0.005 85), is #171613", () => {
+    expect(oklchToHex(0.2, 0.005, 85)).toBe("#171613");
   });
 
   it("clips what is out of the sRGB gamut instead of wrapping", () => {
@@ -108,11 +127,14 @@ const GENERATED = /\.generated\.(?:css|ts)$/;
 const THEME = "apps/web/src/styles/theme.css";
 // the scroll-fade masks: opaque black as the mask, not a color of the brand
 const MASKS = "apps/web/src/styles/shadcn-tailwind.css";
-const MASK_COLOR = /oklch\(0 0 0\)/g;
-const COMMENT = /\/\*[\s\S]*?\*\//g;
-// a literal color: #hex, rgb(, hsl(, oklch(. `oklch(from …)` derives from another color, it is not a literal.
+const MASK_COLOR = /oklch\(0 0 0\)/gi;
+// a block comment starts after a space or at the line start: the "/**/" of a glob inside a string does not count
+const COMMENT = /(^|\s)\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT = /^\s*\/\/.*$/gm;
+// a literal color: #hex, rgb(, hsl(, hwb(, lab(, lch(, oklab(, oklch(, color(srgb …). `oklch(from …)` derives from
+// another color, it is not a literal.
 const LITERAL_COLOR =
-  /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(|\boklch\((?!\s*from\b)/g;
+  /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab)\(|\boklch\((?!\s*from\b)|\bcolor\(\s*(?:srgb|display-p3|a98-rgb|prophoto-rgb|rec2020|xyz)/gi;
 
 function filesUnder(directory) {
   return readdirSync(directory).flatMap((name) => {
@@ -126,7 +148,7 @@ function filesUnder(directory) {
 
 /** The literal colors of a source text, comments left out. */
 export function literalColors(text, path) {
-  const code = text.replace(COMMENT, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = text.replace(COMMENT, "$1").replace(LINE_COMMENT, "");
   return (
     (path === MASKS ? code.replace(MASK_COLOR, "") : code).match(
       LITERAL_COLOR
@@ -187,6 +209,15 @@ describe("no color written by hand", () => {
     expect(literalColors("m { mask: oklch(0 0 0) }", MASKS)).toEqual([]);
     expect(literalColors("m { mask: oklch(0 0 0) }", "x.css")).toHaveLength(1);
     expect(literalColors("m { color: oklch(0.2 0 0) }", MASKS)).toHaveLength(1);
+    expect(literalColors("a { color: RGB(0 0 0) }", "x.css")).toHaveLength(1);
+    expect(literalColors("a { color: lab(50 0 0) }", "x.css")).toHaveLength(1);
+    expect(
+      literalColors("a { color: color(srgb 1 0 0) }", "x.css")
+    ).toHaveLength(1);
+    // a glob in a string is not a comment, so a color after it is still seen
+    expect(
+      literalColors('g = "src/**/*.ts"; c = "#fff";', "x.ts")
+    ).toHaveLength(1);
     // a comment is not a color
     expect(literalColors("/* was #fff */ a { top: 0 }", "x.css")).toEqual([]);
   });
