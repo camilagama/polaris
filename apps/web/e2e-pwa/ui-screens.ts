@@ -4,6 +4,7 @@ import type { BrowserContext, Page } from "@playwright/test";
 import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
+import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
@@ -275,6 +276,34 @@ async function exerciseRevoke(page: Page) {
   );
 }
 
+/** The files of the payment profiles screen on the new interface (the draft and the fee model have no markup). */
+const PAYMENT_SOURCES = [
+  "src/payment-profiles/payment-profile-form.tsx",
+  "src/payment-profiles/payment-profile-list.tsx",
+  "src/payment-profiles/payment-profiles-page.tsx",
+];
+
+/** One state of the payment profiles screen (`ui-payment-states.ts`). */
+const paymentScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `perfis de pagamento ${name}`,
+  open,
+  sourceDirs: PAYMENT_SOURCES,
+  status: "migrated",
+});
+
+async function exercisePaymentMethod(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Método", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
 /**
  * The files of the pieces around the screens on the new interface: the 404, the failure of a screen, the loading,
  * the notices of the session, the acceptance and the new version, "Sair" with work to lose and the expired access.
@@ -520,6 +549,9 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  paymentScreen("lista", paymentStates.list),
+  paymentScreen("edição", paymentStates.edit, exercisePaymentMethod),
+  paymentScreen("erros nos campos", paymentStates.errors),
   deviceScreen("lista", deviceStates.list, exerciseRevoke),
   deviceScreen("carregando", deviceStates.loading),
   deviceScreen("vazio", deviceStates.empty),

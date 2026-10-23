@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeFee,
   formatFeePercentage,
   PERCENTAGE_RULE_TEXT,
   percentageFieldText,
   percentageProblem,
+  settlementText,
 } from "./payment-fee-model";
 
 describe("formatFeePercentage (U-30)", () => {
@@ -75,5 +77,47 @@ describe("percentageProblem (U-29)", () => {
     );
     // the six decimals are only enforced: the text does not ask the shopkeeper to count them
     expect(PERCENTAGE_RULE_TEXT).not.toContain("casas");
+  });
+});
+
+describe("describeFee", () => {
+  const fee = (
+    mode: "fixed" | "fixed_and_percentage" | "none" | "percentage" | "unknown",
+    fixedAmount: string | null,
+    percentage: string | null
+  ) => ({ fixedAmount, mode, percentage });
+
+  it("says the fixed amount in reais with the comma, as the rest of the app does", () => {
+    expect(describeFee(fee("fixed", "0.50", null))).toEqual({
+      text: "R$ 0,50",
+      unknown: false,
+    });
+    expect(describeFee(fee("fixed", "1500.5", null)).text).toBe("R$ 1.500,50");
+  });
+
+  it("joins the fixed amount and the percentage", () => {
+    expect(
+      describeFee(fee("fixed_and_percentage", "0.50", "0.990000")).text
+    ).toBe("R$ 0,50 + 0,99%");
+  });
+
+  it("marks the fee that was never told, and never reads it as zero", () => {
+    expect(describeFee(fee("unknown", null, null))).toEqual({
+      text: "desconhecida (não é zero)",
+      unknown: true,
+    });
+    expect(describeFee(fee("none", null, null))).toEqual({
+      text: "nenhuma",
+      unknown: false,
+    });
+  });
+});
+
+describe("settlementText", () => {
+  it("uses the singular for one day, the plural for the rest and says when it was not told", () => {
+    expect(settlementText(1)).toBe("1 dia");
+    expect(settlementText(30)).toBe("30 dias");
+    expect(settlementText(0)).toBe("0 dias");
+    expect(settlementText(null)).toBe("não informado");
   });
 });
