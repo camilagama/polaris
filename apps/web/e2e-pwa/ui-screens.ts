@@ -252,6 +252,45 @@ async function exerciseStockReason(page: Page) {
   );
 }
 
+/**
+ * The files of the pieces around the screens on the new interface: the 404, the failure of a screen, the loading,
+ * the notices of the session, the acceptance and the new version, "Sair" with work to lose and the expired access.
+ */
+const SHELL_PIECE_SOURCES = [
+  "src/app-shell/error-boundary.tsx",
+  "src/app-shell/legal-acceptance-notice.tsx",
+  "src/app-shell/not-found-page.tsx",
+  "src/app-shell/page-loading.tsx",
+  "src/app-shell/session-ended-notice.tsx",
+  "src/app-shell/state-panel.tsx",
+  "src/offline/logout-dialog.tsx",
+  "src/offline/runtime/offline-access-expired.tsx",
+  "src/pwa/update-banner.tsx",
+  "src/offline-poc/screens-lab-shell-pieces.tsx",
+];
+
+/** One piece in its state, drawn by the gallery of the pieces (`/ui-pecas-do-shell?estado=…`), with synthetic data. */
+const shellPieceScreen = (
+  name: string,
+  state: string,
+  ready: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `peças do shell ${name}`,
+  open: async (page) => {
+    await page.goto(`/ui-pecas-do-shell?estado=${state}`);
+    await ready(page);
+    await page.evaluate(() => document.fonts.ready);
+  },
+  sourceDirs: SHELL_PIECE_SOURCES,
+  status: "migrated",
+});
+
+const headingOf =
+  (name: string, level = 1) =>
+  async (page: Page) => {
+    await page.getByRole("heading", { level, name }).waitFor();
+  };
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
@@ -425,6 +464,39 @@ export const SCREENS: UiScreen[] = [
   historyScreen("lista", historyStates.list),
   historyScreen("sem conexão", historyStates.offline),
   historyScreen("período invertido", historyStates.periodError),
+  shellPieceScreen("404", "nao-encontrada", headingOf("Página não encontrada")),
+  shellPieceScreen(
+    "falha da tela",
+    "erro",
+    headingOf("Algo deu errado nesta tela")
+  ),
+  shellPieceScreen("carregando", "carregando", async (page) => {
+    await page.getByRole("status").getByText("Carregando…").waitFor();
+  }),
+  shellPieceScreen(
+    "avisos de sessão, aceite e nova versão",
+    "avisos",
+    async (page) => {
+      await page.getByText("Sua sessão acabou.").first().waitFor();
+      await page.getByText("Há uma nova versão do Polaris").first().waitFor();
+    }
+  ),
+  shellPieceScreen(
+    "sair com trabalho a perder",
+    "sair",
+    headingOf("Há trabalho que ainda não foi enviado", 2)
+  ),
+  shellPieceScreen("sair confirmando o descarte", "sair", async (page) => {
+    await page.getByRole("button", { name: "Descartar e sair…" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Descartar e sair" })
+      .waitFor();
+  }),
+  shellPieceScreen(
+    "acesso sem internet vencido",
+    "acesso-vencido",
+    headingOf("O acesso sem internet venceu")
+  ),
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),

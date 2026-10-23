@@ -10,6 +10,7 @@ import ReceiptTextIcon from "lucide-react/dist/esm/icons/receipt-text";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import SmartphoneIcon from "lucide-react/dist/esm/icons/smartphone";
 import TagIcon from "lucide-react/dist/esm/icons/tag";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
   type ChangeEvent,
@@ -18,6 +19,7 @@ import {
   useCallback,
   useEffect,
 } from "react";
+import { Button } from "@/ui/button";
 import { Logo } from "@/ui/logo";
 import {
   Sidebar,
@@ -59,7 +61,6 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { OrganizationSetup } from "../organization/organization-setup";
-import "./app-shell.css";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
   BOTTOM_BAR_IDS,
@@ -70,8 +71,10 @@ import {
   navGroups,
   OFFLINE_NAV_ITEMS,
 } from "./navigation-model";
+import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
 import { useSignedInEmail } from "./signed-in-email";
+import { StatePanel } from "./state-panel";
 
 /** The icon of each destination (lucide, one module each). */
 const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
@@ -345,9 +348,7 @@ function SessionEndedGate({ atOpen }: { atOpen: boolean }) {
     }
   }, [atOpen, runtime]);
   return atOpen ? (
-    <p className="app-status" role="status">
-      {OPENING_SIGN_IN_TEXT}
-    </p>
+    <PageLoading label={OPENING_SIGN_IN_TEXT} />
   ) : (
     <SessionEndedNotice alone />
   );
@@ -368,9 +369,7 @@ function LegalAcceptanceGate({ atOpen }: { atOpen: boolean }) {
     }
   }, [atOpen]);
   return atOpen ? (
-    <p className="app-status" role="status">
-      {ACCEPTANCE_OPENING_SCREEN}
-    </p>
+    <PageLoading label={ACCEPTANCE_OPENING_SCREEN} />
   ) : (
     <LegalAcceptanceNotice />
   );
@@ -415,11 +414,7 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   const { load, reload } = useOrganizationLoad();
 
   if (load.status === "loading") {
-    return (
-      <p className="app-status" role="status">
-        Carregando sua organização…
-      </p>
-    );
+    return <PageLoading label="Carregando sua organização…" />;
   }
   if (load.status === "session_ended") {
     return <SessionEndedGate atOpen={load.atOpen} />;
@@ -429,15 +424,25 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   }
   if (load.status === "error") {
     return (
-      <section aria-labelledby="app-gate-error" className="app-gate">
-        <h1 id="app-gate-error">Não foi possível abrir o Polaris</h1>
-        <p className="categories-message is-error" role="alert">
+      <StatePanel
+        actions={
+          <Button onClick={reload} type="button">
+            Tentar novamente
+          </Button>
+        }
+        icon={
+          <TriangleAlertIcon
+            aria-hidden="true"
+            className="size-5 shrink-0 text-destructive"
+          />
+        }
+        title="Não foi possível abrir o Polaris"
+        titleId="app-gate-error"
+      >
+        <p className="text-muted-foreground" role="alert">
           {load.message}
         </p>
-        <button className="primary-button" onClick={reload} type="button">
-          Tentar novamente
-        </button>
-      </section>
+      </StatePanel>
     );
   }
   if (load.status === "empty") {

@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
 import type { BlockedWorkspace, LogoutBlockReason } from "./logout-guard";
-import "./logout-dialog.css";
 
 /**
  * What the person sees when logging out would lose work (plan PR59). It never
@@ -8,6 +10,9 @@ import "./logout-dialog.css";
  * the queue (try again), to look at what the server refused, to stay signed in,
  * or to discard the queued operations on purpose, in two steps that say what
  * will be lost.
+ *
+ * It is a panel in the page (`alertdialog`), not a modal: the Base UI Dialog would add about 6 KB to the precache,
+ * past the budget of the shell, and the panel is what the person already sees under "Sair".
  */
 export interface LogoutDialogProps {
   blocked: readonly BlockedWorkspace[];
@@ -55,90 +60,96 @@ export function LogoutDialog({
   );
 
   return (
-    <section
+    <Card
+      aria-describedby="logout-description"
       aria-labelledby="logout-title"
-      className="logout-dialog"
+      className="font-sans"
+      data-ui=""
       role="alertdialog"
     >
-      <h2 id="logout-title">Há trabalho que ainda não foi enviado</h2>
-      <p>
-        Este aparelho guarda {plural(total, "operação", "operações")} que o
-        servidor ainda não recebeu. Se você sair agora sem enviar, elas se
-        perdem.
-      </p>
-      <ul className="logout-workspaces">
-        {blocked.map((item) => (
-          <li key={item.label}>
-            <strong>{item.label}</strong>:{" "}
-            {plural(item.total, "operação", "operações")}.{" "}
-            {REASON_TEXT[item.reason]}
-          </li>
-        ))}
-      </ul>
-      {errorMessage ? (
-        <p className="logout-error" role="alert">
-          {errorMessage}
-        </p>
-      ) : null}
-      {confirming ? (
-        <div className="logout-confirm">
-          <p>
-            Isto apaga {plural(total, "operação", "operações")} deste aparelho,
-            sem registrá-las no servidor, e depois encerra a sessão.
-            {sending > 0
-              ? ` ${plural(sending, "delas já foi enviada", "delas já foram enviadas")} e o servidor pode ter recebido: confira antes se ${sending === 1 ? "ela" : "elas"} apareceu no sistema.`
-              : ""}
+      <CardContent className="grid gap-4">
+        <div className="grid gap-2">
+          <h2 className="text-section" id="logout-title">
+            Há trabalho que ainda não foi enviado
+          </h2>
+          <p className="text-muted-foreground" id="logout-description">
+            Este aparelho guarda {plural(total, "operação", "operações")} que o
+            servidor ainda não recebeu. Se você sair agora sem enviar, elas se
+            perdem.
           </p>
-          <button
-            className="danger-button"
-            disabled={busy}
-            onClick={confirmDiscard}
-            type="button"
-          >
-            Descartar e sair
-          </button>
-          <button className="secondary-button" onClick={keep} type="button">
-            Voltar
-          </button>
         </div>
-      ) : (
-        <div className="logout-actions">
-          <button
-            className="primary-button"
-            disabled={busy}
-            onClick={onRetry}
-            type="button"
-          >
-            Tentar enviar de novo
-          </button>
-          {needsAttention ? (
-            <button
-              className="secondary-button"
+        <ul className="m-0 grid list-none gap-1.5 p-0 text-support">
+          {blocked.map((item) => (
+            <li key={item.label}>
+              <strong className="font-semibold">{item.label}</strong>:{" "}
+              {plural(item.total, "operação", "operações")}.{" "}
+              {REASON_TEXT[item.reason]}
+            </li>
+          ))}
+        </ul>
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
+        {confirming ? (
+          <div className="grid gap-3">
+            <Alert variant="destructive">
+              <AlertDescription>
+                Isto apaga {plural(total, "operação", "operações")} deste
+                aparelho, sem registrá-las no servidor, e depois encerra a
+                sessão.
+                {sending > 0
+                  ? ` ${plural(sending, "delas já foi enviada", "delas já foram enviadas")} e o servidor pode ter recebido: confira antes se ${sending === 1 ? "ela" : "elas"} apareceu no sistema.`
+                  : ""}
+              </AlertDescription>
+            </Alert>
+            <Button
               disabled={busy}
-              onClick={onShowAttention}
+              onClick={confirmDiscard}
               type="button"
+              variant="destructive"
             >
-              Ver o que precisa de atenção
-            </button>
-          ) : null}
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={onCancel}
-            type="button"
-          >
-            Ficar conectado
-          </button>
-          <button
-            className="danger-button"
-            disabled={busy}
-            onClick={askDiscard}
-            type="button"
-          >
-            Descartar e sair…
-          </button>
-        </div>
-      )}
-    </section>
+              Descartar e sair
+            </Button>
+            <Button onClick={keep} type="button" variant="outline">
+              Voltar
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <Button disabled={busy} onClick={onRetry} type="button">
+              Tentar enviar de novo
+            </Button>
+            {needsAttention ? (
+              <Button
+                disabled={busy}
+                onClick={onShowAttention}
+                type="button"
+                variant="outline"
+              >
+                Ver o que precisa de atenção
+              </Button>
+            ) : null}
+            <Button
+              disabled={busy}
+              onClick={onCancel}
+              type="button"
+              variant="outline"
+            >
+              Ficar conectado
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={askDiscard}
+              type="button"
+              variant="destructive"
+            >
+              Descartar e sair…
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
