@@ -2,7 +2,15 @@ import type {
   ProductReadModel,
   PublicCatalogProfileReadModel,
 } from "@polaris/contracts";
-import { type ChangeEvent, type FormEvent, useCallback } from "react";
+import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import EyeOffIcon from "lucide-react/dist/esm/icons/eye-off";
+import GlobeIcon from "lucide-react/dist/esm/icons/globe";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import { type FormEvent, useCallback } from "react";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import type { ProfileField, ProfileFieldError } from "./public-catalog-errors";
 import {
   type CatalogVisibility,
@@ -12,6 +20,10 @@ import {
   publicUrl,
   slugFromName,
 } from "./public-catalog-model";
+import { ProductTextAreaField, ProductTextField } from "./product-fields";
+
+/** The id of the notice of the plan: the controls it turns off point at it, so they read why. */
+export const PLAN_NOTICE_ID = "public-catalog-plan-notice";
 
 const VISIBILITY_TEXT: Readonly<Record<CatalogVisibility, string>> = {
   live: "No ar: qualquer pessoa com o endereço vê os produtos escolhidos.",
@@ -19,6 +31,12 @@ const VISIBILITY_TEXT: Readonly<Record<CatalogVisibility, string>> = {
   "waiting-plan":
     "Ligado, mas fora do ar: o plano atual não inclui o catálogo público. Tudo fica guardado e volta ao ar quando o plano incluir.",
 };
+
+const VISIBILITY_ICON = {
+  live: GlobeIcon,
+  off: EyeOffIcon,
+  "waiting-plan": TriangleAlertIcon,
+} as const;
 
 /** What a command said, shown next to the button that ran it (U-49). */
 interface ActionFeedback {
@@ -28,69 +46,70 @@ interface ActionFeedback {
 
 /**
  * The two live regions of a command, always in the tree so a message that appears is announced: the notice is
- * polite, the error is an alert. Empty, they take no room.
+ * polite, the error is an alert. Empty, they take no room: they go inside the block of what ran the command, not as
+ * a cell of a grid (a grid would leave a gap for each), and the message brings its own top margin. An icon goes with
+ * each, so the color is never alone.
  */
 function ActionMessages({ error, notice }: ActionFeedback) {
   return (
     <>
       <div role="status">
         {notice ? (
-          <p className="public-catalog-message is-success">{notice}</p>
+          <p className="mt-2 flex items-start gap-1.5 font-medium text-support">
+            <CircleCheckIcon
+              aria-hidden="true"
+              className="mt-px size-3.5 shrink-0"
+            />
+            {notice}
+          </p>
         ) : null}
       </div>
       <div role="alert">
         {error ? (
-          <p className="public-catalog-message is-error">{error}</p>
+          <p className="mt-2 flex items-start gap-1.5 font-medium text-destructive text-support">
+            <CircleAlertIcon
+              aria-hidden="true"
+              className="mt-px size-3.5 shrink-0"
+            />
+            {error}
+          </p>
         ) : null}
       </div>
     </>
   );
 }
 
-/** The error of one field of the form, under it and tied to it. */
-function FieldProblem({
-  field,
-  problem,
-}: {
-  field: ProfileField;
-  problem: ProfileFieldError | null;
-}) {
-  return problem?.field === field ? (
-    <p className="field-error" id={`public-${field}-error`}>
-      {problem.message}
-    </p>
-  ) : null;
-}
-
-/** `aria-invalid` and `aria-describedby` of the input of a field that has an error. */
-function problemAttributes(
+/** The text of the error of one field of the form, or nothing. */
+function problemOf(
   field: ProfileField,
   problem: ProfileFieldError | null
-) {
-  return problem?.field === field
-    ? { "aria-describedby": `public-${field}-error`, "aria-invalid": true }
-    : {};
+): string | undefined {
+  return problem?.field === field ? problem.message : undefined;
 }
+
+/** A button that is off for a reason the screen says: it stays reachable and reads the reason (decision of 21/10). */
+const OFF_BUTTON = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 interface ProfileFormProps {
   changed: boolean;
   disabled: boolean;
   draft: PublicProfileDraft;
   feedback: ActionFeedback;
-  problem: ProfileFieldError | null;
   onChange: (draft: PublicProfileDraft) => void;
   onSlugEdited: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   pending: boolean;
+  problem: ProfileFieldError | null;
   publicOrigin: string | null;
   slugEdited: boolean;
 }
 
+const SAVE_REASON_ID = "public-profile-save-reason";
+
 export function ProfileForm(props: ProfileFormProps) {
   const { draft, onChange, onSlugEdited, problem, slugEdited } = props;
   const handleName = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const publicName = event.target.value;
+    (publicName: string) => {
       // the address follows the name until the organization types its own
       onChange({
         ...draft,
@@ -101,113 +120,136 @@ export function ProfileForm(props: ProfileFormProps) {
     [draft, onChange, slugEdited]
   );
   const handleSlug = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
+    (slug: string) => {
       onSlugEdited();
-      onChange({ ...draft, slug: event.target.value });
+      onChange({ ...draft, slug });
     },
     [draft, onChange, onSlugEdited]
   );
   const handleDescription = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) =>
-      onChange({ ...draft, description: event.target.value }),
+    (description: string) => onChange({ ...draft, description }),
     [draft, onChange]
   );
   const handleWhatsapp = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ ...draft, whatsapp: event.target.value }),
+    (whatsapp: string) => onChange({ ...draft, whatsapp }),
     [draft, onChange]
   );
   const handleInstagram = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      onChange({ ...draft, instagram: event.target.value }),
+    (instagram: string) => onChange({ ...draft, instagram }),
     [draft, onChange]
   );
   const example = draft.slug.trim() || "seu-endereco";
   const preview = publicUrl(props.publicOrigin, example) ?? `/${example}`;
 
+  // nothing to save, or the plan does not allow it: the button says so by aria-disabled and the reason is read with it
+  let reasonId: string | undefined;
+  if (props.disabled) {
+    reasonId = PLAN_NOTICE_ID;
+  } else if (!props.changed) {
+    reasonId = SAVE_REASON_ID;
+  }
+  const { onSubmit } = props;
+  const handleSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      // Enter in a field submits even when the button is off
+      if (reasonId !== undefined) {
+        event.preventDefault();
+        return;
+      }
+      onSubmit(event);
+    },
+    [onSubmit, reasonId]
+  );
+
   return (
-    <form className="public-catalog-card" onSubmit={props.onSubmit}>
-      <h2>Perfil público</h2>
-      <p className="field-help">
-        O que você digitar aqui é o que aparece. Nada é copiado do seu cadastro,
-        do seu login ou do plano.
-      </p>
-      <label htmlFor="public-name">Nome público</label>
-      <input
-        {...problemAttributes("publicName", problem)}
-        disabled={props.pending}
-        id="public-name"
-        maxLength={MAX_PUBLIC_NAME}
-        onChange={handleName}
-        required
-        value={draft.publicName}
-      />
-      <FieldProblem field="publicName" problem={problem} />
-      <label htmlFor="public-slug">Endereço</label>
-      <input
-        {...problemAttributes("slug", problem)}
-        autoCapitalize="none"
-        disabled={props.pending}
-        id="public-slug"
-        maxLength={40}
-        onChange={handleSlug}
-        required
-        spellCheck={false}
-        value={draft.slug}
-      />
-      <FieldProblem field="slug" problem={problem} />
-      <p className="field-help">
-        {preview} · de 3 a 40 letras minúsculas, números e hífens, único entre
-        todas as lojas.
-      </p>
-      <label htmlFor="public-description">Descrição (opcional)</label>
-      <textarea
-        {...problemAttributes("description", problem)}
-        disabled={props.pending}
-        id="public-description"
-        maxLength={MAX_PUBLIC_DESCRIPTION}
-        onChange={handleDescription}
-        rows={3}
-        value={draft.description}
-      />
-      <FieldProblem field="description" problem={problem} />
-      <p className="field-help">
-        {MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres
-        restantes.
-      </p>
-      <label htmlFor="public-whatsapp">WhatsApp (opcional)</label>
-      <input
-        {...problemAttributes("whatsapp", problem)}
-        autoComplete="off"
-        disabled={props.pending}
-        id="public-whatsapp"
-        inputMode="tel"
-        onChange={handleWhatsapp}
-        placeholder="11 91234-5678"
-        value={draft.whatsapp}
-      />
-      <FieldProblem field="whatsapp" problem={problem} />
-      <label htmlFor="public-instagram">Instagram (opcional)</label>
-      <input
-        {...problemAttributes("instagram", problem)}
-        autoCapitalize="none"
-        disabled={props.pending}
-        id="public-instagram"
-        onChange={handleInstagram}
-        placeholder="minhaloja"
-        spellCheck={false}
-        value={draft.instagram}
-      />
-      <FieldProblem field="instagram" problem={problem} />
-      <button
-        className="primary-button"
-        disabled={props.pending || props.disabled || !props.changed}
-        type="submit"
-      >
-        {props.pending ? "Salvando…" : "Salvar perfil"}
-      </button>
-      <ActionMessages {...props.feedback} />
-    </form>
+    <Card>
+      <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
+        <CardHeader>
+          <CardTitle aria-level={2} role="heading">
+            Perfil público
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <p className="text-muted-foreground text-support">
+            O que você digitar aqui é o que aparece. Nada é copiado do seu
+            cadastro, do seu login ou do plano.
+          </p>
+          <ProductTextField
+            error={problemOf("publicName", problem)}
+            id="public-name"
+            label="Nome público"
+            maxLength={MAX_PUBLIC_NAME}
+            onChange={handleName}
+            value={draft.publicName}
+          />
+          <ProductTextField
+            autoCapitalize="none"
+            className="[&_[data-slot=field-description]]:[overflow-wrap:anywhere]"
+            error={problemOf("slug", problem)}
+            hint={`${preview} · de 3 a 40 letras minúsculas, números e hífens, único entre todas as lojas.`}
+            id="public-slug"
+            label="Endereço"
+            maxLength={40}
+            onChange={handleSlug}
+            spellCheck={false}
+            value={draft.slug}
+          />
+          <ProductTextAreaField
+            error={problemOf("description", problem)}
+            hint={`${MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres restantes.`}
+            id="public-description"
+            label="Descrição"
+            maxLength={MAX_PUBLIC_DESCRIPTION}
+            onChange={handleDescription}
+            optional
+            value={draft.description}
+          />
+          <ProductTextField
+            error={problemOf("whatsapp", problem)}
+            id="public-whatsapp"
+            inputMode="tel"
+            label="WhatsApp"
+            onChange={handleWhatsapp}
+            optional
+            placeholder="11 91234-5678"
+            value={draft.whatsapp}
+          />
+          <ProductTextField
+            autoCapitalize="none"
+            error={problemOf("instagram", problem)}
+            id="public-instagram"
+            label="Instagram"
+            onChange={handleInstagram}
+            optional
+            placeholder="minhaloja"
+            spellCheck={false}
+            value={draft.instagram}
+          />
+        </CardContent>
+        <CardContent>
+          <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
+            <Button
+              aria-describedby={reasonId}
+              aria-disabled={reasonId !== undefined || undefined}
+              className={OFF_BUTTON}
+              disabled={props.pending}
+              type="submit"
+            >
+              {props.pending ? "Salvando…" : "Salvar perfil"}
+            </Button>
+            {reasonId === SAVE_REASON_ID ? (
+              <p
+                className="text-muted-foreground text-support"
+                id={SAVE_REASON_ID}
+              >
+                Altere algum campo para salvar.
+              </p>
+            ) : null}
+          </div>
+          <ActionMessages {...props.feedback} />
+        </CardContent>
+      </form>
+    </Card>
   );
 }
 
@@ -222,51 +264,91 @@ interface SwitchCardProps {
   visibility: CatalogVisibility;
 }
 
+const SWITCH_REASON_ID = "public-catalog-switch-reason";
+
 export function SwitchCard(props: SwitchCardProps) {
   const { profile } = props;
   const address = profile ? publicUrl(props.publicOrigin, profile.slug) : null;
+  const Icon = VISIBILITY_ICON[props.visibility];
+
+  // off for a reason that is on the screen: unsaved changes (the hint below) or the plan (its notice at the top)
+  let reasonId: string | undefined;
+  if (props.changed) {
+    reasonId = SWITCH_REASON_ID;
+  } else if (props.planBlocks && profile && !profile.published) {
+    reasonId = PLAN_NOTICE_ID;
+  }
+  const { onToggle } = props;
+  const handleClick = useCallback(() => {
+    if (reasonId === undefined) {
+      onToggle();
+    }
+  }, [onToggle, reasonId]);
+
   return (
-    <section aria-labelledby="catalog-switch" className="public-catalog-card">
-      <h2 id="catalog-switch">Catálogo</h2>
-      <p
-        className={`public-catalog-status is-${props.visibility}`}
-        role="status"
-      >
-        {VISIBILITY_TEXT[props.visibility]}
-      </p>
-      {profile ? (
-        <button
-          className={profile.published ? "quiet-button" : "primary-button"}
-          disabled={
-            props.pending ||
-            props.changed ||
-            (props.planBlocks && !profile.published)
+    <Card aria-labelledby="catalog-switch" role="region">
+      <CardHeader>
+        <CardTitle aria-level={2} id="catalog-switch" role="heading">
+          Catálogo
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <p
+          className={
+            props.visibility === "waiting-plan"
+              ? "flex items-start gap-2 text-warning"
+              : "flex items-start gap-2"
           }
-          onClick={props.onToggle}
-          type="button"
+          role="status"
         >
-          {profile.published ? "Desligar catálogo" : "Ligar catálogo"}
-        </button>
-      ) : (
-        <p className="field-help">
-          Salve o perfil para poder ligar o catálogo.
+          <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          {VISIBILITY_TEXT[props.visibility]}
         </p>
-      )}
-      <ActionMessages {...props.feedback} />
-      {props.changed && profile ? (
-        <p className="field-help">
-          Salve o perfil antes de ligar ou desligar o catálogo.
-        </p>
-      ) : null}
-      {address && props.visibility === "live" ? (
-        <p>
-          <a href={address} rel="noopener" target="_blank">
-            Abrir o catálogo
-          </a>{" "}
-          <span className="field-help">{address}</span>
-        </p>
-      ) : null}
-    </section>
+        {profile ? (
+          <div>
+            <Button
+              aria-describedby={reasonId}
+              aria-disabled={reasonId !== undefined || undefined}
+              className={OFF_BUTTON}
+              disabled={props.pending}
+              onClick={handleClick}
+              type="button"
+              variant={profile.published ? "outline" : "default"}
+            >
+              {profile.published ? "Desligar catálogo" : "Ligar catálogo"}
+            </Button>
+            <ActionMessages {...props.feedback} />
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-support">
+            Salve o perfil para poder ligar o catálogo.
+          </p>
+        )}
+        {props.changed && profile ? (
+          <p
+            className="text-muted-foreground text-support"
+            id={SWITCH_REASON_ID}
+          >
+            Salve o perfil antes de ligar ou desligar o catálogo.
+          </p>
+        ) : null}
+        {address && props.visibility === "live" ? (
+          <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <a
+              className="focus-ring touch-hit rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+              href={address}
+              rel="noopener"
+              target="_blank"
+            >
+              Abrir o catálogo
+            </a>
+            <span className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+              {address}
+            </span>
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -283,17 +365,23 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
     [onToggle, product.id, shown]
   );
   return (
-    <li>
-      <span>{product.name}</span>
-      <button
+    <li className="grid justify-items-start gap-2 py-2.5 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between min-[30rem]:gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-medium [overflow-wrap:anywhere]">
+          {product.name}
+        </span>
+        {shown ? <Badge>No catálogo</Badge> : null}
+      </div>
+      <Button
         aria-pressed={shown}
-        className={shown ? "quiet-button" : "primary-button"}
         disabled={disabled}
         onClick={handleClick}
+        size="sm"
         type="button"
+        variant="outline"
       >
         {shown ? "Tirar do catálogo" : "Mostrar no catálogo"}
-      </button>
+      </Button>
     </li>
   );
 }
@@ -336,58 +424,63 @@ export function ProductsCard(props: ProductsCardProps) {
   );
 
   return (
-    <section
-      aria-labelledby="catalog-products"
-      className="public-catalog-card public-catalog-products"
-    >
-      <div className="public-catalog-products-heading">
-        <h2 id="catalog-products">Produtos</h2>
-        <div className="public-catalog-bulk">
-          <button
-            className="quiet-button"
+    <Card aria-labelledby="catalog-products" role="region">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardTitle aria-level={2} id="catalog-products" role="heading">
+          Produtos
+        </CardTitle>
+        <div className="flex gap-3">
+          <Button
             disabled={
               props.pending ||
               props.planBlocks ||
               shownCount === products.length
             }
             onClick={handleShowAll}
+            size="sm"
             type="button"
+            variant="outline"
           >
             Mostrar todos
-          </button>
-          <button
-            className="quiet-button"
+          </Button>
+          <Button
             disabled={props.pending || shownCount === 0}
             onClick={handleHideAll}
+            size="sm"
             type="button"
+            variant="outline"
           >
             Tirar todos
-          </button>
+          </Button>
         </div>
-      </div>
-      <ActionMessages {...props.feedback} />
-      <p className="field-help">
-        {shownCount} de {products.length} produtos ativos escolhidos. Produto
-        arquivado ou removido sai do catálogo sozinho.
-      </p>
-      {products.length === 0 ? (
-        <p>Você ainda não tem produtos ativos.</p>
-      ) : (
-        <ul className="public-catalog-product-list">
-          {products.map((product) => {
-            const isShown = shown.has(product.id);
-            return (
-              <ProductRow
-                disabled={props.pending || (props.planBlocks && !isShown)}
-                key={product.id}
-                onToggle={handleToggle}
-                product={product}
-                shown={isShown}
-              />
-            );
-          })}
-        </ul>
-      )}
-    </section>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div>
+          <p className="text-muted-foreground text-support">
+            {shownCount} de {products.length} produtos ativos escolhidos.
+            Produto arquivado ou removido sai do catálogo sozinho.
+          </p>
+          <ActionMessages {...props.feedback} />
+        </div>
+        {products.length === 0 ? (
+          <p>Você ainda não tem produtos ativos.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {products.map((product) => {
+              const isShown = shown.has(product.id);
+              return (
+                <ProductRow
+                  disabled={props.pending || (props.planBlocks && !isShown)}
+                  key={product.id}
+                  onToggle={handleToggle}
+                  product={product}
+                  shown={isShown}
+                />
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

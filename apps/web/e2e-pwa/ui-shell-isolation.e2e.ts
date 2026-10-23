@@ -235,9 +235,146 @@ const PRODUCTS_SCREENS = [
   },
 ];
 
+const DAY = "2026-10-14T12:00:00.000Z";
+const category = (n: number, name: string) => ({
+  archivedAt: null,
+  createdAt: DAY,
+  deletedAt: null,
+  id: id(40 + n),
+  name,
+  organizationId: ORGANIZATION.id,
+  status: "active",
+  updatedAt: DAY,
+});
+const customer = (n: number, name: string, phone: string) => ({
+  anonymizedAt: null,
+  archivedAt: null,
+  createdAt: DAY,
+  email: null,
+  id: id(60 + n),
+  name,
+  notes: null,
+  organizationId: ORGANIZATION.id,
+  phone,
+  status: "active",
+  updatedAt: DAY,
+  version: 1,
+});
+const PUBLIC_CATALOG_SETUP = {
+  enabled: true,
+  profile: {
+    description: "Roupas e acessórios.",
+    instagram: null,
+    publicName: "Loja da Ana",
+    published: true,
+    slug: "loja-da-ana",
+    version: 2,
+    whatsapp: null,
+  },
+  publicOrigin: "https://catalogo.example",
+  publishedProductIds: [],
+};
+
+/** Categorias, Clientes and the public catalog (t235): each with the screen as it opens and one state with a field. */
+const LOT2_SCREENS = [
+  {
+    name: "Categorias no shell: lista",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/categories",
+        () => expect(page.getByText("Camisetas")).toBeVisible(),
+        { "category/list": { categories: [category(1, "Camisetas")] } }
+      ),
+  },
+  {
+    name: "Categorias no shell: renomeando",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/categories",
+        async () => {
+          await page
+            .getByRole("button", { name: "Mais ações para Camisetas" })
+            .click();
+          await page
+            .getByRole("menuitem", { exact: true, name: "Renomear" })
+            .click();
+          await expect(
+            page.getByLabel("Novo nome para Camisetas")
+          ).toBeVisible();
+        },
+        { "category/list": { categories: [category(1, "Camisetas")] } }
+      ),
+  },
+  {
+    name: "Clientes no shell: lista",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/customers",
+        () => expect(page.getByText("Ana Lima")).toBeVisible(),
+        {
+          "customer/list": {
+            customers: [customer(1, "Ana Lima", "11912345678")],
+          },
+        }
+      ),
+  },
+  {
+    name: "Clientes no shell: formulário com erro no nome",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/customers",
+        async () => {
+          await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+          await expect(
+            page.getByText("Informe o nome do cliente.")
+          ).toBeVisible();
+        },
+        { "customer/list": { customers: [] } }
+      ),
+  },
+  {
+    name: "Catálogo público no shell: no ar",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/public-catalog",
+        () =>
+          expect(page.getByLabel("Nome público")).toHaveValue("Loja da Ana"),
+        {
+          "product/list": { products: [] },
+          "publicCatalog/setup": PUBLIC_CATALOG_SETUP,
+        }
+      ),
+  },
+  {
+    name: "Catálogo público no shell: endereço recusado",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/public-catalog",
+        async () => {
+          await page
+            .getByLabel("Endereço", { exact: true })
+            .fill("Loja da Ana!");
+          await page.getByRole("button", { name: "Salvar perfil" }).click();
+          await expect(page.locator("#public-slug-error")).toBeVisible();
+        },
+        {
+          "product/list": { products: [] },
+          "publicCatalog/setup": PUBLIC_CATALOG_SETUP,
+        }
+      ),
+  },
+];
+
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
+  ...LOT2_SCREENS,
   {
     name: "Venda no shell",
     open: (page: Page) =>

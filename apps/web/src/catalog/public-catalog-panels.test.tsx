@@ -8,15 +8,27 @@ import { blankProfileDraft } from "./public-catalog-model";
 import { ProductsCard, ProfileForm, SwitchCard } from "./public-catalog-panels";
 
 const none = () => undefined;
-const MARKED_SLUG = /<input[^>]*aria-invalid="true"[^>]*id="public-slug"/;
-const DESCRIBED_SLUG =
-  /<input[^>]*aria-describedby="public-slug-error"[^>]*id="public-slug"/;
-const MARKED_NAME = /<input[^>]*aria-invalid[^>]*id="public-name"/;
-const SAVED_IN_STATUS = /<div role="status"><p[^>]*>Perfil salvo\./;
-const REFUSED_IN_ALERT = /<div role="alert"><p[^>]*>O perfil não foi salvo\./;
+const SAVED_IN_STATUS = /<div role="status"><p[^>]*>.*Perfil salvo\./;
+const REFUSED_IN_ALERT = /<div role="alert"><p[^>]*>.*O perfil não foi salvo\./;
 const noFeedback = { error: null, notice: null };
-const DISABLED_TURN_ON = /disabled=""[^>]*>Ligar catálogo/;
-const DISABLED_SAVE = /disabled=""[^>]*>Salvar perfil/;
+// a button that is off for a reason on the screen: aria-disabled and the id of the reason, never `disabled`
+const OFF_TURN_ON = /<button[^>]*aria-disabled="true"[^>]*>Ligar catálogo/;
+const OFF_SAVE = /<button[^>]*aria-disabled="true"[^>]*>Salvar perfil/;
+const DESCRIBED_BY_PLAN =
+  /<button[^>]*aria-describedby="public-catalog-plan-notice"[^>]*>Ligar catálogo/;
+const DESCRIBED_BY_SAVE_REASON =
+  /<button[^>]*aria-describedby="public-profile-save-reason"[^>]*>Salvar perfil/;
+
+/** The tag of the input (or textarea) with this id, as drawn. */
+function controlTag(markup: string, id: string): string {
+  const tag = new RegExp(`<(?:input|textarea)[^>]*id="${id}"[^>]*>`).exec(
+    markup
+  );
+  if (!tag) {
+    throw new Error(`no control ${id}`);
+  }
+  return tag[0];
+}
 const profile: PublicCatalogProfileReadModel = {
   description: null,
   instagram: null,
@@ -83,7 +95,9 @@ describe("the catalog switch", () => {
       profile: { ...profile, published: false },
       visibility: "off",
     });
-    expect(html).toMatch(DISABLED_TURN_ON);
+    expect(html).toMatch(OFF_TURN_ON);
+    expect(html).toMatch(DESCRIBED_BY_PLAN);
+    expect(html).not.toContain('disabled=""');
   });
 });
 
@@ -136,7 +150,9 @@ describe("the profile form", () => {
       />
     );
     expect(html).toContain("https://catalogo.example/loja-da-ana");
-    expect(html).toMatch(DISABLED_SAVE);
+    expect(html).toMatch(OFF_SAVE);
+    expect(html).toMatch(DESCRIBED_BY_SAVE_REASON);
+    expect(html).toContain("Altere algum campo para salvar.");
     expect(html).toContain("280 caracteres");
   });
 
@@ -166,10 +182,11 @@ describe("the profile form", () => {
     });
     expect(html).toContain('id="public-slug-error"');
     expect(html).toContain("Endereço inválido.");
-    expect(html).toMatch(MARKED_SLUG);
-    expect(html).toMatch(DESCRIBED_SLUG);
+    const slug = controlTag(html, "public-slug");
+    expect(slug).toContain('aria-invalid="true"');
+    expect(slug).toContain("public-slug-error");
     // the name is not marked
-    expect(html).not.toMatch(MARKED_NAME);
+    expect(controlTag(html, "public-name")).not.toContain("aria-invalid");
   });
 
   it("shows the message of the save under the save button, in live regions that are always there (U-49)", () => {
