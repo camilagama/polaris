@@ -629,9 +629,8 @@ test.describe("desafio bloqueado (P2)", () => {
       expect(alertId).toBeTruthy();
       await expect(submit).toHaveAttribute("aria-describedby", alertId ?? "");
       await expect(submit).toHaveAccessibleDescription(BLOCKED_DESCRIPTION);
-      // a press, and Enter in a field, do nothing: no request leaves the page
-      // forced: Playwright treats aria-disabled as not actionable, and a person can still press it
-      await submit.click({ force: true });
+      // Enter in a field does nothing: no request leaves the page (only the keyboard reaches the button,
+      // since pointer-events-none sends a click to what is below)
       await page.getByLabel("E-mail", { exact: true }).press("Enter");
       expect(callsTo(server, "/api/auth/sign-in/email")).toEqual([]);
       expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
@@ -675,8 +674,7 @@ test.describe("desafio bloqueado (P2)", () => {
       "aria-describedby",
       (await page.getByRole("alert").getAttribute("id")) ?? ""
     );
-    // forced: Playwright treats aria-disabled as not actionable, and a person can still press it
-    await change.click({ force: true });
+    // only the keyboard reaches the button (pointer-events-none sends a click to what is below)
     await newPasswordField(page).press("Enter");
     expect(callsTo(server, "/api/auth/reset-password")).toEqual([]);
     await expect(page.getByRole("alert")).toHaveCount(1);
@@ -1175,9 +1173,8 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     await expect(change).toHaveAccessibleDescription(
       "Muitas tentativas. Espere 14 minutos. Não lembra a senha atual? Saia e use Esqueci a senha."
     );
-    // a press does nothing: no second request while paused
+    // Enter does nothing: no second request while paused
     const sent = callsTo(server, "/api/auth/change-password").length;
-    await change.click({ force: true });
     await newPasswordField(page).press("Enter");
     // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
     await page.waitForTimeout(500);
