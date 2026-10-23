@@ -343,6 +343,7 @@ export const protectAuthRequest: AuthAbuseProtector = async (
 
   const secret = bindings.TURNSTILE_SECRET_KEY?.trim();
   const baseURL = bindings.BETTER_AUTH_BASE_URL?.trim();
+  // `secret` and `baseURL` are tested again here only to narrow their types for the code below.
   if (
     !(
       secret &&

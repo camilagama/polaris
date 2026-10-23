@@ -372,6 +372,8 @@ describe("the staging isolation check", () => {
     staging.vars.AUTH_EMAIL_FROM = "";
     staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "false";
     expect(findIsolationProblems(entries)).toEqual([]);
+    staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = "true";
+    expect(findIsolationProblems(entries)).toEqual([]);
     staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "true";
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
