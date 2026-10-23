@@ -288,17 +288,22 @@ export function EntrySuccess({ children }: { children: ReactNode }) {
   );
 }
 
-/** A link that looks like the main action: a whole page load, so the policy of the page it opens comes with it. */
+/**
+ * A link that looks like the main action: a whole page load, so the policy of the page it opens comes with it.
+ * "outline" where another button of the page is the action (the first access, which also has the notice of the session).
+ */
 export function EntryLinkButton({
   children,
   href,
+  variant = "default",
 }: {
   children: ReactNode;
   href: string;
+  variant?: "default" | "outline";
 }) {
   return (
     <a
-      className={cn(buttonVariants({ size: "lg" }), "w-full")}
+      className={cn(buttonVariants({ size: "lg", variant }), "w-full")}
       data-slot="button"
       href={href}
     >

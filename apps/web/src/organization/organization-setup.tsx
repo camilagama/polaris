@@ -155,6 +155,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
         {failure?.endedSession ? (
           <EntryLinkButton
             href={signInPath({ reason: "sessao", returnTo: "/" })}
+            variant="outline"
           >
             {SIGN_IN_AGAIN_BUTTON}
           </EntryLinkButton>

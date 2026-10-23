@@ -517,7 +517,10 @@ export function AppShell({
         {updateNotice}
         {showNotice || showAcceptanceNotice ? (
           // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
-          <div className="bg-background px-(--gutter) pt-4" data-ui="">
+          <div
+            className="flow-root bg-background px-(--gutter) pt-4"
+            data-ui=""
+          >
             <div className="mx-auto max-w-[420px]">
               {showNotice ? <SessionEndedNotice alone /> : null}
               {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
