@@ -729,7 +729,7 @@ export function SubmitButton({
       aria-busy={pending || undefined}
       aria-describedby={blocked ? alertId : offBy}
       aria-disabled={off || undefined}
-      className={cn("w-full aria-disabled:cursor-not-allowed", className)}
+      className={cn("w-full", className)}
       disabled={disabled || pending}
       onClick={off ? (event) => event.preventDefault() : undefined}
       size="lg"

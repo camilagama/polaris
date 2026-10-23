@@ -58,8 +58,6 @@ const THIS_DEVICE_ONLINE_HELP = (
 const THIS_DEVICE_OFFLINE_HELP =
   "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho.";
 
-/** A button that is off for a reason keeps its place in the focus order and reads the reason (decision of 21/10). */
-
 interface RevokeFormProps {
   actionError: string | null;
   busy: boolean;
