@@ -99,35 +99,29 @@ export function savedSaleLines(
   return [first, ...others];
 }
 
-const ATTENTION_STATES: ReadonlySet<PendingSale["state"]> = new Set([
-  "needs_attention",
-  "rejected",
-]);
-
-const ROW = "grid gap-1.5 rounded-lg border p-3";
 /** The sale kept just now has the border and the ring of a chosen card (DESIGN.md), so it reads as the one to look at. */
-const ROW_JUST_SAVED = `${ROW} border-foreground/70 bg-secondary ring-1 ring-foreground/10`;
-
-function itemsText(count: number): string {
-  return `${count} ${count === 1 ? "item" : "itens"}`;
-}
+const ROW_JUST_SAVED =
+  "border-foreground/70 bg-secondary ring-1 ring-foreground/10";
 
 function SavedSaleRow({ line }: { line: SavedSaleLine }) {
-  const attention = ATTENTION_STATES.has(line.state);
+  const attention =
+    line.state === "needs_attention" || line.state === "rejected";
   const when = [
     line.occurredAt ? pendingDateTime.format(new Date(line.occurredAt)) : null,
-    line.itemCount === null ? null : itemsText(line.itemCount),
+    line.itemCount === null
+      ? null
+      : `${line.itemCount} ${line.itemCount === 1 ? "item" : "itens"}`,
   ].filter(Boolean);
   return (
-    <li className={line.justSaved ? ROW_JUST_SAVED : `${ROW} border-border`}>
+    <li
+      className={`grid gap-1.5 rounded-lg border p-3 ${line.justSaved ? ROW_JUST_SAVED : "border-border"}`}
+    >
       {line.justSaved ? (
         // a status with its text in the tree: it is what the screen reader says when the sale is kept
-        <div role="status">
-          <p>
-            <strong>Venda guardada neste aparelho.</strong> O formulário abaixo
-            foi reiniciado para uma nova venda.
-          </p>
-        </div>
+        <p role="status">
+          <strong>Venda guardada neste aparelho.</strong> O formulário abaixo
+          foi reiniciado para uma nova venda.
+        </p>
       ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <span className="tabular-nums">{when.join(" · ")}</span>
