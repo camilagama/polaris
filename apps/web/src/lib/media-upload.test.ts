@@ -4,7 +4,7 @@ import {
 } from "@polaris/domain/catalog/media";
 import { describe, expect, it, vi } from "vitest";
 import { isMediaSessionEnded } from "../catalog/media-commands-model";
-import { Connection, NoWorkerAnswerError } from "./connection";
+import { createConnection, NoWorkerAnswerError } from "./connection";
 import {
   type MediaUploadHttpError,
   prepareMediaUploadFile,
@@ -362,7 +362,7 @@ describe("reorderProductMedia", () => {
 
 describe("an answer that is not the Worker's", () => {
   it("a portal's 401 (no mark) is no answer, never a session that ended", async () => {
-    const connection = new Connection({
+    const connection = createConnection({
       browserOnline: () => true,
       fetch: async () =>
         new Response("<html>login</html>", {

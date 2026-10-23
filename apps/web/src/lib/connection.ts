@@ -16,7 +16,7 @@
  * page visibility injected, so it is tested without a browser.
  */
 
-export type ConnectionState = "offline" | "online";
+type ConnectionState = "offline" | "online";
 
 /**
  * - `worker`: the Worker answered (any status): the connection is proven.
@@ -127,7 +127,7 @@ export interface ConnectionDependencies {
   schedule: (callback: () => void, delayMs: number) => () => void;
 }
 
-export interface ConnectionSnapshot {
+interface ConnectionSnapshot {
   /** When the state last changed (ms since the epoch). */
   since: number;
   state: ConnectionState;
@@ -173,308 +173,313 @@ async function isHealthy(response: Response): Promise<boolean> {
   }
 }
 
-export class Connection {
-  private readonly dependencies: ConnectionDependencies;
-  private readonly listeners = new Set<() => void>();
-  private snapshot: ConnectionSnapshot;
-  private probing: Promise<void> | null = null;
-  private cancelProbe: (() => void) | null = null;
-  private step = 0;
-  private timeouts = 0;
-  private retryAfterMs: number | null = null;
+interface EventSource<A, R> {
+  addEventListener: A;
+  removeEventListener: R;
+}
 
-  constructor(dependencies: ConnectionDependencies) {
-    this.dependencies = dependencies;
-    const now = dependencies.now();
-    const stored = readRemembered(dependencies.memory);
-    // an old "offline since" (a tab that slept) says nothing about this cut: it would start at the 60 s probe
-    const remembered =
-      stored && now - stored.seen < REMEMBERED_FOR_MS ? stored : null;
-    if (!dependencies.browserOnline()) {
-      this.snapshot = { since: remembered?.since ?? now, state: "offline" };
-      this.remember();
-      this.scheduleProbe();
-    } else if (remembered) {
-      // reloaded while offline: open offline (no online screen first) and look at once
-      this.snapshot = { since: remembered.since, state: "offline" };
-      this.scheduleProbe(0);
-    } else {
-      dependencies.memory?.remove();
-      this.snapshot = { since: now, state: "online" };
-    }
-  }
+/** The `Retry-After` of a 429 in ms, at most 5 min: a huge value never holds the queue back for hours. */
+function retryAfterOf(response: Response): number | null {
+  const seconds = Number(response.headers.get("retry-after"));
+  return seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) * 1000 : null;
+}
 
-  getSnapshot = (): ConnectionSnapshot => this.snapshot;
-
-  isOnline = (): boolean => this.snapshot.state === "online";
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  };
-
-  /** The `Retry-After` of the Worker's last 429, once: the next try waits at least this long. */
-  takeRetryAfterMs(): number | null {
-    const value = this.retryAfterMs;
-    this.retryAfterMs = null;
-    return value;
-  }
-
+export interface Connection {
+  /** The browser's own signals. Returns how to stop listening. */
+  attach: (
+    target: EventSource<
+      Window["addEventListener"],
+      Window["removeEventListener"]
+    >,
+    page: EventSource<
+      Document["addEventListener"],
+      Document["removeEventListener"]
+    >
+  ) => () => void;
   /**
    * The `fetch` of the RPC client (and of the session lookup): the call itself, unchanged, classified
    * before anyone reads it. A response that is not the Worker's is thrown as `NoWorkerAnswerError`, so no
    * caller can take a portal's 401 or 403 for a refused session.
    */
-  fetch = async (
-    input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> => {
-    const cancelSlow = this.dependencies.schedule(
-      () => this.doubt(),
-      SLOW_CALL_MS
-    );
-    let response: Response;
-    try {
-      response = await this.dependencies.fetch(input, init);
-    } catch (error) {
-      const signal =
-        init?.signal ?? (input instanceof Request ? input.signal : undefined);
-      // the caller gave up (it left the screen): that says nothing about the network; an abort for time
-      // (`AbortSignal.timeout`) is an answer that did not come
-      if (!signal?.aborted || signal.reason?.name === "TimeoutError") {
-        this.doubt();
-      }
-      throw error;
-    } finally {
-      cancelSlow();
-    }
-    const verdict = classifyResponse(response);
-    if (verdict === "worker" || verdict === "server_failed") {
-      if (verdict === "worker" && response.status === 429) {
-        const seconds = Number(response.headers.get("retry-after"));
-        // at most 5 min: a huge value never holds the queue back for hours
-        this.retryAfterMs =
-          seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) * 1000 : null;
-      }
-      this.goOnline();
-      return response;
-    }
-    this.doubt();
-    throw new NoWorkerAnswerError(verdict);
-  };
-
+  fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  getSnapshot: () => ConnectionSnapshot;
+  isOnline: () => boolean;
   /** "Tentar agora": one probe right now, whatever the interval; the state it ends in. */
-  async probeNow(): Promise<ConnectionState> {
-    await this.probe();
-    return this.snapshot.state;
-  }
+  probeNow: () => Promise<ConnectionState>;
+  subscribe: (listener: () => void) => () => void;
+  /** The `Retry-After` of the Worker's last 429, once: the next try waits at least this long. */
+  takeRetryAfterMs: () => number | null;
+}
 
-  /** The browser's own signals. Returns how to stop listening. */
-  attach(
-    target: {
-      addEventListener: Window["addEventListener"];
-      removeEventListener: Window["removeEventListener"];
-    },
-    page: {
-      addEventListener: Document["addEventListener"];
-      removeEventListener: Document["removeEventListener"];
-    }
-  ): () => void {
-    const onOffline = () => this.goOffline();
-    const onMaybeBack = () => {
-      if (this.snapshot.state === "offline") {
-        this.scheduleProbe(0);
-      }
-    };
-    const onVisibility = () => {
-      if (this.dependencies.isVisible()) {
-        onMaybeBack();
-      } else {
-        this.clearProbe(); // nothing with the page hidden; the return looks again
-      }
-    };
-    const listeners = [
-      [target, "offline", onOffline],
-      [target, "online", onMaybeBack],
-      [target, "pageshow", onMaybeBack],
-      [page, "visibilitychange", onVisibility],
-    ] as const;
-    for (const [on, type, listener] of listeners) {
-      on.addEventListener(type, listener);
-    }
-    return () => {
-      for (const [on, type, listener] of listeners) {
-        on.removeEventListener(type, listener);
-      }
-      this.clearProbe();
-    };
-  }
+/*
+ * A closure rather than a class: the minifier shortens local names but never property names, and this
+ * module sits in the precache of every page (ADR 0103 budget).
+ */
+export function createConnection(
+  dependencies: ConnectionDependencies
+): Connection {
+  const { browserOnline, isVisible, memory, now, schedule } = dependencies;
+  const listeners = new Set<() => void>();
+  let snapshot: ConnectionSnapshot;
+  let probing: Promise<void> | null = null;
+  let cancelProbe: (() => void) | null = null;
+  let step = 0;
+  let timeouts = 0;
+  let retryAfterMs: number | null = null;
 
-  // ------------------------------------------------------------- internals
-  private mark(name: string) {
-    this.dependencies.mark?.(name);
-  }
+  const mark = (name: string) => dependencies.mark?.(name);
 
-  private set(state: ConnectionState) {
-    if (this.snapshot.state === state) {
+  const set = (state: ConnectionState) => {
+    if (snapshot.state === state) {
       return;
     }
-    this.snapshot = { since: this.dependencies.now(), state };
-    this.mark(`connection:state:${state}`);
-    for (const listener of this.listeners) {
+    snapshot = { since: now(), state };
+    mark(`connection:state:${state}`);
+    for (const listener of listeners) {
       listener();
     }
-  }
+  };
 
-  private remember() {
+  const remember = () => {
     try {
-      this.dependencies.memory?.write(
+      memory?.write(
         JSON.stringify({
-          seen: this.dependencies.now(),
-          since: this.snapshot.since,
+          seen: now(),
+          since: snapshot.since,
         } satisfies Remembered)
       );
     } catch {
       // storage unavailable: the reload just starts online and finds out
     }
-  }
+  };
 
-  private goOnline() {
-    if (!this.dependencies.browserOnline()) {
+  const clearProbe = () => {
+    cancelProbe?.();
+    cancelProbe = null;
+  };
+
+  const goOnline = () => {
+    if (!browserOnline()) {
       // the browser says there is no network at all: whatever answered (a cache, a test's fake) proves nothing
       return;
     }
-    this.step = 0;
-    this.timeouts = 0;
-    this.clearProbe();
+    step = 0;
+    timeouts = 0;
+    clearProbe();
     try {
-      this.dependencies.memory?.remove();
+      memory?.remove();
     } catch {
       // nothing to forget
     }
-    this.set("online");
-  }
-
-  private goOffline() {
-    this.timeouts = 0;
-    if (this.snapshot.state === "online") {
-      this.step = 0;
-    }
-    this.set("offline");
-    this.remember();
-    this.scheduleProbe();
-  }
-
-  /** A call failed by network or hangs: online, one probe decides; offline, the schedule already looks. */
-  private doubt() {
-    if (this.snapshot.state === "online" && !this.probing) {
-      this.probe().catch(() => undefined);
-    }
-  }
-
-  private clearProbe() {
-    this.cancelProbe?.();
-    this.cancelProbe = null;
-  }
+    set("online");
+  };
 
   /** The next probe while offline: 2, 4, 8, 8… s, and 60 s after 10 min offline. */
-  private nextDelay(): number {
-    if (this.dependencies.now() - this.snapshot.since >= PROBE_FAST_FOR_MS) {
+  const nextDelay = (): number => {
+    if (now() - snapshot.since >= PROBE_FAST_FOR_MS) {
       return PROBE_SLOW_MS;
     }
-    const delay =
-      PROBE_STEPS_MS[Math.min(this.step, PROBE_STEPS_MS.length - 1)];
-    this.step += 1;
+    const delay = PROBE_STEPS_MS[Math.min(step, PROBE_STEPS_MS.length - 1)];
+    step += 1;
     return delay ?? PROBE_SLOW_MS;
-  }
+  };
 
-  private scheduleProbe(delayMs?: number) {
-    this.clearProbe();
-    if (!this.dependencies.isVisible()) {
+  const scheduleProbe = (delayMs?: number) => {
+    clearProbe();
+    if (!isVisible()) {
       return; // the return to the page probes
     }
-    const delay = delayMs ?? this.nextDelay();
-    this.cancelProbe = this.dependencies.schedule(() => {
-      this.cancelProbe = null;
-      this.probe().catch(() => undefined);
-    }, delay);
-  }
+    cancelProbe = schedule(() => {
+      cancelProbe = null;
+      probe().catch(() => undefined);
+    }, delayMs ?? nextDelay());
+  };
 
-  private probe(): Promise<void> {
-    if (this.probing) {
-      return this.probing;
+  const goOffline = () => {
+    timeouts = 0;
+    if (snapshot.state === "online") {
+      step = 0;
     }
-    if (!this.dependencies.isVisible()) {
-      return Promise.resolve();
-    }
-    this.clearProbe();
-    const run = this.runProbe().finally(() => {
-      this.probing = null;
-    });
-    this.probing = run;
-    return run;
-  }
+    set("offline");
+    remember();
+    scheduleProbe();
+  };
 
-  private async runProbe(): Promise<void> {
-    const outcome: { result: ProbeResult | null } = { result: null };
-    const task = async () => {
-      outcome.result = await this.askHealth();
-    };
-    const { lock } = this.dependencies;
-    if (lock) {
-      await lock(PROBE_LOCK, task);
-    } else {
-      await task();
-    }
-    if (outcome.result === null) {
-      // another tab is probing right now: look again at the next step
-      if (this.snapshot.state === "offline") {
-        this.scheduleProbe();
-      }
-      return;
-    }
-    this.settle(outcome.result);
-  }
-
-  private settle(result: ProbeResult) {
-    if (result === "online") {
-      this.goOnline();
-      return;
-    }
-    if (result === "timeout" && this.snapshot.state === "online") {
-      this.timeouts += 1;
-      if (this.timeouts < TIMEOUTS_FOR_OFFLINE) {
-        this.scheduleProbe(PROBE_STEPS_MS[0]); // look once more before calling it offline
-        return;
-      }
-    }
-    this.goOffline();
-  }
-
-  private async askHealth(): Promise<ProbeResult> {
-    this.mark("connection:probe:start");
+  const askHealth = async (): Promise<ProbeResult> => {
+    mark("connection:probe:start");
     const controller = new AbortController();
-    const cancelTimeout = this.dependencies.schedule(
+    const cancelTimeout = schedule(
       () => controller.abort(new DOMException("probe_timeout", "TimeoutError")),
       PROBE_TIMEOUT_MS
     );
     try {
-      const response = await this.dependencies.fetch("/health", {
+      const response = await dependencies.fetch("/health", {
         cache: "no-store",
         credentials: "omit",
         redirect: "error",
         signal: controller.signal,
       });
       const healthy = await isHealthy(response);
-      this.mark(healthy ? "connection:probe:ok" : "connection:probe:fail");
+      mark(healthy ? "connection:probe:ok" : "connection:probe:fail");
       return healthy ? "online" : "offline";
     } catch {
-      this.mark("connection:probe:fail");
+      mark("connection:probe:fail");
       return controller.signal.aborted ? "timeout" : "offline";
     } finally {
       cancelTimeout();
     }
+  };
+
+  const settle = (result: ProbeResult) => {
+    if (result === "online") {
+      goOnline();
+      return;
+    }
+    if (result === "timeout" && snapshot.state === "online") {
+      timeouts += 1;
+      if (timeouts < TIMEOUTS_FOR_OFFLINE) {
+        scheduleProbe(PROBE_STEPS_MS[0]); // look once more before calling it offline
+        return;
+      }
+    }
+    goOffline();
+  };
+
+  const runProbe = async (): Promise<void> => {
+    const outcome: { result: ProbeResult | null } = { result: null };
+    const task = async () => {
+      outcome.result = await askHealth();
+    };
+    const { lock } = dependencies;
+    if (lock) {
+      await lock(PROBE_LOCK, task);
+    } else {
+      await task();
+    }
+    const { result } = outcome;
+    if (result === null) {
+      // another tab is probing right now: look again at the next step
+      if (snapshot.state === "offline") {
+        scheduleProbe();
+      }
+      return;
+    }
+    settle(result);
+  };
+
+  const probe = (): Promise<void> => {
+    if (probing) {
+      return probing;
+    }
+    if (!isVisible()) {
+      return Promise.resolve();
+    }
+    clearProbe();
+    probing = runProbe().finally(() => {
+      probing = null;
+    });
+    return probing;
+  };
+
+  /** A call failed by network or hangs: online, one probe decides; offline, the schedule already looks. */
+  const doubt = () => {
+    if (snapshot.state === "online" && !probing) {
+      probe().catch(() => undefined);
+    }
+  };
+
+  const start = now();
+  const stored = readRemembered(memory);
+  // an old "offline since" (a tab that slept) says nothing about this cut: it would start at the 60 s probe
+  const remembered =
+    stored && start - stored.seen < REMEMBERED_FOR_MS ? stored : null;
+  if (!browserOnline()) {
+    snapshot = { since: remembered?.since ?? start, state: "offline" };
+    remember();
+    scheduleProbe();
+  } else if (remembered) {
+    // reloaded while offline: open offline (no online screen first) and look at once
+    snapshot = { since: remembered.since, state: "offline" };
+    scheduleProbe(0);
+  } else {
+    memory?.remove();
+    snapshot = { since: start, state: "online" };
   }
+
+  return {
+    attach(target, page) {
+      const onMaybeBack = () => {
+        if (snapshot.state === "offline") {
+          scheduleProbe(0);
+        }
+      };
+      const onVisibility = () => {
+        if (isVisible()) {
+          onMaybeBack();
+        } else {
+          clearProbe(); // nothing with the page hidden; the return looks again
+        }
+      };
+      const events = [
+        [target, "offline", goOffline],
+        [target, "online", onMaybeBack],
+        [target, "pageshow", onMaybeBack],
+        [page, "visibilitychange", onVisibility],
+      ] as const;
+      for (const [on, type, listener] of events) {
+        on.addEventListener(type, listener);
+      }
+      return () => {
+        for (const [on, type, listener] of events) {
+          on.removeEventListener(type, listener);
+        }
+        clearProbe();
+      };
+    },
+    async fetch(input, init) {
+      const cancelSlow = schedule(doubt, SLOW_CALL_MS);
+      let response: Response;
+      try {
+        response = await dependencies.fetch(input, init);
+      } catch (error) {
+        const signal =
+          init?.signal ?? (input instanceof Request ? input.signal : undefined);
+        // the caller gave up (it left the screen): that says nothing about the network; an abort for time
+        // (`AbortSignal.timeout`) is an answer that did not come
+        if (!signal?.aborted || signal.reason?.name === "TimeoutError") {
+          doubt();
+        }
+        throw error;
+      } finally {
+        cancelSlow();
+      }
+      const verdict = classifyResponse(response);
+      if (verdict === "worker" || verdict === "server_failed") {
+        if (verdict === "worker" && response.status === 429) {
+          retryAfterMs = retryAfterOf(response);
+        }
+        goOnline();
+        return response;
+      }
+      doubt();
+      throw new NoWorkerAnswerError(verdict);
+    },
+    getSnapshot: () => snapshot,
+    isOnline: () => snapshot.state === "online",
+    async probeNow() {
+      await probe();
+      return snapshot.state;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    takeRetryAfterMs() {
+      const value = retryAfterMs;
+      retryAfterMs = null;
+      return value;
+    },
+  };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { Connection, timerSchedule } from "./connection";
+import { type Connection, createConnection, timerSchedule } from "./connection";
 
 /**
  * The one connection state of this tab (emenda do ADR 0043): the RPC client classifies every response
@@ -40,7 +40,7 @@ function session(): Storage | null {
 }
 
 function createBrowserConnection(): Connection {
-  return new Connection({
+  return createConnection({
     // outside a browser (a test that only renders markup) there is nothing to doubt
     browserOnline: () => typeof navigator === "undefined" || navigator.onLine,
     fetch: (input, init) => globalThis.fetch(input, init),

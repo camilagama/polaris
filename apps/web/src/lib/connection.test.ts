@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  Connection,
+  type Connection,
   type ConnectionDependencies,
   type ConnectionMemory,
   classifyResponse,
+  createConnection,
   jittered,
   NoWorkerAnswerError,
 } from "./connection";
@@ -79,7 +80,7 @@ function setup(options: Options = {}) {
       return await routes.rpc(input, init);
     }
   );
-  const connection = new Connection({
+  const connection = createConnection({
     browserOnline: () => state.browserOnline,
     fetch: fetchImpl,
     isVisible: () => state.visible,
