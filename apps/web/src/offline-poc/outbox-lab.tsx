@@ -9,6 +9,7 @@ import {
   wipeOutboxStore,
 } from "../offline/outbox/outbox-store";
 import { requestPersistentStorage } from "../offline/persistence";
+import "./lab-page.css";
 
 /** Browser lab for the durable outbox (PR52). Synthetic keys and data only. */
 const DEVICE_ID = "0199c2d0-0000-7000-8000-0000000000d1";

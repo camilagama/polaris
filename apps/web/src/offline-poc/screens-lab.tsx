@@ -43,6 +43,7 @@ import { ChangePasswordPage } from "../sign-in/change-password-page";
 import { AttentionLabPage } from "./notice-lab-pages";
 import { ProductsLabServer } from "./products-lab-server";
 import { SaleLabServer } from "./sale-lab-server";
+import "./lab-page.css";
 
 /**
  * Browser lab for the screens that work from this device (plan PR64): the real

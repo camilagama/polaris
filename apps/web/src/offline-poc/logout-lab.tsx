@@ -14,6 +14,7 @@ import {
   type OutboxStore,
   openOutboxStore,
 } from "../offline/outbox/outbox-store";
+import "./lab-page.css";
 
 /**
  * Browser lab for logging out with queued work (PR59): the real guard, dialog and

@@ -10,6 +10,7 @@ import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer } from "../offline/test-support";
+import "./lab-page.css";
 
 /**
  * Browser lab for the offline runtime (Phase 5 wiring): the real runtime over the

@@ -156,7 +156,6 @@ export function OfflineAccessGateView({
       {snapshot ? (
         <p
           className="m-0 not-empty:mb-4 font-sans text-muted-foreground text-sm"
-          data-ui=""
           role="status"
         >
           {renewed ? ACCESS_RENEWED : ""}

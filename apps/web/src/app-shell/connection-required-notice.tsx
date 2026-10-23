@@ -63,7 +63,7 @@ function ConnectionRequiredNotice({ form }: { form: boolean }) {
     tryConnectionNow().finally(() => setTrying(false));
   }, [trying]);
   return (
-    <Alert className="mb-4 font-sans" data-ui="" variant="warning">
+    <Alert className="mb-4 font-sans" variant="warning">
       <CloudOffIcon aria-hidden="true" />
       <AlertTitle>{CONNECTION_NOTICE_TITLE}</AlertTitle>
       <AlertDescription

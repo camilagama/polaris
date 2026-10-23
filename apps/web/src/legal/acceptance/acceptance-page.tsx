@@ -416,7 +416,7 @@ export function AcceptancePage() {
       )}
       {leaving || load.status !== "pending" ? <ReadLinks /> : null}
       <IdleRuntimeProvider>
-        <LogoutControl shell />
+        <LogoutControl />
       </IdleRuntimeProvider>
     </EntryScreen>
   );

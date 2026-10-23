@@ -1,13 +1,10 @@
 // The CSS entry before any other import: it declares the order of the cascade layers before any other
-// sheet (ADR 0103), and the CSS of a module imported earlier (the app's screens) would come first.
+// sheet (ADR 0103), and the CSS of a module imported earlier (a lab's own sheet) would come first.
 import "./styles/index.css";
 import { CSPProvider } from "@base-ui/react/csp-provider";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app-shell/app";
-import "./styles.css";
-import "./styles/tokens.css";
-import "./styles/ui.css";
 import { followSystemTheme } from "./lib/theme";
 import { initSentry } from "./observability/sentry";
 import {
@@ -83,7 +80,7 @@ if (isShellPiecesRoute) {
       root.render(<ShellPiecesGallery />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir as peças do shell</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -98,7 +95,7 @@ if (isShellPiecesRoute) {
       root.render(<UiGallery />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir a galeria da interface</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -113,7 +110,7 @@ if (isShellPiecesRoute) {
       root.render(<RuntimeLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório do runtime</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -128,7 +125,7 @@ if (isShellPiecesRoute) {
       root.render(<LogoutLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório da saída</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -143,7 +140,7 @@ if (isShellPiecesRoute) {
       root.render(<ScreensLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório das telas</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -158,7 +155,7 @@ if (isShellPiecesRoute) {
       root.render(<AttentionLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório da atenção</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -173,7 +170,7 @@ if (isShellPiecesRoute) {
       root.render(<OutboxLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório do outbox</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -190,7 +187,7 @@ if (isShellPiecesRoute) {
       root.render(<LocalCollectionsLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório das coleções locais</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>
@@ -199,9 +196,7 @@ if (isShellPiecesRoute) {
   };
   loadLocalLab().catch(() => undefined);
 } else if (isOfflinePocRoute) {
-  root.render(
-    <main className="app-shell">Carregando laboratório offline…</main>
-  );
+  root.render(<main>Carregando laboratório offline…</main>);
   const loadOfflineLab = async () => {
     try {
       const { OfflinePersistenceLab } = await import(
@@ -210,7 +205,7 @@ if (isShellPiecesRoute) {
       root.render(<OfflinePersistenceLab />);
     } catch (error: unknown) {
       root.render(
-        <main className="app-shell" role="alert">
+        <main role="alert">
           <h1>Falha ao abrir o laboratório offline</h1>
           <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
         </main>

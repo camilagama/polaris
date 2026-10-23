@@ -175,10 +175,7 @@ export function ExpensesPage() {
   const isSaving = busy === "create" || (busy?.startsWith("save:") ?? false);
 
   return (
-    <div
-      className="grid gap-4 font-sans text-foreground text-sm antialiased"
-      data-ui=""
-    >
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <Heading />
       <ActionNotice feedback={feedback} />
       {categories.state.error ? (
