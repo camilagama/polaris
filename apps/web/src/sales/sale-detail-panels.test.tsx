@@ -86,12 +86,12 @@ describe("ReturnTable", () => {
   it("ties a line's error to its field and says the error of the whole table as an alert", () => {
     const html = renderTable({
       items: "Informe ao menos uma quantidade.",
-      lines: { 0: { returned: "Use um número inteiro de 1 a 1." } },
+      lines: { 0: { returned: "Só resta 1 para devolver." } },
     });
     expect(html).toContain('aria-describedby="sale-return-0-returned-error"');
     expect(html).toContain('aria-invalid="true"');
     expect(html).toContain('id="sale-return-0-returned-error"');
-    expect(html).toContain("Use um número inteiro de 1 a 1.");
+    expect(html).toContain("Só resta 1 para devolver.");
     expect(html).toContain("Informe ao menos uma quantidade.");
     expect(html.match(/role="alert"/g)).toHaveLength(2);
   });
@@ -229,6 +229,12 @@ describe("OperationActions", () => {
     expect(renderActions({ confirming: true, locked: true })).not.toContain(
       "Voltar"
     );
+  });
+
+  it("sends the same command again from a locked cancellation as the main action, not a destructive one", () => {
+    const html = renderActions({ confirming: true, locked: true });
+    expect(html).toContain("Confirmar cancelamento");
+    expect(html).not.toContain(DESTRUCTIVE);
   });
 
   it("keeps the confirm of a return as the main action, not a destructive one", () => {

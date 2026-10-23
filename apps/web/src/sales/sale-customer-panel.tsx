@@ -63,9 +63,6 @@ function sendCommand(command: LinkCommand): Promise<SaleCustomerLinkChange> {
   }
 }
 
-/* aria-disabled, not disabled: the button stays reachable and reads why it is off (decision of 21/10) */
-const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
-
 interface ActionButtonProps {
   action: ActionState;
   hintId: string;
@@ -82,7 +79,6 @@ function ActionButton({ action, hintId, onAction }: ActionButtonProps) {
     <Button
       aria-describedby={!action.enabled && action.hint ? hintId : undefined}
       aria-disabled={!action.enabled || undefined}
-      className={OFF}
       onClick={action.enabled ? handleClick : undefined}
       type="button"
     >
@@ -93,11 +89,12 @@ function ActionButton({ action, hintId, onAction }: ActionButtonProps) {
 
 interface RemoveButtonProps {
   action: ActionState;
+  hintId: string;
   onAction: (action: LinkAction) => void;
 }
 
 /** Removing the customer is destructive: it asks first, in a dialog, whose confirm is the destructive button. */
-function RemoveButton({ action, onAction }: RemoveButtonProps) {
+function RemoveButton({ action, hintId, onAction }: RemoveButtonProps) {
   const [asking, setAsking] = useState(false);
   const handleAsk = useCallback(() => setAsking(true), []);
   const handleOpenChange = useCallback((open: boolean) => setAsking(open), []);
@@ -109,8 +106,8 @@ function RemoveButton({ action, onAction }: RemoveButtonProps) {
   return (
     <>
       <Button
+        aria-describedby={!action.enabled && action.hint ? hintId : undefined}
         aria-disabled={!action.enabled || undefined}
-        className={OFF}
         onClick={action.enabled ? handleAsk : undefined}
         type="button"
         variant="outline"
@@ -382,6 +379,7 @@ export function SaleCustomerPanel({
                 action.action === "unassign" ? (
                   <RemoveButton
                     action={action}
+                    hintId={hintId}
                     key={action.action}
                     onAction={handleActionEvent}
                   />

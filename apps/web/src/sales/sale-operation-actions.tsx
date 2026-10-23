@@ -5,7 +5,10 @@ interface OperationActionsProps {
   /** The last step: the review, or the locked attempt. */
   confirming: boolean;
   confirmLabel: string;
-  /** Cancelling is destructive; registering a return is the main action. */
+  /**
+   * Cancelling is destructive; registering a return is the main action. A locked attempt only resends the same
+   * command (safe), so its confirm is the main action too: the destructive one is "discard", in the notice.
+   */
   destructive: boolean;
   locked: boolean;
   onBack: () => void;
@@ -41,7 +44,7 @@ export function OperationActions({
             disabled={submitting}
             onClick={onConfirm}
             type="button"
-            variant={destructive ? "destructive" : "default"}
+            variant={destructive && !locked ? "destructive" : "default"}
           >
             {confirmLabel}
           </Button>

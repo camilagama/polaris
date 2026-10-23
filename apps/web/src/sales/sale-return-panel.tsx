@@ -36,6 +36,7 @@ import {
   visibleReturnErrors,
 } from "./sale-return-model";
 import { ReturnTable } from "./sale-return-table";
+import { useStepFocus } from "./use-step-focus";
 
 const newId = () => crypto.randomUUID();
 
@@ -59,6 +60,10 @@ export function SaleReturnPanel({
   const [state, setState] = useState(initialReturnState);
   useReportUnsentWork(isReturnDraftChanged(state));
   const inFlight = useRef<boolean>(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const confirming = state.step === "confirming" || isReturnLocked(state);
+  useStepFocus(confirming, noticeRef, sectionRef);
 
   const handleOpen = useCallback(
     () => setState((current) => openReturn(current, rows)),
@@ -171,11 +176,10 @@ export function SaleReturnPanel({
   }
 
   const locked = isReturnLocked(state);
-  const confirming = state.step === "confirming" || locked;
   const review = confirming ? returnReview(state) : null;
   const errors = visibleReturnErrors(state);
   return (
-    <section aria-labelledby="sale-return-title">
+    <section aria-labelledby="sale-return-title" ref={sectionRef}>
       <Card className="gap-0 py-0">
         <CardContent className="grid gap-4 py-(--card-spacing)">
           <div className="grid gap-1">
@@ -208,7 +212,7 @@ export function SaleReturnPanel({
           />
           {review ? (
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <Alert>
+            <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
               <AlertTitle>Confirme a devolução</AlertTitle>
               <AlertDescription className="grid gap-2 [&_p:not(:last-child)]:mb-0">
                 <p>Motivo: {review.reasonText}.</p>

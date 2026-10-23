@@ -32,6 +32,7 @@ import {
 } from "./sale-cancellation-model";
 import { OperationActions } from "./sale-operation-actions";
 import { ReasonFields } from "./sale-reason-fields";
+import { useStepFocus } from "./use-step-focus";
 
 const newId = () => crypto.randomUUID();
 
@@ -54,6 +55,10 @@ export function SaleCancelPanel({
   const [state, setState] = useState(initialCancelState);
   useReportUnsentWork(isCancelDraftChanged(state));
   const inFlight = useRef<boolean>(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const confirming = state.step === "confirming" || isCancelLocked(state);
+  useStepFocus(confirming, noticeRef, sectionRef);
 
   const handleOpen = useCallback(
     () => setState((current) => openCancel(current)),
@@ -156,12 +161,11 @@ export function SaleCancelPanel({
   }
 
   const locked = isCancelLocked(state);
-  const confirming = state.step === "confirming" || locked;
   const errors = visibleCancelErrors(state);
   const { draft } = state;
   const submitting = state.submission.phase === "submitting";
   return (
-    <section aria-labelledby="sale-cancel-title">
+    <section aria-labelledby="sale-cancel-title" ref={sectionRef}>
       <Card className="gap-0 py-0">
         <CardContent className="grid gap-4 py-(--card-spacing)">
           <div className="grid gap-1">
@@ -186,7 +190,7 @@ export function SaleCancelPanel({
           />
           {confirming ? (
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <Alert>
+            <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
               <AlertTitle>Confirme o cancelamento</AlertTitle>
               <AlertDescription>
                 A venda será marcada como cancelada

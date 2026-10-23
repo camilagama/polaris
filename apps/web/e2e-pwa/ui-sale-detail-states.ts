@@ -103,7 +103,7 @@ export const saleDetailStates = {
     await page.getByRole("button", { name: "Registrar devolução" }).click();
     await page.getByLabel("Devolvido: Calça jeans — 42 (até 1)").fill("5");
     await page.getByRole("button", { name: "Revisar devolução" }).click();
-    await page.getByText("Use um número inteiro de 1 a 1.").waitFor();
+    await page.getByText("Só resta 1 para devolver.").waitFor();
     await showScreenAlone(page);
   },
 };
