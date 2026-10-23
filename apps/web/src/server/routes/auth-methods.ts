@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { abuseProtectionConfigured } from "../auth/abuse-protection";
 import { isEmailPasswordAuthEnabled } from "../auth/handler";
 import type { ServerEnv, WorkerBindings } from "../environment";
 
@@ -11,22 +12,15 @@ export interface AuthMethods {
 }
 
 /**
- * The abuse protection is ready when the form can get past the gate of `protectAuthRequest` for lack of
- * setup: the flag, the Turnstile secret, the base URL and both limiters (the e-mail one is only required by
- * the actions that send e-mail, but the form has sign-up). The site key is not read by the server; it is here
- * so that `turnstileSiteKey` is set exactly when `emailPassword` is. Keep this list with that gate. The
- * server keeps its 503 as the barrier; this only keeps the page from offering a form that can answer nothing else.
+ * The abuse protection is ready when `abuseProtectionConfigured` (the one list, shared with the gate of
+ * `protectAuthRequest`) says so and the public key of the Turnstile is set: the server does not read the site
+ * key, it is here so that `turnstileSiteKey` is set exactly when `emailPassword` is. The server keeps its 503
+ * as the barrier; this only keeps the page from offering a form that can answer nothing else.
  */
 function isAbuseProtectionReady(bindings: WorkerBindings): boolean {
   return (
-    bindings.AUTH_ABUSE_PROTECTION_ENABLED === "true" &&
-    Boolean(
-      bindings.TURNSTILE_SECRET_KEY?.trim() &&
-        bindings.TURNSTILE_SITE_KEY?.trim() &&
-        bindings.BETTER_AUTH_BASE_URL?.trim() &&
-        bindings.AUTH_RATE_LIMITER &&
-        bindings.AUTH_EMAIL_RATE_LIMITER
-    )
+    abuseProtectionConfigured(bindings) &&
+    Boolean(bindings.TURNSTILE_SITE_KEY?.trim())
   );
 }
 

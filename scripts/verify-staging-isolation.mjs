@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
- * - the deployed name does not end in `-staging`, previews are on, or password sign-in is on with a sender or reply-to outside araute.app;
+ * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app with workers_dev off, or production uses a host of staging;
  * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
@@ -282,7 +282,7 @@ function checkStagingBlock(app, where, staging, problems) {
   }
   checkStagingResources(where, staging, problems);
   if (app === "web") {
-    checkStagingPasswordSender(where, staging, problems);
+    checkStagingEmail(where, staging, problems);
     checkStagingAbuseProtection(where, staging, problems);
   }
   if (app === "web" && staging.workers_dev !== false) {
@@ -296,33 +296,42 @@ function checkStagingBlock(app, where, staging, problems) {
 }
 
 // Password sign-in is on in staging by decision of the user (22/10, ADR 0100), open to anyone because the
-// data is synthetic. It may only send e-mail from the staging domain: a sender of another domain would
-// send from a verified domain of production or of a third party. Name and address, or the bare address.
+// data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
+// ones and the closure notices, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
+// sender of another domain would send from a verified domain of production or of a third party the day any
+// flag turns on. Name and address, or the bare address.
 const STAGING_SENDER =
   /^(?:[^<>@\r\n]*<[A-Za-z0-9._+-]+@araute\.app>|[A-Za-z0-9._+-]+@araute\.app)$/i;
 
-function checkStagingPasswordSender(where, staging, problems) {
-  const enabled = staging.vars?.EMAIL_PASSWORD_AUTH_ENABLED;
-  if (enabled === "false") {
-    return;
-  }
-  if (enabled !== "true") {
+function checkStagingEmail(where, staging, problems) {
+  const vars = staging.vars ?? {};
+  const passwordOn = vars.EMAIL_PASSWORD_AUTH_ENABLED === "true";
+  if (!passwordOn && vars.EMAIL_PASSWORD_AUTH_ENABLED !== "false") {
     problems.push(
       `${where}: vars.EMAIL_PASSWORD_AUTH_ENABLED must be "true" or "false"`
     );
-    return;
   }
-  if (!STAGING_SENDER.test((staging.vars?.AUTH_EMAIL_FROM ?? "").trim())) {
+  if (
+    vars.CLOSURE_NOTICE_EMAIL_ENABLED !== "true" &&
+    vars.CLOSURE_NOTICE_EMAIL_ENABLED !== "false"
+  ) {
     problems.push(
-      `${where}: password sign-in in staging needs vars.AUTH_EMAIL_FROM on @araute.app`
+      `${where}: vars.CLOSURE_NOTICE_EMAIL_ENABLED must be "true" or "false"`
+    );
+  }
+  // An empty sender sends nothing, so it is only refused while the password is on and needs it.
+  const from = (vars.AUTH_EMAIL_FROM ?? "").trim();
+  if (from === "" ? passwordOn : !STAGING_SENDER.test(from)) {
+    problems.push(
+      `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags`
     );
   }
   // The reply-to is optional, but when it is there the answer of a person goes to a mailbox of the staging
   // domain, with the same rules as the sender.
-  const replyTo = (staging.vars?.AUTH_EMAIL_REPLY_TO ?? "").trim();
+  const replyTo = (vars.AUTH_EMAIL_REPLY_TO ?? "").trim();
   if (replyTo !== "" && !STAGING_SENDER.test(replyTo)) {
     problems.push(
-      `${where}: password sign-in in staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app`
+      `${where}: staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app, whatever the flags`
     );
   }
 }
