@@ -43,7 +43,10 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
   await page.goto("/expenses");
   await addCategory(page, categoryName);
 
-  const form = page.getByRole("region", { name: "Nova despesa" });
+  const form = page.getByRole("region", {
+    exact: true,
+    name: "Nova despesa",
+  });
   const register = async (
     amount: string,
     competenceOn: string,

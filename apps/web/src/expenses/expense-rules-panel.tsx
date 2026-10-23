@@ -12,7 +12,7 @@ import { focusLater } from "../lib/focus";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
 import { CollapsibleSection } from "./collapsible-section";
-import { FeedbackMessage, ListNote, LoadError } from "./expense-fields";
+import { ActionNotice, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel } from "./expense-model";
 import { ExpenseRuleForm } from "./expense-rule-form";
 import { type RuleCreateInput, ruleFrequencyLabel } from "./expense-rule-model";
@@ -349,7 +349,7 @@ export function ExpenseRulesPanel({
   return (
     <CollapsibleSection id="expense-rules" title="Despesas recorrentes">
       <RulesIntro />
-      <FeedbackMessage feedback={feedback} />
+      <ActionNotice feedback={feedback} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Field className="min-h-ctl-md w-auto" orientation="horizontal">
           <Checkbox

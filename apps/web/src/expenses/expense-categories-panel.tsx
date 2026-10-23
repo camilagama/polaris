@@ -16,7 +16,7 @@ import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import { CollapsibleSection } from "./collapsible-section";
-import { ExpenseTextField, FeedbackMessage, ListNote } from "./expense-fields";
+import { ActionNotice, ExpenseTextField, ListNote } from "./expense-fields";
 import {
   EXPENSE_GROUP_ORDER,
   type ExpenseGroupKey,
@@ -331,7 +331,7 @@ export function ExpenseCategoriesPanel({
 
   return (
     <CollapsibleSection id="expense-categories" title="Categorias de despesa">
-      <FeedbackMessage feedback={feedback} />
+      <ActionNotice feedback={feedback} />
       <Field className="min-h-ctl-md w-auto" orientation="horizontal">
         <Checkbox
           checked={showArchived}

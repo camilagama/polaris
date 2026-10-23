@@ -427,7 +427,7 @@ async function choose(
 }
 
 const expenseForm = (page: Page) =>
-  page.getByRole("region", { name: "Nova despesa" });
+  page.getByRole("region", { exact: true, name: "Nova despesa" });
 
 async function fillExpense(
   page: Page,
@@ -668,7 +668,10 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e aceita o 
 
   await page.getByRole("button", { name: "Próximo mês" }).click();
   await expect(picker).toHaveText("Novembro de 2026");
-  await expect(page.getByText("Total do período").locator("..")).toBeVisible();
+  // the total of the list follows the month
+  await expect(
+    page.getByText("Total do período").locator("../..")
+  ).toContainText("novembro de 2026");
   await page.getByRole("button", { name: "Mês anterior" }).click();
   await page.getByRole("button", { name: "Mês anterior" }).click();
   await expect(picker).toHaveText("Setembro de 2026");
@@ -685,10 +688,10 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   page,
 }) => {
   const server = new FakeExpenseServer();
-  let fail = true;
+  const reads: { fail: boolean } = { fail: true };
   await openExpenses(page, server, (target) =>
     target.route("**/rpc/expense/list", (route) =>
-      fail ? route.abort("internetdisconnected") : route.fallback()
+      reads.fail ? route.abort("internetdisconnected") : route.fallback()
     )
   );
 
@@ -696,7 +699,7 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   await expect(retry).toBeVisible();
   await expect(page.getByText("Nenhuma despesa neste período")).toHaveCount(0);
 
-  fail = false;
+  reads.fail = false;
   await retry.click();
   await expect(retry).toHaveCount(0);
   await expect(

@@ -175,7 +175,7 @@ export function ExpenseCategorySelect({
 }
 
 /** A success note (`status`) or an error (`alert`), or nothing: no gap is drawn without a message. */
-export function FeedbackMessage({ feedback }: { feedback: Feedback | null }) {
+export function ActionNotice({ feedback }: { feedback: Feedback | null }) {
   if (!feedback) {
     return null;
   }

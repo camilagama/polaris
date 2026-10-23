@@ -97,8 +97,12 @@ export function MonthPicker({
       ) : (
         <FieldLabel id={labelId}>{label}</FieldLabel>
       )}
-      {/* the field has its own label: the group is only layout (role="none"), as the quantity of the sale */}
-      <ButtonGroup role="none">
+      {/* the field has its own label: the group is only layout (role="none"), as the quantity of the sale; with no
+          month field, the group is what the label names */}
+      <ButtonGroup
+        aria-labelledby={supported ? undefined : labelId}
+        role={supported ? "none" : "group"}
+      >
         <Button
           aria-label="Mês anterior"
           disabled={previous === null}

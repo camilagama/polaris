@@ -6,7 +6,7 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
-import { FeedbackMessage, LoadError } from "./expense-fields";
+import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, ExpenseList, ExpenseSummary } from "./expense-list";
 import {
@@ -180,7 +180,7 @@ export function ExpensesPage() {
       data-ui=""
     >
       <Heading />
-      <FeedbackMessage feedback={feedback} />
+      <ActionNotice feedback={feedback} />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}

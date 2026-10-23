@@ -11,6 +11,9 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
  * typing in the month field and the closed sections are proved in the browser (e2e/expenses.e2e.ts).
  */
 const noop = () => undefined;
+const MONTH_FIELD = /<input[^>]*id="m"[^>]*type="month"[^>]*value="2026-10"/;
+const MONTH_WORDS = /<span aria-hidden="true"[^>]*>Outubro de 2026<\/span>/;
+const AMOUNT = /R\$\s1\.500,50/;
 
 describe("MonthPicker", () => {
   it("says the month in words, over the browser's month field named by the label", () => {
@@ -24,15 +27,11 @@ describe("MonthPicker", () => {
     );
     expect(html).toContain("Outubro de 2026");
     expect(html).toContain('for="m"');
-    expect(html).toMatch(
-      /<input[^>]*id="m"[^>]*type="month"[^>]*value="2026-10"/
-    );
+    expect(html).toMatch(MONTH_FIELD);
     expect(html).toContain('aria-label="Mês anterior"');
     expect(html).toContain('aria-label="Próximo mês"');
     // the words are what the eye reads; the field's own value is what the screen reader says
-    expect(html).toMatch(
-      /<span aria-hidden="true"[^>]*>Outubro de 2026<\/span>/
-    );
+    expect(html).toMatch(MONTH_WORDS);
   });
 
   it("turns off the arrow past the first month there is", () => {
@@ -122,7 +121,7 @@ describe("ExpenseList", () => {
     const active = list(state({ count: 1, expenses: [expense({})] }));
     expect(active).toContain('aria-label="Editar despesa Aluguel de outubro"');
     expect(active).toContain('aria-label="Anular despesa Aluguel de outubro"');
-    expect(active).toMatch(/R\$\s1\.500,50/);
+    expect(active).toMatch(AMOUNT);
 
     const voided = list(
       state({ count: 1, expenses: [expense({ status: "voided" })] }),
