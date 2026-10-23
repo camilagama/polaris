@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
   mkdirSync,
   mkdtempSync,
@@ -349,6 +350,50 @@ describe("precache budget (ADR 0103, section 4)", () => {
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
+  });
+
+  it("warns, without failing, between the reference and the hard cap, and fails past the hard cap (the build, over a real output directory)", () => {
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    // random bytes do not compress: the gzip size is the size, plus a few hundred bytes
+    const build = (growth: number) => {
+      const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      writeFileSync(
+        join(directory, "assets/app-abc.js"),
+        randomBytes(baseline + growth)
+      );
+      const said = {
+        error: [] as string[],
+        info: [] as string[],
+        warn: [] as string[],
+      };
+      const plugin = precacheBudgetPlugin();
+      (plugin.configResolved as (config: unknown) => void)({ env: {} });
+      try {
+        (
+          plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+        ).call(
+          {
+            error: (message: string) => said.error.push(message),
+            info: (message: string) => said.info.push(message),
+            warn: (message: string) => said.warn.push(message),
+          },
+          { dir: directory }
+        );
+      } finally {
+        rmSync(directory, { force: true, recursive: true });
+      }
+      return said;
+    };
+    const inBetween = build(55_000);
+    expect(inBetween.error).toEqual([]);
+    expect(inBetween.warn).toEqual([expect.stringContaining("excess +")]);
+    expect(inBetween.info.join("\n")).toMatch(GROWTH_LINE);
+    const past = build(90_000);
+    expect(past.warn).toEqual([]);
+    expect(past.error).toEqual([expect.stringContaining("hard cap")]);
+    expect(past.info.join("\n")).toMatch(GROWTH_LINE);
   });
 
   it("fails the production build when the gallery or the lab of the screens is in it (control: a build without them passes)", () => {

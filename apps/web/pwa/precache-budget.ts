@@ -204,7 +204,7 @@ function restLine(size: PrecacheSize): number {
 }
 
 /** The growth of the rest line over the baseline, in gzip bytes. */
-export function restGrowth(size: PrecacheSize, baseline: number): number {
+function restGrowth(size: PrecacheSize, baseline: number): number {
   return restLine(size) - baseline;
 }
 
@@ -264,7 +264,7 @@ export function budgetWarnings(
 }
 
 /** The line a review greps for in the CI log: how much the precache has and how much it grew. */
-export function growthLine(size: PrecacheSize, baseline: number): string {
+function growthLine(size: PrecacheSize, baseline: number): string {
   const growth = restGrowth(size, baseline);
   return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B)`;
 }
