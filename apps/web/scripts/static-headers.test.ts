@@ -7,6 +7,9 @@ const SHELL_POLICY =
 const shipped = parseHeadersFile(
   readFileSync(new URL("../public/_headers", import.meta.url), "utf8")
 );
+const TURNSTILE_SCRIPT =
+  /"(https:\/\/challenges\.cloudflare\.com\/[^"]+api\.js[^"]*)"/;
+const WHITESPACE = /\s+/;
 const cspOf = (path: string) =>
   headersForPath(shipped, path)["content-security-policy"];
 
@@ -28,6 +31,44 @@ describe("the _headers of the shell, as the static server of the browser checks 
       expect(policy).toContain("frame-src https://challenges.cloudflare.com");
       expect(policy).not.toContain(", default-src");
     }
+  });
+
+  it("lets the staging page load the Turnstile script and open its frame, on every page with the challenge", () => {
+    // The URL the app really loads (src/sign-in/turnstile.ts) and the frame the script opens, from the same origin.
+    const loader = readFileSync(
+      new URL("../src/sign-in/turnstile.ts", import.meta.url),
+      "utf8"
+    );
+    const scriptUrl = new URL(loader.match(TURNSTILE_SCRIPT)?.[1] ?? "");
+    const frameUrl = new URL(
+      "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv/0/0x4AAAAAAFhym3AGtjg2fgH0/light/fbE/new/normal/auto/"
+    );
+    const pages = [
+      "/entrar",
+      "/criar-conta",
+      "/esqueci-a-senha",
+      "/redefinir-senha",
+      "/confirmar-email",
+    ];
+    for (const page of pages) {
+      for (const path of [page, `${page}/`]) {
+        const directives = Object.fromEntries(
+          cspOf(path)
+            .split(";")
+            .map((directive) => directive.trim().split(WHITESPACE))
+            .map(([name, ...sources]) => [name, sources])
+        ) as Record<string, string[]>;
+        // CSP ignores the query of the URL: a source with a path allows exactly that path, `?render=explicit` included.
+        expect(directives["script-src"], path).toContain(
+          scriptUrl.origin + scriptUrl.pathname
+        );
+        expect(directives["frame-src"], path).toEqual([frameUrl.origin]);
+        expect(directives["connect-src"], path).not.toContain(frameUrl.origin);
+      }
+    }
+    // The unlock page shows no challenge and keeps the policy of the shell.
+    expect(cspOf("/desbloquear")).toMatch(SHELL_POLICY);
+    expect(cspOf("/desbloquear")).not.toContain("challenges.cloudflare.com");
   });
 
   it("joins repeated headers, keeps the other ones and detaches with !", () => {

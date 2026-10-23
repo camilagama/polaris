@@ -346,6 +346,37 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("accepts the protection against abuse on in staging, with the public key of the widget", () => {
+    const { staging } = entryOf(repositoryEntries(), "web").config.env;
+    expect(staging.vars.AUTH_ABUSE_PROTECTION_ENABLED).toBe("true");
+    expect(staging.vars.TURNSTILE_SITE_KEY).toMatch(/^0x[A-Za-z0-9_-]+$/);
+    expect(findIsolationProblems(repositoryEntries())).toEqual([]);
+  });
+
+  it("refuses the protection on without the site key, and a flag that is neither true nor false", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.vars.TURNSTILE_SITE_KEY = "  ";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.staging: vars.AUTH_ABUSE_PROTECTION_ENABLED "true" needs vars.TURNSTILE_SITE_KEY (the public key of the staging widget)',
+    ]);
+    staging.vars.AUTH_ABUSE_PROTECTION_ENABLED = "false";
+    expect(findIsolationProblems(entries)).toEqual([]);
+    staging.vars.AUTH_ABUSE_PROTECTION_ENABLED = "yes";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.staging: vars.AUTH_ABUSE_PROTECTION_ENABLED must be "true" or "false"',
+    ]);
+  });
+
+  it("refuses production using the widget key of staging", () => {
+    const entries = repositoryEntries();
+    const { production, staging } = entryOf(entries, "web").config.env;
+    production.vars.TURNSTILE_SITE_KEY = staging.vars.TURNSTILE_SITE_KEY;
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.TURNSTILE_SITE_KEY must not be the widget key of staging",
+    ]);
+  });
+
   it("refuses an Admin reachable in staging", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "admin").config.env;

@@ -207,9 +207,11 @@
         // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md).
         "EMAIL_PASSWORD_AUTH_ENABLED": "true",
         "AUTH_EMAIL_FROM": "Polaris (staging) <nao-responda@araute.app>",
-        // Stays off until a Turnstile widget exists (TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY): while it is off,
-        // every password POST answers 503 auth_abuse_protection_unavailable (runbook auth-abuse-protection.md).
-        "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        // The Turnstile widget `polaris-staging` (managed, hostname dash.araute.app only; runbook staging.md). The site
+        // key is public; TURNSTILE_SECRET_KEY is a Worker secret. With the protection off, every password POST
+        // answers 503 auth_abuse_protection_unavailable (runbook auth-abuse-protection.md).
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFhym3AGtjg2fgH0",
+        "AUTH_ABUSE_PROTECTION_ENABLED": "true",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
@@ -348,6 +350,8 @@
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
         // empty on purpose (the parity check wants the name): the sender is set at the go-live, on a verified domain of production
         "AUTH_EMAIL_FROM": "",
+        // empty on purpose (the parity check wants the name): the widget of production is created at the go-live
+        "TURNSTILE_SITE_KEY": "",
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",

@@ -261,6 +261,17 @@ export const alertSignals = [
     windowMinutes: 1440,
   },
   {
+    id: "link-de-verificacao",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["auth_verification_link_record_failed"],
+    },
+    threshold: { atLeast: 3, kind: "count" },
+    title: "Cadastro sem e-mail de verificação (data do link não gravada)",
+    windowMinutes: 60,
+  },
+  {
     id: "apagamento-automatico",
     notify: "wake",
     severity: "critical",

@@ -283,6 +283,7 @@ function checkStagingBlock(app, where, staging, problems) {
   checkStagingResources(where, staging, problems);
   if (app === "web") {
     checkStagingPasswordSender(where, staging, problems);
+    checkStagingAbuseProtection(where, staging, problems);
   }
   if (app === "web" && staging.workers_dev !== false) {
     problems.push(
@@ -322,6 +323,26 @@ function checkStagingPasswordSender(where, staging, problems) {
   if (replyTo !== "" && !STAGING_SENDER.test(replyTo)) {
     problems.push(
       `${where}: password sign-in in staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app`
+    );
+  }
+}
+
+// The protection against abuse of the password routes (ADR 0100): on, it needs the public key of the Turnstile
+// widget; without it the page offers no form while the flag says the protection is ready. The limiters are
+// bindings, so the check of the bindings that are not inherited already covers them. The secret is a Worker
+// secret and no test can see it.
+function checkStagingAbuseProtection(where, staging, problems) {
+  const enabled = staging.vars?.AUTH_ABUSE_PROTECTION_ENABLED;
+  if (enabled !== "true" && enabled !== "false") {
+    problems.push(
+      `${where}: vars.AUTH_ABUSE_PROTECTION_ENABLED must be "true" or "false"`
+    );
+    return;
+  }
+  const siteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
+  if (enabled === "true" && siteKey === "") {
+    problems.push(
+      `${where}: vars.AUTH_ABUSE_PROTECTION_ENABLED "true" needs vars.TURNSTILE_SITE_KEY (the public key of the staging widget)`
     );
   }
 }
@@ -544,6 +565,15 @@ function checkProductionBlock(app, production, staging, problems) {
         `${app}: env.production vars.${variable} must not use the host of staging`
       );
     }
+  }
+  const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
+  if (
+    stagingSiteKey !== "" &&
+    (production.vars?.TURNSTILE_SITE_KEY ?? "").trim() === stagingSiteKey
+  ) {
+    problems.push(
+      `${app}: env.production vars.TURNSTILE_SITE_KEY must not be the widget key of staging`
+    );
   }
   if (production.workers_dev !== false) {
     problems.push(`${app}: env.production workers_dev must be false`);
