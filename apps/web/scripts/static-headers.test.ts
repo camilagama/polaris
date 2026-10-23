@@ -34,15 +34,13 @@ describe("the _headers of the shell, as the static server of the browser checks 
   });
 
   it("lets the staging page load the Turnstile script and open its frame, on every page with the challenge", () => {
-    // The URL the app really loads (src/sign-in/turnstile.ts) and the frame the script opens, from the same origin.
+    // The URL the app really loads (src/sign-in/turnstile.ts); the frame the script opens is on the same origin.
     const loader = readFileSync(
       new URL("../src/sign-in/turnstile.ts", import.meta.url),
       "utf8"
     );
     const scriptUrl = new URL(loader.match(TURNSTILE_SCRIPT)?.[1] ?? "");
-    const frameUrl = new URL(
-      "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv/0/0x4AAAAAAFhym3AGtjg2fgH0/light/fbE/new/normal/auto/"
-    );
+    const frameUrl = new URL("https://challenges.cloudflare.com");
     const pages = [
       "/entrar",
       "/criar-conta",
