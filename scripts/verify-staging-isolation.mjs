@@ -339,10 +339,23 @@ function checkStagingAbuseProtection(where, staging, problems) {
     );
     return;
   }
+  checkTurnstileTestKey(`${where}:`, staging, problems);
   const siteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (enabled === "true" && siteKey === "") {
     problems.push(
       `${where}: vars.AUTH_ABUSE_PROTECTION_ENABLED "true" needs vars.TURNSTILE_SITE_KEY (the public key of the staging widget)`
+    );
+  }
+}
+
+// Cloudflare's dummy Turnstile keys (1x always passes, 2x always blocks, 3x forces a challenge) are for tests:
+// a widget with one of them protects nothing, so neither staging nor production may carry one.
+const TURNSTILE_TEST_KEY = /^[123]x/i;
+
+function checkTurnstileTestKey(where, env, problems) {
+  if (TURNSTILE_TEST_KEY.test((env.vars?.TURNSTILE_SITE_KEY ?? "").trim())) {
+    problems.push(
+      `${where} vars.TURNSTILE_SITE_KEY is a Cloudflare test key (prefix 1x, 2x or 3x); use the key of the real widget`
     );
   }
 }
@@ -566,6 +579,7 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
+  checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (
     stagingSiteKey !== "" &&

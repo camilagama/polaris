@@ -267,9 +267,9 @@ export const alertSignals = [
     source: {
       events: ["auth_verification_link_record_failed"],
     },
-    threshold: { atLeast: 3, kind: "count" },
+    threshold: { atLeast: 1, kind: "count" },
     title: "Cadastro sem e-mail de verificação (data do link não gravada)",
-    windowMinutes: 60,
+    windowMinutes: 1440,
   },
   {
     id: "apagamento-automatico",

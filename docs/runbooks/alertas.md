@@ -30,7 +30,7 @@
 | [`rejeicao-no-sync`](#rejeicao-no-sync) | `sync_push_command_rejected` | 15 min | 10 | warning | não |
 | [`registro-de-acesso`](#registro-de-acesso) | `auth_access_log_write_failed` | 15 min | 3 | critical | sim |
 | [`aceite-no-cadastro`](#aceite-no-cadastro) | `legal_acceptance_signup_record_failed` | 24 h | 1 | warning | não |
-| [`link-de-verificacao`](#link-de-verificacao) | `auth_verification_link_record_failed` | 60 min | 3 | warning | não |
+| [`link-de-verificacao`](#link-de-verificacao) | `auth_verification_link_record_failed` | 24 h | 1 | warning | não |
 | [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
@@ -181,7 +181,7 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 
 ### link-de-verificacao — cadastro sem e-mail de verificação
 
-**O que significa.** Antes de cada e-mail de verificação o Worker grava em `user.verification_link_expires_at` o fim do link ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), [e-mail de autenticação](./email-auth.md#ordem-de-implantação-da-gravação-do-link-e-alerta-antes-da-flag-da-senha)). Se a gravação falha, o e-mail não sai, a tela responde como sempre e o Worker registra `auth_verification_link_record_failed` (nível `error`, só `errorClass` e `sqlState`, nunca o e-mail nem o ID). Um pico é cadastro que não recebe o e-mail e não consegue confirmar. O reenvio fora do teto de 72 horas não é falha e não gera o evento.
+**O que significa.** Antes de cada e-mail de verificação o Worker grava em `user.verification_link_expires_at` o fim do link ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), [e-mail de autenticação](./email-auth.md#ordem-de-implantação-da-gravação-do-link-e-alerta-antes-da-flag-da-senha)). Se a gravação falha, o e-mail não sai, a tela responde como sempre e o Worker registra `auth_verification_link_record_failed` (nível `error`, só `errorClass` e `sqlState`, nunca o e-mail nem o ID). Cada evento é um cadastro que não recebe o e-mail e não consegue confirmar, e a causa costuma atingir todos os cadastros (migration atrasada, privilégio revogado); por isso um evento em 24 horas já dispara, como no `aceite-no-cadastro`. O reenvio fora do teto de 72 horas não é falha e não gera o evento.
 
 **Como confirmar.** Workers Logs: o evento, por `sqlState` e `errorClass`. `42703` é a coluna que não existe: o Worker subiu antes da migration 0094, aplique-a no banco do ambiente. `42501` é privilégio revogado (incidente de banco). `57014` ou timeout é banco lento: siga [erros-de-banco](#erros-de-banco).
 

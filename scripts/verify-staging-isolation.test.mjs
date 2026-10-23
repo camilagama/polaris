@@ -379,6 +379,30 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it.each([
+    "1x00000000000000000000AA",
+    "2x00000000000000000000AB",
+    "3x00000000000000000000FF",
+  ])("refuses the Cloudflare test key %s as the staging site key", (key) => {
+    const entries = repositoryEntries();
+    entryOf(entries, "web").config.env.staging.vars.TURNSTILE_SITE_KEY = key;
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.staging: vars.TURNSTILE_SITE_KEY is a Cloudflare test key (prefix 1x, 2x or 3x); use the key of the real widget",
+    ]);
+  });
+
+  it.each([
+    "1x00000000000000000000AA",
+    "2x00000000000000000000AB",
+    "3x00000000000000000000FF",
+  ])("refuses the Cloudflare test key %s as the production site key", (key) => {
+    const entries = repositoryEntries();
+    entryOf(entries, "web").config.env.production.vars.TURNSTILE_SITE_KEY = key;
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.TURNSTILE_SITE_KEY is a Cloudflare test key (prefix 1x, 2x or 3x); use the key of the real widget",
+    ]);
+  });
+
   it("refuses an Admin reachable in staging", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "admin").config.env;

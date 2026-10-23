@@ -208,8 +208,9 @@
         "EMAIL_PASSWORD_AUTH_ENABLED": "true",
         "AUTH_EMAIL_FROM": "Polaris (staging) <nao-responda@araute.app>",
         // The Turnstile widget `polaris-staging` (managed, hostname dash.araute.app only; runbook staging.md). The site
-        // key is public; TURNSTILE_SECRET_KEY is a Worker secret. With the protection off, every password POST
-        // answers 503 auth_abuse_protection_unavailable (runbook auth-abuse-protection.md).
+        // key is public; TURNSTILE_SECRET_KEY is a Worker secret. The protection is on here: without the secret
+        // (or with AUTH_ABUSE_PROTECTION_ENABLED off), every password POST answers 503 auth_abuse_protection_unavailable
+        // (runbook auth-abuse-protection.md). The isolation check refuses a Cloudflare test key (1x, 2x, 3x prefix).
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFhym3AGtjg2fgH0",
         "AUTH_ABUSE_PROTECTION_ENABLED": "true",
         "WOOVI_REFUND_ENABLED": "false",
