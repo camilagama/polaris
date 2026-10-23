@@ -35,7 +35,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
           aria-describedby={disabled ? PANEL_OPEN_REASON_ID : undefined}
           aria-disabled={disabled || undefined}
           aria-label={`${STOCK_ACTION_LABELS[action].trigger} estoque de ${row.productName}, ${row.variantText}`}
-          className="flex-1 aria-disabled:pointer-events-none aria-disabled:opacity-50 md:flex-none"
+          className="flex-1 md:flex-none"
           data-stock-action={action}
           data-variant-id={row.id}
           id={triggerId(row.id, action)}

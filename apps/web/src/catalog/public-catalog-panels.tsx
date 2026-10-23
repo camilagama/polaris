@@ -88,9 +88,6 @@ function problemOf(
   return problem?.field === field ? problem.message : undefined;
 }
 
-/** A button that is off for a reason the screen says: it stays reachable and reads the reason (decision of 21/10). */
-const OFF_BUTTON = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
-
 interface ProfileFormProps {
   changed: boolean;
   disabled: boolean;
@@ -234,7 +231,6 @@ export function ProfileForm(props: ProfileFormProps) {
             <Button
               aria-describedby={reasonId}
               aria-disabled={reasonId !== undefined || undefined}
-              className={OFF_BUTTON}
               disabled={props.pending}
               type="submit"
             >
@@ -318,7 +314,6 @@ export function SwitchCard(props: SwitchCardProps) {
             <Button
               aria-describedby={reasonId}
               aria-disabled={reasonId !== undefined || undefined}
-              className={OFF_BUTTON}
               disabled={props.pending}
               onClick={handleClick}
               type="button"
@@ -391,7 +386,6 @@ function ProductRow({
       <Button
         {...connectionControlProps(online)}
         aria-pressed={shown}
-        className={OFF_BUTTON}
         disabled={disabled}
         onClick={handleClick}
         size="sm"
@@ -451,7 +445,6 @@ export function ProductsCard(props: ProductsCardProps) {
         <div className="flex gap-3">
           <Button
             {...connectionControlProps(props.online)}
-            className={OFF_BUTTON}
             disabled={
               props.pending ||
               props.planBlocks ||
@@ -466,7 +459,6 @@ export function ProductsCard(props: ProductsCardProps) {
           </Button>
           <Button
             {...connectionControlProps(props.online)}
-            className={OFF_BUTTON}
             disabled={props.pending || shownCount === 0}
             onClick={handleHideAll}
             size="sm"

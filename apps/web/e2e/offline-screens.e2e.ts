@@ -1098,6 +1098,8 @@ for (const mode of ["offline", "mentindo"] as const) {
         "aria-describedby",
         "connection-required-text"
       );
+      // it also looks off (the Button base class), not just reads off
+      await expect(create).toHaveCSS("opacity", "0.5");
       // focusable and pressable (the pattern of a control off with a reason), and nothing leaves
       await create.click({ force: true });
       await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");

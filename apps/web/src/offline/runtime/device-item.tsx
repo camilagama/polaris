@@ -59,7 +59,6 @@ const THIS_DEVICE_OFFLINE_HELP =
   "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho.";
 
 /** A button that is off for a reason keeps its place in the focus order and reads the reason (decision of 21/10). */
-const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 interface RevokeFormProps {
   actionError: string | null;
@@ -122,7 +121,6 @@ export function RevokeForm({
       <DialogFooter className="gap-3">
         <Button
           aria-disabled={busy || undefined}
-          className={OFF}
           onClick={busy ? undefined : onCancel}
           type="button"
           variant="outline"
@@ -133,7 +131,7 @@ export function RevokeForm({
           aria-describedby={offline ? reasonId : undefined}
           aria-disabled={blocked || undefined}
           // the label is long ("…e encerrar as outras sessões"): it wraps, so it fits a 320 px dialog
-          className={`${OFF} h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center`}
+          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
           onClick={blocked ? undefined : onRevoke}
           type="button"
           variant="destructive"
@@ -234,7 +232,7 @@ export function DeviceItem({
               aria-describedby={offline ? reasonId : undefined}
               aria-disabled={busy || offline || undefined}
               aria-label={`Revogar o aparelho ${row.labelText}`}
-              className={`mt-1 self-start ${OFF}`}
+              className="mt-1 self-start"
               onClick={busy || offline ? undefined : handleAsk}
               ref={askRef}
               type="button"
