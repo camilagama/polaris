@@ -13,7 +13,7 @@ const NOW = "2026-10-14T12:00:00.000Z";
 /** The server read the figures at NOW: 09:00 in the lab organization (America/Sao_Paulo). */
 const UPDATED_UNTIL = "Atualizado até 14/10/2026 09:00";
 const COPY_NOTICE =
-  "Não foi possível falar com o servidor. Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
+  "Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 const rpcPrefix = /^\/rpc\//;
 
@@ -191,8 +191,6 @@ function summaryOf(month: string, from: string, to: string) {
     level = "no_data";
   }
   return {
-    // the server clock at the read: what the screen says it is updated until
-    generatedAt: NOW,
     cards: {
       items: sum(sales.map((sale) => sale.items)),
       marginPercent:
@@ -219,6 +217,8 @@ function summaryOf(month: string, from: string, to: string) {
       processingFees: money(processing),
       returns: money(returns),
     },
+    // the server clock at the read: what the screen says it is updated until
+    generatedAt: NOW,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: unknownAnticipation,
@@ -341,11 +341,15 @@ const CARD = {
 } as const;
 
 const card = (page: Page, index: number) =>
-  page.locator(".dashboard-card").nth(index);
+  page.locator("dl > [data-slot=card]").nth(index);
 const quality = (page: Page) =>
   page.getByRole("region", { name: "Qualidade dos dados" });
+const chain = (page: Page) =>
+  page.getByRole("region", { name: "Como chegamos a este resultado" });
+const goalsRegion = (page: Page) =>
+  page.getByRole("region", { exact: true, name: "Metas" });
 const chainRow = (page: Page, label: string) =>
-  page.locator(".dashboard-chain tbody tr").filter({ hasText: label });
+  chain(page).locator("tbody tr").filter({ hasText: label });
 
 test("mostra os seis cartões e o passo a passo do mês atual", async ({
   page,
@@ -353,7 +357,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await expect(page.locator(".dashboard-card")).toHaveCount(6);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(6);
   await expect(card(page, CARD.netSales)).toContainText("Vendas líquidas");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   await expect(card(page, CARD.result)).toContainText("Resultado estimado");
@@ -380,9 +384,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
   await expect(
     page.getByRole("heading", { name: "Como chegamos a este resultado" })
   ).toBeVisible();
-  const labels = await page
-    .locator(".dashboard-chain tbody th")
-    .allTextContents();
+  const labels = await chain(page).locator("tbody th").allTextContents();
   expect(labels).toEqual([
     "Vendas brutas",
     "(−) Descontos",
@@ -421,7 +423,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
   );
 
   // the time of the last successful load is visible
-  await expect(page.locator(".dashboard-updated")).toContainText(UPDATED_UNTIL);
+  await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
 });
 
 test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa incompleta", async ({
@@ -493,12 +495,11 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
 
   await page.locator("#dashboard-month").fill("2026-03");
 
-  await expect(quality(page)).toContainText("Sem vendas neste período.");
   await expect(
-    page.getByText("Não há vendas nem despesas em março")
+    page.getByText("Sem vendas nem despesas em março de 2026")
   ).toBeVisible();
-  await expect(page.locator(".dashboard-card")).toHaveCount(0);
-  await expect(page.locator(".dashboard-chain")).toHaveCount(0);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(chain(page)).toHaveCount(0);
 });
 
 test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
@@ -536,20 +537,18 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
   await expect(alert).toContainText(
     "Não foi possível carregar o resultado. Tente novamente."
   );
-  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   server.failure = null;
-  await alert.getByRole("button", { name: "Tentar de novo" }).click();
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
-  await expect(page.locator(".dashboard-updated")).toContainText(UPDATED_UNTIL);
+  await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
 });
 
 const copyNotice = (page: Page) =>
-  page
-    .getByRole("status")
-    .filter({ hasText: "Não foi possível falar com o servidor." });
+  page.getByRole("status").filter({ hasText: "Sem conexão com o servidor." });
 
 /** The months of the device copy of the results kept in this browser. */
 const cachedMonths = (page: Page) =>
@@ -568,7 +567,7 @@ test("com o servidor, a tela diz até quando está atualizada e guarda o mês pa
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
   await expect(copyNotice(page)).toHaveCount(0);
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
@@ -585,7 +584,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
 
   server.networkDown = true;
-  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
 
   const notice = copyNotice(page);
   await expect(notice).toContainText(COPY_NOTICE);
@@ -593,22 +592,22 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(notice).not.toContainText("operações guardadas");
   await expect(page.getByRole("alert")).toHaveCount(0);
   // the same figures the server confirmed, not recomputed
-  await expect(page.locator(".dashboard-card")).toHaveCount(6);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(6);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
   await expect(quality(page)).toContainText(
     "Dados completos para este período"
   );
   // the quiet "updated until" line is for figures the server just gave
-  await expect(page.locator(".dashboard-updated")).not.toContainText(
+  await expect(page.locator("#dashboard-updated")).not.toContainText(
     "Atualizado até"
   );
 
   // the connection is back: the figures of the server replace the copy
   server.networkDown = false;
-  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
   await expect(copyNotice(page)).toHaveCount(0);
-  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
 });
 
 test("sem conexão, a cópia vale só para o mês já lido, com a estimativa como estava", async ({
@@ -626,7 +625,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
   await expect(page.getByRole("alert")).toContainText(
     "Não foi possível carregar o resultado. Tente novamente."
   );
-  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // a month that was read shows its own copy, never the one of another month
@@ -652,14 +651,13 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   // the goals are never copied: their panel shows its own load error
-  await page.locator(".goal-panel > summary").click();
-  await expect(page.locator(".goal-panel")).toContainText(
+  await expect(goalsRegion(page)).toContainText(
     "Não foi possível carregar as metas."
   );
 
   server.networkDown = false;
-  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
-  await expect(page.locator(".dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
   await expect(copyNotice(page)).toHaveCount(0);
 });
 
@@ -678,7 +676,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(page.getByRole("alert")).toContainText(
     "Não foi possível carregar o resultado."
   );
-  await expect(page.locator(".dashboard-card")).toHaveCount(0);
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // and the session being over cleared every copy this browser held
@@ -686,13 +684,13 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
 
   // signed in again, the month is read and kept anew
   server.failure = null;
-  await page.getByRole("button", { name: "Tentar de novo" }).click();
+  await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
   // an outage of the server is not a refusal
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
-  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });

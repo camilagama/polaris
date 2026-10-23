@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Field, FieldLabel } from "@/ui/field";
-import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import {
   Select,
   SelectContent,
@@ -25,6 +25,8 @@ import type { Feedback } from "./use-command-runner";
    error, with the ids of the error ("{id}-error") and of the help ("{id}-hint") in aria-describedby. */
 
 interface ExpenseTextFieldProps {
+  /** Text before the control, as the "R$" of an amount. */
+  addon?: string | undefined;
   className?: string | undefined;
   disabled?: boolean | undefined;
   error?: string | undefined;
@@ -46,6 +48,7 @@ interface ExpenseTextFieldProps {
 }
 
 export function ExpenseTextField({
+  addon,
   className,
   disabled,
   error,
@@ -71,6 +74,7 @@ export function ExpenseTextField({
         ) : null}
       </FieldLabel>
       <InputGroup>
+        {addon ? <InputGroupAddon>{addon}</InputGroupAddon> : null}
         <InputGroupInput
           aria-describedby={describedBy(id, error, hint)}
           aria-invalid={error ? true : undefined}

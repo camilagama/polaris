@@ -100,7 +100,6 @@ function percentOf(value: number, target: number): string | null {
 
 function summary(from: string, to: string) {
   return {
-    generatedAt: NOW,
     cards: {
       items: 5,
       marginPercent: "53.33",
@@ -124,6 +123,7 @@ function summary(from: string, to: string) {
       processingFees: "10.00",
       returns: "20.00",
     },
+    generatedAt: NOW,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: 0,
@@ -379,21 +379,29 @@ async function openDashboard(page: Page, server: FakeGoalServer) {
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(
-    page.getByRole("heading", { exact: true, name: "Resultado" })
+    page.getByRole("heading", { exact: true, level: 1, name: "Resultado" })
   ).toBeVisible({ timeout: 20_000 });
 }
 
-/** Opens the screen and the collapsible "Metas" panel. */
+/** Opens the screen: "Metas" is always open, a region of its own. */
 async function openGoals(page: Page, server: FakeGoalServer) {
   await openDashboard(page, server);
-  await page.locator(".goal-panel > summary").click();
-  await expect(page.locator(".goal-panel")).toHaveAttribute("open", "");
+  await expect(
+    page.getByRole("region", { exact: true, name: "Metas" })
+  ).toBeVisible();
 }
 
 const card = (page: Page, title: string): Locator =>
   page
-    .locator(".goal-card")
+    .locator("[data-slot=card]")
     .filter({ has: page.getByRole("heading", { exact: true, name: title }) });
+
+/** Picks an option of a Base UI select: its list opens in a portal, on the page. */
+async function choose(page: Page, label: string, option: string) {
+  await page.getByRole("combobox", { exact: true, name: label }).click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+}
 
 const goalActions = (page: Page) =>
   page.getByRole("button", { name: goalActionName });
@@ -402,7 +410,7 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   const server = new FakeGoalServer();
   await openGoals(page, server);
 
-  await expect(page.getByText("Nenhuma meta ainda.")).toBeVisible();
+  await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
   await page.getByRole("button", { name: "Nova meta" }).click();
 
   // the period starts as the month on screen
@@ -425,13 +433,9 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await expect(created).toContainText("Em andamento");
   await expect(created).toContainText("Vendas líquidas");
   await expect(created).toContainText("01/10/2026 a 31/10/2026");
-  await expect(created.locator(".goal-progress-text")).toContainText(
-    "R$ 450,00"
-  );
-  await expect(created.locator(".goal-progress-text")).toContainText(
-    "R$ 1.000,00"
-  );
-  await expect(created.locator(".goal-progress-text")).toContainText("45,0%");
+  await expect(created).toContainText("R$ 450,00");
+  await expect(created).toContainText("R$ 1.000,00");
+  await expect(created).toContainText("45,0%");
   const bar = created.getByRole("progressbar");
   await expect(bar).toHaveAttribute("aria-valuenow", "45");
   await expect(bar).toHaveAttribute("aria-valuemax", "100");
@@ -447,7 +451,7 @@ test("uma meta que chegou ao alvo vira Concluída e continua concluída", async 
   await openGoals(page, server);
 
   await page.getByRole("button", { name: "Nova meta" }).click();
-  await page.locator("#goal-create-kind").selectOption("sale_count");
+  await choose(page, "Indicador", "Número de vendas");
   await page.locator("#goal-create-target").fill("3");
   await page.getByRole("button", { name: "Criar meta" }).click();
 
@@ -455,9 +459,6 @@ test("uma meta que chegou ao alvo vira Concluída e continua concluída", async 
   const done = card(page, "Número de vendas");
   await expect(done).toContainText("Concluída");
   await expect(done).toContainText("atingido com 3 (conferido em 14/10/2026)");
-  await expect(done).toContainText(
-    "Uma meta concluída continua concluída, mesmo que devoluções posteriores reduzam os números."
-  );
   await expect(page.getByRole("heading", { name: "Encerradas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Em andamento" })).toHaveCount(
     0
@@ -523,21 +524,22 @@ test("cancela a meta só depois da confirmação", async ({ page }) => {
   await openGoals(page, server);
 
   const goal = card(page, "Meta de vendas");
+  const dialog = page.getByRole("dialog");
   await goal
     .getByRole("button", { name: "Cancelar meta Meta de vendas" })
     .click();
-  await expect(goal).toContainText("isso não poderá ser desfeito");
+  await expect(dialog).toContainText("isso não poderá ser desfeito");
   expect(server.goals[0]?.status).toBe("active");
 
   // back out: nothing was cancelled
-  await goal.getByRole("button", { name: "Voltar" }).click();
-  await expect(goal).not.toContainText("isso não poderá ser desfeito");
+  await dialog.getByRole("button", { name: "Voltar" }).click();
+  await expect(dialog).toHaveCount(0);
   expect(server.goals[0]?.status).toBe("active");
 
   await goal
     .getByRole("button", { name: "Cancelar meta Meta de vendas" })
     .click();
-  await goal.getByRole("button", { name: "Confirmar cancelamento" }).click();
+  await dialog.getByRole("button", { name: "Confirmar cancelamento" }).click();
 
   await expect(page.getByText("Meta cancelada.")).toBeVisible();
   expect(server.goals[0]?.status).toBe("cancelled");
@@ -582,7 +584,11 @@ test("as metas finais não têm editar nem cancelar", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Em andamento" })).toHaveCount(
     0
   );
-  await expect(page.locator(".goal-card")).toHaveCount(3);
+  await expect(
+    page
+      .locator("[data-slot=card]")
+      .filter({ has: page.getByRole("heading", { level: 4 }) })
+  ).toHaveCount(3);
   await expect(page.getByRole("progressbar")).toHaveCount(0);
   await expect(goalActions(page)).toHaveCount(0);
 });
@@ -600,7 +606,7 @@ test("a meta que ainda não começou diz quando começa", async ({ page }) => {
 
   const goal = card(page, "Novembro");
   await expect(goal).toContainText("Em andamento");
-  await expect(goal).toContainText("Começa em 01/11/2026");
+  await expect(goal).toContainText("começa em 01/11/2026");
   await expect(goal.getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "0"
@@ -621,8 +627,8 @@ test("o operacional estimado negativo mostra a barra vazia", async ({
   await openGoals(page, server);
 
   const shown = card(page, "Resultado");
-  await expect(shown.locator(".goal-progress-text")).toContainText("-R$ 80,00");
-  await expect(shown.locator(".goal-progress-text")).toContainText("0%");
+  await expect(shown).toContainText("-R$ 80,00");
+  await expect(shown).toContainText("0%");
   await expect(shown.getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "0"
@@ -697,10 +703,14 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await expect(alert).toContainText(
     "Não foi possível carregar as metas. Tente novamente."
   );
-  await expect(page.locator(".goal-card")).toHaveCount(0);
+  await expect(
+    page
+      .locator("[data-slot=card]")
+      .filter({ has: page.getByRole("heading", { level: 4 }) })
+  ).toHaveCount(0);
 
   server.listFailure = null;
-  await alert.getByRole("button", { name: "Tentar de novo" }).click();
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");

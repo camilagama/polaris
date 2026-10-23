@@ -1,15 +1,27 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { MAX_GOAL_NAME_LENGTH } from "@polaris/domain/goals/goal";
+import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
+import { Button } from "@/ui/button";
 import {
-  type ChangeEvent,
-  type FormEvent,
-  type ReactNode,
-  useCallback,
-  useState,
-} from "react";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/card";
+import { Field, FieldLabel } from "@/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
+import { ExpenseTextField } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { describedBy, FieldTexts } from "../sales/sale-fields";
 import {
   GOAL_DRAFT_FIELDS,
   GOAL_KIND_OPTIONS,
@@ -28,121 +40,15 @@ import {
   validateGoalEdit,
 } from "./goal-model";
 
-interface GoalFieldProps {
-  children: ReactNode;
-  /** The inline error of the field, when there is one. */
-  error: string | undefined;
-  help?: string | undefined;
-  id: string;
-  label: string;
-  optional?: boolean | undefined;
-  wide?: boolean | undefined;
-}
-
-function describedBy(
-  id: string,
-  error: string | undefined,
-  help: string | undefined
-): string | undefined {
-  const ids = [
-    help ? `${id}-help` : undefined,
-    error ? `${id}-error` : undefined,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return ids === "" ? undefined : ids;
-}
-
-/** Label, control, optional help text and the inline error of one field. */
-function GoalField({
-  children,
-  error,
-  help,
-  id,
-  label,
-  optional,
-  wide,
-}: GoalFieldProps) {
-  return (
-    <div className={wide ? "goal-field goal-field-wide" : "goal-field"}>
-      <label className="field-label" htmlFor={id}>
-        {label}
-        {optional ? <span className="field-optional"> Opcional</span> : null}
-      </label>
-      {children}
-      {help ? (
-        <p className="field-help" id={`${id}-help`}>
-          {help}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="field-error" id={`${id}-error`}>
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-interface TextFieldProps {
-  disabled: boolean;
-  error: string | undefined;
-  help?: string | undefined;
-  id: string;
-  inputMode?: "decimal" | "numeric" | undefined;
-  label: string;
-  name: string;
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  optional?: boolean | undefined;
-  placeholder?: string | undefined;
-  value: string;
-  wide?: boolean | undefined;
-}
-
-function TextField({
-  disabled,
-  error,
-  help,
-  id,
-  inputMode,
-  label,
-  name,
-  onChange,
-  optional,
-  placeholder,
-  value,
-  wide,
-}: TextFieldProps) {
-  return (
-    <GoalField
-      error={error}
-      help={help}
-      id={id}
-      label={label}
-      optional={optional}
-      wide={wide}
-    >
-      <input
-        aria-describedby={describedBy(id, error, help)}
-        aria-invalid={error ? true : undefined}
-        autoComplete="off"
-        disabled={disabled}
-        id={id}
-        inputMode={inputMode}
-        maxLength={name === "name" ? MAX_GOAL_NAME_LENGTH : undefined}
-        name={name}
-        onChange={onChange}
-        placeholder={placeholder}
-        value={value}
-      />
-    </GoalField>
-  );
-}
-
 const PERIOD_HELP = "O período pode ter no máximo 366 dias.";
 
+/** The amount of a money goal carries its "R$"; a count says what it counts in the label. */
 function targetLabel(kind: GoalKind): string {
-  return kind === "sale_count" ? "Alvo (número de vendas)" : "Alvo (R$)";
+  return kind === "sale_count" ? "Alvo (número de vendas)" : "Alvo";
+}
+
+function targetAddon(kind: GoalKind): string | undefined {
+  return kind === "sale_count" ? undefined : "R$";
 }
 
 function targetPlaceholder(kind: GoalKind): string {
@@ -153,6 +59,68 @@ function targetInputMode(kind: GoalKind): "decimal" | "numeric" {
   return kind === "sale_count" ? "numeric" : "decimal";
 }
 
+const KIND_ITEMS = GOAL_KIND_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.key,
+}));
+
+interface GoalKindSelectProps {
+  disabled: boolean;
+  error: string | undefined;
+  id: string;
+  onChange: (kind: GoalKind) => void;
+  value: GoalKind;
+}
+
+/** "Indicador": what the goal measures, with the hint of the one chosen under the field. */
+function GoalKindSelect({
+  disabled,
+  error,
+  id,
+  onChange,
+  value,
+}: GoalKindSelectProps) {
+  const handleChange = useCallback(
+    (next: GoalKind | null) => {
+      if (next) {
+        onChange(next);
+      }
+    },
+    [onChange]
+  );
+  const hint = goalKindHint(value);
+  const labelId = `${id}-label`;
+  return (
+    <Field className="min-w-0 sm:col-span-2" data-invalid={Boolean(error)}>
+      <FieldLabel id={labelId}>Indicador</FieldLabel>
+      <Select
+        disabled={disabled}
+        items={KIND_ITEMS}
+        onValueChange={handleChange}
+        value={value}
+      >
+        <SelectTrigger
+          aria-describedby={describedBy(id, error, hint)}
+          aria-invalid={error ? true : undefined}
+          aria-labelledby={labelId}
+          className="w-full min-w-0"
+          id={id}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {KIND_ITEMS.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldTexts error={error} hint={hint} id={id} />
+    </Field>
+  );
+}
+
 interface FormActionsProps {
   cancelLabel: string;
   disabled: boolean;
@@ -160,6 +128,7 @@ interface FormActionsProps {
   onCancel: () => void;
 }
 
+/** "Criar meta" first (ink), the way out in outline beside it. */
 function FormActions({
   cancelLabel,
   disabled,
@@ -167,18 +136,18 @@ function FormActions({
   onCancel,
 }: FormActionsProps) {
   return (
-    <div className="goal-form-actions">
-      <button
-        className="quiet-button"
+    <div className="flex flex-wrap gap-2 sm:col-span-2">
+      <Button disabled={disabled} type="submit">
+        {label}
+      </Button>
+      <Button
         disabled={disabled}
         onClick={onCancel}
         type="button"
+        variant="outline"
       >
         {cancelLabel}
-      </button>
-      <button className="primary-button" disabled={disabled} type="submit">
-        {label}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -203,7 +172,9 @@ function createId(field: GoalDraftField): string {
   return `goal-create-${field}`;
 }
 
-/** Creates a goal. The parent gives it a new `key` to start over. */
+const CREATE_TITLE_ID = "goal-create-title";
+
+/** Creates a goal, in a card above the list. The parent gives it a new `key` to start over. */
 export function GoalCreateForm({
   disabled,
   month,
@@ -217,17 +188,18 @@ export function GoalCreateForm({
   const [initialDraft] = useState<GoalDraft>(() => newGoalDraft(month));
   useReportUnsentWork(isDraftChanged(draft, initialDraft));
 
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      const { name, value } = event.currentTarget;
-      if (!isDraftField(name)) {
-        return;
-      }
-      setDraft((current) => ({ ...current, [name]: value }));
-      setErrors((current) => ({ ...current, [name]: undefined }));
-    },
-    []
-  );
+  const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.currentTarget;
+    if (!isDraftField(name)) {
+      return;
+    }
+    setDraft((current) => ({ ...current, [name]: value }));
+    setErrors((current) => ({ ...current, [name]: undefined }));
+  }, []);
+  const handleKind = useCallback((kind: GoalKind) => {
+    setDraft((current) => ({ ...current, kind }));
+    setErrors((current) => ({ ...current, kind: undefined }));
+  }, []);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -247,107 +219,85 @@ export function GoalCreateForm({
   );
 
   return (
-    <form className="goal-form" noValidate onSubmit={handleSubmit}>
-      <GoalField
-        error={errors.kind}
-        help={goalKindHint(draft.kind)}
-        id={createId("kind")}
-        label="O que a meta mede"
-        wide
-      >
-        <select
-          aria-describedby={describedBy(
-            createId("kind"),
-            errors.kind,
-            goalKindHint(draft.kind)
-          )}
-          className="goal-select"
-          disabled={disabled}
-          id={createId("kind")}
-          name="kind"
-          onChange={handleChange}
-          value={draft.kind}
+    <Card aria-labelledby={CREATE_TITLE_ID} role="region">
+      <CardHeader>
+        <CardTitle aria-level={3} id={CREATE_TITLE_ID} role="heading">
+          Nova meta
+        </CardTitle>
+        <CardDescription>
+          Começa com o mês da tela. Mesmos números dos cartões acima.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4 sm:grid-cols-2"
+          noValidate
+          onSubmit={handleSubmit}
         >
-          {GOAL_KIND_OPTIONS.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </GoalField>
-      <TextField
-        disabled={disabled}
-        error={errors.name}
-        id={createId("name")}
-        label="Nome"
-        name="name"
-        onChange={handleChange}
-        optional
-        value={draft.name}
-        wide
-      />
-      <GoalField
-        error={errors.startsOn}
-        id={createId("startsOn")}
-        label="Começa em"
-      >
-        <input
-          aria-describedby={describedBy(
-            createId("startsOn"),
-            errors.startsOn,
-            undefined
-          )}
-          aria-invalid={errors.startsOn ? true : undefined}
-          disabled={disabled}
-          id={createId("startsOn")}
-          min={EARLIEST_EXPENSE_COMPETENCE}
-          name="startsOn"
-          onChange={handleChange}
-          type="date"
-          value={draft.startsOn}
-        />
-      </GoalField>
-      <GoalField
-        error={errors.endsOn}
-        help={PERIOD_HELP}
-        id={createId("endsOn")}
-        label="Termina em"
-      >
-        <input
-          aria-describedby={describedBy(
-            createId("endsOn"),
-            errors.endsOn,
-            PERIOD_HELP
-          )}
-          aria-invalid={errors.endsOn ? true : undefined}
-          disabled={disabled}
-          id={createId("endsOn")}
-          min={draft.startsOn}
-          name="endsOn"
-          onChange={handleChange}
-          type="date"
-          value={draft.endsOn}
-        />
-      </GoalField>
-      <TextField
-        disabled={disabled}
-        error={errors.target}
-        id={createId("target")}
-        inputMode={targetInputMode(draft.kind)}
-        label={targetLabel(draft.kind)}
-        name="target"
-        onChange={handleChange}
-        placeholder={targetPlaceholder(draft.kind)}
-        value={draft.target}
-        wide
-      />
-      <FormActions
-        cancelLabel="Cancelar"
-        disabled={disabled}
-        label={saving ? "Criando…" : "Criar meta"}
-        onCancel={onCancel}
-      />
-    </form>
+          <GoalKindSelect
+            disabled={disabled}
+            error={errors.kind}
+            id={createId("kind")}
+            onChange={handleKind}
+            value={draft.kind}
+          />
+          <ExpenseTextField
+            className="sm:col-span-2"
+            disabled={disabled}
+            error={errors.name}
+            id={createId("name")}
+            label="Nome"
+            maxLength={MAX_GOAL_NAME_LENGTH}
+            name="name"
+            onChange={handleChange}
+            optional
+            value={draft.name}
+          />
+          <ExpenseTextField
+            disabled={disabled}
+            error={errors.startsOn}
+            id={createId("startsOn")}
+            label="Começa em"
+            min={EARLIEST_EXPENSE_COMPETENCE}
+            name="startsOn"
+            onChange={handleChange}
+            type="date"
+            value={draft.startsOn}
+          />
+          <ExpenseTextField
+            disabled={disabled}
+            error={errors.endsOn}
+            hint={PERIOD_HELP}
+            id={createId("endsOn")}
+            label="Termina em"
+            min={draft.startsOn}
+            name="endsOn"
+            onChange={handleChange}
+            type="date"
+            value={draft.endsOn}
+          />
+          <ExpenseTextField
+            addon={targetAddon(draft.kind)}
+            className="sm:col-span-2 sm:max-w-56"
+            disabled={disabled}
+            error={errors.target}
+            id={createId("target")}
+            inputMode={targetInputMode(draft.kind)}
+            label={targetLabel(draft.kind)}
+            name="target"
+            onChange={handleChange}
+            placeholder={targetPlaceholder(draft.kind)}
+            value={draft.target}
+          />
+          <FormActions
+            cancelLabel="Cancelar"
+            disabled={disabled}
+            label={saving ? "Criando…" : "Criar meta"}
+            onCancel={onCancel}
+          />
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -408,24 +358,28 @@ export function GoalEditForm({
   return (
     <form
       aria-label={`Editar ${goalTitle(goal)}`}
-      className="goal-form goal-edit-form"
+      className="grid gap-4 sm:grid-cols-2"
       noValidate
       onSubmit={handleSubmit}
     >
-      <TextField
+      <ExpenseTextField
+        className="sm:col-span-2"
         disabled={disabled}
         error={errors.name}
         id={editId(goal, "name")}
         label="Nome"
+        maxLength={MAX_GOAL_NAME_LENGTH}
         name="name"
         onChange={handleName}
         optional
         value={name}
       />
-      <TextField
+      <ExpenseTextField
+        addon={targetAddon(goal.kind)}
+        className="sm:col-span-2 sm:max-w-56"
         disabled={disabled}
         error={errors.target}
-        help="Mudar o alvo é permitido e fica no histórico do alvo."
+        hint="Mudar o alvo é permitido e fica no histórico do alvo."
         id={editId(goal, "target")}
         inputMode={targetInputMode(goal.kind)}
         label={targetLabel(goal.kind)}

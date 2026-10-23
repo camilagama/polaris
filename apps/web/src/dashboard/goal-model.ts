@@ -7,9 +7,9 @@ import {
   MAX_SALE_COUNT_TARGET,
 } from "@polaris/domain/goals/goal";
 import {
+  type MoneyInputError,
   moneyInputText,
   monthBounds,
-  type MoneyInputError,
   parseMoneyInput,
 } from "../expenses/expense-model";
 import { calendarDayInTimezone, isCalendarDate } from "../lib/dates";
@@ -73,12 +73,18 @@ export function goalStatusLabel(status: GoalStatus): string {
   return statusLabels[status];
 }
 
-/** The badge style (shared with the other screens) for a status; the text always carries the meaning. */
-export function goalStatusClass(status: GoalStatus): string {
-  if (status === "cancelled") {
-    return "status-deleted";
+/** The badge for a status (a paused goal warns); the text always carries the meaning. */
+export function goalBadgeVariant(
+  status: GoalStatus,
+  paused: boolean
+): "ink" | "outline" | "secondary" | "warning" {
+  if (paused) {
+    return "warning";
   }
-  return status === "missed" ? "status-archived" : "status-active";
+  if (status === "active") {
+    return "secondary";
+  }
+  return status === "completed" ? "ink" : "outline";
 }
 
 /** What the goal is called on screen: its own name, or what it measures. */
