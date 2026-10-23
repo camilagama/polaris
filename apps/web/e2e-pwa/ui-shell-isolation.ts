@@ -2,262 +2,98 @@
 import type { Page } from "@playwright/test";
 
 /**
- * A migrated screen lives inside the old shell (`.ui-root`, `body:has(.ui-root)`), so the sheets of `@layer legacy`
- * are on the page and any rule of them that names an element (`button`, `.ui-root input`, `:focus-visible`) reaches the
- * new components. The check: the computed style of every element under `[data-ui]` with the layer on the page,
- * and again with the layer taken out of the CSSOM. Whatever the layer contributes is a leak (ADR 0103, section 3).
- * The lab of the screens is not the reference because it has no `.ui-root`: the screen itself, without the layer, is.
+ * Since batch 6 (t256) there is no old CSS: every style rule on the page is in a layer of Tailwind (`properties`,
+ * `theme`, `base`, `components`, `utilities`). A rule outside them (no layer, or a layer of its own such as the old
+ * `legacy`) beats or escapes the order the components count on, and reaches the screen without the review of the
+ * base seeing it (ADR 0103, section 3). The check walks every sheet of the page, the adopted ones too, into `@media`,
+ * `@supports`, nesting and `@import`, and lists each style rule whose outermost layer is not one of those.
+ * `@font-face`, `@keyframes` and `@property` style no element, so they may stand outside, and so may the token rules
+ * of theme.css: `:root` and `.dark` (also in the touch block) setting only custom properties and the `color-scheme`
+ * of the theme, which the components read through their utilities. Any other selector with tokens is a fault.
  *
  * Everything below `page.evaluate` is serialized and runs in the browser: it may use nothing of this module.
  */
 
-/**
- * What an old rule would change on a control or on text: box, border, margin, padding, type, color, focus, position.
- * The used values (`width`, `height`) stay out: they follow the container, which the old sheets do change. A margin
- * side that comes from `auto` is the same: its used value follows the container, so it is read as `auto` (see `read`).
- */
-const PROPERTIES = [
-  "accent-color",
-  "appearance",
-  "background-color",
-  "background-image",
-  "border-bottom-color",
-  "border-bottom-left-radius",
-  "border-bottom-right-radius",
-  "border-bottom-style",
-  "border-bottom-width",
-  "border-left-color",
-  "border-left-style",
-  "border-left-width",
-  "border-right-color",
-  "border-right-style",
-  "border-right-width",
-  "border-top-color",
-  "border-top-left-radius",
-  "border-top-right-radius",
-  "border-top-style",
-  "border-top-width",
-  "box-shadow",
-  "box-sizing",
-  "caret-color",
-  "color",
-  "cursor",
-  "display",
-  "font-family",
-  "font-size",
-  "font-style",
-  "font-weight",
-  "letter-spacing",
-  "line-height",
-  "column-gap",
-  "margin-bottom",
-  "margin-left",
-  "margin-right",
-  "margin-top",
-  "max-height",
-  "max-width",
-  "min-height",
-  "min-width",
-  "opacity",
-  "outline-color",
-  "outline-offset",
-  "outline-style",
-  "outline-width",
-  "overflow-x",
-  "overflow-y",
-  "padding-bottom",
-  "padding-left",
-  "padding-right",
-  "padding-top",
-  "pointer-events",
-  "position",
-  "row-gap",
-  "text-align",
-  "text-decoration-line",
-  "text-transform",
-  "transform",
-  "visibility",
-  "white-space",
-  "z-index",
+/** The layers of the build, the order of `@import "tailwindcss"` (`properties` is Tailwind's fallback for @property). */
+const TAILWIND_LAYERS = [
+  "properties",
+  "theme",
+  "base",
+  "components",
+  "utilities",
 ] as const;
 
-/** The style of an element, by the name of the element (`button "Mostrar"`, its place in the tree), property by property. */
-type UiSnapshot = Record<string, Record<string, string>>;
-
-/** One side of the comparison: the legacy layer, still on the page or not. */
-export interface UiLayerState {
-  /** How many rules of the layer `legacy` were taken out of the CSSOM (zero while it is on the page). */
-  removed: number;
-  snapshot: UiSnapshot;
+export interface PageRules {
+  /** Each style rule outside the layers of Tailwind: `sem camada: button` or `@layer legacy: .x input`. */
+  outside: string[];
+  /** How many style rules were read, so a check that read nothing does not pass. */
+  styleRules: number;
 }
 
-/** An old rule that leaks, as the control cases inject it: in the layer, with the selector of the real fault. */
-export async function addLegacyRule(page: Page, css: string) {
-  await page.evaluate((rule) => {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(`@layer legacy { ${rule} }`);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  }, css);
-}
-
-/** A rule outside every layer (it beats the layers), for the control that needs a transition the check must see through. */
-export async function addPageRule(page: Page, css: string) {
-  await page.evaluate((rule) => {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(rule);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  }, css);
-}
-
-/**
- * Puts under the shell a block of the new interface with what the screens opened by the checks do not show: a
- * field in error, one with a placeholder, a native select and a textarea. The old sheets name each of them.
- */
-export async function addProbe(page: Page) {
-  await page.evaluate(() => {
-    const probe = document.createElement("div");
-    probe.dataset.ui = "";
-    probe.innerHTML =
-      '<input aria-label="sonda com erro" aria-invalid="true" />' +
-      '<input aria-label="sonda com texto de apoio" placeholder="apoio" />' +
-      '<select aria-label="sonda de lista"><option>a</option></select>' +
-      '<textarea aria-label="sonda de texto"></textarea>';
-    (document.querySelector(".ui-root") ?? document.body).append(probe);
-  });
-}
-
-/**
- * Takes the snapshot of the screen under `[data-ui]` (the page is in the state to measure), then takes the layer
- * `legacy` out of the page and takes it again. Tab first: the focus is programmatic and only matches
- * `:focus-visible` when the last input was the keyboard.
- */
-export async function legacyLayerOnAndOff(
+export async function rulesOutsideTailwindLayers(
   page: Page
-): Promise<{ off: UiLayerState; on: UiLayerState }> {
-  await page.keyboard.press("Tab");
-  // a computed style read in the middle of a transition is the start of it, not the value the rule gives
-  await addPageRule(
-    page,
-    "*, *::before, *::after { transition: none !important; }"
-  );
-  return await page.evaluate((properties) => {
-    const seen = new Map<string, number>();
-    function nameOf(element: Element) {
-      const text = (
-        element.getAttribute("aria-label") ??
-        (element as HTMLInputElement).labels?.[0]?.textContent ??
-        element.textContent ??
-        ""
-      )
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 24);
-      const slot = element.getAttribute("data-slot");
-      const base = `${element.tagName.toLowerCase()}${slot ? `[${slot}]` : ""}${text ? ` "${text}"` : ""}`;
-      // two elements with the same name are told apart by the order they come in, not by their place in the page
-      const count = (seen.get(base) ?? 0) + 1;
-      seen.set(base, count);
-      return count > 1 ? `${base} #${count}` : base;
-    }
-    function read(element: Element, pseudo?: string) {
-      const style = getComputedStyle(element, pseudo);
-      // `getComputedStyle` gives the used value of an `auto` margin (it follows the width of the container);
-      // the computed value keeps the keyword, so a side that is `auto` with and without the layer reads the same
-      const computed = pseudo ? undefined : element.computedStyleMap();
-      return Object.fromEntries(
-        properties.map((property) => [
-          property,
-          property.startsWith("margin-") &&
-          String(computed?.get(property)) === "auto"
-            ? "auto"
-            : style.getPropertyValue(property),
-        ])
+): Promise<PageRules> {
+  return await page.evaluate((layers) => {
+    const allowed = new Set<string>(layers);
+    const outside: string[] = [];
+    let styleRules = 0;
+    // what a rule holds and the outermost layer of it (null: none); a nested layer does not change where it sits
+    const inner = (
+      rule: CSSRule,
+      layer: string | null
+    ): [CSSRuleList, string | null] | null => {
+      if (rule instanceof CSSLayerBlockRule) {
+        return [rule.cssRules, layer ?? rule.name];
+      }
+      if (rule instanceof CSSImportRule) {
+        return rule.styleSheet
+          ? [rule.styleSheet.cssRules, layer ?? rule.layerName]
+          : null;
+      }
+      // CSS nesting: the rules inside a style rule are in the same layer, like those of `@media` and `@supports`
+      return rule instanceof CSSStyleRule || rule instanceof CSSGroupingRule
+        ? [rule.cssRules, layer]
+        : null;
+    };
+    const onlyTokens = (rule: CSSStyleRule) =>
+      (rule.selectorText === ":root" || rule.selectorText === ".dark") &&
+      rule.style.length > 0 &&
+      [...rule.style].every(
+        (property) => property.startsWith("--") || property === "color-scheme"
       );
-    }
-    function snapshot() {
-      const elements = [...document.querySelectorAll("[data-ui], [data-ui] *")];
-      const result: Record<string, Record<string, string>> = {};
-      const names = new Map<Element, string>();
-      seen.clear();
-      for (const element of elements) {
-        const name = nameOf(element);
-        names.set(element, name);
-        result[name] = read(element);
-        if (
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLTextAreaElement
-        ) {
-          result[`${name} ::placeholder`] = read(element, "::placeholder");
+    const note = (rule: CSSStyleRule, layer: string | null) => {
+      styleRules += 1;
+      if ((layer === null || !allowed.has(layer)) && !onlyTokens(rule)) {
+        const where =
+          layer === null ? "sem camada" : `@layer ${layer || "anônima"}`;
+        outside.push(`${where}: ${rule.selectorText}`);
+      }
+    };
+    const pending: [CSSRuleList, string | null][] = [
+      ...document.styleSheets,
+      ...document.adoptedStyleSheets,
+    ].map((sheet) => [sheet.cssRules, null]);
+    for (let next = pending.pop(); next; next = pending.pop()) {
+      const [rules, layer] = next;
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          note(rule, layer);
+        }
+        const held = inner(rule, layer);
+        if (held) {
+          pending.push(held);
         }
       }
-      // the focus ring of each control that can have it
-      const focusable = elements.filter(
-        (element): element is HTMLElement =>
-          element instanceof HTMLElement &&
-          element.matches(
-            "a[href], button:not(:disabled), input:not(:disabled):not([type=hidden]), select, textarea, [tabindex]"
-          )
-      );
-      const before = document.activeElement;
-      for (const element of focusable) {
-        element.focus();
-        if (element.matches(":focus-visible")) {
-          result[`${names.get(element)} :focus-visible`] = read(element);
-        }
-      }
-      (document.activeElement as HTMLElement | null)?.blur();
-      (before as HTMLElement | null)?.focus?.();
-      return result;
     }
-    function removeLegacy() {
-      let removed = 0;
-      const clear = (rules: CSSRuleList, remove: (index: number) => void) => {
-        for (let index = rules.length - 1; index >= 0; index -= 1) {
-          const rule = rules[index] as CSSLayerBlockRule;
-          if (rule instanceof CSSLayerBlockRule && rule.name === "legacy") {
-            removed += rule.cssRules.length;
-            remove(index);
-          } else if (rule instanceof CSSGroupingRule) {
-            clear(rule.cssRules, (at) => rule.deleteRule(at));
-          }
-        }
-      };
-      for (const sheet of [
-        ...document.styleSheets,
-        ...document.adoptedStyleSheets,
-      ]) {
-        clear(sheet.cssRules, (at) => sheet.deleteRule(at));
-      }
-      return removed;
-    }
-    const on = { removed: 0, snapshot: snapshot() };
-    const removed = removeLegacy();
-    return { off: { removed, snapshot: snapshot() }, on };
-  }, PROPERTIES);
+    return { outside, styleRules };
+  }, TAILWIND_LAYERS);
 }
 
-/** What the layer changed under `[data-ui]`: element, property, the value with the layer and the one without. */
-export function leaks({ off, on }: { off: UiLayerState; on: UiLayerState }) {
-  const found: string[] = [];
-  for (const name of new Set([
-    ...Object.keys(on.snapshot),
-    ...Object.keys(off.snapshot),
-  ])) {
-    const withLayer = on.snapshot[name];
-    const without = off.snapshot[name];
-    if (!(withLayer && without)) {
-      found.push(
-        `${name}: só existe ${withLayer ? "com" : "sem"} a camada legacy`
-      );
-      continue;
-    }
-    for (const property of Object.keys(withLayer)) {
-      if (withLayer[property] !== without[property]) {
-        found.push(
-          `${name}: ${property} ${withLayer[property]} (com legacy) ≠ ${without[property]} (sem)`
-        );
-      }
-    }
-  }
-  return found;
+/** A sheet put on the page as the control cases need it (adopted: the CSP of the app refuses a `<style>`). */
+export async function addSheet(page: Page, css: string) {
+  await page.evaluate((text) => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(text);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  }, css);
 }

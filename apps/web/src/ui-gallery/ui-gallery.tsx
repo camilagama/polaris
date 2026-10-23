@@ -181,10 +181,7 @@ export function UiGallery() {
   return (
     <ToastProvider>
       <TooltipProvider>
-        <main
-          className="mx-auto grid min-h-dvh max-w-[76rem] gap-4 bg-background p-(--gutter) font-sans text-foreground text-sm antialiased"
-          data-ui=""
-        >
+        <main className="mx-auto grid min-h-dvh max-w-[76rem] gap-4 bg-background p-(--gutter) font-sans text-foreground text-sm antialiased">
           <header className="flex items-center justify-between gap-3">
             <h1 className="text-title">Galeria da interface</h1>
             <ThemeSwitch />

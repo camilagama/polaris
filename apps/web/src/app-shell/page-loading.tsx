@@ -29,7 +29,6 @@ export function PageLoading({
         "grid content-start gap-4 font-sans text-foreground text-sm antialiased",
         fullPage ? "min-h-dvh bg-background p-(--gutter)" : "py-2"
       )}
-      data-ui=""
       role="status"
     >
       <p className="text-muted-foreground">{label}</p>

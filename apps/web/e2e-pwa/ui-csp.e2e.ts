@@ -184,7 +184,7 @@ test("as faces da Geist e da Geist Mono vêm de arquivos do próprio app e cobre
   expect(csp.violations()).toEqual([]);
 });
 
-test("no CSS do build, a ordem das camadas é theme, base, components, legacy e utilities", async ({
+test("no CSS do build, a ordem das camadas é theme, base, components e utilities, sem legacy", async ({
   page,
 }) => {
   await openGallery(page, null);
@@ -204,7 +204,6 @@ test("no CSS do build, a ordem das camadas é theme, base, components, legacy e 
     "theme",
     "base",
     "components",
-    "legacy",
     "utilities",
   ]);
 });

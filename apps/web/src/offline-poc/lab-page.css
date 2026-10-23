@@ -1,0 +1,12 @@
+/*
+ * The frame of the labs (`/offline-*-lab`, not screens of the shop): the width and the margins the old `.app-shell`
+ * of styles.css gave them, now that the old sheets are gone (ADR 0103, section 3). In `components`, under the
+ * utilities, like the other sheet of the labs (offline-poc.css).
+ */
+@layer components {
+  .app-shell {
+    max-width: 72rem;
+    padding: 2rem;
+    margin: 0 auto;
+  }
+}

@@ -9,21 +9,42 @@ import {
   type NormalizedMediaCropRect,
   UnsupportedMediaImageError,
 } from "@polaris/domain/catalog/media";
+import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/card";
+import { Checkbox } from "@/ui/checkbox";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/ui/field";
+import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { Label } from "@/ui/label";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
   listProductMedia,
   prepareMediaUploadFile,
-  productMediaAssetUrl,
   removeProductMedia,
   reorderProductMedia,
   uploadProductMedia,
@@ -33,9 +54,6 @@ import { useReportUnsentWork } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   describeMediaFailure,
-  type ImageActionAvailability,
-  imageActionAvailability,
-  imageActionLabel,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   type MediaFailure,
@@ -43,9 +61,7 @@ import {
   type MoveDirection,
   movedAssetOrder,
   movedNotice,
-  removeConfirmationText,
   removedNotice,
-  replaceConfirmationText,
   replacementAbandonedText,
   replacementDoneText,
   replacementPendingText,
@@ -55,9 +71,17 @@ import {
   cropArrowKeys,
   describeCrop,
 } from "./media-crop-model";
-import "./product-media-panel.css";
+import { ProductMediaCropField } from "./product-media-crop";
+import {
+  type ConfirmKind,
+  type ConfirmRequest,
+  ProductMediaList,
+  type RunningCommand,
+} from "./product-media-list";
 
 interface ProductMediaPanelProps {
+  /** Where the focus goes when the panel opens: the title, which names what the person is about to edit. */
+  headingRef?: Ref<HTMLDivElement>;
   onClose: () => void;
   organizationId: string;
   product: ProductReadModel;
@@ -151,263 +175,45 @@ function variantLabel(variant: {
   return values.length > 0 ? values.join(" / ") : "Variante padrão";
 }
 
-function formatBytes(value: number): string {
-  return `${(value / 1_000_000).toFixed(1)} MB`;
-}
-
-type ConfirmKind = "remove" | "replace";
-
-type CommandKind = "move" | ConfirmKind;
-
-interface RunningCommand {
-  assetId: string;
-  kind: CommandKind;
-}
-
-interface ConfirmRequest {
-  assetId: string;
-  kind: ConfirmKind;
-}
-
 type FocusRequest =
   | { assetId: string; fallbacks: readonly string[]; type: "item" }
   | { assetId: string; type: "keep" }
   | { type: "file" }
   | { type: "heading" };
 
-function confirmButtonLabel(kind: ConfirmKind, running: boolean): string {
-  if (kind === "remove") {
-    return running ? "Removendo…" : "Remover imagem";
-  }
-  return running ? "Substituindo…" : "Remover e escolher outra";
+interface VariantOptionProps {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onToggle: (variantId: string) => void;
+  variantId: string;
 }
 
-interface ProductMediaItemProps {
-  asset: ProductMediaAssetReadModel;
-  availability: ImageActionAvailability;
-  confirming: ConfirmKind | null;
-  count: number;
-  index: number;
-  onAsk: (assetId: string, kind: ConfirmKind) => void;
-  onConfirm: (assetId: string, kind: ConfirmKind) => void;
-  onKeep: (assetId: string, kind: ConfirmKind) => void;
-  onMove: (assetId: string, direction: MoveDirection) => void;
-  organizationId: string;
-  productName: string;
-  running: CommandKind | null;
-}
-
-function ProductMediaItem({
-  asset,
-  availability,
-  confirming,
-  count,
-  index,
-  onAsk,
-  onConfirm,
-  onKeep,
-  onMove,
-  organizationId,
-  productName,
-  running,
-}: ProductMediaItemProps) {
-  const { assetId } = asset;
-  const position = index + 1;
-  const handleMoveEarlier = useCallback(
-    () => onMove(assetId, "earlier"),
-    [assetId, onMove]
+function VariantOption({
+  checked,
+  disabled,
+  label,
+  onToggle,
+  variantId,
+}: VariantOptionProps) {
+  const handleChange = useCallback(
+    () => onToggle(variantId),
+    [onToggle, variantId]
   );
-  const handleMoveLater = useCallback(
-    () => onMove(assetId, "later"),
-    [assetId, onMove]
-  );
-  const handleAskRemove = useCallback(
-    () => onAsk(assetId, "remove"),
-    [assetId, onAsk]
-  );
-  const handleAskReplace = useCallback(
-    () => onAsk(assetId, "replace"),
-    [assetId, onAsk]
-  );
-  const handleConfirm = useCallback(() => {
-    if (confirming) {
-      onConfirm(assetId, confirming);
-    }
-  }, [assetId, confirming, onConfirm]);
-  const handleKeep = useCallback(() => {
-    if (confirming) {
-      onKeep(assetId, confirming);
-    }
-  }, [assetId, confirming, onKeep]);
-  const variantCount = asset.variantIds.length;
-  const confirmRunning = confirming !== null && running === confirming;
-
   return (
-    <li
-      aria-busy={running !== null}
-      className="product-media-item"
-      data-asset-id={assetId}
-    >
-      <img
-        alt={`${productName}, imagem ${position}`}
-        height={asset.height}
-        loading="lazy"
-        src={productMediaAssetUrl(asset, organizationId, undefined, 320)}
-        width={asset.width}
+    <Label className="min-h-ctl-md rounded-md border border-border px-3">
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={handleChange}
       />
-      <div className="product-media-item-copy">
-        <p>
-          Imagem {position} de {count}
-        </p>
-        <span>
-          {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}
-        </span>
-        {variantCount > 0 ? (
-          <span>
-            Associada a {variantCount}{" "}
-            {variantCount === 1 ? "variante" : "variantes"}
-          </span>
-        ) : null}
-      </div>
-      {confirming ? (
-        <div
-          aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
-          className="product-media-confirm"
-          role="alertdialog"
-        >
-          <p>
-            {confirming === "remove"
-              ? removeConfirmationText({ position, variantCount })
-              : replaceConfirmationText({ position, variantCount })}
-          </p>
-          <div className="product-media-item-actions">
-            <button
-              className="danger-button"
-              disabled={running !== null}
-              onClick={handleConfirm}
-              type="button"
-            >
-              {confirmButtonLabel(confirming, confirmRunning)}
-            </button>
-            <button
-              className="quiet-button"
-              data-media-action="keep"
-              disabled={running !== null}
-              onClick={handleKeep}
-              type="button"
-            >
-              Manter imagem
-            </button>
-          </div>
-        </div>
-      ) : (
-        <fieldset className="product-media-item-actions is-group">
-          <legend className="visually-hidden">
-            Ações da imagem {position}
-          </legend>
-          <button
-            aria-label={imageActionLabel("moveEarlier", index)}
-            className="quiet-button"
-            data-media-action="moveEarlier"
-            disabled={!availability.moveEarlier}
-            onClick={handleMoveEarlier}
-            type="button"
-          >
-            Para antes
-          </button>
-          <button
-            aria-label={imageActionLabel("moveLater", index)}
-            className="quiet-button"
-            data-media-action="moveLater"
-            disabled={!availability.moveLater}
-            onClick={handleMoveLater}
-            type="button"
-          >
-            Para depois
-          </button>
-          <button
-            aria-label={imageActionLabel("replace", index)}
-            className="quiet-button"
-            data-media-action="replace"
-            disabled={!availability.replace}
-            onClick={handleAskReplace}
-            type="button"
-          >
-            Substituir
-          </button>
-          <button
-            aria-label={imageActionLabel("remove", index)}
-            className="danger-text-button"
-            data-media-action="remove"
-            disabled={!availability.remove}
-            onClick={handleAskRemove}
-            type="button"
-          >
-            Remover
-          </button>
-        </fieldset>
-      )}
-    </li>
-  );
-}
-
-function ProductMediaList({
-  assets,
-  busy,
-  confirm,
-  onAsk,
-  onConfirm,
-  onKeep,
-  onMove,
-  organizationId,
-  productName,
-  running,
-}: {
-  assets: ProductMediaAssetReadModel[];
-  busy: boolean;
-  confirm: ConfirmRequest | null;
-  onAsk: (assetId: string, kind: ConfirmKind) => void;
-  onConfirm: (assetId: string, kind: ConfirmKind) => void;
-  onKeep: (assetId: string, kind: ConfirmKind) => void;
-  onMove: (assetId: string, direction: MoveDirection) => void;
-  organizationId: string;
-  productName: string;
-  running: RunningCommand | null;
-}) {
-  if (assets.length === 0) {
-    return (
-      <p className="product-empty-state">Ainda não há imagens neste produto.</p>
-    );
-  }
-
-  return (
-    <ul aria-busy={busy} className="product-media-list">
-      {assets.map((asset, index) => (
-        <ProductMediaItem
-          asset={asset}
-          availability={imageActionAvailability({
-            busy,
-            count: assets.length,
-            index,
-          })}
-          confirming={confirm?.assetId === asset.assetId ? confirm.kind : null}
-          count={assets.length}
-          index={index}
-          key={asset.assetId}
-          onAsk={onAsk}
-          onConfirm={onConfirm}
-          onKeep={onKeep}
-          onMove={onMove}
-          organizationId={organizationId}
-          productName={productName}
-          running={running?.assetId === asset.assetId ? running.kind : null}
-        />
-      ))}
-    </ul>
+      <span className="[overflow-wrap:anywhere]">{label}</span>
+    </Label>
   );
 }
 
 export function ProductMediaPanel({
+  headingRef,
   onClose,
   organizationId,
   product,
@@ -429,6 +235,7 @@ export function ProductMediaPanel({
   const [isPreparing, setIsPreparing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
   const [running, setRunning] = useState<RunningCommand | null>(null);
@@ -440,7 +247,7 @@ export function ProductMediaPanel({
   const assetsVersion = useRef(0);
   const commandLock = useRef<boolean>(false);
   const focusRequest = useRef<FocusRequest | null>(null);
-  const panelRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const listHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const imagesBusy = running !== null || isUploading;
@@ -465,11 +272,18 @@ export function ProductMediaPanel({
           setAssets(result.media);
           if (!quiet) {
             setError(null);
+            setLoadError(null);
           }
         }
       } catch (cause: unknown) {
         if (version === assetsVersion.current) {
-          setError(mediaFailure("list", cause).message);
+          const { message } = mediaFailure("list", cause);
+          // the first read that fails is not an empty list: it says why and offers "Tentar novamente"
+          if (quiet) {
+            setError(message);
+          } else {
+            setLoadError(message);
+          }
         }
       } finally {
         if (!quiet) {
@@ -724,14 +538,9 @@ export function ProductMediaPanel({
     });
   }, []);
 
-  const handleVariantChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { variantId } = event.currentTarget.dataset;
-      if (variantId) {
-        handleVariantToggle(variantId);
-      }
-    },
-    [handleVariantToggle]
+  const handleReload = useCallback(
+    () => setReloadVersion((version) => version + 1),
+    []
   );
 
   const handleUpload = useCallback(
@@ -907,12 +716,6 @@ export function ProductMediaPanel({
     setNotice(replacementAbandonedText);
   }, []);
 
-  const cropStyle = {
-    height: `${crop.height * 100}%`,
-    left: `${crop.x * 100}%`,
-    top: `${crop.y * 100}%`,
-    width: `${crop.width * 100}%`,
-  };
   let uploadButtonLabel = "Enviar imagem";
   if (isPreparing) {
     uploadButtonLabel = "Preparando…";
@@ -921,227 +724,197 @@ export function ProductMediaPanel({
     uploadButtonLabel = "Processando…";
   }
 
-  return (
-    <section
-      aria-labelledby="product-media-heading"
-      className="product-form-panel product-media-panel"
-      ref={panelRef}
-    >
-      <div className="product-form-heading">
-        <div>
-          <p className="categories-eyebrow">Imagens do produto</p>
-          <h2 id="product-media-heading">{product.name}</h2>
-        </div>
-        <button className="quiet-button" onClick={onClose} type="button">
-          Fechar
-        </button>
-      </div>
+  let list: ReactNode;
+  if (isLoading) {
+    list = (
+      <p className="text-muted-foreground text-support" role="status">
+        Carregando imagens…
+      </p>
+    );
+  } else if (loadError) {
+    list = (
+      <Alert variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {loadError}
+          <Button onClick={handleReload} size="sm" type="button" variant="link">
+            Tentar novamente
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  } else {
+    list = (
+      <ProductMediaList
+        assets={assets}
+        busy={imagesBusy}
+        confirm={confirm}
+        onAsk={handleAsk}
+        onConfirm={handleConfirm}
+        onKeep={handleKeep}
+        onMove={handleMove}
+        organizationId={organizationId}
+        productName={product.name}
+        running={running}
+      />
+    );
+  }
 
-      <div className="product-media-content">
+  return (
+    <Card aria-labelledby="product-media-heading" ref={panelRef} role="region">
+      <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
+        <div
+          className="grid gap-0.5 outline-none"
+          ref={headingRef}
+          tabIndex={-1}
+        >
+          <CardTitle
+            aria-level={2}
+            className="[overflow-wrap:anywhere]"
+            id="product-media-heading"
+            role="heading"
+          >
+            {product.name}
+          </CardTitle>
+          <CardDescription>Imagens</CardDescription>
+        </div>
+        <Button onClick={onClose} size="sm" type="button" variant="ghost">
+          Fechar
+        </Button>
+      </CardHeader>
+
+      <CardContent className="grid gap-4">
         {error ? (
-          <p className="categories-message is-error" role="alert">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : null}
         {notice ? (
-          <p className="categories-message is-success" role="status">
-            {notice}
-          </p>
+          <Alert>
+            <CircleCheckIcon aria-hidden="true" />
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
         ) : null}
 
         {replacementPending ? (
-          <div className="product-media-replacement" role="status">
-            <p>{replacementPendingText}</p>
-            <button
-              className="quiet-button"
-              disabled={isUploading}
-              onClick={handleAbandonReplacement}
-              type="button"
-            >
-              Desistir da substituição
-            </button>
-          </div>
+          <Alert variant="warning">
+            <AlertDescription className="grid justify-items-start gap-3">
+              {replacementPendingText}
+              <Button
+                disabled={isUploading}
+                onClick={handleAbandonReplacement}
+                type="button"
+                variant="outline"
+              >
+                Desistir da substituição
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : null}
 
-        <form className="product-media-upload" onSubmit={handleUpload}>
-          <div className="product-form-field">
-            <label className="field-label" htmlFor="product-media-file">
+        <form className="grid gap-4" onSubmit={handleUpload}>
+          <Field>
+            <FieldLabel htmlFor="product-media-file">
               Escolher imagem
-            </label>
-            <input
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-              disabled={isPreparing || imagesBusy}
-              id="product-media-file"
-              onChange={handleFileChange}
-              ref={fileInputRef}
-              type="file"
-            />
-            <p className="field-help">
-              JPEG, PNG e WebP; HEIC do iPhone é convertido neste dispositivo.
-              Até 20 MB.
-            </p>
-          </div>
+            </FieldLabel>
+            <InputGroup>
+              <InputGroupInput
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+                className="cursor-pointer file:me-3 file:cursor-pointer file:border-0 file:bg-transparent file:p-0 file:font-medium file:text-sm"
+                disabled={isPreparing || imagesBusy}
+                id="product-media-file"
+                onChange={handleFileChange}
+                ref={fileInputRef}
+                type="file"
+              />
+            </InputGroup>
+            <FieldDescription>
+              JPEG, PNG e WebP; HEIC do iPhone é convertido neste aparelho. Até
+              20 MB.
+            </FieldDescription>
+          </Field>
 
           {isPreparing ? (
-            <p className="field-help" role="status">
+            <p className="text-muted-foreground text-support" role="status">
               Preparando a imagem para recorte…
             </p>
           ) : null}
 
           {previewUrl ? (
-            <div className="product-media-crop-field">
-              <div className="product-media-crop-heading">
-                <div>
-                  <p className="field-label">Recorte</p>
-                  <p className="field-help">
-                    Arraste sobre a imagem para escolher uma área. Com o
-                    teclado, as setas aumentam ou diminuem o recorte a partir do
-                    canto inferior direito; com Alt, a partir do canto superior
-                    esquerdo; com Shift, movem a área. Um toque sem arraste
-                    mantém a imagem inteira.
-                  </p>
-                </div>
-                <div className="product-media-crop-actions">
-                  <button
-                    aria-pressed={adjusting}
-                    className="quiet-button"
-                    disabled={isUploading}
-                    onClick={handleToggleAdjusting}
-                    type="button"
-                  >
-                    {adjusting ? "Concluir ajuste" : "Ajustar com o dedo"}
-                  </button>
-                  <button
-                    className="quiet-button"
-                    disabled={isUploading}
-                    onClick={handleUseFullImage}
-                    type="button"
-                  >
-                    Imagem inteira
-                  </button>
-                </div>
-              </div>
-              <div className="product-media-crop-stage">
-                <button
-                  aria-describedby="product-media-crop-help product-media-crop-state"
-                  aria-label="Área de recorte. Arraste ou use as setas para ajustar."
-                  className={
-                    adjusting
-                      ? "product-media-crop-frame is-adjusting"
-                      : "product-media-crop-frame"
-                  }
-                  onKeyDown={handleCropPreviewKeyDown}
-                  onPointerCancel={handleCropPointerCancel}
-                  onPointerDown={handleCropPointerDown}
-                  onPointerMove={handleCropPointerMove}
-                  onPointerUp={handleCropPointerUp}
-                  type="button"
-                >
-                  <img
-                    alt=""
-                    className="product-media-crop-preview"
-                    draggable={false}
-                    height={previewDimensions?.height}
-                    src={previewUrl}
-                    width={previewDimensions?.width}
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="product-media-crop-selection"
-                    style={cropStyle}
-                  />
-                </button>
-              </div>
-              <p
-                aria-live="polite"
-                className="field-help"
-                id="product-media-crop-state"
-                role="status"
-              >
-                {cropAnnouncement || describeCrop(crop)}
-              </p>
-              <p className="field-help" id="product-media-crop-help">
-                Saída WebP, proporção preservada e dimensão máxima de 1200 px
-                sem ampliação.
-              </p>
-            </div>
+            <ProductMediaCropField
+              adjusting={adjusting}
+              announcement={cropAnnouncement}
+              crop={crop}
+              dimensions={previewDimensions}
+              disabled={isUploading}
+              onKeyDown={handleCropPreviewKeyDown}
+              onPointerCancel={handleCropPointerCancel}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onToggleAdjusting={handleToggleAdjusting}
+              onUseFullImage={handleUseFullImage}
+              previewUrl={previewUrl}
+            />
           ) : null}
 
           {availableVariants.length > 0 ? (
-            <fieldset className="product-media-variants">
-              <legend className="field-label">
-                Associar também às variantes
-              </legend>
-              <p className="field-help">
-                A imagem continua vinculada ao produto e pode ser reutilizada
-                nas variantes marcadas.
-              </p>
-              <div className="product-media-variant-options">
+            <FieldSet>
+              <div className="grid gap-0.5">
+                <FieldLegend className="mb-0" variant="label">
+                  Associar também às variantes
+                </FieldLegend>
+                <FieldDescription>
+                  A imagem continua no produto e também aparece nas variantes
+                  marcadas.
+                </FieldDescription>
+              </div>
+              <div className="flex flex-wrap gap-3">
                 {availableVariants.map((variant) => (
-                  <label
-                    className="product-media-variant-option"
+                  <VariantOption
+                    checked={selectedVariantIds.includes(variant.id)}
+                    disabled={isUploading}
                     key={variant.id}
-                  >
-                    <input
-                      checked={selectedVariantIds.includes(variant.id)}
-                      data-variant-id={variant.id}
-                      disabled={isUploading}
-                      onChange={handleVariantChange}
-                      type="checkbox"
-                    />
-                    <span>{variantLabel(variant)}</span>
-                  </label>
+                    label={variantLabel(variant)}
+                    onToggle={handleVariantToggle}
+                    variantId={variant.id}
+                  />
                 ))}
               </div>
-            </fieldset>
+            </FieldSet>
           ) : null}
           {availableVariants.length === 0 && variants?.configured === false ? (
-            <p className="field-help">
+            <p className="text-muted-foreground text-support">
               Configure as variantes do produto para associar imagens a
               combinações específicas.
             </p>
           ) : null}
 
-          <div className="product-form-actions">
-            <button
-              className="primary-button"
+          <div className="flex min-[30rem]:justify-end">
+            <Button
+              className="max-[29.99rem]:w-full"
               disabled={!preparedFile || isPreparing || imagesBusy}
               type="submit"
             >
               {uploadButtonLabel}
-            </button>
+            </Button>
           </div>
         </form>
 
-        <section aria-labelledby="product-media-list-heading">
+        <section
+          aria-labelledby="product-media-list-heading"
+          className="grid gap-3 border-border border-t pt-4"
+        >
           <h3
-            className="product-media-list-heading"
+            className="text-section outline-none"
             id="product-media-list-heading"
             ref={listHeadingRef}
             tabIndex={-1}
           >
             Imagens associadas
           </h3>
-          {isLoading ? (
-            <p className="product-empty-state" role="status">
-              Carregando imagens…
-            </p>
-          ) : (
-            <ProductMediaList
-              assets={assets}
-              busy={imagesBusy}
-              confirm={confirm}
-              onAsk={handleAsk}
-              onConfirm={handleConfirm}
-              onKeep={handleKeep}
-              onMove={handleMove}
-              organizationId={organizationId}
-              productName={product.name}
-              running={running}
-            />
-          )}
+          {list}
         </section>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
