@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   budgetProblems,
+  budgetWarnings,
   FONT_BUDGET_BYTES,
   interfaceShares,
   measurePrecache,
@@ -18,9 +19,14 @@ import {
   primitiveShares,
   REST_BASELINE_GZIP_BYTES,
   REST_GROWTH_BUDGET_GZIP_BYTES,
+  REST_GROWTH_HARD_CAP_GZIP_BYTES,
+  REST_GROWTH_MODE,
   restBaseline,
   testOnlyChunkProblems,
 } from "./precache-budget";
+
+const GROWTH_LINE =
+  /PRECACHE-GROWTH total \d+ B gzip, growth [+-]?\d+ B over the baseline of \d+ B \(reference \+44000 B/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
 
@@ -101,9 +107,65 @@ describe("precache budget (ADR 0103, section 4)", () => {
         baseline
       )
     ).toEqual([expect.stringContaining("primitives")]);
+  });
+
+  it("passes with a warning above +44 000 B and below the hard cap, and fails past the hard cap (t272)", () => {
+    expect(REST_GROWTH_MODE).toBe("warn");
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    const withGrowth = (growth: number) => ({
+      fonts: 0,
+      interface: 0,
+      primitives: 0,
+      rest: baseline + growth,
+    });
+    // at the reference: no problem, no warning
     expect(
-      budgetProblems({ ...atLimit, rest: atLimit.rest + 1 }, baseline)
-    ).toEqual([expect.stringContaining("rest")]);
+      budgetProblems(withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES), baseline)
+    ).toEqual([]);
+    expect(
+      budgetWarnings(withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES), baseline)
+    ).toEqual([]);
+    // one byte over the reference: passes, with a warning that says the total, the reference and the excess
+    const over = withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES + 1);
+    expect(budgetProblems(over, baseline)).toEqual([]);
+    const [warning] = budgetWarnings(over, baseline);
+    expect(budgetWarnings(over, baseline)).toHaveLength(1);
+    expect(warning).toContain(`total ${baseline + 44_001} B gzip`);
+    expect(warning).toContain("reference +44000 B");
+    expect(warning).toContain("excess +1 B");
+    // in the middle of the way (+60 000 B): still passes, with the warning
+    expect(budgetProblems(withGrowth(60_000), baseline)).toEqual([]);
+    expect(budgetWarnings(withGrowth(60_000), baseline)).toHaveLength(1);
+    // at the hard cap: passes; one byte past it: fails, and it is a problem, not a warning
+    expect(
+      budgetProblems(withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES), baseline)
+    ).toEqual([]);
+    const past = withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES + 1);
+    expect(budgetProblems(past, baseline)).toEqual([
+      expect.stringContaining("hard cap of +80000 B"),
+    ]);
+    expect(budgetWarnings(past, baseline)).toEqual([]);
+    // the fonts and the primitives keep blocking in this mode
+    expect(
+      budgetProblems(
+        { ...withGrowth(60_000), fonts: FONT_BUDGET_BYTES + 1 },
+        baseline
+      )
+    ).toEqual([expect.stringContaining("fonts")]);
+  });
+
+  it("blocks past the reference when the mode goes back to block (the cut step)", () => {
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    const over = {
+      fonts: 0,
+      interface: 0,
+      primitives: 0,
+      rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES + 1,
+    };
+    expect(budgetProblems(over, baseline, "block")).toEqual([
+      expect.stringContaining("past the +44000 B budget"),
+    ]);
+    expect(budgetWarnings(over, baseline, "block")).toEqual([]);
   });
 
   it("measures each kind of build against its own baseline (the offline runtime is in the shell or not)", () => {
@@ -119,7 +181,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       rest: 1_105_454,
     };
     expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([
-      expect.stringContaining("rest"),
+      expect.stringContaining("hard cap"),
     ]);
     expect(budgetProblems(runtimeOn, restBaseline(true))).toEqual([]);
   });
@@ -139,6 +201,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
         {
           error: (message: string) => logged.push(message),
           info: (message: string) => logged.push(message),
+          warn: (message: string) => logged.push(message),
         },
         { dir: directory }
       );
@@ -198,7 +261,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(split.primitives + split.interface + split.rest).toBe(whole.rest);
   });
 
-  it("counts the interface infrastructure in the +40 KB line (control: it does not escape it by moving out of the rest)", () => {
+  it("counts the interface infrastructure in the rest line (control: it does not escape it by moving out of the rest)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const atLimit = {
       fonts: 0,
@@ -206,13 +269,21 @@ describe("precache budget (ADR 0103, section 4)", () => {
       primitives: 0,
       rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES - 15_000,
     };
-    expect(budgetProblems(atLimit, baseline)).toEqual([]);
-    const past = budgetProblems(
+    expect(budgetWarnings(atLimit, baseline)).toEqual([]);
+    const past = budgetWarnings(
       { ...atLimit, interface: atLimit.interface + 1 },
       baseline
     );
-    expect(past).toEqual([expect.stringContaining("rest")]);
-    expect(past[0]).toContain("interface infrastructure 15001 B");
+    expect(past).toEqual([expect.stringContaining("excess +1 B")]);
+    const hard = budgetProblems(
+      {
+        ...atLimit,
+        interface: atLimit.interface + REST_GROWTH_HARD_CAP_GZIP_BYTES,
+      },
+      baseline
+    );
+    expect(hard).toEqual([expect.stringContaining("hard cap")]);
+    expect(hard[0]).toContain("interface infrastructure 95000 B");
   });
 
   it("prints the primitives, the interface infrastructure and the screen apart, over a real output directory", () => {
@@ -273,6 +344,8 @@ describe("precache budget (ADR 0103, section 4)", () => {
       expect(logged.join("\n")).toContain(
         `Base UI primitives ${size.primitives} B gzip, interface infrastructure ${size.interface} B gzip, screen and the rest ${size.rest} B gzip (${size.rest - baseline} B over the baseline); rest line ${size.rest + size.interface} B gzip`
       );
+      // the line a review greps for in the CI log is always printed
+      expect(logged.join("\n")).toMatch(GROWTH_LINE);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
@@ -323,9 +396,10 @@ describe("precache budget (ADR 0103, section 4)", () => {
     ).toHaveLength(2);
   });
 
-  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip for the rest since the legacy went", () => {
+  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip of reference (warning) and +80 KB hard cap for the rest", () => {
     expect(FONT_BUDGET_BYTES).toBe(55_000);
     expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
     expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(44_000);
+    expect(REST_GROWTH_HARD_CAP_GZIP_BYTES).toBe(80_000);
   });
 });
