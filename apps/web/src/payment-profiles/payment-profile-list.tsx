@@ -147,9 +147,9 @@ function ProfileRow({
           <li className="grid gap-2 rounded-lg border p-3" key={rule.id}>
             <p className="font-medium">{ruleTitle(rule)}</p>
             <dl className="grid gap-x-3 gap-y-2 text-support min-[30rem]:grid-cols-3">
-              <Figure label="Liquidação">
+              <Figure label="Recebimento">
                 {rule.expectedSettlementDays === null
-                  ? "não informada"
+                  ? "não informado"
                   : `${rule.expectedSettlementDays} dias`}
               </Figure>
               <FeeFigure fee={rule.processingFee} label="Processamento" />

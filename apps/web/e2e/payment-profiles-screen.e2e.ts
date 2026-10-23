@@ -358,11 +358,11 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   );
   await page.getByRole("button", { name: "Criar perfil" }).click();
   await expect(
-    page.getByText("Informe um número inteiro de parcelas, de 1 em diante.")
+    page.getByText("Informe o número de parcelas: 1 ou mais, sem vírgula.")
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Informe um número inteiro de dias, de 0 em diante, ou deixe em branco."
+      "Informe os dias de prazo: 0 ou mais, sem vírgula. Ou deixe em branco."
     )
   ).toBeVisible();
   await expect(

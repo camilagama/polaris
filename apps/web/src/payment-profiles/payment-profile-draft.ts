@@ -34,9 +34,9 @@ export const NAME_ID = "payment-profile-name";
 export const NAME_REQUIRED = "Informe o nome do perfil.";
 export const FIXED_RULE_TEXT = "Informe o valor fixo, por exemplo 0,50.";
 export const INSTALLMENTS_RULE_TEXT =
-  "Informe um número inteiro de parcelas, de 1 em diante.";
+  "Informe o número de parcelas: 1 ou mais, sem vírgula.";
 export const SETTLEMENT_RULE_TEXT =
-  "Informe um número inteiro de dias, de 0 em diante, ou deixe em branco.";
+  "Informe os dias de prazo: 0 ou mais, sem vírgula. Ou deixe em branco.";
 const MAX_INTEGER = 2_147_483_647;
 const INTEGER_TEXT = /^\d+$/;
 
