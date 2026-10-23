@@ -164,6 +164,13 @@ for (const size of SIZES) {
       ).toBeLessThanOrEqual(3 * lineHeight + 1);
     });
 
+    test("na página do produto o título de 300 letras continua inteiro", async ({
+      page,
+    }) => {
+      await open(page, `${FIXTURE}/nome-longo/p/${PRODUCT_WITH_LONG_TEXT}`);
+      await expect(page.locator("main h1")).toHaveText(LONG_NAME);
+    });
+
     test("o rodapé tem área de toque de 44 px", async ({ page }) => {
       await open(page, `${FIXTURE}/`);
       expect(await hasTouchArea(page, "footer.foot a")).toBe(true);

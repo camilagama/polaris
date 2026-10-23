@@ -39,7 +39,7 @@ const VAZIA: PublicCatalogProfile = {
 /** A store whose texts are as long as the rules allow, with words nobody can break at a space. */
 const NOME_LONGO: PublicCatalogProfile = {
   description: `Veja tudo em https://exemplo.com.br/${"catalogo-completo-".repeat(8)} e fale com a gente.`,
-  instagram: "loja.nome.longo",
+  instagram: "polaris_teste_nome_longo",
   name: "Loja de Artigos Diversos para Casa, Jardim, Escritório e Presentes Criativos",
   slug: "nome-longo",
   whatsapp: "5511000000000",

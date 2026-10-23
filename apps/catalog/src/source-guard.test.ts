@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { polarisSiteHref } from "./polaris-site";
 
 /**
  * The public catalog stays outside Tailwind and Base UI (ADR 0103, condition 7): one static stylesheet, one
@@ -33,7 +34,8 @@ const TEST_OR_TYPES = /\.(?:test|d)\.(?:ts|tsx)$/;
 const FOOTER_CALL = /<Footer href=\{footerHref\} \/>/g;
 const FOOTER_WITHOUT_HREF = /<Footer\b(?![^>]*\bhref=\{footerHref\})/;
 const FOOTER_FROM_PROFILE = /footerHref=\{[^}]*profile/;
-const EMPTY_OR_HTTPS_ORIGIN = /^$|^https:\/\/[^\s/?#@\\]+\/?$/;
+// URL drops an empty "?" or "#", so the text is checked too
+const QUERY_OR_FRAGMENT = /[?#]/;
 const LINE_COMMENT = /^\s*\/\/.*$/gm;
 const TRAILING_COMMA = /,(\s*[}\]])/g;
 
@@ -351,7 +353,17 @@ describe("POLARIS_SITE_URL by environment (AC-11)", () => {
     "is empty or a bare https origin in %s",
     (_environment, value) => {
       expect(typeof value).toBe("string");
-      expect(value).toMatch(EMPTY_OR_HTTPS_ORIGIN);
+      if (value === "" || value === undefined) {
+        return;
+      }
+      // the footer must really link to it: the page treats an address it refuses as none, and nothing fails
+      expect(polarisSiteHref(value)).not.toBeNull();
+      const url = new URL(value);
+      expect(url.protocol).toBe("https:");
+      expect(url.pathname).toBe("/");
+      expect(url.search).toBe("");
+      expect(url.hash).toBe("");
+      expect(value).not.toMatch(QUERY_OR_FRAGMENT);
     }
   );
 });
