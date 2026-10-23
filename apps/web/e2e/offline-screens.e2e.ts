@@ -45,7 +45,29 @@ async function register(page: Page, customer: { name: string; phone: string }) {
 
 const chip = (page: Page) => page.locator(".sync-status");
 const card = (page: Page, name: string) =>
-  page.locator(".customer-card", { hasText: name });
+  page.locator("[data-customer-id]", { hasText: name });
+
+/** The actions of a customer are in the menu of its row: opens it and gives the item. */
+async function customerMenuItem(page: Page, customer: string, item: string) {
+  await page
+    .getByRole("button", { name: `Mais ações para ${customer}` })
+    .click();
+  return page.getByRole("menuitem", { exact: true, name: item });
+}
+
+/** Opens the menu of the row, says whether the item is on, and closes it. */
+async function expectCustomerItem(
+  page: Page,
+  customer: string,
+  item: string,
+  state: "disabled" | "enabled"
+) {
+  const entry = await customerMenuItem(page, customer, item);
+  await (state === "enabled"
+    ? expect(entry).toBeEnabled()
+    : expect(entry).toBeDisabled());
+  await page.keyboard.press("Escape");
+}
 
 test("com rede, cadastra pelo aparelho, o servidor confirma e o selo de envio some", async ({
   page,
@@ -58,9 +80,10 @@ test("com rede, cadastra pelo aparelho, o servidor confirma e o selo de envio so
   await expect(page.getByTestId("server-records")).toHaveText("1", {
     timeout: 20_000,
   });
-  await expect(
-    card(page, "Ana Lima").locator(".customer-sync-state")
-  ).toHaveCount(0, { timeout: 20_000 });
+  await expect(card(page, "Ana Lima").locator("[data-sync-state]")).toHaveCount(
+    0,
+    { timeout: 20_000 }
+  );
   await expect(chip(page)).toContainText("Tudo sincronizado");
 });
 
@@ -72,16 +95,12 @@ test("sem rede, cadastra e lista do aparelho, bloqueia a edição, e numa segund
   await start(page);
 
   await page.getByLabel("Rede disponível").uncheck();
-  await expect(
-    page.getByText("Sem conexão. Você pode cadastrar")
-  ).toBeVisible();
+  await expect(page.getByText("Cadastrar e editar funciona")).toBeVisible();
 
   await register(page, { name: "Bia Souza", phone: "11900000002" });
   await expect(page.getByText("Cliente salvo neste aparelho.")).toBeVisible();
   await expect(card(page, "Bia Souza")).toContainText("Aguardando envio");
-  await expect(
-    page.getByRole("button", { name: "Editar cliente Bia Souza" })
-  ).toBeDisabled();
+  await expectCustomerItem(page, "Bia Souza", "Editar", "disabled");
   await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
   await expect(page.getByTestId("server-records")).toHaveText("0");
 
@@ -105,7 +124,7 @@ test("sem rede, avisa de cliente repetido pelo telefone usando só os dados do a
 
   await register(page, { name: "Carla D.", phone: "11900000003" });
   await expect(page.getByText("Carla Dias").first()).toBeVisible();
-  await expect(page.getByText("Correspondência por telefone.")).toBeVisible();
+  await expect(page.getByText("Mesmo telefone")).toBeVisible();
   await page.getByRole("button", { name: "Criar mesmo assim" }).click();
   await expect(card(page, "Carla D.")).toBeVisible();
 });
@@ -124,11 +143,9 @@ test("voltando a rede, envia o que ficou guardado e confirma os clientes", async
     timeout: 20_000,
   });
   await expect(
-    card(page, "Duda Reis").locator(".customer-sync-state")
+    card(page, "Duda Reis").locator("[data-sync-state]")
   ).toHaveCount(0, { timeout: 20_000 });
-  await expect(
-    page.getByRole("button", { name: "Editar cliente Duda Reis" })
-  ).toBeEnabled();
+  await expectCustomerItem(page, "Duda Reis", "Editar", "enabled");
 });
 
 async function registerConfirmed(page: Page, name: string, phone: string) {
@@ -136,14 +153,13 @@ async function registerConfirmed(page: Page, name: string, phone: string) {
   await expect(page.getByTestId("server-records")).toHaveText("1", {
     timeout: 20_000,
   });
-  await expect(card(page, name).locator(".customer-sync-state")).toHaveCount(
-    0,
-    { timeout: 20_000 }
-  );
+  await expect(card(page, name).locator("[data-sync-state]")).toHaveCount(0, {
+    timeout: 20_000,
+  });
 }
 
 async function editName(page: Page, from: string, to: string) {
-  await page.getByRole("button", { name: `Editar cliente ${from}` }).click();
+  await (await customerMenuItem(page, from, "Editar")).click();
   await page.locator("#customer-name").fill(to);
   await page.getByRole("button", { name: "Salvar alterações" }).click();
 }
@@ -160,23 +176,17 @@ test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o 
   await expect(page.getByText("Alteração salva neste aparelho.")).toBeVisible();
   const edited = card(page, "Eva Costa Lima");
   await expect(edited).toContainText("Alteração aguardando envio");
-  await expect(
-    page.getByRole("button", { name: "Editar cliente Eva Costa Lima" })
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Arquivar cliente Eva Costa Lima" })
-  ).toBeDisabled();
+  await expectCustomerItem(page, "Eva Costa Lima", "Editar", "disabled");
+  await expectCustomerItem(page, "Eva Costa Lima", "Arquivar", "disabled");
   await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
 
   await page.getByLabel("Rede disponível").check();
   await expect(chip(page)).toContainText("Tudo sincronizado", {
     timeout: 20_000,
   });
-  await expect(edited.locator(".customer-sync-state")).toHaveCount(0);
+  await expect(edited.locator("[data-sync-state]")).toHaveCount(0);
   await expect(edited).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Editar cliente Eva Costa Lima" })
-  ).toBeEnabled();
+  await expectCustomerItem(page, "Eva Costa Lima", "Editar", "enabled");
 });
 
 test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar não", async ({
@@ -187,18 +197,13 @@ test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar n
   await registerConfirmed(page, "Gil Alves", "11900000006");
 
   await page.getByLabel("Rede disponível").uncheck();
+  await expectCustomerItem(page, "Gil Alves", "Editar", "enabled");
+  await expectCustomerItem(page, "Gil Alves", "Arquivar", "disabled");
+  await expectCustomerItem(page, "Gil Alves", "Anonimizar", "disabled");
+  // said once, at the top, and not in every row
   await expect(
-    page.getByRole("button", { name: "Editar cliente Gil Alves" })
-  ).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "Arquivar cliente Gil Alves" })
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Anonimizar cliente Gil Alves" })
-  ).toBeDisabled();
-  await expect(card(page, "Gil Alves")).toContainText(
-    "Arquivar, restaurar e anonimizar precisam de conexão."
-  );
+    page.getByText("arquivar, restaurar e anonimizar precisam de conexão")
+  ).toBeVisible();
 });
 
 test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, sem sobrescrever nada", async ({
@@ -228,9 +233,7 @@ test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, 
   // the server's row (the other device's edit) is what the card shows, not the refused one
   await expect(refused).toContainText("(outro aparelho)");
   await expect(refused).not.toContainText("Filho");
-  await expect(
-    refused.getByRole("button", { name: "Editar cliente" })
-  ).toBeDisabled();
+  await expectCustomerItem(page, "Hugo Neri", "Editar", "disabled");
 });
 
 const productRow = (page: Page, name: string) =>

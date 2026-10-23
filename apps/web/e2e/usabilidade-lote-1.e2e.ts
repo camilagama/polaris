@@ -16,9 +16,11 @@ const ORGANIZATION = {
 const SESSION_MARKER_KEY = "polaris.sessionMarker";
 const DARK = /\bdark\b/;
 const RGBA_WITH_ALPHA = /^rgba\(.*,\s*0?\.\d+\)$/;
-const PRIMARY = /primary-button/;
+// the main action is the one in ink (the `default` variant of the button); the outline one has no `bg-primary`
+const PRIMARY = /bg-primary/;
 /** The sentence the chip used to say on every screen offline; an online-only screen must never promise it. */
 const NOT_STORED_ON_DEVICE = /tudo guardado neste aparelho/;
+const SLUG_ERROR_ID = /(^| )public-slug-error( |$)/;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -285,7 +287,7 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
   const errorBox = await error.boundingBox();
   const saveBox = await save.boundingBox();
   expect(Math.abs((saveBox?.y ?? 0) - (errorBox?.y ?? 0))).toBeLessThan(120);
-  await expect(page.locator(".customer-error")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(1);
   // the fields are marked and say why, and the focus goes to the first
   await expectMarked(page, "#customer-phone");
   await expectMarked(page, "#customer-email");
@@ -298,20 +300,21 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
     "true"
   );
 
-  // U-28: the 3 px ring plus its 3 px offset clear the text under a field
-  await page.evaluate(() => {
-    const field = document.querySelector("#customer-name");
-    const message = document.createElement("p");
-    message.className = "field-error";
-    message.textContent = "x";
-    field?.after(message);
-  });
-  const margin = await page
-    .locator("p.field-error")
-    .evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).marginTop)
-    );
-  expect(margin).toBeGreaterThanOrEqual(6);
+  // U-28: the 3 px halo of the field in focus clears the text of the error under it (6 px between the two)
+  await page.locator("#customer-phone").fill("");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  await page.locator("#customer-name").fill("");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const nameError = page.locator("#customer-name-error");
+  await expect(nameError).toHaveText("Informe o nome do cliente.");
+  await expect(page.locator("#customer-name")).toBeFocused();
+  const group = await page
+    .locator("#customer-name")
+    .locator("xpath=..")
+    .boundingBox();
+  const messageBox = await nameError.boundingBox();
+  const gap = (messageBox?.y ?? 0) - ((group?.y ?? 0) + (group?.height ?? 0));
+  expect(gap).toBeGreaterThanOrEqual(6);
 });
 
 test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a ação principal", async ({
@@ -321,14 +324,14 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
   await page.getByLabel("Rede disponível").uncheck();
   await register(page, "Carla Dias", "11900000003");
   await expect(
-    page.locator(".customer-card", { hasText: "Carla Dias" })
+    page.locator("[data-customer-id]", { hasText: "Carla Dias" })
   ).toBeVisible();
   await register(page, "Carla D.", "11900000003");
-  await expect(page.getByText("Correspondência por telefone.")).toBeVisible();
+  await expect(page.getByText("Mesmo telefone")).toBeVisible();
   // a live region that was there before the panel, now with the sentence
-  await expect(
-    page.locator('[role="status"].visually-hidden').first()
-  ).toContainText("Encontramos possíveis clientes existentes");
+  await expect(page.locator('p.sr-only[role="status"]').first()).toContainText(
+    "Encontramos possíveis clientes existentes"
+  );
   const useExisting = page.getByRole("button", {
     name: "Usar existente: Carla Dias",
   });
@@ -337,7 +340,7 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
   await expect(createAnyway).not.toHaveClass(PRIMARY);
   await createAnyway.click();
   await expect(
-    page.locator(".customer-card", { hasText: "Carla D." })
+    page.locator("[data-customer-id]", { hasText: "Carla D." })
   ).toBeVisible();
 });
 
@@ -433,10 +436,18 @@ test("U-48: erro 400 do servidor ao salvar não apaga o Nome nem o Endereço e a
     "O endereço precisa ter de 3 a 40 caracteres"
   );
   await expect(slug).toHaveAttribute("aria-invalid", "true");
-  await expect(slug).toHaveAttribute("aria-describedby", "public-slug-error");
+  await expect(slug).toHaveAttribute("aria-describedby", SLUG_ERROR_ID);
   await expect(slug).toBeFocused();
-  // and not at the top of the page
-  await expect(page.locator("h1 ~ .public-catalog-message")).toHaveCount(0);
+  // and the summary is under the button that was touched, not at the top of the page
+  const summary = page.getByText(
+    "O perfil não foi salvo. Corrija o campo indicado acima."
+  );
+  await expect(summary).toBeVisible();
+  const saveBox = await page
+    .getByRole("button", { name: "Salvar perfil" })
+    .boundingBox();
+  const summaryBox = await summary.boundingBox();
+  expect(summaryBox?.y ?? 0).toBeGreaterThan(saveBox?.y ?? 0);
   // fixing the address clears the mark
   await slug.fill("loja-da-ana-2");
   await expect(page.locator("#public-slug-error")).toHaveCount(0);
@@ -466,7 +477,7 @@ test("U-49: 'Perfil salvo.', 'Catálogo ligado.' e o erro aparecem junto do bot�
   const save = page.getByRole("button", { name: "Salvar perfil" });
   await save.click();
 
-  const form = page.locator("form.public-catalog-card");
+  const form = page.locator("form");
   const saved = form.getByText("Perfil salvo.");
   await expect(saved).toBeVisible();
   await expect(
@@ -477,13 +488,14 @@ test("U-49: 'Perfil salvo.', 'Catálogo ligado.' e o erro aparecem junto do bot�
   const savedBox = await saved.boundingBox();
   expect(savedBox?.y ?? 0).toBeGreaterThan(saveBox?.y ?? 0);
   expect((savedBox?.y ?? 0) - (saveBox?.y ?? 0)).toBeLessThan(120);
-  // nothing at the top of the page
-  await expect(page.locator("h1 ~ .public-catalog-message")).toHaveCount(0);
+  // nothing at the top of the page: the only live regions with text are the ones of the button that ran
+  await expect(page.getByText("Perfil salvo.")).toHaveCount(1);
 
   const toggle = page.getByRole("button", { name: "Ligar catálogo" });
   await toggle.click();
-  const switchCard = page.locator("section", {
-    has: page.getByRole("heading", { exact: true, name: "Catálogo" }),
+  const switchCard = page.getByRole("region", {
+    exact: true,
+    name: "Catálogo",
   });
   await expect(switchCard.getByText("Catálogo ligado.")).toBeVisible();
   await expect(
@@ -503,6 +515,9 @@ test("U-54: numa tela que só funciona online, o chip sem conexão diz que a tel
     "Sem conexão · esta tela precisa de internet"
   );
   await expect(chip).not.toHaveAttribute("title", NOT_STORED_ON_DEVICE);
+  // and the screen says what that means for what is typed: a strip of its own (an Alert), not only the chip
+  await expect(page.getByText("Esta tela precisa de conexão.")).toBeVisible();
+  await expect(page.getByText("O que você digitou fica aqui")).toBeVisible();
 });
 
 test("U-54: numa tela que guarda no aparelho, o chip sem fila diz só 'Sem conexão' (também ao leitor de tela)", async ({

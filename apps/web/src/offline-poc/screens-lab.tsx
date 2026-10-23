@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { ConnectionRequiredSlot } from "../app-shell/connection-required-notice";
+import { CategoriesPage } from "../catalog/categories-page";
 import { ProductsPage } from "../catalog/products-page";
 import { PublicCatalogPage } from "../catalog/public-catalog-page";
 import { CustomersPage } from "../customers/customers-page";
@@ -26,11 +27,11 @@ import { openBrowserDataChannel } from "../offline/runtime/data-channel";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
-import { SyncStatus } from "../offline/runtime/sync-status";
 import {
   type SyncScheduler,
   startSyncScheduler,
 } from "../offline/runtime/sync-scheduler";
+import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
@@ -64,6 +65,7 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
+  | "categories"
   | "change-password"
   | "customers"
   | "dashboard"
@@ -78,6 +80,7 @@ type LabScreen =
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
   return screen === "change-password" ||
+    screen === "categories" ||
     screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
@@ -142,6 +145,7 @@ function legalAcceptanceRefusal(): Error {
 }
 
 const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
+  categories: CategoriesPage,
   "change-password": ChangePasswordPage,
   customers: CustomersPage,
   dashboard: DashboardPage,
@@ -162,7 +166,9 @@ function LabScreenPage({ screen }: { screen: LabScreen }) {
 export function ScreensLab() {
   const screen = useMemo(labScreen, []);
   const onlineOnly =
-    screen === "payment-profiles" || screen === "public-catalog";
+    screen === "categories" ||
+    screen === "payment-profiles" ||
+    screen === "public-catalog";
   const [userId, setUserId] = useState("user-a");
   const [online, setOnline] = useState(true);
   const [started, setStarted] = useState(false);
@@ -231,12 +237,12 @@ export function ScreensLab() {
         },
         // the lab's switch, and the tab's connection state as in the app
         isOnline: () => network.online && browserConnection.isOnline(),
-        mayTry: () => network.online && navigator.onLine,
         keyValues: {
           read: (key) => window.localStorage.getItem(key),
           remove: (key) => window.localStorage.removeItem(key),
           write: (key, value) => window.localStorage.setItem(key, value),
         },
+        mayTry: () => network.online && navigator.onLine,
         namespaceFor: localNamespace,
         openDataChannel: openBrowserDataChannel,
         openStores: openRuntimeStores,
@@ -404,7 +410,7 @@ export function ScreensLab() {
             </p>
           </div>
           {started && onlineOnly ? (
-            <ConnectionRequiredSlot form={screen === "payment-profiles"} />
+            <ConnectionRequiredSlot form={screen !== "public-catalog"} />
           ) : null}
           {started ? <LabScreenPage screen={screen} /> : null}
         </main>

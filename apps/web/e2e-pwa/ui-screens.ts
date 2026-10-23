@@ -8,6 +8,11 @@ import {
 } from "./ui-account-states";
 import { entryStates, settle } from "./ui-entry-states";
 import { historyStates } from "./ui-history-states";
+import {
+  catalogStates,
+  categoryStates,
+  customerStates,
+} from "./ui-lot2-states";
 import { passwordStates } from "./ui-password-states";
 import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
@@ -201,6 +206,72 @@ async function exerciseProductMenu(page: Page) {
     { role: "menu" }
   );
 }
+
+/** The files of Categorias on the new interface (the pieces it shares with Clientes and the catalog are listed in each). */
+const CATEGORY_SOURCES = [
+  "src/catalog/categories-page.tsx",
+  "src/catalog/category-form.tsx",
+  "src/catalog/category-list.tsx",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/screen-parts.tsx",
+  "src/app-shell/connection-required-notice.tsx",
+];
+
+/** The files of Clientes on the new interface. */
+const CUSTOMER_SOURCES = [
+  "src/catalog/product-fields.tsx",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/screen-parts.tsx",
+  "src/customers/customer-form.tsx",
+  "src/customers/customer-list.tsx",
+  "src/customers/customers-page-parts.tsx",
+  "src/customers/customers-page.tsx",
+];
+
+/** The files of the public catalog of the ERP on the new interface. */
+const CATALOG_SOURCES = [
+  "src/catalog/product-fields.tsx",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/public-catalog-page.tsx",
+  "src/catalog/public-catalog-panels.tsx",
+  "src/catalog/screen-parts.tsx",
+  "src/app-shell/connection-required-notice.tsx",
+];
+
+/** One state of a screen of the lot 2 (`ui-lot2-states.ts`). */
+const lot2Screen = (
+  title: string,
+  sourceDirs: string[],
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `${title} ${name}`,
+  open,
+  sourceDirs,
+  status: "migrated",
+});
+const categoryScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+) => lot2Screen("categorias", CATEGORY_SOURCES, name, open, exercise);
+const customerScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+) => lot2Screen("clientes", CUSTOMER_SOURCES, name, open, exercise);
+const catalogScreen = (name: string, open: (page: Page) => Promise<void>) =>
+  lot2Screen("catálogo público", CATALOG_SOURCES, name, open);
+
+/** Opens the menu of a row and closes it with Escape, so the motion recorder sees it. */
+const exerciseRowMenu = (name: string) => (page: Page) =>
+  openAndClose(
+    page,
+    { name: `Mais ações para ${name}`, role: "button" },
+    { role: "menu" }
+  );
 
 async function exerciseSalePayment(page: Page) {
   await openAndClose(
@@ -556,6 +627,15 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  categoryScreen("lista", categoryStates.list, exerciseRowMenu("Camisetas")),
+  categoryScreen("remover", categoryStates.remove),
+  categoryScreen("sem conexão", categoryStates.offline),
+  customerScreen("lista", customerStates.list, exerciseRowMenu("Ana Lima")),
+  customerScreen("cliente parecido", customerStates.duplicate),
+  customerScreen("sem conexão, cliente guardado", customerStates.offline),
+  catalogScreen("no ar", catalogStates.live),
+  catalogScreen("endereço recusado", catalogStates.slugError),
+  catalogScreen("sem conexão", catalogStates.offline),
   paymentScreen("lista", paymentStates.list),
   paymentScreen("edição", paymentStates.edit, exercisePaymentMethod),
   paymentScreen("erros nos campos", paymentStates.errors),
