@@ -181,6 +181,25 @@ describe("selling offline", () => {
     expect(totalDue).toBe("100.00");
   });
 
+  it("the pending list carries what the customer owes, the same total the server computes (P-3)", async () => {
+    const { outbox, sell } = await setup();
+    await sell([{ quantity: 2, variantId: shirt }]);
+    const second = await sell(
+      [{ chargedUnitPrice: "45.00", quantity: 2, variantId: shirt }],
+      {
+        adjustments: [
+          { kind: "freight", value: { amount: "10.00", type: "fixed" } },
+        ],
+      }
+    );
+    const pending = await pendingSales(outbox);
+    expect(pending.map((sale) => sale.totalDue)).toEqual([
+      "100.00",
+      second.totalDue,
+    ]);
+    expect(second.totalDue).toBe("100.00");
+  });
+
   it("needs a price for a variant without a list price, and a known variant", async () => {
     const { outbox, sell } = await setup();
     await expect(

@@ -473,7 +473,7 @@ async function saleFlow(
     async () => {
       await click(browser, "button=Guardar venda neste aparelho");
       await waitForText(browser, "Venda guardada neste aparelho");
-      await waitForText(browser, "Vendas neste aparelho aguardando o servidor");
+      await waitForText(browser, "Vendas guardadas neste aparelho");
       await waitForText(browser, "Sem conexão · 1 operação guardada");
       await waitForTestId(browser, "server-records", "0");
     }
@@ -499,11 +499,7 @@ async function saleFlow(
       await goOnline(browser, sessionId);
       await setChecked(browser, "Rede disponível", true);
       await waitForTestId(browser, "server-records", "1");
-      await waitForText(
-        browser,
-        "Vendas neste aparelho aguardando o servidor",
-        true
-      );
+      await waitForText(browser, "Vendas guardadas neste aparelho", true);
     }
   );
 

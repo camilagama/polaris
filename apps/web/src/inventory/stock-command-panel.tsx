@@ -93,6 +93,8 @@ interface ActionsProps {
   onBack: () => void;
   onClose: () => void;
   onConfirm: () => void;
+  /** Set while the attempt is locked and the discard was not asked yet: the outline button after the safe retry. */
+  onDiscardRequest: (() => void) | undefined;
   onReview: () => void;
   submitting: boolean;
   blocked: boolean;
@@ -109,6 +111,7 @@ function Actions({
   onBack,
   onClose,
   onConfirm,
+  onDiscardRequest,
   onReview,
   submitting,
 }: ActionsProps) {
@@ -139,6 +142,11 @@ function Actions({
       {closable ? (
         <Button onClick={onClose} type="button" variant="ghost">
           {confirming ? "Cancelar" : "Fechar"}
+        </Button>
+      ) : null}
+      {onDiscardRequest ? (
+        <Button onClick={onDiscardRequest} type="button" variant="outline">
+          Descartar esta tentativa
         </Button>
       ) : null}
     </div>
@@ -414,7 +422,7 @@ export function StockCommandPanel({
           {labels.title}
         </h3>
         <p className="text-muted-foreground text-support">
-          {state.target.productName} — {state.target.variantText}. Saldo atual:{" "}
+          {state.target.productName} · {state.target.variantText}. Saldo atual:{" "}
           {unitsText(state.target.quantity)} · custo médio:{" "}
           {targetCostText(state.target)}.
         </p>
@@ -455,7 +463,6 @@ export function StockCommandPanel({
             failure={submission.failure}
             onDiscardCancel={handleDiscardCancel}
             onDiscardConfirm={handleDiscardConfirm}
-            onDiscardRequest={handleDiscardRequest}
           />
         ) : null}
         <Actions
@@ -468,6 +475,11 @@ export function StockCommandPanel({
           onBack={handleBack}
           onClose={onClose}
           onConfirm={handleConfirmEvent}
+          onDiscardRequest={
+            submission.phase === "locked" && !submission.confirmingDiscard
+              ? handleDiscardRequest
+              : undefined
+          }
           onReview={handleReview}
           submitting={submitting}
         />

@@ -161,7 +161,7 @@ describe("a target without the cost on the device", () => {
   it("shows the cost column as a connection matter, not as an unknown cost, in the list", () => {
     const [offlineRow] = stockRows([entry], true);
     expect(offlineRow?.costUnknown).toBe(false);
-    expect(offlineRow?.costText).toBe("Com conexão");
+    expect(offlineRow?.costText).toBe("Só com conexão");
     expect(offlineRow?.target.costUnavailable).toBe(true);
     const [onlineRow] = stockRows([entry]);
     expect(onlineRow?.costUnknown).toBe(true);

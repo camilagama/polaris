@@ -114,13 +114,13 @@ export function validateVariantDrafts(
       })
     );
   });
-  const combinationKeys = variants.map((variant) =>
-    JSON.stringify(
-      optionNames.map((name) =>
-        (variant.values[name] ?? "").trim().toLowerCase()
-      )
-    )
-  );
+  // a row still missing a value repeats nothing: only rows with every value chosen are compared
+  const combinationKeys = variants.flatMap((variant) => {
+    const chosen = optionNames.map((name) =>
+      (variant.values[name] ?? "").trim().toLowerCase()
+    );
+    return chosen.every(Boolean) ? [JSON.stringify(chosen)] : [];
+  });
   const combinationsAreUnique =
     new Set(combinationKeys).size === combinationKeys.length;
 

@@ -35,7 +35,7 @@ test("produto: categoria, produto e preço de tabela aparecem na lista e na vend
     .getByRole("button", { name: `Mais ações para ${productName}` })
     .click();
   await page.getByRole("menuitem", { name: "Variantes" }).click();
-  await page.getByLabel("Preço de tabela — Variante padrão").fill(price);
+  await page.getByLabel("Preço de tabela · Variante padrão").fill(price);
   await page.getByRole("button", { name: "Salvar preço" }).click();
   await expect
     .poll(async () => {

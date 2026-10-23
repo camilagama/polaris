@@ -17,7 +17,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
-const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
+const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 
 const THEMES = [
@@ -127,11 +127,12 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Usar agora" }).click();
   await expect(date).toHaveValue("");
   await expect(summary).toContainText("Desconto (5");
-  // only the total due is a live region, read whole when it changes
+  // two live regions, each read whole when it changes: the preview of fees (P-4) and the total due
   const live = summary.locator("[aria-live]");
-  await expect(live).toHaveCount(1);
-  await expect(live).toHaveAttribute("aria-atomic", "true");
-  await expect(live).toContainText("Total devido");
+  await expect(live).toHaveCount(2);
+  await expect(live.first()).toHaveAttribute("aria-atomic", "true");
+  await expect(live.last()).toHaveAttribute("aria-atomic", "true");
+  await expect(live.last()).toContainText("Total devido");
 }
 
 for (const theme of THEMES) {

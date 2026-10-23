@@ -211,7 +211,7 @@ export function stockRows(
   return entries.map((entry) => ({
     archived: entry.productStatus === "archived",
     costText: costUnavailable
-      ? "Com conexão"
+      ? "Só com conexão"
       : costText(entry.movingAverageCost),
     costUnknown: !costUnavailable && entry.movingAverageCost === null,
     id: entry.variantId,

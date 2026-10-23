@@ -34,7 +34,7 @@ const HOUR = 3_600_000;
 const SLOW_ANSWER_MS = 30_000;
 const DEVICE_KEY = "polaris.offline.device";
 const SESSION_USER_KEY = "polaris.offline.session-user";
-const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
+const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const leaseKey = (userId: string) =>

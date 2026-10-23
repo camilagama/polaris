@@ -1,4 +1,9 @@
-import { type ChangeEvent, type ComponentProps, useCallback } from "react";
+import {
+  type ChangeEvent,
+  type ComponentProps,
+  type Ref,
+  useCallback,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Field, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -47,6 +52,8 @@ interface ProductTextFieldProps extends FieldBaseProps {
    */
   errorOutside?: boolean | undefined;
   inputMode?: ComponentProps<"input">["inputMode"];
+  /** The input itself, for a screen that moves the focus to it (an error said at this field). */
+  inputRef?: Ref<HTMLInputElement> | undefined;
   maxLength?: number | undefined;
   onChange: (value: string) => void;
   placeholder?: string | undefined;
@@ -68,6 +75,7 @@ export function ProductTextField({
   hint,
   id,
   inputMode,
+  inputRef,
   label,
   maxLength,
   onChange,
@@ -99,6 +107,7 @@ export function ProductTextField({
           maxLength={maxLength}
           onChange={handleChange}
           placeholder={placeholder}
+          ref={inputRef}
           spellCheck={spellCheck}
           type={type}
           value={value}
