@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
 const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
@@ -9,7 +9,14 @@ const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
 async function openLab(
   page: Page,
   user: string,
-  screen: "customers" | "history" | "products" | "sale" | "stock" = "customers"
+  screen:
+    | "customers"
+    | "history"
+    | "payment-profiles"
+    | "products"
+    | "public-catalog"
+    | "sale"
+    | "stock" = "customers"
 ) {
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
@@ -566,8 +573,8 @@ async function serveSaleReadsOnly(page: Page) {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill({
       body: JSON.stringify({ json: { profiles: [] }, meta: [] }),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/rpc/inventory/listBalances", (route) =>
@@ -576,8 +583,8 @@ async function serveSaleReadsOnly(page: Page) {
         json: { entries: [SHIRT_ENTRY], nextCursor: null },
         meta: [],
       }),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/rpc/sale/confirm", (route) =>
@@ -796,8 +803,8 @@ const LEGAL_REFUSAL = {
     },
     meta: [],
   }),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status: 403,
 };
 
@@ -865,5 +872,453 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
     await expect(page.getByTestId("server-records")).toHaveText("0");
     expect(new URL(page.url()).pathname).toBe("/offline-screens-lab");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// F7: the connection state with proof (emenda do ADR 0043, U-57 to U-62). Two ways to lose the network:
+// "offline" is the browser's own (`navigator.onLine=false`); "mentindo" keeps `onLine=true` while `/rpc` and
+// `/health` fail, as a wi-fi with no internet, a captive portal or the Pixel after a reload.
+
+type Network = "mentindo" | "offline" | "ok";
+
+const cutNetwork = (route: Route) => route.abort("internetdisconnected");
+
+/** Puts the page's network in one of the three states; "ok" undoes the other two without an `online` event in "mentindo". */
+async function rede(page: Page, mode: Network) {
+  await page.unroute("**/rpc/**", cutNetwork);
+  await page.unroute("**/health", cutNetwork);
+  if (mode === "ok") {
+    await page.context().setOffline(false);
+    return;
+  }
+  // a fulfilled route still answers with the context offline: with no network, nothing answers
+  await page.route("**/rpc/**", cutNetwork);
+  await page.route("**/health", cutNetwork);
+  if (mode === "offline") {
+    await page.context().setOffline(true);
+  }
+}
+
+const healthRequests = (page: Page) => {
+  const seen: number[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/health") {
+      seen.push(Date.now());
+    }
+  });
+  return seen;
+};
+
+const WITH_FORM =
+  "Sem internet. Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
+const WITHOUT_FORM =
+  "Sem internet. Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
+
+const rpcAnswer = (json: unknown, status = 200) => ({
+  body: JSON.stringify({ json, meta: [] }),
+  contentType: "application/json",
+  headers: { ...WORKER_MARK },
+  status,
+});
+
+/** The public catalog of a store with no profile yet, answered by the Worker; counts the saves. */
+async function serveCatalogSetup(page: Page) {
+  const catalog = { saves: 0 };
+  await page.route("**/rpc/publicCatalog/**", (route) => {
+    const procedure = new URL(route.request().url()).pathname;
+    if (procedure.endsWith("/setup")) {
+      return route.fulfill(
+        rpcAnswer({
+          enabled: true,
+          profile: null,
+          publicOrigin: "https://catalogo.example",
+          publishedProductIds: [],
+        })
+      );
+    }
+    if (procedure.endsWith("/saveProfile")) {
+      catalog.saves += 1;
+    }
+    return route.fallback();
+  });
+  await page.route("**/rpc/product/list", (route) =>
+    route.fulfill(rpcAnswer({ products: [] }))
+  );
+  return catalog;
+}
+
+interface ProfilesServer {
+  creates: number;
+  lists: number;
+  profiles: { name: string }[];
+}
+
+/** The payment profile procedures the screen calls, answered by the Worker (with its mark). */
+async function serveProfiles(page: Page): Promise<ProfilesServer> {
+  const server: ProfilesServer = { creates: 0, lists: 0, profiles: [] };
+  await page.route("**/rpc/paymentProfile/**", (route) => {
+    const procedure = new URL(route.request().url()).pathname;
+    if (procedure.endsWith("/list")) {
+      server.lists += 1;
+      return route.fulfill(
+        rpcAnswer({
+          profiles: server.profiles.map((profile, index) => ({
+            createdAt: "2026-10-22T12:00:00.000Z",
+            id: `0199c2d0-0000-7000-8000-0000000b${String(index).padStart(4, "0")}`,
+            name: profile.name,
+            organizationId: "0199c2d0-0000-7000-8000-00000000a001",
+            rules: [],
+            status: "active",
+            updatedAt: "2026-10-22T12:00:00.000Z",
+            version: 1,
+          })),
+        })
+      );
+    }
+    if (procedure.endsWith("/create")) {
+      server.creates += 1;
+    }
+    return route.fallback();
+  });
+  return server;
+}
+
+for (const mode of ["offline", "mentindo"] as const) {
+  test.describe(`conexão com prova, modo ${mode}`, () => {
+    test(`U-57: o histórico mostra a faixa e as vendas do aparelho, sem erro de carregamento (${mode})`, async ({
+      page,
+    }) => {
+      const user = `user-${crypto.randomUUID()}`;
+      await openLab(page, user, "history");
+      await start(page, "Histórico de vendas");
+      await rede(page, mode);
+      if (mode === "mentindo") {
+        // the Pixel after a reload: `onLine` true and nothing gets through
+        await page.reload();
+        await page.getByLabel("Usuário").fill(user);
+        await page
+          .getByRole("button", { exact: true, name: "Iniciar" })
+          .click();
+      } else {
+        await page
+          .getByRole("button", { exact: true, name: "Sincronizar" })
+          .click();
+      }
+      await expect(
+        page.getByText("Sem conexão. Estas são as vendas mais recentes")
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByRole("list", { name: "Vendas" }).getByRole("listitem")
+      ).toHaveCount(3);
+      await expect(
+        page.getByText("Não foi possível carregar as vendas")
+      ).toHaveCount(0);
+    });
+
+    test(`U-58: o estoque mostra os saldos do aparelho, sem R$ 0,00 nem erro (${mode})`, async ({
+      page,
+    }) => {
+      await openStockLab(page, `user-${crypto.randomUUID()}`);
+      await rede(page, mode);
+      await page
+        .getByRole("button", { exact: true, name: "Sincronizar" })
+        .click();
+      await expect(
+        page.getByText("O saldo é o do aparelho, com o que está na fila.")
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(rowBalance(shirtRow(page))).toContainText("5");
+      await expect(shirtRow(page)).not.toContainText("R$ 0,00");
+      await expect(
+        page.getByText("Não foi possível carregar o estoque")
+      ).toHaveCount(0);
+    });
+
+    test(`U-62: a venda guarda no aparelho, com as variantes locais e nenhum erro preso (${mode})`, async ({
+      page,
+    }) => {
+      await openSaleLab(page, `user-${crypto.randomUUID()}`);
+      await rede(page, mode);
+      await page
+        .getByRole("button", { exact: true, name: "Sincronizar" })
+        .click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Sem internet." })
+      ).toBeVisible({ timeout: 15_000 });
+      await fillShirtSale(page, 1);
+      await expect(keepSale(page)).toBeVisible();
+      await expect(
+        page.getByText("Não foi possível carregar as variantes")
+      ).toHaveCount(0);
+      await keepSale(page).click();
+      await expect(chip(page)).toContainText("Offline · 1");
+    });
+
+    test(`U-60: perfis offline: faixa, lista "não carregaram", "Criar perfil" sem pedido e o nome fica (${mode})`, async ({
+      page,
+    }) => {
+      const server = await serveProfiles(page);
+      await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+      await rede(page, mode);
+      await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+      await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByText(
+          "Os perfis não carregaram. Eles aparecem quando a conexão voltar."
+        )
+      ).toBeVisible();
+      await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
+      await expect(page.getByText("Tentar novamente")).toHaveCount(0);
+      await page.getByLabel("Nome do perfil").fill("Maquininha");
+      const create = page.getByRole("button", { name: "Criar perfil" });
+      await expect(create).toHaveAttribute("aria-disabled", "true");
+      await expect(create).toHaveAttribute(
+        "aria-describedby",
+        "connection-required-text"
+      );
+      // focusable and pressable (the pattern of a control off with a reason), and nothing leaves
+      await create.click({ force: true });
+      await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+      expect(server.creates).toBe(0);
+      // the connection returns: the list is read again (a read, never the POST)
+      await rede(page, "ok");
+      await expect(page.getByText(WITH_FORM)).toHaveCount(0, {
+        timeout: 20_000,
+      });
+      await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+      expect(server.creates).toBe(0);
+      await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+    });
+
+    test(`U-59: o catálogo aberto sem conexão mostra só a faixa e carrega sozinho na volta (${mode})`, async ({
+      page,
+    }) => {
+      await serveCatalogSetup(page);
+      await openLab(page, `user-${crypto.randomUUID()}`, "public-catalog");
+      await rede(page, mode);
+      await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+      await expect(page.getByText(WITHOUT_FORM)).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(
+        page.getByRole("button", { name: "Salvar perfil" })
+      ).toHaveCount(0);
+      await expect(page.getByText("Perfil salvo.")).toHaveCount(0);
+      await expect(
+        page.getByText("Não foi possível carregar o catálogo público")
+      ).toHaveCount(0);
+      await rede(page, "ok");
+      await expect(page.getByLabel("Nome público")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByText(WITHOUT_FORM)).toHaveCount(0);
+    });
+
+    test(`U-59: o catálogo carregado antes do corte guarda o texto, e "Salvar perfil" não envia (${mode})`, async ({
+      page,
+    }) => {
+      const catalog = await serveCatalogSetup(page);
+      await openLab(page, `user-${crypto.randomUUID()}`, "public-catalog");
+      await start(page, "Catálogo público");
+      await page.getByLabel("Nome público").fill("Loja da Ana");
+      await rede(page, mode);
+      await page
+        .getByRole("button", { exact: true, name: "Sincronizar" })
+        .click();
+      await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+      const save = page.getByRole("button", { name: "Salvar perfil" });
+      await expect(save).toHaveAttribute("aria-disabled", "true");
+      await save.click({ force: true });
+      await expect(page.getByLabel("Nome público")).toHaveValue("Loja da Ana");
+      await expect(page.getByText("Perfil salvo.")).toHaveCount(0);
+      expect(catalog.saves).toBe(0);
+    });
+  });
+}
+
+test.describe("conexão com prova", () => {
+  test("U-60: o POST cortado diz que não sabe, não reenvia, e a releitura confirma o perfil salvo", async ({
+    page,
+  }) => {
+    const server = await serveProfiles(page);
+    await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+    await start(page, "Perfis de pagamento");
+    await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+    // the server saves it, but the answer never comes back, and the network goes with it
+    await page.route("**/rpc/paymentProfile/create", async (route) => {
+      server.creates += 1;
+      server.profiles.push({ name: "Maquininha" });
+      await page.route("**/health", cutNetwork);
+      await route.abort("connectionreset");
+    });
+    await page.getByLabel("Nome do perfil").fill("Maquininha");
+    await page.getByRole("button", { name: "Criar perfil" }).click();
+    await expect(
+      page.getByText(
+        "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo."
+      )
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+    await expect(
+      page.getByRole("button", { name: "Criar perfil" })
+    ).toBeVisible();
+
+    await page.unroute("**/health", cutNetwork);
+    await expect(
+      page.getByText("O perfil “Maquininha” foi salvo.")
+    ).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByLabel("Nome do perfil")).toHaveValue("");
+    expect(server.creates).toBe(1); // read again, never sent again
+  });
+
+  test("um erro de rede isolado, com /health respondendo, não troca a tela para offline", async ({
+    page,
+  }) => {
+    await openStockLab(page, `user-${crypto.randomUUID()}`);
+    let cut = false;
+    await page.route("**/rpc/__screens-lab", (route) => {
+      if (!cut) {
+        cut = true;
+        return route.abort("connectionreset");
+      }
+      return route.fallback();
+    });
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    await expect(page.getByTestId("message")).toContainText("Sincronizar: ok");
+    await page.waitForTimeout(3000);
+    await expect(
+      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+    ).toHaveCount(0);
+    await expect(chip(page)).not.toContainText("Offline");
+  });
+
+  test("portal cativo: HTML 200 em /rpc e em /health é sem conexão", async ({
+    page,
+  }) => {
+    await openLab(page, `user-${crypto.randomUUID()}`, "history");
+    await start(page, "Histórico de vendas");
+    const portal = (route: Route) =>
+      route.fulfill({
+        body: "<html><title>Wi-Fi</title></html>",
+        contentType: "text/html",
+        status: 200,
+      });
+    await page.route("**/rpc/**", portal);
+    await page.route("**/health", portal);
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    await expect(
+      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(chip(page)).toContainText("Offline");
+  });
+
+  test("recarga com o 'offline desde' vencido (90 s) abre offline em até 5 s", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    await openLab(page, user, "history");
+    await start(page, "Histórico de vendas");
+    await rede(page, "mentindo");
+    await page.evaluate(() =>
+      window.sessionStorage.setItem(
+        "polaris.connection.offline-since",
+        JSON.stringify({
+          seen: Date.now() - 90_000,
+          since: Date.now() - 120_000,
+        })
+      )
+    );
+    await page.reload();
+    await page.getByLabel("Usuário").fill(user);
+    const clicked = Date.now();
+    await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+    await expect(
+      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+    ).toBeVisible({ timeout: 5000 });
+    expect(Date.now() - clicked).toBeLessThan(5000);
+  });
+
+  test("sondas: nenhuma online, no máximo 9 no 1º minuto offline e nenhuma com a página escondida", async ({
+    page,
+  }) => {
+    await page.clock.install();
+    const probes = healthRequests(page);
+    await openLab(page, `user-${crypto.randomUUID()}`, "stock");
+    // online, nothing in doubt: no probe in two minutes
+    await page.clock.runFor(120_000);
+    expect(probes).toHaveLength(0);
+
+    await start(page, "Estoque");
+    await rede(page, "mentindo");
+    const before = probes.length;
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    await expect(
+      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+    ).toBeVisible({ timeout: 15_000 });
+    await page.clock.runFor(60_000);
+    // the first minute offline, counted from the probe that found it
+    expect(probes.length - before).toBeGreaterThan(0);
+    expect(probes.length - before).toBeLessThanOrEqual(9);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    const hidden = probes.length;
+    await page.clock.runFor(180_000);
+    expect(probes.length).toBe(hidden);
+  });
+
+  test("U-61 mentindo: a rede volta sem o evento online e as 2 vendas chegam em até 16 s", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await rede(page, "mentindo");
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    for (const sale of [1, 2]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each sale is kept after the form of the previous one cleared
+      await fillShirtSale(page, 1);
+      await keepSale(page).click();
+      await expect(chip(page)).toContainText(`Offline · ${sale}`);
+    }
+    const back = Date.now();
+    await rede(page, "ok");
+    await expect(page.getByTestId("server-records")).toHaveText("2", {
+      timeout: 16_000,
+    });
+    expect(Date.now() - back).toBeLessThanOrEqual(16_000);
+    await expect(chip(page)).toContainText("Sincronizado", { timeout: 10_000 });
+  });
+
+  test("U-61 offline: com o evento online, as 2 vendas saem em até 3 s", async ({
+    page,
+  }) => {
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+    await rede(page, "offline");
+    for (const sale of [1, 2]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each sale is kept after the form of the previous one cleared
+      await fillShirtSale(page, 1);
+      await keepSale(page).click();
+      await expect(chip(page)).toContainText(`Offline · ${sale}`);
+    }
+    const back = Date.now();
+    await rede(page, "ok");
+    await expect(page.getByTestId("server-records")).toHaveText("2", {
+      timeout: 3000,
+    });
+    expect(Date.now() - back).toBeLessThanOrEqual(3000);
   });
 });
