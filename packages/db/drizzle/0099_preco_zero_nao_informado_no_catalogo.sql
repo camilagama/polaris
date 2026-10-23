@@ -165,7 +165,6 @@ BEGIN
   );
 END;
 $function$;--> statement-breakpoint
--- where a public picture lives, only for a picture of a product that is shown; NULL otherwise
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_catalog_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_catalog_owner;
