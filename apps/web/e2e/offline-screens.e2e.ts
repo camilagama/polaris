@@ -115,7 +115,7 @@ test("sem rede, avisa de cliente repetido pelo telefone usando só os dados do a
 
   await register(page, { name: "Carla D.", phone: "11900000003" });
   await expect(page.getByText("Carla Dias").first()).toBeVisible();
-  await expect(page.getByText("Correspondência por telefone.")).toBeVisible();
+  await expect(page.getByText("Mesmo telefone")).toBeVisible();
   await page.getByRole("button", { name: "Criar mesmo assim" }).click();
   await expect(card(page, "Carla D.")).toBeVisible();
 });

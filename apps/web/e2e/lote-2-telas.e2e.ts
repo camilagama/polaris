@@ -275,14 +275,16 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
     name: "Confirmar remoção de Camisetas",
   });
   await expect(confirmation).toBeFocused();
-  await expect(confirmation).toContainText("o histórico e o nome ficam");
+  await expect(confirmation).toContainText(
+    "O histórico de vendas continua igual."
+  );
   await confirmation.getByRole("button", { name: "Cancelar" }).click();
   await expect(confirmation).toHaveCount(0);
   expect(removed).toEqual([]);
 
   await menuOf(page, "Camisetas").click();
   await page.getByRole("menuitem", { exact: true, name: "Remover" }).click();
-  await page.getByRole("button", { name: "Confirmar remoção" }).click();
+  await page.getByRole("button", { name: "Remover categoria" }).click();
   await expect(page.getByText("Categoria “Camisetas” removida;")).toBeVisible();
   expect(removed).toHaveLength(1);
 
@@ -399,7 +401,7 @@ test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e de
   await name.fill("Bia Souza");
   await page.getByLabel("Telefone").fill("11900000002");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-  await expect(page.getByText("Cliente cadastrado.")).toBeVisible();
+  await expect(page.getByText("Cliente cadastrado.").first()).toBeVisible();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
 });
@@ -545,9 +547,7 @@ test("Catálogo público: sem nada para salvar o botão diz por quê, e Enter nu
     "publicCatalog/setup": reply(SETUP),
   });
   const save = page.getByRole("button", { name: "Salvar perfil" });
-  await expect(save).toHaveAccessibleDescription(
-    "Altere algum campo para salvar."
-  );
+  await expect(save).toHaveAccessibleDescription("Nada mudou para salvar.");
   await page.getByLabel("Instagram").press("Enter");
   expect(saves).toBe(0);
 });

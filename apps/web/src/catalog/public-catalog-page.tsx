@@ -282,7 +282,7 @@ export function PublicCatalogPage() {
       ) : null}
       {planBlocks ? (
         <Alert id={PLAN_NOTICE_ID} variant="warning">
-          <AlertTitle>Fora do plano.</AlertTitle>
+          <AlertTitle>Seu plano não inclui o catálogo público.</AlertTitle>
           <AlertDescription>
             O catálogo público faz parte do plano Pro. Você pode ver o que já
             está guardado, mas só poderá salvar o perfil e escolher produtos

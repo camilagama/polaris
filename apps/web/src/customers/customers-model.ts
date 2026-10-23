@@ -1,5 +1,5 @@
 import type { CustomerReadModel } from "@polaris/contracts";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
+import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import type { CustomerDraft } from "./customer-draft";
@@ -31,14 +31,6 @@ export function isCustomerListStatus(
   value: string
 ): value is CustomerListStatus {
   return value === "active" || value === "archived";
-}
-
-function rpcErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  const { code } = error as { code?: unknown };
-  return typeof code === "string" ? code : undefined;
 }
 
 /** What did not happen, without the sentence about the session: the notice of the shell carries that one. */

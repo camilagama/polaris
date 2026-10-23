@@ -130,8 +130,10 @@ describe("the list of categories", () => {
   it("asks again before a removal, in the row, naming the category and what stays", () => {
     const html = render({ pendingDeleteId: category(2, "Calçados").id });
     expect(html).toContain("Confirmar remoção de Calçados");
-    expect(html).toContain("o histórico e o nome ficam preservados");
-    expect(html).toContain("Confirmar remoção</button>");
+    expect(html).toContain("Ela some da lista e não pode ser restaurada.");
+    expect(html).toContain("O histórico de vendas continua igual.");
+    expect(html).toContain("“Calçados”");
+    expect(html).toContain("Remover categoria</button>");
   });
 
   it("says what a row is doing, and locks the menu of that row while it does", () => {

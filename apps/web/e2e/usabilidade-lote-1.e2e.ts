@@ -317,7 +317,7 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
     page.locator("[data-customer-id]", { hasText: "Carla Dias" })
   ).toBeVisible();
   await register(page, "Carla D.", "11900000003");
-  await expect(page.getByText("Correspondência por telefone.")).toBeVisible();
+  await expect(page.getByText("Mesmo telefone")).toBeVisible();
   // a live region that was there before the panel, now with the sentence
   await expect(page.locator('p.sr-only[role="status"]').first()).toContainText(
     "Encontramos possíveis clientes existentes"

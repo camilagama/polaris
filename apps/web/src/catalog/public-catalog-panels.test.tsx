@@ -152,7 +152,7 @@ describe("the profile form", () => {
     expect(html).toContain("https://catalogo.example/loja-da-ana");
     expect(html).toMatch(OFF_SAVE);
     expect(html).toMatch(DESCRIBED_BY_SAVE_REASON);
-    expect(html).toContain("Altere algum campo para salvar.");
+    expect(html).toContain("Nada mudou para salvar.");
     expect(html).toContain("280 caracteres");
   });
 

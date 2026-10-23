@@ -82,6 +82,15 @@ interface CandidateProps {
   onUseExisting: (customer: CustomerReadModel) => void;
 }
 
+/** What the two customers have in common, in the order the person reads it: "Mesmo email e telefone". */
+function matchLabel(matchedBy: Array<"email" | "phone">): string {
+  const fields = [
+    matchedBy.includes("email") ? "email" : null,
+    matchedBy.includes("phone") ? "telefone" : null,
+  ].filter((field) => field !== null);
+  return `Mesmo ${fields.join(" e ")}`;
+}
+
 function DuplicateCandidate({
   customer,
   disabled,
@@ -108,11 +117,7 @@ function DuplicateCandidate({
           {[customer.phone, customer.email].filter(Boolean).join(" · ")}
         </p>
         <p className="text-muted-foreground text-support">
-          Correspondência por{" "}
-          {matchedBy
-            .map((field) => (field === "email" ? "email" : "telefone"))
-            .join(" e ")}
-          .
+          {matchLabel(matchedBy)}
         </p>
         {archived ? (
           <p className="text-muted-foreground text-support">

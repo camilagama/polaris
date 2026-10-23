@@ -2,7 +2,7 @@ import {
   type CategoryReadModel,
   categoryNameCodePointLength,
 } from "@polaris/contracts";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
+import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
 
 export type CategoryListStatus = "active" | "archived" | "deleted";
 export type CategoryAction = "archive" | "delete" | "restore";
@@ -46,14 +46,6 @@ export function categoryNameCountLabel(name: string): string {
   return count > MAX_CATEGORY_NAME
     ? `Limite de ${MAX_CATEGORY_NAME} caracteres excedido (${count}).`
     : `${count}/${MAX_CATEGORY_NAME} caracteres`;
-}
-
-function rpcErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  const { code } = error as { code?: unknown };
-  return typeof code === "string" ? code : undefined;
 }
 
 export type CategoryFailure = CategoryAction | "create" | "rename";

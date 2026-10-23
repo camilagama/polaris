@@ -242,7 +242,7 @@ export function ProfileForm(props: ProfileFormProps) {
                 className="text-muted-foreground text-support"
                 id={SAVE_REASON_ID}
               >
-                Altere algum campo para salvar.
+                Nada mudou para salvar.
               </p>
             ) : null}
           </div>

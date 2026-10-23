@@ -228,11 +228,12 @@ function DeleteConfirm({
     >
       <legend className="sr-only">Confirmar remoção de {category.name}</legend>
       <p className="text-support">
+        Remover{" "}
         <strong className="font-medium [overflow-wrap:anywhere]">
-          {category.name}
+          “{category.name}”
         </strong>
-        : a remoção é permanente na lista; o histórico e o nome ficam
-        preservados.
+        ? Ela some da lista e não pode ser restaurada. O histórico de vendas
+        continua igual.
       </p>
       <div className="flex flex-wrap gap-3">
         <Button
@@ -249,7 +250,7 @@ function DeleteConfirm({
           type="button"
           variant="destructive"
         >
-          Confirmar remoção
+          Remover categoria
         </Button>
       </div>
     </fieldset>

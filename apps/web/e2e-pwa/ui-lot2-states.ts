@@ -152,7 +152,7 @@ export const customerStates = {
     await page.getByText("Carla Dias").first().waitFor();
     await noPendingRow(page);
     await register(page, "Carla D.", "11900000003");
-    await page.getByText("Correspondência por telefone.").waitFor();
+    await page.getByText("Mesmo telefone").waitFor();
     await showScreenAlone(page);
   },
 
