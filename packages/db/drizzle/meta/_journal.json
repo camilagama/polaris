@@ -687,6 +687,13 @@
       "when": 1792692452621,
       "tag": "0098_rls_das_tabelas_de_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1792743223276,
+      "tag": "0099_preco_zero_nao_informado_no_catalogo",
+      "breakpoints": true
     }
   ]
 }
