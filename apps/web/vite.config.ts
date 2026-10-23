@@ -17,13 +17,13 @@ const APP_CORE =
   /[\\/]apps[\\/]web[\\/]src[\\/](?:offline[\\/](?:customer-create|customer-update|product-create|sale-confirm|stock-commands)|offline[\\/]runtime[\\/]runtime-context|lib[\\/]current-organization|legal[\\/]legal-routes)\.ts$/;
 
 /**
- * The modules that Produtos, Categorias, Clientes and the public catalog share (field parts, the search model, the
- * screen parts and the online-only notice): with the four screens migrated the default split left each in a chunk of
+ * The modules that Produtos, Categorias, Clientes and the public catalog share (field parts, the search model and the
+ * screen parts): with the four screens migrated the default split left each in a chunk of
  * its own, 0.2 to 1.3 KB gzip, which compress worse alone (+2.8 KB over the main with the merge of the PR 255, past
  * the +46 KB ceiling). One chunk, +42.8 KB of +46 KB measured with Node.
  */
 const CATALOG_SHARED =
-  /[\\/]apps[\\/]web[\\/]src[\\/](?:catalog[\\/](?:product-fields|product-search-model|products-page-parts|screen-parts)|offline[\\/]runtime[\\/]online-only-notice)\.tsx?$/;
+  /[\\/]apps[\\/]web[\\/]src[\\/](?:catalog[\\/](?:product-fields|product-search-model|products-page-parts|screen-parts))\.tsx?$/;
 
 export default defineConfig(({ mode }) => {
   const sentry = sentryBuildSettings(
