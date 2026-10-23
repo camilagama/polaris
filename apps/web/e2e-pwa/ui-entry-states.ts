@@ -177,7 +177,7 @@ export const entryStates = {
     await openSignIn(page, { challenge: "blocked" });
     await typeCompleteEmail(page);
     await passwordField(page).fill(PASSWORD);
-    await page.getByRole("button", { name: "Tentar de novo" }).waitFor();
+    await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
     await settle(page);
   },
   signInEmailComplete: async (page: Page) => {
@@ -281,7 +281,7 @@ export const entryStates = {
   signUpBlocked: async (page: Page) => {
     await openSignUp(page, { challenge: "blocked" });
     await typeCompleteEmail(page, "nova@exemplo.com");
-    await page.getByRole("button", { name: "Tentar de novo" }).waitFor();
+    await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
     await settle(page);
   },
   signUpChecking: async (page: Page) => {

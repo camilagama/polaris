@@ -174,7 +174,7 @@ export function OutboxLab() {
   );
   const handleRetry = useCallback(
     () =>
-      run("Tentar de novo", async () => {
+      run("Tentar novamente", async () => {
         const { first, store } = await head();
         await store.outbox.retry(first.commandId);
       }),
@@ -265,7 +265,7 @@ export function OutboxLab() {
           Rejeitar
         </button>
         <button onClick={handleRetry} type="button">
-          Tentar de novo
+          Tentar novamente
         </button>
         <button onClick={handleRecover} type="button">
           Recuperar

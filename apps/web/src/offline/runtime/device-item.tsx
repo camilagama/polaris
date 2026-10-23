@@ -56,7 +56,7 @@ const THIS_DEVICE_ONLINE_HELP = (
   </>
 );
 const THIS_DEVICE_OFFLINE_HELP =
-  "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho.";
+  "Sair sem internet não tira este aparelho da lista. Ele sai quando você sair conectado, ou pode ser revogado de outro aparelho.";
 
 interface RevokeFormProps {
   actionError: string | null;

@@ -11,7 +11,7 @@ export const SIGN_IN_FIRST_TIME = "Primeira vez? O botão também cria a conta."
 
 export const GOOGLE_BUTTON = "Continuar com o Google";
 export const GOOGLE_BUTTON_PENDING = "Abrindo o Google…";
-export const GOOGLE_RETRY = "Tentar de novo";
+export const GOOGLE_RETRY = "Tentar novamente";
 export const SIGN_IN_ENTERING = "Entrando…";
 export const SIGN_IN_CHECKING = "Verificando se você já entrou…";
 

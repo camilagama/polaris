@@ -152,7 +152,7 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
   const google = useGoogleStart(search.returnTo);
   const { startedRef } = google;
   const [reconnected, setReconnected] = useState(false);
-  // bumped by "Tentar de novo" (Google off): the lookups run again
+  // bumped by "Tentar novamente" (Google off): the lookups run again
   const [lookupRound, setLookupRound] = useState(0);
 
   useEffect(() => {

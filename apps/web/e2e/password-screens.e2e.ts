@@ -557,7 +557,7 @@ test.describe("entrar com e-mail e senha", () => {
 });
 
 test.describe("desafio bloqueado (P2)", () => {
-  test("entrar, criar conta e esqueci a senha: a frase e 'Tentar de novo', sem recarregar o que foi digitado", async ({
+  test("entrar, criar conta e esqueci a senha: a frase e 'Tentar novamente', sem recarregar o que foi digitado", async ({
     page,
   }) => {
     const server = newServer({ turnstile: "blocked" });
@@ -568,10 +568,10 @@ test.describe("desafio bloqueado (P2)", () => {
     await shot(page, "esqueci-desafio-bloqueado");
     // the person freed the site in the blocker: asking again loads the script, the form keeps its text
     // still blocked: the button stays where it was, with the focus, and the alert comes back unchanged
-    const again = page.getByRole("button", { name: "Tentar de novo" });
+    const again = page.getByRole("button", { name: "Tentar novamente" });
     await again.click();
     await expect(again).toBeFocused();
-    await expect(again).toHaveText("Tentar de novo");
+    await expect(again).toHaveText("Tentar novamente");
     await expect(page.getByRole("alert")).toContainText("Recarregue a página");
     server.turnstile = "ok";
     await again.click();
@@ -579,7 +579,7 @@ test.describe("desafio bloqueado (P2)", () => {
     // the block went away with the focus on it: the focus moves to the first field of the form
     await expect(page.getByLabel("E-mail", { exact: true })).toBeFocused();
     await expect(
-      page.getByRole("button", { name: "Tentar de novo" })
+      page.getByRole("button", { name: "Tentar novamente" })
     ).toHaveCount(0);
     await expect(page.getByLabel("E-mail", { exact: true })).toHaveValue(
       "quem@exemplo.com"
@@ -597,7 +597,7 @@ test.describe("desafio bloqueado (P2)", () => {
       await page.goto(path);
       await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
       await expect(
-        page.getByRole("button", { name: "Tentar de novo" })
+        page.getByRole("button", { name: "Tentar novamente" })
       ).toBeVisible();
     }
   });
@@ -641,11 +641,11 @@ test.describe("desafio bloqueado (P2)", () => {
       await shot(page, `${name}-desafio-bloqueado-botao`);
       // the script loads: the button is normal again
       server.turnstile = "ok";
-      await page.getByRole("button", { name: "Tentar de novo" }).click();
+      await page.getByRole("button", { name: "Tentar novamente" }).click();
       await expect(
-        page.getByRole("button", { name: "Tentar de novo" })
+        page.getByRole("button", { name: "Tentar novamente" })
       ).toHaveCount(0);
-      // "Tentando…" has another name than "Tentar de novo": wait for the alert to go, not only for the button
+      // "Tentando novamente…" has another name than "Tentar novamente": wait for the alert to go, not only for the button
       await expect(alert).toHaveCount(0);
       await expect.poll(() => submit.getAttribute("aria-disabled")).toBeNull();
       expect(await submit.getAttribute("aria-describedby")).toBeNull();
@@ -662,7 +662,7 @@ test.describe("desafio bloqueado (P2)", () => {
       "Não deu para carregar a confirmação. Libere este site no bloqueador de anúncios e abra o link de novo."
     );
     await expect(
-      page.getByRole("button", { name: "Tentar de novo" })
+      page.getByRole("button", { name: "Tentar novamente" })
     ).toHaveCount(0);
     await expect(page.locator("main")).not.toContainText("Recarregue");
     // a try with the script missing does nothing: the button is off (`aria-disabled`, still reachable), names the
