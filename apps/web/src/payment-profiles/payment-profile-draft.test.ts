@@ -233,9 +233,20 @@ describe("the fixed amount of a fee", () => {
     });
   });
 
-  it("does not count the saved profile as changed, so the screen does not warn about unsent work", () => {
-    const draft = profileDraft(saved);
-    expect(profileDraftKey(draft)).toBe(profileDraftKey(profileDraft(saved)));
+  it("does not count an unedited profile as changed, and counts the fixed amount typed again with another value", () => {
+    // the screen warns about unsent work by comparing the draft with the one the edit started from
+    const base = profileDraftKey(profileDraft(saved));
+    const typed = (fixedAmount: string) => {
+      const draft = profileDraft(saved);
+      const [rule] = draft.rules;
+      if (rule) {
+        rule.processingFee = { ...rule.processingFee, fixedAmount };
+      }
+      return profileDraftKey(draft);
+    };
+    // the same value typed by the person, with the comma, is what the field already showed
+    expect(typed("0,50")).toBe(base);
+    expect(typed("0,5")).not.toBe(base);
   });
 });
 
