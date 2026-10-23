@@ -273,7 +273,7 @@ export const resultStates = {
     await page.getByText("Estimativa incompleta").first().waitFor();
     served.offline = true;
     await signIn(page, user);
-    await page.getByText("Sem conexão com o servidor.").waitFor();
+    await page.getByText("Não foi possível falar com o servidor.").waitFor();
     await showScreenAlone(page);
   },
 };

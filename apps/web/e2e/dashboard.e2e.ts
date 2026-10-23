@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The real period result screen in a real browser, over a small in-memory
@@ -306,8 +306,8 @@ async function installServer(page: Page, server: FakeReportServer) {
     const answer = await server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   });
@@ -551,7 +551,9 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 });
 
 const copyNotice = (page: Page) =>
-  page.getByRole("status").filter({ hasText: "Sem conexão com o servidor." });
+  page
+    .getByRole("status")
+    .filter({ hasText: "Não foi possível falar com o servidor." });
 
 /** The months of the device copy of the results kept in this browser. */
 const cachedMonths = (page: Page) =>

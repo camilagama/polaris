@@ -11,7 +11,7 @@ interface GoalHistoryProps {
 }
 
 /** The id of the body "Histórico do alvo" opens, for the button's `aria-controls`. */
-export function historyBodyId(goal: GoalReadModel): string {
+function historyBodyId(goal: GoalReadModel): string {
   return `goal-history-${goal.id}`;
 }
 

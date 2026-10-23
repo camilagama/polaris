@@ -67,7 +67,7 @@ export function formatLastConfirmed(
 }
 
 /**
- * What the screen says, under the title "Sem conexão com o servidor.", when the figures come from the device's copy
+ * What the screen says, under the title "Não foi possível falar com o servidor." (the server may be out, not only the network), when the figures come from the device's copy
  * of the last confirmed result.
  */
 export function offlineCopyNotice(

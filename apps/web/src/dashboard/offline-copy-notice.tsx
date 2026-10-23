@@ -29,7 +29,7 @@ export function OfflineCopyNotice({
   return (
     <Alert variant="warning">
       <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Sem conexão com o servidor.</AlertTitle>
+      <AlertTitle>Não foi possível falar com o servidor.</AlertTitle>
       <AlertDescription>
         <p>{summary}</p>
         {pending ? <p>{pending}</p> : null}

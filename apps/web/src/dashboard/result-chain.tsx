@@ -56,7 +56,7 @@ export function ResultChain({ summary }: { summary: PeriodSummaryReadModel }) {
           {rows.map((row) => (
             <TableRow className={rowClass(row)} key={row.id}>
               <TableHead
-                className="h-auto whitespace-normal py-2.5 align-top font-[inherit] text-foreground text-sm"
+                className="h-auto whitespace-normal py-2.5 align-top font-[weight:inherit] text-foreground text-sm"
                 scope="row"
               >
                 {row.label}

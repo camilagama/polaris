@@ -99,7 +99,10 @@ function GoalList({
       {groups.active.length > 0 ? (
         <>
           <GroupLabel id="goals-active-heading">Em andamento</GroupLabel>
-          <ul className="grid gap-3 md:grid-cols-2">
+          <ul
+            aria-labelledby="goals-active-heading"
+            className="grid gap-3 md:grid-cols-2"
+          >
             {groups.active.map((goal) => (
               <li key={goal.id}>
                 <ActiveGoalCard
@@ -119,7 +122,10 @@ function GoalList({
       {groups.settled.length > 0 ? (
         <>
           <GroupLabel id="goals-settled-heading">Encerradas</GroupLabel>
-          <ul className="grid gap-3 md:grid-cols-2">
+          <ul
+            aria-labelledby="goals-settled-heading"
+            className="grid gap-3 md:grid-cols-2"
+          >
             {groups.settled.map((goal) => (
               <li key={goal.id}>
                 <SettledGoalCard
@@ -172,13 +178,12 @@ export function GoalsPanel({
     },
     [closeForm, create]
   );
-  // the card that held the dialog is gone after a cancel that went through: the focus goes to the heading
+  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the heading
   const handleCancel = useCallback(
     async (goal: GoalReadModel) => {
       const outcome = await cancel(goal);
-      if (outcome !== "failed") {
-        focusLater(() => document.getElementById(HEADING_ID)?.focus());
-      }
+      // the dialog closes with any answer, and what happened is said right under the heading
+      focusLater(() => document.getElementById(HEADING_ID)?.focus());
       return outcome;
     },
     [cancel]
@@ -205,9 +210,7 @@ export function GoalsPanel({
             variant="ghost"
           >
             <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            <span className="max-sm:hidden">
-              {state.isLoading ? "Atualizando…" : "Atualizar"}
-            </span>
+            <span className="max-sm:hidden">Atualizar</span>
           </Button>
           {creating ? null : (
             <Button
