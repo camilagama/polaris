@@ -77,7 +77,7 @@ export const ADJUSTMENT_KINDS: ReadonlyArray<
 ];
 
 const methodLabels = new Map<string, string>(SALE_METHODS);
-/** The receipt and summary phrase of each plan; the form field uses the shorter words of installment-plan-text. */
+/** The receipt and summary phrase of each plan; the form field uses the shorter words of INSTALLMENT_PLAN_* in sale-fields.tsx. */
 const planLabels: Readonly<Record<string, string>> = {
   issuer: "Parcelado pelo emissor",
   merchant: "Parcelado pelo lojista",
@@ -1456,7 +1456,7 @@ function methodSummary(payment: PaymentDraft): string {
   const installments = payment.installments.trim() || "?";
   const plan =
     payment.installmentPlan === ""
-      ? "modalidade não escolhida"
+      ? "quem parcela não escolhido"
       : (planLabels[payment.installmentPlan] ?? payment.installmentPlan);
   return `${label} · ${installments}x · ${plan}`;
 }
