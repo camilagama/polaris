@@ -1023,7 +1023,9 @@ for (const mode of ["offline", "mentindo"] as const) {
           .click();
       }
       await expect(
-        page.getByText("Sem conexão. Estas são as vendas mais recentes")
+        page.getByText(
+          "Estas são as vendas mais recentes guardadas neste aparelho"
+        )
       ).toBeVisible({ timeout: 15_000 });
       await expect(
         page.getByRole("list", { name: "Vendas" }).getByRole("listitem")
@@ -1258,7 +1260,9 @@ test.describe("conexão com prova", () => {
       .getByRole("button", { exact: true, name: "Sincronizar" })
       .click();
     await expect(
-      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+      page.getByText(
+        "Estas são as vendas mais recentes guardadas neste aparelho"
+      )
     ).toBeVisible({ timeout: 15_000 });
     await expect(chip(page)).toContainText("Offline");
   });
@@ -1284,7 +1288,9 @@ test.describe("conexão com prova", () => {
     const clicked = Date.now();
     await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
     await expect(
-      page.getByText("Sem conexão. Estas são as vendas mais recentes")
+      page.getByText(
+        "Estas são as vendas mais recentes guardadas neste aparelho"
+      )
     ).toBeVisible({ timeout: 5000 });
     expect(Date.now() - clicked).toBeLessThan(5000);
   });

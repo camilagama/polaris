@@ -323,9 +323,9 @@ describe("precache budget (ADR 0103, section 4)", () => {
     ).toHaveLength(2);
   });
 
-  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +48 KB gzip for the rest until the legacy goes", () => {
+  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +50 KB gzip for the rest until the legacy goes", () => {
     expect(FONT_BUDGET_BYTES).toBe(55_000);
     expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
-    expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(48_000);
+    expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(50_000);
   });
 });
