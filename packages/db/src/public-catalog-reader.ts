@@ -22,7 +22,7 @@ export interface PublicCatalogProductSummary {
   description: string | null;
   id: string;
   name: string;
-  /** The lowest list price, as a decimal string, or null when no variant has one. */
+  /** The lowest list price above zero, as a decimal string, or null when no variant has one (0.00 is not informed). */
   priceFrom: string | null;
 }
 
@@ -37,6 +37,7 @@ export interface PublicCatalogProduct {
   id: string;
   media: { assetId: string; height: number; width: number }[];
   name: string;
+  /** `price` is null when the list price is missing or 0.00 (not informed). */
   variants: { id: string; label: string | null; price: string | null }[];
 }
 

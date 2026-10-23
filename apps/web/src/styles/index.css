@@ -50,6 +50,9 @@
 /* The expenses screen (v5.1): the page, the form, the list, the two closed sections and the month picker; the old
    "feedback-message" stays out (Resultado, still old, uses it). */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,collapsible-section,month-picker}.tsx";
+/* The sales history and the sale detail (v5.1): their files; the return, cancellation and customer panels, and the
+   form of the sale identifier, are still old (they migrate in the next pull request). */
+@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 
 /*
  * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files

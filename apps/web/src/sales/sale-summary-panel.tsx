@@ -70,7 +70,7 @@ export function Perforation() {
 const CURRENCY_PREFIX = /^R\$\s*/u;
 
 /** A value in reais: "R$" small and set back, the number in tabular figures. */
-function Money({
+export function Money({
   className,
   text,
 }: {

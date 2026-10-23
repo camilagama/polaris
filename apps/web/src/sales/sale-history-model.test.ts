@@ -5,6 +5,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   activeFilterCount,
+  cancelOffer,
   canLoadMore,
   detailLoadErrorMessage,
   emptyHistoryFilters,
@@ -26,7 +27,6 @@ import {
   SALES_PAGE_SIZE,
   saleCustomerHref,
   saleDetailHref,
-  cancelOffer,
   saleDetailView,
 } from "./sale-history-model";
 
@@ -226,6 +226,23 @@ describe("rows", () => {
       "Cliente indisponível",
     ]);
     expect(JSON.stringify(rows)).not.toContain("example.com");
+  });
+
+  it("draws the circle of the row with the customer's first and last initials, or a dash", () => {
+    const rows = historyRows(
+      loaded([
+        entry(1),
+        entry(2, { customerId: ana, customerName: "ana Souza" }),
+        entry(3, { customerId: gone, customerName: "Madalena" }),
+        entry(4, { customerId: gone, customerName: null }),
+      ])
+    );
+    expect(rows.map((row) => row.customerInitials)).toEqual([
+      "—",
+      "AS",
+      "M",
+      "—",
+    ]);
   });
 
   it("shows the commercial date and the time, not just an instant", () => {

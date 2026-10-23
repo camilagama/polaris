@@ -247,6 +247,165 @@ const PRODUCTS_SCREENS = [
   },
 ];
 
+const SALE_ID = id(70);
+const historyEntry = (n: number, overrides: Record<string, unknown> = {}) => ({
+  cancelledAt: null,
+  confirmedAt: "2026-10-14T12:00:01.000Z",
+  customerId: null,
+  customerName: null,
+  hasReturns: false,
+  id: id(70 + n),
+  itemCount: 2,
+  occurredAt: "2026-10-14T12:00:00.000Z",
+  occurredOn: "2026-10-14",
+  paymentMethod: "pix",
+  status: "confirmed",
+  totalDue: "219.90",
+  ...overrides,
+});
+
+/** The real route `/sales/history` (server mode, the list answered here): every badge, a customer, "Carregar mais". */
+const HISTORY = {
+  name: "Histórico de vendas no shell",
+  open: (page: Page) =>
+    openInShell(
+      page,
+      "/sales/history",
+      async () => {
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Histórico de vendas" })
+        ).toBeVisible();
+        await expect(page.getByText("Ângela Souza")).toBeVisible();
+      },
+      {
+        "sale/list": {
+          hasMore: true,
+          sales: [
+            historyEntry(1, {
+              customerId: id(90),
+              customerName: "Ângela Souza",
+            }),
+            historyEntry(2, {
+              cancelledAt: "2026-10-13T12:00:00.000Z",
+              status: "cancelled",
+            }),
+            historyEntry(3, { hasReturns: true }),
+          ],
+        },
+      }
+    ),
+};
+
+/** The real route `/sales/detail`: the receipt, a return made, and under them the old panels (outside `data-ui`). */
+const SALE_DETAIL = {
+  name: "Detalhe da venda no shell",
+  open: (page: Page) =>
+    openInShell(
+      page,
+      `/sales/detail?saleId=${SALE_ID}`,
+      async () => {
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Detalhe da venda" })
+        ).toBeVisible();
+        await expect(
+          page.getByRole("heading", { level: 2, name: "Devoluções" })
+        ).toBeVisible();
+      },
+      {
+        "sale/get": {
+          cancellation: null,
+          customer: { customerId: null, version: 0 },
+          returnSummary: [
+            {
+              availableToReturn: 1,
+              position: 0,
+              restockedQuantity: 0,
+              returnedQuantity: 1,
+              sold: 2,
+            },
+          ],
+          returns: [
+            {
+              commandId: id(80),
+              id: id(81),
+              items: [
+                { position: 0, restockedQuantity: 0, returnedQuantity: 1 },
+              ],
+              reasonCode: "defective",
+              reasonNote: "Rasgada",
+              returnedAt: "2026-10-15T12:00:00.000Z",
+              returnedBy: "user_1",
+              saleId: SALE_ID,
+            },
+          ],
+          sale: {
+            adjustments: [
+              {
+                amount: "10.00",
+                kind: "discount",
+                percentage: null,
+                position: 0,
+                valueType: "fixed",
+              },
+            ],
+            items: [
+              {
+                chargedUnitPrice: "114.95",
+                listedUnitPrice: "139.90",
+                position: 0,
+                productId: id(21),
+                productLabel: "Calça jeans — 42",
+                quantity: 2,
+                unitCost: null,
+                variantId: id(31),
+              },
+            ],
+            payment: {
+              amount: "219.90",
+              anticipationFee: {
+                amount: "0.00",
+                fixedAmount: null,
+                mode: "not_applicable",
+                percentage: null,
+              },
+              anticipationRequested: false,
+              expectedSettlementDays: null,
+              installmentPlan: null,
+              installments: null,
+              method: "pix",
+              paymentProfileId: null,
+              paymentProfileName: null,
+              paymentProfileRuleId: null,
+              paymentProfileVersion: null,
+              processingFee: {
+                amount: null,
+                fixedAmount: null,
+                mode: "unknown",
+                percentage: null,
+              },
+            },
+            sale: {
+              commandId: id(82),
+              confirmedAt: "2026-10-14T12:00:01.000Z",
+              currency: "BRL",
+              id: SALE_ID,
+              occurredAt: "2026-10-14T12:00:00.000Z",
+              occurredOn: "2026-10-14",
+              recordedAt: null,
+            },
+            totals: {
+              discountTotal: "10.00",
+              freightTotal: "0.00",
+              paymentSurchargeTotal: "0.00",
+              subtotal: "229.90",
+              surchargeTotal: "0.00",
+              totalDue: "219.90",
+            },
+          },
+        },
+      }
+    ),
+};
 const fee = (mode: string, percentage: string | null) => ({
   fixedAmount: null,
   mode,
@@ -437,6 +596,8 @@ const EXPENSE_SCREENS = [
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
+  HISTORY,
+  SALE_DETAIL,
   ...PAYMENT_SCREENS,
   {
     name: "Venda no shell",
