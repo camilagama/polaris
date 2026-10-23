@@ -31,6 +31,16 @@ const json = (body: unknown) => ({
 
 const RPC_PREFIX = /^.*\/rpc\//;
 
+/**
+ * The fewest rules of `@layer legacy` that any measured screen has on the page (they are the sheets of the screens not
+ * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
+ * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
+ * (135 and 156 on "Produtos" and "Venda"). The floor is below the measured minimum so that one more sheet leaving the
+ * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
+ * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
+ */
+const LEGACY_RULES_FLOOR = 60;
+
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
   await page.evaluate(() => document.fonts.ready);
@@ -401,7 +411,7 @@ for (const screen of SCREENS) {
     const names = Object.keys(state.on.snapshot);
     // the check is not vacuous: the layer was on the page and came off, there was something to measure, the probe
     // was measured, and so was the focus (Tab put the page in keyboard mode and some control took the ring)
-    expect(state.off.removed).toBeGreaterThan(100);
+    expect(state.off.removed).toBeGreaterThan(LEGACY_RULES_FLOOR);
     expect(names.length).toBeGreaterThan(20);
     expect(
       names.some((name) => name.startsWith('input "sonda com erro"'))

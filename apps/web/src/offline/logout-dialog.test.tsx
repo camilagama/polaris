@@ -85,6 +85,8 @@ describe("the logout dialog", () => {
   });
 
   it("disables the buttons while working", () => {
-    expect(render([blocked()], true).match(/disabled=""/g)).toHaveLength(3);
+    const html = render([blocked()], true);
+    expect(html.match(/<button\b/g)).toHaveLength(3);
+    expect(html.match(/<button\b[^>]*\sdisabled=""/g)).toHaveLength(3);
   });
 });

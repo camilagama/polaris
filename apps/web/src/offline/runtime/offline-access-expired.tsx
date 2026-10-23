@@ -1,3 +1,4 @@
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import {
   type ReactNode,
   useCallback,
@@ -5,6 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Button } from "@/ui/button";
+import { StatePanel } from "../../app-shell/state-panel";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
@@ -86,33 +89,43 @@ export function OfflineAccessExpiredView({
     onRetry?.();
   }, [onRetry]);
   return (
-    <section
-      aria-labelledby="offline-access-expired-title"
-      className="app-gate offline-access-expired"
-      ref={noticeRef}
+    <StatePanel
+      actions={
+        canRetry ? (
+          <Button onClick={retry} type="button" variant="outline">
+            {ACCESS_RETRY}
+          </Button>
+        ) : null
+      }
+      icon={
+        <CloudOffIcon
+          aria-hidden="true"
+          className="size-5 shrink-0 text-muted-foreground"
+        />
+      }
+      panelRef={noticeRef}
       role="alert"
       tabIndex={-1}
+      title={ACCESS_EXPIRED_TITLE}
+      titleId="offline-access-expired-title"
     >
-      <h1 id="offline-access-expired-title">{ACCESS_EXPIRED_TITLE}</h1>
-      <p>
-        {snapshot.online ? ACCESS_EXPIRED_BODY_ONLINE : ACCESS_EXPIRED_BODY}
-      </p>
-      {snapshot.expiredWhileOpen ? <p>{ACCESS_SALE_NOT_KEPT}</p> : null}
-      <p data-testid="offline-access-expired-queue">
-        {storedOperationsText(storedOperations(snapshot))}
-      </p>
-      {snapshot.online || snapshot.renewalRefused ? null : (
-        <p>{ACCESS_RETURNS_BY_ITSELF}</p>
-      )}
-      <p aria-live="polite" role="status">
-        {renewalText(snapshot)}
-      </p>
-      {canRetry ? (
-        <button className="secondary-button" onClick={retry} type="button">
-          {ACCESS_RETRY}
-        </button>
-      ) : null}
-    </section>
+      <div className="grid gap-2 text-muted-foreground">
+        <p>
+          {snapshot.online ? ACCESS_EXPIRED_BODY_ONLINE : ACCESS_EXPIRED_BODY}
+        </p>
+        {snapshot.expiredWhileOpen ? <p>{ACCESS_SALE_NOT_KEPT}</p> : null}
+        <p data-testid="offline-access-expired-queue">
+          {storedOperationsText(storedOperations(snapshot))}
+        </p>
+        {snapshot.online || snapshot.renewalRefused ? null : (
+          <p>{ACCESS_RETURNS_BY_ITSELF}</p>
+        )}
+        {/* empty until the network returns: the region stays (no gap for it) so the text is announced when it fills in */}
+        <p aria-live="polite" className="empty:-mt-2" role="status">
+          {renewalText(snapshot)}
+        </p>
+      </div>
+    </StatePanel>
   );
 }
 
@@ -141,7 +154,11 @@ export function OfflineAccessGateView({
   return (
     <>
       {snapshot ? (
-        <p className="offline-access-renewed" role="status">
+        <p
+          className="m-0 not-empty:mb-4 font-sans text-muted-foreground text-sm"
+          data-ui=""
+          role="status"
+        >
           {renewed ? ACCESS_RENEWED : ""}
         </p>
       ) : null}
