@@ -130,7 +130,6 @@ function Actions({
         <Button
           aria-describedby={blocked ? blockId : undefined}
           aria-disabled={blocked || undefined}
-          className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
           onClick={blocked ? undefined : onReview}
           type="button"
         >

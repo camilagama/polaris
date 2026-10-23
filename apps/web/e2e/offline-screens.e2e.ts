@@ -957,10 +957,16 @@ async function serveCatalogSetup(page: Page) {
         })
       );
     }
-    if (procedure.endsWith("/saveProfile")) {
+    return route.fallback();
+  });
+  // counted as the page sends it: the route that cuts the network aborts before this one, so a count
+  // in the handler would never see the press that the guard is meant to stop
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname.endsWith("/publicCatalog/saveProfile")
+    ) {
       catalog.saves += 1;
     }
-    return route.fallback();
   });
   await page.route("**/rpc/product/list", (route) =>
     route.fulfill(rpcAnswer({ products: [] }))
@@ -996,10 +1002,13 @@ async function serveProfiles(page: Page): Promise<ProfilesServer> {
         })
       );
     }
-    if (procedure.endsWith("/create")) {
+    return route.fallback();
+  });
+  // counted as the page sends it, even when the route that cuts the network aborts it (see serveCatalogSetup)
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.endsWith("/paymentProfile/create")) {
       server.creates += 1;
     }
-    return route.fallback();
   });
   return server;
 }
@@ -1098,8 +1107,12 @@ for (const mode of ["offline", "mentindo"] as const) {
         "aria-describedby",
         "connection-required-text"
       );
-      // focusable and pressable (the pattern of a control off with a reason), and nothing leaves
-      await create.click({ force: true });
+      // it also looks off (the Button base class), not just reads off
+      await expect(create).toHaveCSS("opacity", "0.5");
+      // focusable (the pattern of a control off with a reason): only the keyboard reaches it, since
+      // pointer-events-none sends a click to what is below, so Enter on the focused button is the proof
+      await create.focus();
+      await page.keyboard.press("Enter");
       await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
       expect(server.creates).toBe(0);
       // the connection returns: the list is read again (a read, never the POST)
@@ -1150,7 +1163,9 @@ for (const mode of ["offline", "mentindo"] as const) {
       await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
       const save = page.getByRole("button", { name: "Salvar perfil" });
       await expect(save).toHaveAttribute("aria-disabled", "true");
-      await save.click({ force: true });
+      // only the keyboard reaches it (a click falls to what is below), so focus and Enter
+      await save.focus();
+      await page.keyboard.press("Enter");
       await expect(page.getByLabel("Nome público")).toHaveValue("Loja da Ana");
       await expect(page.getByText("Perfil salvo.")).toHaveCount(0);
       expect(catalog.saves).toBe(0);
@@ -1168,7 +1183,6 @@ test.describe("conexão com prova", () => {
     await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
     // the server saves it, but the answer never comes back, and the network goes with it
     await page.route("**/rpc/paymentProfile/create", async (route) => {
-      server.creates += 1;
       server.profiles.push({ name: "Maquininha" });
       await page.route("**/health", cutNetwork);
       await route.abort("connectionreset");
