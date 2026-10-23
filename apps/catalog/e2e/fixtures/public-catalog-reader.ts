@@ -45,6 +45,18 @@ const NOME_LONGO: PublicCatalogProfile = {
   whatsapp: "5511000000000",
 };
 
+/** A store name of 60 characters: it does not fit the "Voltar" link of the product page at 360 px (P-22). */
+export const NOME_60_LETRAS =
+  "Casa Horizonte de Roupas, Calçados e Acessórios para Família";
+
+const NOME_60: PublicCatalogProfile = {
+  description: null,
+  instagram: null,
+  name: NOME_60_LETRAS,
+  slug: "nome-60",
+  whatsapp: "5511000000000",
+};
+
 const id = (n: number) =>
   `0199a0a0-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
@@ -138,6 +150,7 @@ const STORES: Record<
 > = {
   "loja-horizonte": { products: horizonteProducts, profile: HORIZONTE },
   "nome-longo": { products: horizonteProducts, profile: NOME_LONGO },
+  "nome-60": { products: horizonteProducts, profile: NOME_60 },
   "sem-contato": { products: horizonteProducts, profile: SEM_CONTATO },
   vazia: { products: [], profile: VAZIA },
 };

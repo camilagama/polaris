@@ -18,7 +18,7 @@ Cada verificação roda só nos eixos (largura, ponteiro, tema) que podem mudar 
 
 | Verificação | Contextos | Por quê |
 |---|---|---|
-| 1. contêiner | 320, 360 (com toque) e 1280 (com mouse), tema claro | a largura decide o que cabe; tema e ponteiro não mexem em caixa |
+| 1. contêiner | 320, 360 (com toque) e 1280 (com mouse e com toque), tema claro | a largura decide o que cabe; o tema não mexe em caixa; a 1280 roda também com toque, contexto que a verificação 2 já carrega |
 | 2. toque | 320, 360 e 1280, todos com toque, tema claro | as áreas de 48 px só existem com `pointer: coarse` (celular e tablet) |
 | 3. axe | 360 com toque, tema claro e escuro | o contraste é do tema; o celular é a largura mais apertada |
 | 6. foco | 1280 com mouse, tema claro | o anel de foco aparece com o teclado, que é a tela larga |
