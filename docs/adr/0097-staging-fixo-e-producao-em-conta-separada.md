@@ -4,7 +4,7 @@ status: accepted
 
 # Staging fixo na conta atual e produção em conta separada
 
-> O número deste ADR (0097) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0095 é o dos alertas, na `main`, e o 0096 é o das migrations compatíveis com a versão anterior do Worker, também na `main`); pode mudar se outro entrar antes. As decisões abaixo marcadas como **decisão** foram tomadas pelo responsável (Arrascaeta) na revisão do desenho t067, com as correções de arquitetura (Filipe Luís) e de segurança (Rodrigo Caio).
+> O número deste ADR (0097) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0095 é o dos alertas, na `main`, e o 0096 é o das migrations compatíveis com a versão anterior do Worker, também na `main`); pode mudar se outro entrar antes. As decisões abaixo marcadas como **decisão** foram tomadas pelo Arrascaeta na revisão do desenho t067, com as correções de arquitetura (Filipe Luís) e de segurança (Rodrigo Caio).
 
 ## Contexto
 
