@@ -1,6 +1,7 @@
 import type { PaymentProfileReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
   type FormEvent,
   type Ref,
@@ -10,10 +11,15 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage } from "../lib/rpc-error";
+import {
+  CHANGE_OUTCOME_UNKNOWN,
+  isConnectionFailure,
+  legalAcceptanceMessage,
+} from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   blankDraft,
@@ -33,6 +39,10 @@ import { PaymentProfileList } from "./payment-profile-list";
 
 const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
+
+/** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
+export const SAVE_OUTCOME_UNKNOWN =
+  "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo.";
 
 const GENERIC_ERROR_TEXT =
   "Não foi possível concluir a operação. Revise os dados e tente novamente.";
@@ -74,11 +84,18 @@ interface FeedbackProps {
   notice: string | null;
   /** The focus goes here when an action ends, so a person far down the page reads the result. */
   regionRef: Ref<HTMLDivElement>;
+  /** The answer of a change the connection cut: not an error, not a success. */
+  uncertain: string | null;
 }
 
 /** What the last action did, at the top of the screen; nothing is drawn (not even a gap) without a message. */
-function ActionFeedback({ error, notice, regionRef }: FeedbackProps) {
-  if (!(error || notice)) {
+function ActionFeedback({
+  error,
+  notice,
+  regionRef,
+  uncertain,
+}: FeedbackProps) {
+  if (!(error || notice || uncertain)) {
     return null;
   }
   return (
@@ -87,6 +104,12 @@ function ActionFeedback({ error, notice, regionRef }: FeedbackProps) {
         <Alert variant="destructive">
           <CircleAlertIcon aria-hidden="true" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      {uncertain ? (
+        <Alert variant="warning">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertDescription>{uncertain}</AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
@@ -112,6 +135,10 @@ export function PaymentProfilesPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  // the list was not read for lack of a connection (not an empty list); read again when it returns
+  const [notLoaded, setNotLoaded] = useState(false);
+  // a change the connection cut: amber, the form stays, and it stays said after the list is read again
+  const [uncertain, setUncertain] = useState<string | null>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
@@ -134,6 +161,7 @@ export function PaymentProfilesPage() {
     }
   }, [feedbackFocus]);
 
+  // only a read: a save whose answer was cut is never sent again from here
   const loadProfiles = useCallback(async () => {
     if (!readOnce.current) {
       setLoading(true);
@@ -145,9 +173,16 @@ export function PaymentProfilesPage() {
         status: "all",
       });
       setProfiles(result.profiles);
+      setNotLoaded(false);
       readOnce.current = true;
     } catch (cause) {
-      setLoadError(errorText(cause, "os perfis de pagamento", LOAD_ERROR_TEXT));
+      if (isConnectionFailure(cause) && !(await workerAnswers())) {
+        setNotLoaded(true);
+      } else {
+        setLoadError(
+          errorText(cause, "os perfis de pagamento", LOAD_ERROR_TEXT)
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -155,6 +190,18 @@ export function PaymentProfilesPage() {
   useEffect(() => {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
+  // an isolated cut (the Worker still answers): the list is read now, never the change sent again
+  const readAgainIfAnswers = useCallback(() => {
+    workerAnswers()
+      .then((answers) => (answers ? loadProfiles() : undefined))
+      .catch(() => undefined);
+  }, [loadProfiles]);
+  // the connection came back: the list that did not load, or that a cut save may have changed, is read again
+  const online = useConnectionReturn(() => {
+    if (notLoaded || uncertain) {
+      loadProfiles().catch(() => undefined);
+    }
+  });
   const handleRetry = useCallback(() => {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
@@ -221,7 +268,8 @@ export function PaymentProfilesPage() {
   const saveProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!draft.rules.length) {
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (!(online && draft.rules.length)) {
         return;
       }
       const problems = draftProblems(draft);
@@ -243,6 +291,7 @@ export function PaymentProfilesPage() {
       setPending(true);
       setError(null);
       setNotice(null);
+      setUncertain(null);
       try {
         const rules = draft.rules.map(ruleInput);
         const name = draft.name.trim();
@@ -267,13 +316,26 @@ export function PaymentProfilesPage() {
         setDraft(blankDraft());
         await loadProfiles();
       } catch (cause) {
-        setError(errorText(cause));
+        if (isConnectionFailure(cause)) {
+          setUncertain(SAVE_OUTCOME_UNKNOWN);
+          readAgainIfAnswers();
+        } else {
+          setError(errorText(cause));
+        }
       } finally {
         setPending(false);
         focusFeedback();
       }
     },
-    [draft, editing, focusFeedback, loadProfiles, organizationId]
+    [
+      draft,
+      editing,
+      focusFeedback,
+      loadProfiles,
+      online,
+      organizationId,
+      readAgainIfAnswers,
+    ]
   );
   const editProfile = useCallback((profile: PaymentProfileReadModel) => {
     setEditing(profile);
@@ -288,6 +350,7 @@ export function PaymentProfilesPage() {
       setPending(true);
       setError(null);
       setNotice(null);
+      setUncertain(null);
       try {
         const input = {
           expectedVersion: profile.version,
@@ -303,19 +366,27 @@ export function PaymentProfilesPage() {
         }
         await loadProfiles();
       } catch (cause) {
-        setError(errorText(cause));
+        if (isConnectionFailure(cause)) {
+          setUncertain(CHANGE_OUTCOME_UNKNOWN);
+          readAgainIfAnswers();
+        } else {
+          setError(errorText(cause));
+        }
       } finally {
         setPending(false);
         focusFeedback();
       }
     },
-    [focusFeedback, loadProfiles, organizationId]
+    [focusFeedback, loadProfiles, organizationId, readAgainIfAnswers]
   );
   const handleLifecycle = useCallback(
     (profile: PaymentProfileReadModel) => {
-      changeLifecycle(profile).catch(() => undefined);
+      // offline nothing leaves: the button says why (aria-describedby on the notice)
+      if (online) {
+        changeLifecycle(profile).catch(() => undefined);
+      }
     },
-    [changeLifecycle]
+    [changeLifecycle, online]
   );
 
   const visibleProfiles = profiles.filter(
@@ -334,7 +405,12 @@ export function PaymentProfilesPage() {
             perfil.
           </p>
         </header>
-        <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
+        <ActionFeedback
+          error={error}
+          notice={notice}
+          regionRef={feedbackRef}
+          uncertain={uncertain}
+        />
         <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <PaymentProfileForm
             draft={draft}
@@ -342,6 +418,7 @@ export function PaymentProfilesPage() {
             errors={fieldErrors}
             onAddRule={handleAddRule}
             onCancel={handleCancelEdit}
+            online={online}
             onNameChange={handleNameChange}
             onRemoveRule={handleRemoveRule}
             onSubmit={saveProfile}
@@ -349,13 +426,15 @@ export function PaymentProfilesPage() {
             pending={pending}
           />
           <PaymentProfileList
+            hasAnyProfile={profiles.length > 0}
             includeArchived={showArchived}
             loadError={loadError}
-            loading={loading}
+            loading={loading && online}
+            notLoaded={notLoaded || (loading && !online)}
             onChangeLifecycle={handleLifecycle}
             onEdit={editProfile}
             onIncludeArchivedChange={setShowArchived}
-            hasAnyProfile={profiles.length > 0}
+            online={online}
             onRetry={handleRetry}
             pending={pending}
             profiles={visibleProfiles}

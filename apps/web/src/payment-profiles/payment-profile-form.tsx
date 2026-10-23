@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useId } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldLegend, FieldSet } from "@/ui/field";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { SelectField, TextField } from "../sales/sale-fields";
 import {
   decimalInputValue,
@@ -248,6 +249,8 @@ interface PaymentProfileFormProps {
   errors: Readonly<Record<string, string>>;
   onAddRule: () => void;
   onCancel: () => void;
+  /** Offline the submit button says why (the notice's sentence) and nothing leaves. */
+  online: boolean;
   onNameChange: (name: string) => void;
   onRemoveRule: (draftId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -273,6 +276,7 @@ export function PaymentProfileForm({
   onRemoveRule,
   onSubmit,
   onUpdateRule,
+  online,
   pending,
 }: PaymentProfileFormProps) {
   const headingId = useId();
@@ -334,6 +338,7 @@ export function PaymentProfileForm({
         </CardContent>
         <CardContent className="flex flex-col-reverse gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
           <Button
+            {...connectionControlProps(online)}
             aria-busy={pending || undefined}
             disabled={pending}
             type="submit"

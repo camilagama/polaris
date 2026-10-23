@@ -10,10 +10,13 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
+import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import { OnlineOnlyNotice } from "../offline/runtime/online-only-notice";
+import { LoadErrorNotice } from "./products-page-parts";
 import {
   type ProfileFieldError,
   profileFieldError,
@@ -34,7 +37,6 @@ import {
   ProfileForm,
   SwitchCard,
 } from "./public-catalog-panels";
-import { LoadErrorNotice } from "./products-page-parts";
 import { ListNotice } from "./screen-parts";
 
 interface LoadedState {
@@ -79,9 +81,13 @@ export function PublicCatalogPage() {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [problem, setProblem] = useState<ProfileFieldError | null>(null);
+  // read again when the connection returns: the page that did not load, or what a cut command changed
+  const [stale, setStale] = useState(false);
   useReportUnsentWork(
     loaded !== null && hasProfileChanges(draft, loaded.setup.profile)
   );
+  // offline the notice says the typed text stays only when there is a form (it shows once the page loaded)
+  useConnectionNoticeForm(loaded !== null);
 
   const load = useCallback(
     async (keepDraft: boolean) => {
@@ -92,16 +98,21 @@ export function PublicCatalogPage() {
           orpcClient.product.list({ organizationId, status: "active" }),
         ]);
         setLoaded({ products: products.products, setup });
+        setStale(false);
         if (!keepDraft) {
           setDraft(draftFromProfile(setup.profile));
           setSlugEdited(setup.profile !== null);
         }
       } catch (loadError) {
-        setFeedback({
-          error: publicCatalogErrorMessage(loadError, "load"),
-          notice: null,
-          where: "load",
-        });
+        if (isConnectionFailure(loadError) && !(await workerAnswers())) {
+          setStale(true); // the connection notice says it; the page loads by itself on the return
+        } else {
+          setFeedback({
+            error: publicCatalogErrorMessage(loadError, "load"),
+            notice: null,
+            where: "load",
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -112,6 +123,14 @@ export function PublicCatalogPage() {
   useEffect(() => {
     load(false).catch(() => undefined);
   }, [load]);
+
+  const hasLoaded = loaded !== null;
+  const online = useConnectionReturn(() => {
+    if (stale) {
+      // what was typed before the cut stays
+      load(hasLoaded).catch(() => undefined);
+    }
+  });
 
   // the field with the error gets the focus once the form is enabled again (a disabled input takes no focus)
   useEffect(() => {
@@ -128,6 +147,9 @@ export function PublicCatalogPage() {
       success: string,
       keepDraft: boolean
     ) => {
+      if (!online) {
+        return; // nothing leaves offline; the button says why
+      }
       setPending(true);
       setFeedback(null);
       setProblem(null);
@@ -139,7 +161,18 @@ export function PublicCatalogPage() {
         failed = true;
         const fieldError =
           action === "profile" ? profileFieldError(commandError) : null;
-        if (fieldError) {
+        if (isConnectionFailure(commandError)) {
+          setFeedback({
+            error: CHANGE_OUTCOME_UNKNOWN,
+            notice: null,
+            where: action,
+          });
+          if (!(await workerAnswers())) {
+            setStale(true);
+            return;
+          }
+          // an isolated cut (the Worker still answers): the page is read again below, the change never sent again
+        } else if (fieldError) {
           // under its field, with the summary beside the button; what was typed stays as it is
           setProblem(fieldError);
           setFeedback({
@@ -160,7 +193,7 @@ export function PublicCatalogPage() {
       // a refused command never takes the typed form back to what the server holds (U-48)
       await load(keepDraft || failed).catch(() => undefined);
     },
-    [load]
+    [load, online]
   );
 
   const setup = loaded?.setup ?? null;
@@ -269,11 +302,10 @@ export function PublicCatalogPage() {
           Custo, estoque e SKU nunca saem.
         </p>
       </div>
-      <OnlineOnlyNotice />
       {feedback?.where === "load" && feedback.error ? (
         <LoadErrorNotice message={feedback.error} onRetry={handleRetry} />
       ) : null}
-      {loading && !loaded ? (
+      {loading && !loaded && online ? (
         <ListNotice>
           <p className="text-muted-foreground" role="status">
             Carregando…
@@ -298,6 +330,7 @@ export function PublicCatalogPage() {
             draft={draft}
             feedback={feedbackOf(feedback, "profile")}
             onChange={handleDraftChange}
+            online={online}
             onSlugEdited={handleSlugEdited}
             onSubmit={saveProfile}
             pending={pending}
@@ -308,6 +341,7 @@ export function PublicCatalogPage() {
           <SwitchCard
             changed={changed}
             feedback={feedbackOf(feedback, "switch")}
+            online={online}
             onToggle={toggleCatalog}
             pending={pending}
             planBlocks={planBlocks}
@@ -319,6 +353,7 @@ export function PublicCatalogPage() {
             <ProductsCard
               feedback={feedbackOf(feedback, "products")}
               onChange={changeProducts}
+              online={online}
               pending={pending}
               planBlocks={planBlocks}
               products={loaded.products}

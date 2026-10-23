@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * Correções de usabilidade do staging, lote 1 (t213; U-NN são os achados do Diego e do Petković de 22/10).
@@ -17,12 +18,14 @@ const DARK = /\bdark\b/;
 const RGBA_WITH_ALPHA = /^rgba\(.*,\s*0?\.\d+\)$/;
 // the main action is the one in ink (the `default` variant of the button); the outline one has no `bg-primary`
 const PRIMARY = /bg-primary/;
+/** The sentence the chip used to say on every screen offline; an online-only screen must never promise it. */
 const NOT_STORED_ON_DEVICE = /tudo guardado neste aparelho/;
 const SLUG_ERROR_ID = /(^| )public-slug-error( |$)/;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const rpcError = (code: string, status: number, reason?: string) =>
@@ -51,6 +54,7 @@ async function openLab(
   page: Page,
   screen: "customers" | "public-catalog" | "sale"
 ) {
+  await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -66,7 +70,11 @@ async function openLab(
 
 async function openWithoutSession(page: Page) {
   await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({ body: "null", contentType: "application/json" })
+    route.fulfill({
+      body: "null",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
   );
   await page.route("**/api/auth-methods", (route) =>
     route.fulfill({
@@ -76,6 +84,7 @@ async function openWithoutSession(page: Page) {
         turnstileSiteKey: null,
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/rpc/**", (route) => route.fulfill(unauthorized));
@@ -156,6 +165,7 @@ for (const width of [360, 320]) {
       route.fulfill({
         body: JSON.stringify({ user: { id: "u" } }),
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
       })
     );
     await page.goto("/devices");
@@ -499,6 +509,8 @@ test("U-54: numa tela que só funciona online, o chip sem conexão diz que a tel
   await serveCatalog(page, () => rpc({}));
   await openLab(page, "public-catalog");
   await page.getByLabel("Rede disponível").uncheck();
+  // the strip follows the proved connection of the tab (emenda do ADR 0043), not only the lab's runtime
+  await page.context().setOffline(true);
   const chip = page.locator(".sync-status");
   await expect(chip).toHaveAttribute(
     "title",
@@ -510,13 +522,12 @@ test("U-54: numa tela que só funciona online, o chip sem conexão diz que a tel
   await expect(page.getByText("O que você digitou fica aqui")).toBeVisible();
 });
 
-test("U-54: numa tela que guarda no aparelho, o chip continua dizendo 'tudo guardado neste aparelho'", async ({
+test("U-54: numa tela que guarda no aparelho, o chip sem fila diz só 'Sem conexão' (também ao leitor de tela)", async ({
   page,
 }) => {
   await openLab(page, "customers");
   await page.getByLabel("Rede disponível").uncheck();
-  await expect(page.locator(".sync-status")).toHaveAttribute(
-    "title",
-    "Sem conexão · tudo guardado neste aparelho"
-  );
+  const chip = page.locator(".sync-status");
+  await expect(chip).toHaveAttribute("title", "Sem conexão");
+  await expect(chip.locator(".sr-only")).toHaveText("Sem conexão");
 });

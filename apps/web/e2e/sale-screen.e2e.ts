@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
  * The sale screen on the components of src/ui (ADR 0103, PR 4), in the lab of the offline screens:
@@ -26,6 +27,7 @@ const THEMES = [
 
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
 });
 
@@ -49,6 +51,7 @@ async function openSaleLab(page: Page, stored: string) {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [PROFILE] }))
   );
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=sale");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

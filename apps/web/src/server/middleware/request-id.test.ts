@@ -53,4 +53,17 @@ describe("request id middleware", () => {
     expect(body.requestId).not.toBe(supplied);
     expect(header).toBe(body.requestId);
   });
+
+  it("marks a Response a route builds itself, also one with immutable headers", async () => {
+    const app = new Hono<ServerEnv>();
+    app.use("*", requestIdMiddleware);
+    app.get("/raw", () => new Response("null", { status: 401 }));
+    app.get("/redirect", () => Response.redirect("https://example.invalid/x"));
+
+    for (const path of ["/raw", "/redirect"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one request at a time
+      const response = await app.request(path);
+      expect(response.headers.get("X-Request-Id")).toMatch(uuidPattern);
+    }
+  });
 });

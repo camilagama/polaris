@@ -62,6 +62,7 @@ import {
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
+import { ConnectionRequiredSlot } from "./connection-required-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
   BOTTOM_BAR_IDS,
@@ -462,8 +463,30 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   return <div key={load.current.id}>{children}</div>;
 }
 
+/** The notices at the top of `main`: the session that ended, the acceptance that is missing, the connection. */
+function ShellNotices({
+  acceptance,
+  connection,
+  session,
+}: {
+  acceptance: boolean;
+  /** An online-only screen: the notice shows by itself while the tab does not reach the Worker. */
+  connection: { form: boolean } | null;
+  session: boolean;
+}) {
+  return (
+    <>
+      {session ? <SessionEndedNotice /> : null}
+      {acceptance ? <LegalAcceptanceNotice /> : null}
+      {connection ? <ConnectionRequiredSlot form={connection.form} /> : null}
+    </>
+  );
+}
+
 interface AppShellProps {
   children: ReactNode;
+  /** An online-only screen with a form: offline, the notice says the typed text stays. */
+  connectionForm?: boolean;
   navId: NavId | null;
   /** The screen works only online (no copy on the device): the state chip says so while offline. */
   onlineOnly?: boolean;
@@ -480,6 +503,7 @@ interface AppShellProps {
  */
 export function AppShell({
   children,
+  connectionForm = true,
   navId,
   onlineOnly = false,
   requiresOrganization = true,
@@ -551,8 +575,13 @@ export function AppShell({
         <ShellChip onlineOnly={onlineOnly} />
         <main className="categories-content" id="conteudo">
           {updateNotice}
-          {showNotice ? <SessionEndedNotice /> : null}
-          {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
+          <ShellNotices
+            acceptance={showAcceptanceNotice}
+            connection={
+              onlineOnly && !sessionOver ? { form: connectionForm } : null
+            }
+            session={showNotice}
+          />
           <OfflineAccessGate>
             {requiresOrganization ? (
               <OrganizationGate>{children}</OrganizationGate>

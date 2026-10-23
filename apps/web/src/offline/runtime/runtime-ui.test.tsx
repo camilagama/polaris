@@ -55,7 +55,7 @@ describe("the sync status in the header", () => {
     });
   });
 
-  it("tells how much is kept on the device when there is no connection", () => {
+  it("tells how much is kept on the device when there is no connection (U-54)", () => {
     expect(
       syncStatusLabel(
         snapshot({ counts: counts({ pending: 2 }), online: false })
@@ -64,8 +64,18 @@ describe("the sync status in the header", () => {
       text: "Sem conexão · 2 operações guardadas",
       tone: "offline",
     });
-    expect(syncStatusLabel(snapshot({ online: false })).text).toContain(
-      "tudo guardado neste aparelho"
+    // U-54: with nothing queued the sentence is only "Sem conexão", for the screen reader too
+    expect(syncStatusLabel(snapshot({ online: false }))).toMatchObject({
+      short: "Offline",
+      text: "Sem conexão",
+    });
+    const html = renderToStaticMarkup(
+      <SyncStatusView
+        snapshot={snapshot({ counts: counts({ pending: 2 }), online: false })}
+      />
+    );
+    expect(html).toContain(
+      '<span class="sr-only">Sem conexão · 2 operações guardadas</span>'
     );
   });
 

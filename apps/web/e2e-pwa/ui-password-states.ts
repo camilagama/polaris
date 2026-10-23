@@ -11,6 +11,7 @@ import {
   serveEntry,
   settle,
 } from "./ui-entry-states";
+import { serveLabWorker } from "./worker-mark";
 
 /**
  * The states of the other password pages (v5.2) the interface guardrails measure: "Confirme seu e-mail",
@@ -95,6 +96,7 @@ const ok = (route: Route) => route.fulfill(json(200, { status: true }));
 /** "Trocar senha" in the lab of the screens: the page over the runtime, the methods answered by the test. */
 async function openChangePassword(page: Page) {
   await serveEntry(page);
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=change-password");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * "Sua sessão acabou" nas telas que sobraram do PR da tela de entrada: venda (texto do 401 e rolagem),
@@ -24,6 +25,7 @@ const SHOTS = process.env.T111_SHOTS;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -93,6 +95,7 @@ async function openScreen(
       body: JSON.stringify(
         alive ? { session: { id: "s" }, user: { id: "u" } } : null
       ),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -305,12 +308,14 @@ test("foto do produto: o 401 do upload mostra o aviso com 'Entrar de novo' e 'A 
           media: [],
           requestId: "0199c2d0-0000-7000-8000-0000000000aa",
         }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
       });
     }
     screen.endSession();
     return route.fulfill({
       body: JSON.stringify({ error: { code: "session_required" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
       status: 401,
     });

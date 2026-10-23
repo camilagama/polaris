@@ -3,10 +3,13 @@ import {
   type ChangeEvent,
   type ComponentType,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { ConnectionRequiredSlot } from "../app-shell/connection-required-notice";
 import { CategoriesPage } from "../catalog/categories-page";
 import { ProductsPage } from "../catalog/products-page";
 import { PublicCatalogPage } from "../catalog/public-catalog-page";
@@ -14,6 +17,7 @@ import { CustomersPage } from "../customers/customers-page";
 import { DashboardPage } from "../dashboard/dashboard-page";
 import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
+import { addConnectionTry, browserConnection } from "../lib/browser-connection";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { wipeLocalStore } from "../offline/local-store";
@@ -24,6 +28,10 @@ import { DevicesPage } from "../offline/runtime/devices-page";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
+import {
+  type SyncScheduler,
+  startSyncScheduler,
+} from "../offline/runtime/sync-scheduler";
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
@@ -118,6 +126,18 @@ function recordsOn(
   return server.customers.size;
 }
 
+/**
+ * The simulated server is in this page, but the network to it is the real one: before each push and pull
+ * the lab calls the Worker (a GET of an unknown RPC path, answered 404 with the Worker's mark), through the tab's
+ * connection. With `/rpc` cut or answered by a "portal", the sync gets no answer, as in the field.
+ */
+async function reachWorker(): Promise<void> {
+  const response = await browserConnection.fetch("/rpc/__screens-lab", {
+    cache: "no-store",
+  });
+  await response.body?.cancel();
+}
+
 /** The refusal the real server sends without the legal acceptance: a FORBIDDEN with its own reason. */
 function legalAcceptanceRefusal(): Error {
   return Object.assign(new Error("Forbidden"), {
@@ -153,6 +173,10 @@ function LabScreenPage({ screen }: { screen: LabScreen }) {
 
 export function ScreensLab() {
   const screen = useMemo(labScreen, []);
+  const onlineOnly =
+    screen === "categories" ||
+    screen === "payment-profiles" ||
+    screen === "public-catalog";
   const [userId, setUserId] = useState("user-a");
   const [online, setOnline] = useState(true);
   const [started, setStarted] = useState(false);
@@ -197,24 +221,36 @@ export function ScreensLab() {
             );
             return { expiresAt: expiresAt.toISOString(), lease };
           },
-          push: () => (input) =>
-            legal.missing
+          push: () => async (input) => {
+            await reachWorker();
+            return legal.missing
               ? Promise.reject(legalAcceptanceRefusal())
-              : server.push(input),
+              : server.push(input);
+          },
           registerDevice: () => {
             const deviceId = uuid(7001);
             window.localStorage.setItem(deviceOwnerKey(deviceId), labUser());
             return Promise.resolve(deviceId);
           },
           sessionUserId: () => Promise.resolve(labUser()),
-          source: () => server,
+          source: () => ({
+            getCursor: () => server.getCursor(),
+            page: (collection, request) => server.page(collection, request),
+            pull: async (cursor, limit) => {
+              await reachWorker();
+              return server.pull(cursor, limit);
+            },
+            recentSales: () => server.recentSales(),
+          }),
         },
-        isOnline: () => network.online,
+        // the lab's switch, and the tab's connection state as in the app
+        isOnline: () => network.online && browserConnection.isOnline(),
         keyValues: {
           read: (key) => window.localStorage.getItem(key),
           remove: (key) => window.localStorage.removeItem(key),
           write: (key, value) => window.localStorage.setItem(key, value),
         },
+        mayTry: () => network.online && navigator.onLine,
         namespaceFor: localNamespace,
         openDataChannel: openBrowserDataChannel,
         openStores: openRuntimeStores,
@@ -229,11 +265,46 @@ export function ScreensLab() {
   // the screen syncs by itself: read the simulated server whenever the runtime says so
   useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
   const serverRecords = recordsOn(server, screen);
+  const scheduler = useRef<SyncScheduler | null>(null);
+  // the same signals and scheduler as the app's runtime provider
+  useEffect(() => browserConnection.attach(window, document), []);
+  useEffect(
+    () => () => {
+      scheduler.current?.stop();
+    },
+    []
+  );
+  useEffect(
+    () =>
+      addConnectionTry(() => scheduler.current?.syncNow() ?? Promise.resolve()),
+    []
+  );
 
   const handleStart = useCallback(async () => {
     window.localStorage.setItem("screens-lab-user", userId);
     try {
       await runtime.start(ORGANIZATION.id);
+      scheduler.current?.stop();
+      scheduler.current = startSyncScheduler({
+        connection: browserConnection,
+        isVisible: () => document.visibilityState === "visible",
+        onVisible: (listener) => {
+          const onVisibility = () => {
+            if (document.visibilityState === "visible") {
+              listener();
+            }
+          };
+          document.addEventListener("visibilitychange", onVisibility);
+          return () =>
+            document.removeEventListener("visibilitychange", onVisibility);
+        },
+        random: Math.random,
+        runtime,
+        schedule: (callback, delayMs) => {
+          const timer = setTimeout(callback, delayMs);
+          return () => clearTimeout(timer);
+        },
+      });
       const { phase, reason } = runtime.getSnapshot();
       setMessage(`Iniciar: ok (${reason ? `${phase}:${reason}` : phase})`);
       setStarted(true);
@@ -305,13 +376,7 @@ export function ScreensLab() {
           <div data-lab-chrome="">
             <h1>Laboratório das telas offline</h1>
             <p data-testid="message">{message}</p>
-            <SyncStatus
-              onlineOnly={
-                screen === "categories" ||
-                screen === "payment-profiles" ||
-                screen === "public-catalog"
-              }
-            />
+            <SyncStatus onlineOnly={onlineOnly} />
             <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>
               <label>
                 Usuário
@@ -352,6 +417,12 @@ export function ScreensLab() {
               <span data-testid="server-records">{serverRecords}</span>
             </p>
           </div>
+          {started && onlineOnly ? (
+            // on the page's background, as in the shell: the lab's own page stays light in the dark theme
+            <div style={{ background: "var(--background)" }}>
+              <ConnectionRequiredSlot form={screen !== "public-catalog"} />
+            </div>
+          ) : null}
           {started ? <LabScreenPage screen={screen} /> : null}
         </main>
       </StaticOrganizationProvider>

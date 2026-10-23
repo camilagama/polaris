@@ -11,6 +11,7 @@ import {
   legacyLayerOnAndOff,
 } from "./ui-shell-isolation";
 import { serveStockRows } from "./ui-stock-states";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The migrated screens inside the real shell (t193): nothing of `@layer legacy` may reach what is under `[data-ui]`
@@ -27,6 +28,7 @@ const ORGANIZATION = {
 const WRITE_OFF_SHIRT = /^Baixar estoque de Camiseta/;
 const json = (body: unknown) => ({
   body: JSON.stringify(body),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
 });
 

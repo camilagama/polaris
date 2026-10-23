@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 const ORIGINAL = [
   {
@@ -50,6 +51,7 @@ async function serveListing(page: Page, listing: () => Listing) {
           meta: [],
         }),
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
         status,
       });
       return;
@@ -58,6 +60,7 @@ async function serveListing(page: Page, listing: () => Listing) {
       await route.fulfill({
         body: JSON.stringify({ json: { organizations: [] }, meta: [] }),
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
       });
       return;
     }
@@ -74,6 +77,7 @@ async function serveListing(page: Page, listing: () => Listing) {
           meta: [],
         }),
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
         status: 401,
       });
       return;
@@ -84,6 +88,7 @@ async function serveListing(page: Page, listing: () => Listing) {
         meta: [],
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     });
   });
   // everything else the runtime asks for is unreachable in this scenario
@@ -247,6 +252,7 @@ test("401 ao abrir a loja: o aviso de sessão fica sobre o cartão e o erro leva
         meta: [],
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: 401,
     });
   });
@@ -277,6 +283,7 @@ test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a loja abre
         meta: [],
       }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     });
   });
   await page.goto("/");

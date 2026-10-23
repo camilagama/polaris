@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of the payment profiles screen the interface guardrails measure: the screen in the lab of the screens
@@ -15,6 +16,7 @@ const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const fee = (
@@ -90,6 +92,7 @@ async function openProfilesLab(page: Page) {
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
     route.fulfill(rpc({ profiles: PROFILES }))
   );
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=payment-profiles");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

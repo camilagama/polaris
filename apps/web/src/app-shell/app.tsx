@@ -167,6 +167,7 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
   const Page = pages[route.id];
   return (
     <AppShell
+      connectionForm={route.connectionForm}
       navId={route.navId}
       onlineOnly={route.onlineOnly}
       updateNotice={<UpdateSlot />}

@@ -9,7 +9,6 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
-import { OnlineOnlyNotice } from "../offline/runtime/online-only-notice";
 import {
   type CategoryAction,
   type CategoryListStatus,
@@ -237,7 +236,6 @@ export function CategoriesPage() {
           Despesas.
         </p>
       </div>
-      <OnlineOnlyNotice />
       <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
       <StatusNav
         disabled={pendingAction !== null}

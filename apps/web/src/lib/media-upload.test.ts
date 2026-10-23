@@ -3,6 +3,8 @@ import {
   UnsupportedMediaImageError,
 } from "@polaris/domain/catalog/media";
 import { describe, expect, it, vi } from "vitest";
+import { isMediaSessionEnded } from "../catalog/media-commands-model";
+import { createConnection, NoWorkerAnswerError } from "./connection";
 import {
   type MediaUploadHttpError,
   prepareMediaUploadFile,
@@ -355,5 +357,34 @@ describe("reorderProductMedia", () => {
       code: "media_reorder_failed",
       status: 500,
     });
+  });
+});
+
+describe("an answer that is not the Worker's", () => {
+  it("a portal's 401 (no mark) is no answer, never a session that ended", async () => {
+    const connection = createConnection({
+      browserOnline: () => true,
+      fetch: async () =>
+        new Response("<html>login</html>", {
+          headers: { "content-type": "text/html" },
+          status: 401,
+        }),
+      isVisible: () => false, // no probe: only the classification is looked at
+      now: () => 0,
+      schedule: () => () => undefined,
+    });
+    const removal = removeProductMedia(
+      {
+        assetId: "asset-1",
+        organizationId: "org-1",
+        origin: "https://polaris.test",
+        productId: "product-1",
+      },
+      connection.fetch
+    );
+
+    await expect(removal).rejects.toBeInstanceOf(NoWorkerAnswerError);
+    const error = await removal.catch((cause: unknown) => cause);
+    expect(isMediaSessionEnded(error)).toBe(false);
   });
 });

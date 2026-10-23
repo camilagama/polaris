@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * Categorias, Clientes and the public catalog of the ERP on the interface v5.1 (t235, lot 2 of the migration): the
@@ -21,6 +22,7 @@ const DAY = "2026-10-14T12:00:00.000Z";
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const refusal = (code: string, status: number) =>
@@ -44,8 +46,10 @@ async function openScreen(
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
+  await serveHealth(page);
   await page.route("**/rpc/**", (route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       "/rpc/",
