@@ -1,3 +1,4 @@
+import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import {
   type ReactNode,
   useCallback,
@@ -5,6 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Button } from "@/ui/button";
+import { StatePanel } from "../../app-shell/state-panel";
 import type { RuntimeSnapshot } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
@@ -36,16 +39,6 @@ export const ACCESS_RETRY = "Tentar agora";
 export const ACCESS_RENEWED = "Acesso renovado.";
 /** How long "Acesso renovado." stays on the page. */
 const RENEWED_NOTICE_MS = 5000;
-
-/*
- * The gate is in the entry chunk, which every screen downloads first: it does not import `@/ui/button` or
- * `@/ui/card` (they bring the Base UI button and the class merger into that chunk, +6.7 KB gzip measured by the
- * budget), and writes the same classes of the outline button and of the card instead, as the sidebar does for "Sair".
- */
-const CARD =
-  "flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-(--card-spacing) py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] md:[--card-spacing:--spacing(4)] dark:shadow-[inset_0_1px_0_var(--card-glow)]";
-const OUTLINE_BUTTON =
-  "touch-hit focus-ring inline-flex h-ctl-md shrink-0 select-none items-center justify-center gap-1.5 justify-self-start whitespace-nowrap rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs transition-colors hover:bg-accent dark:bg-secondary/60 dark:hover:bg-accent";
 
 /** Every operation still on the device: waiting, being sent or refused; none of them is lost. */
 function storedOperations(snapshot: RuntimeSnapshot): number {
@@ -96,18 +89,27 @@ export function OfflineAccessExpiredView({
     onRetry?.();
   }, [onRetry]);
   return (
-    <section
-      aria-labelledby="offline-access-expired-title"
-      className="focus-ring mx-auto w-full max-w-xl rounded-xl font-sans text-foreground text-sm antialiased"
-      data-ui=""
-      ref={noticeRef}
+    <StatePanel
+      actions={
+        canRetry ? (
+          <Button onClick={retry} type="button" variant="outline">
+            {ACCESS_RETRY}
+          </Button>
+        ) : null
+      }
+      icon={
+        <CloudOffIcon
+          aria-hidden="true"
+          className="size-5 shrink-0 text-muted-foreground"
+        />
+      }
+      panelRef={noticeRef}
       role="alert"
       tabIndex={-1}
+      title={ACCESS_EXPIRED_TITLE}
+      titleId="offline-access-expired-title"
     >
-      <div className={CARD}>
-        <h1 className="text-title" id="offline-access-expired-title">
-          {ACCESS_EXPIRED_TITLE}
-        </h1>
+      <div className="grid gap-2 text-muted-foreground">
         <p>
           {snapshot.online ? ACCESS_EXPIRED_BODY_ONLINE : ACCESS_EXPIRED_BODY}
         </p>
@@ -116,23 +118,14 @@ export function OfflineAccessExpiredView({
           {storedOperationsText(storedOperations(snapshot))}
         </p>
         {snapshot.online || snapshot.renewalRefused ? null : (
-          <p className="text-muted-foreground">{ACCESS_RETURNS_BY_ITSELF}</p>
+          <p>{ACCESS_RETURNS_BY_ITSELF}</p>
         )}
-        {/* mounted and empty until the network returns: no gap for it, and the text is announced when it fills in */}
-        <p
-          aria-live="polite"
-          className="-mt-3 not-empty:mt-0 text-muted-foreground text-support"
-          role="status"
-        >
+        {/* empty until the network returns: the region stays (no gap for it) so the text is announced when it fills in */}
+        <p aria-live="polite" className="empty:-mt-2" role="status">
           {renewalText(snapshot)}
         </p>
-        {canRetry ? (
-          <button className={OUTLINE_BUTTON} onClick={retry} type="button">
-            {ACCESS_RETRY}
-          </button>
-        ) : null}
       </div>
-    </section>
+    </StatePanel>
   );
 }
 
@@ -162,7 +155,7 @@ export function OfflineAccessGateView({
     <>
       {snapshot ? (
         <p
-          className="mb-4 font-sans text-muted-foreground text-support antialiased empty:mb-0"
+          className="m-0 not-empty:mb-4 font-sans text-muted-foreground text-sm"
           data-ui=""
           role="status"
         >

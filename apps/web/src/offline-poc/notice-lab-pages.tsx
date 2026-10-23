@@ -1,14 +1,11 @@
 import { useCallback, useState } from "react";
 import type { AttentionItem, AttentionSummary } from "../offline/attention";
 import { AttentionPanel } from "../offline/attention-panel";
-import { OfflineAccessExpiredView } from "../offline/runtime/offline-access-expired";
-import type { RuntimeSnapshot } from "../offline/runtime/offline-runtime";
 
 /**
- * Two screens that need no server and no outbox to be drawn, for the interface guardrails (`?screen=attention` and
- * `?screen=access-expired` of the lab of the screens): the panel of what the server refused and the notice of the
- * offline access that expired, over synthetic data. The wiring with the real outbox and the real runtime is proved
- * by `e2e/offline-attention.e2e.ts` and `e2e/offline-runtime-api.e2e.ts`. Only in the lab and browser-check builds.
+ * Pendências in the lab of the screens (`?screen=attention`), for the interface guardrails: the panel of what the
+ * server refused, over synthetic data and with no outbox. The wiring with the real outbox and the real runtime is
+ * proved by `e2e/offline-attention.e2e.ts`. Only in the lab and browser-check builds.
  */
 const param = (name: string) =>
   new URLSearchParams(window.location.search).get(name);
@@ -73,32 +70,6 @@ export function AttentionLabPage() {
       onResubmit={noop}
       onReviewAccount={handleReview}
       summary={summary}
-    />
-  );
-}
-
-/** `&online=1` is the connection back, still renewing or failing to; `&open=1` is the access ending with the app open. */
-export function AccessExpiredLabPage() {
-  const online = param("online") === "1";
-  const snapshot: RuntimeSnapshot = {
-    bootstrapped: false,
-    counts: { pending: 2, rejected: 1, sending: 0 },
-    dataVersion: 0,
-    expiredWhileOpen: param("open") === "1",
-    lastSyncAt: null,
-    leaseExpiresAt: "2026-10-17T12:00:00.000Z",
-    legalAcceptanceRequired: false,
-    online,
-    phase: "expired",
-    reason: "offline_access_expired",
-    renewalRefused: false,
-    sessionRefused: false,
-    syncing: false,
-  };
-  return (
-    <OfflineAccessExpiredView
-      onRetry={online ? noop : undefined}
-      snapshot={snapshot}
     />
   );
 }

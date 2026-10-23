@@ -30,12 +30,21 @@
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
 @source "../{main,app-shell/app,app-shell/app-shell}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
+/* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session,
+   the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
+   the attention page that uses the loading). */
+@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice}.tsx";
+@source "../pwa/update-banner.tsx";
+@source "../offline/logout-dialog.tsx";
+@source "../offline/runtime/{offline-access-expired,attention-page}.tsx";
+/* The lab of those pieces (browser checks only). */
+@source "../offline-poc/screens-lab-shell-pieces.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
-/* Aparelhos, Pendências and the notice of the offline access that expired (v5.1): the screens and their parts; the
-   dialog of "Sair" (logout-dialog.tsx) is still the old sheet. */
+/* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
+   attention page are in the list of the pieces above). */
 @source "../offline/attention-panel.tsx";
-@source "../offline/runtime/{devices-page,device-item,attention-page,offline-access-expired}.tsx";
+@source "../offline/runtime/{devices-page,device-item}.tsx";
 
 /*
  * Geist and Geist Mono served by the app (`font-src 'self'`, offline), only the latin subset: the files

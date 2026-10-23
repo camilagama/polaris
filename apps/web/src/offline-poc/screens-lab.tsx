@@ -29,7 +29,7 @@ import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
-import { AccessExpiredLabPage, AttentionLabPage } from "./notice-lab-pages";
+import { AttentionLabPage } from "./notice-lab-pages";
 import { ProductsLabServer } from "./products-lab-server";
 import { SaleLabServer } from "./sale-lab-server";
 
@@ -58,7 +58,6 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
-  | "access-expired"
   | "attention"
   | "change-password"
   | "customers"
@@ -74,8 +73,7 @@ type LabScreen =
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "access-expired" ||
-    screen === "attention" ||
+  return screen === "attention" ||
     screen === "devices" ||
     screen === "change-password" ||
     screen === "products" ||
@@ -130,7 +128,6 @@ function legalAcceptanceRefusal(): Error {
 }
 
 const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
-  "access-expired": AccessExpiredLabPage,
   attention: AttentionLabPage,
   "change-password": ChangePasswordPage,
   customers: CustomersPage,

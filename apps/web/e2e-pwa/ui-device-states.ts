@@ -3,9 +3,9 @@
 import type { Page, Route } from "@playwright/test";
 
 /**
- * The states of Aparelhos, Pendências and the notice of the offline access that expired, as the interface
+ * The states of Aparelhos and Pendências, as the interface
  * guardrails measure them (t237): each screen in the lab of the screens (`/offline-screens-lab?screen=…`), Aparelhos
- * over the real offline runtime with the server answered by the test (`page.route`), the other two over synthetic data
+ * over the real offline runtime with the server answered by the test (`page.route`), Pendências over synthetic data
  * (`src/offline-poc/notice-lab-pages.tsx`). The lab's own controls are hidden at the end of each state, so what is
  * measured is the screen alone. Same shape as `ui-stock-states.ts`.
  */
@@ -235,24 +235,6 @@ export const attentionStates = {
   async items(page: Page) {
     await openNoticeLab(page, "screen=attention", () =>
       page.getByText("Venda de 2 itens").waitFor()
-    );
-  },
-};
-
-export const accessStates = {
-  /** The access ended with the app open and there is no connection: the sale is not kept, and it comes back by itself. */
-  async offline(page: Page) {
-    await openNoticeLab(page, "screen=access-expired&open=1", () =>
-      page
-        .getByRole("heading", { name: "O acesso sem internet venceu" })
-        .waitFor()
-    );
-  },
-
-  /** The connection is back and the renewal did not start: the person can try now. */
-  async online(page: Page) {
-    await openNoticeLab(page, "screen=access-expired&online=1", () =>
-      page.getByRole("button", { name: "Tentar agora" }).waitFor()
     );
   },
 };

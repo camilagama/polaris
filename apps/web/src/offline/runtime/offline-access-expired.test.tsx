@@ -189,7 +189,7 @@ describe("the way out of the notice", () => {
     const html = render({ online: true, syncing: false });
     expect(html).toContain(ACCESS_RENEW_FAILED);
     expect(html).toContain(ACCESS_RETRY);
-    expect(html).toContain(">Tentar agora</button>");
+    expect(html).toContain('data-slot="button"');
     expect(html).not.toContain(ACCESS_RETURNS_BY_ITSELF);
     expect(html).not.toContain(ACCESS_RENEW_REFUSED);
   });
