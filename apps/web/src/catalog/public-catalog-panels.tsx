@@ -11,6 +11,8 @@ import { type FormEvent, useCallback } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { ProductTextAreaField, ProductTextField } from "./product-fields";
 import type { ProfileField, ProfileFieldError } from "./public-catalog-errors";
 import {
   type CatalogVisibility,
@@ -20,7 +22,6 @@ import {
   publicUrl,
   slugFromName,
 } from "./public-catalog-model";
-import { ProductTextAreaField, ProductTextField } from "./product-fields";
 
 /** The id of the notice of the plan: the controls it turns off point at it, so they read why. */
 export const PLAN_NOTICE_ID = "public-catalog-plan-notice";
@@ -96,6 +97,8 @@ interface ProfileFormProps {
   draft: PublicProfileDraft;
   feedback: ActionFeedback;
   onChange: (draft: PublicProfileDraft) => void;
+  /** Offline the commands send nothing and say why (the connection notice). */
+  online: boolean;
   onSlugEdited: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   pending: boolean;
@@ -141,11 +144,11 @@ export function ProfileForm(props: ProfileFormProps) {
   const example = draft.slug.trim() || "seu-endereco";
   const preview = publicUrl(props.publicOrigin, example) ?? `/${example}`;
 
-  // nothing to save, or the plan does not allow it: the button says so by aria-disabled and the reason is read with it
-  let reasonId: string | undefined;
-  if (props.disabled) {
+  // offline, nothing to save, or the plan does not allow it: the button says so by aria-disabled and the reason is read with it
+  let reasonId = connectionControlProps(props.online)["aria-describedby"];
+  if (reasonId === undefined && props.disabled) {
     reasonId = PLAN_NOTICE_ID;
-  } else if (!props.changed) {
+  } else if (reasonId === undefined && !props.changed) {
     reasonId = SAVE_REASON_ID;
   }
   const { onSubmit } = props;
@@ -256,6 +259,7 @@ export function ProfileForm(props: ProfileFormProps) {
 interface SwitchCardProps {
   changed: boolean;
   feedback: ActionFeedback;
+  online: boolean;
   onToggle: () => void;
   pending: boolean;
   planBlocks: boolean;
@@ -271,11 +275,16 @@ export function SwitchCard(props: SwitchCardProps) {
   const address = profile ? publicUrl(props.publicOrigin, profile.slug) : null;
   const Icon = VISIBILITY_ICON[props.visibility];
 
-  // off for a reason that is on the screen: unsaved changes (the hint below) or the plan (its notice at the top)
-  let reasonId: string | undefined;
-  if (props.changed) {
+  // off for a reason that is on the screen: no connection (its notice), unsaved changes (the hint below) or the plan (its notice at the top)
+  let reasonId = connectionControlProps(props.online)["aria-describedby"];
+  if (reasonId === undefined && props.changed) {
     reasonId = SWITCH_REASON_ID;
-  } else if (props.planBlocks && profile && !profile.published) {
+  } else if (
+    reasonId === undefined &&
+    props.planBlocks &&
+    profile &&
+    !profile.published
+  ) {
     reasonId = PLAN_NOTICE_ID;
   }
   const { onToggle } = props;
@@ -354,12 +363,19 @@ export function SwitchCard(props: SwitchCardProps) {
 
 interface ProductRowProps {
   disabled: boolean;
+  online: boolean;
   onToggle: (productId: string, show: boolean) => void;
   product: ProductReadModel;
   shown: boolean;
 }
 
-function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
+function ProductRow({
+  disabled,
+  onToggle,
+  online,
+  product,
+  shown,
+}: ProductRowProps) {
   const handleClick = useCallback(
     () => onToggle(product.id, !shown),
     [onToggle, product.id, shown]
@@ -373,7 +389,9 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
         {shown ? <Badge>No catálogo</Badge> : null}
       </div>
       <Button
+        {...connectionControlProps(online)}
         aria-pressed={shown}
+        className={OFF_BUTTON}
         disabled={disabled}
         onClick={handleClick}
         size="sm"
@@ -389,6 +407,7 @@ function ProductRow({ disabled, onToggle, product, shown }: ProductRowProps) {
 interface ProductsCardProps {
   feedback: ActionFeedback;
   onChange: (productIds: string[], show: boolean) => void;
+  online: boolean;
   pending: boolean;
   planBlocks: boolean;
   products: ProductReadModel[];
@@ -431,6 +450,8 @@ export function ProductsCard(props: ProductsCardProps) {
         </CardTitle>
         <div className="flex gap-3">
           <Button
+            {...connectionControlProps(props.online)}
+            className={OFF_BUTTON}
             disabled={
               props.pending ||
               props.planBlocks ||
@@ -444,6 +465,8 @@ export function ProductsCard(props: ProductsCardProps) {
             Mostrar todos
           </Button>
           <Button
+            {...connectionControlProps(props.online)}
+            className={OFF_BUTTON}
             disabled={props.pending || shownCount === 0}
             onClick={handleHideAll}
             size="sm"
@@ -472,6 +495,7 @@ export function ProductsCard(props: ProductsCardProps) {
                 <ProductRow
                   disabled={props.pending || (props.planBlocks && !isShown)}
                   key={product.id}
+                  online={props.online}
                   onToggle={handleToggle}
                   product={product}
                   shown={isShown}

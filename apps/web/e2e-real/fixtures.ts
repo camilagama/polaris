@@ -1,17 +1,17 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import {
-  expect as playwrightExpect,
-  type Page,
   test as base,
+  type Page,
+  expect as playwrightExpect,
   type TestInfo,
 } from "@playwright/test";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { createDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
-import { createBetterAuth } from "../src/server/auth";
 import { PREFERRED_ORGANIZATION_KEY } from "../src/lib/current-organization-model";
+import { createBetterAuth } from "../src/server/auth";
 import { journeyClientIp, journeyName, uuidV5 } from "./journey-names";
 import { databaseUrl } from "./run-database";
 import {
@@ -31,6 +31,7 @@ import { commandSeed, startCommandIds } from "./seed";
 
 interface AuthHelpers {
   createUser: (overrides?: Record<string, unknown>) => { id: string };
+  getAuthHeaders: (options: { userId: string }) => Promise<Headers>;
   getCookies: (options: { userId: string; domain?: string }) => Promise<
     {
       name: string;
@@ -43,25 +44,24 @@ interface AuthHelpers {
       expires?: number;
     }[]
   >;
-  getAuthHeaders: (options: { userId: string }) => Promise<Headers>;
   saveUser: (user: { id: string }) => Promise<{ id: string }>;
 }
 
 type Sql = ReturnType<typeof createDatabase>["pool"];
 
 export interface JourneyUser {
+  headers: Headers;
   id: string;
   name: string;
-  headers: Headers;
   rpc: PolarisRpcClient;
 }
 
 export interface Journey {
   /** `qa-<project>-<journey>-t<attempt>` */
   name: string;
-  user: JourneyUser;
   organizationId: string | undefined;
   page: Page;
+  user: JourneyUser;
 }
 
 export interface JourneyOptions {
@@ -102,7 +102,7 @@ const openContexts: import("@playwright/test").BrowserContext[] = [];
 const rpcAddresses: Promise<{
   clientIp: string;
   sent: string | undefined;
-}>[] = [];
+} | null>[] = [];
 
 let helpersPromise:
   | Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }>
@@ -194,13 +194,16 @@ export async function openJourney(
   });
   openContexts.push(context);
   // checked when the test ends: every /rpc/ of the browser left with the journey's address, not 127.0.0.1 (only the
-  // finished ones: `allHeaders` of a request a navigation aborted never settles)
+  // finished ones: `allHeaders` of a request a navigation aborted never settles). A background request (the
+  // connection probe, the sync scheduler) can finish while the context closes: its headers can no longer be read,
+  // so it is left out (null) instead of failing the journey with "Target page, context or browser has been closed"
   context.on("requestfinished", (request) => {
     if (new URL(request.url()).pathname.startsWith("/rpc/")) {
       rpcAddresses.push(
         request
           .allHeaders()
           .then((headers) => ({ clientIp, sent: headers[CLIENT_IP_HEADER] }))
+          .catch(() => null)
       );
     }
   });
@@ -235,7 +238,9 @@ export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
       );
       if (testInfo.status === testInfo.expectedStatus) {
         playwrightExpect(
-          addresses.filter(({ clientIp, sent }) => sent !== clientIp),
+          addresses.filter(
+            (address) => address !== null && address.sent !== address.clientIp
+          ),
           "every /rpc/ of the browser carries the journey's client address"
         ).toEqual([]);
       }

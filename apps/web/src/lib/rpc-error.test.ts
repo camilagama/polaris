@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { NoWorkerAnswerError } from "./connection";
 import {
+  isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   readErrorMessage,
@@ -87,5 +89,55 @@ describe("the refusal for lack of the legal acceptance", () => {
     expect(message).toContain("Termos de Uso");
     expect(message).toContain("Política de Privacidade");
     expect(message).not.toContain("organização");
+  });
+});
+
+describe("a call that got no answer from the Worker", () => {
+  it("is a connection failure for a network error, no Worker answer, a timeout, an abort or a cause of those", () => {
+    expect(isConnectionFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isConnectionFailure(new NoWorkerAnswerError("intercepted"))).toBe(
+      true
+    );
+    expect(
+      isConnectionFailure(new DOMException("timeout", "TimeoutError"))
+    ).toBe(true);
+    expect(isConnectionFailure(new DOMException("aborted", "AbortError"))).toBe(
+      true
+    );
+    expect(
+      isConnectionFailure(
+        new Error("wrapper", {
+          cause: new Error("middle", {
+            cause: new TypeError("Failed to fetch"),
+          }),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("is not one for an answer of the Worker or for any other error", () => {
+    expect(isConnectionFailure({ code: "UNAUTHORIZED" })).toBe(false);
+    expect(isConnectionFailure(new Error("boom"))).toBe(false);
+    expect(isConnectionFailure(null)).toBe(false);
+    expect(isConnectionFailure("Failed to fetch")).toBe(false);
+    // a TypeError that carries an oRPC code is an answer, not a failed fetch
+    expect(
+      isConnectionFailure(
+        Object.assign(new TypeError("x"), { code: "INTERNAL_SERVER_ERROR" })
+      )
+    ).toBe(false);
+  });
+
+  it("is said in a failed read as a connection that failed", () => {
+    expect(
+      readErrorMessage(new TypeError("Failed to fetch"), "o estoque")
+    ).toBe(
+      "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
+    );
+    expect(
+      readErrorMessage(new NoWorkerAnswerError("unproven"), "o estoque")
+    ).toBe(
+      "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
+    );
   });
 });

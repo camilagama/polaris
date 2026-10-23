@@ -58,6 +58,7 @@ describe("the catalog switch", () => {
       <SwitchCard
         changed={false}
         feedback={noFeedback}
+        online
         onToggle={none}
         pending={false}
         planBlocks={false}
@@ -110,6 +111,7 @@ describe("the product list", () => {
       <ProductsCard
         feedback={noFeedback}
         onChange={none}
+        online
         pending={false}
         planBlocks={false}
         products={products}
@@ -141,6 +143,7 @@ describe("the profile form", () => {
         draft={{ ...blankProfileDraft, slug: "loja-da-ana" }}
         feedback={noFeedback}
         onChange={none}
+        online
         onSlugEdited={none}
         onSubmit={none}
         pending={false}
@@ -166,6 +169,7 @@ describe("the profile form", () => {
         draft={{ ...blankProfileDraft, publicName: "Loja", slug: "a" }}
         feedback={noFeedback}
         onChange={none}
+        online
         onSlugEdited={none}
         onSubmit={none}
         pending={false}
@@ -213,6 +217,7 @@ describe("the messages of the switch and of the products", () => {
       <SwitchCard
         changed={false}
         feedback={{ error: null, notice: "Catálogo ligado." }}
+        online
         onToggle={none}
         pending={false}
         planBlocks={false}
@@ -224,5 +229,79 @@ describe("the messages of the switch and of the products", () => {
     expect(html.indexOf("Desligar catálogo")).toBeLessThan(
       html.indexOf("Catálogo ligado.")
     );
+  });
+});
+
+describe("without a connection (the shell's notice)", () => {
+  // off with the notice's sentence as the reason, before the plan and "nothing changed"; never `disabled`
+  const describedByConnection = (label: string) =>
+    new RegExp(
+      `<button[^>]*aria-describedby="connection-required-text"[^>]*>${label}`
+    );
+  const offButton = (label: string) =>
+    new RegExp(`<button[^>]*aria-disabled="true"[^>]*>${label}`);
+
+  it("keeps saving the profile off and reads the notice, even with changes", () => {
+    const html = renderToStaticMarkup(
+      <ProfileForm
+        changed
+        disabled
+        draft={{ ...blankProfileDraft, publicName: "Loja", slug: "loja" }}
+        feedback={noFeedback}
+        onChange={none}
+        online={false}
+        onSlugEdited={none}
+        onSubmit={none}
+        pending={false}
+        problem={null}
+        publicOrigin="https://catalogo.example"
+        slugEdited
+      />
+    );
+    expect(html).toMatch(offButton("Salvar perfil"));
+    expect(html).toMatch(describedByConnection("Salvar perfil"));
+    expect(html).not.toContain("Nada mudou para salvar.");
+  });
+
+  it("keeps the switch off and reads the notice", () => {
+    const html = renderToStaticMarkup(
+      <SwitchCard
+        changed={false}
+        feedback={noFeedback}
+        online={false}
+        onToggle={none}
+        pending={false}
+        planBlocks={false}
+        profile={{ ...profile, published: false }}
+        publicOrigin="https://catalogo.example"
+        visibility="off"
+      />
+    );
+    expect(html).toMatch(offButton("Ligar catálogo"));
+    expect(html).toMatch(describedByConnection("Ligar catálogo"));
+  });
+
+  it("keeps every product button off and reads the notice", () => {
+    const html = renderToStaticMarkup(
+      <ProductsCard
+        feedback={noFeedback}
+        onChange={none}
+        online={false}
+        pending={false}
+        planBlocks={false}
+        products={[product("a", "Vestido"), product("b", "Blusa")]}
+        shown={new Set(["a"])}
+      />
+    );
+    for (const label of [
+      "Mostrar todos",
+      "Tirar todos",
+      "Tirar do catálogo",
+      "Mostrar no catálogo",
+    ]) {
+      expect(html).toMatch(offButton(label));
+      expect(html).toMatch(describedByConnection(label));
+    }
+    expect(html).not.toContain('disabled=""');
   });
 });

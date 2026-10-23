@@ -149,18 +149,17 @@ export function syncStatusLabel(
 }
 
 /**
- * The sentence when there is no connection. "Tudo guardado neste aparelho" is true only for what the device keeps:
- * on a screen that works only online it would promise the opposite, so it says the screen needs internet.
+ * The sentence when there is no connection (U-54): "Sem conexão", and how much waits on the device when
+ * something does. On a screen that works only online it adds that the screen needs internet.
  */
 function offlineText(waiting: number, onlineOnly: boolean): string {
   const kept =
     waiting > 0
       ? plural(waiting, "operação guardada", "operações guardadas")
       : null;
-  if (onlineOnly) {
-    return ["Sem conexão", kept, NEEDS_INTERNET].filter(Boolean).join(" · ");
-  }
-  return `Sem conexão · ${kept ?? "tudo guardado neste aparelho"}`;
+  return ["Sem conexão", kept, onlineOnly ? NEEDS_INTERNET : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /* v5.1 (the SyncChip of the design): a 20 px pill. Synced and sending are neutral; only what asks for attention has

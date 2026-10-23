@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { deviceFamilyLabel } from "../src/server/device-family-label";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * "Sair" revokes this device (ADR 0048, emenda de 22/10; U-50 and U-51), against a server played by network
@@ -34,6 +35,7 @@ const uuid = (n: number) =>
 const json = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const rpcError = (status: number, code: string, reason?: string) =>
@@ -97,6 +99,7 @@ class Server {
     }
     const signedIn = () => this.sessions.has(context);
     const refused = () => rpcError(401, "UNAUTHORIZED");
+    await serveHealth(page);
     await page.route("**/rpc/**", (route) =>
       route.abort("internetdisconnected")
     );
@@ -106,14 +109,23 @@ class Server {
           ? {
               body: JSON.stringify({ user: { id: USER_ID } }),
               contentType: "application/json",
+              headers: { ...WORKER_MARK },
             }
-          : { body: "null", contentType: "application/json" }
+          : {
+              body: "null",
+              contentType: "application/json",
+              headers: { ...WORKER_MARK },
+            }
       )
     );
     await page.route("**/api/auth/sign-out", (route) => {
       this.log.push("sign-out");
       this.sessions.delete(context);
-      return route.fulfill({ body: "{}", contentType: "application/json" });
+      return route.fulfill({
+        body: "{}",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
     });
     await page.route("**/rpc/organization/listMine", (route) =>
       route.fulfill(

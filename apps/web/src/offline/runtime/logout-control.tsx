@@ -1,5 +1,6 @@
 import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserConnection } from "../../lib/browser-connection";
 import { orpcClient } from "../../lib/orpc";
 import { logoutDestination, type SignInReason } from "../../lib/sign-in-path";
 import { LogoutDialog } from "../logout-dialog";
@@ -19,7 +20,8 @@ import { useOfflineRuntime } from "./runtime-context";
  * one else has.
  */
 async function signOutOnServer(): Promise<void> {
-  const response = await fetch("/api/auth/sign-out", {
+  // through the connection: a portal's 200 (no Worker mark) never passes for a cleared cookie
+  const response = await browserConnection.fetch("/api/auth/sign-out", {
     body: "{}",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },

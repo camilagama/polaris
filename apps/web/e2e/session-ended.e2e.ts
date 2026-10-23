@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * "Sua sessão acabou" dentro de uma tela com ação em andamento (AC-17, AC-18): o 401 de uma chamada da
@@ -20,6 +21,7 @@ const WARNING =
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -43,12 +45,17 @@ async function openCategories(page: Page) {
       body: JSON.stringify(
         alive ? { session: { id: "s" }, user: { id: "u" } } : null
       ),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
   await page.route("**/api/auth/sign-out", (route) => {
     calls.signOut += 1;
-    return route.fulfill({ body: "{}", contentType: "application/json" });
+    return route.fulfill({
+      body: "{}",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    });
   });
   await page.route("**/rpc/**", (route) => {
     const procedure = new URL(route.request().url()).pathname.replace(

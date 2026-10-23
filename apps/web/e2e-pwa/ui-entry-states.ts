@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of `/entrar` and `/criar-conta` (v5.2) the interface guardrails measure: the pages of the pwa-e2e
@@ -15,6 +16,7 @@ export const PASSWORD = "uma frase longa de teste";
 
 export const json = (status: number, body: unknown) => ({
   body: JSON.stringify(body),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });

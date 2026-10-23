@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * Correções de usabilidade do staging, lote 1, parte C (t213): percentual de taxa dos perfis de pagamento
@@ -15,6 +16,7 @@ const ORGANIZATION = {
 };
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -62,6 +64,7 @@ async function openProfiles(
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );

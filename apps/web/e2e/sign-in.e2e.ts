@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const GOOGLE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth?client_id=teste";
@@ -39,11 +40,13 @@ const newServer = (overrides: Partial<Server> = {}): Server => ({
 const json = (body: unknown, status = 200) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 
 /** Plays the part of the server for the sign-in screen, and of Google for the page it navigates to. */
 async function serve(page: Page, server: Server) {
+  await serveHealth(page);
   await page.route("**/api/auth/get-session", async (route) => {
     if (server.sessionDelayMs > 0) {
       await new Promise((resolve) =>
@@ -69,7 +72,11 @@ async function serve(page: Page, server: Server) {
         await route.abort("internetdisconnected");
         return;
       case "garbage":
-        await route.fulfill({ body: "<html>", contentType: "text/html" });
+        await route.fulfill({
+          body: "<html>",
+          contentType: "text/html",
+          headers: { ...WORKER_MARK },
+        });
         return;
       case "limit":
         await route.fulfill(

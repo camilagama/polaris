@@ -1,3 +1,4 @@
+import { browserConnection } from "./browser-connection";
 import {
   createContext,
   createElement,
@@ -112,7 +113,16 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       }
     };
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
+    // the connection proven again (a wi-fi that had no internet gives no `online` event)
+    const stopConnection = browserConnection.subscribe(() => {
+      if (browserConnection.isOnline()) {
+        onOnline();
+      }
+    });
+    return () => {
+      window.removeEventListener("online", onOnline);
+      stopConnection();
+    };
   }, [loadOrganizations]);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of Categorias, Clientes and the public catalog of the ERP the interface guardrails measure (t235, lot
@@ -19,12 +20,14 @@ const id = (n: number) =>
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const STRIP = "Esta tela precisa de conexão.";
 
 /** Starts the runtime of the lab for the screen and waits until it is ready. */
 async function startLab(page: Page, screen: string) {
+  await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -92,6 +95,8 @@ export const categoryStates = {
   async offline(page: Page) {
     await openCategories(page);
     await page.getByLabel("Rede disponível").uncheck();
+    // the strip follows the proved connection of the tab (emenda do ADR 0043), not only the lab's runtime
+    await page.context().setOffline(true);
     await page.getByText(STRIP).waitFor();
     await showScreenAlone(page);
   },
@@ -130,6 +135,16 @@ const noPendingRow = (page: Page) =>
   );
 
 export const customerStates = {
+  /** A customer with the phone of another: the panel of the possible duplicates, with its two buttons (U-25). */
+  async duplicate(page: Page) {
+    await openCustomers(page);
+    await register(page, "Carla Dias", "11900000003");
+    await page.getByText("Carla Dias").first().waitFor();
+    await noPendingRow(page);
+    await register(page, "Carla D.", "11900000003");
+    await page.getByText("Mesmo telefone").waitFor();
+    await showScreenAlone(page);
+  },
   /** Two customers, one with a name that does not fit a line; the form is over the list. */
   async list(page: Page) {
     await openCustomers(page);
@@ -142,17 +157,6 @@ export const customerStates = {
     );
     await page.getByText("Bruno Carvalho").first().waitFor();
     await noPendingRow(page);
-    await showScreenAlone(page);
-  },
-
-  /** A customer with the phone of another: the panel of the possible duplicates, with its two buttons (U-25). */
-  async duplicate(page: Page) {
-    await openCustomers(page);
-    await register(page, "Carla Dias", "11900000003");
-    await page.getByText("Carla Dias").first().waitFor();
-    await noPendingRow(page);
-    await register(page, "Carla D.", "11900000003");
-    await page.getByText("Mesmo telefone").waitFor();
     await showScreenAlone(page);
   },
 
@@ -235,6 +239,8 @@ export const catalogStates = {
     await openCatalog(page, SETUP);
     await page.getByLabel("Nome público").fill("Loja da Ana");
     await page.getByLabel("Rede disponível").uncheck();
+    // the strip follows the proved connection of the tab (emenda do ADR 0043), not only the lab's runtime
+    await page.context().setOffline(true);
     await page.getByText(STRIP).waitFor();
     await showScreenAlone(page);
   },
