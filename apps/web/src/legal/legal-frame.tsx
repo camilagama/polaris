@@ -1,23 +1,14 @@
 import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import type { ReactNode } from "react";
+import { Button } from "@/ui/button";
+import { EntryAlert, EntryScreen, EntryStatus } from "../sign-in/entry-ui";
 import { LEGAL_PAGE_TITLES } from "./legal-routes";
-import "./legal.css";
 
-/** The brand bar of every legal page, also when the text is not there yet or failed to load. */
-function LegalTopbar() {
-  return (
-    <header className="legal-topbar">
-      <a aria-label="Polaris, início" className="app-brand" href="/">
-        <span aria-hidden="true" className="app-brand-mark">
-          P
-        </span>
-        <span>Polaris</span>
-      </a>
-    </header>
-  );
-}
-
-/** A page of a legal document: brand, title and, inside, the text or the message of a state. */
+/**
+ * A page of a legal document, on the entry frame of the interface v5.1 in its reading width: brand (a link to the
+ * start), title and, inside, the text or the message of a state. The brand and the title are there also when the
+ * text is not yet or failed to load.
+ */
 export function LegalFrame({
   children,
   document,
@@ -26,15 +17,14 @@ export function LegalFrame({
   document: LegalDocumentId;
 }) {
   return (
-    <div className="ui-root legal-root">
-      <LegalTopbar />
-      <main className="legal-main" id="conteudo">
-        <article aria-labelledby="legal-title">
-          <h1 id="legal-title">{LEGAL_PAGE_TITLES[document]}</h1>
-          {children}
-        </article>
-      </main>
-    </div>
+    <EntryScreen
+      brandHref="/"
+      legalLinks={false}
+      title={LEGAL_PAGE_TITLES[document]}
+      width="reading"
+    >
+      {children}
+    </EntryScreen>
   );
 }
 
@@ -42,9 +32,7 @@ export function LegalFrame({
 export function LegalLoading({ document }: { document: LegalDocumentId }) {
   return (
     <LegalFrame document={document}>
-      <p className="legal-state" role="status">
-        Carregando…
-      </p>
+      <EntryStatus>Carregando…</EntryStatus>
     </LegalFrame>
   );
 }
@@ -61,14 +49,20 @@ export function LegalLoadFailure({
 }) {
   return (
     <LegalFrame document={document}>
-      <p className="legal-state" role="alert">
+      <EntryAlert>
         {offline
           ? "Sem conexão. Abra de novo quando a internet voltar."
           : "Não foi possível abrir esta página. Tente de novo."}
-      </p>
-      <button className="primary-button" onClick={onRetry} type="button">
+      </EntryAlert>
+      <Button
+        className="w-full sm:w-fit"
+        onClick={onRetry}
+        size="lg"
+        type="button"
+        variant="outline"
+      >
         Tentar novamente
-      </button>
+      </Button>
     </LegalFrame>
   );
 }

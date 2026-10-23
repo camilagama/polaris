@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import {
   addLegacyRule,
@@ -35,11 +36,12 @@ const RPC_PREFIX = /^.*\/rpc\//;
  * The fewest rules of `@layer legacy` that any measured screen has on the page (they are the sheets of the screens not
  * migrated yet, which are loaded everywhere). The number follows the migration: 120 until t233 took app-shell.css,
  * logout-dialog.css and update-banner.css out of the layer, 90 on the entry pages, "Trocar senha" and "Estoque" since
- * (135 and 156 on "Produtos" and "Venda"). The floor is below the measured minimum so that one more sheet leaving the
+ * (135 and 156 on "Produtos" and "Venda"), and 57 on the first access, the acceptance and the legal texts after t239 deleted
+ * legal.css, acceptance.css, sign-in.css and the rules of the old setup card from ui.css. The floor is below the measured minimum so that one more sheet leaving the
  * layer does not break it, and far above the few rules a stray `@layer legacy` could have: if the layer stopped being
  * loaded the count would fall to zero. The controls below prove that what leaves is what the check compares.
  */
-const LEGACY_RULES_FLOOR = 60;
+const LEGACY_RULES_FLOOR = 40;
 
 /** The fonts are in and the finite animations are over (a spinner that never ends is not waited for). */
 const settle = async (page: Page) => {
@@ -351,6 +353,17 @@ const SCREENS = [
         {},
         serveStockRows
       );
+    },
+  },
+  // the first access, the acceptance and a legal text stand outside the shell, on the entry card
+  { name: "Primeiro acesso", open: firstAccessStates.empty },
+  { name: "Aceite dos termos", open: acceptanceStates.first },
+  {
+    name: "/privacidade",
+    open: async (page: Page) => {
+      await page.goto("/privacidade");
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
+      await settle(page);
     },
   },
   ...ENTRY_PAGES.map(({ heading, path }) => ({

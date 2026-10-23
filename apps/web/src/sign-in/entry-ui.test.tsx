@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { challengeAlertId, SubmitButton } from "./entry-ui";
+import { challengeAlertId, EntryScreen, SubmitButton } from "./entry-ui";
 import type { Challenge } from "./turnstile";
 
 type ChallengeState = Challenge["state"];
@@ -70,5 +70,43 @@ describe("SubmitButton with the challenge script blocked (N-1)", () => {
 
   it("derives the alert id from the form, one place for both parts", () => {
     expect(challengeAlertId("a")).not.toBe(challengeAlertId("b"));
+  });
+});
+
+describe("EntryScreen outside the entry pages (t239)", () => {
+  const screen = (props: Partial<Parameters<typeof EntryScreen>[0]> = {}) =>
+    renderToStaticMarkup(
+      <EntryScreen title="Abra a sua organização" {...props}>
+        <p>conteúdo</p>
+      </EntryScreen>
+    );
+
+  it("is the card of the entry, with the two legal links, by default", () => {
+    const markup = screen();
+    expect(markup).toContain("max-w-[380px]");
+    expect(markup).toContain("Termos de Uso");
+    expect(markup).toContain("Política de Privacidade");
+    // the brand is a name, not a link, where nobody is going back to the start
+    expect(markup).not.toContain('href="/"');
+  });
+
+  it("is wider for the acceptance and a reading column for a legal text", () => {
+    expect(screen({ width: "wide" })).toContain("max-w-[420px]");
+    const reading = screen({ width: "reading" });
+    expect(reading).toContain("max-w-[calc(68ch+3rem)]");
+    // the title of a text is the 24/32 of the reading scale
+    expect(reading).toContain("text-2xl/8");
+  });
+
+  it("drops the legal links where the page is one of them, and links the brand to the start", () => {
+    const markup = screen({ brandHref: "/", legalLinks: false });
+    expect(markup).not.toContain("Termos de Uso");
+    expect(markup).toContain('href="/"');
+  });
+
+  it("says its one line of support under the title", () => {
+    expect(screen({ support: "Uma linha de apoio." })).toContain(
+      "Uma linha de apoio."
+    );
   });
 });

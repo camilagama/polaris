@@ -1,7 +1,12 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
-import { entryStates } from "./ui-entry-states";
+import {
+  acceptanceStates,
+  firstAccessStates,
+  legalStates,
+} from "./ui-account-states";
+import { entryStates, settle } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
 import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
@@ -304,7 +309,7 @@ async function openLegalPage(page: Page, path: string, title: string) {
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
   // the title shows while the text still loads: wait for the text
   await page.getByText("Versão 1. Em vigor desde:").waitFor();
-  await page.evaluate(() => document.fonts.ready);
+  await settle(page);
 }
 
 /** The files of the entry pages on the new interface (`/entrar` and the whole password family, "Trocar senha" too). */
@@ -328,11 +333,23 @@ const entryScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   status: "migrated",
 });
 
-// the brand link of the legal frame is named "Polaris, início" and shows "P Polaris": a voice command that says what
-// is on screen misses it. Fixed with the migration of the legal pages (their frame is legacy markup).
-const LEGAL_KNOWN: UiScreen["known"] = {
-  axe: ["label-content-name-mismatch: .app-brand"],
-};
+/** The files of the first access, the acceptance and the legal texts, which stand outside the shell on the entry card. */
+const ACCOUNT_SOURCES = [
+  "src/legal/acceptance/acceptance-page.tsx",
+  "src/legal/legal-app.tsx",
+  "src/legal/legal-frame.tsx",
+  "src/legal/legal-page.tsx",
+  "src/organization/organization-setup.tsx",
+  "src/sign-in/entry-ui.tsx",
+];
+
+/** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
+const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
+  name,
+  open,
+  sourceDirs: ACCOUNT_SOURCES,
+  status: "migrated",
+});
 
 export const SCREENS: UiScreen[] = [
   {
@@ -429,21 +446,29 @@ export const SCREENS: UiScreen[] = [
     "trocar senha conta do Google",
     passwordStates.changePasswordNoPassword
   ),
-  {
-    known: LEGAL_KNOWN,
-    name: "política de privacidade",
-    open: (page) =>
-      openLegalPage(page, "/privacidade", "Política de Privacidade"),
-    sourceDirs: [],
-    status: "legacy",
-  },
-  {
-    known: LEGAL_KNOWN,
-    name: "termos de uso",
-    open: (page) => openLegalPage(page, "/termos", "Termos de Uso"),
-    sourceDirs: [],
-    status: "legacy",
-  },
+  accountScreen("política de privacidade", (page) =>
+    openLegalPage(page, "/privacidade", "Política de Privacidade")
+  ),
+  accountScreen("termos de uso", (page) =>
+    openLegalPage(page, "/termos", "Termos de Uso")
+  ),
+  accountScreen("texto legal carregando", legalStates.loading),
+  accountScreen("texto legal não abriu", legalStates.failed),
+  accountScreen("primeiro acesso", firstAccessStates.empty),
+  accountScreen(
+    "primeiro acesso com erro no nome",
+    firstAccessStates.fieldErrors
+  ),
+  accountScreen("primeiro acesso abrindo", firstAccessStates.opening),
+  accountScreen("primeiro acesso recusado", firstAccessStates.failed),
+  accountScreen("aceite", acceptanceStates.first),
+  accountScreen("aceite de versão nova", acceptanceStates.newVersion),
+  accountScreen("aceite sem a caixa", acceptanceStates.boxMissing),
+  accountScreen("aceite registrando", acceptanceStates.saving),
+  accountScreen("aceite não registrou", acceptanceStates.saveFailed),
+  accountScreen("aceite carregando", acceptanceStates.loading),
+  accountScreen("aceite não carregou", acceptanceStates.loadFailed),
+  accountScreen("aceite já feito", acceptanceStates.done),
   saleScreen("vazia", saleStates.empty),
   saleScreen("com itens", saleStates.withItems),
   saleScreen("pagamento a crédito", saleStates.payment, exerciseSalePayment),

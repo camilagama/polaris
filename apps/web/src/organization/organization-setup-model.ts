@@ -5,7 +5,7 @@ import {
 } from "../lib/rpc-error";
 
 export const MAX_ORGANIZATION_NAME_LENGTH = 128;
-export const MAX_TIMEZONE_LENGTH = 64;
+const MAX_TIMEZONE_LENGTH = 64;
 
 export interface SetupDraft {
   name: string;
@@ -17,11 +17,46 @@ export interface SetupErrors {
   timezone?: string;
 }
 
+export const BRASILIA_TIMEZONE = "America/Sao_Paulo";
+
+/** The zones of Brazil, by the name a person knows them (the Select of the first access). Brasília comes first. */
+export const BRAZIL_TIMEZONES: ReadonlyArray<{ id: string; label: string }> = [
+  { id: BRASILIA_TIMEZONE, label: "Horário de Brasília (São Paulo)" },
+  { id: "America/Manaus", label: "Horário de Manaus" },
+  { id: "America/Cuiaba", label: "Horário de Cuiabá" },
+  { id: "America/Rio_Branco", label: "Horário do Acre (Rio Branco)" },
+  { id: "America/Noronha", label: "Horário de Fernando de Noronha" },
+];
+
 /** The device's IANA zone, the usual answer for the organization's zone. */
 export function defaultTimezone(): string {
-  return (
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo"
-  );
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || BRASILIA_TIMEZONE;
+}
+
+/** The zones of Brazil that keep the hour of one in the list, by the one that stands for them there. */
+const SAME_HOUR_AS: Readonly<Record<string, string>> = {
+  "America/Boa_Vista": "America/Manaus",
+  "America/Campo_Grande": "America/Cuiaba",
+  "America/Eirunepe": "America/Rio_Branco",
+  "America/Porto_Velho": "America/Manaus",
+};
+
+/**
+ * The zone of the device when the list has it (or one with the same hour), otherwise Brasília: the list has no
+ * other place to go, and Brasília is the hour of most of the country.
+ */
+export function initialTimezone(device: string = defaultTimezone()): string {
+  const zone = SAME_HOUR_AS[device] ?? device;
+  return BRAZIL_TIMEZONES.some((item) => item.id === zone)
+    ? zone
+    : BRASILIA_TIMEZONE;
+}
+
+export const SETUP_SESSION_ENDED = "Sua sessão acabou. Entre de novo.";
+
+/** The server answered that the session is over: the screen says so and offers "Entrar de novo". */
+export function setupSessionEnded(error: unknown): boolean {
+  return rpcErrorCode(error) === "UNAUTHORIZED";
 }
 
 export function isValidTimezone(timezone: string): boolean {
