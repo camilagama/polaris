@@ -333,6 +333,10 @@ export class Connection {
   }
 
   private goOnline() {
+    if (!this.dependencies.browserOnline()) {
+      // the browser says there is no network at all: whatever answered (a cache, a test's fake) proves nothing
+      return;
+    }
     this.step = 0;
     this.timeouts = 0;
     this.clearProbe();

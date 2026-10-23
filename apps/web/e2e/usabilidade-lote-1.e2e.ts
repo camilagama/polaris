@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
  * Correções de usabilidade do staging, lote 1 (t213; U-NN são os achados do Diego e do Petković de 22/10).
@@ -51,6 +51,7 @@ async function openLab(
   page: Page,
   screen: "customers" | "public-catalog" | "sale"
 ) {
+  await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

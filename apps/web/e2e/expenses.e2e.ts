@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
  * The real expenses screen in a real browser, over a small in-memory stand-in
@@ -399,6 +399,7 @@ async function installServer(page: Page, server: FakeExpenseServer) {
 
 async function openExpenses(page: Page, server: FakeExpenseServer) {
   await installServer(page, server);
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=expenses");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório — Azul/;
 const SHIRT_WITH_THREE = /Camiseta do laboratório — Azul.*Saldo 3/;
@@ -11,6 +11,7 @@ async function openLab(
   user: string,
   screen: "customers" | "history" | "products" | "sale" | "stock" = "customers"
 ) {
+  await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await expect(
     page.getByRole("heading", { name: "Laboratório das telas offline" })

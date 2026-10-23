@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
  * The real period result screen in a real browser, over a small in-memory
@@ -314,6 +314,7 @@ async function installServer(page: Page, server: FakeReportServer) {
 }
 
 async function signIn(page: Page, user: string) {
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=dashboard");
   await page.getByLabel("Usuário").fill(user);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

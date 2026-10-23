@@ -34,3 +34,21 @@ export async function serveHealth(
         })
   );
 }
+
+/**
+ * The network of the offline screens lab: its simulated server sits in the page, but each push and pull
+ * first calls the Worker (`GET /rpc/__screens-lab`, answered 404 with the mark), as the app's sync does, and
+ * the connection probes `/health`. The static server has neither, so they are served here; a test cuts them
+ * (`route.abort`) to make the network lie.
+ */
+export async function serveLabWorker(page: Page) {
+  await serveHealth(page);
+  await page.route("**/rpc/__screens-lab", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ error: { code: "not_found" } }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+      status: 404,
+    })
+  );
+}

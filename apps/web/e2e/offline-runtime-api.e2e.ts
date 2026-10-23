@@ -398,8 +398,11 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(
       page.getByText("Sua sessão acabou. Entre de novo para continuar.").first()
     ).toBeVisible({ timeout: 20_000 });
+    // the re-read of the organizations may say it first; the sync comes ~1 s after the connection is proven (jitter)
+    await expect
+      .poll(() => stored(page, SESSION_USER_KEY), { timeout: 10_000 })
+      .toBeNull();
     expect(server.pushed).toEqual([]); // a queue is never pushed for a session the server denies
-    expect(await stored(page, SESSION_USER_KEY)).toBeNull();
     // Today a refused lookup stops the runtime but deletes nothing (the lease and
     // the collections stay under this user's own namespace, unusable without a
     // session): only a refusal of the server to a command wipes them (next test).

@@ -203,6 +203,7 @@ describe("classifyResponse", () => {
 describe("the fetch of the RPC client", () => {
   it("a marked response proves the connection: offline goes to online", async () => {
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     expect(t.connection.isOnline()).toBe(false);
 
     const response = await t.connection.fetch("/rpc/x");
@@ -366,9 +367,29 @@ describe("the fetch of the RPC client", () => {
   });
 });
 
+describe("with no network in the browser", () => {
+  it("no answer takes it online while navigator.onLine is false; the online event then probes and goes online", async () => {
+    const { advance, connection, healthCalls, state } = setup({
+      browserOnline: false,
+    });
+    const events = fakeEvents();
+    connection.attach(events.target, events.page);
+    await connection.fetch("/rpc/x");
+    await advance(0);
+    expect(connection.isOnline()).toBe(false);
+    state.browserOnline = true;
+    const before = healthCalls.length;
+    events.emit("online");
+    await advance(0);
+    expect(healthCalls.length).toBe(before + 1);
+    expect(connection.isOnline()).toBe(true);
+  });
+});
+
 describe("the probe", () => {
   it("is online only for 200, JSON, {status:ok} and the mark, and asks /health as agreed", async () => {
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.routes.health = healthy;
 
     expect(await t.connection.probeNow()).toBe("online");
@@ -485,6 +506,7 @@ describe("the probe", () => {
 
   it("a timeout while already offline stays offline", async () => {
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.routes.health = (_input, init) => hang(init?.signal);
     const result = t.connection.probeNow();
     await t.advance(4000);
@@ -495,6 +517,7 @@ describe("the probe", () => {
 describe("when it looks while offline", () => {
   it("looks at 2, 4, 8, 8, 8... s, and at most 9 times in the first minute", async () => {
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.routes.health = () => reply(503);
 
     await t.advance(60_000);
@@ -509,6 +532,7 @@ describe("when it looks while offline", () => {
 
   it("slows to every 60 s after 10 minutes offline", async () => {
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.routes.health = () => reply(503);
 
     await t.advance(10 * 60_000 + 30_000);
@@ -548,6 +572,7 @@ describe("when it looks while offline", () => {
   it("does not look with the page hidden, and looks at once when it comes back", async () => {
     const events = fakeEvents();
     const t = setup({ browserOnline: false, visible: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.connection.attach(events.target, events.page);
     t.routes.health = () => reply(503);
 
@@ -563,6 +588,7 @@ describe("when it looks while offline", () => {
   it("stops a look that was waiting when the page is hidden", async () => {
     const events = fakeEvents();
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     t.connection.attach(events.target, events.page);
 
     await t.advance(1000);
@@ -591,6 +617,7 @@ describe("the signals of the browser", () => {
     it(`'${name}' while offline probes at once`, async () => {
       const events = fakeEvents();
       const t = setup({ browserOnline: false });
+      t.state.browserOnline = true; // started offline; the network is there now
       t.connection.attach(events.target, events.page);
 
       events.emit(name);
@@ -616,6 +643,7 @@ describe("the signals of the browser", () => {
   it("stops listening and looking once detached", async () => {
     const events = fakeEvents();
     const t = setup({ browserOnline: false });
+    t.state.browserOnline = true; // started offline; the network is there now
     const detach = t.connection.attach(events.target, events.page);
 
     detach();
@@ -671,6 +699,7 @@ describe("what a reloaded page remembers", () => {
   it("opens offline when the browser says there is no network, and remembers it", () => {
     const { memory, store } = fakeMemory();
     const t = setup({ browserOnline: false, memory });
+    t.state.browserOnline = true; // started offline; the network is there now
 
     expect(t.connection.isOnline()).toBe(false);
     expect(JSON.parse(store.value ?? "null")).toEqual({
@@ -682,6 +711,7 @@ describe("what a reloaded page remembers", () => {
   it("forgets the memory when the Worker answers", async () => {
     const { memory, store } = fakeMemory();
     const t = setup({ browserOnline: false, memory });
+    t.state.browserOnline = true; // started offline; the network is there now
     expect(store.value).not.toBeNull();
 
     await t.connection.fetch("/rpc/x");
@@ -694,6 +724,7 @@ describe("the lock between tabs", () => {
   it("sends no probe when another tab holds the lock, and looks again later", async () => {
     const lock = vi.fn(async () => false);
     const t = setup({ browserOnline: false, lock });
+    t.state.browserOnline = true; // started offline; the network is there now
 
     await t.advance(2000);
     expect(lock).toHaveBeenCalledTimes(1);
@@ -715,6 +746,7 @@ describe("the lock between tabs", () => {
       return true;
     });
     const t = setup({ browserOnline: false, lock });
+    t.state.browserOnline = true; // started offline; the network is there now
 
     await t.advance(2000);
 
