@@ -93,8 +93,7 @@ export function validateSetup(draft: SetupDraft): {
   } else if (timezone.length > MAX_TIMEZONE_LENGTH) {
     errors.timezone = `Use no máximo ${MAX_TIMEZONE_LENGTH} caracteres.`;
   } else if (!isValidTimezone(timezone)) {
-    errors.timezone =
-      "Horário não reconhecido. Escolha um da lista.";
+    errors.timezone = "Horário não reconhecido. Escolha um da lista.";
   }
   return {
     errors,
