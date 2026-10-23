@@ -427,6 +427,29 @@ test("com o envio falhando, o diálogo aparece e nada é revogado", async ({
   expect(await storedDevice(page)).not.toBeNull();
 });
 
+test("no celular, fechar Mais antes da resposta do Sair não esconde o aviso da fila: Mais abre de novo", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  const server = new Server();
+  await openApp(page, server);
+  server.pushReaches = false;
+  await queueCustomers(page, 2);
+  // the send answers late, after the person closed "Mais"
+  await page.route("**/rpc/sync/push", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fallback();
+  });
+
+  await clickSair(page);
+  const sheet = page.getByRole("dialog", { name: "Mais" });
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect(sheet).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("alertdialog")).toContainText("2 operações");
+  expect(server.log).not.toContain("sign-out");
+});
+
 for (const [name, answer] of [
   ["um 5xx", { code: "INTERNAL_SERVER_ERROR", status: 500 }],
   ["sem rede", "abort"],

@@ -127,6 +127,11 @@ export function useLogout(destination: LeavePath) {
 }
 
 interface LogoutControlProps {
+  /**
+   * Called when the warning of the pending queue or a message appears, so a closed "Mais" sheet of the phone opens
+   * again: the answer may arrive after the person closed it.
+   */
+  onAttention?: () => void;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
   reason?: SignInReason;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
@@ -136,6 +141,7 @@ interface LogoutControlProps {
 }
 
 export function LogoutControl({
+  onAttention,
   reason,
   returnTo,
   shell = false,
@@ -146,6 +152,12 @@ export function LogoutControl({
   );
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
+  const needsAttention = blocked !== null || message !== null;
+  useEffect(() => {
+    if (needsAttention) {
+      onAttention?.();
+    }
+  }, [needsAttention, onAttention]);
   // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
   useEffect(() => {
     if (shell && blocked) {

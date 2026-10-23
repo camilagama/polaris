@@ -142,7 +142,13 @@ interface AppSidebarProps {
  * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot.
  */
 function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
-  const { isMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
+  // the answer of "Sair" may come after "Mais" was closed: open it again to show the warning
+  const showLogoutAttention = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(true);
+    }
+  }, [isMobile, setOpenMobile]);
   const email = useSignedInEmail();
   const items = menuItems().filter(
     (item) => !(isMobile && inBottomBar(item.id))
@@ -212,7 +218,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
               ) : null}
             </div>
           ) : null}
-          <LogoutControl shell />
+          <LogoutControl onAttention={showLogoutAttention} shell />
         </div>
       </SidebarFooter>
     </Sidebar>
