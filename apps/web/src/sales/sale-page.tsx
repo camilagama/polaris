@@ -46,11 +46,7 @@ import {
   withSuggestedPrices,
   writeLastPrices,
 } from "./last-prices-model";
-import {
-  OfflineSaleNotice,
-  PendingSalesCard,
-  QueuedSalePanel,
-} from "./offline-sale-panels";
+import { OfflineSaleNotice, SavedSalesCard } from "./offline-sale-panels";
 import {
   readSaleAttempt,
   sessionStorageOrNull,
@@ -616,10 +612,11 @@ export function SalePage() {
     >
       <h1 className="text-title">Nova venda</h1>
       {offline ? <OfflineSaleNotice /> : null}
-      {workspace ? <PendingSalesCard workspace={workspace} /> : null}
-      {submission.phase === "queued" ? (
-        <QueuedSalePanel panelRef={confirmedRef} sale={submission.sale} />
-      ) : null}
+      <SavedSalesCard
+        justSaved={submission.phase === "queued" ? submission.sale : null}
+        panelRef={submission.phase === "queued" ? confirmedRef : undefined}
+        workspace={workspace}
+      />
       {submission.phase === "confirmed" ? (
         <ConfirmedSalePanel
           key={submission.sale.saleId}

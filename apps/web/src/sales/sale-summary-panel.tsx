@@ -113,7 +113,11 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
+/**
+ * The preview changes when the payment profile (or any value) does, and the person at the screen reader would not
+ * hear it: its values sit in a live region that is in the tree before the content changes (P-4), like the total.
+ */
+export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
   return (
     <section aria-labelledby="sale-preview-title" className="grid gap-2">
       <h3 className="font-medium" id="sale-preview-title">
@@ -122,43 +126,48 @@ function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
       <p className="text-muted-foreground text-support">
         O servidor recalcula ao confirmar.
       </p>
-      {preview ? (
-        <dl className="grid gap-2 text-support">
-          <DetailRow label="Perfil de pagamento" value={preview.profileText} />
-          <DetailRow
-            label="Regra"
-            value={
-              preview.ruleMatched ? (
-                preview.ruleText
-              ) : (
-                <Unknown>{preview.ruleText}</Unknown>
-              )
-            }
-          />
-          <DetailRow
-            label="Taxa de processamento"
-            value={<FeeValue line={preview.processing} />}
-          />
-          <DetailRow
-            label="Antecipação"
-            value={<FeeValue line={preview.anticipation} />}
-          />
-          <DetailRow
-            label="Prazo"
-            value={
-              preview.settlementText.startsWith(UNKNOWN_SETTLEMENT) ? (
-                <Unknown>{preview.settlementText}</Unknown>
-              ) : (
-                preview.settlementText
-              )
-            }
-          />
-        </dl>
-      ) : (
-        <p className="text-muted-foreground text-support">
-          Complete itens, pagamento e perfil para ver a prévia.
-        </p>
-      )}
+      <div aria-atomic="true" aria-live="polite" className="grid">
+        {preview ? (
+          <dl className="grid gap-2 text-support">
+            <DetailRow
+              label="Perfil de pagamento"
+              value={preview.profileText}
+            />
+            <DetailRow
+              label="Regra"
+              value={
+                preview.ruleMatched ? (
+                  preview.ruleText
+                ) : (
+                  <Unknown>{preview.ruleText}</Unknown>
+                )
+              }
+            />
+            <DetailRow
+              label="Taxa de processamento"
+              value={<FeeValue line={preview.processing} />}
+            />
+            <DetailRow
+              label="Antecipação"
+              value={<FeeValue line={preview.anticipation} />}
+            />
+            <DetailRow
+              label="Prazo"
+              value={
+                preview.settlementText.startsWith(UNKNOWN_SETTLEMENT) ? (
+                  <Unknown>{preview.settlementText}</Unknown>
+                ) : (
+                  preview.settlementText
+                )
+              }
+            />
+          </dl>
+        ) : (
+          <p className="text-muted-foreground text-support">
+            Complete itens, pagamento e perfil para ver a prévia.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -263,6 +272,11 @@ function FailureNotice({
                 </Button>
               </>
             ) : null}
+            {/* the safe button is the submit button below (the bar under 900 px): it comes first, the discard last */}
+            <p className="text-foreground">
+              Para repetir a mesma venda, toque em “Tentar novamente (seguro)”,
+              abaixo. Repetir é seguro.
+            </p>
             <Button
               className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
               onClick={onDiscardRequest}

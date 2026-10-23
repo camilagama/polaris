@@ -19,8 +19,8 @@ const VARIANT_ID = "0199c2d0-0000-7000-8000-0000000000b1";
 const SENTENCE = "Sua sessão acabou. Entre de novo para continuar.";
 const WARNING =
   "O que você digitou e ainda não enviou pode se perder ao entrar de novo.";
-const SHIRT_OPTION = /Camiseta do teste — Azul/;
-const PRICE_FIELD = /Preço de tabela — /;
+const SHIRT_OPTION = /Camiseta do teste · Azul/;
+const PRICE_FIELD = /Preço de tabela · /;
 const SHOTS = process.env.T111_SHOTS;
 
 const rpc = (json: unknown, status = 200) => ({

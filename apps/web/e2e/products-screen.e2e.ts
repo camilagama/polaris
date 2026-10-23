@@ -656,6 +656,8 @@ test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com
   const describedBy = await field.getAttribute("aria-describedby");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
   await expect(field).toHaveValue("CAM-001");
+  // the focus goes to the field of the variant that was refused (P-6), not to a block around it
+  await expect(field).toBeFocused();
   await expect(
     skuSection.getByRole("button", { name: "Atualizar variantes" })
   ).toHaveCount(0);
@@ -674,6 +676,63 @@ test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com
   await expect(
     skuSection.getByRole("button", { name: "Atualizar variantes" })
   ).toBeVisible();
+});
+
+test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são repetidas, e os rótulos e o exemplo do preço cabem em 360 px", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) =>
+        route.fulfill(
+          rpc({
+            ...CONFIGURATION,
+            variants: [{ ...CONFIGURATION.variants[0], sku: "CAM-1" }],
+          })
+        ),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+
+  // P-11 and P-8: the label has a middle dot, and the example of the price is short
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  await expect(
+    skuSection.getByRole("textbox", { name: "SKU · Variante padrão" })
+  ).toHaveValue("CAM-1");
+  const priceSection = page.getByRole("region", {
+    name: "Preço de tabela das variantes",
+  });
+  await expect(
+    priceSection.getByRole("textbox", {
+      name: "Preço de tabela · Variante padrão",
+    })
+  ).toHaveAttribute("placeholder", "Ex.: 49,90");
+
+  // P-7: the default variant has a SKU, but nobody asked for options yet: no warning
+  const warning = page.getByText("Limpe o SKU da variante padrão");
+  await expect(warning).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await expect(warning).toBeVisible();
+
+  // P-5: two rows that still have no color are not a repeated combination
+  const repeated = page.getByText("Cada combinação precisa ser única.");
+  await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await expect(page.getByText("Combinação 2")).toBeVisible();
+  await expect(repeated).toHaveCount(0);
+  // the same color in both is
+  const colors = page.getByRole("combobox", { exact: true, name: "Cor" });
+  await colors.nth(0).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  await colors.nth(1).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await expect(repeated).toBeVisible();
 });
 
 test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícone; o sucesso é status e o conflito oferece 'Atualizar variantes'", async ({

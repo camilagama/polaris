@@ -108,6 +108,30 @@ describe("validação das combinações", () => {
     expect(result.canSubmit).toBe(false);
   });
 
+  it("linhas ainda sem todos os valores não contam como repetidas (P-5), mas também não salvam", () => {
+    const empty = validateVariantDrafts(names, values, [
+      { values: { color: "", size: "" } },
+      { values: { color: "", size: "" } },
+    ]);
+    expect(empty.combinationsAreUnique).toBe(true);
+    expect(empty.canSubmit).toBe(false);
+    const partial = validateVariantDrafts(names, values, [
+      { values: { color: "Azul", size: "" } },
+      { values: { color: "Azul", size: "" } },
+    ]);
+    expect(partial.combinationsAreUnique).toBe(true);
+    expect(partial.canSubmit).toBe(false);
+  });
+
+  it("uma linha vazia ao lado de duas iguais e completas não esconde a repetição", () => {
+    const result = validateVariantDrafts(names, values, [
+      { values: { color: "", size: "" } },
+      { values: { color: "Azul", size: "P" } },
+      { values: { color: "Azul", size: "P" } },
+    ]);
+    expect(result.combinationsAreUnique).toBe(false);
+  });
+
   it("uma opção com valores inválidos trava tanto o adicionar quanto o salvar", () => {
     const result = validateVariantDrafts(names, { ...values, size: [] }, [
       { values: { color: "Azul", size: "P" } },

@@ -603,7 +603,7 @@ export function stockSummary(
   const lines: SummaryLine[] = [
     {
       label: "Variante",
-      value: `${target.productName} — ${target.variantText}`,
+      value: `${target.productName} · ${target.variantText}`,
     },
   ];
   if (body.action === "receive") {

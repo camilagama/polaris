@@ -36,13 +36,13 @@ export function variantLabelText(entry: EntryVariant): string {
   return entry.isDefaultVariant ? "Variante padrão" : "Sem opções";
 }
 
-/** Product and variant on one line: "Camiseta — Azul / M". */
+/** Product and variant on one line: "Camiseta · Azul / M". */
 export function variantFullLabel(
   entry: EntryVariant & { productName: string }
 ): string {
   return entry.isDefaultVariant && entry.values.length === 0
     ? entry.productName
-    : `${entry.productName} — ${variantLabelText(entry)}`;
+    : `${entry.productName} · ${variantLabelText(entry)}`;
 }
 
 export function stockTarget(
