@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of Resultado and Metas the interface guardrails measure: the screen in the lab of the screens
@@ -19,6 +20,7 @@ const RPC_PREFIX = /^\/rpc\//;
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 /** A month with an unknown cost and a processing fee left out: the warning, the badges and the notes on the chain. */
@@ -198,6 +200,8 @@ async function serveResult(page: Page, served: Served) {
     }
     return route.abort("internetdisconnected");
   });
+  // after the catch-all above: the last route registered is the first asked
+  await serveLabWorker(page);
 }
 
 async function signIn(page: Page, user: string) {
