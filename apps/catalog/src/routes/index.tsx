@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { keepOutOfSearch } from "../seo";
+import { HomeView, useFooterHref } from "../views";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -7,10 +8,5 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  return (
-    <main className="page">
-      <h1>Catálogo Polaris</h1>
-      <p>Abra o endereço de uma loja para ver o catálogo dela.</p>
-    </main>
-  );
+  return <HomeView footerHref={useFooterHref()} />;
 }

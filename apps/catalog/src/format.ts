@@ -17,9 +17,57 @@ export function formatPrice(price: string): string {
   return `R$ ${whole.replace(THOUSANDS, ".")},${cents}`;
 }
 
-/** WhatsApp link for a number stored as digits (country code included). */
-export function whatsappLink(digits: string): string {
-  return `https://wa.me/${digits}`;
+/** The pieces of a list price ("R$" and "1.234,50"), for a page that sets the symbol apart; null when it is not a price. */
+export function priceParts(
+  price: string
+): { amount: string; symbol: string } | null {
+  const text = formatPrice(price);
+  return text === price ? null : { amount: text.slice(3), symbol: "R$" };
+}
+
+const QUESTION_NAME_LIMIT = 120;
+const WHATSAPP_NUMBER = /^[0-9]{10,15}$/;
+
+/**
+ * WhatsApp link for a number stored as digits (country code included). The origin is fixed and the number
+ * must be 10 to 15 digits, so nothing else can end up in the address; anything else is no link at all.
+ * `text` is the message the chat opens with, percent-encoded here.
+ */
+export function whatsappLink(digits: string, text?: string): string | null {
+  if (!WHATSAPP_NUMBER.test(digits)) {
+    return null;
+  }
+  const base = `https://wa.me/${digits}`;
+  return text === undefined ? base : `${base}?text=${encodeURIComponent(text)}`;
+}
+
+/** The message a visitor sends from a product page: the name and the address of the page, nothing about price or stock. */
+export function productQuestion(name: string, pageUrl: string): string {
+  // by code point, so a cut never splits a surrogate pair (encodeURIComponent throws on a lone one)
+  const points = Array.from(name);
+  const shown =
+    points.length > QUESTION_NAME_LIMIT
+      ? `${points.slice(0, QUESTION_NAME_LIMIT).join("")}…`
+      : name;
+  return `Olá! Tenho uma pergunta sobre ${shown}: ${pageUrl}`;
+}
+
+interface Contacts {
+  instagram: string | null;
+  whatsapp: string | null;
+}
+
+/** Whether the store published a way to be asked something (a number that is not a link does not count). */
+export function hasContact(contacts: Contacts): boolean {
+  return (
+    (contacts.whatsapp !== null && whatsappLink(contacts.whatsapp) !== null) ||
+    Boolean(contacts.instagram)
+  );
+}
+
+/** What a price-less variant says: neutral, and it points to a contact only when there is one. */
+export function noPriceLabel(contacts: Contacts): string {
+  return hasContact(contacts) ? "Preço sob consulta" : "Preço não informado";
 }
 
 export function instagramLink(handle: string): string {
