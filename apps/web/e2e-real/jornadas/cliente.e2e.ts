@@ -1,6 +1,6 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
-import { confirmSale, fillSale } from "../pages/venda";
+import { choose, confirmSale, fillSale } from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
 const AGENDA = /Agenda 2027/;
@@ -76,9 +76,7 @@ test("cliente: cadastro, lista e escolha na venda", async ({
   await confirmed
     .getByRole("button", { name: "Associar cliente a esta venda (opcional)" })
     .click();
-  await confirmed
-    .getByLabel("Cliente", { exact: true })
-    .selectOption({ label: name });
+  await choose(page, confirmed, "Cliente", name);
   await confirmed.getByRole("button", { name: "Associar cliente" }).click();
   await expect(confirmed.getByText("Cliente associado à venda.")).toBeVisible();
   await expect

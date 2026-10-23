@@ -6,6 +6,7 @@ import {
   type OperationSubmission,
 } from "./sale-cancellation-model";
 import { SaleIdMissing } from "./sale-id-missing";
+import { OperationActions } from "./sale-operation-actions";
 import { ReasonFields } from "./sale-reason-fields";
 import { ReturnTable } from "./sale-return-table";
 
@@ -56,7 +57,7 @@ const renderTable = (errors: Parameters<typeof ReturnTable>[0]["errors"]) =>
   );
 
 describe("ReturnTable", () => {
-  it("names every cell by its column, for the cards below 760 px", () => {
+  it("names every cell by its column, for the cards of a narrow card (container below 48rem)", () => {
     const html = renderTable({ lines: {} });
     for (const label of [
       "Item",
@@ -70,8 +71,8 @@ describe("ReturnTable", () => {
       // one cell per row of the two rows
       expect(html.split(`data-label="${label}"`)).toHaveLength(3);
     }
-    expect(html).toContain("max-md:before:content-[attr(data-label)]");
-    expect(html).toContain("max-md:sr-only");
+    expect(html).toContain("@max-3xl:before:content-[attr(data-label)]");
+    expect(html).toContain("@max-3xl:sr-only");
   });
 
   it("gives each field the item and the most that can be returned, and shows a dash where nothing can", () => {
@@ -186,5 +187,53 @@ describe("SaleIdMissing", () => {
     expect(
       renderToStaticMarkup(<SaleIdMissing param={{ kind: "invalid" }} />)
     ).toContain("Este endereço não aponta para uma venda.");
+  });
+});
+
+const renderActions = (
+  step: { confirming: boolean; locked: boolean },
+  destructive = true
+) =>
+  renderToStaticMarkup(
+    <OperationActions
+      closeLabel="Não cancelar"
+      confirming={step.confirming}
+      confirmLabel="Confirmar cancelamento"
+      destructive={destructive}
+      locked={step.locked}
+      onBack={NOOP}
+      onClose={NOOP}
+      onConfirm={NOOP}
+      onReview={NOOP}
+      reviewLabel="Revisar cancelamento"
+      submitting={false}
+    />
+  );
+const DESTRUCTIVE = "bg-destructive/10";
+const DESTRUCTIVE_CONFIRM = /bg-destructive\/10[^>]*>Confirmar cancelamento</;
+
+describe("OperationActions", () => {
+  it("has no destructive button while the draft is edited", () => {
+    const html = renderActions({ confirming: false, locked: false });
+    expect(html).toContain("Revisar cancelamento");
+    expect(html).toContain("Não cancelar");
+    expect(html).not.toContain("Confirmar cancelamento");
+    expect(html).not.toContain(DESTRUCTIVE);
+  });
+
+  it("puts the destructive confirm on the last step, with a way back", () => {
+    const html = renderActions({ confirming: true, locked: false });
+    expect(html).toMatch(DESTRUCTIVE_CONFIRM);
+    expect(html).toContain("Voltar");
+    // a locked attempt only goes on (the same request) or is discarded in the notice above
+    expect(renderActions({ confirming: true, locked: true })).not.toContain(
+      "Voltar"
+    );
+  });
+
+  it("keeps the confirm of a return as the main action, not a destructive one", () => {
+    expect(
+      renderActions({ confirming: true, locked: false }, false)
+    ).not.toContain(DESTRUCTIVE);
   });
 });

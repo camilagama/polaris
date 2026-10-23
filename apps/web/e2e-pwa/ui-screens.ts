@@ -387,6 +387,7 @@ const SALE_DETAIL_SOURCES = [
   "src/sales/sale-detail-page.tsx",
   "src/sales/sale-id-missing.tsx",
   "src/sales/sale-notice-region.tsx",
+  "src/sales/sale-operation-actions.tsx",
   "src/sales/sale-reason-fields.tsx",
   "src/sales/sale-receipt.tsx",
   "src/sales/sale-return-panel.tsx",

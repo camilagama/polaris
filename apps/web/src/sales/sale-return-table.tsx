@@ -17,15 +17,17 @@ import type {
   ReturnTableRow,
 } from "./sale-return-model";
 
-/* Below 760 px each row is a card: the head row is read only by the screen reader, the item is the card's title and
-   every cell shows its column name (`data-label`) beside the value (auditoria v5.1, rule 3). */
+/* When the card is narrower than 48rem (a phone, or a tablet with the sidebar open) each row is a card: the head row
+   is read only by the screen reader, the item is the card's title and every cell shows its column name
+   (`data-label`) beside the value (auditoria v5.1, rule 3). The table measures its own box (`@container`), not the
+   window: from 760 px the sidebar takes 16rem, and seven columns do not fit in what is left. */
 const CARD_ROW =
-  "max-md:grid max-md:gap-1 max-md:border-b max-md:py-3 max-md:hover:bg-transparent";
+  "@max-3xl:grid @max-3xl:gap-1 @max-3xl:border-b @max-3xl:py-3 @max-3xl:hover:bg-transparent";
 const CARD_CELL =
-  "max-md:grid max-md:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] max-md:items-center max-md:gap-2 max-md:whitespace-normal max-md:px-0! max-md:py-0.5 max-md:before:text-muted-foreground max-md:before:text-support max-md:before:content-[attr(data-label)]";
+  "@max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
 const NUMBER_CELL = `${CARD_CELL} tabular-nums`;
 /* the two fields of a card are one above the other: 12 px between them keeps their 48 px touch areas apart */
-const INPUT_CELL = `${CARD_CELL} max-md:py-1.5`;
+const INPUT_CELL = `${CARD_CELL} @max-3xl:py-1.5`;
 
 interface QuantityInputProps {
   disabled: boolean;
@@ -97,7 +99,7 @@ function ReturnRow({
   return (
     <TableRow className={CARD_ROW}>
       <th
-        className="px-3 py-2.5 text-left align-middle font-medium [overflow-wrap:anywhere] first:pl-4 max-md:px-0 max-md:py-0"
+        className="@max-3xl:px-0 px-3 @max-3xl:py-0 py-2.5 text-left align-middle font-medium [overflow-wrap:anywhere] first:pl-4"
         data-label="Item"
         scope="row"
       >
@@ -165,12 +167,12 @@ export function ReturnTable({
   rows,
 }: ReturnTableProps) {
   return (
-    <div className="grid gap-2">
-      <Table className="max-md:block max-md:[&_tbody]:block">
+    <div className="@container grid gap-2">
+      <Table className="@max-3xl:block @max-3xl:[&_tbody]:block">
         <TableCaption className="sr-only">
           Itens da venda e quantidades para devolver
         </TableCaption>
-        <TableHeader className="max-md:sr-only">
+        <TableHeader className="@max-3xl:sr-only">
           <TableRow className="hover:bg-transparent">
             <TableHead scope="col">Item</TableHead>
             <TableHead scope="col">Vendido</TableHead>

@@ -97,7 +97,7 @@ export const saleDetailStates = {
     await showScreenAlone(page);
   },
 
-  /** The return open, with a quantity over what is left: the table (cards below 760 px) and the field errors. */
+  /** The return open, with a quantity over what is left: the table (cards in a card narrower than 48rem) and the field errors. */
   async returnError(page: Page) {
     await openDetail(page);
     await page.getByRole("button", { name: "Registrar devolução" }).click();

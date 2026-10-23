@@ -34,7 +34,7 @@ export function OperationFailureNotice({
   }
   return (
     <Alert variant="destructive">
-      <AlertDescription className="grid justify-items-start gap-3">
+      <AlertDescription className="grid justify-items-start gap-3 [&_p:not(:last-child)]:mb-0">
         <p>{submission.failure.message}</p>
         {submission.confirmingDiscard ? (
           <>

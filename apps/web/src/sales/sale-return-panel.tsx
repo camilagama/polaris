@@ -6,6 +6,7 @@ import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import type { SaleNotice } from "./sale-cancellation-model";
+import { OperationActions } from "./sale-operation-actions";
 import { ReasonFields } from "./sale-reason-fields";
 import {
   backToReturnEditing,
@@ -231,33 +232,19 @@ export function SaleReturnPanel({
             submission={state.submission}
             warning="A devolução pode já ter sido registrada."
           />
-          <div className="flex flex-wrap gap-3">
-            {confirming ? (
-              <>
-                <Button
-                  disabled={state.submission.phase === "submitting"}
-                  onClick={handleConfirmEvent}
-                  type="button"
-                >
-                  {returnSubmitLabel(state)}
-                </Button>
-                {locked ? null : (
-                  <Button onClick={handleBack} type="button" variant="outline">
-                    Voltar
-                  </Button>
-                )}
-              </>
-            ) : (
-              <>
-                <Button onClick={handleReview} type="button">
-                  Revisar devolução
-                </Button>
-                <Button onClick={handleClose} type="button" variant="ghost">
-                  Não devolver
-                </Button>
-              </>
-            )}
-          </div>
+          <OperationActions
+            closeLabel="Não devolver"
+            confirming={confirming}
+            confirmLabel={returnSubmitLabel(state)}
+            destructive={false}
+            locked={locked}
+            onBack={handleBack}
+            onClose={handleClose}
+            onConfirm={handleConfirmEvent}
+            onReview={handleReview}
+            reviewLabel="Revisar devolução"
+            submitting={state.submission.phase === "submitting"}
+          />
         </CardContent>
       </Card>
     </section>

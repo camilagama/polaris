@@ -30,6 +30,7 @@ import {
   type SaleNotice,
   visibleCancelErrors,
 } from "./sale-cancellation-model";
+import { OperationActions } from "./sale-operation-actions";
 import { ReasonFields } from "./sale-reason-fields";
 
 const newId = () => crypto.randomUUID();
@@ -39,60 +40,6 @@ interface CancelPanelProps {
   onSaleChanged: (notice: SaleNotice) => void;
   organizationId: string;
   saleId: string;
-}
-
-interface CancelActionsProps {
-  confirming: boolean;
-  label: string;
-  locked: boolean;
-  onBack: () => void;
-  onClose: () => void;
-  onConfirm: () => void;
-  onReview: () => void;
-  submitting: boolean;
-}
-
-/** The destructive button exists only on the last step, the confirmation (auditoria v5.1, rule 1). */
-function CancelActions({
-  confirming,
-  label,
-  locked,
-  onBack,
-  onClose,
-  onConfirm,
-  onReview,
-  submitting,
-}: CancelActionsProps) {
-  return (
-    <div className="flex flex-wrap gap-3">
-      {confirming ? (
-        <>
-          <Button
-            disabled={submitting}
-            onClick={onConfirm}
-            type="button"
-            variant="destructive"
-          >
-            {label}
-          </Button>
-          {locked ? null : (
-            <Button onClick={onBack} type="button" variant="outline">
-              Voltar
-            </Button>
-          )}
-        </>
-      ) : (
-        <>
-          <Button onClick={onReview} type="button">
-            Revisar cancelamento
-          </Button>
-          <Button onClick={onClose} type="button" variant="ghost">
-            Não cancelar
-          </Button>
-        </>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -257,14 +204,17 @@ export function SaleCancelPanel({
             submission={state.submission}
             warning="O cancelamento pode já ter sido registrado."
           />
-          <CancelActions
+          <OperationActions
+            closeLabel="Não cancelar"
             confirming={confirming}
-            label={cancelSubmitLabel(state)}
+            confirmLabel={cancelSubmitLabel(state)}
+            destructive
             locked={locked}
             onBack={handleBack}
             onClose={handleClose}
             onConfirm={handleConfirmEvent}
             onReview={handleReview}
+            reviewLabel="Revisar cancelamento"
             submitting={submitting}
           />
         </CardContent>

@@ -1,5 +1,12 @@
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
@@ -89,7 +96,7 @@ interface RemoveButtonProps {
   onAction: (action: LinkAction) => void;
 }
 
-/** Removing the customer is destructive: it asks first, in a dialog. */
+/** Removing the customer is destructive: it asks first, in a dialog, whose confirm is the destructive button. */
 function RemoveButton({ action, onAction }: RemoveButtonProps) {
   const [asking, setAsking] = useState(false);
   const handleAsk = useCallback(() => setAsking(true), []);
@@ -106,7 +113,7 @@ function RemoveButton({ action, onAction }: RemoveButtonProps) {
         className={OFF}
         onClick={action.enabled ? handleAsk : undefined}
         type="button"
-        variant="destructive"
+        variant="outline"
       >
         {action.label}
       </Button>
@@ -181,7 +188,21 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
   );
 }
 
+function Frame({ children, framed }: { children: ReactNode; framed: boolean }) {
+  return framed ? (
+    <Card className="gap-0 py-0">
+      <CardContent className="grid gap-4 py-(--card-spacing)">
+        {children}
+      </CardContent>
+    </Card>
+  ) : (
+    <div className="grid gap-4">{children}</div>
+  );
+}
+
 interface SaleCustomerPanelProps {
+  /** In its own card (the detail and the customer page); inside another card (the confirmed sale) it has none. */
+  framed?: boolean;
   headingLevel: 2 | 3;
   organizationId: string;
   saleId: string;
@@ -192,6 +213,7 @@ interface SaleCustomerPanelProps {
  * values: every change is a new version in a separate history.
  */
 export function SaleCustomerPanel({
+  framed = true,
   headingLevel,
   organizationId,
   saleId,
@@ -305,131 +327,125 @@ export function SaleCustomerPanel({
   const ready = state.link.status === "ready";
   return (
     <section aria-labelledby="sale-customer-title">
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-4 py-(--card-spacing)">
-          <div className="grid gap-1">
-            <Heading className="text-section" id="sale-customer-title">
-              Cliente da venda
-            </Heading>
-            <p className="text-muted-foreground text-support">
-              {VALUES_UNCHANGED_NOTE}
-            </p>
-          </div>
-          {currentView.kind === "error" ? (
-            <Alert variant="destructive">
-              <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                {currentView.label}
-                <Button
-                  onClick={handleRetry}
-                  size="sm"
-                  type="button"
-                  variant="link"
-                >
-                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                  Tentar novamente
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-0.5">
-                <dt className="text-muted-foreground text-support">
-                  Cliente atual
-                </dt>
-                <dd className="font-medium [overflow-wrap:anywhere]">
-                  {currentView.label}
-                </dd>
-              </div>
-              {currentView.detail ? (
-                <div className="grid gap-0.5">
-                  <dt className="text-muted-foreground text-support">
-                    Situação
-                  </dt>
-                  <dd>{currentView.detail}</dd>
-                </div>
-              ) : null}
-            </dl>
-          )}
-          {ready ? (
-            <div className="grid gap-3">
-              <CustomerPicker
-                disabled={status.kind === "submitting"}
-                onChange={handleSelect}
-                selectedId={state.selectedCustomerId}
-                view={pickerView(state)}
-              />
-              <div className="flex flex-wrap gap-3">
-                {actions.map((action) =>
-                  action.action === "unassign" ? (
-                    <RemoveButton
-                      action={action}
-                      key={action.action}
-                      onAction={handleActionEvent}
-                    />
-                  ) : (
-                    <ActionButton
-                      action={action}
-                      hintId={hintId}
-                      key={action.action}
-                      onAction={handleActionEvent}
-                    />
-                  )
-                )}
-              </div>
-              {disabledHint ? (
-                <p className="text-muted-foreground text-support" id={hintId}>
-                  {disabledHint.hint}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          <div aria-live="polite" role="status">
-            {status.kind === "success" || status.kind === "submitting" ? (
-              <p
-                className={
-                  status.kind === "success"
-                    ? "font-medium"
-                    : "text-muted-foreground"
-                }
+      <Frame framed={framed}>
+        <div className="grid gap-1">
+          <Heading className="text-section" id="sale-customer-title">
+            Cliente da venda
+          </Heading>
+          <p className="text-muted-foreground text-support">
+            {VALUES_UNCHANGED_NOTE}
+          </p>
+        </div>
+        {currentView.kind === "error" ? (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {currentView.label}
+              <Button
+                onClick={handleRetry}
+                size="sm"
+                type="button"
+                variant="link"
               >
-                {status.message}
+                <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+                Tentar novamente
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground text-support">
+                Cliente atual
+              </dt>
+              <dd className="font-medium [overflow-wrap:anywhere]">
+                {currentView.label}
+              </dd>
+            </div>
+            {currentView.detail ? (
+              <div className="grid gap-0.5">
+                <dt className="text-muted-foreground text-support">Situação</dt>
+                <dd>{currentView.detail}</dd>
+              </div>
+            ) : null}
+          </dl>
+        )}
+        {ready ? (
+          <div className="grid gap-3">
+            <CustomerPicker
+              disabled={status.kind === "submitting"}
+              onChange={handleSelect}
+              selectedId={state.selectedCustomerId}
+              view={pickerView(state)}
+            />
+            <div className="flex flex-wrap gap-3">
+              {actions.map((action) =>
+                action.action === "unassign" ? (
+                  <RemoveButton
+                    action={action}
+                    key={action.action}
+                    onAction={handleActionEvent}
+                  />
+                ) : (
+                  <ActionButton
+                    action={action}
+                    hintId={hintId}
+                    key={action.action}
+                    onAction={handleActionEvent}
+                  />
+                )
+              )}
+            </div>
+            {disabledHint ? (
+              <p className="text-muted-foreground text-support" id={hintId}>
+                {disabledHint.hint}
               </p>
             ) : null}
           </div>
-          {status.kind === "error" ? (
-            <Alert variant="destructive">
-              <AlertDescription>{status.message}</AlertDescription>
-            </Alert>
-          ) : null}
-          {history.length > 0 ? (
-            <div className="grid gap-2">
-              <SubHeading className="font-medium">
-                Histórico de atribuição
-              </SubHeading>
-              <ol className="grid gap-2">
-                {history.map((row) => (
-                  <li
-                    className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 border-border border-t pt-2 text-support [overflow-wrap:anywhere] first:border-t-0 first:pt-0"
-                    key={row.key}
-                  >
-                    <span>
-                      v{row.version} · {row.text}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {row.dateText}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
-          {ready && history.length === 0 ? (
-            <p className="text-muted-foreground text-support">
-              Ainda não há histórico: esta venda nunca teve cliente associado.
+        ) : null}
+        <div aria-live="polite" role="status">
+          {status.kind === "success" || status.kind === "submitting" ? (
+            <p
+              className={
+                status.kind === "success"
+                  ? "font-medium"
+                  : "text-muted-foreground"
+              }
+            >
+              {status.message}
             </p>
           ) : null}
-        </CardContent>
-      </Card>
+        </div>
+        {status.kind === "error" ? (
+          <Alert variant="destructive">
+            <AlertDescription>{status.message}</AlertDescription>
+          </Alert>
+        ) : null}
+        {history.length > 0 ? (
+          <div className="grid gap-2">
+            <SubHeading className="font-medium">
+              Histórico de atribuição
+            </SubHeading>
+            <ol className="grid gap-2">
+              {history.map((row) => (
+                <li
+                  className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 border-border border-t pt-2 text-support [overflow-wrap:anywhere] first:border-t-0 first:pt-0"
+                  key={row.key}
+                >
+                  <span>
+                    v{row.version} · {row.text}
+                  </span>
+                  <span className="text-muted-foreground">{row.dateText}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+        {ready && history.length === 0 ? (
+          <p className="text-muted-foreground text-support">
+            Ainda não há histórico: esta venda nunca teve cliente associado.
+          </p>
+        ) : null}
+      </Frame>
     </section>
   );
 }
