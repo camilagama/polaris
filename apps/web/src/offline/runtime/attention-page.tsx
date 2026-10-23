@@ -6,7 +6,11 @@ import {
   discardAttentionItem,
   resubmitAttentionItem,
 } from "../attention";
-import { AttentionPanel } from "../attention-panel";
+import {
+  AttentionFrame,
+  AttentionPanel,
+  AttentionStateCard,
+} from "../attention-panel";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -98,19 +102,22 @@ export function AttentionPage() {
 
   if (!(runtime && snapshot)) {
     return (
-      <section className="attention-panel">
-        <h2>Operações que precisam de atenção</h2>
-        <p>O modo offline não está ativo neste aparelho.</p>
-      </section>
+      <AttentionFrame>
+        <AttentionStateCard>
+          O modo offline não está ativo neste aparelho.
+        </AttentionStateCard>
+      </AttentionFrame>
     );
   }
   if (snapshot.phase !== "ready") {
     return (
-      <p className="app-status" role="status">
-        {snapshot.phase === "unavailable"
-          ? "O modo offline não está disponível neste aparelho agora."
-          : "Preparando o modo offline…"}
-      </p>
+      <AttentionFrame>
+        <AttentionStateCard role="status">
+          {snapshot.phase === "unavailable"
+            ? "O modo offline não está disponível neste aparelho agora."
+            : "Preparando o modo offline…"}
+        </AttentionStateCard>
+      </AttentionFrame>
     );
   }
   return (

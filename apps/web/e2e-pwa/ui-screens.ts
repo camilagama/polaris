@@ -1,6 +1,11 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Page } from "@playwright/test";
+import {
+  accessStates,
+  attentionStates,
+  deviceStates,
+} from "./ui-device-states";
 import { entryStates } from "./ui-entry-states";
 import { passwordStates } from "./ui-password-states";
 import { productStates } from "./ui-product-states";
@@ -231,6 +236,61 @@ async function exerciseStockReason(page: Page) {
   );
 }
 
+/** The files of Aparelhos, Pendências and the notice of the expired access on the new interface (the dialog of "Sair" is old). */
+const DEVICE_SOURCES = [
+  "src/offline/runtime/device-item.tsx",
+  "src/offline/runtime/devices-page.tsx",
+];
+const ATTENTION_SOURCES = [
+  "src/offline/attention-panel.tsx",
+  "src/offline/runtime/attention-page.tsx",
+];
+const ACCESS_SOURCES = ["src/offline/runtime/offline-access-expired.tsx"];
+
+/** One state of Aparelhos (`ui-device-states.ts`). */
+const deviceScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `aparelhos ${name}`,
+  open,
+  sourceDirs: DEVICE_SOURCES,
+  status: "migrated",
+});
+
+/** One state of Pendências. */
+const attentionScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `pendências ${name}`,
+  open,
+  sourceDirs: ATTENTION_SOURCES,
+  status: "migrated",
+});
+
+/** One state of the notice of the offline access that expired. */
+const accessScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `acesso sem internet vencido ${name}`,
+  open,
+  sourceDirs: ACCESS_SOURCES,
+  status: "migrated",
+});
+
+/** Opens the confirmation of a revocation and closes it with Escape, so the motion recorder sees the dialog. */
+async function exerciseRevoke(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Revogar o aparelho Celular da Ana", role: "button" },
+    { role: "dialog" }
+  );
+}
+
 async function openLegalPage(page: Page, path: string, title: string) {
   await page.goto(path);
   await page.getByRole("heading", { level: 1, name: title }).waitFor();
@@ -404,4 +464,15 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  deviceScreen("lista", deviceStates.list, exerciseRevoke),
+  deviceScreen("carregando", deviceStates.loading),
+  deviceScreen("vazio", deviceStates.empty),
+  deviceScreen("erro ao ler", deviceStates.error),
+  deviceScreen("sem conexão", deviceStates.offline),
+  deviceScreen("login antigo", deviceStates.sessionOld),
+  attentionScreen("com itens", attentionStates.items),
+  attentionScreen("descartando", attentionStates.discarding),
+  attentionScreen("vazio", attentionStates.empty),
+  accessScreen("sem internet", accessStates.offline),
+  accessScreen("com internet", accessStates.online),
 ];

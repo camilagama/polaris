@@ -26,8 +26,8 @@ const snapshot = (
   dataVersion: 0,
   expiredWhileOpen: false,
   lastSyncAt: null,
-  legalAcceptanceRequired: false,
   leaseExpiresAt: "2026-10-17T12:00:00.000Z",
+  legalAcceptanceRequired: false,
   online: false,
   phase: "expired",
   reason: "offline_access_expired",
@@ -189,7 +189,7 @@ describe("the way out of the notice", () => {
     const html = render({ online: true, syncing: false });
     expect(html).toContain(ACCESS_RENEW_FAILED);
     expect(html).toContain(ACCESS_RETRY);
-    expect(html).toContain('class="secondary-button"');
+    expect(html).toContain(">Tentar agora</button>");
     expect(html).not.toContain(ACCESS_RETURNS_BY_ITSELF);
     expect(html).not.toContain(ACCESS_RENEW_REFUSED);
   });

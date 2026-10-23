@@ -235,6 +235,19 @@ const PRODUCTS_SCREENS = [
   },
 ];
 
+const device = (n: number, label: string | null, lastSeenAt: string) => ({
+  createdAt: "2026-10-01T12:00:00.000Z",
+  id: id(40 + n),
+  label,
+  lastSeenAt,
+  revokedAt: null,
+});
+const DEVICES = [
+  device(1, "Chrome no Android", "2026-10-14T10:00:00.000Z"),
+  device(2, "Celular da Ana", "2026-10-13T10:00:00.000Z"),
+  device(3, null, "2026-10-12T10:00:00.000Z"),
+];
+
 const SCREENS = [
   CHANGE_PASSWORD,
   ...PRODUCTS_SCREENS,
@@ -265,6 +278,35 @@ const SCREENS = [
         serveStockRows
       );
     },
+  },
+  {
+    // the list read from the (answered) server, the runtime not ready: the rows, the line that says why the buttons are off
+    name: "Aparelhos no shell",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/devices",
+        async () => {
+          await expect(
+            page.getByRole("heading", { level: 1, name: "Aparelhos" })
+          ).toBeVisible();
+          await expect(page.getByText("Celular da Ana")).toBeVisible();
+        },
+        { "device/list": { devices: DEVICES } }
+      ),
+  },
+  {
+    // without the runtime (the pwa-e2e shell has no server for it) the page says the offline mode is not ready
+    name: "Pendências no shell",
+    open: (page: Page) =>
+      openInShell(page, "/attention", () =>
+        expect(
+          page.getByRole("heading", {
+            level: 1,
+            name: "Operações que precisam de atenção",
+          })
+        ).toBeVisible()
+      ),
   },
   ...ENTRY_PAGES.map(({ heading, path }) => ({
     name: path,

@@ -19,6 +19,7 @@ import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
 import { localNamespace } from "../offline/namespace";
 import { openBrowserDataChannel } from "../offline/runtime/data-channel";
+import { DevicesPage } from "../offline/runtime/devices-page";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
 import { RuntimeContext } from "../offline/runtime/runtime-context";
 import { openRuntimeStores } from "../offline/runtime/runtime-stores";
@@ -28,6 +29,7 @@ import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
 import { ChangePasswordPage } from "../sign-in/change-password-page";
+import { AccessExpiredLabPage, AttentionLabPage } from "./notice-lab-pages";
 import { ProductsLabServer } from "./products-lab-server";
 import { SaleLabServer } from "./sale-lab-server";
 
@@ -56,9 +58,12 @@ const deviceOwnerKey = (deviceId: string) =>
   `screens-lab-device-owner.${deviceId}`;
 
 type LabScreen =
+  | "access-expired"
+  | "attention"
   | "change-password"
   | "customers"
   | "dashboard"
+  | "devices"
   | "expenses"
   | "history"
   | "payment-profiles"
@@ -69,7 +74,10 @@ type LabScreen =
 
 function labScreen(): LabScreen {
   const screen = new URLSearchParams(window.location.search).get("screen");
-  return screen === "change-password" ||
+  return screen === "access-expired" ||
+    screen === "attention" ||
+    screen === "devices" ||
+    screen === "change-password" ||
     screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
@@ -122,9 +130,12 @@ function legalAcceptanceRefusal(): Error {
 }
 
 const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
+  "access-expired": AccessExpiredLabPage,
+  attention: AttentionLabPage,
   "change-password": ChangePasswordPage,
   customers: CustomersPage,
   dashboard: DashboardPage,
+  devices: DevicesPage,
   expenses: ExpensesPage,
   history: SaleHistoryPage,
   "payment-profiles": PaymentProfilesPage,

@@ -1,4 +1,19 @@
-import { type ChangeEvent, useCallback, useEffect, useRef } from "react";
+import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import { useCallback, useRef } from "react";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { Card } from "@/ui/card";
+import { Checkbox } from "@/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import {
   confirmLabel,
   type DeviceRow,
@@ -10,6 +25,9 @@ import {
   REVOKE_WARNING_NOTE,
   REVOKING_LABEL,
 } from "./devices-model";
+
+/** Where the focus goes when the confirmation closes without a cancel: the heading of the screen. */
+export const DEVICES_HEADING_ID = "devices-title";
 
 interface RowProps {
   /** What went wrong with the last attempt, said inside the confirmation, right above the buttons. */
@@ -24,6 +42,8 @@ interface RowProps {
   /** There is a connection: Sair can revoke this device on the server before it leaves. */
   online: boolean;
   onRevoke: (id: string) => void;
+  /** The line of the screen that says why the button is off (offline, or this browser's device not known yet). */
+  reasonId?: string | undefined;
   row: DeviceRow;
   /** The session is over (the panel above says so): no promise about what Sair does. */
   sessionGone: boolean;
@@ -38,6 +58,111 @@ const THIS_DEVICE_ONLINE_HELP = (
 const THIS_DEVICE_OFFLINE_HELP =
   "Sem conexão, Sair não tira este aparelho da lista; ele sai quando você sair com internet, ou pode ser revogado de outro aparelho.";
 
+/** A button that is off for a reason keeps its place in the focus order and reads the reason (decision of 21/10). */
+const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+
+interface RevokeFormProps {
+  actionError: string | null;
+  busy: boolean;
+  endOtherSessions: boolean;
+  offline: boolean;
+  onCancel: () => void;
+  onChoose: (endOtherSessions: boolean) => void;
+  onRevoke: () => void;
+  /** The line of the screen that says why the confirm is off; it is read from the page even behind the dialog. */
+  reasonId?: string | undefined;
+  row: DeviceRow;
+}
+
+/**
+ * The rest of the confirmation of a revocation, in the order of the rule of 19/10: the extra choice (always
+ * unticked on opening), the error of the attempt right above the buttons, then the buttons.
+ */
+export function RevokeForm({
+  actionError,
+  busy,
+  endOtherSessions,
+  offline,
+  onCancel,
+  onChoose,
+  onRevoke,
+  reasonId,
+  row,
+}: RevokeFormProps) {
+  const blocked = busy || offline;
+  const helpId = `${row.id}-help`;
+  return (
+    <>
+      <Field orientation="horizontal">
+        <Checkbox
+          aria-describedby={helpId}
+          checked={endOtherSessions}
+          disabled={blocked}
+          id={`${row.id}-end-others`}
+          onCheckedChange={onChoose}
+        />
+        <FieldContent>
+          <FieldLabel htmlFor={`${row.id}-end-others`}>
+            {END_OTHER_SESSIONS_LABEL}
+          </FieldLabel>
+          <FieldDescription id={helpId}>
+            {END_OTHER_SESSIONS_HELP}
+          </FieldDescription>
+        </FieldContent>
+      </Field>
+      {endOtherSessions ? (
+        <p className="font-medium">{END_OTHER_SESSIONS_WARNING}</p>
+      ) : null}
+      {actionError ? (
+        <Alert variant="destructive">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      ) : null}
+      <DialogFooter className="gap-3">
+        <Button
+          aria-disabled={busy || undefined}
+          className={OFF}
+          onClick={busy ? undefined : onCancel}
+          type="button"
+          variant="outline"
+        >
+          Cancelar
+        </Button>
+        <Button
+          aria-describedby={offline ? reasonId : undefined}
+          aria-disabled={blocked || undefined}
+          className={OFF}
+          onClick={blocked ? undefined : onRevoke}
+          type="button"
+          variant="destructive"
+        >
+          {busy ? REVOKING_LABEL : confirmLabel(endOtherSessions)}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+/** The confirmation, in a dialog: the effect first (title and the two sentences), then the form. */
+function RevokeBody(props: RevokeFormProps) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {REVOKE_TITLE}
+          <span className="sr-only"> ({props.row.labelText})</span>
+        </DialogTitle>
+        <DialogDescription className="grid gap-2" render={<div />}>
+          <p>{REVOKE_WARNING}</p>
+          <p>{REVOKE_WARNING_NOTE}</p>
+        </DialogDescription>
+      </DialogHeader>
+      <RevokeForm {...props} />
+    </>
+  );
+}
+
 export function DeviceItem({
   actionError,
   busy,
@@ -49,111 +174,95 @@ export function DeviceItem({
   onChoose,
   onRevoke,
   online,
+  reasonId,
   row,
   sessionGone,
 }: RowProps) {
   const askRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLFieldSetElement>(null);
-  const focusAskAfterCancel = useRef<boolean>(false);
+  const cancelled = useRef<boolean>(false);
   const handleAsk = useCallback(() => onAsk(row.id), [onAsk, row.id]);
   const handleRevoke = useCallback(() => onRevoke(row.id), [onRevoke, row.id]);
   const handleChoose = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChoose(event.target.checked),
+    (checked: boolean) => onChoose(checked),
     [onChoose]
   );
-  // focus goes to the confirmation when it opens and back to "Revogar" on Cancelar (not when another row took the confirmation)
-  useEffect(() => {
-    if (confirming) {
-      confirmRef.current?.focus();
-    } else if (focusAskAfterCancel.current) {
-      focusAskAfterCancel.current = false;
-      askRef.current?.focus();
-    }
-  }, [confirming]);
   const handleCancel = useCallback(() => {
-    focusAskAfterCancel.current = true;
+    cancelled.current = true;
     onCancel();
   }, [onCancel]);
+  // Escape and a press outside are a cancel too, but not while the call runs
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!(open || busy)) {
+        handleCancel();
+      }
+    },
+    [busy, handleCancel]
+  );
+  // back to "Revogar" after a cancel; after a revocation the row may be gone: the heading of the screen keeps the place
+  const finalFocus = useCallback(() => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return askRef.current;
+    }
+    return document.getElementById(DEVICES_HEADING_ID);
+  }, []);
   return (
-    <li className="device-item">
-      <div className="device-main">
-        <p className="device-name">
-          {row.labelText}
+    <li>
+      <Card className="gap-2 px-(--card-spacing)">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="font-medium [overflow-wrap:anywhere]">
+            {row.labelText}
+          </p>
           {row.isCurrent ? (
-            <span className="device-badge">Este aparelho</span>
+            <Badge variant="outline">Este aparelho</Badge>
           ) : null}
-        </p>
-        <p className="device-meta">
+        </div>
+        <p className="text-muted-foreground text-support">
           Registrado em {row.registeredText} · visto por último em{" "}
           {row.lastSeenText}
         </p>
-      </div>
-      {row.isCurrent && !sessionGone ? (
-        <p className="device-meta">
-          {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
-        </p>
-      ) : null}
-      {!row.isCurrent && confirming ? (
-        <fieldset className="device-confirm" ref={confirmRef} tabIndex={-1}>
-          <legend className="device-confirm-title">
-            {REVOKE_TITLE}
-            <span className="visually-hidden"> ({row.labelText})</span>
-          </legend>
-          <p className="device-confirm-warning">{REVOKE_WARNING}</p>
-          <p className="device-confirm-note">{REVOKE_WARNING_NOTE}</p>
-          <label className="device-check">
-            <input
-              aria-describedby={`${row.id}-help`}
-              checked={endOtherSessions}
-              disabled={busy || offline}
-              onChange={handleChoose}
-              type="checkbox"
-            />
-            <span>{END_OTHER_SESSIONS_LABEL}</span>
-          </label>
-          <p className="device-check-help" id={`${row.id}-help`}>
-            {END_OTHER_SESSIONS_HELP}
+        {row.isCurrent && !sessionGone ? (
+          <p className="text-muted-foreground text-support">
+            {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
           </p>
-          {endOtherSessions ? (
-            <p className="device-check-warning">{END_OTHER_SESSIONS_WARNING}</p>
-          ) : null}
-          {actionError ? (
-            <p className="device-confirm-error" role="alert">
-              {actionError}
-            </p>
-          ) : null}
-          <div className="device-actions">
-            <button
-              className="danger-button"
-              disabled={busy || offline}
-              onClick={handleRevoke}
+        ) : null}
+        {row.isCurrent ? null : (
+          <>
+            <Button
+              aria-describedby={offline ? reasonId : undefined}
+              aria-disabled={busy || offline || undefined}
+              aria-label={`Revogar o aparelho ${row.labelText}`}
+              className={`mt-1 self-start ${OFF}`}
+              onClick={busy || offline ? undefined : handleAsk}
+              ref={askRef}
               type="button"
+              variant="destructive"
             >
-              {busy ? REVOKING_LABEL : confirmLabel(endOtherSessions)}
-            </button>
-            <button
-              className="quiet-button"
-              disabled={busy}
-              onClick={handleCancel}
-              type="button"
-            >
-              Cancelar
-            </button>
-          </div>
-        </fieldset>
-      ) : null}
-      {row.isCurrent || confirming ? null : (
-        <button
-          aria-label={`Revogar o aparelho ${row.labelText}`}
-          className="quiet-button"
-          disabled={busy || offline}
-          onClick={handleAsk}
-          ref={askRef}
-          type="button"
-        >
-          Revogar
-        </button>
-      )}
+              Revogar
+            </Button>
+            <Dialog onOpenChange={handleOpenChange} open={confirming}>
+              <DialogContent
+                className="sm:max-w-md"
+                finalFocus={finalFocus}
+                showCloseButton={false}
+              >
+                <RevokeBody
+                  actionError={actionError}
+                  busy={busy}
+                  endOtherSessions={endOtherSessions}
+                  offline={offline}
+                  onCancel={handleCancel}
+                  onChoose={handleChoose}
+                  onRevoke={handleRevoke}
+                  reasonId={reasonId}
+                  row={row}
+                />
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
+      </Card>
     </li>
   );
 }

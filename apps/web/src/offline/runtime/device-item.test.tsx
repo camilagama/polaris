@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { DeviceItem } from "./device-item";
+import { DeviceItem, RevokeForm } from "./device-item";
 import { deviceRows } from "./devices-model";
 
-const LABELLED_FIELD =
-  /<label class="device-check"><input[^>]*type="checkbox"[^>]*\/><span>Encerrar também as outras sessões<\/span><\/label>/;
+const LABEL_FOR_CHECKBOX =
+  /<label [^>]*data-slot="field-label" for="[^"]*-end-others">Encerrar também as outras sessões<\/label>/;
+/** The opening tag of the button that says `label`. */
+function buttonTag(html: string, label: string): string {
+  const end = html.indexOf(`>${label}<`);
+  return html.slice(html.lastIndexOf("<button", end), end);
+}
+
 const row = (
   overrides: Partial<Parameters<typeof DeviceItem>[0]["row"]> = {}
 ) => ({
@@ -45,29 +51,11 @@ describe("a device row", () => {
     expect(html).toContain("Revogar o aparelho Celular da Ana");
   });
 
-  it("offers the option, unticked, with a label tied to the field and the help text, only while confirming", () => {
+  it("shows the confirmation only in the dialog: the row itself offers the button and nothing else", () => {
+    // a dialog draws into a portal, after the page mounts: the static markup is the row as it waits
     const html = render({ confirming: true });
-    expect(html).toContain('type="checkbox"');
-    expect(html).not.toContain("checked");
-    // the whole line is the label: it wraps the field and the text
-    expect(html).toMatch(LABELLED_FIELD);
-    expect(html).toContain("aria-describedby=");
-    expect(html).toContain(
-      "todos os outros celulares e computadores, menos neste"
-    );
-    expect(html).toContain("Sim, revogar este aparelho");
-    expect(html).not.toContain("será desconectado agora");
-    expect(html).not.toContain("Revogar o aparelho Celular da Ana");
-  });
-
-  it("ticked: shows the extra warning and changes the confirm button, which goes back when unticked", () => {
-    const ticked = render({ confirming: true, endOtherSessions: true });
-    expect(ticked).toContain("será desconectado agora");
-    expect(ticked).toContain("Sim, revogar e encerrar as outras sessões");
-    expect(ticked).not.toContain(">Sim, revogar este aparelho<");
-    const unticked = render({ confirming: true, endOtherSessions: false });
-    expect(unticked).toContain(">Sim, revogar este aparelho<");
-    expect(unticked).not.toContain("será desconectado agora");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).toContain("Revogar o aparelho Celular da Ana");
   });
 
   it("never says before the answer that this browser leaves", () => {
@@ -85,32 +73,14 @@ describe("a device row", () => {
     }
   });
 
-  it("offline: the button, the option and the confirm are disabled", () => {
-    const html = render({ confirming: true, offline: true });
-    const disabled = html.match(/disabled=""/g) ?? [];
-    // checkbox + confirm; Cancelar stays available
-    expect(disabled).toHaveLength(2);
-    expect(render({ offline: true })).toContain('disabled=""');
-  });
-
-  it("the confirmation has the short red title, the two sentences, and the error right above the buttons", () => {
-    const html = render({
-      actionError: "Não conseguimos confirmar se o aparelho foi revogado.",
-      confirming: true,
-    });
-    expect(html).toContain("Revogar este aparelho?");
-    expect(html).toContain("Não dá para desfazer.");
-    expect(html).toContain("Use para aparelho perdido ou roubado.");
-    const alert = html.indexOf('role="alert"');
-    expect(alert).toBeGreaterThan(html.indexOf("Use para aparelho perdido"));
-    expect(alert).toBeLessThan(html.indexOf("Sim, revogar este aparelho"));
-    expect(render({ confirming: true })).not.toContain('role="alert"');
-  });
-
-  it("the confirm button says Revogando… during the call", () => {
-    const html = render({ busy: true, confirming: true });
-    expect(html).toContain(">Revogando…<");
-    expect(html).not.toContain(">Sim, revogar este aparelho<");
+  it("offline: the button is off but reachable, and reads the line that says why", () => {
+    const html = render({ offline: true, reasonId: "devices-offline" });
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('aria-describedby="devices-offline"');
+    expect(html).not.toContain('disabled=""');
+    const on = render({ reasonId: "devices-offline" });
+    expect(on).not.toContain('aria-disabled="true"');
+    expect(on).not.toContain("aria-describedby");
   });
 
   it("says where Sair is: under Mais on a phone, or at the foot of the sidebar on a big screen", () => {
@@ -180,5 +150,82 @@ describe("the name of a device on the devices screen", () => {
       "Chrome no Android"
     );
     expect(render({ row: rowFor(null, true) })).toContain("Aparelho sem nome");
+  });
+});
+
+describe("the form of the confirmation of a revocation", () => {
+  const form = (props: Partial<Parameters<typeof RevokeForm>[0]> = {}) =>
+    renderToStaticMarkup(
+      <RevokeForm
+        actionError={null}
+        busy={false}
+        endOtherSessions={false}
+        offline={false}
+        onCancel={vi.fn()}
+        onChoose={vi.fn()}
+        onRevoke={vi.fn()}
+        row={row()}
+        {...props}
+      />
+    );
+
+  it("offers the option, unticked, with a label tied to the field and the help text", () => {
+    const html = form();
+    expect(html).toContain('role="checkbox"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toMatch(LABEL_FOR_CHECKBOX);
+    expect(html).toContain(
+      'aria-describedby="0199c2d0-0000-7000-8000-000000000002-help"'
+    );
+    expect(html).toContain(
+      "todos os outros celulares e computadores, menos neste"
+    );
+    expect(html).toContain("Sim, revogar este aparelho");
+    expect(html).toContain(">Cancelar<");
+    expect(html).not.toContain("será desconectado agora");
+  });
+
+  it("ticked: shows the extra warning and changes the confirm button, which goes back when unticked", () => {
+    const ticked = form({ endOtherSessions: true });
+    expect(ticked).toContain("será desconectado agora");
+    expect(ticked).toContain("Sim, revogar e encerrar as outras sessões");
+    expect(ticked).not.toContain(">Sim, revogar este aparelho<");
+    const unticked = form({ endOtherSessions: false });
+    expect(unticked).toContain(">Sim, revogar este aparelho<");
+    expect(unticked).not.toContain("será desconectado agora");
+  });
+
+  it("never says before the answer that this browser leaves", () => {
+    expect(form({ endOtherSessions: true }).toLowerCase()).not.toContain(
+      "navegador"
+    );
+  });
+
+  it("offline: the option is off, the confirm is off but reads why, and Cancelar stays available", () => {
+    const html = form({ offline: true, reasonId: "devices-offline" });
+    // the checkbox (a real disabled field, with the line of the reason right above the buttons)
+    expect(html).toContain("data-disabled");
+    const confirm = buttonTag(html, "Sim, revogar este aparelho");
+    expect(confirm).toContain('aria-disabled="true"');
+    expect(confirm).toContain('aria-describedby="devices-offline"');
+    expect(buttonTag(html, "Cancelar")).not.toContain('aria-disabled="true"');
+  });
+
+  it("the error of the attempt is an alert right above the buttons, and only when there is one", () => {
+    const html = form({
+      actionError: "Não conseguimos confirmar se o aparelho foi revogado.",
+    });
+    const alert = html.indexOf('role="alert"');
+    expect(alert).toBeGreaterThan(html.indexOf("todos os outros celulares"));
+    expect(alert).toBeLessThan(html.indexOf("Sim, revogar este aparelho"));
+    expect(form()).not.toContain('role="alert"');
+  });
+
+  it("the confirm button says Revogando… during the call, and both buttons are off", () => {
+    const html = form({ busy: true });
+    expect(html).toContain(">Revogando…<");
+    expect(html).not.toContain(">Sim, revogar este aparelho<");
+    expect(buttonTag(html, "Cancelar")).toContain('aria-disabled="true"');
+    expect(buttonTag(html, "Revogando…")).toContain('aria-disabled="true"');
   });
 });
