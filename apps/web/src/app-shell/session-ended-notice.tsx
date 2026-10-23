@@ -1,4 +1,7 @@
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import {
   SESSION_ENDED_MESSAGE,
   SIGN_IN_AGAIN_BUTTON,
@@ -34,7 +37,7 @@ export function SessionEndedNotice({
   const [leaving, setLeaving] = useState(false);
   // each screen says by itself that it holds something typed or picked and not sent
   const unsent = useHasUnsentWork();
-  const noticeRef = useRef<HTMLElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
   // the notice can appear far from where the person is (a long sale): bring it into view and put the focus on it,
   // unless a field is active
   useEffect(() => {
@@ -56,24 +59,29 @@ export function SessionEndedNotice({
   }, [returnTo, runtime]);
 
   return (
-    <section
+    <Alert
       aria-label="Sua sessão acabou"
-      className="session-ended-notice"
+      className="focus-ring mb-4 font-sans"
+      data-notice="session-ended"
+      data-ui=""
       ref={noticeRef}
       role={alone ? "alert" : "status"}
       tabIndex={-1}
+      variant="warning"
     >
-      <p>{SESSION_ENDED_MESSAGE}</p>
-      {unsent ? <p>{UNSENT_INPUT_WARNING}</p> : null}
-      <button
-        aria-busy={leaving}
-        className="primary-button"
-        disabled={leaving}
-        onClick={handleClick}
-        type="button"
-      >
-        {leaving ? SIGN_IN_AGAIN_OPENING : SIGN_IN_AGAIN_BUTTON}
-      </button>
-    </section>
+      <TriangleAlertIcon aria-hidden="true" />
+      <AlertTitle>{SESSION_ENDED_MESSAGE}</AlertTitle>
+      <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
+        {unsent ? <p>{UNSENT_INPUT_WARNING}</p> : null}
+        <Button
+          aria-busy={leaving}
+          disabled={leaving}
+          onClick={handleClick}
+          type="button"
+        >
+          {leaving ? SIGN_IN_AGAIN_OPENING : SIGN_IN_AGAIN_BUTTON}
+        </Button>
+      </AlertDescription>
+    </Alert>
   );
 }

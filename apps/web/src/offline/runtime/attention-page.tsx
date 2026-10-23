@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { PageLoading } from "../../app-shell/page-loading";
 import {
   type AttentionItem,
   type AttentionSummary,
@@ -106,11 +107,14 @@ export function AttentionPage() {
   }
   if (snapshot.phase !== "ready") {
     return (
-      <p className="app-status" role="status">
-        {snapshot.phase === "unavailable"
-          ? "O modo offline não está disponível neste aparelho agora."
-          : "Preparando o modo offline…"}
-      </p>
+      <PageLoading
+        label={
+          snapshot.phase === "unavailable"
+            ? "O modo offline não está disponível neste aparelho agora."
+            : "Preparando o modo offline…"
+        }
+        skeleton={snapshot.phase !== "unavailable"}
+      />
     );
   }
   return (
