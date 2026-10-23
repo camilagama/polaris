@@ -69,7 +69,7 @@ Este arquivo define direção visual e de interação, não bibliotecas; a base 
 - Toda tela trata carregamento (`aria-busy` na lista ou texto de status), vazio (texto explicativo, sem ilustração), erro e sucesso.
 - Mensagens de erro usam `role="alert"`; avisos de estado, confirmações e carregamento usam `role="status"`; resultados que mudam sem foco (totais, resumo) usam `aria-live="polite"`.
 - Estados de ciclo de vida (ativo, arquivado, removido, confirmada, cancelada, com devoluções) aparecem como selo com texto e cor; **nunca só cor**.
-- Validação fica junto do campo (`aria-invalid` e texto de erro associado por `aria-describedby`); campos desabilitados mostram opacidade reduzida e cursor de bloqueio.
+- Validação fica junto do campo (`aria-invalid` e texto de erro associado por `aria-describedby`); campos desabilitados mostram opacidade reduzida e cursor de bloqueio. O botão desligado com motivo (`aria-disabled`) tem a mesma aparência do `disabled` (50% e sem toque), na classe base do `Button`.
 - Ações que alteram dados mostram o estado pendente no próprio botão e impedem reenvio.
 - **Ação irreversível em duas etapas:** cancelamento e devolução pedem os campos, depois um resumo do efeito ("isso não poderá ser desfeito") e só então a confirmação, com opção de voltar.
 - **Resultado desconhecido** (falha de rede, 5xx) trava a tentativa: o formulário não é editável, só a repetição exata da mesma tentativa é oferecida, e descartar exige uma segunda confirmação que avisa que a operação pode já ter sido registrada. Falhas definitivas com motivo explicam a causa e liberam a edição, que gera uma nova tentativa. O contrato de repetição está em [vendas](docs/business-rules/sales.md).

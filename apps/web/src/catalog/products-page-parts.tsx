@@ -105,7 +105,6 @@ export function ActionFeedback({
               <Button
                 aria-describedby={undoDisabled ? undoReasonId : undefined}
                 aria-disabled={undoDisabled || undefined}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
                 onClick={undoDisabled ? undefined : onUndo}
                 size="sm"
                 type="button"
