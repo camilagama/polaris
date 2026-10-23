@@ -41,11 +41,16 @@ const successMessages: Readonly<Record<LinkAction, string>> = {
   unassign: "Cliente removido da venda.",
 };
 
+/** The page opened without `?saleId=`: the sale is chosen in the history (there is no form for an identifier). */
+export const SALE_ID_MISSING_MESSAGE =
+  "Escolha a venda no histórico para ver o detalhe e o cliente dela.";
+
+/** The page opened with a `?saleId=` that is not a UUID. */
 export const INVALID_SALE_ID_MESSAGE =
-  "Informe um identificador de venda válido (um UUID, como 123e4567-e89b-42d3-a456-426614174000).";
+  "Este endereço não aponta para uma venda. Escolha a venda no histórico.";
 
 /* -------------------------------------------------------------------------- */
-/* Sale identifier (standalone page)                                          */
+/* Sale identifier (in the URL)                                               */
 /* -------------------------------------------------------------------------- */
 
 const uuidPattern =

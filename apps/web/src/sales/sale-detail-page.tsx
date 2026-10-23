@@ -12,13 +12,13 @@ import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import "./sale-legacy.css";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
   isLatestRequest,
   nextRequestToken,
   type RequestSequence,
+  readSaleIdParam,
 } from "./sale-customer-link-model";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { Loadable } from "./sale-form-model";
@@ -30,11 +30,10 @@ import {
   saleCustomerHref,
   saleDetailView,
 } from "./sale-history-model";
-import { SaleIdForm } from "./sale-id-form";
+import { SaleIdMissing } from "./sale-id-missing";
 import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
-import { useSaleIdParam } from "./use-sale-id-param";
 
 /** The root of a piece of the screen on the new interface (`data-ui`, as the other migrated screens write it). */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
@@ -107,42 +106,40 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   );
 
   return (
-    <>
-      <div className={UI_ROOT} data-ui="">
-        <SaleNoticeRegion notice={notice} />
-        {load.status === "loading" ? (
-          <StateCard role="status">Carregando venda…</StateCard>
-        ) : null}
-        {load.status === "error" ? (
-          <Alert variant="destructive">
-            <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              {load.message}
-              <Button
-                onClick={handleRetry}
-                size="sm"
-                type="button"
-                variant="link"
-              >
-                <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                Tentar novamente
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {load.status === "ready" ? (
-          <ReadyDetailTop detail={load.value} refreshing={refreshing} />
-        ) : null}
-      </div>
-      {load.status === "ready" ? (
-        <ReadyDetailPanels
-          detail={load.value}
-          onSaleChanged={handleSaleChanged}
-          organizationId={organizationId}
-          refreshing={refreshing}
-          saleId={saleId}
-        />
+    <div className={UI_ROOT} data-ui="">
+      <SaleNoticeRegion notice={notice} />
+      {load.status === "loading" ? (
+        <StateCard role="status">Carregando venda…</StateCard>
       ) : null}
-    </>
+      {load.status === "error" ? (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {load.message}
+            <Button
+              onClick={handleRetry}
+              size="sm"
+              type="button"
+              variant="link"
+            >
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {load.status === "ready" ? (
+        <>
+          <ReadyDetailTop detail={load.value} refreshing={refreshing} />
+          <ReadyDetailPanels
+            detail={load.value}
+            onSaleChanged={handleSaleChanged}
+            organizationId={organizationId}
+            refreshing={refreshing}
+            saleId={saleId}
+          />
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -256,7 +253,7 @@ interface ReadyDetailPanelsProps {
   saleId: string;
 }
 
-/** Return, cancel and customer: still the old interface (they migrate in their own pull request). */
+/** Return, cancel and customer, each in its card under the receipt. */
 function ReadyDetailPanels({
   detail,
   onSaleChanged,
@@ -268,38 +265,34 @@ function ReadyDetailPanels({
   const offer = cancelOffer(view, refreshing);
   return (
     <>
-      <div className="sale-page">
-        {view.canReturn ? (
-          <SaleReturnPanel
-            key={view.returnPanelKey}
-            onSaleChanged={onSaleChanged}
-            organizationId={organizationId}
-            rows={view.returnRows}
-            saleId={saleId}
-          />
-        ) : null}
-        {offer === "panel" ? (
-          <SaleCancelPanel
-            key={saleId}
-            onSaleChanged={onSaleChanged}
-            organizationId={organizationId}
-            saleId={saleId}
-          />
-        ) : null}
-        <SaleCustomerPanel
-          headingLevel={2}
+      {view.canReturn ? (
+        <SaleReturnPanel
+          key={view.returnPanelKey}
+          onSaleChanged={onSaleChanged}
+          organizationId={organizationId}
+          rows={view.returnRows}
+          saleId={saleId}
+        />
+      ) : null}
+      {offer === "panel" ? (
+        <SaleCancelPanel
           key={saleId}
+          onSaleChanged={onSaleChanged}
           organizationId={organizationId}
           saleId={saleId}
         />
-      </div>
-      <div className={UI_ROOT} data-ui="">
-        <p>
-          <a className={LINK} href={saleCustomerHref(saleId)}>
-            Abrir o ajuste de cliente em uma página própria
-          </a>
-        </p>
-      </div>
+      ) : null}
+      <SaleCustomerPanel
+        headingLevel={2}
+        key={saleId}
+        organizationId={organizationId}
+        saleId={saleId}
+      />
+      <p>
+        <a className={LINK} href={saleCustomerHref(saleId)}>
+          Abrir o ajuste de cliente em uma página própria
+        </a>
+      </p>
     </>
   );
 }
@@ -307,7 +300,7 @@ function ReadyDetailPanels({
 /** One sale in full: its receipt, cancellation, and customer attribution. */
 export function SaleDetailPage() {
   const { organizationId } = useCurrentOrganization();
-  const { clear, initialError, open, saleId } = useSaleIdParam();
+  const [param] = useState(() => readSaleIdParam(window.location.search));
   return (
     <div className="grid gap-4">
       <div className={UI_ROOT} data-ui="">
@@ -318,30 +311,20 @@ export function SaleDetailPage() {
             cliente são registros à parte.
           </p>
         </header>
-        <div className="flex flex-wrap items-center gap-x-4">
+        <p>
           <a className={LINK} href="/sales/history">
             Voltar ao histórico
           </a>
-          {saleId === null ? null : (
-            <Button onClick={clear} size="sm" type="button" variant="link">
-              Abrir outra venda
-            </Button>
-          )}
-        </div>
+        </p>
+        {param.kind === "valid" ? null : <SaleIdMissing param={param} />}
       </div>
-      {saleId === null ? (
-        // still the old form: the page of the customer of a sale shares it and migrates in its own pull request
-        <div className="sale-page">
-          <SaleIdForm initialError={initialError} onOpen={open} />
-        </div>
-      ) : null}
-      {saleId === null ? null : (
+      {param.kind === "valid" ? (
         <SaleDetailContent
-          key={saleId}
+          key={param.saleId}
           organizationId={organizationId}
-          saleId={saleId}
+          saleId={param.saleId}
         />
-      )}
+      ) : null}
     </div>
   );
 }

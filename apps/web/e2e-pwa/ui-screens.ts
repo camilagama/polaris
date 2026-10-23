@@ -19,6 +19,7 @@ import { passwordStates } from "./ui-password-states";
 import { paymentStates } from "./ui-payment-states";
 import { productStates } from "./ui-product-states";
 import { resultStates } from "./ui-result-states";
+import { saleDetailStates } from "./ui-sale-detail-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
 
@@ -359,13 +360,11 @@ async function exerciseGoalOverlays(page: Page) {
   );
 }
 
-/** The files of the sales history and of the sale detail on the new interface: the panels of the detail are still old. */
+/** The files of the sales history on the new interface. */
 const HISTORY_SOURCES = [
   "src/sales/confirmed-sale-parts.tsx",
-  "src/sales/sale-detail-page.tsx",
   "src/sales/sale-history-list.tsx",
   "src/sales/sale-history-page.tsx",
-  "src/sales/sale-receipt.tsx",
 ];
 
 /** One state of the sales history (`ui-history-states.ts`). */
@@ -378,6 +377,56 @@ const historyScreen = (
   sourceDirs: HISTORY_SOURCES,
   status: "migrated",
 });
+
+/** The files of the sale detail (with its return, cancellation and customer panels) and of the customer page. */
+const SALE_DETAIL_SOURCES = [
+  "src/sales/operation-failure-notice.tsx",
+  "src/sales/sale-cancel-panel.tsx",
+  "src/sales/sale-customer-page.tsx",
+  "src/sales/sale-customer-panel.tsx",
+  "src/sales/sale-detail-page.tsx",
+  "src/sales/sale-id-missing.tsx",
+  "src/sales/sale-notice-region.tsx",
+  "src/sales/sale-reason-fields.tsx",
+  "src/sales/sale-receipt.tsx",
+  "src/sales/sale-return-panel.tsx",
+  "src/sales/sale-return-table.tsx",
+];
+
+/** One state of the sale detail or of the customer page (`ui-sale-detail-states.ts`). */
+const saleDetailScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
+): UiScreen => ({
+  ...(exercise ? { exercise } : {}),
+  name: `detalhe da venda ${name}`,
+  open,
+  sourceDirs: SALE_DETAIL_SOURCES,
+  status: "migrated",
+});
+
+async function exerciseCancelReason(page: Page) {
+  await page.getByRole("button", { name: "Voltar" }).click();
+  await openAndClose(
+    page,
+    { name: "Motivo (opcional)", role: "combobox" },
+    { role: "listbox" }
+  );
+}
+
+async function exerciseSaleCustomer(page: Page) {
+  await openAndClose(
+    page,
+    { name: "Cliente", role: "combobox" },
+    { role: "listbox" }
+  );
+  await openAndClose(
+    page,
+    { name: "Remover cliente", role: "button" },
+    { role: "dialog" }
+  );
+}
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
 const STOCK_SOURCES = [
@@ -723,6 +772,18 @@ export const SCREENS: UiScreen[] = [
   historyScreen("lista", historyStates.list),
   historyScreen("sem conexão", historyStates.offline),
   historyScreen("período invertido", historyStates.periodError),
+  saleDetailScreen("aberto", saleDetailStates.detail),
+  saleDetailScreen("devolução com erro", saleDetailStates.returnError),
+  saleDetailScreen(
+    "cancelamento revisado",
+    saleDetailStates.cancelReview,
+    exerciseCancelReason
+  ),
+  saleDetailScreen(
+    "cliente da venda",
+    saleDetailStates.customer,
+    exerciseSaleCustomer
+  ),
   shellPieceScreen("404", "nao-encontrada", headingOf("Página não encontrada")),
   shellPieceScreen(
     "falha da tela",
