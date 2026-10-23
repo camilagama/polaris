@@ -2026,3 +2026,12 @@ Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisado
 | A3 rodapé | Em revisão | `POLARIS_SITE_URL` (vazia nos três ambientes do `wrangler.jsonc`); só `https` sem credencial nem fragmento vira link (`rel="noopener noreferrer"`, `referrerpolicy="no-referrer"`). |
 | Testes | Em revisão | Vitest: `views.test.tsx`, `format.test.ts`, `polaris-site.test.ts`, `source-guard.test.ts` (com casos de controle). Navegador: `e2e/csp.e2e.ts` e `e2e/catalog-pages.e2e.ts` sobre o build `fixture-data` (Worker real sobre lojas de fixture, sem PostgreSQL). **Limite:** `scroll-snap` no Safari do iPhone e foto real com `object-fit: cover` (AC-7) ficam para o BrowserStack. |
 
+### Preço de tabela 0,00 conta como não informado no catálogo público (AC-12; migration 0099, número provisório)
+
+Regra de produto de 22/10/2026 ([public-catalog.md](../docs/business-rules/public-catalog.md)); desenho do Filipe, `NULLIF(list_price, 0)` numa expressão só nas duas funções que dão preço ao público.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Migration 0099 | Em revisão | `CREATE OR REPLACE` de `public_catalog_products` (`priceFrom` é o `min(NULLIF(list_price, 0))`) e `public_catalog_product` (`price` da variante a 0,00 sai `null`), como `polaris_catalog_owner` (`CREATE` em `public` e `SET` só pelo momento, devolvidos), assinaturas e retorno iguais, `search_path` com `pg_temp` por último. Dono e `EXECUTE` não mudam. Expand (ADR 0096): o Worker anterior recebe `null` onde recebia `"0.00"` e já mostra o texto de preço ausente. Nenhum dado muda: `product_variants.list_price` segue 0,00 para ERP, venda e exportação. |
+| Gate `public-catalog` | Em revisão | 0,00 e 49,90 dá `priceFrom = 49.90` e a página mostra a variante a 0,00 com `price = null`; só 0,00 dá `null` na lista e na página (produto de uma e de duas variantes); o dado fica 0,00; para cada produto da lista, `priceFrom` é igual ao menor `price` não nulo da página (os três estados e o original). Confere vermelho sem o `NULLIF`. |
+| Site (`apps/catalog`) | Sem mudança | Já mostra o texto de preço ausente para `null`; o SEO já filtra `null`. |
