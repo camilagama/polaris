@@ -16,13 +16,13 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  * Never two runs pending: the runtime's sync is single-flight, and each of the timers here is replaced,
  * never added. Framework-free, with the clock and the page injected.
  */
-export interface SchedulerRuntime {
+interface SchedulerRuntime {
   connectionChanged: () => void;
   getSnapshot: () => RuntimeSnapshot;
   syncNow: () => Promise<void>;
 }
 
-export interface SchedulerConnection {
+interface SchedulerConnection {
   isOnline: () => boolean;
   subscribe: (listener: () => void) => () => void;
   takeRetryAfterMs: () => number | null;

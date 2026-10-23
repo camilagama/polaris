@@ -512,5 +512,5 @@ test("U-54: numa tela que guarda no aparelho, o chip sem fila diz só 'Sem conex
   await page.getByLabel("Rede disponível").uncheck();
   const chip = page.locator(".sync-status");
   await expect(chip).toHaveAttribute("title", "Sem conexão");
-  await expect(chip.locator(".visually-hidden")).toHaveText("Sem conexão");
+  await expect(chip.locator(".sr-only")).toHaveText("Sem conexão");
 });

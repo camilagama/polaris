@@ -16,10 +16,7 @@ import { CustomersPage } from "../customers/customers-page";
 import { DashboardPage } from "../dashboard/dashboard-page";
 import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
-import {
-  addConnectionTry,
-  browserConnection,
-} from "../lib/browser-connection";
+import { addConnectionTry, browserConnection } from "../lib/browser-connection";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { wipeLocalStore } from "../offline/local-store";
@@ -265,9 +262,7 @@ export function ScreensLab() {
   );
   useEffect(
     () =>
-      addConnectionTry(
-        () => scheduler.current?.syncNow() ?? Promise.resolve()
-      ),
+      addConnectionTry(() => scheduler.current?.syncNow() ?? Promise.resolve()),
     []
   );
 

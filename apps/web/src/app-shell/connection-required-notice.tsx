@@ -11,11 +11,11 @@ import {
  * the screen loads by itself when the connection returns. A control that needs the connection points to
  * the sentence with `aria-describedby` (`CONNECTION_NOTICE_TEXT_ID`).
  */
-export const CONNECTION_NOTICE_TEXT_ID = "connection-required-text";
+const CONNECTION_NOTICE_TEXT_ID = "connection-required-text";
 
-export const CONNECTION_NOTICE_WITH_FORM =
+const CONNECTION_NOTICE_WITH_FORM =
   "Sem internet. Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta.";
-export const CONNECTION_NOTICE_WITHOUT_FORM =
+const CONNECTION_NOTICE_WITHOUT_FORM =
   "Sem internet. Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar.";
 
 // ---------------------------------------------------- which form the screen shows
@@ -47,7 +47,7 @@ export function useConnectionNoticeForm(form: boolean) {
   }, [form]);
 }
 
-export function ConnectionRequiredNotice({ form }: { form: boolean }) {
+function ConnectionRequiredNotice({ form }: { form: boolean }) {
   const [trying, setTrying] = useState(false);
   const handleTry = useCallback(() => {
     if (trying) {

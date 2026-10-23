@@ -247,10 +247,10 @@ describe("rate limit wiring", () => {
 
 // The client takes a response for the Worker's only by this mark (emenda do ADR 0043): every answer has it,
 // the unhandled error, the not-found, the raw answer of a route and the one of the RPC handler too.
-describe("the Worker's mark on every response", () => {
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const workerMarkPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+describe("the Worker's mark on every response", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -263,8 +263,7 @@ describe("the Worker's mark on every response", () => {
       authHandler: () => Promise.reject(new Error("boom")),
     });
     const raw = createServerApp({
-      authHandler: () =>
-        Promise.resolve(new Response("null", { status: 401 })),
+      authHandler: () => Promise.resolve(new Response("null", { status: 401 })),
     });
     const responses = [
       await failing.request("/api/auth/get-session", {}, createBindings()),
@@ -290,7 +289,7 @@ describe("the Worker's mark on every response", () => {
     ]);
     expect(
       responses.map((response) =>
-        uuidPattern.test(response.headers.get("x-request-id") ?? "")
+        workerMarkPattern.test(response.headers.get("x-request-id") ?? "")
       )
     ).toEqual([true, true, true, true, true]);
   });

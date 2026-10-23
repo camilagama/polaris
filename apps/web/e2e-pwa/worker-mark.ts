@@ -13,7 +13,7 @@ export const WORKER_MARK = {
  * server has no `/health`, and the client only returns to "online" with a marked answer. While the context
  * is offline (`context.setOffline(true)`) or when `unreachable()` says the scenario has no network, the request fails, since a fulfilled route would not.
  */
-export async function serveHealth(
+async function serveHealth(
   page: Page,
   unreachable: () => boolean = () => false
 ) {

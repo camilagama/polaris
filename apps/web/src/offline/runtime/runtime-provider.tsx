@@ -111,23 +111,24 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
     }
     let scheduler: ReturnType<typeof startSyncScheduler> | null = null;
     let stopped = false;
+    const schedule = () => {
+      if (stopped) {
+        return;
+      }
+      getUpdateStore()?.setWorkSource(runtime.workSource());
+      scheduler = startSyncScheduler({
+        connection: browserConnection,
+        isVisible: () => document.visibilityState === "visible",
+        onVisible: onPageVisible,
+        random: Math.random,
+        runtime,
+        schedule: browserSchedule,
+      });
+      return scheduler.syncNow();
+    };
     runtime
       .start(organizationId)
-      .then(() => {
-        if (stopped) {
-          return;
-        }
-        getUpdateStore()?.setWorkSource(runtime.workSource());
-        scheduler = startSyncScheduler({
-          connection: browserConnection,
-          isVisible: () => document.visibilityState === "visible",
-          onVisible: onPageVisible,
-          random: Math.random,
-          runtime,
-          schedule: browserSchedule,
-        });
-        scheduler.syncNow().catch(() => undefined);
-      })
+      .then(schedule)
       .catch(() => undefined);
     // "Tentar agora" of the notices: the same real try as the timer's
     const removeTry = addConnectionTry(

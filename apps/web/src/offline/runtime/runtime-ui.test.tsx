@@ -75,7 +75,7 @@ describe("the sync status in the header", () => {
       />
     );
     expect(html).toContain(
-      '<span class="visually-hidden">Sem conexão · 2 operações guardadas</span>'
+      '<span class="sr-only">Sem conexão · 2 operações guardadas</span>'
     );
   });
 

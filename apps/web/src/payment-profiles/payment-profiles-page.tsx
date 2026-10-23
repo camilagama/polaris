@@ -16,10 +16,7 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import {
-  isConnectionFailure,
-  legalAcceptanceMessage,
-} from "../lib/rpc-error";
+import { isConnectionFailure, legalAcceptanceMessage } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   formatFeePercentage,
@@ -783,8 +780,9 @@ export function PaymentProfilesPage() {
         if (isConnectionFailure(saveError)) {
           const name = draft.name.trim();
           // a name already on the list before would prove nothing on the return
-          const provable =
-            !editing && !profiles.some((profile) => profile.name === name);
+          const provable = !(
+            editing || profiles.some((profile) => profile.name === name)
+          );
           setUncertain({
             message: SAVE_OUTCOME_UNKNOWN,
             name: provable ? name : null,
