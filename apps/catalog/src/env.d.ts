@@ -11,5 +11,10 @@ declare namespace Cloudflare {
     CATALOG_ORIGIN: string;
     /** The private media bucket, only ever read (ADR 0069). */
     MEDIA_BUCKET: R2Bucket;
+    /**
+     * The address of the Polaris site the footer links to. Not a secret; empty (or not a plain https address)
+     * means the footer is only text. Declared in every environment of wrangler.jsonc.
+     */
+    POLARIS_SITE_URL?: string;
   }
 }

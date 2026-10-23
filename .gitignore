@@ -3,6 +3,7 @@ node_modules/
 .turbo/
 dist/
 dist-bare/
+dist-fixture/
 coverage/
 playwright-report/
 test-results/

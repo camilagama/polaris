@@ -11,6 +11,9 @@
   "preview_urls": false,
   // CATALOG_ORIGIN (the public origin canonical links point to) is a per-environment variable:
   // a deploy without it fails closed instead of publishing a development address.
+  // POLARIS_SITE_URL (the Polaris site the page footer links to) is not a secret and is empty in every
+  // environment until the site has an address; empty or not a plain https address means the footer is only text.
+  "vars": { "POLARIS_SITE_URL": "" },
   // Our own server entry (nonce and security headers, ADR 0090). With the Cloudflare plugin the Worker's
   // main is the entry Start builds, so naming "@tanstack/react-start/server-entry" here would skip
   // src/server.ts; that file delegates to the package's handler (the router then refuses a page
@@ -55,6 +58,7 @@
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
+        "POLARIS_SITE_URL": "",
         "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev"
       },
       "observability": {
@@ -84,6 +88,7 @@
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
+        "POLARIS_SITE_URL": "",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin"
       },
       "observability": {

@@ -10,6 +10,7 @@ const SKIPPED_FOLDERS = new Set([
   "node_modules",
   "dist",
   "dist-bare",
+  "dist-fixture",
   "coverage",
   "playwright-report",
   "test-results",
