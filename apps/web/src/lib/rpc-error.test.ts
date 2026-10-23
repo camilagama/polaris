@@ -95,9 +95,9 @@ describe("the refusal for lack of the legal acceptance", () => {
 describe("a call that got no answer from the Worker", () => {
   it("is a connection failure for a network error, no Worker answer, a timeout, an abort or a cause of those", () => {
     expect(isConnectionFailure(new TypeError("Failed to fetch"))).toBe(true);
-    expect(
-      isConnectionFailure(new NoWorkerAnswerError("intercepted"))
-    ).toBe(true);
+    expect(isConnectionFailure(new NoWorkerAnswerError("intercepted"))).toBe(
+      true
+    );
     expect(
       isConnectionFailure(new DOMException("timeout", "TimeoutError"))
     ).toBe(true);

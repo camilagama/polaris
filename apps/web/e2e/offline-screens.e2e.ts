@@ -1137,7 +1137,7 @@ for (const mode of ["offline", "mentindo"] as const) {
 }
 
 test.describe("conexão com prova", () => {
-  test("U-60: o POST cortado diz que não sabe, não reenvia, e a releitura confirma o perfil salvo", async ({
+  test("U-60: o POST cortado diz que não sabe, não reenvia, e a releitura mostra a lista", async ({
     page,
   }) => {
     const server = await serveProfiles(page);
@@ -1164,12 +1164,14 @@ test.describe("conexão com prova", () => {
     ).toBeVisible();
 
     await page.unroute("**/health", cutNetwork);
+    // the list read on the return shows the saved profile; the warning and the typed form stay to be checked
+    await expect(page.getByRole("heading", { name: "Maquininha" })).toBeVisible(
+      { timeout: 20_000 }
+    );
+    await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
     await expect(
-      page.getByText("O perfil “Maquininha” foi salvo.")
-    ).toBeVisible({
-      timeout: 20_000,
-    });
-    await expect(page.getByLabel("Nome do perfil")).toHaveValue("");
+      page.getByText("Não sabemos se o perfil foi salvo", { exact: false })
+    ).toBeVisible();
     expect(server.creates).toBe(1); // read again, never sent again
   });
 

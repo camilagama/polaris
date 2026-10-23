@@ -79,6 +79,15 @@ function isTimeout(reason: unknown): boolean {
   return reason instanceof Error && reason.name === "TimeoutError";
 }
 
+/** `setTimeout` as a `schedule`: returns how to cancel. */
+export function timerSchedule(
+  callback: () => void,
+  delayMs: number
+): () => void {
+  const timer = setTimeout(callback, delayMs);
+  return () => clearTimeout(timer);
+}
+
 /** ±20% around the delay, so the tabs and devices that lost the network together do not come back together. */
 export function jittered(delayMs: number, random: () => number): number {
   return Math.round(delayMs * (0.8 + 0.4 * random()));

@@ -7,11 +7,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
-import { useConnectionOnline } from "../lib/browser-connection";
+import { useConnectionReturn } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
@@ -75,7 +74,6 @@ export function PublicCatalogPage() {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [problem, setProblem] = useState<ProfileFieldError | null>(null);
-  const online = useConnectionOnline();
   // read again when the connection returns: the page that did not load, or what a cut command changed
   const [stale, setStale] = useState(false);
   useReportUnsentWork(
@@ -119,16 +117,13 @@ export function PublicCatalogPage() {
     load(false).catch(() => undefined);
   }, [load]);
 
-  const wasOnline = useRef(online);
   const hasLoaded = loaded !== null;
-  useEffect(() => {
-    const cameBack = online && !wasOnline.current;
-    wasOnline.current = online;
-    if (cameBack && stale) {
+  const online = useConnectionReturn(() => {
+    if (stale) {
       // what was typed before the cut stays
       load(hasLoaded).catch(() => undefined);
     }
-  }, [hasLoaded, load, online, stale]);
+  });
 
   // the field with the error gets the focus once the form is enabled again (a disabled input takes no focus)
   useEffect(() => {

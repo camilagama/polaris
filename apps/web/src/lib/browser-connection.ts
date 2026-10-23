@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
-import { Connection } from "./connection";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { Connection, timerSchedule } from "./connection";
 
 /**
  * The one connection state of this tab (emenda do ADR 0043): the RPC client classifies every response
@@ -58,10 +58,7 @@ function createBrowserConnection(): Connection {
       write: (value) => session()?.setItem(OFFLINE_SINCE_KEY, value),
     },
     now: () => Date.now(),
-    schedule: (callback, delayMs) => {
-      const timer = setTimeout(callback, delayMs);
-      return () => clearTimeout(timer);
-    },
+    schedule: timerSchedule,
   });
 }
 
@@ -75,6 +72,25 @@ export function useConnectionOnline(): boolean {
     browserConnection.subscribe,
     browserConnection.isOnline
   );
+}
+
+/**
+ * Whether this tab reaches the Worker now, and `onReturn` when it comes back (offline to online): a screen
+ * reads again what did not load. Only a read: a change whose answer was cut is never sent again from here.
+ */
+export function useConnectionReturn(onReturn: () => void): boolean {
+  const online = useConnectionOnline();
+  const wasOnline = useRef(online);
+  const latest = useRef(onReturn);
+  latest.current = onReturn;
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (cameBack) {
+      latest.current();
+    }
+  }, [online]);
+  return online;
 }
 
 type TryNow = () => Promise<void>;

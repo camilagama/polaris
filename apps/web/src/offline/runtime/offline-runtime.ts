@@ -1,3 +1,4 @@
+import { timerSchedule } from "../../lib/connection";
 import { readUnverifiedOfflineLease } from "../../lib/offline-lease-token";
 import {
   isConnectionFailure,
@@ -119,6 +120,7 @@ export interface RuntimeDependencies {
    * device, a lease renewal, the bootstrap).
    */
   isOnline: () => boolean;
+  keyValues: KeyValueStore;
   /** Timeline marks per phase of a sync (`performance.mark` in the browser); nothing is sent. */
   mark?: (name: string) => void;
   /**
@@ -127,7 +129,6 @@ export interface RuntimeDependencies {
    * Worker is what proves it again, and a state must never stop the real try.
    */
   mayTry?: () => boolean;
-  keyValues: KeyValueStore;
   namespaceFor: (
     userId: string,
     organizationId: string
@@ -173,13 +174,13 @@ export interface RuntimeSnapshot {
    */
   expiredWhileOpen: boolean;
   lastSyncAt: string | null;
+  leaseExpiresAt: string | null;
   /**
    * The server refused the last call for lack of the legal acceptance (ADR 0100). It is not a refused
    * session: the collections, the lease and the queue stay as they are, nothing is rejected, and the
    * sync tries again at its usual moments; it clears once a sync goes through.
    */
   legalAcceptanceRequired: boolean;
-  leaseExpiresAt: string | null;
   online: boolean;
   phase: RuntimePhase;
   /** Why the runtime is unavailable or the last sync failed; null when fine. */
@@ -260,11 +261,6 @@ const RENEW_BEFORE_MS = 12 * 3_600_000;
 const SESSION_RECHECK_MS = 30_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
-function browserSchedule(callback: () => void, delayMs: number): () => void {
-  const timer = setTimeout(callback, delayMs);
-  return () => clearTimeout(timer);
-}
-
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
 interface RunScope {
   generation: number;
@@ -305,8 +301,8 @@ export class OfflineRuntime {
     dataVersion: 0,
     expiredWhileOpen: false,
     lastSyncAt: null,
-    legalAcceptanceRequired: false,
     leaseExpiresAt: null,
+    legalAcceptanceRequired: false,
     online: true,
     phase: "off",
     reason: null,
@@ -1201,7 +1197,7 @@ export class OfflineRuntime {
       return; // set for an organization that is no longer the open one
     }
     this.clearExpiryTimer();
-    const schedule = this.dependencies.schedule ?? browserSchedule;
+    const schedule = this.dependencies.schedule ?? timerSchedule;
     this.cancelExpiryTimer = schedule(
       () => {
         this.cancelExpiryTimer = null;

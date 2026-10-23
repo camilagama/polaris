@@ -222,10 +222,7 @@ describe("the fetch of the RPC client", () => {
 
     const call = t.connection.fetch("/rpc/x");
     await expect(call).rejects.toBeInstanceOf(NoWorkerAnswerError);
-    await expect(call).rejects.toMatchObject({
-      status: 200,
-      verdict: "unproven",
-    });
+    await expect(call).rejects.toThrow("no_worker_answer_unproven");
     await flush();
 
     expect(t.healthCalls).toHaveLength(1);
@@ -250,11 +247,9 @@ describe("the fetch of the RPC client", () => {
       const t = setup();
       t.routes.rpc = () => reply(status);
       // biome-ignore lint/performance/noAwaitInLoops: each status has its own connection
-      await expect(t.connection.fetch("/rpc/x")).rejects.toMatchObject({
-        name: "NoWorkerAnswerError",
-        status,
-        verdict: "intercepted",
-      });
+      await expect(t.connection.fetch("/rpc/x")).rejects.toThrow(
+        "no_worker_answer_intercepted"
+      );
     }
   });
 

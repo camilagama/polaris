@@ -5,6 +5,7 @@ import {
   lockInBrowser,
   markInBrowser,
 } from "../../lib/browser-connection";
+import { timerSchedule } from "../../lib/connection";
 import { useOrganizationLoad } from "../../lib/current-organization";
 import {
   isLegalAcceptanceRequired,
@@ -79,11 +80,6 @@ function createBrowserRuntime(): OfflineRuntime {
   });
 }
 
-function browserSchedule(callback: () => void, delayMs: number): () => void {
-  const timer = setTimeout(callback, delayMs);
-  return () => clearTimeout(timer);
-}
-
 function onPageVisible(listener: () => void): () => void {
   const onVisibility = () => {
     if (document.visibilityState === "visible") {
@@ -122,7 +118,7 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
         onVisible: onPageVisible,
         random: Math.random,
         runtime,
-        schedule: browserSchedule,
+        schedule: timerSchedule,
       });
       return scheduler.syncNow();
     };

@@ -8,11 +8,10 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
-import { useConnectionOnline } from "../lib/browser-connection";
+import { useConnectionReturn } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
@@ -617,16 +616,10 @@ export function PaymentProfilesPage() {
   const [canRetry, setCanRetry] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const online = useConnectionOnline();
   // the list was not read for lack of a connection (not an empty list); read again when it returns
   const [notLoaded, setNotLoaded] = useState(false);
-  // a save the connection cut: amber, the form stays; `name` is looked for in the list read on the return
-  const [uncertain, setUncertain] = useState<{
-    message: string;
-    name: string | null;
-  } | null>(null);
-  const uncertainRef = useRef(uncertain);
-  uncertainRef.current = uncertain;
+  // a change the connection cut: amber, the form stays, and it stays said after the list is read again
+  const [uncertain, setUncertain] = useState<string | null>(null);
   useReportUnsentWork(
     !pending &&
       profileDraftKey(draft) !==
@@ -644,17 +637,6 @@ export function PaymentProfilesPage() {
       });
       setProfiles(result.profiles);
       setNotLoaded(false);
-      const cut = uncertainRef.current;
-      if (cut) {
-        const saved =
-          cut.name !== null &&
-          result.profiles.some((profile) => profile.name === cut.name);
-        setUncertain(null);
-        if (saved) {
-          setNotice(`O perfil “${cut.name}” foi salvo.`);
-          setDraft(blankDraft());
-        }
-      }
     } catch (loadError) {
       if (isConnectionFailure(loadError)) {
         setNotLoaded(true);
@@ -670,14 +652,11 @@ export function PaymentProfilesPage() {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
   // the connection came back: the list that did not load, or that a cut save may have changed, is read again
-  const wasOnline = useRef(online);
-  useEffect(() => {
-    const cameBack = online && !wasOnline.current;
-    wasOnline.current = online;
-    if (cameBack && (notLoaded || uncertainRef.current)) {
+  const online = useConnectionReturn(() => {
+    if (notLoaded || uncertain) {
       loadProfiles().catch(() => undefined);
     }
-  }, [loadProfiles, notLoaded, online]);
+  });
   const handleRetry = useCallback(() => {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
@@ -780,15 +759,7 @@ export function PaymentProfilesPage() {
         await loadProfiles();
       } catch (saveError) {
         if (isConnectionFailure(saveError)) {
-          const name = draft.name.trim();
-          // a name already on the list before would prove nothing on the return
-          const provable = !(
-            editing || profiles.some((profile) => profile.name === name)
-          );
-          setUncertain({
-            message: SAVE_OUTCOME_UNKNOWN,
-            name: provable ? name : null,
-          });
+          setUncertain(SAVE_OUTCOME_UNKNOWN);
         } else {
           setError(errorText(saveError));
         }
@@ -796,7 +767,7 @@ export function PaymentProfilesPage() {
         setPending(false);
       }
     },
-    [draft, editing, loadProfiles, online, organizationId, profiles]
+    [draft, editing, loadProfiles, online, organizationId]
   );
   const editProfile = useCallback((profile: PaymentProfileReadModel) => {
     setEditing(profile);
@@ -828,7 +799,7 @@ export function PaymentProfilesPage() {
         await loadProfiles();
       } catch (actionError) {
         if (isConnectionFailure(actionError)) {
-          setUncertain({ message: CHANGE_OUTCOME_UNKNOWN, name: null });
+          setUncertain(CHANGE_OUTCOME_UNKNOWN);
         } else {
           setError(errorText(actionError));
         }
@@ -873,7 +844,7 @@ export function PaymentProfilesPage() {
       )}
       {uncertain && (
         <p className="payment-message is-warning" role="status">
-          {uncertain.message}
+          {uncertain}
         </p>
       )}
       <section className="payment-workspace">
