@@ -396,7 +396,8 @@ describe("@source covers every file of a migrated screen (ADR 0103)", () => {
     const legacy = legacyClasses(
       cssFiles(src).map((path) => readFileSync(path, "utf8"))
     );
-    expect(legacy.size).toBeGreaterThan(100);
+    // the old sheets shrink with the migration (the lot 6 empties them): while some stay, the guard must still find their classes
+    expect(legacy.size).toBeGreaterThan(20);
     const isUtility = await appUtility(legacy);
     expect(isUtility("md:w-fit")).toBe(true);
     expect(isUtility("animate-in")).toBe(true);

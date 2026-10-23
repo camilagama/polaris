@@ -20,6 +20,22 @@ const OUTSIDE_LEGACY = new Set([
   // Tailwind's preflight, imported into the base layer by the entry
   "styles/preflight.css",
 ]);
+// the lab of the offline persistence is no screen of the shop: its sheet is wholly inside `@layer components`
+const LAB_SHEETS = ["offline-poc/offline-poc.css"];
+/**
+ * The sheets still in `@layer legacy`, which the end of the migration (t256) empties: the three panels of the sale that
+ * the lot 1b takes out (cancel, return and customer) and what they lean on. The list only shrinks; with the lot 1b
+ * in, it is empty and this guard says what the task asks: no file in `@layer legacy`.
+ */
+const STILL_LEGACY = [
+  "sales/sale-cancel-panel.css",
+  "sales/sale-customer-panel.css",
+  "sales/sale-legacy.css",
+  "sales/sale-return-panel.css",
+  "styles.css",
+  "styles/tokens.css",
+  "styles/ui.css",
+];
 const LAYER_ORDER = "@layer theme, base, components, legacy, utilities;";
 const THEME_OUTSIDE_LAYER = [
   /^:root$/,
@@ -70,11 +86,15 @@ function topLevelStatements(css: string): string[] {
   return statements;
 }
 
-/** What in a sheet is not inside `@layer legacy { … }`. */
-function outsideLegacy(css: string): string[] {
+/** What in a sheet is not inside `@layer <name> { … }`. */
+function outsideLayer(css: string, layer: string): string[] {
   return topLevelStatements(css).filter(
-    (statement) => statement !== "@layer legacy"
+    (statement) => statement !== `@layer ${layer}`
   );
+}
+
+function outsideLegacy(css: string): string[] {
+  return outsideLayer(css, "legacy");
 }
 
 describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
@@ -89,12 +109,29 @@ describe("old CSS in @layer legacy (ADR 0103, section 3)", () => {
     }
   });
 
-  it.each(files.filter((file) => !OUTSIDE_LEGACY.has(file)))(
-    "%s is wholly inside @layer legacy",
-    (file) => {
-      expect(outsideLegacy(readFileSync(join(src, file), "utf8"))).toEqual([]);
-    }
-  );
+  it.each(
+    files.filter(
+      (file) => !(OUTSIDE_LEGACY.has(file) || LAB_SHEETS.includes(file))
+    )
+  )("%s is wholly inside @layer legacy", (file) => {
+    expect(outsideLegacy(readFileSync(join(src, file), "utf8"))).toEqual([]);
+  });
+
+  it.each(LAB_SHEETS)("%s is wholly inside @layer components", (file) => {
+    expect(files).toContain(file);
+    expect(
+      outsideLayer(readFileSync(join(src, file), "utf8"), "components")
+    ).toEqual([]);
+  });
+
+  it("only the sheets of the lot 1b (and what they lean on) are still in @layer legacy", () => {
+    const inLegacy = files.filter((file) =>
+      topLevelStatements(readFileSync(join(src, file), "utf8")).includes(
+        "@layer legacy"
+      )
+    );
+    expect(inLegacy.sort()).toEqual([...STILL_LEGACY].sort());
+  });
 
   it("the entry declares the order of the layers before anything else, legacy under the utilities", () => {
     const statements = topLevelStatements(

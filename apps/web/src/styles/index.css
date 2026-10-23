@@ -24,8 +24,8 @@
 @source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
 @source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
-/* The products screen (v5.1, third migrated screen): its own files; the images panel and the categories are still old. */
-@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section}.tsx";
+/* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
+@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-list,product-media-crop}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
    strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";

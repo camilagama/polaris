@@ -230,7 +230,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
               ) : null}
             </div>
           ) : null}
-          <LogoutControl onAttention={showLogoutAttention} shell />
+          <LogoutControl onAttention={showLogoutAttention} />
         </div>
       </SidebarFooter>
     </Sidebar>
@@ -573,7 +573,10 @@ export function AppShell({
       />
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
-        <main className="categories-content" id="conteudo">
+        <main
+          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
+          id="conteudo"
+        >
           {updateNotice}
           <ShellNotices
             acceptance={showAcceptanceNotice}

@@ -1,4 +1,9 @@
-@layer legacy {
+/*
+ * The lab of the offline persistence (`/offline-poc`, not a screen of the shop): its own rules, in `components`, under the
+ * utilities, and out of `legacy`, which goes away with the old screens (ADR 0103, section 3). It reads no token of the old
+ * sheets: the colors are its own.
+ */
+@layer components {
   .offline-lab-entry-link {
     align-self: flex-start;
     font-weight: 600;

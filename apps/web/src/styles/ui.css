@@ -26,12 +26,6 @@
     background: var(--ui-canvas);
   }
 
-  .categories-content {
-    width: min(100% - 2rem, 76rem);
-    padding: clamp(2rem, 5vw, 4.25rem) 0 3.5rem;
-    margin: 0 auto;
-  }
-
   .categories-heading {
     display: flex;
     gap: 2rem;
@@ -66,46 +60,6 @@
     color: var(--ui-muted);
   }
 
-  .category-tabs {
-    display: flex;
-    gap: 0.35rem;
-    padding-bottom: 0.5rem;
-    margin: 0 0 1.1rem;
-    border-bottom: 1px solid var(--ui-line);
-  }
-
-  .category-tab {
-    min-height: 2.75rem;
-    padding: 0.5rem 0.85rem;
-    font: inherit;
-    font-size: 0.9rem;
-    font-weight: 650;
-    color: var(--ui-muted);
-    cursor: pointer;
-    background: transparent;
-    border: 0;
-    border-radius: 0.55rem 0.55rem 0 0;
-  }
-
-  .category-tab:hover {
-    color: var(--ui-ink);
-    background: var(--ui-surface-muted);
-  }
-
-  .category-tab.is-selected {
-    color: var(--ui-accent-strong);
-    background: var(--ui-accent-soft);
-    box-shadow: inset 0 -2px 0 var(--ui-accent);
-  }
-
-  .field-label {
-    display: block;
-    margin: 0 0 0.45rem;
-    font-size: 0.83rem;
-    font-weight: 700;
-    color: var(--ui-ink);
-  }
-
   .ui-root input:not(:where([data-ui] *)) {
     width: 100%;
     min-height: 2.8rem;
@@ -125,9 +79,7 @@
 
   .primary-button,
   .quiet-button,
-  .secondary-button,
-  .danger-button,
-  .danger-text-button {
+  .danger-button {
     min-height: 2.75rem;
     padding: 0.55rem 0.9rem;
     font: inherit;
@@ -151,21 +103,18 @@
 
   .ui-root .primary-button:disabled,
   .ui-root .danger-button:disabled,
-  .ui-root .secondary-button:disabled,
   .ui-root .quiet-button:disabled {
     cursor: wait;
     opacity: 0.65;
   }
 
-  .quiet-button,
-  .secondary-button {
+  .quiet-button {
     color: var(--ui-ink);
     background: var(--ui-surface);
     border-color: var(--ui-line);
   }
 
-  .quiet-button:hover:not(:disabled),
-  .secondary-button:hover:not(:disabled) {
+  .quiet-button:hover:not(:disabled) {
     background: var(--ui-surface-muted);
   }
 
@@ -197,100 +146,8 @@
     border-color: var(--ui-accent-strong);
   }
 
-  .danger-text-button {
-    min-height: 2.3rem;
-    padding-inline: 0.5rem;
-    color: var(--ui-danger);
-    background: transparent;
-  }
-
-  .danger-text-button:hover {
-    color: var(--ui-danger-strong);
-    background: var(--ui-danger-soft);
-  }
-
-  .category-status {
-    display: inline-flex;
-    align-items: center;
-    min-height: 1.6rem;
-    padding: 0.2rem 0.55rem;
-    font-size: 0.73rem;
-    font-weight: 750;
-    white-space: nowrap;
-    border-radius: 999px;
-  }
-
-  .status-active {
-    color: var(--ui-accent-strong);
-    background: var(--ui-accent-soft);
-  }
-
-  .status-archived {
-    color: var(--ui-warning);
-    background: var(--ui-warning-soft);
-  }
-
-  .status-deleted {
-    color: var(--ui-danger);
-    background: var(--ui-danger-soft);
-  }
-
-  .category-empty-state {
-    padding: 2.6rem 1.4rem;
-    margin: 0;
-    font-size: 0.92rem;
-    line-height: 1.6;
-    color: var(--ui-muted);
-    text-align: center;
-  }
-
-  .categories-message {
-    padding: 0.85rem 1rem;
-    margin: 0 0 1rem;
-    font-size: 0.88rem;
-    line-height: 1.5;
-    border: 1px solid var(--ui-line);
-    border-radius: 0.65rem;
-  }
-
-  .categories-message.is-error {
-    color: var(--ui-danger-strong);
-    background: var(--ui-danger-soft);
-    border-color: color-mix(in srgb, var(--ui-danger) 32%, transparent);
-  }
-
-  .categories-message.is-success {
-    color: var(--ui-accent-strong);
-    background: var(--ui-accent-soft);
-    border-color: color-mix(in srgb, var(--ui-accent) 32%, transparent);
-  }
-
-  .field-help {
-    margin: -0.2rem 0 0.45rem;
-    font-size: 0.78rem;
-    color: var(--ui-muted);
-  }
-
-  /* clear of the 3 px focus ring (+ 3 px offset) of the field above, so the ring never strikes the text (U-28) */
-  .field-error {
-    margin: 0.5rem 0 0.45rem;
-    font-size: 0.8rem;
-    font-weight: 650;
-    color: var(--ui-danger-strong);
-  }
-
   .ui-root input[aria-invalid="true"]:not(:where([data-ui] *)) {
     border-color: var(--ui-danger);
-  }
-
-  .offline-lab-link {
-    display: inline-flex;
-    margin-top: 1.4rem;
-    font-size: 0.82rem;
-    font-weight: 650;
-    color: var(--ui-accent);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 0.2rem;
   }
 
   .visually-hidden {

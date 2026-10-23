@@ -174,11 +174,14 @@ const saleScreen = (
   status: "migrated",
 });
 
-/** The files of the products screen on the new interface: the images panel and the categories are still the old CSS. */
+/** The files of the products screen on the new interface, with the images panel. */
 const PRODUCT_SOURCES = [
   "src/catalog/product-fields.tsx",
   "src/catalog/product-form.tsx",
   "src/catalog/product-list.tsx",
+  "src/catalog/product-media-crop.tsx",
+  "src/catalog/product-media-list.tsx",
+  "src/catalog/product-media-panel.tsx",
   "src/catalog/product-variant-parts.tsx",
   "src/catalog/product-variant-price-section.tsx",
   "src/catalog/product-variant-sku-section.tsx",
@@ -759,6 +762,11 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  productScreen("imagens, remoção pedindo confirmação", productStates.media),
+  productScreen(
+    "imagens, recorte da imagem escolhida",
+    productStates.mediaCrop
+  ),
   categoryScreen("lista", categoryStates.list, exerciseRowMenu("Camisetas")),
   categoryScreen("remover", categoryStates.remove),
   categoryScreen("sem conexão", categoryStates.offline),
