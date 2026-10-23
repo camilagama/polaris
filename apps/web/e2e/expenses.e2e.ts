@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -234,11 +234,11 @@ class FakeExpenseServer {
 
   private fail(code: string, status: number) {
     return {
-      status,
       body: {
         json: { code, data: {}, defined: false, message: code, status },
         meta: [],
       },
+      status,
     };
   }
 
@@ -375,7 +375,7 @@ class FakeExpenseServer {
   }
 
   private ok(output: unknown) {
-    return { status: 200, body: { json: output, meta: [] } };
+    return { body: { json: output, meta: [] }, status: 200 };
   }
 }
 
@@ -395,8 +395,14 @@ async function installServer(page: Page, server: FakeExpenseServer) {
   });
 }
 
-async function openExpenses(page: Page, server: FakeExpenseServer) {
+async function openExpenses(
+  page: Page,
+  server: FakeExpenseServer,
+  /** Routes that answer before the fake server (the last route registered is the first asked). */
+  before?: (page: Page) => Promise<unknown>
+) {
   await installServer(page, server);
+  await before?.(page);
   await page.goto("/offline-screens-lab?screen=expenses");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -406,16 +412,29 @@ async function openExpenses(page: Page, server: FakeExpenseServer) {
 }
 
 const row = (page: Page, text: string) =>
-  page.locator("article, li").filter({ hasText: text }).first();
+  page.locator("article").filter({ hasText: text }).first();
+
+/** Picks an option of a Base UI select: its list opens in a portal, on the page. */
+async function choose(
+  page: Page,
+  scope: Page | Locator,
+  label: string,
+  option: string
+) {
+  await scope.getByRole("combobox", { exact: true, name: label }).click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+}
+
+const expenseForm = (page: Page) =>
+  page.getByRole("region", { exact: true, name: "Nova despesa" });
 
 async function fillExpense(
   page: Page,
   values: { amount: string; description: string; category: string }
 ) {
   await page.getByLabel("Valor (R$)").fill(values.amount);
-  await page.locator("#expense-categoryId").selectOption({
-    label: values.category,
-  });
+  await choose(page, expenseForm(page), "Categoria", values.category);
   await page.getByLabel("Descrição").fill(values.description);
 }
 
@@ -521,10 +540,7 @@ test("uma categoria com nome já usado é recusada com a mensagem da tela", asyn
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
 
-  await page
-    .locator("summary")
-    .filter({ hasText: "Categorias de despesa" })
-    .click();
+  await page.getByRole("button", { name: "Categorias de despesa" }).click();
   await page.getByLabel("Nome da categoria").fill("aluguel");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
 
@@ -533,12 +549,16 @@ test("uma categoria com nome já usado é recusada com a mensagem da tela", asyn
   ).toBeVisible();
 });
 
-const rulesPanel = (page: Page) => page.locator("details.expense-rules");
+const rulesPanel = (page: Page) =>
+  page.getByRole("region", { name: "Despesas recorrentes" });
 const listedExpense = (page: Page, text: string) =>
-  page.locator(".expense-list-body article").filter({ hasText: text });
+  page
+    .getByRole("region", { name: "Despesas do período" })
+    .locator("article")
+    .filter({ hasText: text });
 
 async function openRulesPanel(page: Page) {
-  await rulesPanel(page).locator("summary").click();
+  await page.getByRole("button", { name: "Despesas recorrentes" }).click();
 }
 
 /** Creates a monthly rule that started three months before today. */
@@ -546,10 +566,8 @@ async function createMonthlyRule(page: Page, description: string) {
   const panel = rulesPanel(page);
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
   await panel.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
-  await panel.locator("#expense-rule-categoryId").selectOption({
-    label: "Aluguel",
-  });
-  await panel.getByLabel("Frequência").selectOption({ label: "Todo mês" });
+  await choose(page, panel, "Categoria", "Aluguel");
+  await choose(page, panel, "Frequência", "Todo mês");
   await panel.getByLabel("Começa em").fill("2026-07-14");
   await panel.getByLabel("Descrição").fill(description);
   await panel.getByRole("button", { name: "Criar despesa recorrente" }).click();
@@ -610,7 +628,7 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(panel.getByText("Despesa recorrente pausada.")).toBeVisible();
   await expect(rule).toHaveCount(0);
 
-  await panel.getByLabel("Mostrar pausadas").check();
+  await panel.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
   await expect(rule.getByText("Pausada", { exact: true })).toBeVisible();
   await expect(rule).toContainText("Geração suspensa até retomar");
 
@@ -625,4 +643,129 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   // nothing new was generated by pausing and resuming
   expect(server.expenses).toHaveLength(4);
   await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
+});
+
+test("o seletor de mês mostra o mês por extenso, anda com as setas e aceita o mês digitado", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  const months: string[] = [];
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      const body = route.request().postDataJSON() as {
+        json?: { from?: string };
+      };
+      months.push(String(body.json?.from ?? "").slice(0, 7));
+      await route.fallback();
+    })
+  );
+  // the words over the month field (the field itself is invisible)
+  const picker = page.locator("#expense-month").locator("..");
+  await expect(picker).toHaveText("Outubro de 2026");
+  // the month field is named by its label, and the browser's own text never shows
+  await expect(page.getByLabel("Mês de competência")).toHaveValue("2026-10");
+
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(picker).toHaveText("Novembro de 2026");
+  // the total of the list follows the month
+  await expect(
+    page.getByText("Total do período").locator("../..")
+  ).toContainText("novembro de 2026");
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(picker).toHaveText("Setembro de 2026");
+
+  await page.getByLabel("Mês de competência").fill("2026-03");
+  await expect(picker).toHaveText("Março de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-03");
+  expect(months).toEqual(
+    expect.arrayContaining(["2026-10", "2026-11", "2026-09"])
+  );
+});
+
+test("com o teclado o campo do mês aparece no lugar do texto e aceita o mês digitado", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  const months: string[] = [];
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      const body = route.request().postDataJSON() as {
+        json?: { from?: string };
+      };
+      months.push(String(body.json?.from ?? "").slice(0, 7));
+      await route.fallback();
+    })
+  );
+  const field = page.getByLabel("Mês de competência");
+  const words = page.locator("#expense-month").locator("..").locator("span");
+  await expect(field).toHaveCSS("opacity", "0");
+  await expect(words).toHaveCSS("opacity", "1");
+
+  // the mouse (and the touch) keep the field invisible under the words, even focused
+  await field.click({ force: true });
+  await expect(field).toBeFocused();
+  await expect(field).toHaveCSS("opacity", "0");
+  await expect(words).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Escape");
+
+  // Tab from the previous-month arrow lands on the field, and it shows itself instead of the words
+  await page.getByRole("button", { name: "Mês anterior" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveCSS("opacity", "1");
+  await expect(words).toHaveCSS("opacity", "0");
+
+  // typing the digits of the month into the visible field: the list follows
+  await page.keyboard.type("112026");
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue("2026-11");
+  await expect.poll(() => months.at(-1)).toBe("2026-11");
+  await expect(
+    page.getByText("Total do período").locator("../..")
+  ).toContainText("novembro de 2026");
+  await expect(words).toHaveText("Novembro de 2026");
+});
+
+test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nunca a lista vazia", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  const reads: { fail: boolean } = { fail: true };
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", (route) =>
+      reads.fail ? route.abort("internetdisconnected") : route.fallback()
+    )
+  );
+
+  const retry = page.getByRole("button", { name: "Tentar novamente" });
+  await expect(retry).toBeVisible();
+  await expect(page.getByText("Nenhuma despesa neste período")).toHaveCount(0);
+
+  reads.fail = false;
+  await retry.click();
+  await expect(retry).toHaveCount(0);
+  await expect(
+    page.getByText("Nenhuma despesa neste período", { exact: false })
+  ).toBeVisible();
+});
+
+test("fechar e abrir um painel recolhível não perde o que foi digitado nele", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  const trigger = page.getByRole("button", { name: "Categorias de despesa" });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Nome da categoria")).toBeHidden();
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await page.getByLabel("Nome da categoria").fill("Frete");
+  await trigger.click();
+  await expect(page.getByLabel("Nome da categoria")).toBeHidden();
+  await trigger.click();
+  await expect(page.getByLabel("Nome da categoria")).toHaveValue("Frete");
 });

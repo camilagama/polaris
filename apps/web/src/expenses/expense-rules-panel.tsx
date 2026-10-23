@@ -2,27 +2,33 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseRuleReadModel,
 } from "@polaris/contracts";
-import { type ChangeEvent, useCallback, useMemo, useState } from "react";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import { useCallback, useMemo, useState } from "react";
+import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
+import { CollapsibleSection } from "./collapsible-section";
+import { ActionNotice, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel } from "./expense-model";
 import { ExpenseRuleForm } from "./expense-rule-form";
 import { type RuleCreateInput, ruleFrequencyLabel } from "./expense-rule-model";
-import { FeedbackMessage } from "./feedback-message";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import { type ExpenseRulesState, useExpenseRules } from "./use-expense-rules";
 
 interface ExpenseRulesPanelProps {
   /** Every category, archived ones included. */
   categories: readonly ExpenseCategoryReadModel[];
-  organizationId: string;
   /**
    * Called after a rule changed (or turned out stale): the page reloads the
    * expense list, because the server generates the occurrences that fell due
    * when the list is read.
    */
   onChanged: () => Promise<void>;
+  organizationId: string;
   /** The organization's today, YYYY-MM-DD. */
   today: string;
 }
@@ -64,45 +70,52 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
   const toggleBusyLabel = paused ? "Retomando…" : "Pausando…";
 
   return (
-    <article className="expense-card expense-rule-card">
-      <div className="expense-card-main">
-        <div className="expense-card-title-row">
-          <h3>{rule.description}</h3>
-          {paused ? (
-            <span className="category-status status-archived">Pausada</span>
-          ) : null}
+    <article className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center">
+      <div className="grid min-w-0 gap-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="font-medium [overflow-wrap:anywhere]">
+            {rule.description}
+          </h3>
+          {paused ? <Badge variant="warning">Pausada</Badge> : null}
         </div>
-        <p className="expense-card-meta">
-          {ruleFrequencyLabel(rule.frequency)} · {rule.categoryName}
-          <span className="expense-card-group">
-            {" "}
-            · {expenseGroupLabel(rule.categoryGroup)}
-          </span>
+        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+          {ruleFrequencyLabel(rule.frequency)} · {rule.categoryName} ·{" "}
+          {expenseGroupLabel(rule.categoryGroup)}
           {rule.payee ? ` · ${rule.payee}` : ""}
         </p>
-        <p className="expense-card-meta">{scheduleText(rule)}</p>
-        <p className="expense-card-meta">{nextOccurrenceText(rule)}</p>
+        <p className="text-muted-foreground text-support">
+          {scheduleText(rule)}
+        </p>
+        <p className="text-muted-foreground text-support">
+          {nextOccurrenceText(rule)}
+        </p>
       </div>
-      <p className="expense-card-amount">{formatBrlAmount(rule.amount)}</p>
-      <div className="expense-card-actions">
-        <button
-          aria-label={`Editar despesa recorrente ${rule.description}`}
-          className="quiet-button"
-          disabled={isBusy}
-          onClick={handleEdit}
-          type="button"
-        >
-          Editar
-        </button>
-        <button
-          aria-label={`${toggleLabel} despesa recorrente ${rule.description}`}
-          className="quiet-button"
-          disabled={isBusy}
-          onClick={handleToggle}
-          type="button"
-        >
-          {thisBusy ? toggleBusyLabel : toggleLabel}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-[30rem]:justify-end">
+        <p className="whitespace-nowrap font-semibold text-value-md tabular-nums">
+          {formatBrlAmount(rule.amount)}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            aria-label={`Editar despesa recorrente ${rule.description}`}
+            disabled={isBusy}
+            onClick={handleEdit}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Editar
+          </Button>
+          <Button
+            aria-label={`${toggleLabel} despesa recorrente ${rule.description}`}
+            disabled={isBusy}
+            onClick={handleToggle}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {thisBusy ? toggleBusyLabel : toggleLabel}
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -137,32 +150,24 @@ function RuleList({
     (rule) => showPaused || rule.status === "active"
   );
   return (
-    <div aria-busy={state.isLoading}>
+    <div aria-busy={state.isLoading} className="grid gap-2">
       {state.error ? (
-        <p className="categories-message is-error" role="alert">
-          {state.error}{" "}
-          <button
-            className="quiet-button"
-            disabled={state.isLoading}
-            onClick={onRetry}
-            type="button"
-          >
-            Tentar de novo
-          </button>
-        </p>
+        <LoadError
+          busy={state.isLoading}
+          message={state.error}
+          onRetry={onRetry}
+        />
       ) : null}
       {state.isLoading && rules.length === 0 ? (
-        <p className="expense-empty-state" role="status">
-          Carregando despesas recorrentes…
-        </p>
+        <ListNote loading>Carregando despesas recorrentes…</ListNote>
       ) : null}
       {!state.isLoading && visible.length === 0 && state.error === null ? (
-        <p className="expense-empty-state">{emptyRulesText(rules.length)}</p>
+        <ListNote>{emptyRulesText(rules.length)}</ListNote>
       ) : null}
       {visible.length > 0 ? (
-        <ul className="expense-list">
+        <ul className="divide-y">
           {visible.map((rule) => (
-            <li className="expense-list-item" key={rule.id}>
+            <li key={rule.id}>
               <RuleCard
                 busyKey={busyKey}
                 onEdit={onEdit}
@@ -267,11 +272,9 @@ function useRuleCommands({
 
 function RulesIntro() {
   return (
-    <p className="expense-rules-intro">
-      Cada ocorrência vira uma despesa comum quando a data chega. Se o início já
-      passou, o que ficou para trás é lançado de uma vez. Editar muda só as
-      próximas ocorrências, nunca as já lançadas. Pausar interrompe os
-      lançamentos, e retomar não lança os períodos que passaram durante a pausa.
+    <p className="text-muted-foreground text-support">
+      Cada ocorrência vira uma despesa comum na data. Editar muda só as
+      próximas; retomar depois de pausar não lança os períodos da pausa.
     </p>
   );
 }
@@ -307,11 +310,6 @@ export function ExpenseRulesPanel({
     [clearFeedback]
   );
   const handleNew = useCallback(() => openForm("new"), [openForm]);
-  const handleShowPaused = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      setShowPaused(event.currentTarget.checked),
-    []
-  );
   const handleRetry = useCallback(() => {
     reload();
   }, [reload]);
@@ -349,63 +347,63 @@ export function ExpenseRulesPanel({
   }, [formCount, target]);
 
   return (
-    <details className="expense-panel expense-categories expense-rules">
-      <summary>
-        <span className="categories-eyebrow">Lançamentos automáticos</span>
-        <span className="expense-categories-title">Despesas recorrentes</span>
-      </summary>
-      <div className="expense-categories-body">
-        <RulesIntro />
-        <FeedbackMessage feedback={feedback} />
-        <div className="expense-rules-toolbar">
-          <label className="expense-checkbox">
-            <input
-              checked={showPaused}
-              onChange={handleShowPaused}
-              type="checkbox"
-            />
+    <CollapsibleSection id="expense-rules" title="Despesas recorrentes">
+      <RulesIntro />
+      <ActionNotice feedback={feedback} />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+          <Checkbox
+            checked={showPaused}
+            id="expense-rules-paused"
+            onCheckedChange={setShowPaused}
+          />
+          <FieldLabel htmlFor="expense-rules-paused">
             Mostrar pausadas
-          </label>
-          {target === "new" ? null : (
-            <button
-              className="primary-button"
-              disabled={busy !== null}
-              onClick={handleNew}
-              type="button"
-            >
-              Nova despesa recorrente
-            </button>
-          )}
-        </div>
-        {target === null ? null : (
-          <div className="expense-rule-form-wrap">
-            <h3>
-              {target === "new"
-                ? "Nova despesa recorrente"
-                : "Editar despesa recorrente"}
-            </h3>
-            <ExpenseRuleForm
-              categories={categories}
-              disabled={busy !== null}
-              editing={editing}
-              key={formKey}
-              onCancel={closeForm}
-              onSave={handleSave}
-              saving={isSaving}
-              today={today}
-            />
-          </div>
+          </FieldLabel>
+        </Field>
+        {target === "new" ? null : (
+          <Button
+            disabled={busy !== null}
+            onClick={handleNew}
+            type="button"
+            variant="outline"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova despesa recorrente
+          </Button>
         )}
-        <RuleList
-          busyKey={busy}
-          onEdit={openForm}
-          onRetry={handleRetry}
-          onToggle={handleToggle}
-          rules={state.rules}
-          showPaused={showPaused}
-          state={state}
-        />
       </div>
-    </details>
+      {target === null ? null : (
+        <section
+          aria-labelledby="expense-rule-form-title"
+          className="grid gap-3 rounded-lg border p-3"
+        >
+          <h3 className="text-section" id="expense-rule-form-title">
+            {target === "new"
+              ? "Nova despesa recorrente"
+              : "Editar despesa recorrente"}
+          </h3>
+          <ExpenseRuleForm
+            categories={categories}
+            disabled={busy !== null}
+            editing={editing}
+            key={formKey}
+            onCancel={closeForm}
+            onSave={handleSave}
+            saving={isSaving}
+            today={today}
+          />
+        </section>
+      )}
+      <RuleList
+        busyKey={busy}
+        onEdit={openForm}
+        onRetry={handleRetry}
+        onToggle={handleToggle}
+        rules={state.rules}
+        showPaused={showPaused}
+        state={state}
+      />
+    </CollapsibleSection>
   );
 }
