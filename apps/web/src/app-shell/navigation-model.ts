@@ -98,6 +98,25 @@ export function inBottomBar(id: NavId): id is BottomBarId {
   return (BOTTOM_BAR_IDS as readonly NavId[]).includes(id);
 }
 
+/**
+ * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose
+ * area it is in (Estoque for Produtos, Categorias and Clientes; Resultado for Despesas), as in the reference of
+ * the shell v5.1. "more" for the items of no destination of the bar, which "Mais" marks.
+ */
+const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
+  categories: "inventory",
+  customers: "inventory",
+  expenses: "dashboard",
+  products: "inventory",
+};
+
+export function bottomBarMark(id: NavId): BottomBarId | "more" {
+  if (inBottomBar(id)) {
+    return id;
+  }
+  return BOTTOM_BAR_AREA[id] ?? "more";
+}
+
 /** The items in their groups, in the order of the list; a group with no item is left out. */
 export function navGroups(
   items: readonly NavItem[]

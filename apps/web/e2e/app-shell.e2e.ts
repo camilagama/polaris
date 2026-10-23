@@ -275,7 +275,10 @@ test.describe("celular (360 px)", () => {
     ).toBe(true);
 
     await page.goto("/products");
+    // Estoque marks its area (Produtos, Categorias, Clientes) and Resultado marks Despesas; Mais does not
     await expect(bar.locator('[aria-current="page"]')).toHaveCount(0);
+    await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
+    await expect(bar.locator("[data-bottom-mark]")).toHaveCount(1);
     await more(page).click();
     const panel = page.getByRole("dialog", { name: "Mais" });
     await expect(panel).toBeVisible();
@@ -288,6 +291,16 @@ test.describe("celular (360 px)", () => {
     ).toBeVisible();
     await panel.getByRole("link", { name: "Clientes" }).click();
     await page.waitForURL("**/customers");
+    await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
+
+    await page.goto("/expenses");
+    await expect(bar.locator('[aria-current="true"]')).toHaveText("Resultado");
+    await expect(bar.locator("[data-bottom-mark]")).toHaveCount(1);
+
+    // only a screen of no destination of the bar marks Mais
+    await page.goto("/payment-profiles");
+    await expect(bar.locator("[aria-current]")).toHaveCount(0);
+    await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
   });
 
   test("Mais abre e fecha com o teclado, e o foco volta para o botão", async ({

@@ -45,6 +45,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.CategoriesPage,
     }))
   ),
+  customers: lazy(() =>
+    import("../customers/customers-page").then((module) => ({
+      default: module.CustomersPage,
+    }))
+  ),
   dashboard: lazy(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
@@ -53,11 +58,6 @@ const pages: Readonly<Record<RouteId, Page>> = {
   devices: lazy(() =>
     import("../offline/runtime/devices-page").then((module) => ({
       default: module.DevicesPage,
-    }))
-  ),
-  customers: lazy(() =>
-    import("../customers/customers-page").then((module) => ({
-      default: module.CustomersPage,
     }))
   ),
   expenses: lazy(() =>
@@ -150,14 +150,22 @@ const entryPages: Record<EntryPageId, Page> = {
 function RouteContent({ route }: { route: ResolvedRoute }) {
   if (route.kind === "not-found") {
     return (
-      <AppShell navId={null} requiresOrganization={false}>
+      <AppShell
+        navId={null}
+        requiresOrganization={false}
+        updateNotice={<UpdateSlot />}
+      >
         <NotFoundPage pathname={window.location.pathname} />
       </AppShell>
     );
   }
   const Page = pages[route.id];
   return (
-    <AppShell navId={route.navId} onlineOnly={route.onlineOnly}>
+    <AppShell
+      navId={route.navId}
+      onlineOnly={route.onlineOnly}
+      updateNotice={<UpdateSlot />}
+    >
       <ErrorBoundary>
         <Suspense
           fallback={
@@ -236,7 +244,6 @@ function StoreApp() {
     <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
       <OrganizationProvider>
         <OfflineRuntimeProvider>
-          <UpdateSlot />
           <RouteContent route={route} />
         </OfflineRuntimeProvider>
       </OrganizationProvider>

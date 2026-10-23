@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOTTOM_BAR_IDS,
+  bottomBarMark,
   documentTitle,
   entryPageFor,
   NAV_ITEMS,
@@ -48,6 +49,29 @@ describe("main menu", () => {
         (id) => NAV_ITEMS.find((item) => item.id === id)?.label
       )
     ).toEqual(["Vender", "Histórico", "Estoque", "Resultado"]);
+  });
+
+  it("marks the destination of the area on the bottom bar, and Mais only for the screens of no destination", () => {
+    expect(
+      Object.fromEntries(
+        [...NAV_ITEMS, ...OFFLINE_NAV_ITEMS].map((item) => [
+          item.id,
+          bottomBarMark(item.id),
+        ])
+      )
+    ).toEqual({
+      categories: "inventory",
+      customers: "inventory",
+      dashboard: "dashboard",
+      devices: "more",
+      expenses: "dashboard",
+      history: "history",
+      inventory: "inventory",
+      "payment-profiles": "more",
+      products: "inventory",
+      "public-catalog": "more",
+      sale: "sale",
+    });
   });
 
   it("does not offer the customer-of-a-sale page, which asks for an ID", () => {

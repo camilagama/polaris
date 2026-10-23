@@ -63,6 +63,7 @@ import "./app-shell.css";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
   BOTTOM_BAR_IDS,
+  bottomBarMark,
   inBottomBar,
   NAV_ITEMS,
   type NavId,
@@ -220,18 +221,22 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
 
 /**
  * The bar of destinations of the phone: Vender, Histórico, Estoque, Resultado and "Mais", which opens the rest
- * (the sidebar in a sheet). "Mais" carries the mark when the current screen is one of the rest.
+ * (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
+ * screens of its area (`aria-current="true"`): Estoque on Produtos, Categorias and Clientes, Resultado on Despesas.
+ * "Mais" carries it on the screens of no destination of the bar.
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
   const { mobileTrigger, openMobile, setOpenMobile } = useSidebar();
   const openMore = useCallback(() => setOpenMobile(true), [setOpenMobile]);
-  const moreCurrent = navId !== null && !inBottomBar(navId);
+  const marked = navId === null ? null : bottomBarMark(navId);
+  const moreCurrent = marked === "more";
   const tab =
     "focus-ring relative grid min-h-13 min-w-0 content-center justify-items-center gap-0.5 px-0.5 pt-1 font-medium text-xs [&_svg]:size-[18px]";
   const mark = (
     <span
       aria-hidden="true"
       className="absolute inset-x-4 top-0 h-0.5 rounded-b bg-mark"
+      data-bottom-mark=""
     />
   );
   return (
@@ -246,11 +251,15 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         if (!item) {
           return null;
         }
-        const current = id === navId;
+        const current = id === marked;
         const Icon = NAV_ICONS[id];
+        let ariaCurrent: "page" | "true" | undefined;
+        if (current) {
+          ariaCurrent = id === navId ? "page" : "true";
+        }
         return (
           <a
-            aria-current={current ? "page" : undefined}
+            aria-current={ariaCurrent}
             className={`${tab} ${current ? "text-foreground" : "text-muted-foreground"}`}
             href={item.href}
             key={id}
@@ -440,6 +449,8 @@ interface AppShellProps {
   onlineOnly?: boolean;
   /** Pages that need data of an organization wait for it to be resolved. */
   requiresOrganization?: boolean;
+  /** The new-version notice (ADR 0039), at the top of the content, beside the sidebar and never under it. */
+  updateNotice?: ReactNode;
 }
 
 /**
@@ -452,6 +463,7 @@ export function AppShell({
   navId,
   onlineOnly = false,
   requiresOrganization = true,
+  updateNotice,
 }: AppShellProps) {
   const { load, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
@@ -495,6 +507,7 @@ export function AppShell({
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
         <main className="categories-content" id="conteudo">
+          {updateNotice}
           {showNotice ? <SessionEndedNotice /> : null}
           {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
           <OfflineAccessGate>
