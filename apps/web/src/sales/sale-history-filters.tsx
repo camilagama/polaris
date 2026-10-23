@@ -64,7 +64,8 @@ export function HistoryFiltersBar({
     [onChange]
   );
   // Below 760 px the five fields would push the first sale a screen down: they sit in a panel under "Filtrar",
-  // closed unless the screen arrives with a filter on. From 760 px they are in the page, as before.
+  // closed unless the screen arrives with a filter on, and held open while the period contradicts itself (its
+  // message is in the panel). From 760 px they are in the page, as before.
   const mobile = useIsMobile();
   const [open, setOpen] = useState(active > 0);
   const fields = (
@@ -123,10 +124,8 @@ export function HistoryFiltersBar({
   return (
     <search aria-label="Filtrar vendas" className="grid gap-3">
       {mobile ? (
-        <Collapsible onOpenChange={setOpen} open={open}>
-          <CollapsibleTrigger
-            render={<Button className="justify-self-start" variant="outline" />}
-          >
+        <Collapsible onOpenChange={setOpen} open={open || period !== null}>
+          <CollapsibleTrigger render={<Button variant="outline" />}>
             <FunnelIcon aria-hidden="true" data-icon="inline-start" />
             {active > 0 ? `Filtrar · ${active}` : "Filtrar"}
           </CollapsibleTrigger>
