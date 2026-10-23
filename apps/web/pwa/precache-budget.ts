@@ -26,8 +26,10 @@ export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
  * the 40 KB of ADR 0103, section 4. Taking `@layer legacy` out freed only about 1.3 KB gzip (the CSS went from
  * 17 305 to 16 139 B); the rest of the growth is JS of the screens. The Arrascaeta set 44 KB on 23/10, with the
  * measure of the batch in its pull request.
+ * 44 500: aprovado pelo Arrascaeta em 23/10/2026 (t275, bump do zod GHSA-mrhx-c7xc-m3w5); o zod novo soma cerca de
+ * 194 B gzip (checagem de limites de array, set e map).
  */
-export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
+export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_500;
 
 /**
  * The rest of the precache before the UI base, one number per kind of production build, since the switch of
