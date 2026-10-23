@@ -103,6 +103,13 @@ describe("the zones of the first access", () => {
 
   it("starts on the zone of the device when it is one of them, otherwise on Brasília", () => {
     expect(initialTimezone("America/Manaus")).toBe("America/Manaus");
+    // the zones with the hour of one in the list stand for it
+    expect(initialTimezone("America/Porto_Velho")).toBe("America/Manaus");
+    expect(initialTimezone("America/Boa_Vista")).toBe("America/Manaus");
+    expect(initialTimezone("America/Campo_Grande")).toBe("America/Cuiaba");
+    expect(initialTimezone("America/Eirunepe")).toBe("America/Rio_Branco");
+    // and the ones with the hour of Brasília are Brasília
+    expect(initialTimezone("America/Recife")).toBe(BRASILIA_TIMEZONE);
     expect(initialTimezone("Europe/Lisbon")).toBe(BRASILIA_TIMEZONE);
     expect(initialTimezone("")).toBe(BRASILIA_TIMEZONE);
   });

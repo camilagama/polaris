@@ -33,10 +33,22 @@ export function defaultTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || BRASILIA_TIMEZONE;
 }
 
-/** Brasília unless the device is in another zone of Brazil: the list has no other place to go. */
+/** The zones of Brazil that keep the hour of one in the list, by the one that stands for them there. */
+const SAME_HOUR_AS: Readonly<Record<string, string>> = {
+  "America/Boa_Vista": "America/Manaus",
+  "America/Campo_Grande": "America/Cuiaba",
+  "America/Eirunepe": "America/Rio_Branco",
+  "America/Porto_Velho": "America/Manaus",
+};
+
+/**
+ * The zone of the device when the list has it (or one with the same hour), otherwise Brasília: the list has no
+ * other place to go, and Brasília is the hour of most of the country.
+ */
 export function initialTimezone(device: string = defaultTimezone()): string {
-  return BRAZIL_TIMEZONES.some((zone) => zone.id === device)
-    ? device
+  const zone = SAME_HOUR_AS[device] ?? device;
+  return BRAZIL_TIMEZONES.some((item) => item.id === zone)
+    ? zone
     : BRASILIA_TIMEZONE;
 }
 

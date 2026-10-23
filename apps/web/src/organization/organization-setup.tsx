@@ -141,6 +141,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           <FieldError id="organization-name-error">{errors.name}</FieldError>
         </Field>
         <SelectField
+          error={errors.timezone}
           hint="É o horário que o Polaris usa nas datas das vendas."
           id="organization-timezone"
           label="Fuso horário da organização"
