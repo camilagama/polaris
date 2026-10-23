@@ -347,7 +347,7 @@ export function PaymentProfilesPage() {
             onChangeLifecycle={handleLifecycle}
             onEdit={editProfile}
             onIncludeArchivedChange={setShowArchived}
-            onlyArchived={profiles.length > 0}
+            hasAnyProfile={profiles.length > 0}
             onRetry={handleRetry}
             pending={pending}
             profiles={visibleProfiles}

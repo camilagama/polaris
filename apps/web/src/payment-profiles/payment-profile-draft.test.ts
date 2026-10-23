@@ -153,6 +153,21 @@ describe("ruleInput", () => {
   });
 });
 
+describe("ruleInput, settlement", () => {
+  it("sends no settlement for an empty or blank field, and the days otherwise", () => {
+    for (const text of ["", "  "]) {
+      expect(
+        ruleInput({ ...blankRule(), expectedSettlementDays: text })
+          .expectedSettlementDays
+      ).toBeNull();
+    }
+    expect(
+      ruleInput({ ...blankRule(), expectedSettlementDays: " 0 " })
+        .expectedSettlementDays
+    ).toBe(0);
+  });
+});
+
 describe("hasRepeatedRules", () => {
   it("is true for the same method, and for the same installments and plan of the credit card", () => {
     expect(hasRepeatedRules(named("A", {}, {}).rules)).toBe(true);

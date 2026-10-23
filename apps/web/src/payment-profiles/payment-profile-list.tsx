@@ -166,8 +166,8 @@ interface ListBodyProps extends Omit<ProfileRowProps, "profile"> {
   loadError: string | null;
   loading: boolean;
   onRetry: () => void;
-  /** Profiles exist, but all of them are archived and the list shows only the active ones. */
-  onlyArchived: boolean;
+  /** Some profile exists, archived or not: an empty list then means the filter, not an empty organization. */
+  hasAnyProfile: boolean;
   profiles: PaymentProfileReadModel[];
 }
 
@@ -176,7 +176,7 @@ function ListBody({
   loading,
   onChangeLifecycle,
   onEdit,
-  onlyArchived,
+  hasAnyProfile,
   onRetry,
   pending,
   profiles,
@@ -210,10 +210,10 @@ function ListBody({
     return (
       <CardContent className="grid gap-0.5">
         <p className="font-medium">
-          {onlyArchived ? "Nenhum perfil ativo" : "Nenhum perfil cadastrado"}
+          {hasAnyProfile ? "Nenhum perfil ativo" : "Nenhum perfil cadastrado"}
         </p>
         <p className="text-muted-foreground text-support">
-          {onlyArchived
+          {hasAnyProfile
             ? "Os perfis arquivados aparecem com “Incluir arquivados”."
             : "Adicione um perfil para registrar métodos e taxas de pagamento."}
         </p>

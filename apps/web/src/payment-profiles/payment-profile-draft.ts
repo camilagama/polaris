@@ -117,12 +117,10 @@ function feeInput(fee: FeeDraft): PaymentFeeConfigurationReadModel {
 
 export function ruleInput(rule: RuleDraft): PaymentProfileRuleInput {
   const credit = rule.method === "credit_card";
+  const days = rule.expectedSettlementDays.trim();
   return {
     anticipationFee: feeInput(rule.anticipationFee),
-    expectedSettlementDays:
-      rule.expectedSettlementDays === ""
-        ? null
-        : Number(rule.expectedSettlementDays),
+    expectedSettlementDays: days === "" ? null : Number(days),
     installmentPlan: credit ? rule.installmentPlan : null,
     installments: credit ? Number(rule.installments) : null,
     method: rule.method,
