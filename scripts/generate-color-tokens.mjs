@@ -194,7 +194,7 @@ function hexOf(token, value) {
   const match = PLAIN_OKLCH.exec(value);
   if (!match) {
     throw new Error(
-      `theme.css: --${token} is "${value}", not a plain oklch(L C h) (an e-mail needs an opaque color)`
+      `theme.css: --${token} is "${value}", not a plain oklch(L C h) (an e-mail and the manifest need an opaque color)`
     );
   }
   return oklchToHex(Number(match[1]), Number(match[2]), Number(match[3]));

@@ -14,7 +14,7 @@ import {
 } from "./generate-color-tokens.mjs";
 
 // One source of color: apps/web/src/styles/theme.css (DESIGN.md, "Changing a color"). The catalog and the e-mails
-// read files generated from it; these tests fail when one of them is stale, and when a color is written by hand
+// read files generated from it, and the manifest has two colors written by it; these tests fail when one of them is stale, and when a color is written by hand
 // anywhere else under apps/web/src or apps/catalog/src.
 const FOREGROUND_VALUE = /--foreground: oklch\([^)]*\);/;
 const DARK_RING_VALUE = /(\.dark \{[\s\S]*?)--ring: oklch\([^)]*\);/;
