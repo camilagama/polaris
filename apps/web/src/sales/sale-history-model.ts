@@ -229,6 +229,8 @@ export function historyListRequest(
 export interface HistoryRow {
   /** The sale was dated before the day it was confirmed on the server. */
   backdated: boolean;
+  /** The two letters of the circle of the row, or a dash when the sale has no customer name. */
+  customerInitials: string;
   customerText: string;
   /** The commercial date (the organization's calendar day), dd/mm/aaaa. */
   dateText: string;
@@ -258,9 +260,20 @@ function rowCustomerText(sale: SaleListEntryReadModel): string {
   return sale.customerName ?? "Cliente indisponível";
 }
 
+const NAME_SPACES = /\s+/u;
+
+function rowCustomerInitials(sale: SaleListEntryReadModel): string {
+  const words = (sale.customerName ?? "").trim().split(NAME_SPACES);
+  const [first] = words;
+  const last = words.length > 1 ? words.at(-1) : undefined;
+  const letters = [first, last].map((word) => Array.from(word ?? "")[0] ?? "");
+  return letters.join("").toLocaleUpperCase("pt-BR") || "—";
+}
+
 export function historyRows(state: HistoryState): HistoryRow[] {
   return state.sales.map((sale) => ({
     backdated: sale.occurredOn < localDay(sale.confirmedAt),
+    customerInitials: rowCustomerInitials(sale),
     customerText: rowCustomerText(sale),
     dateText: formatCalendarDate(sale.occurredOn),
     detailHref: saleDetailHref(sale.id),
