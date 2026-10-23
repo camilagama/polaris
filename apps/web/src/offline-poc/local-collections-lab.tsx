@@ -13,6 +13,7 @@ import {
 } from "../offline/local-store";
 import { localNamespace } from "../offline/namespace";
 import { LabServer } from "./local-lab-server";
+import "./lab-page.css";
 
 const COLLECTIONS = [
   "categories",

@@ -32,13 +32,12 @@ function render(
 }
 
 describe("the attention panel", () => {
-  it("is the page of the screen: one h1 with the title, in the root of the new interface, with or without items", () => {
+  it("is the page of the screen: one h1 with the title, with or without items", () => {
     for (const summary of [
       { items: [], waitingBehind: 0 },
       { items: [item()], waitingBehind: 0 },
     ]) {
       const html = render(summary);
-      expect(html).toContain('data-ui=""');
       expect(html.match(/<h1[ >]/g)).toHaveLength(1);
       expect(html).toContain("Pendências</h1>");
     }

@@ -1,31 +1,24 @@
 /*
- * The CSS entry of the app (ADR 0103): the order of the cascade layers comes first, before anything
- * else, so the old sheets (`@layer legacy`, every other CSS file under src/) win over Tailwind's base
- * and components but never over its utilities. Then Tailwind (its reset scoped to `[data-ui]`, see
- * preflight.css), the shadcn variants and animations,
- * the v5.1 tokens and two things the Base UI components would otherwise inject: the Geist faces and
- * the rule that hides the native scrollbar (CSPProvider disableStyleElements, ADR 0103 section 5).
+ * The CSS entry of the app (ADR 0103): Tailwind with its layers (theme, base, components, utilities) and its reset,
+ * the shadcn variants and animations, the v5.1 tokens and page defaults (theme.css) and two things the Base UI
+ * components would otherwise inject: the Geist faces and the rule that hides the native scrollbar (CSPProvider
+ * disableStyleElements, ADR 0103 section 5). Nothing else of src/ is old CSS: the labs' own sheets are in
+ * `components`, under the utilities (styles/css-layers.test.ts).
  */
-@layer theme, base, components, legacy, utilities;
-
-/* `tailwindcss` in its three parts, so the preflight can be the scoped copy (preflight.css). */
-@import "tailwindcss/theme.css" layer(theme);
-@import "./preflight.css" layer(base);
-@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "./shadcn-tailwind.css";
 @import "./theme.css";
 
-/* Utilities only for the classes of the new interface: a utility named like an old class (`.hidden`, `.grid`,
-   `.table`) would beat it on an old screen. Each migrated screen adds its folder here. */
+/* Utilities only for the files that draw the interface, file by file (styles/source-coverage.test.ts). */
 @source "../ui";
 @source "../ui-gallery";
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
 @source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
 @source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
-/* The products screen (v5.1, third migrated screen): its own files; the images panel and the categories are still old. */
-@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section}.tsx";
+/* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
+@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-list,product-media-crop}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
    strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";
@@ -113,13 +106,6 @@
       --app-bottom-bar: calc(3.25rem + env(safe-area-inset-bottom));
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
     }
-  }
-}
-
-/* The page under the shell has the color of its frame, not the old canvas of `.ui-root` (ui.css leaves it out). */
-@layer base {
-  body:has(.app-shell-root) {
-    background: var(--background);
   }
 }
 

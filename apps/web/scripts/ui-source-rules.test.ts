@@ -6,7 +6,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
 
 /**
  * Source rules of the interface guardrails (t180, items 4 and 5): what the review of the CSS and the classes finds
- * by reading, a test reads. They run on `src/ui`, on `src/styles` and on the source folders of every migrated
+ * by reading, a test reads. They run on `src/ui`, on `src/styles` and on the source folders of every
  * screen (`sourceDirs` in e2e-pwa/ui-screens.ts); the measured checks (overflow, touch, axe, motion, focus) are in
  * e2e-pwa/ui-guardrails.e2e.ts. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
  *
@@ -17,8 +17,6 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 
-/** Old sheets, outside the rules until their screens are migrated; the test fails when one of them is clean. */
-const LEGACY_SHEETS = ["src/styles/tokens.css", "src/styles/ui.css"];
 /** The one sheet that may write an `oklch(…)` literal: the tokens. */
 const TOKEN_SHEET = "src/styles/theme.css";
 
@@ -141,19 +139,18 @@ const sourcesUnder = (dir: string): string[] => {
   });
 };
 
-const migrated = SCREENS.filter((screen) => screen.status === "migrated");
 const SCOPE = [
   ...new Set([
     ...sourcesUnder("src/ui"),
     ...sourcesUnder("src/styles"),
-    ...migrated.flatMap((screen) => screen.sourceDirs.flatMap(sourcesUnder)),
+    ...SCREENS.flatMap((screen) => screen.sourceDirs.flatMap(sourcesUnder)),
   ]),
-].filter((path) => !LEGACY_SHEETS.includes(path));
+];
 
 const read = (path: string) => readFileSync(join(web, path), "utf8");
 
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
-  it("cobre a base, os estilos e as pastas das telas migradas", () => {
+  it("cobre a base, os estilos e as pastas das telas", () => {
     expect(SCOPE).toEqual(
       expect.arrayContaining([
         "src/ui/button.tsx",
@@ -162,12 +159,8 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
         "src/ui-gallery/ui-gallery.tsx",
       ])
     );
-    for (const screen of migrated) {
+    for (const screen of SCREENS) {
       expect(screen.sourceDirs.length, screen.name).toBeGreaterThan(0);
-      expect(
-        screen.known,
-        `${screen.name} migrada não tem falha conhecida`
-      ).toBeUndefined();
       for (const dir of screen.sourceDirs) {
         expect(existsSync(join(web, dir)), dir).toBe(true);
       }
@@ -177,13 +170,6 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it.each(SCOPE)("%s: só OKLCH, só tokens, só desvanece", (path) => {
     expect(sourceFaults(path, read(path))).toEqual([]);
   });
-
-  it.each(LEGACY_SHEETS)(
-    "%s ainda tem o que a regra reprova (ao migrar, saia desta lista)",
-    (path) => {
-      expect(sourceFaults(path, read(path)).length).toBeGreaterThan(0);
-    }
-  );
 
   it("o desvanecer `rise` mexe só na opacidade", () => {
     const sheet = withoutComments(read(TOKEN_SHEET));

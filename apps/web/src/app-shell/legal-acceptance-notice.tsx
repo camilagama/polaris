@@ -24,7 +24,6 @@ export function LegalAcceptanceNotice() {
       aria-label="Falta aceitar os termos"
       className="mb-4 font-sans"
       data-notice="legal-acceptance"
-      data-ui=""
       variant="warning"
     >
       <TriangleAlertIcon aria-hidden="true" />

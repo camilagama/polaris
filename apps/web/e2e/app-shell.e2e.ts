@@ -171,7 +171,7 @@ test.describe("desktop (1280 px)", () => {
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("Produtos");
     await expect(current).toHaveAttribute("href", "/products");
-    // the sidebar is on the new interface (data-ui): no bullets, no underline, no link color of the browser
+    // the sidebar is on the new interface: no bullets, no underline, no link color of the browser
     await expect(nav.locator("li").first()).toHaveCSS(
       "list-style-type",
       "none"

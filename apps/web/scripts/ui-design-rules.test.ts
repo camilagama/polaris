@@ -8,8 +8,6 @@ import { BROWSER_TARGET } from "../vite.ui";
  * Rules of the interface base that the review would otherwise have to remember (ADR 0103):
  * - colors only in OKLCH in src/ui/ and in the CSS of the base (decision 3);
  * - lucide icons one file at a time, never the whole package (section 2);
- * - every Base UI portal carries `data-ui`, the root of the scoped preflight and page defaults (section 3):
- *   a popup portalled to <body> without it would lose the reset;
  * - the primitives only fade (DESIGN.md, motion): no `zoom-*` nor `slide-in-from-*`;
  * - the browser floor of Tailwind 4 is the same in `build.target` and in `browserslist` (section 2).
  */
@@ -23,14 +21,12 @@ const BASE_CSS = [
   "src/styles/index.css",
   "src/styles/theme.css",
   "src/styles/shadcn-tailwind.css",
-  "src/styles/preflight.css",
 ];
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
 const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
 const NOT_OKLCH = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/;
 const WHOLE_LUCIDE = /from "lucide-react"/;
 const BASE_UI_STYLE = /^base-/;
-const PORTAL = /<[A-Za-z]+\.Portal\b[^>]*>/g;
 const TOAST_VIEWPORT_NAMED =
   /<ToastPrimitive\.Viewport\b[^>]*\saria-label="Avisos"/;
 const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
@@ -112,11 +108,6 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect(read(`src/ui/${file}`)).not.toMatch(WHOLE_LUCIDE);
   });
 
-  it.each(uiFiles)("every portal of %s carries data-ui", (file) => {
-    const portals = read(`src/ui/${file}`).match(PORTAL) ?? [];
-    expect(portals.filter((tag) => !tag.includes('data-ui=""'))).toEqual([]);
-  });
-
   it.each(uiFiles)("%s only fades: no zoom nor slide", (file) => {
     expect(read(`src/ui/${file}`)).not.toMatch(MOVING);
   });
@@ -182,7 +173,6 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect("bg-[rgb(0_0_0)]").toMatch(NOT_OKLCH);
     expect("oklch(0.2 0.005 85 / 0.4)").not.toMatch(NOT_OKLCH);
     expect('import { X } from "lucide-react"').toMatch(WHOLE_LUCIDE);
-    expect("<Foo.Portal>".match(PORTAL)).toEqual(["<Foo.Portal>"]);
     expect("data-open:zoom-in-95").toMatch(MOVING);
     expect("data-[side=top]:slide-in-from-bottom-2").toMatch(MOVING);
     expect("data-open:fade-in-0").not.toMatch(MOVING);

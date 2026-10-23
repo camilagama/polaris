@@ -6,7 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The stock screen on the components of src/ui (ADR 0103, t194), in the lab of the offline screens:
@@ -29,8 +29,8 @@ const THEMES = [
 
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 const SHIRT = {
@@ -211,7 +211,10 @@ test("a 320 px nada transborda: a lista, o painel aberto e a revisão", async ({
   await openStockLab(page, "claro");
   const sideways = async () => {
     const found = await page.evaluate(() => {
-      const root = document.querySelector("[data-ui]");
+      // the root of the screen: the header with the title is its first child
+      const root = [...document.querySelectorAll("h1")]
+        .find((heading) => heading.textContent === "Estoque")
+        ?.closest("header")?.parentElement;
       const limit = window.innerWidth + 0.5;
       const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
         right: element.getBoundingClientRect().right,
