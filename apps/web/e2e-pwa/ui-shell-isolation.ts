@@ -7,9 +7,9 @@ import type { Page } from "@playwright/test";
  * `legacy`) beats or escapes the order the components count on, and reaches the screen without the review of the
  * base seeing it (ADR 0103, section 3). The check walks every sheet of the page, the adopted ones too, into `@media`,
  * `@supports`, nesting and `@import`, and lists each style rule whose outermost layer is not one of those.
- * `@font-face`, `@keyframes` and `@property` style no element, so they may stand outside, and so may a rule that only
- * sets tokens: the custom properties of `:root`, `.dark` and the touch block of theme.css (with the `color-scheme` of
- * the theme), which the components read through their utilities.
+ * `@font-face`, `@keyframes` and `@property` style no element, so they may stand outside, and so may the token rules
+ * of theme.css: `:root` and `.dark` (also in the touch block) setting only custom properties and the `color-scheme`
+ * of the theme, which the components read through their utilities. Any other selector with tokens is a fault.
  *
  * Everything below `page.evaluate` is serialized and runs in the browser: it may use nothing of this module.
  */
@@ -56,6 +56,7 @@ export async function rulesOutsideTailwindLayers(
         : null;
     };
     const onlyTokens = (rule: CSSStyleRule) =>
+      (rule.selectorText === ":root" || rule.selectorText === ".dark") &&
       rule.style.length > 0 &&
       [...rule.style].every(
         (property) => property.startsWith("--") || property === "color-scheme"

@@ -39,6 +39,8 @@ Os valores e as medidas (tokens em OKLCH com o contraste de cada par, escala de 
 ### 3. Convivência com o CSS atual: `@layer legacy`
 
 > Substituído em parte pela emenda de 20/10 (escopo `[data-ui]`): a camada sozinha não contém o preflight, que passa a valer só em `[data-ui]`.
+>
+> Encerrado pela emenda de 23/10 (lote 6): não há mais `@layer legacy`, CSS antigo nem `[data-ui]`.
 
 O CSS atual fica até cada tela migrar, dentro de `@layer legacy`. Um CSS fora de camada vence qualquer camada, inclusive `utilities`: uma folha antiga com seletor de elemento (`button`, `input`) ou de classe genérica sobrescreveria as utilidades dos componentes novos na mesma tela, e o problema só apareceria na migração. Por isso o mecanismo é este:
 
@@ -139,7 +141,7 @@ Com a última tela na v5.1, a emenda de 20/10 deixa de valer: `preflight.css` (a
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
-- Até a migração terminar, o app tem duas formas de estilizar: o CSS atual em `@layer legacy` e o Tailwind nas telas novas. O DESIGN.md marca o que é diretriz da v5.1 e o que ainda descreve o código existente; em conflito, vale a diretriz.
+- Durante a migração, o app teve duas formas de estilizar: o CSS antigo em `@layer legacy` e o Tailwind nas telas novas. Desde o lote 6 (emenda de 23/10) só há o Tailwind.
 - O preflight do Tailwind é o risco real do PR de base; a mitigação é a camada e as capturas, e a regra é que diferença visual bloqueia.
 - O custo de bundle é limitado e medido, em três linhas (fontes, primitivos do Base UI e resto), com a baseline do resto por tipo de build; o JS do Base UI é o maior item e tem linha própria.
 - A edição livre de `src/ui/` desloca a segurança da origem do código para o teste de código-fonte e para a revisão; por isso as condições 1 a 3 bloqueiam.

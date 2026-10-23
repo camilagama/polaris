@@ -18,8 +18,8 @@ const BASE = new Set([
   // copy of shadcn/tailwind.css (variants, keyframes, utilities)
   "styles/shadcn-tailwind.css",
 ]);
-// the labs are no screens of the shop: their sheets are wholly inside `@layer components`, under the utilities
 const LEGACY_LAYER = /@layer\s+[^;{]*\blegacy\b/;
+// the labs are no screens of the shop: their sheets are wholly inside `@layer components`, under the utilities
 const LAB_SHEETS = ["offline-poc/lab-page.css", "offline-poc/offline-poc.css"];
 const THEME_OUTSIDE_LAYER = [
   /^:root$/,

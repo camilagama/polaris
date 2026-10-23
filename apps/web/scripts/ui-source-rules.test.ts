@@ -150,7 +150,7 @@ const SCOPE = [
 const read = (path: string) => readFileSync(join(web, path), "utf8");
 
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
-  it("cobre a base, os estilos e as pastas das telas migradas", () => {
+  it("cobre a base, os estilos e as pastas das telas", () => {
     expect(SCOPE).toEqual(
       expect.arrayContaining([
         "src/ui/button.tsx",

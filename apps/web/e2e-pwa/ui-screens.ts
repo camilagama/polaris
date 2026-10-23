@@ -25,7 +25,7 @@ import { stockStates } from "./ui-stock-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
- * the CSP of `_headers`. The list grows with each migrated screen: docs/runbooks/testes-de-tela.md says how.
+ * the CSP of `_headers`. The list grows with each new screen or state: docs/runbooks/testes-de-tela.md says how.
  *
  * Every screen is on the new interface since batch 6 (t256): touch area of 48 px, no fault waits for a migration,
  * and the source folders of each one are read by the source rules (`scripts/ui-source-rules.test.ts`).

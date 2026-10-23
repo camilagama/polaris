@@ -14,8 +14,9 @@ import { WORKER_MARK } from "./worker-mark";
  * The screens inside the real shell and the pages outside it (t193; since batch 6, t256): every style rule on the page
  * is in a layer of Tailwind, so nothing old or stray (a sheet with no layer, the old `@layer legacy`) can reach a
  * screen. The break this used to catch was `.ui-root input` giving the field of "Trocar senha" a border and a 2.8rem
- * height (ADR 0103, section 3). How the proof works is in `ui-shell-isolation.ts`; the runbook is
- * docs/runbooks/testes-de-tela.md.
+ * height (ADR 0103, section 3). Every screen and state is opened, not one: the build splits CSS by chunk, so a sheet
+ * can come with the lazy route or the state that loads it. How the proof works is in `ui-shell-isolation.ts`; the
+ * runbook is docs/runbooks/testes-de-tela.md.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -939,6 +940,12 @@ test.describe("controle: a verificação pega a regra fora das camadas do Tailwi
       css: ":root { --sonda: 1px; color: rgb(255 0 0); }",
       found: "sem camada: :root",
       name: "regra de tokens com uma propriedade comum",
+    },
+    // tokens outside a layer on any other selector beat the theme
+    {
+      css: "* { --radius: 0; }",
+      found: "sem camada: *",
+      name: "tokens fora de :root e .dark",
     },
     {
       css: ".app-shell-root { & select { box-sizing: content-box; } }",
