@@ -3,7 +3,6 @@ import {
   type LegalDocumentId,
   legalVersionLine,
 } from "@polaris/domain/legal/legal-documents";
-import InfoIcon from "lucide-react/dist/esm/icons/info";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Fragment, type ReactNode } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
@@ -180,7 +179,6 @@ function SectionView({ section }: { section: Section }) {
         className="bg-muted/60 text-foreground"
         role="note"
       >
-        <InfoIcon aria-hidden="true" className="text-muted-foreground" />
         <h2 className={SECTION_TITLE} id={heading.id}>
           {heading.text}
         </h2>
@@ -219,7 +217,7 @@ export function LegalDocumentView({ document, text }: LegalDocumentViewProps) {
   const numbered = sections.filter((section) => section !== essential);
   return (
     <LegalFrame document={document}>
-      <div className="flex flex-col gap-4 text-sm/5 touch:text-base/6 [overflow-wrap:anywhere]">
+      <div className="flex flex-col gap-4 break-words text-sm/5 touch:text-base/6">
         <p className="text-muted-foreground">
           {renderInline(parseInline(legalVersionLine(document)))}
         </p>
