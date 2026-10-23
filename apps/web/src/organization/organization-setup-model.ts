@@ -5,7 +5,7 @@ import {
 } from "../lib/rpc-error";
 
 export const MAX_ORGANIZATION_NAME_LENGTH = 128;
-export const MAX_TIMEZONE_LENGTH = 64;
+const MAX_TIMEZONE_LENGTH = 64;
 
 export interface SetupDraft {
   name: string;
