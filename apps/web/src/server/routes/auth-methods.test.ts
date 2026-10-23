@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../app";
+import { protectAuthRequest } from "../auth/abuse-protection";
 import type { WorkerBindings } from "../environment";
 import { authMethods } from "./auth-methods";
 
@@ -131,6 +132,89 @@ describe("authMethods", () => {
       });
     }
   );
+});
+
+const CONFIGURATION_503 = new Set([
+  "auth_abuse_protection_unavailable",
+  "auth_rate_limit_unavailable",
+]);
+
+/** Sign-up is the action of the form that asks the most of the setup (it sends e-mail). */
+async function signUpGetsConfigurationError(
+  extra: Partial<WorkerBindings>
+): Promise<boolean> {
+  const request = new Request(
+    "https://polaris.example/api/auth/sign-up/email",
+    {
+      headers: {
+        "cf-connecting-ip": "203.0.113.17",
+        "x-turnstile-token": "token",
+      },
+      method: "POST",
+    }
+  );
+  const response = await protectAuthRequest(
+    request,
+    bindings(extra),
+    undefined,
+    () => Promise.resolve(Response.json({ success: false }))
+  );
+  if (response?.status !== 503) {
+    return false;
+  }
+  const body = (await response.json()) as { error: { code: string } };
+  return CONFIGURATION_503.has(body.error.code);
+}
+
+describe("authMethods and protectAuthRequest share one list of what is ready", () => {
+  it.each([
+    ["everything is set", { ...passwordSetup, ...protection }],
+    [
+      "the flag is off",
+      { ...protection, AUTH_ABUSE_PROTECTION_ENABLED: "false" },
+    ],
+    [
+      "the flag is missing",
+      { ...protection, AUTH_ABUSE_PROTECTION_ENABLED: undefined },
+    ],
+    [
+      "the flag is not exactly true",
+      { ...protection, AUTH_ABUSE_PROTECTION_ENABLED: "TRUE" },
+    ],
+    [
+      "the Turnstile secret is missing",
+      { ...protection, TURNSTILE_SECRET_KEY: undefined },
+    ],
+    [
+      "the Turnstile secret is blank",
+      { ...protection, TURNSTILE_SECRET_KEY: " " },
+    ],
+    ["the base URL is blank", { ...protection, BETTER_AUTH_BASE_URL: " " }],
+    [
+      "the base URL is missing",
+      { ...protection, BETTER_AUTH_BASE_URL: undefined },
+    ],
+    ["the e-mail limiter is missing", withoutEmailLimiter],
+    ["the IP limiter is missing", withoutIpLimiter],
+    [
+      "both limiters are missing",
+      { ...withoutEmailLimiter, AUTH_RATE_LIMITER: undefined },
+    ],
+    ["nothing is set", {}],
+  ] as const)(
+    "%s: the form is offered if and only if sign-up gets no configuration 503",
+    async (_name, setup) => {
+      const extra = { ...passwordSetup, ...setup } as Partial<WorkerBindings>;
+      const ready = !(await signUpGetsConfigurationError(extra));
+      expect(authMethods(bindings(extra)).emailPassword).toBe(ready);
+    }
+  );
+
+  it("adds only the public site key: without it the form is not offered although the server has no 503", async () => {
+    const extra = { ...passwordSetup, ...protection, TURNSTILE_SITE_KEY: " " };
+    expect(await signUpGetsConfigurationError(extra)).toBe(false);
+    expect(authMethods(bindings(extra)).emailPassword).toBe(false);
+  });
 });
 
 describe("GET /api/auth-methods", () => {
