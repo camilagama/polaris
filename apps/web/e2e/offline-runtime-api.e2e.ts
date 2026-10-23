@@ -667,7 +667,7 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
     ).toHaveCount(0);
     await expect(page.getByText(SHIRT_OPTION)).toHaveCount(0);
     // the remembered organization only drew the screen: hidden now
-    await expect(page.locator(".app-org-name")).toHaveCount(0);
+    await expect(page.getByText(ORGANIZATION.name)).toHaveCount(0);
     await expect(chip(page)).toContainText("Conecte-se");
     // it ended with the app open: what was being put together is gone, and the notice says so
     await expect(
@@ -728,7 +728,7 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
       page.getByText("Há 1 operação guardada neste aparelho. Ela não se perde.")
     ).toBeVisible();
     await expect(saleHeading(page)).toHaveCount(0);
-    await expect(page.locator(".app-org-name")).toHaveCount(0);
+    await expect(page.getByText(ORGANIZATION.name)).toHaveCount(0);
     // opened already expired: nothing was being put together
     await expect(
       page.getByText("A venda que você estava montando não foi guardada.", {

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOTTOM_BAR_IDS,
+  bottomBarMark,
   documentTitle,
   entryPageFor,
   NAV_ITEMS,
+  navGroups,
   OFFLINE_NAV_ITEMS,
   resolveRoute,
 } from "./navigation-model";
@@ -23,6 +26,52 @@ describe("main menu", () => {
     ]);
     expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(10);
     expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(10);
+  });
+
+  it("groups the sidebar as in the v5.1 shell, Aparelhos last in Configurações", () => {
+    const groups = navGroups([...NAV_ITEMS, ...OFFLINE_NAV_ITEMS]).map(
+      (group) => [group.label, group.items.map((item) => item.label)]
+    );
+    expect(groups).toEqual([
+      [null, ["Vender", "Histórico"]],
+      ["Catálogo", ["Estoque", "Produtos", "Categorias", "Clientes"]],
+      ["Resultado", ["Despesas", "Resultado"]],
+      [
+        "Configurações",
+        ["Perfis de pagamento", "Catálogo público", "Aparelhos"],
+      ],
+    ]);
+  });
+
+  it("the bottom bar of the phone has four destinations of the menu; the rest is under Mais", () => {
+    expect(
+      BOTTOM_BAR_IDS.map(
+        (id) => NAV_ITEMS.find((item) => item.id === id)?.label
+      )
+    ).toEqual(["Vender", "Histórico", "Estoque", "Resultado"]);
+  });
+
+  it("marks the destination of the area on the bottom bar, and Mais only for the screens of no destination", () => {
+    expect(
+      Object.fromEntries(
+        [...NAV_ITEMS, ...OFFLINE_NAV_ITEMS].map((item) => [
+          item.id,
+          bottomBarMark(item.id),
+        ])
+      )
+    ).toEqual({
+      categories: "inventory",
+      customers: "inventory",
+      dashboard: "dashboard",
+      devices: "more",
+      expenses: "dashboard",
+      history: "history",
+      inventory: "inventory",
+      "payment-profiles": "more",
+      products: "inventory",
+      "public-catalog": "more",
+      sale: "sale",
+    });
   });
 
   it("does not offer the customer-of-a-sale page, which asks for an ID", () => {
