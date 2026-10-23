@@ -163,7 +163,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           Abrir loja
         </SubmitButton>
       </form>
-      <LogoutControl shell />
+      <LogoutControl />
     </EntryScreen>
   );
 }

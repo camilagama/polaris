@@ -35,7 +35,7 @@ import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
 
-/** The root of a piece of the screen on the new interface (`data-ui`, as the other migrated screens write it). */
+/** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
 /** A link on a line of its own: it gets the 48 px touch area. */
 const LINK =
@@ -106,7 +106,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   );
 
   return (
-    <div className={UI_ROOT} data-ui="">
+    <div className={UI_ROOT}>
       <SaleNoticeRegion notice={notice} />
       {load.status === "loading" ? (
         <StateCard role="status">Carregando venda…</StateCard>
@@ -303,7 +303,7 @@ export function SaleDetailPage() {
   const [param] = useState(() => readSaleIdParam(window.location.search));
   return (
     <div className="grid gap-4">
-      <div className={UI_ROOT} data-ui="">
+      <div className={UI_ROOT}>
         <header className="grid gap-1">
           <h1 className="text-title">Detalhe da venda</h1>
           <p className="text-muted-foreground text-support">

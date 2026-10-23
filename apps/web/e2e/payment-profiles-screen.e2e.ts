@@ -210,7 +210,8 @@ async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
     const root = [...document.querySelectorAll("h1")]
       .find((heading) => heading.textContent === "Perfis de pagamento")
-      ?.closest("[data-ui]");
+      // the root of the screen: the header with the title is its first child
+      ?.closest("header")?.parentElement;
     const limit = window.innerWidth + 0.5;
     const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
       right: element.getBoundingClientRect().right,
@@ -473,17 +474,6 @@ test("duas regras para o mesmo método são recusadas antes de enviar", async ({
     page.getByRole("alert").filter({ hasText: "Remova regras repetidas" })
   ).toBeVisible();
   expect(creates).toBe(0);
-});
-
-test("os campos da tela não herdam a borda nem a altura do CSS antigo do shell (.ui-root input)", async ({
-  page,
-}) => {
-  await openServerScreen(page, { lists: [answer([])] });
-  const style = await page.getByLabel("Nome do perfil").evaluate((node) => {
-    const computed = getComputedStyle(node);
-    return { border: computed.borderTopWidth, minHeight: computed.minHeight };
-  });
-  expect(style).toEqual({ border: "0px", minHeight: "auto" });
 });
 
 test("o valor fixo aparece com vírgula na lista e no campo, e vai ao servidor com ponto; o prazo de 1 dia fica no singular", async ({

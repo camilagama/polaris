@@ -25,7 +25,7 @@ const none = () => undefined;
 
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-dvh bg-background" data-ui="">
+    <div className="min-h-dvh bg-background">
       <main
         className="mx-auto w-[min(100%-2rem,76rem)] py-8 font-sans text-foreground text-sm antialiased"
         id="conteudo"

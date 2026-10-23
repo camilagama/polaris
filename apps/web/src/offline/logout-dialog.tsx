@@ -64,7 +64,6 @@ export function LogoutDialog({
       aria-describedby="logout-description"
       aria-labelledby="logout-title"
       className="font-sans"
-      data-ui=""
       role="alertdialog"
     >
       <CardContent className="grid gap-4">

@@ -164,10 +164,7 @@ export function EntryScreen({
     </>
   );
   return (
-    <div
-      className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased"
-      data-ui=""
-    >
+    <div className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased">
       <main
         className={cn(
           "grid min-h-dvh px-(--gutter) py-8",

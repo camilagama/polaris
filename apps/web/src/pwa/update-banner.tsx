@@ -28,7 +28,6 @@ export function UpdateBannerView({ onApply, snapshot }: UpdateBannerViewProps) {
       aria-label="Atualização do aplicativo"
       className="mb-4 font-sans"
       data-notice="update"
-      data-ui=""
     >
       <RefreshCwIcon aria-hidden="true" />
       <AlertTitle aria-level={2} role="heading">

@@ -25,25 +25,19 @@ import { stockStates } from "./ui-stock-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
- * the CSP of `_headers`. The list grows with each migrated screen: docs/runbooks/testes-de-tela.md says how.
+ * the CSP of `_headers`. The list grows with each new screen or state: docs/runbooks/testes-de-tela.md says how.
  *
- * - `migrated`: a screen of the new interface (`data-ui`, tokens v5.1): touch area of 48 px, and its source
- *   folder is read by the source rules (`scripts/ui-source-rules.test.ts`).
- * - `legacy`: a screen of the old CSS, measured as it is (touch area of 44 px, the rule it still follows); it
- *   cannot change before its migration, so what it fails today is listed in `known`, check by check, and the
- *   test fails if the list is not exactly what the browser finds (a new fault, or one fixed and still listed).
+ * Every screen is on the new interface since batch 6 (t256): touch area of 48 px, no fault waits for a migration,
+ * and the source folders of each one are read by the source rules (`scripts/ui-source-rules.test.ts`).
  */
 export interface UiScreen {
   /** Opens and closes every overlay of the screen, so the motion recorder sees them. */
   exercise?: (page: Page) => Promise<void>;
-  /** Faults of a legacy screen that wait for its migration, by check. Always empty for a migrated screen. */
-  known?: Partial<Record<UiCheck, string[]>>;
   name: string;
   /** Opens the screen in one of the states, and waits until it is drawn. */
   open: (page: Page, context: BrowserContext) => Promise<void>;
-  /** Source folders (or files) under `src/` of a migrated screen, for the source rules. */
+  /** Source folders (or files) under `src/` of the screen, for the source rules. */
   sourceDirs: string[];
-  status: "legacy" | "migrated";
 }
 
 export type UiCheck = "overflow" | "touch" | "axe" | "focus";
@@ -172,14 +166,16 @@ const saleScreen = (
   name: `venda ${name}`,
   open,
   sourceDirs: SALE_SOURCES,
-  status: "migrated",
 });
 
-/** The files of the products screen on the new interface: the images panel and the categories are still the old CSS. */
+/** The files of the products screen on the new interface, with the images panel. */
 const PRODUCT_SOURCES = [
   "src/catalog/product-fields.tsx",
   "src/catalog/product-form.tsx",
   "src/catalog/product-list.tsx",
+  "src/catalog/product-media-crop.tsx",
+  "src/catalog/product-media-list.tsx",
+  "src/catalog/product-media-panel.tsx",
   "src/catalog/product-variant-parts.tsx",
   "src/catalog/product-variant-price-section.tsx",
   "src/catalog/product-variant-sku-section.tsx",
@@ -199,7 +195,6 @@ const productScreen = (
   name: `produtos ${name}`,
   open,
   sourceDirs: PRODUCT_SOURCES,
-  status: "migrated",
 });
 
 /** Opens the menu of a row and closes it with Escape, so the motion recorder sees it. */
@@ -254,7 +249,6 @@ const lot2Screen = (
   name: `${title} ${name}`,
   open,
   sourceDirs,
-  status: "migrated",
 });
 const categoryScreen = (
   name: string,
@@ -308,7 +302,6 @@ const expenseScreen = (
   name: `despesas ${name}`,
   open,
   sourceDirs: EXPENSE_SOURCES,
-  status: "migrated",
 });
 
 async function exerciseExpenseCategoryFilter(page: Page) {
@@ -342,7 +335,6 @@ const resultScreen = (
   name: `resultado ${name}`,
   open,
   sourceDirs: RESULT_SOURCES,
-  status: "migrated",
 });
 
 /** The select of the indicator and the dialog that asks before cancelling a goal. */
@@ -375,7 +367,6 @@ const historyScreen = (
   name: `histórico ${name}`,
   open,
   sourceDirs: HISTORY_SOURCES,
-  status: "migrated",
 });
 
 /** The files of the sale detail (with its return, cancellation and customer panels) and of the customer page. */
@@ -404,7 +395,6 @@ const saleDetailScreen = (
   name: `detalhe da venda ${name}`,
   open,
   sourceDirs: SALE_DETAIL_SOURCES,
-  status: "migrated",
 });
 
 async function exerciseCancelReason(page: Page) {
@@ -447,7 +437,6 @@ const stockScreen = (
   name: `estoque ${name}`,
   open,
   sourceDirs: STOCK_SOURCES,
-  status: "migrated",
 });
 
 async function exerciseStockReason(page: Page) {
@@ -478,7 +467,6 @@ const deviceScreen = (
   name: `aparelhos ${name}`,
   open,
   sourceDirs: DEVICE_SOURCES,
-  status: "migrated",
 });
 
 /** One state of Pendências. */
@@ -489,7 +477,6 @@ const attentionScreen = (
   name: `pendências ${name}`,
   open,
   sourceDirs: ATTENTION_SOURCES,
-  status: "migrated",
 });
 
 /** Opens the confirmation of a revocation and closes it with Escape, so the motion recorder sees the dialog. */
@@ -518,7 +505,6 @@ const paymentScreen = (
   name: `perfis de pagamento ${name}`,
   open,
   sourceDirs: PAYMENT_SOURCES,
-  status: "migrated",
 });
 
 async function exercisePaymentMethod(page: Page) {
@@ -560,7 +546,6 @@ const shellPieceScreen = (
     await page.evaluate(() => document.fonts.ready);
   },
   sourceDirs: SHELL_PIECE_SOURCES,
-  status: "migrated",
 });
 
 const headingOf =
@@ -595,7 +580,6 @@ const entryScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
   open,
   sourceDirs: ENTRY_SOURCES,
-  status: "migrated",
 });
 
 /** The files of the first access, the acceptance and the legal texts, which stand outside the shell on the entry card. */
@@ -613,7 +597,6 @@ const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
   open,
   sourceDirs: ACCOUNT_SOURCES,
-  status: "migrated",
 });
 
 export const SCREENS: UiScreen[] = [
@@ -628,7 +611,6 @@ export const SCREENS: UiScreen[] = [
       await page.evaluate(() => document.fonts.ready);
     },
     sourceDirs: ["src/ui-gallery"],
-    status: "migrated",
   },
   entryScreen("entrar só com o Google", entryStates.googleOnly),
   entryScreen("entrar", entryStates.signIn),
@@ -821,6 +803,11 @@ export const SCREENS: UiScreen[] = [
   productScreen("lista", productStates.list, exerciseProductMenu),
   productScreen("edição com erro no nome", productStates.edit),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
+  productScreen("imagens, remoção pedindo confirmação", productStates.media),
+  productScreen(
+    "imagens, recorte da imagem escolhida",
+    productStates.mediaCrop
+  ),
   categoryScreen("lista", categoryStates.list, exerciseRowMenu("Camisetas")),
   categoryScreen("remover", categoryStates.remove),
   categoryScreen("sem conexão", categoryStates.offline),

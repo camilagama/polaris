@@ -121,10 +121,10 @@ export const replacementAbandonedText =
   "Substituição cancelada. A imagem anterior já foi removida, então o produto ficou com uma imagem a menos.";
 
 export const replacementDoneText =
-  "Imagem substituída. A nova imagem entrou no fim da lista; use Mover para ajustar a posição.";
+  "Imagem substituída. A nova imagem entrou no fim da lista; use Para antes e Para depois para ajustar a posição.";
 
 const networkMessage =
-  "Sem conexão com o servidor. Verifique a internet e tente novamente.";
+  "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro.";
 
 export interface MediaFailure {
   message: string;
@@ -212,7 +212,7 @@ function codeMessage(code: string): MediaFailure | null {
     case "entitlement_limit_reached":
       return {
         message:
-          "O plano atingiu o limite de imagens. Remova uma imagem para liberar um lugar e envie de novo.",
+          "Seu plano atingiu o limite de imagens. Remova uma imagem para liberar um lugar e envie de novo.",
         reloadList: true,
       };
     case "product_media_limit":

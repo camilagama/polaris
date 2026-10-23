@@ -6,7 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The products screen on the components of src/ui (v5.1, third migrated screen):
@@ -15,7 +15,7 @@ import { WORKER_MARK, serveLabWorker } from "./worker-mark";
  *   and at 320 px nothing goes past the window;
  * - in the real route, with the API answered by the test (the server mode, no offline runtime): the list failing and
  *   being read again, the search, the name that is required, a product created and archived with the result said
- *   and focused, and the field of the search not taking the border of the old shell (`.ui-root input`).
+ *   and focused (that no stray CSS reaches the screen is proven by e2e-pwa/ui-shell-isolation.e2e.ts).
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
@@ -34,8 +34,8 @@ const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
-  headers: { ...WORKER_MARK },
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const unavailable = rpc(
@@ -191,7 +191,7 @@ for (const theme of THEMES) {
 /** No box of the screen ends beyond the right edge of the window (the page may hide it, so boxes are measured). */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
-    const root = document.querySelector(".products-page [data-ui]");
+    const root = document.querySelector(".products-page");
     const limit = window.innerWidth + 0.5;
     const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
       right: element.getBoundingClientRect().right,
@@ -254,8 +254,8 @@ async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/rpc/**", (route) => {
@@ -315,21 +315,6 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
   ).toBeVisible();
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
-});
-
-test("o campo de busca da tela não herda a borda nem a altura do CSS antigo do shell (.ui-root input)", async ({
-  page,
-}) => {
-  await openServerScreen(page, { lists: [answer([])] });
-  const style = await page.getByLabel("Buscar produto").evaluate((node) => {
-    const computed = getComputedStyle(node);
-    return {
-      border: computed.borderTopWidth,
-      minHeight: computed.minHeight,
-    };
-  });
-  // the field says nothing about its border or min-height: no border, and the browser's `auto` (the old shell gave it 2.8rem)
-  expect(style).toEqual({ border: "0px", minHeight: "auto" });
 });
 
 test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número acompanha", async ({
