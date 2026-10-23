@@ -1165,9 +1165,12 @@ test.describe("conexão com prova", () => {
 
     await page.unroute("**/health", cutNetwork);
     // the list read on the return shows the saved profile; the warning and the typed form stay to be checked
-    await expect(page.getByRole("heading", { name: "Maquininha" })).toBeVisible(
-      { timeout: 20_000 }
-    );
+    await expect(
+      page
+        .getByRole("region", { name: "Perfis cadastrados" })
+        .getByRole("listitem")
+        .filter({ hasText: "Maquininha" })
+    ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
     await expect(
       page.getByText("Não sabemos se o perfil foi salvo", { exact: false })
