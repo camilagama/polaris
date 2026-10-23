@@ -474,6 +474,6 @@ export function saleDetailView(detail: SaleDetailReadModel): SaleDetailView {
 /** Message for a sale that failed to load. */
 export function detailLoadErrorMessage(error: unknown): string {
   return rpcErrorReason(error) === "sale_not_found"
-    ? "Esta venda não foi encontrada nesta organização. Confira o identificador da venda."
+    ? "Esta venda não foi encontrada nesta loja. Confira o identificador da venda."
     : loadErrorMessage(error, "a venda");
 }

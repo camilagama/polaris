@@ -12,7 +12,7 @@ export function periodSummaryErrorMessage(error: unknown): string {
     return "Não foi possível carregar o resultado.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso ao resultado desta organização.";
+    return "Sua conta não tem acesso ao resultado desta loja.";
   }
   if (code === "BAD_REQUEST") {
     return "Não foi possível calcular o resultado deste período. Escolha outro mês.";

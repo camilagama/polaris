@@ -290,7 +290,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "sale_not_found",
     {
       message:
-        "Esta venda não foi encontrada nesta organização. Confira o identificador da venda.",
+        "Esta venda não foi encontrada nesta loja. Confira o identificador da venda.",
     },
   ],
 ]);

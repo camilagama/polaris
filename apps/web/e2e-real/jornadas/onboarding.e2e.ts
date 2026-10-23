@@ -6,7 +6,7 @@ import { expect, openJourney, runT0, test } from "../fixtures";
  * chosen on the screen. The screen offers the zones of Brazil; Fernando de Noronha is the one that is not the default.
  * The extreme zones (+14 h, −11 h) are covered by the journeys that open the organization by the API.
  */
-test("onboarding: abre a organização com nome e fuso, e repetir não duplica", async ({
+test("onboarding: abre a loja com nome e fuso, e repetir não duplica", async ({
   browser,
   sql,
 }, testInfo) => {
@@ -16,25 +16,21 @@ test("onboarding: abre a organização com nome e fuso, e repetir não duplica",
   const { page } = journey;
   const zone = "America/Noronha";
   console.log(
-    `fuso da organização: ${zone} (data local ${localDate(runT0(), zone)}, UTC ${localDate(runT0(), "UTC")})`
+    `fuso da loja: ${zone} (data local ${localDate(runT0(), zone)}, UTC ${localDate(runT0(), "UTC")})`
   );
 
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Abra a sua organização" })
+    page.getByRole("heading", { name: "Abra a sua loja" })
   ).toBeVisible();
-  await page.getByLabel("Nome da organização").fill(journey.name);
-  await page
-    .getByRole("combobox", { name: "Fuso horário da organização" })
-    .click();
+  await page.getByLabel("Nome da loja").fill(journey.name);
+  await page.getByRole("combobox", { name: "Horário da loja" }).click();
   await page
     .getByRole("option", { name: "Horário de Fernando de Noronha" })
     .click();
-  await page
-    .getByRole("button", { name: "Criar ou abrir organização" })
-    .click();
+  await page.getByRole("button", { name: "Abrir loja" }).click();
   await expect(
-    page.getByRole("heading", { name: "Abra a sua organização" })
+    page.getByRole("heading", { name: "Abra a sua loja" })
   ).toBeHidden();
   await expect(
     page.getByRole("navigation").getByRole("link", { name: "Vender" }).first()

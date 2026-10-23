@@ -52,7 +52,7 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
       : "A meta não foi alterada.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso às metas desta organização.";
+    return "Sua conta não tem acesso às metas desta loja.";
   }
   if (code === "BAD_REQUEST") {
     return BAD_REQUEST_MESSAGES[action] ?? fallbackMessage(action);
@@ -64,7 +64,7 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
     return CONFLICT_MESSAGES[action] ?? fallbackMessage(action);
   }
   if (code === "NOT_FOUND") {
-    return "A meta não existe mais nesta organização.";
+    return "A meta não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "As metas estão temporariamente indisponíveis. Tente novamente.";

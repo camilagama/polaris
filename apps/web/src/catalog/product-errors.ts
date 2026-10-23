@@ -21,13 +21,13 @@ export function productErrorMessage(
       : "O produto não foi alterado.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (code === "BAD_REQUEST") {
     return "Informe um nome de produto válido.";
   }
   if (code === "NOT_FOUND") {
-    return "O produto não existe mais nesta organização.";
+    return "O produto não existe mais nesta loja.";
   }
   if (code === "CONFLICT" && action === "create") {
     return "A categoria selecionada não está mais disponível. Atualize a lista e tente novamente.";

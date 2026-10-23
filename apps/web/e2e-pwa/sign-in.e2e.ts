@@ -30,7 +30,7 @@ test("a tela de entrada abre pelo shell em cache, sem rede, com o botão desabil
   ).toBeEnabled();
 });
 
-test("a tela de entrada não pede organização nem mostra o menu do app", async ({
+test("a tela de entrada não pede loja nem mostra o menu do app", async ({
   page,
 }) => {
   const rpcCalls: string[] = [];

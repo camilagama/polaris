@@ -164,7 +164,7 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
       return "Este registro colidiu com outro que já existe. Descarte-o e cadastre de novo.";
     case "unavailable":
       if (kind === "customer_update") {
-        return "Este cliente não existe mais nesta organização. Descarte a alteração.";
+        return "Este cliente não existe mais nesta loja. Descarte a alteração.";
       }
       return kind === "sale"
         ? "Um dos produtos desta venda não está mais disponível (arquivado, removido ou inexistente). Restaure o produto e reenvie a venda, ou descarte-a."
@@ -178,7 +178,7 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
     case "entitlement_changed":
-      return "O plano desta organização não permite mais estes registros. Regularize o plano e use Tentar de novo: o registro é enviado como está. Nada foi perdido.";
+      return "O plano desta loja não permite mais estes registros. Regularize o plano e use Tentar de novo: o registro é enviado como está. Nada foi perdido.";
     case "session_changed":
       return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar de novo.";
     case "authorization_revoked":

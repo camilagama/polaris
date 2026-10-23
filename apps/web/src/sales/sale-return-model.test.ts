@@ -470,7 +470,7 @@ describe("error mapping", () => {
       mapReturnError({ code: "CONFLICT", data: { reason: "novo" } }).message
     ).toContain("O estado da venda mudou");
     expect(mapReturnError({ code: "FORBIDDEN" }).message).toBe(
-      "Sua conta não tem acesso a esta organização ou ação."
+      "Sua conta não tem acesso a esta loja ou a esta ação."
     );
   });
 });

@@ -36,10 +36,10 @@ describe("the states of the list", () => {
 describe("what the screen says when a call fails", () => {
   it("separates the name already in use from a state that changed", () => {
     expect(categoryErrorMessage(refusal("CONFLICT"), "create")).toBe(
-      "Já existe uma categoria com esse nome nesta organização."
+      "Já existe uma categoria com esse nome nesta loja."
     );
     expect(categoryErrorMessage(refusal("CONFLICT"), "rename")).toBe(
-      "Já existe uma categoria com esse nome nesta organização."
+      "Já existe uma categoria com esse nome nesta loja."
     );
     expect(categoryErrorMessage(refusal("CONFLICT"), "archive")).toBe(
       "O estado da categoria mudou. Atualize a lista e tente novamente."

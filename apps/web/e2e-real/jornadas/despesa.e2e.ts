@@ -99,7 +99,7 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
  * that starts today has its occurrence generated and the one that starts tomorrow has none. With "today" taken in
  * UTC, Kiritimati (ahead) generates nothing for the first and Pago Pago (behind) generates the second.
  */
-test("despesa recorrente: a que começa hoje no fuso da organização é lançada, a que começa amanhã não", async ({
+test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que começa amanhã não", async ({
   browser,
   sql,
 }, testInfo) => {

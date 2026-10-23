@@ -65,7 +65,7 @@ function errorText(
     return "Não foi possível concluir a operação com o perfil de pagamento.";
   }
   if (code === "FORBIDDEN") {
-    return "Sua conta não tem acesso a esta organização ou ação.";
+    return "Sua conta não tem acesso a esta loja ou a esta ação.";
   }
   if (code === "BAD_REQUEST") {
     return "Revise o método, as parcelas, o prazo e os valores das taxas.";
@@ -74,7 +74,7 @@ function errorText(
     return "Este perfil foi alterado em outra solicitação. Atualize a lista e tente novamente.";
   }
   if (code === "NOT_FOUND") {
-    return "Este perfil não existe mais nesta organização.";
+    return "Este perfil não existe mais nesta loja.";
   }
   return fallback;
 }

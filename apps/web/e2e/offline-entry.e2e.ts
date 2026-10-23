@@ -12,7 +12,7 @@ const ORIGINAL = [
   },
 ];
 const CACHE_KEY = "polaris.offline.organizations";
-const OPENING_TITLE = /Abra a sua organização/;
+const OPENING_TITLE = /Abra a sua loja/;
 const SIGN_IN_AGAIN_HREF = /\/entrar\?motivo=sessao&voltar=/;
 
 let organizations = ORIGINAL;
@@ -101,7 +101,7 @@ async function serveListing(page: Page, listing: () => Listing) {
   });
 }
 
-test("depois de um acesso online, o app abre sem rede com a organização lembrada no aparelho", async ({
+test("depois de um acesso online, o app abre sem rede com a loja lembrada no aparelho", async ({
   page,
 }) => {
   let listing: Listing = "ok";
@@ -114,7 +114,7 @@ test("depois de um acesso online, o app abre sem rede com a organização lembra
   await page.reload();
   await expect(page.getByText("Loja do teste").first()).toBeAttached();
   await expect(
-    page.getByText("Não foi possível carregar suas organizações")
+    page.getByText("Não foi possível carregar suas lojas")
   ).toHaveCount(0);
 });
 
@@ -124,11 +124,11 @@ test("sem nenhum acesso anterior e sem rede, diz que não foi possível carregar
   await serveListing(page, () => "down");
   await page.goto("/");
   await expect(
-    page.getByText("Não foi possível carregar suas organizações")
+    page.getByText("Não foi possível carregar suas lojas")
   ).toBeVisible();
 });
 
-test("quando a sessão acabou, a cópia das organizações é apagada e não é oferecida", async ({
+test("quando a sessão acabou, a cópia das lojas é apagada e não é oferecida", async ({
   page,
 }) => {
   let listing: Listing = "ok";
@@ -157,7 +157,7 @@ test("quando a sessão acabou, a cópia das organizações é apagada e não é 
   listing = "down";
   await page.goto("/");
   await expect(
-    page.getByText("Não foi possível carregar suas organizações")
+    page.getByText("Não foi possível carregar suas lojas")
   ).toBeVisible();
 });
 
@@ -199,7 +199,7 @@ for (const refusal of ["throttled", "unavailable"] as const) {
   });
 }
 
-test("o primeiro acesso de uma conta sem organização chega à tela de criar organização, sem erro (AC-9)", async ({
+test("o primeiro acesso de uma conta sem loja chega à tela de abrir a loja, sem erro (AC-9)", async ({
   page,
 }) => {
   await serveListing(page, () => "empty");
@@ -208,7 +208,7 @@ test("o primeiro acesso de uma conta sem organização chega à tela de criar or
   await expect(page.getByText("Sua sessão acabou")).toHaveCount(0);
   expect(new URL(page.url()).pathname).toBe("/");
   await expect(
-    page.getByRole("heading", { name: "Abra a sua organização" })
+    page.getByRole("heading", { name: "Abra a sua loja" })
   ).toBeVisible();
 });
 
@@ -218,9 +218,9 @@ test("o primeiro acesso não mostra o menu: só o cartão, a aba com o nome da t
   await serveListing(page, () => "empty");
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Abra a sua organização" })
+    page.getByRole("heading", { level: 1, name: "Abra a sua loja" })
   ).toBeVisible();
-  await expect(page).toHaveTitle("Abra a sua organização · Polaris");
+  await expect(page).toHaveTitle("Abra a sua loja · Polaris");
   // nothing to go to yet: no sidebar, no bottom bar, no state chip
   await expect(page.getByRole("navigation", { name: "Principal" })).toHaveCount(
     0
@@ -235,7 +235,7 @@ test("o primeiro acesso não mostra o menu: só o cartão, a aba com o nome da t
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toBeVisible();
 });
 
-test("401 ao criar a organização: o aviso de sessão fica sobre o cartão e o erro leva a Entrar de novo", async ({
+test("401 ao abrir a loja: o aviso de sessão fica sobre o cartão e o erro leva a Entrar de novo", async ({
   page,
 }) => {
   await serveListing(page, () => "empty");
@@ -257,10 +257,8 @@ test("401 ao criar a organização: o aviso de sessão fica sobre o cartão e o 
     });
   });
   await page.goto("/");
-  await page.getByLabel("Nome da organização").fill("Loja do teste");
-  await page
-    .getByRole("button", { name: "Criar ou abrir organização" })
-    .click();
+  await page.getByLabel("Nome da loja").fill("Loja do teste");
+  await page.getByRole("button", { name: "Abrir loja" }).click();
   await expect(
     page.getByText("Sua sessão acabou. Entre de novo.")
   ).toBeVisible();
@@ -272,7 +270,7 @@ test("401 ao criar a organização: o aviso de sessão fica sobre o cartão e o 
   await expect(again).toHaveAttribute("href", SIGN_IN_AGAIN_HREF);
 });
 
-test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organização abre", async ({
+test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a loja abre", async ({
   page,
 }) => {
   let created = false;
@@ -289,17 +287,13 @@ test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organiza�
     });
   });
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "Criar ou abrir organização" })
-    .click();
-  await expect(page.getByText("Informe o nome da organização.")).toBeVisible();
-  await expect(page.getByLabel("Nome da organização")).toBeFocused();
+  await page.getByRole("button", { name: "Abrir loja" }).click();
+  await expect(page.getByText("Informe o nome da loja.")).toBeVisible();
+  await expect(page.getByLabel("Nome da loja")).toBeFocused();
   expect(created).toBe(false);
 
-  await page.getByLabel("Nome da organização").fill("Loja do teste");
-  await page
-    .getByRole("button", { name: "Criar ou abrir organização" })
-    .click();
+  await page.getByLabel("Nome da loja").fill("Loja do teste");
+  await page.getByRole("button", { name: "Abrir loja" }).click();
   // the app opens with its menu and the tab goes back to the name of the screen
   // (the sidebar from 760 px, the bar of destinations below it: one of the two is on the page)
   await expect(
@@ -309,7 +303,7 @@ test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organiza�
       .first()
   ).toBeAttached();
   await expect(
-    page.getByRole("heading", { name: "Abra a sua organização" })
+    page.getByRole("heading", { name: "Abra a sua loja" })
   ).toHaveCount(0);
   await expect(page).not.toHaveTitle(OPENING_TITLE);
 });

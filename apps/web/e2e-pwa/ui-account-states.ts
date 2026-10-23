@@ -76,12 +76,12 @@ async function serveFirstAccess(
 }
 
 const submitSetup = (page: Page) =>
-  page.getByRole("button", { name: "Criar ou abrir organização" }).click();
+  page.getByRole("button", { name: "Abrir loja" }).click();
 
 async function openFirstAccess(page: Page) {
   await page.goto("/");
   await page
-    .getByRole("heading", { level: 1, name: "Abra a sua organização" })
+    .getByRole("heading", { level: 1, name: "Abra a sua loja" })
     .waitFor();
 }
 
@@ -128,26 +128,26 @@ export const firstAccessStates = {
       create: (route) => route.fulfill(rpcError("SERVICE_UNAVAILABLE", 503)),
     });
     await openFirstAccess(page);
-    await page.getByLabel("Nome da organização").fill("Loja Horizonte");
+    await page.getByLabel("Nome da loja").fill("Loja Horizonte");
     await submitSetup(page);
     await page
       .getByText("O Polaris está temporariamente indisponível.")
       .waitFor();
     await settle(page);
   },
-  /** "Criar ou abrir organização" with the name empty: the error at the field, the focus on it. */
+  /** "Abrir loja" with the name empty: the error at the field, the focus on it. */
   fieldErrors: async (page: Page) => {
     await serveFirstAccess(page);
     await openFirstAccess(page);
     await submitSetup(page);
-    await page.getByText("Informe o nome da organização.").waitFor();
+    await page.getByText("Informe o nome da loja.").waitFor();
     await settle(page);
   },
   /** The server did not answer yet: the button says so and takes no second send. */
   opening: async (page: Page) => {
     await serveFirstAccess(page, { create: hold });
     await openFirstAccess(page);
-    await page.getByLabel("Nome da organização").fill("Loja Horizonte");
+    await page.getByLabel("Nome da loja").fill("Loja Horizonte");
     await submitSetup(page);
     await page.getByRole("button", { name: "Abrindo…" }).waitFor();
     await settle(page);
