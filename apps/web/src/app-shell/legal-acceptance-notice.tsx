@@ -1,11 +1,15 @@
-import { legalAcceptancePath } from "../lib/legal-acceptance";
-import { currentReturnPath } from "../lib/sign-in-path";
-import { useHasUnsentWork } from "../lib/unsent-work";
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { buttonVariants } from "@/ui/button";
 import {
   ACCEPTANCE_NOTICE,
   ACCEPTANCE_NOTICE_KEEPS_INPUT,
   ACCEPTANCE_NOTICE_LINK,
 } from "../legal/acceptance/acceptance-texts";
+import { legalAcceptancePath } from "../lib/legal-acceptance";
+import { currentReturnPath } from "../lib/sign-in-path";
+import { useHasUnsentWork } from "../lib/unsent-work";
 
 /**
  * The fixed notice for "the legal acceptance is missing" (ADR 0100): the server refused a call of this
@@ -16,35 +20,42 @@ export function LegalAcceptanceNotice() {
   const unsent = useHasUnsentWork();
   const href = legalAcceptancePath(currentReturnPath(window.location));
   return (
-    <section
+    <Alert
       aria-label="Falta aceitar os termos"
-      className="session-ended-notice legal-acceptance-notice"
-      role="status"
+      className="mb-4 font-sans"
+      data-notice="legal-acceptance"
+      data-ui=""
+      variant="warning"
     >
-      <p>{ACCEPTANCE_NOTICE}</p>
-      {unsent ? (
-        <>
+      <TriangleAlertIcon aria-hidden="true" />
+      <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
+        <p>{ACCEPTANCE_NOTICE}</p>
+        {unsent ? (
+          <>
+            <a
+              aria-describedby="legal-acceptance-notice-hint"
+              className={cn(buttonVariants(), "no-underline!")}
+              data-slot="button"
+              href={href}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {ACCEPTANCE_NOTICE_LINK}
+            </a>
+            <p id="legal-acceptance-notice-hint">
+              ({ACCEPTANCE_NOTICE_KEEPS_INPUT})
+            </p>
+          </>
+        ) : (
           <a
-            aria-describedby="legal-acceptance-notice-hint"
-            className="primary-button"
+            className={cn(buttonVariants(), "no-underline!")}
+            data-slot="button"
             href={href}
-            rel="noopener noreferrer"
-            target="_blank"
           >
             {ACCEPTANCE_NOTICE_LINK}
           </a>
-          <p
-            className="legal-acceptance-notice-hint"
-            id="legal-acceptance-notice-hint"
-          >
-            ({ACCEPTANCE_NOTICE_KEEPS_INPUT})
-          </p>
-        </>
-      ) : (
-        <a className="primary-button" href={href}>
-          {ACCEPTANCE_NOTICE_LINK}
-        </a>
-      )}
-    </section>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

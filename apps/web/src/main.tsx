@@ -68,7 +68,30 @@ const isUiGalleryRoute =
   (isOfflinePocEnabled || import.meta.env.MODE === "pwa-e2e") &&
   window.location.pathname === "/ui-galeria";
 
-if (isUiGalleryRoute) {
+// The pieces around the screens (404, failure, loading, notices, "Sair", expired access) in the states the
+// browser checks measure: a lab like the one of the screens, only in the builds of the browser checks.
+const isShellPiecesRoute =
+  (isOfflinePocEnabled || import.meta.env.MODE === "pwa-e2e") &&
+  window.location.pathname === "/ui-pecas-do-shell";
+
+if (isShellPiecesRoute) {
+  const loadShellPieces = async () => {
+    try {
+      const { ShellPiecesGallery } = await import(
+        "./offline-poc/screens-lab-shell-pieces"
+      );
+      root.render(<ShellPiecesGallery />);
+    } catch (error: unknown) {
+      root.render(
+        <main className="app-shell" role="alert">
+          <h1>Falha ao abrir as peças do shell</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadShellPieces().catch(() => undefined);
+} else if (isUiGalleryRoute) {
   const loadUiGallery = async () => {
     try {
       const { UiGallery } = await import("./ui-gallery/ui-gallery");
