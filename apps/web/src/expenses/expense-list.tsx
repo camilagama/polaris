@@ -153,17 +153,11 @@ function ExpenseCard({
   const voided = expense.status === "voided";
   const handleEdit = useCallback(() => onEdit(expense), [expense, onEdit]);
   const online = useConnectionOnline();
-  // offline nothing leaves: the button says why (aria-describedby on the notice)
-  const handleVoid = useCallback(() => {
-    if (online) {
-      onVoid(expense);
-    }
-  }, [expense, online, onVoid]);
-  const handleRestore = useCallback(() => {
-    if (online) {
-      onRestore(expense);
-    }
-  }, [expense, online, onRestore]);
+  const handleVoid = useCallback(() => onVoid(expense), [expense, onVoid]);
+  const handleRestore = useCallback(
+    () => onRestore(expense),
+    [expense, onRestore]
+  );
   const isBusy = busyKey !== null;
   const thisBusy = busyKey?.endsWith(expense.id) ?? false;
 

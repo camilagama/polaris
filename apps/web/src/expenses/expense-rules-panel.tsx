@@ -66,12 +66,7 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
   const paused = rule.status === "archived";
   const handleEdit = useCallback(() => onEdit(rule), [onEdit, rule]);
   const online = useConnectionOnline();
-  // offline nothing leaves: the button says why (aria-describedby on the notice)
-  const handleToggle = useCallback(() => {
-    if (online) {
-      onToggle(rule);
-    }
-  }, [online, onToggle, rule]);
+  const handleToggle = useCallback(() => onToggle(rule), [onToggle, rule]);
   const isBusy = busyKey !== null;
   const thisBusy = busyKey === `rule-toggle:${rule.id}`;
   const toggleLabel = paused ? "Retomar" : "Pausar";

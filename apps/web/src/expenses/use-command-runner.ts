@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { browserConnection } from "../lib/browser-connection";
 import { rpcErrorCode } from "../lib/rpc-error";
 import { type ExpenseAction, expenseErrorMessage } from "./expense-errors";
 
@@ -11,7 +12,8 @@ export type CommandOutcome = "conflict" | "failed" | "ok";
 
 /**
  * Runs one command at a time for a part of the screen: the busy key disables
- * the buttons, and the result becomes a message. Never throws.
+ * the buttons, and the result becomes a message. Never throws. Offline nothing leaves: the buttons say why (the
+ * notice of the shell), so a press that still gets here, by the keyboard, sends nothing.
  */
 export function useCommandRunner() {
   const [busy, setBusy] = useState<string | null>(null);
@@ -25,6 +27,9 @@ export function useCommandRunner() {
       action: ExpenseAction,
       command: () => Promise<string>
     ): Promise<CommandOutcome> => {
+      if (!browserConnection.isOnline()) {
+        return "failed";
+      }
       setBusy(key);
       setFeedback(null);
       try {

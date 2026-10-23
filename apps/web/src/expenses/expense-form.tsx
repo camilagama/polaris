@@ -137,10 +137,6 @@ export function ExpenseForm({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      // offline nothing leaves and nothing typed is touched: the button says why
-      if (!online) {
-        return;
-      }
       const result = validateExpenseDraft(draft);
       if (result.input === null) {
         setErrors(result.errors);
@@ -154,7 +150,7 @@ export function ExpenseForm({
       }
       await onSave(result.input);
     },
-    [draft, online, onSave]
+    [draft, onSave]
   );
 
   return (

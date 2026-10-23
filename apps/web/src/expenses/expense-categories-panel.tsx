@@ -68,18 +68,13 @@ function CategoryRow({
     []
   );
   const online = useConnectionOnline();
-  // offline nothing leaves: the buttons say why (aria-describedby on the notice)
-  const handleToggle = useCallback(() => {
-    if (online) {
-      onToggle(category);
-    }
-  }, [category, online, onToggle]);
+  const handleToggle = useCallback(
+    () => onToggle(category),
+    [category, onToggle]
+  );
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!online) {
-        return;
-      }
       if (name.trim() === category.name) {
         setRenaming(false);
         return;
@@ -88,7 +83,7 @@ function CategoryRow({
         setRenaming(false);
       }
     },
-    [category, name, online, onRename]
+    [category, name, onRename]
   );
 
   if (renaming) {
@@ -195,10 +190,6 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      // offline nothing leaves and nothing typed is touched: the button says why
-      if (!online) {
-        return;
-      }
       if (name.trim() === "") {
         setError("Informe o nome da categoria.");
         return;
@@ -207,7 +198,7 @@ function NewCategoryForm({ busy, onCreate }: NewCategoryFormProps) {
         setName("");
       }
     },
-    [group, name, online, onCreate]
+    [group, name, onCreate]
   );
 
   return (

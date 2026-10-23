@@ -168,10 +168,6 @@ export function ExpenseRuleForm({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      // offline nothing leaves and nothing typed is touched: the button says why
-      if (!online) {
-        return;
-      }
       const result = validateRuleDraft(draft, {
         fixedStart: editing !== null,
         today,
@@ -186,7 +182,7 @@ export function ExpenseRuleForm({
       }
       await onSave(result.input);
     },
-    [draft, editing, online, onSave, today]
+    [draft, editing, onSave, today]
   );
 
   return (
