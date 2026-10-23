@@ -32,6 +32,10 @@
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
 @source "../{main,app-shell/app,app-shell/app-shell}.tsx";
 @source "../offline/runtime/{sync-status,logout-control,devices-page}.tsx";
+/* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
+@source "../organization/organization-setup.tsx";
+@source "../legal/{legal-app,legal-frame,legal-page}.tsx";
+@source "../legal/acceptance/acceptance-page.tsx";
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session,
    the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */

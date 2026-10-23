@@ -5,7 +5,6 @@ import {
   Suspense,
   useEffect,
 } from "react";
-import { LegalApp } from "../legal/legal-app";
 import { resolveLegalRoute } from "../legal/legal-routes";
 import { OrganizationProvider } from "../lib/current-organization";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
@@ -107,6 +106,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
     }))
   ),
 };
+
+/** A legal text is its own chunk, kept by the service worker: the shell and the entry pages do not carry it. */
+const LegalApp = lazy(() =>
+  import("../legal/legal-app").then((module) => ({ default: module.LegalApp }))
+);
 
 const AcceptancePage = lazy(() =>
   import("../legal/acceptance/acceptance-page").then((module) => ({
@@ -258,7 +262,11 @@ function StoreApp() {
 export function App() {
   const legalDocument = resolveLegalRoute(window.location.pathname);
   if (legalDocument) {
-    return <LegalApp document={legalDocument} />;
+    return (
+      <Suspense fallback={<PageLoading fullPage />}>
+        <LegalApp document={legalDocument} />
+      </Suspense>
+    );
   }
   if (isLegalAcceptancePath(window.location.pathname)) {
     return <AcceptanceApp />;
