@@ -6,20 +6,29 @@ import {
   useRef,
   useState,
 } from "react";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
+import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { documentTitle } from "../app-shell/navigation-model";
 import { orpcClient } from "../lib/orpc";
+import { SIGN_IN_AGAIN_BUTTON } from "../lib/session-ended-text";
+import { signInPath } from "../lib/sign-in-path";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { LogoutControl } from "../offline/runtime/logout-control";
-import { EntryAlert, EntryScreen, SubmitButton } from "../sign-in/entry-ui";
+import { SelectField } from "../sales/sale-fields";
 import {
-  defaultTimezone,
-  firstInvalidField,
+  EntryAlert,
+  EntryLinkButton,
+  EntryScreen,
+  SubmitButton,
+} from "../sign-in/entry-ui";
+import {
+  BRAZIL_TIMEZONES,
+  initialTimezone,
   MAX_ORGANIZATION_NAME_LENGTH,
-  MAX_TIMEZONE_LENGTH,
+  SETUP_SESSION_ENDED,
   type SetupErrors,
   setupErrorMessage,
+  setupSessionEnded,
   validateSetup,
 } from "./organization-setup-model";
 
@@ -38,13 +47,16 @@ interface OrganizationSetupProps {
  */
 export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   const [name, setName] = useState("");
-  const [timezone, setTimezone] = useState(defaultTimezone);
+  const [timezone, setTimezone] = useState(initialTimezone);
   const [errors, setErrors] = useState<SetupErrors>({});
-  const [failure, setFailure] = useState<string | null>(null);
+  // the session ended while the card was open: the alert says so and "Entrar de novo" is under it
+  const [failure, setFailure] = useState<{
+    endedSession: boolean;
+    message: string;
+  } | null>(null);
   const [pending, setPending] = useState(false);
   useReportUnsentWork(name.trim() !== "");
   const nameRef = useRef<HTMLInputElement>(null);
-  const timezoneRef = useRef<HTMLInputElement>(null);
 
   // the tab says what the page is, and gives the title back when the organization opens
   useEffect(() => {
@@ -59,10 +71,6 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
     (event: ChangeEvent<HTMLInputElement>) => setName(event.target.value),
     []
   );
-  const handleTimezoneChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => setTimezone(event.target.value),
-    []
-  );
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -74,8 +82,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
       setErrors(found);
       setFailure(null);
       if (input === null) {
-        const field = firstInvalidField(found);
-        (field === "timezone" ? timezoneRef : nameRef).current?.focus();
+        nameRef.current?.focus();
         return;
       }
       setPending(true);
@@ -83,7 +90,13 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
         await orpcClient.organization.createInitial(input);
         onOpened();
       } catch (error) {
-        setFailure(setupErrorMessage(error));
+        const endedSession = setupSessionEnded(error);
+        setFailure({
+          endedSession,
+          message: endedSession
+            ? SETUP_SESSION_ENDED
+            : setupErrorMessage(error),
+        });
         setPending(false);
       }
     },
@@ -98,7 +111,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
 
   return (
     <EntryScreen
-      support="Você ainda não tem uma organização. Crie a sua para usar o catálogo, o estoque e as vendas. Se ela já existir, será aberta sem alterar seus dados."
+      support="Dê um nome à sua organização. Dá para mudar depois."
       title={TITLE}
     >
       <form
@@ -127,34 +140,25 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           />
           <FieldError id="organization-name-error">{errors.name}</FieldError>
         </Field>
-        <Field data-invalid={errors.timezone ? true : undefined}>
-          <FieldLabel htmlFor="organization-timezone">
-            Fuso horário da organização
-          </FieldLabel>
-          <Input
-            aria-describedby={
-              errors.timezone
-                ? "organization-timezone-error organization-timezone-help"
-                : "organization-timezone-help"
-            }
-            aria-invalid={errors.timezone ? true : undefined}
-            autoComplete="off"
-            id="organization-timezone"
-            maxLength={MAX_TIMEZONE_LENGTH}
-            onChange={handleTimezoneChange}
-            ref={timezoneRef}
-            required
-            value={timezone}
-          />
-          <FieldError id="organization-timezone-error">
-            {errors.timezone}
-          </FieldError>
-          <FieldDescription id="organization-timezone-help">
-            Use um identificador IANA, como America/Sao_Paulo. As datas de
-            estoque e de venda seguem este fuso.
-          </FieldDescription>
-        </Field>
-        {failure ? <EntryAlert key={failure}>{failure}</EntryAlert> : null}
+        <SelectField
+          hint="É o horário que o Polaris usa nas datas das vendas."
+          id="organization-timezone"
+          label="Fuso horário da organização"
+          onChange={setTimezone}
+          options={BRAZIL_TIMEZONES}
+          placeholder="Escolha o fuso"
+          value={timezone}
+        />
+        {failure ? (
+          <EntryAlert key={failure.message}>{failure.message}</EntryAlert>
+        ) : null}
+        {failure?.endedSession ? (
+          <EntryLinkButton
+            href={signInPath({ reason: "sessao", returnTo: "/" })}
+          >
+            {SIGN_IN_AGAIN_BUTTON}
+          </EntryLinkButton>
+        ) : null}
         <SubmitButton pending={pending} pendingText="Abrindo…">
           Criar ou abrir organização
         </SubmitButton>

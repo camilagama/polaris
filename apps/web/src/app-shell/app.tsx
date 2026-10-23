@@ -22,6 +22,7 @@ import {
   resolveRoute,
 } from "./navigation-model";
 import { NotFoundPage } from "./not-found-page";
+import { PageLoading } from "./page-loading";
 
 type Page = LazyExoticComponent<ComponentType>;
 
@@ -171,13 +172,7 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       updateNotice={<UpdateSlot />}
     >
       <ErrorBoundary>
-        <Suspense
-          fallback={
-            <p className="app-status" role="status">
-              Carregando…
-            </p>
-          }
-        >
+        <Suspense fallback={<PageLoading />}>
           <Page />
         </Suspense>
       </ErrorBoundary>
@@ -186,9 +181,19 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
 }
 
 /** The new-version notice, where there is a service worker to update. */
-function UpdateSlot() {
+function UpdateSlot({ standalone = false }: { standalone?: boolean }) {
   const store = getUpdateStore();
-  return store ? <UpdateBanner store={store} /> : null;
+  if (!store) {
+    return null;
+  }
+  // outside the shell there is no content column to sit in: the notice makes its own, above the page
+  return standalone ? (
+    <div className="mx-auto w-[min(100%-2rem,28rem)] pt-4">
+      <UpdateBanner store={store} />
+    </div>
+  ) : (
+    <UpdateBanner store={store} />
+  );
 }
 
 /**
@@ -198,18 +203,13 @@ function UpdateSlot() {
 function SignInApp({ page }: { page: EntryPageId }) {
   const EntryPage = entryPages[page];
   return (
-    <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
-      <UpdateSlot />
-      <Suspense
-        fallback={
-          // inside `.ui-root`: its canvas color is what the page has in the dark theme, so there is no white flash
-          <div className="ui-root">
-            <p className="app-status" role="status">
-              Carregando…
-            </p>
-          </div>
-        }
-      >
+    <ErrorBoundary
+      fullPage
+      message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+    >
+      <UpdateSlot standalone />
+      {/* `fullPage`: the color of the page while the chunk loads, so there is no white flash in the dark theme */}
+      <Suspense fallback={<PageLoading fullPage />}>
         <EntryPage />
       </Suspense>
     </ErrorBoundary>
@@ -222,15 +222,12 @@ function SignInApp({ page }: { page: EntryPageId }) {
  */
 function AcceptanceApp() {
   return (
-    <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
-      <UpdateSlot />
-      <Suspense
-        fallback={
-          <p className="app-status" role="status">
-            Carregando…
-          </p>
-        }
-      >
+    <ErrorBoundary
+      fullPage
+      message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+    >
+      <UpdateSlot standalone />
+      <Suspense fallback={<PageLoading fullPage />}>
         <AcceptancePage />
       </Suspense>
     </ErrorBoundary>
@@ -245,7 +242,10 @@ function StoreApp() {
   }, [title]);
 
   return (
-    <ErrorBoundary message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo.">
+    <ErrorBoundary
+      fullPage
+      message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+    >
       <OrganizationProvider>
         <OfflineRuntimeProvider>
           <RouteContent route={route} />
@@ -263,13 +263,7 @@ export function App() {
   const legalDocument = resolveLegalRoute(window.location.pathname);
   if (legalDocument) {
     return (
-      <Suspense
-        fallback={
-          <p className="app-status" role="status">
-            Carregando…
-          </p>
-        }
-      >
+      <Suspense fallback={<PageLoading fullPage />}>
         <LegalApp document={legalDocument} />
       </Suspense>
     );

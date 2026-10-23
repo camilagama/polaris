@@ -20,10 +20,8 @@ const backLinkPattern =
 const sectionHeadingPattern = /<h2 [^>]*id="1-so-isto">1\. Só isto<\/h2>/;
 const essentialHeadingPattern = /id="o-essencial">O essencial<\/h2>/;
 const termsTitlePattern = /<h1[^>]*>Termos de Uso<\/h1>/;
-const markerPattern = (text: string) =>
-  new RegExp(
-    `<mark [^>]*data-slot="legal-marker">${text.replace(/[[\]]/g, "\\$&")}</mark>`
-  );
+/** The text of a pending marker inside its `<mark>`, compared as text: no pattern is built from it. */
+const marker = (text: string) => `data-slot="legal-marker">${text}</mark>`;
 const tagStartPattern = /^\/?([a-z][a-z0-9]*)/i;
 const headingLowerPattern = /<h[3-6][ >]/g;
 const hrefPattern = /href="([^"#][^"]*)"/g;
@@ -140,14 +138,12 @@ describe("the pending markers (AC-9)", () => {
         text={"# T\n\n## 1. Um\n\nContato: **[preencher: e-mail]**."}
       />
     );
-    expect(html).toMatch(markerPattern("[preencher: e-mail]"));
+    expect(html).toContain(marker("[preencher: e-mail]"));
   });
 
   it("show the effective date of the constant as a marker while it is a draft", () => {
     if (LEGAL_DOCUMENTS.terms.effectiveFrom === null) {
-      expect(render("terms")).toMatch(
-        markerPattern("[preencher na publicação]")
-      );
+      expect(render("terms")).toContain(marker("[preencher na publicação]"));
     }
   });
 });

@@ -12,6 +12,7 @@ const ORIGINAL = [
 ];
 const CACHE_KEY = "polaris.offline.organizations";
 const OPENING_TITLE = /Abra a sua organização/;
+const SIGN_IN_AGAIN_HREF = /\/entrar\?motivo=sessao&voltar=/;
 
 let organizations = ORIGINAL;
 
@@ -229,6 +230,42 @@ test("o primeiro acesso não mostra o menu: só o cartão, a aba com o nome da t
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toBeVisible();
 });
 
+test("401 ao criar a organização: o aviso de sessão fica sobre o cartão e o erro leva a Entrar de novo", async ({
+  page,
+}) => {
+  await serveListing(page, () => "empty");
+  await page.route("**/rpc/organization/createInitial", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        json: {
+          code: "UNAUTHORIZED",
+          data: undefined,
+          defined: false,
+          message: "Unauthorized",
+          status: 401,
+        },
+        meta: [],
+      }),
+      contentType: "application/json",
+      status: 401,
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Nome da organização").fill("Loja do teste");
+  await page
+    .getByRole("button", { name: "Criar ou abrir organização" })
+    .click();
+  await expect(
+    page.getByText("Sua sessão acabou. Entre de novo.")
+  ).toBeVisible();
+  // the notice of the shell stays above the card, and the error offers the way back
+  await expect(
+    page.getByRole("alert", { name: "Sua sessão acabou" })
+  ).toBeVisible();
+  const again = page.getByRole("link", { name: "Entrar de novo" });
+  await expect(again).toHaveAttribute("href", SIGN_IN_AGAIN_HREF);
+});
+
 test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organização abre", async ({
   page,
 }) => {
@@ -257,8 +294,12 @@ test("no primeiro acesso, o nome vazio aponta o campo e, com o nome, a organiza�
     .getByRole("button", { name: "Criar ou abrir organização" })
     .click();
   // the app opens with its menu and the tab goes back to the name of the screen
+  // (the sidebar from 760 px, the bar of destinations below it: one of the two is on the page)
   await expect(
-    page.getByRole("navigation", { name: "Principal" })
+    page
+      .getByRole("navigation", { name: "Principal" })
+      .or(page.getByRole("navigation", { name: "Destinos" }))
+      .first()
   ).toBeAttached();
   await expect(
     page.getByRole("heading", { name: "Abra a sua organização" })

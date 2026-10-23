@@ -40,8 +40,7 @@
     margin-bottom: 2rem;
   }
 
-  .categories-heading h1,
-  .setup-card h1 {
+  .categories-heading h1 {
     margin: 0;
     font-family: Georgia, "Times New Roman", serif;
     font-size: clamp(2.25rem, 5vw, 3.6rem);
@@ -210,8 +209,7 @@
     background: var(--ui-danger-soft);
   }
 
-  .category-list-panel,
-  .setup-card {
+  .category-list-panel {
     overflow: hidden;
     background: var(--ui-surface);
     border: 1px solid var(--ui-line);
@@ -323,26 +321,6 @@
     border-color: color-mix(in srgb, var(--ui-accent) 32%, transparent);
   }
 
-  .setup-card {
-    max-width: 43rem;
-    padding: clamp(1.5rem, 4vw, 2.6rem);
-    margin: 3rem auto;
-  }
-
-  .setup-card h1 {
-    font-size: clamp(2rem, 5vw, 3rem);
-  }
-
-  .setup-form {
-    display: grid;
-    gap: 0.65rem;
-    margin-top: 1.6rem;
-  }
-
-  .setup-form .field-label:not(:first-child) {
-    margin-top: 0.5rem;
-  }
-
   .field-help {
     margin: -0.2rem 0 0.45rem;
     font-size: 0.78rem;
@@ -359,11 +337,6 @@
 
   .ui-root input[aria-invalid="true"]:not(:where([data-ui] *)) {
     border-color: var(--ui-danger);
-  }
-
-  .setup-form .primary-button {
-    justify-self: start;
-    margin-top: 0.4rem;
   }
 
   .offline-lab-link {
@@ -400,8 +373,7 @@
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .category-list-panel,
-    .setup-card {
+    .category-list-panel {
       animation: categories-enter 220ms ease-out both;
     }
 

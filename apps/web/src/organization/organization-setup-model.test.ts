@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  BRASILIA_TIMEZONE,
+  BRAZIL_TIMEZONES,
   defaultTimezone,
   firstInvalidField,
+  initialTimezone,
   isValidTimezone,
   MAX_ORGANIZATION_NAME_LENGTH,
   setupErrorMessage,
+  setupSessionEnded,
   validateSetup,
 } from "./organization-setup-model";
 
@@ -75,5 +79,39 @@ describe("setupErrorMessage", () => {
       "indisponível"
     );
     expect(setupErrorMessage(new TypeError("x"))).toContain("Tente novamente");
+  });
+});
+
+describe("the zones of the first access", () => {
+  it("offers Brasília first and the other zones of Brazil by name", () => {
+    expect(BRAZIL_TIMEZONES[0]).toEqual({
+      id: BRASILIA_TIMEZONE,
+      label: "Horário de Brasília (São Paulo)",
+    });
+    expect(BRAZIL_TIMEZONES.map((zone) => zone.id)).toEqual([
+      "America/Sao_Paulo",
+      "America/Manaus",
+      "America/Cuiaba",
+      "America/Rio_Branco",
+      "America/Noronha",
+    ]);
+    // every one is a zone the server accepts
+    for (const zone of BRAZIL_TIMEZONES) {
+      expect(isValidTimezone(zone.id)).toBe(true);
+    }
+  });
+
+  it("starts on the zone of the device when it is one of them, otherwise on Brasília", () => {
+    expect(initialTimezone("America/Manaus")).toBe("America/Manaus");
+    expect(initialTimezone("Europe/Lisbon")).toBe(BRASILIA_TIMEZONE);
+    expect(initialTimezone("")).toBe(BRASILIA_TIMEZONE);
+  });
+});
+
+describe("setupSessionEnded", () => {
+  it("is the 401 and nothing else", () => {
+    expect(setupSessionEnded({ code: "UNAUTHORIZED" })).toBe(true);
+    expect(setupSessionEnded({ code: "FORBIDDEN" })).toBe(false);
+    expect(setupSessionEnded(new TypeError("x"))).toBe(false);
   });
 });

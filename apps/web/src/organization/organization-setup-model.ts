@@ -17,11 +17,34 @@ export interface SetupErrors {
   timezone?: string;
 }
 
+export const BRASILIA_TIMEZONE = "America/Sao_Paulo";
+
+/** The zones of Brazil, by the name a person knows them (the Select of the first access). Brasília comes first. */
+export const BRAZIL_TIMEZONES: ReadonlyArray<{ id: string; label: string }> = [
+  { id: BRASILIA_TIMEZONE, label: "Horário de Brasília (São Paulo)" },
+  { id: "America/Manaus", label: "Horário de Manaus" },
+  { id: "America/Cuiaba", label: "Horário de Cuiabá" },
+  { id: "America/Rio_Branco", label: "Horário do Acre (Rio Branco)" },
+  { id: "America/Noronha", label: "Horário de Fernando de Noronha" },
+];
+
 /** The device's IANA zone, the usual answer for the organization's zone. */
 export function defaultTimezone(): string {
-  return (
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo"
-  );
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || BRASILIA_TIMEZONE;
+}
+
+/** Brasília unless the device is in another zone of Brazil: the list has no other place to go. */
+export function initialTimezone(device: string = defaultTimezone()): string {
+  return BRAZIL_TIMEZONES.some((zone) => zone.id === device)
+    ? device
+    : BRASILIA_TIMEZONE;
+}
+
+export const SETUP_SESSION_ENDED = "Sua sessão acabou. Entre de novo.";
+
+/** The server answered that the session is over: the screen says so and offers "Entrar de novo". */
+export function setupSessionEnded(error: unknown): boolean {
+  return rpcErrorCode(error) === "UNAUTHORIZED";
 }
 
 export function isValidTimezone(timezone: string): boolean {
