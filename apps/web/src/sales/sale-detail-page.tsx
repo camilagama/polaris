@@ -31,6 +31,7 @@ import {
   saleDetailView,
 } from "./sale-history-model";
 import { SaleIdForm } from "./sale-id-form";
+import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
 import { useSaleIdParam } from "./use-sale-id-param";
@@ -108,13 +109,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   return (
     <>
       <div className={UI_ROOT} data-ui="">
-        <div aria-live="polite" className="empty:hidden">
-          {notice ? (
-            <Alert variant={notice.ok ? "default" : "warning"}>
-              <AlertDescription>{notice.message}</AlertDescription>
-            </Alert>
-          ) : null}
-        </div>
+        <SaleNoticeRegion notice={notice} />
         {load.status === "loading" ? (
           <StateCard role="status">Carregando venda…</StateCard>
         ) : null}

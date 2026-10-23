@@ -81,6 +81,14 @@ async function openHistoryLab(page: Page, answers: boolean) {
     .waitFor();
 }
 
+/** Below 760 px the filters are in a closed panel under "Filtrar"; from 760 px there is no trigger. */
+async function openFilters(page: Page) {
+  const trigger = page.getByRole("button", { exact: true, name: "Filtrar" });
+  if (await trigger.isVisible()) {
+    await trigger.click();
+  }
+}
+
 /** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
 async function showScreenAlone(page: Page) {
   await page.evaluate(() => {
@@ -116,6 +124,7 @@ export const historyStates = {
   async periodError(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
+    await openFilters(page);
     await page.getByLabel("De (data da venda)").fill("2026-10-20");
     await page.getByLabel("Até (data da venda)").fill("2026-10-10");
     await page.getByText("A data inicial é posterior à data final.").waitFor();
