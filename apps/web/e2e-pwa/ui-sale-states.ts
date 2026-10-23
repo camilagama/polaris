@@ -325,9 +325,9 @@ export const saleStates = {
       page,
       page.getByRole("combobox", {
         exact: true,
-        name: "Modalidade do parcelamento",
+        name: "Quem parcela",
       }),
-      page.getByRole("option", { exact: true, name: "Parcelado pelo lojista" })
+      page.getByRole("option", { exact: true, name: "Lojista (eu)" })
     );
     await chooseOption(
       page,

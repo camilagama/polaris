@@ -42,7 +42,7 @@ import {
 /* -------------------------------------------------------------------------- */
 
 export type SaleMethod = ConfirmedSaleReadModel["payment"]["method"];
-export type InstallmentPlan = "merchant" | "issuer";
+type InstallmentPlan = "merchant" | "issuer";
 export type AdjustmentKind =
   ConfirmedSaleReadModel["adjustments"][number]["kind"];
 type AdjustmentValueType = "fixed" | "percentage";
@@ -67,13 +67,6 @@ export const SALE_METHODS: ReadonlyArray<readonly [SaleMethod, string]> = [
   ["other", "Outro"],
 ];
 
-export const INSTALLMENT_PLANS: ReadonlyArray<
-  readonly [InstallmentPlan, string]
-> = [
-  ["merchant", "Parcelado pelo lojista"],
-  ["issuer", "Parcelado pelo emissor"],
-];
-
 export const ADJUSTMENT_KINDS: ReadonlyArray<
   readonly [AdjustmentKind, string]
 > = [
@@ -84,7 +77,11 @@ export const ADJUSTMENT_KINDS: ReadonlyArray<
 ];
 
 const methodLabels = new Map<string, string>(SALE_METHODS);
-const planLabels = new Map<string, string>(INSTALLMENT_PLANS);
+/** The receipt and summary phrase of each plan; the form field uses the shorter words of installment-plan-text. */
+const planLabels: Readonly<Record<string, string>> = {
+  issuer: "Parcelado pelo emissor",
+  merchant: "Parcelado pelo lojista",
+};
 const adjustmentLabels = new Map<string, string>(ADJUSTMENT_KINDS);
 
 export interface ItemDraft {
@@ -843,7 +840,7 @@ function describeRule(
     parts.push(`${installments}x`);
   }
   if (plan !== null) {
-    parts.push(planLabels.get(plan) ?? plan);
+    parts.push(planLabels[plan] ?? plan);
   }
   return parts.join(" · ");
 }
@@ -1197,7 +1194,7 @@ function parsePayment(
     pushIssue(
       issues,
       formFieldKeys.installmentPlan,
-      "Escolha a modalidade do parcelamento.",
+      "Escolha quem parcela.",
       true
     );
   }
@@ -1460,7 +1457,7 @@ function methodSummary(payment: PaymentDraft): string {
   const plan =
     payment.installmentPlan === ""
       ? "modalidade não escolhida"
-      : (planLabels.get(payment.installmentPlan) ?? payment.installmentPlan);
+      : (planLabels[payment.installmentPlan] ?? payment.installmentPlan);
   return `${label} · ${installments}x · ${plan}`;
 }
 
@@ -1812,7 +1809,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "invalid_sale_payment",
     {
       message:
-        "O pagamento informado é inválido. Revise método, parcelas e modalidade do parcelamento.",
+        "O pagamento informado é inválido. Revise método, parcelas e quem parcela.",
     },
   ],
   [
