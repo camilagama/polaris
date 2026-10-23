@@ -3,54 +3,19 @@ import { type RefObject, useCallback, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
 import { Separator } from "@/ui/separator";
+import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { saleDetailHref } from "./sale-history-model";
-import { FeeValue, LeaderRow, Perforation } from "./sale-summary-panel";
+import { LeaderRow, Perforation } from "./sale-summary-panel";
 
-function Details({ details }: { details: ConfirmedSaleView["saleDetails"] }) {
-  return (
-    <dl className="grid gap-2 text-support sm:grid-cols-2">
-      {details.map((detail) => (
-        <div className="grid gap-0.5" key={detail.label}>
-          <dt className="text-muted-foreground">{detail.label}</dt>
-          <dd className="[overflow-wrap:anywhere]">
-            {detail.tone === "plain" ? (
-              detail.value
-            ) : (
-              <FeeValue line={{ text: detail.value, tone: detail.tone }} />
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** The confirmed sale exactly as stored: items, totals, payment and fees (the detail page keeps SaleSnapshot). */
+/** The confirmed sale exactly as stored: items, totals, payment and fees (the detail page has its own, in `Receipt`). */
 function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
   return (
     <>
       <CardContent className="grid gap-4">
-        <Details details={sale.saleDetails} />
-        <section aria-labelledby="sale-confirmed-items" className="grid gap-2">
-          <h3 className="font-medium" id="sale-confirmed-items">
-            Itens
-          </h3>
-          <ul className="grid gap-2">
-            {sale.items.map((item) => (
-              <li className="grid gap-0.5" key={item.key}>
-                <span className="font-medium [overflow-wrap:anywhere]">
-                  {item.label}
-                </span>
-                <span className="tabular-nums">{item.detail}</span>
-                <span className="text-muted-foreground text-support">
-                  {item.costText}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ConfirmedDetails details={sale.saleDetails} />
+        <ConfirmedItems headingId="sale-confirmed-items" items={sale.items} />
       </CardContent>
       <Perforation />
       <CardContent>
@@ -77,7 +42,7 @@ function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
       </CardContent>
       <CardContent className="grid gap-2">
         <h3 className="font-medium">Pagamento</h3>
-        <Details details={sale.paymentDetails} />
+        <ConfirmedDetails details={sale.paymentDetails} />
         <p className="text-muted-foreground text-support">{sale.note}</p>
       </CardContent>
     </>

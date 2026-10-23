@@ -53,6 +53,7 @@ interface TextFieldProps {
   /** Text beside the control, as the "R$" of a price. */
   addon?: string | undefined;
   className?: string | undefined;
+  disabled?: boolean | undefined;
   error?: string | undefined;
   hint?: string | undefined;
   id: string;
@@ -69,6 +70,7 @@ interface TextFieldProps {
 export function TextField({
   addon,
   className,
+  disabled,
   error,
   hint,
   id,
@@ -93,6 +95,7 @@ export function TextField({
           aria-describedby={describedBy(id, error, hint)}
           aria-invalid={error ? true : undefined}
           autoComplete="off"
+          disabled={disabled}
           id={id}
           inputMode={inputMode}
           maxLength={maxLength}
