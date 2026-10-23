@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
-import { useConnectionReturn } from "../lib/browser-connection";
+import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
@@ -638,7 +638,7 @@ export function PaymentProfilesPage() {
       setProfiles(result.profiles);
       setNotLoaded(false);
     } catch (loadError) {
-      if (isConnectionFailure(loadError)) {
+      if (isConnectionFailure(loadError) && !(await workerAnswers())) {
         setNotLoaded(true);
       } else {
         setError(errorText(loadError, "os perfis de pagamento"));
@@ -652,6 +652,12 @@ export function PaymentProfilesPage() {
     loadProfiles().catch(() => undefined);
   }, [loadProfiles]);
   // the connection came back: the list that did not load, or that a cut save may have changed, is read again
+  // an isolated cut (the Worker still answers): the list is read now, never the change sent again
+  const readAgainIfAnswers = useCallback(() => {
+    workerAnswers()
+      .then((answers) => (answers ? loadProfiles() : undefined))
+      .catch(() => undefined);
+  }, [loadProfiles]);
   const online = useConnectionReturn(() => {
     if (notLoaded || uncertain) {
       loadProfiles().catch(() => undefined);
@@ -760,6 +766,7 @@ export function PaymentProfilesPage() {
       } catch (saveError) {
         if (isConnectionFailure(saveError)) {
           setUncertain(SAVE_OUTCOME_UNKNOWN);
+          readAgainIfAnswers();
         } else {
           setError(errorText(saveError));
         }
@@ -800,6 +807,7 @@ export function PaymentProfilesPage() {
       } catch (actionError) {
         if (isConnectionFailure(actionError)) {
           setUncertain(CHANGE_OUTCOME_UNKNOWN);
+          readAgainIfAnswers();
         } else {
           setError(errorText(actionError));
         }

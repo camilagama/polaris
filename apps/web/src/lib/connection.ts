@@ -74,11 +74,6 @@ export function isNoAnswer(error: unknown): boolean {
   return error.cause !== undefined && isNoAnswer(error.cause);
 }
 
-/** An abort for time (`AbortSignal.timeout`): the answer did not come, unlike a caller that gave up. */
-function isTimeout(reason: unknown): boolean {
-  return reason instanceof Error && reason.name === "TimeoutError";
-}
-
 /** `setTimeout` as a `schedule`: returns how to cancel. */
 export function timerSchedule(
   callback: () => void,
@@ -104,6 +99,7 @@ const TIMEOUTS_FOR_OFFLINE = 2;
 /** A remembered "offline" this recent makes a reloaded page open offline (and probe at once). */
 const REMEMBERED_FOR_MS = 60_000;
 const PROBE_LOCK = "polaris-connection-probe";
+const RETRY_AFTER_MAX_S = 300;
 
 export interface ConnectionMemory {
   read: () => string | null;
@@ -190,12 +186,15 @@ export class Connection {
   constructor(dependencies: ConnectionDependencies) {
     this.dependencies = dependencies;
     const now = dependencies.now();
-    const remembered = readRemembered(dependencies.memory);
+    const stored = readRemembered(dependencies.memory);
+    // an old "offline since" (a tab that slept) says nothing about this cut: it would start at the 60 s probe
+    const remembered =
+      stored && now - stored.seen < REMEMBERED_FOR_MS ? stored : null;
     if (!dependencies.browserOnline()) {
       this.snapshot = { since: remembered?.since ?? now, state: "offline" };
       this.remember();
       this.scheduleProbe();
-    } else if (remembered && now - remembered.seen < REMEMBERED_FOR_MS) {
+    } else if (remembered) {
       // reloaded while offline: open offline (no online screen first) and look at once
       this.snapshot = { since: remembered.since, state: "offline" };
       this.scheduleProbe(0);
@@ -242,8 +241,9 @@ export class Connection {
     } catch (error) {
       const signal =
         init?.signal ?? (input instanceof Request ? input.signal : undefined);
-      // the caller gave up (it left the screen): that says nothing about the network
-      if (!signal?.aborted || isTimeout(signal.reason)) {
+      // the caller gave up (it left the screen): that says nothing about the network; an abort for time
+      // (`AbortSignal.timeout`) is an answer that did not come
+      if (!signal?.aborted || signal.reason?.name === "TimeoutError") {
         this.doubt();
       }
       throw error;
@@ -254,8 +254,9 @@ export class Connection {
     if (verdict === "worker" || verdict === "server_failed") {
       if (verdict === "worker" && response.status === 429) {
         const seconds = Number(response.headers.get("retry-after"));
+        // at most 5 min: a huge value never holds the queue back for hours
         this.retryAfterMs =
-          Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+          seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) * 1000 : null;
       }
       this.goOnline();
       return response;

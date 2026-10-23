@@ -14,7 +14,10 @@ import {
   UnsupportedMediaImageError,
   validateMediaImageSource,
 } from "@polaris/domain/catalog/media";
+import { browserConnection } from "./browser-connection";
 
+/** The Worker's calls go through the connection: an answer without the Worker's mark is no answer (emenda do ADR 0043). */
+type Fetcher = (input: URL, init: RequestInit) => Promise<Response>;
 export interface PrepareMediaUploadFileDependencies {
   rasterizeHeic?: (file: File) => Promise<Blob>;
 }
@@ -43,7 +46,7 @@ export interface UploadProductMediaInput {
 
 export async function uploadProductMedia(
   input: UploadProductMediaInput,
-  fetcher: typeof fetch = fetch
+  fetcher: Fetcher = browserConnection.fetch
 ): Promise<ProductMediaUploadResponse> {
   const file = await prepareMediaUploadFile(input.file);
   const headers = new Headers({
@@ -107,7 +110,7 @@ export async function listProductMedia(
     origin?: string;
     productId: string;
   },
-  fetcher: typeof fetch = fetch
+  fetcher: Fetcher = browserConnection.fetch
 ): Promise<ProductMediaListResponse> {
   const url = new URL(
     `/api/products/${encodeURIComponent(input.productId)}/media`,
@@ -153,7 +156,7 @@ async function sendMediaCommand<T>(
   init: { body?: string; method: "DELETE" | "PUT" },
   parse: (payload: unknown) => T,
   failureCode: string,
-  fetcher: typeof fetch
+  fetcher: Fetcher
 ): Promise<T> {
   const url = new URL(
     input.path,
@@ -205,7 +208,7 @@ export function removeProductMedia(
     origin?: string;
     productId: string;
   },
-  fetcher: typeof fetch = fetch
+  fetcher: Fetcher = browserConnection.fetch
 ): Promise<ProductMediaRemoveResponse> {
   return sendMediaCommand(
     {
@@ -228,7 +231,7 @@ export function reorderProductMedia(
     origin?: string;
     productId: string;
   },
-  fetcher: typeof fetch = fetch
+  fetcher: Fetcher = browserConnection.fetch
 ): Promise<ProductMediaListResponse> {
   return sendMediaCommand(
     {

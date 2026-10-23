@@ -354,6 +354,13 @@ describe("the fetch of the RPC client", () => {
     expect(t.connection.takeRetryAfterMs()).toBeNull();
   });
 
+  it("holds a Retry-After to 5 min at most", async () => {
+    const t = setup();
+    t.routes.rpc = () => marked(429, { "retry-after": "86400" });
+    await t.connection.fetch("/rpc/x");
+    expect(t.connection.takeRetryAfterMs()).toBe(300_000);
+  });
+
   it("ignores a Retry-After that is not a positive number", async () => {
     const t = setup();
     t.routes.rpc = () => marked(429, { "retry-after": "soon" });
@@ -701,6 +708,17 @@ describe("what a reloaded page remembers", () => {
       seen: START,
       since: START,
     });
+  });
+
+  it("with no network, an old memory (a tab that slept) starts this cut now, at the fast probe", async () => {
+    const { memory } = fakeMemory(
+      remembered(START - 3_600_000, START - 600_000)
+    );
+    const t = setup({ browserOnline: false, memory });
+
+    expect(t.connection.getSnapshot().since).toBe(START);
+    await t.advance(2000);
+    expect(t.healthCalls.map((call) => call.at)).toEqual([START + 2000]);
   });
 
   it("forgets the memory when the Worker answers", async () => {

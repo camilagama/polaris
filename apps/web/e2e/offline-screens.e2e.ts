@@ -1175,6 +1175,29 @@ test.describe("conexão com prova", () => {
     expect(server.creates).toBe(1); // read again, never sent again
   });
 
+  test("Perfis: a leitura cortada uma vez, com /health respondendo, mostra o erro com Tentar novamente", async ({
+    page,
+  }) => {
+    const server = await serveProfiles(page);
+    let cut = true;
+    await page.route("**/rpc/paymentProfile/list", async (route) => {
+      if (cut) {
+        cut = false;
+        await route.abort("connectionreset");
+        return;
+      }
+      await route.fallback();
+    });
+    await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+    await start(page, "Perfis de pagamento");
+    const retry = page.getByRole("button", { name: "Tentar novamente" });
+    await expect(retry).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(WITH_FORM)).toHaveCount(0);
+    await retry.click();
+    await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+    expect(server.lists).toBeGreaterThanOrEqual(1);
+  });
+
   test("um erro de rede isolado, com /health respondendo, não troca a tela para offline", async ({
     page,
   }) => {

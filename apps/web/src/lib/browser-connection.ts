@@ -9,12 +9,8 @@ import { Connection, timerSchedule } from "./connection";
 const OFFLINE_SINCE_KEY = "polaris.connection.offline-since";
 
 function markInBrowser(name: string) {
-  try {
-    // stays in this browser's performance timeline (DevTools); nothing is sent anywhere
-    performance.mark(name);
-  } catch {
-    // no performance timeline: nothing to mark
-  }
+  // stays in this browser's performance timeline (DevTools); nothing is sent anywhere
+  globalThis.performance?.mark?.(name);
 }
 
 async function lockInBrowser(
@@ -91,6 +87,11 @@ export function useConnectionReturn(onReturn: () => void): boolean {
     }
   }, [online]);
   return online;
+}
+
+/** After a call with no answer: whether the probe still finds the Worker (an isolated failure, not offline). */
+export async function workerAnswers(): Promise<boolean> {
+  return (await browserConnection.probeNow()) === "online";
 }
 
 type TryNow = () => Promise<void>;

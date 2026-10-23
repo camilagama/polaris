@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
-import { useConnectionReturn } from "../lib/browser-connection";
+import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
@@ -97,7 +97,7 @@ export function PublicCatalogPage() {
           setSlugEdited(setup.profile !== null);
         }
       } catch (loadError) {
-        if (isConnectionFailure(loadError)) {
+        if (isConnectionFailure(loadError) && !(await workerAnswers())) {
           setStale(true); // the connection notice says it; the page loads by itself on the return
         } else {
           setFeedback({
@@ -152,18 +152,20 @@ export function PublicCatalogPage() {
         setFeedback({ error: null, notice: success, where: action });
       } catch (commandError) {
         failed = true;
+        const fieldError =
+          action === "profile" ? profileFieldError(commandError) : null;
         if (isConnectionFailure(commandError)) {
-          setStale(true);
           setFeedback({
             error: CHANGE_OUTCOME_UNKNOWN,
             notice: null,
             where: action,
           });
-          return;
-        }
-        const fieldError =
-          action === "profile" ? profileFieldError(commandError) : null;
-        if (fieldError) {
+          if (!(await workerAnswers())) {
+            setStale(true);
+            return;
+          }
+          // an isolated cut (the Worker still answers): the page is read again below, the change never sent again
+        } else if (fieldError) {
           // under its field, with the summary beside the button; what was typed stays as it is
           setProblem(fieldError);
           setFeedback({
