@@ -122,39 +122,83 @@ function LegalLinks() {
   );
 }
 
+/** The width of the card: the entry (380 px), the wide one (420 px, the acceptance) and the reading column of a legal text. */
+export type EntryWidth = "narrow" | "reading" | "wide";
+
+const ENTRY_WIDTH: Record<EntryWidth, string> = {
+  narrow: "max-w-[380px]",
+  // 68 characters of the body text (14 px) and the two paddings of the card
+  reading: "max-w-[calc(68ch+3rem)]",
+  wide: "max-w-[420px]",
+};
+
 /**
- * The page of `/entrar` and `/criar-conta`: outside the app shell, one card in the middle, the brand and the
- * title; under the card, the two legal links. Its columns are flex and not grid: an empty part that stays in
- * the tree (a live region, the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
+ * The page of `/entrar` and `/criar-conta`, and of the screens that stand outside the app shell like them (the
+ * first access, the acceptance, the legal texts): one card in the middle, the brand and the title; under the card,
+ * the two legal links. Its columns are flex and not grid: an empty part that stays in the tree (a live region,
+ * the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
  */
 export function EntryScreen({
+  brandHref,
   children,
+  legalLinks = true,
   support,
   title,
+  width = "narrow",
 }: {
+  /** A page that is public to every visitor, signed in or not, takes the brand back to the start. */
+  brandHref?: string;
   children: ReactNode;
+  /** Without them (the legal texts, which are the pages they point to). */
+  legalLinks?: boolean;
   /** The one line under the title, when the screen has one. */
-  support?: string;
+  support?: string | undefined;
   title: string;
+  width?: EntryWidth;
 }) {
+  const reading = width === "reading";
+  const brand = (
+    <>
+      <BrandMark />
+      <span>Polaris</span>
+    </>
+  );
   return (
     <div
       className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased"
       data-ui=""
     >
       <main
-        className="grid min-h-dvh place-items-center px-(--gutter) py-8"
+        className={cn(
+          "grid min-h-dvh px-(--gutter) py-8",
+          reading ? "place-items-start" : "place-items-center"
+        )}
         id="conteudo"
       >
-        <div className="w-full min-w-0 max-w-[380px]">
+        <div className={cn("mx-auto w-full min-w-0", ENTRY_WIDTH[width])}>
           <Card className="animate-rise">
             <CardContent className="flex flex-col gap-4 py-1">
-              <p className="flex w-fit items-center gap-2 font-semibold text-[1.0625rem] tracking-tight">
-                <BrandMark />
-                <span>Polaris</span>
-              </p>
+              {brandHref ? (
+                <a
+                  className="focus-ring touch-hit relative flex w-fit items-center gap-2 rounded-sm font-semibold text-[1.0625rem] tracking-tight"
+                  href={brandHref}
+                >
+                  {brand}
+                </a>
+              ) : (
+                <p className="flex w-fit items-center gap-2 font-semibold text-[1.0625rem] tracking-tight">
+                  {brand}
+                </p>
+              )}
               <div className="grid gap-1">
-                <h1 className="text-balance text-[1.0625rem] text-section">
+                <h1
+                  className={cn(
+                    "text-balance",
+                    reading
+                      ? "font-semibold text-2xl/8 tracking-tight"
+                      : "text-[1.0625rem] text-section"
+                  )}
+                >
                   {withoutBreakInEmail(title)}
                 </h1>
                 {support ? (
@@ -166,7 +210,7 @@ export function EntryScreen({
               {children}
             </CardContent>
           </Card>
-          <LegalLinks />
+          {legalLinks ? <LegalLinks /> : null}
         </div>
       </main>
     </div>

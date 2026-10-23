@@ -30,6 +30,10 @@
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
 @source "../{main,app-shell/app,app-shell/app-shell}.tsx";
 @source "../offline/runtime/{sync-status,logout-control,devices-page}.tsx";
+/* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
+@source "../organization/organization-setup.tsx";
+@source "../legal/{legal-app,legal-frame,legal-page}.tsx";
+@source "../legal/acceptance/acceptance-page.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
 

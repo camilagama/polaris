@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import {
   addLegacyRule,
@@ -266,6 +267,17 @@ const SCREENS = [
       );
     },
   },
+  // the first access, the acceptance and a legal text stand outside the shell, on the entry card
+  { name: "Primeiro acesso", open: firstAccessStates.empty },
+  { name: "Aceite dos termos", open: acceptanceStates.first },
+  {
+    name: "/privacidade",
+    open: async (page: Page) => {
+      await page.goto("/privacidade");
+      await expect(page.getByText("Versão 1. Em vigor desde:")).toBeVisible();
+      await settle(page);
+    },
+  },
   ...ENTRY_PAGES.map(({ heading, path }) => ({
     name: path,
     open: async (page: Page) => {
@@ -289,7 +301,8 @@ for (const screen of SCREENS) {
     const names = Object.keys(state.on.snapshot);
     // the check is not vacuous: the layer was on the page and came off, there was something to measure, the probe
     // was measured, and so was the focus (Tab put the page in keyboard mode and some control took the ring)
-    expect(state.off.removed).toBeGreaterThan(100);
+    // the floor follows the old CSS down as each screen deletes its own (92 rules after t239)
+    expect(state.off.removed).toBeGreaterThan(50);
     expect(names.length).toBeGreaterThan(20);
     expect(
       names.some((name) => name.startsWith('input "sonda com erro"'))

@@ -2,11 +2,17 @@ import {
   type ChangeEvent,
   type FormEvent,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from "react";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
+import { Input } from "@/ui/input";
+import { documentTitle } from "../app-shell/navigation-model";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { LogoutControl } from "../offline/runtime/logout-control";
+import { EntryAlert, EntryScreen, SubmitButton } from "../sign-in/entry-ui";
 import {
   defaultTimezone,
   firstInvalidField,
@@ -17,6 +23,8 @@ import {
   validateSetup,
 } from "./organization-setup-model";
 
+const TITLE = "Abra a sua organização";
+
 interface OrganizationSetupProps {
   /** Called once the organization exists (created or already there). */
   onOpened: () => void;
@@ -25,6 +33,8 @@ interface OrganizationSetupProps {
 /**
  * First access: the signed-in user has no organization yet. Opening is
  * idempotent: an existing organization is opened without changing its data.
+ * It stands alone, with no menu (there is nothing to go to yet) and "Sair" under the card, so a person who
+ * signed in with the wrong account can leave.
  */
 export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   const [name, setName] = useState("");
@@ -35,6 +45,15 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   useReportUnsentWork(name.trim() !== "");
   const nameRef = useRef<HTMLInputElement>(null);
   const timezoneRef = useRef<HTMLInputElement>(null);
+
+  // the tab says what the page is, and gives the title back when the organization opens
+  useEffect(() => {
+    const previous = document.title;
+    document.title = documentTitle(TITLE);
+    return () => {
+      document.title = previous;
+    };
+  }, []);
 
   const handleNameChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => setName(event.target.value),
@@ -78,75 +97,69 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   );
 
   return (
-    <section aria-labelledby="organization-setup-title" className="setup-card">
-      <p className="categories-eyebrow">Primeiro acesso</p>
-      <h1 id="organization-setup-title">Abra a sua organização</h1>
-      <p className="categories-intro-copy">
-        Você ainda não tem uma organização. Crie a sua para usar o catálogo, o
-        estoque e as vendas. Se ela já existir, será aberta sem alterar seus
-        dados.
-      </p>
-      <form className="setup-form" noValidate onSubmit={handleSubmitEvent}>
-        <label className="field-label" htmlFor="organization-name">
-          Nome da organização
-        </label>
-        <input
-          aria-describedby={errors.name ? "organization-name-error" : undefined}
-          aria-invalid={errors.name ? true : undefined}
-          autoComplete="organization"
-          id="organization-name"
-          maxLength={MAX_ORGANIZATION_NAME_LENGTH}
-          onChange={handleNameChange}
-          placeholder="Ex.: Loja Horizonte"
-          ref={nameRef}
-          required
-          value={name}
-        />
-        {errors.name ? (
-          <p className="field-error" id="organization-name-error" role="alert">
-            {errors.name}
-          </p>
-        ) : null}
-        <label className="field-label" htmlFor="organization-timezone">
-          Fuso horário da organização
-        </label>
-        <input
-          aria-describedby={
-            errors.timezone
-              ? "organization-timezone-error organization-timezone-help"
-              : "organization-timezone-help"
-          }
-          aria-invalid={errors.timezone ? true : undefined}
-          autoComplete="off"
-          id="organization-timezone"
-          maxLength={MAX_TIMEZONE_LENGTH}
-          onChange={handleTimezoneChange}
-          ref={timezoneRef}
-          required
-          value={timezone}
-        />
-        {errors.timezone ? (
-          <p
-            className="field-error"
-            id="organization-timezone-error"
-            role="alert"
-          >
+    <EntryScreen
+      support="Você ainda não tem uma organização. Crie a sua para usar o catálogo, o estoque e as vendas. Se ela já existir, será aberta sem alterar seus dados."
+      title={TITLE}
+    >
+      <form
+        aria-label={TITLE}
+        className="flex flex-col gap-4"
+        noValidate
+        onSubmit={handleSubmitEvent}
+      >
+        <Field data-invalid={errors.name ? true : undefined}>
+          <FieldLabel htmlFor="organization-name">
+            Nome da organização
+          </FieldLabel>
+          <Input
+            aria-describedby={
+              errors.name ? "organization-name-error" : undefined
+            }
+            aria-invalid={errors.name ? true : undefined}
+            autoComplete="organization"
+            id="organization-name"
+            maxLength={MAX_ORGANIZATION_NAME_LENGTH}
+            onChange={handleNameChange}
+            placeholder="Ex.: Loja Horizonte"
+            ref={nameRef}
+            required
+            value={name}
+          />
+          <FieldError id="organization-name-error">{errors.name}</FieldError>
+        </Field>
+        <Field data-invalid={errors.timezone ? true : undefined}>
+          <FieldLabel htmlFor="organization-timezone">
+            Fuso horário da organização
+          </FieldLabel>
+          <Input
+            aria-describedby={
+              errors.timezone
+                ? "organization-timezone-error organization-timezone-help"
+                : "organization-timezone-help"
+            }
+            aria-invalid={errors.timezone ? true : undefined}
+            autoComplete="off"
+            id="organization-timezone"
+            maxLength={MAX_TIMEZONE_LENGTH}
+            onChange={handleTimezoneChange}
+            ref={timezoneRef}
+            required
+            value={timezone}
+          />
+          <FieldError id="organization-timezone-error">
             {errors.timezone}
-          </p>
-        ) : null}
-        <p className="field-help" id="organization-timezone-help">
-          Use um identificador IANA, como America/Sao_Paulo. As datas de estoque
-          e de venda seguem este fuso.
-        </p>
-        {failure ? (
-          <p className="categories-message is-error" role="alert">
-            {failure}
-          </p>
-        ) : null}
-        <button className="primary-button" disabled={pending} type="submit">
-          {pending ? "Abrindo…" : "Criar ou abrir organização"}
-        </button>
+          </FieldError>
+          <FieldDescription id="organization-timezone-help">
+            Use um identificador IANA, como America/Sao_Paulo. As datas de
+            estoque e de venda seguem este fuso.
+          </FieldDescription>
+        </Field>
+        {failure ? <EntryAlert key={failure}>{failure}</EntryAlert> : null}
+        <SubmitButton pending={pending} pendingText="Abrindo…">
+          Criar ou abrir organização
+        </SubmitButton>
       </form>
-    </section>
+      <LogoutControl shell />
+    </EntryScreen>
   );
 }

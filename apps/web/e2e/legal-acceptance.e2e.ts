@@ -184,7 +184,9 @@ test("uma versão nova de um documento pede o aceite só dele e mostra o que mud
     page.getByText("Versão 2. Em vigor desde: 01/11/2026.")
   ).toBeVisible();
   await expect(
-    page.getByLabel("Li e aceito a Política de Privacidade.")
+    page.getByRole("checkbox", {
+      name: "Li e aceito a Política de Privacidade.",
+    })
   ).toBeVisible();
 
   await checkbox(page).check();

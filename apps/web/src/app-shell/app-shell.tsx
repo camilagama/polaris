@@ -441,7 +441,8 @@ function OrganizationGate({ children }: { children: ReactNode }) {
     );
   }
   if (load.status === "empty") {
-    return <OrganizationSetup onOpened={reload} />;
+    // `AppShell` shows the first access on a page of its own, with no menu: this is only for the types
+    return null;
   }
   // Remounts the page when another organization is chosen, so no screen keeps
   // data of the previous one.
@@ -471,7 +472,7 @@ export function AppShell({
   requiresOrganization = true,
   updateNotice,
 }: AppShellProps) {
-  const { load, select } = useOrganizationLoad();
+  const { load, reload, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
   // the remembered organizations only draw the screen: with the offline access expired they are hidden, not deleted
   const accessExpired = useOfflineAccessExpired();
@@ -496,6 +497,15 @@ export function AppShell({
           select,
         }
       : null;
+  // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
+  if (requiresOrganization && load.status === "empty" && !accessExpired) {
+    return (
+      <>
+        {updateNotice}
+        <OrganizationSetup onOpened={reload} />
+      </>
+    );
+  }
   return (
     <SidebarProvider className="ui-root app-shell-root bg-background">
       <a
