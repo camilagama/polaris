@@ -217,7 +217,7 @@ const CATEGORY_SOURCES = [
   "src/catalog/category-list.tsx",
   "src/catalog/products-page-parts.tsx",
   "src/catalog/screen-parts.tsx",
-  "src/offline/runtime/online-only-notice.tsx",
+  "src/app-shell/connection-required-notice.tsx",
 ];
 
 /** The files of Clientes on the new interface. */
@@ -238,7 +238,7 @@ const CATALOG_SOURCES = [
   "src/catalog/public-catalog-page.tsx",
   "src/catalog/public-catalog-panels.tsx",
   "src/catalog/screen-parts.tsx",
-  "src/offline/runtime/online-only-notice.tsx",
+  "src/app-shell/connection-required-notice.tsx",
 ];
 
 /** One state of a screen of the lot 2 (`ui-lot2-states.ts`). */
@@ -484,6 +484,7 @@ async function exercisePaymentMethod(page: Page) {
  * the notices of the session, the acceptance and the new version, "Sair" with work to lose and the expired access.
  */
 const SHELL_PIECE_SOURCES = [
+  "src/app-shell/connection-required-notice.tsx",
   "src/app-shell/error-boundary.tsx",
   "src/app-shell/legal-acceptance-notice.tsx",
   "src/app-shell/not-found-page.tsx",

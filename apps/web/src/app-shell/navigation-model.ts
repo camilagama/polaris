@@ -207,9 +207,21 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "sale-detail",
 ];
 
+/**
+ * Online-only screens that show nothing to type until they load: offline, the connection notice says the
+ * screen loads by itself instead of "o que você digitou fica aqui". The public catalog declares its form
+ * once it loaded (`useConnectionNoticeForm`).
+ */
+const ONLINE_ONLY_WITHOUT_FORM: readonly RouteId[] = [
+  "public-catalog",
+  "sale-detail",
+];
+
 export type ResolvedRoute =
   | { kind: "not-found"; title: string }
   | {
+      /** For the connection notice of an online-only screen: whether it holds a form to type in. */
+      connectionForm: boolean;
       id: RouteId;
       kind: "page";
       navId: NavId | null;
@@ -227,6 +239,7 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     : undefined;
   return route
     ? {
+        connectionForm: !ONLINE_ONLY_WITHOUT_FORM.includes(route.id),
         id: route.id,
         kind: "page",
         navId: route.navId,

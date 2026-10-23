@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of the sales history the interface guardrails measure (t234): the screen in the lab of the screens
@@ -60,6 +61,7 @@ const SALES = [
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
@@ -69,6 +71,7 @@ async function openHistoryLab(page: Page, answers: boolean) {
       route.fulfill(rpc({ hasMore: true, sales: SALES }))
     );
   }
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=history");
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
  * The goals panel of the result screen in a real browser, over a small
@@ -365,6 +366,7 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
       status: answer.status,
     });
@@ -375,6 +377,7 @@ async function openDashboard(page: Page, server: FakeGoalServer) {
   // the screen reads today's date from the browser: October 2026
   await page.clock.setFixedTime(new Date(NOW));
   await installServer(page, server);
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=dashboard");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

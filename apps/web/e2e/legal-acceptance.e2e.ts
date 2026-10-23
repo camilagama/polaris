@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * O aceite dos Termos de Uso e da Política de Privacidade (ADR 0100; AC-67 a AC-70 e L5): a tela
@@ -15,6 +16,7 @@ const ORGANIZATION = {
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
+  headers: { ...WORKER_MARK },
   contentType: "application/json",
   status,
 });
@@ -64,6 +66,7 @@ async function serve(
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -253,6 +256,7 @@ test("no primeiro acesso sem aceite, o app vai sozinho a /aceite com a tela de d
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -294,6 +298,7 @@ test("o rodapé do app tem os links das duas páginas legais, em outra aba (AC-7
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
@@ -325,6 +330,7 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );

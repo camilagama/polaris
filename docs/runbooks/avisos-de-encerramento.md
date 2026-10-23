@@ -14,7 +14,7 @@ Pré-requisitos:
 
 - o PR G no ar: a tela da loja encerrada, com o pedido de cópia dos dados e o desfazer do encerramento. O e-mail manda o dono a essa tela; sem ela, não há onde pedir a cópia nem desfazer. Com ela, o link e o botão do e-mail passam a apontar para essa tela (só a rota, sem token), e só então a flag liga;
 - domínio de envio verificado no Resend;
-- segredos `RESEND_API_KEY` e `AUTH_EMAIL_FROM`, que a autenticação já usa;
+- segredos `RESEND_API_KEY` e `AUTH_EMAIL_FROM`, que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
 - `BETTER_AUTH_BASE_URL`, que monta o link;
 - `AUTH_HYPERDRIVE`, pelo qual a função lê o endereço da conta (o papel de autenticação, não o de privacidade).
 

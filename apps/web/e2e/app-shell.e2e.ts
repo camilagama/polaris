@@ -4,6 +4,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The shell v5.1 (t225): the sidebar of the desktop, the bottom bar and "Mais" of the phone, the theme and "Sair",
@@ -39,6 +40,7 @@ const DEVICE = {
 const json = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
 });
 const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
@@ -56,11 +58,16 @@ async function serve(page: Page) {
         state.signOutCalls > 0 ? null : { user: { email: EMAIL, id: USER_ID } }
       ),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/api/auth/sign-out", (route) => {
     state.signOutCalls += 1;
-    return route.fulfill({ body: "{}", contentType: "application/json" });
+    return route.fulfill({
+      body: "{}",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    });
   });
   await page.route("**/rpc/device/list", (route) =>
     route.fulfill(json({ devices: [DEVICE] }))

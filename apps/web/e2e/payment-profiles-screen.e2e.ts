@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The payment profiles screen on the components of src/ui (v5.1):
@@ -32,6 +33,7 @@ const ORGANIZATION = {
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 const unavailable = rpc(
@@ -101,6 +103,7 @@ async function openLab(page: Page, stored = "claro") {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [MACHINE, OLD_LINK] }))
   );
+  await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=payment-profiles");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
@@ -265,8 +268,10 @@ async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
+  await serveHealth(page);
   await page.route("**/rpc/**", (route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       "/rpc/",

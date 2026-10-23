@@ -244,3 +244,53 @@ describe("rate limit wiring", () => {
     expect(limiter.limit).toHaveBeenCalledOnce();
   });
 });
+
+// The client takes a response for the Worker's only by this mark (emenda do ADR 0043): every answer has it,
+// the unhandled error, the not-found, the raw answer of a route and the one of the RPC handler too.
+const workerMarkPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+describe("the Worker's mark on every response", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("is on the 500 of onError, the 404, the health check, a raw Response and an RPC answer", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const failing = createServerApp({
+      authHandler: () => Promise.reject(new Error("boom")),
+    });
+    const raw = createServerApp({
+      authHandler: () => Promise.resolve(new Response("null", { status: 401 })),
+    });
+    const responses = [
+      await failing.request("/api/auth/get-session", {}, createBindings()),
+      await failing.request("/nada-aqui", {}, createBindings()),
+      await failing.request("/health", {}, createBindings()),
+      await raw.request("/api/auth/get-session", {}, createBindings()),
+      await failing.request(
+        "/rpc/category/list",
+        {
+          body: JSON.stringify({ json: { organizationId: "o" } }),
+          headers: { "content-type": "application/json", origin: baseURL },
+          method: "POST",
+        },
+        createBindings()
+      ),
+    ];
+    expect(responses.map((response) => response.status)).toEqual([
+      500,
+      404,
+      200,
+      401,
+      expect.any(Number),
+    ]);
+    expect(
+      responses.map((response) =>
+        workerMarkPattern.test(response.headers.get("x-request-id") ?? "")
+      )
+    ).toEqual([true, true, true, true, true]);
+  });
+});

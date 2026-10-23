@@ -11,6 +11,7 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { describeFee, settlementText } from "./payment-fee-model";
 import { methods } from "./payment-profile-form";
 
@@ -18,6 +19,9 @@ import { methods } from "./payment-profile-form";
    a block per rule. A fee that is not known is never shown as zero: italic, dashed and in the warning color. */
 
 const LIST_TITLE_ID = "payment-list-title";
+/** The list was not read (no connection): it is not an empty list (U-60). */
+const PROFILES_NOT_LOADED =
+  "Os perfis não carregaram. Eles aparecem quando a conexão voltar.";
 
 function Figure({ children, label }: { children: ReactNode; label: string }) {
   return (
@@ -64,6 +68,8 @@ function ruleTitle(rule: PaymentProfileReadModel["rules"][number]): string {
 interface ProfileRowProps {
   onChangeLifecycle: (profile: PaymentProfileReadModel) => void;
   onEdit: (profile: PaymentProfileReadModel) => void;
+  /** Offline the lifecycle button says why and sends nothing. */
+  online: boolean;
   pending: boolean;
   profile: PaymentProfileReadModel;
 }
@@ -71,6 +77,7 @@ interface ProfileRowProps {
 function ProfileRow({
   onChangeLifecycle,
   onEdit,
+  online,
   pending,
   profile,
 }: ProfileRowProps) {
@@ -108,6 +115,7 @@ function ProfileRow({
             </Button>
           ) : null}
           <Button
+            {...connectionControlProps(online)}
             aria-label={`${active ? "Arquivar" : "Restaurar"} perfil ${profile.name}`}
             disabled={pending}
             onClick={handleLifecycle}
@@ -138,20 +146,24 @@ function ProfileRow({
 }
 
 interface ListBodyProps extends Omit<ProfileRowProps, "profile"> {
-  loadError: string | null;
-  loading: boolean;
-  onRetry: () => void;
   /** Some profile exists, archived or not: an empty list then means the filter, not an empty organization. */
   hasAnyProfile: boolean;
+  loadError: string | null;
+  loading: boolean;
+  /** The list could not be read for lack of a connection: never shown as "no profile". */
+  notLoaded: boolean;
+  onRetry: () => void;
   profiles: PaymentProfileReadModel[];
 }
 
 function ListBody({
   loadError,
   loading,
+  notLoaded,
   onChangeLifecycle,
   onEdit,
   hasAnyProfile,
+  online,
   onRetry,
   pending,
   profiles,
@@ -161,6 +173,15 @@ function ListBody({
       <CardContent>
         <p className="text-muted-foreground" role="status">
           Carregando perfis…
+        </p>
+      </CardContent>
+    );
+  }
+  if (notLoaded) {
+    return (
+      <CardContent>
+        <p className="text-muted-foreground" role="status">
+          {PROFILES_NOT_LOADED}
         </p>
       </CardContent>
     );
@@ -202,6 +223,7 @@ function ListBody({
           key={profile.id}
           onChangeLifecycle={onChangeLifecycle}
           onEdit={onEdit}
+          online={online}
           pending={pending}
           profile={profile}
         />

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The password screens behind the flag (P9, ADR 0100; AC-7, 46, 50, 51, 53, 62, 71 to 76), with the server
@@ -127,11 +128,16 @@ async function serve(page: Page, server: Server) {
         google: true,
         turnstileSiteKey: server.emailPassword ? SITE_KEY : null,
       }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
   await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({ body: "null", contentType: "application/json" })
+    route.fulfill({
+      body: "null",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
   );
   const answerPost = async (route: Route) => {
     const request = route.request();
@@ -144,6 +150,7 @@ async function serve(page: Page, server: Server) {
     const answer = server.answers[path] ?? ok;
     await route.fulfill({
       body: JSON.stringify(answer.body),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
       status: answer.status,
     });
@@ -1015,6 +1022,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     await page.route("**/api/auth/get-session", (route) =>
       route.fulfill({
         body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+        headers: { ...WORKER_MARK },
         contentType: "application/json",
       })
     );
@@ -1026,6 +1034,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
             json: { organizations: [ORGANIZATION] },
             meta: [],
           }),
+          headers: { ...WORKER_MARK },
           contentType: "application/json",
         });
       }

@@ -27,10 +27,9 @@
 /* The products screen (v5.1, third migrated screen): its own files; the images panel and the categories are still old. */
 @source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
-   strip of the screens that need a connection is in the runtime folder, which is old. */
+   strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";
 @source "../customers/{customers-page,customers-page-parts,customer-form,customer-list}.tsx";
-@source "../offline/runtime/online-only-notice.tsx";
 /* The payment profiles screen (v5.1): the page, the form and the list; the draft and the fee model have no class. */
 @source "../payment-profiles/{payment-profiles-page,payment-profile-form,payment-profile-list}.tsx";
 /* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
@@ -41,10 +40,10 @@
 @source "../organization/organization-setup.tsx";
 @source "../legal/{legal-app,legal-frame,legal-page}.tsx";
 @source "../legal/acceptance/acceptance-page.tsx";
-/* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session,
-   the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
+/* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
+   and of the connection, the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice}.tsx";
 @source "../pwa/update-banner.tsx";
 @source "../offline/logout-dialog.tsx";
 @source "../offline/runtime/{offline-access-expired,attention-page}.tsx";

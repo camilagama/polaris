@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of Aparelhos and Pendências, as the interface
@@ -12,6 +13,7 @@ import type { Page, Route } from "@playwright/test";
 const rpc = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
+  headers: { ...WORKER_MARK },
   status,
 });
 
@@ -85,6 +87,7 @@ async function serveDevices(page: Page, served: Served) {
 
 /** Starts the lab's runtime on a screen of it; the network is the lab's checkbox. */
 async function startLab(page: Page, query: string) {
+  await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?${query}`);
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

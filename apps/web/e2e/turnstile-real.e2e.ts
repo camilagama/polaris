@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
+import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The real Cloudflare Turnstile script on the five pages that load it (ADR 0100, AC-7), under the policy
@@ -52,11 +53,16 @@ async function serve(page: Page, seen: Seen) {
         google: true,
         turnstileSiteKey: SITE_KEY,
       }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     })
   );
   await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({ body: "null", contentType: "application/json" })
+    route.fulfill({
+      body: "null",
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
   );
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -68,6 +74,7 @@ async function serve(page: Page, seen: Seen) {
     seen.headers.push(await request.headerValue("x-turnstile-token"));
     await route.fulfill({
       body: JSON.stringify({ status: true }),
+      headers: { ...WORKER_MARK },
       contentType: "application/json",
     });
   });
