@@ -20,14 +20,12 @@ import { listFiles, precacheList } from "./service-worker-plugin";
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
 /**
- * 50 KB while the old screens and the shell v5.1 live together: the shell is interface infrastructure paid once
- * (it replaces the old shell, about +5.1 KB gzip), approved by the Arrascaeta on 22/10 at 46 KB; the offline
- * runtime of F7 (connection with proof, about +4.0 KB gzip) took it to 47 KB on 23/10, and the growth of main
- * since then (the screens of Sales History and Detail among them) took it to 50 KB, also on 23/10.
- * Temporary until batch 6, which goes back to 40_000; decision of the Arrascaeta on 23/10, overflow from the
- * growth of main (ADR 0103, section 4).
+ * 42 KB since batch 6 took the old CSS out (t256): the shell v5.1 is interface infrastructure paid once (it replaced
+ * the old shell, about +5.1 KB gzip) and the offline runtime of F7 (connection with proof, about +4.0 KB gzip) came
+ * after the 40 KB of ADR 0103, section 4. Taking `@layer legacy` out freed about 3 KB, not the 10 KB the temporary
+ * 50 KB assumed, so the Arrascaeta set batch 6 at 42 KB on 23/10, with the measure of the batch in its pull request.
  */
-export const REST_GROWTH_BUDGET_GZIP_BYTES = 50_000;
+export const REST_GROWTH_BUDGET_GZIP_BYTES = 42_000;
 
 /**
  * The rest of the precache before the UI base, one number per kind of production build, since the switch of

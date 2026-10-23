@@ -133,7 +133,6 @@ function MobileSheet({
       data-side={side}
       data-sidebar="sidebar"
       data-slot="sidebar"
-      data-ui=""
       onClick={handleClick}
       onClose={handleClose}
       ref={ref}
@@ -186,7 +185,6 @@ function Sidebar({
       className="group peer hidden text-sidebar-foreground md:block"
       data-side={side}
       data-slot="sidebar"
-      data-ui=""
     >
       {/* the gap the fixed column leaves in the flow */}
       <div className="relative w-(--sidebar-width)" data-slot="sidebar-gap" />

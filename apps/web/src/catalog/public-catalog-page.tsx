@@ -292,7 +292,6 @@ export function PublicCatalogPage() {
   return (
     <div
       className="grid gap-4 font-sans text-foreground text-sm antialiased"
-      data-ui=""
     >
       <div className="grid gap-1">
         <h1 className="text-title">Catálogo público</h1>

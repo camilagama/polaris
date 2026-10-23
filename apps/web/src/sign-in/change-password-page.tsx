@@ -75,14 +75,11 @@ type Notice =
   | { kind: "session-ended" }
   | null;
 
-/**
- * A block of the page in the new interface. The page is inside the app shell, whose notices and dialogs are still
- * the old markup and keep to themselves: only what is drawn here is under `data-ui`.
- */
+/** A block of the page: the blocks stack with the same gap as the cards inside them. */
 function UiBlock({ children }: { children: ReactNode }) {
   return (
-    // the gap is the block's own padding, so the background of the new interface runs unbroken from one block to the next
-    <div className="grid gap-4 pb-4 last:pb-0" data-ui="">
+    // the gap is the block's own padding, so a block that is not drawn leaves no gap behind
+    <div className="grid gap-4 pb-4 last:pb-0">
       {children}
     </div>
   );

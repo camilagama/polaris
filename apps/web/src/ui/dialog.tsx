@@ -16,7 +16,7 @@ function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
   return (
-    <DialogPrimitive.Portal data-slot="dialog-portal" data-ui="" {...props} />
+    <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
   );
 }
 

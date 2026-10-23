@@ -361,7 +361,6 @@ export function ProductsPage() {
     <div className="products-page" ref={rootRef}>
       <div
         className="grid gap-4 font-sans text-foreground text-sm antialiased"
-        data-ui=""
       >
         <ProductsHeader
           buttonRef={newButtonRef}

@@ -166,7 +166,6 @@ export function DashboardPage() {
   return (
     <div
       className="grid gap-5 font-sans text-foreground text-sm antialiased"
-      data-ui=""
     >
       <Heading />
       <Toolbar

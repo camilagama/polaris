@@ -177,7 +177,6 @@ export function ExpensesPage() {
   return (
     <div
       className="grid gap-4 font-sans text-foreground text-sm antialiased"
-      data-ui=""
     >
       <Heading />
       <ActionNotice feedback={feedback} />

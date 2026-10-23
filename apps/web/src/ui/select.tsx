@@ -75,7 +75,7 @@ function SelectContent({
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
   return (
-    <SelectPrimitive.Portal data-ui="">
+    <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
         align={align}
         alignItemWithTrigger={alignItemWithTrigger}

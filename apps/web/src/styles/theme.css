@@ -292,36 +292,32 @@
 }
 
 /*
- * The page defaults of the v5.1 (Geist with cv11/ss01, tabular figures, 14 px, the background and ink) on
- * the root of the new interface, `[data-ui]`, and not yet on <body>: on <body> they would reach the old
- * screens, which inherit the font and size of the page (ADR 0103, amendment in section 3). They move to
- * <body> with the last screen, together with the preflight.
+ * The page defaults of the v5.1 (Geist with cv11/ss01, tabular figures, 14 px, the background and ink) on <body>,
+ * for every page of the app, with the width under which the page scrolls sideways instead of squeezing (320 px).
  */
 @layer base {
-  /* In a layer, unlike the design's theme: unlayered, it would beat the old sheets' own `color-scheme` (light,
-     and dark by the system) on the old screens. */
   :root {
     color-scheme: light;
   }
   .dark {
     color-scheme: dark;
   }
-  /* Scoped by `:where`, which adds no specificity (preflight.css). */
-  :where([data-ui]) {
+  body {
+    min-width: 320px;
     font-feature-settings: "cv11", "ss01";
     font-variant-numeric: tabular-nums;
     @apply bg-background font-sans text-foreground text-sm antialiased;
   }
-  :where([data-ui], [data-ui] *) {
+  * {
     @apply border-border;
   }
-  :where([data-ui], [data-ui] *)::selection {
+  ::selection {
     background: color-mix(in oklch, var(--mark) 24%, transparent);
   }
   @media (prefers-reduced-motion: reduce) {
-    :where([data-ui], [data-ui] *),
-    :where([data-ui], [data-ui] *)::before,
-    :where([data-ui], [data-ui] *)::after {
+    *,
+    *::before,
+    *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       scroll-behavior: auto !important;

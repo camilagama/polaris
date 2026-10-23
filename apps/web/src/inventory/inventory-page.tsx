@@ -261,7 +261,6 @@ export function InventoryPage() {
   return (
     <div
       className="grid gap-4 font-sans text-foreground text-sm antialiased"
-      data-ui=""
     >
       <header className="grid gap-1">
         <h1 className="text-title">Estoque</h1>

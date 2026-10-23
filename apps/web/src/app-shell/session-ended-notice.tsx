@@ -63,7 +63,6 @@ export function SessionEndedNotice({
       aria-label="Sua sessão acabou"
       className="focus-ring mb-4 font-sans"
       data-notice="session-ended"
-      data-ui=""
       ref={noticeRef}
       role={alone ? "alert" : "status"}
       tabIndex={-1}
