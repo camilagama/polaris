@@ -175,16 +175,26 @@ jobs:
       # braces has no fixed release; exception in docs/runbooks/dependency-audit.md, review on 2026-11-18
       - run: bun audit --audit-level=high --ignore=GHSA-vfj7-8cjw-p6xm
 
-  # The most expensive job (about nine minutes). It runs on pull requests that
-  # change something it exercises (not on prose or database-only changes) and on
-  # demand; it does not repeat on main what the pull request already proved.
-  offline-poc-browser:
-    name: Offline persistence browser gate
+  # The most expensive gate (about 25 minutes when it ran as one job). It runs on pull
+  # requests that change something it exercises (not on prose or database-only changes)
+  # and on demand; it does not repeat on main what the pull request already proved.
+  # 24/10: the same suites and projects as before, split into four Playwright shards that
+  # run in parallel (each shard runs its share of test:offline-poc and test:pwa, both
+  # browser projects); the catalog CSP test rides with shard 1. Splitting by browser
+  # project left 21 min on desktop and 6 on mobile (run 40078910891), so shards it is.
+  # The job named "Offline persistence browser gate" stays as the single result that
+  # branch rules, the automerge and the bots read.
+  offline-poc-browser-part:
+    name: Offline browser gate (shard ${{ matrix.shard }}/4)
     needs: changes
     # a failed detection runs it anyway: never skipped by accident
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -203,18 +213,40 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
-      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated
+      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4
         working-directory: apps/web
-      - run: bun run test:pwa
+      - run: bun run test:pwa --shard=${{ matrix.shard }}/4
         working-directory: apps/web
       # The public catalog under its production CSP (ADR 0090): nonce on every inline
       # script, no inline style, hydration without violations, catalog_nonce_missing.
-      - run: bunx playwright install chromium
+      - if: ${{ matrix.shard == 1 }}
+        run: bunx playwright install chromium
         working-directory: apps/catalog
-      - name: Catalog CSP browser test
+      - if: ${{ matrix.shard == 1 }}
+        name: Catalog CSP browser test
         run: bun run --filter @polaris/catalog test:e2e
         env:
           POLARIS_CATALOG_E2E: "1"
+
+  offline-poc-browser:
+    name: Offline persistence browser gate
+    needs: [changes, offline-poc-browser-part]
+    if: ${{ !cancelled() && github.event_name != 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # green when every shard passed, or when the change detection skipped them on purpose
+      # (browser explicitly false); red on any failure, cancellation or any other skip
+      - env:
+          PARTS: ${{ needs.offline-poc-browser-part.result }}
+          CHANGES: ${{ needs.changes.result }}
+          BROWSER: ${{ needs.changes.outputs.browser }}
+        run: |
+          echo "parts=$PARTS changes=$CHANGES browser=$BROWSER"
+          if [ "$PARTS" = success ]; then exit 0; fi
+          if [ "$PARTS" = skipped ] && [ "$CHANGES" = success ] && [ "$BROWSER" = false ]; then exit 0; fi
+          exit 1
 
   e2e-real:
     name: e2e journeys on the real local stack
