@@ -46,6 +46,7 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
       </div>
       {progress && !goal.paused ? (
         <Progress
+          aria-label={`Progresso de ${goalTitle(goal)}`}
           aria-valuetext={`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}, ${formatGoalPercent(progress.percent)}`}
           className="gap-1.5"
           value={goalProgressWidth(progress.percent)}

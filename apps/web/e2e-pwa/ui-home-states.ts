@@ -260,6 +260,10 @@ async function openHome(
   await page.goto("/");
   await page.getByRole("heading", { level: 1, name: "Início" }).waitFor();
   await ready(page);
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
   await page.evaluate(() => document.fonts.ready);
 }
 

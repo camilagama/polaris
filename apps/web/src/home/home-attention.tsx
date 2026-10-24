@@ -36,7 +36,7 @@ export function AttentionBlock({
           {lines.map((line) => (
             <li className="border-t first:border-t-0" key={line.id}>
               <a
-                className="focus-ring flex min-h-11 items-center gap-2 rounded-sm py-1 hover:bg-muted/60"
+                className="focus-ring flex min-h-12 items-center gap-2 rounded-sm py-1 hover:bg-muted/60"
                 href={line.href}
               >
                 <span className="min-w-0 flex-1 truncate">{line.text}</span>

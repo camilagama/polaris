@@ -147,7 +147,7 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
               </span>
             </>
           );
-          const row = "flex min-h-11 items-center gap-3 py-1";
+          const row = "flex min-h-12 items-center gap-3 py-1";
           return (
             <li className="border-t first:border-t-0" key={product.productId}>
               {product.deleted ? (
