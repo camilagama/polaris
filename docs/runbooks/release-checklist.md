@@ -20,7 +20,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
 - **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
 - **Sem critério de aceite, o veredito é dados insuficientes.**
-- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 10, 14, 15, 16, 18 e 19, que já foram decididos.
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 10, 14, 15, 16, 18, 19 e 24, que já foram decididos.
 
 ## Itens
 
@@ -198,6 +198,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: o SHA em que as quatro páginas existem e a data da publicação; o sinal [`link-de-verificacao`](./alertas.md#link-de-verificacao) (evento `auth_verification_link_record_failed`) ligado no destino dos logs, ou, sem cron de alertas, a consulta feita à mão nos Workers Logs (nome, consulta e resultado); a leitura de cada rota pelo host de produção (a página abre, sem token); o resultado de `handler.test.ts` no SHA candidato e, se já existir, o do teste de rota real das variações de caminho.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
+### 24. Teto firme do precache de volta (BLOCK)
+
+- Critério: `REST_GROWTH_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, o crescimento do resto só avisa (`"warn"`, trava dura de +80 000 B); sem essa etapa, não há go-live.
+- Evidência: o valor de `REST_GROWTH_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
+- Severidade BLOCK: decidida pelo Arrascaeta (t278).
+
 ## Veredito
 
 Ordem de decisão:
@@ -230,7 +236,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 10, 14, 15, 16, 18 e 19, já decididos (hoje 16 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19 e 24, já decididos (hoje 16 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.
