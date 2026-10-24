@@ -15,6 +15,7 @@ import { ProductsPage } from "../catalog/products-page";
 import { PublicCatalogPage } from "../catalog/public-catalog-page";
 import { CustomersPage } from "../customers/customers-page";
 import { DashboardPage } from "../dashboard/dashboard-page";
+import { HomePage } from "../home/home-page";
 import { ExpensesPage } from "../expenses/expenses-page";
 import { InventoryPage } from "../inventory/inventory-page";
 import { addConnectionTry, browserConnection } from "../lib/browser-connection";
@@ -78,6 +79,7 @@ type LabScreen =
   | "devices"
   | "expenses"
   | "history"
+  | "home"
   | "payment-profiles"
   | "products"
   | "public-catalog"
@@ -95,6 +97,7 @@ function labScreen(): LabScreen {
     screen === "products" ||
     screen === "dashboard" ||
     screen === "expenses" ||
+    screen === "home" ||
     screen === "payment-profiles" ||
     screen === "public-catalog" ||
     screen === "sale" ||
@@ -166,6 +169,7 @@ const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
   devices: DevicesPage,
   expenses: ExpensesPage,
   history: SaleHistoryPage,
+  home: HomePage,
   "payment-profiles": PaymentProfilesPage,
   products: ProductsPage,
   "public-catalog": PublicCatalogPage,

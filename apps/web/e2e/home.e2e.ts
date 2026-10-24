@@ -989,6 +989,7 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
   });
 });
 
+const SYNCED = /sincronizado/i;
 const OFFLINE_KEYS = /^polaris\.offline\.(home|periodSummary)\./;
 
 /** The keys of the Início's copy (A and B) in this browser. */
@@ -1006,6 +1007,10 @@ async function openWithCopy(page: Page, server: FakeServer) {
   await openHome(page, server);
   await expect(region(page, "Hoje")).toContainText("R$ 320,10");
   await expect.poll(() => copyKeys(page)).toHaveLength(2);
+  // the offline runtime finished opening (a usable lease, the collections in place): a sale can be kept offline
+  await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+    timeout: 20_000,
+  });
 }
 
 /** Opens the page again with no network at all but `navigator.onLine` true, the device's clock at `at`. */
@@ -1096,18 +1101,26 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     const scrolled = await page.evaluate(() => window.scrollY);
     expect(scrolled).toBeGreaterThan(0);
     const thirty = chart.getByRole("tab", { name: "30 dias" });
+    // the blocks above the chart change height offline (the sentence under "Nova venda", the stock's lines): the
+    // proof is that the page does not jump back to the top and the chart stays in view, not the exact pixel
+    const kept = async () => {
+      await expect(thirty).toBeInViewport();
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(
+        scrolled / 2
+      );
+    };
 
     await page.context().setOffline(true);
     await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
     await expect(thirty).toHaveAttribute("aria-selected", "true");
-    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await kept();
 
     const reads = periodCalls(server).length;
     await page.context().setOffline(false);
     await expect.poll(() => periodCalls(server).length).toBeGreaterThan(reads);
     await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
     await expect(thirty).toHaveAttribute("aria-selected", "true");
-    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await kept();
   });
 
   test("aberto sem resposta do Worker e com navigator.onLine verdadeiro: a cópia, nunca um erro", async ({
