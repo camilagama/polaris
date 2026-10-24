@@ -132,6 +132,16 @@ bun run gate7:asaas settle-unclaimed
 O corpo do webhook, o recurso relido, o CPF ou CNPJ, o `emv` e o link de pagamento nunca vão para o log; o CPF também não vai em URL (o cliente é achado pela chave do Polaris, não por `?taxID=`), porque os traços de requisições de saída do Worker podem guardar a URL. A troca de ciclo no Pix Automático exige nova autorização do pagador (cancelar e criar outra assinatura), e a contestação (MED) não gera fato na V1 (ADR 0101, emenda Woovi).
 
 <a id="reembolso-pendente"></a>
+## Deploy e rollback da migration 0100 (autosserviço de cobrança)
+
+**Duração e trava.** A 0100 troca a expressão da coluna gerada `event_class` (STORED) de `tenant_audit_event` com `ALTER COLUMN … SET EXPRESSION`, que **reescreve a tabela inteira sob ACCESS EXCLUSIVE** (nenhuma leitura nem escrita de auditoria passa enquanto dura, e a auditoria entra nos comandos de venda e de estoque). Logo depois, o `ADD CONSTRAINT tenant_audit_event_type_registered`, sem `NOT VALID`, varre a tabela de novo. O `lock_timeout` de 10 s da migration só limita a espera pela trava, não a duração da reescrita. Antes do deploy:
+
+1. Contar linhas e tamanho em staging e em produção, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT count(*), pg_size_pretty(pg_total_relation_size('tenant_audit_event')) FROM tenant_audit_event`.
+2. Medir a duração da 0100 numa branch filha do Neon criada de `production` (cópia do tamanho real, sem `--schema-only`), de nome único e apagada ao final, como no [runbook do Gate 4](./gate-4-sales-core.md).
+3. Se passar de ~5 s, aplicar numa janela de pouco uso, combinada com o responsável, e registrar a medida no item 3 do [release checklist](./release-checklist.md#3-migrações-pendentes-com-plano-de-aplicação-e-de-volta-block).
+
+**Rollback do Worker.** Voltar o Worker para antes da 0100 não volta o banco ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)). O `attachProvider` da versão antiga, rodando depois da nova, troca o vínculo mas **não zera os campos novos**: `price_amount`, `price_id`, `first_charge_*`, `refund_requested_at`, `refund_request_id` e `refund_rearm_*` ficam com os valores do vínculo anterior. Ao voltar para a versão nova, conferir as lojas que assinaram no intervalo (`organization_billing.updated_at` entre o rollback e a volta, com `price_id` ou `refund_requested_at` preenchido) e limpar esses campos por um forward-fix revisado; um incidente `refund_not_completed` delas pode ser falso.
+
 ## Reembolso pendente e rede de segurança do reembolso
 
 A rede horária (`runRefundSafetyNet`, na manutenção de cobrança, depois da varredura e das tentativas) cuida de dois casos ([ADR 0104](../adr/0104-autosservico-de-cobranca-do-dono.md), decisão 6). Não há tela nem comando dela: o que aparece é o log e o incidente.
@@ -142,13 +152,14 @@ A rede horária (`runRefundSafetyNet`, na manutenção de cobrança, depois da v
 |---|---|---|
 | `billing_refund_renewal_rearmed` | renovação cancelada agora (`renewal` `cancelled`) ou já cancelada no provedor (`already_cancelled`); `reason` diz `refund` ou `chargeback` | nada |
 | `billing_refund_rearm_failed` | uma tentativa de cancelar falhou (aviso); a próxima sai no recuo | conferir a chave e a disponibilidade do provedor se repetir |
-| `billing_refund_rearm_exhausted` | a 10ª tentativa falhou (erro): a rede parou para essa loja | o operador cancela a assinatura à mão no painel do provedor e registra no caso; enquanto isso a renovação pode cobrar de novo |
+| `billing_refund_rearm_exhausted` | a 10ª tentativa falhou (erro, acorda alguém: sinal [`rede-de-reembolso-parada`](./alertas.md#rede-de-reembolso-parada)): a rede parou para essa loja e abriu o incidente `billing_refund_pending` com a causa `refund_rearm_exhausted`, uma ocorrência por loja e vínculo (fato `command:refund_rearm_exhausted:<loja>:<digest>` no razão; repetir a passada não soma) | o operador cancela a assinatura à mão no painel do provedor e registra no caso; enquanto isso a renovação pode cobrar de novo |
 | `billing_refund_safety_net_incomplete` | a passada teve pelo menos uma falha de cancelamento (erro); a manutenção sai incompleta e a próxima hora tenta de novo | ver as `billing_refund_rearm_failed` do mesmo horário |
 
-**Reembolso pendente.** Um pedido de reembolso do dono, no vínculo atual, ainda não concluído 24 h depois vira **um** incidente operacional `billing_refund_pending` (causa `refund_not_completed`, pelo caminho do [ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), uma ocorrência por loja e pedido. Cada uma tem uma linha no razão (`refund_pending`), então a passada seguinte não soma. Log: `billing_refund_pending_incident` (erro, só o ID opaco da loja e o provedor). Se a gravação falha, `billing_refund_pending_incident_failed` (erro) e a passada sai incompleta.
+**Reembolso pendente.** Um pedido de reembolso do dono, no vínculo atual, ainda não concluído 24 h depois vira **um** incidente operacional `billing_refund_pending` (causa `refund_not_completed`, pelo caminho do [ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), uma ocorrência por loja e pedido. Cada uma tem uma linha no razão (`refund_pending`), então a passada seguinte não soma. Log: `billing_refund_pending_incident` (erro, só o ID opaco da loja e o provedor). Se a gravação falha (deste incidente ou do da rede parada, campo `cause`), `billing_refund_pending_incident_failed` (erro, acorda alguém: sinal [`incidente-de-reembolso-nao-gravado`](./alertas.md#incidente-de-reembolso-nao-gravado)) e a passada sai incompleta; a seguinte grava o que faltou, uma vez só.
 
 **Quem olha:** o operador de plantão, pela lista de incidentes do Admin.
 **O que fazer:**
+Com a causa `refund_rearm_exhausted`, o caso é a renovação ainda viva: cancelá-la à mão no painel do provedor e registrar no caso de suporte. Com `refund_not_completed`:
 1. Conferir no painel do provedor se o reembolso saiu.
 2. Se não saiu, concluir pelo comando de reembolso do operador (ADR 0066, emenda de 23/10/2026): ele cancela a renovação antes de reembolsar, e se o reembolso falhar depois do cancelamento, repete-se o comando.
 3. Se já saiu, não repetir: só registrar.

@@ -844,12 +844,37 @@ async function run() {
     let exhausted = 0;
     const silence = console.error;
     const silenceWarn = console.warn;
-    console.error = () => undefined;
+    const errorLines: string[] = [];
+    const rearmIncidents = async () =>
+      Number(
+        (
+          await owner.pool.query<{ count: string }>(
+            `SELECT COALESCE(sum(occurrence_count), 0)::text AS count FROM public.operational_incidents
+              WHERE kind = 'billing_refund_pending' AND cause = 'refund_rearm_exhausted'`
+          )
+        ).rows[0]?.count ?? 0
+      );
+    const rearmLedger = async (organizationId: string) =>
+      (
+        await owner.pool.query<{ provider_event_id: string }>(
+          `SELECT provider_event_id FROM public.billing_events
+            WHERE provider = 'polaris' AND organization_id = $1 AND fact ->> 'type' = 'refund_rearm_exhausted'`,
+          [organizationId]
+        )
+      ).rows.map((entry) => entry.provider_event_id);
+    const rearmIncidentsBefore = await rearmIncidents();
+    let rearmIncidentsAtNinth = -1;
+    console.error = (...args: unknown[]) => {
+      errorLines.push(args.map((arg) => JSON.stringify(arg)).join(" "));
+    };
     console.warn = () => undefined;
     try {
       const expectedGaps = [1, 2, 4, 8, 16, 24, 24, 24, 24];
       for (let attempt = 1; attempt <= 10; attempt += 1) {
         calls.length = 0;
+        if (attempt === 10) {
+          rearmIncidentsAtNinth = await rearmIncidents();
+        }
         const pass = await netPass(refusing, new Date(clock));
         assert.equal(calls.length, 1, `try ${attempt} is made when due`);
         assert.equal(calls[0]?.attempt, attempt);
@@ -868,20 +893,103 @@ async function run() {
           clock += gap * HOUR;
         }
       }
+      const afterTenth = await rearmIncidents();
       calls.length = 0;
       await netPass(refusing, new Date(clock + 30 * DAY));
       assert.equal(calls.length, 0, "after the 10th failure the net stops");
+      // the 11th pass, and the sweep of the incidents, add nothing for the same store and link
+      await billing.recordPendingRefundIncidents(
+        new Date(clock + 30 * DAY),
+        1000
+      );
+      assert.equal(
+        rearmIncidentsAtNinth,
+        rearmIncidentsBefore,
+        "no incident before the 10th failure"
+      );
+      assert.equal(
+        afterTenth - rearmIncidentsBefore,
+        1,
+        "the 10th failure opens one occurrence of refund_rearm_exhausted"
+      );
+      assert.equal(
+        await rearmIncidents(),
+        afterTenth,
+        "an 11th pass and the sweep do not add a second occurrence"
+      );
     } finally {
       console.error = silence;
       console.warn = silenceWarn;
     }
     assert.equal(tries.length, 10);
     assert.equal(exhausted, 1, "the 10th failure is reported as exhausted");
+    const exhaustedLogs = errorLines.filter((line) =>
+      line.includes("billing_refund_rearm_exhausted")
+    );
+    assert.equal(
+      exhaustedLogs.length,
+      1,
+      "the 10th failure logs billing_refund_rearm_exhausted once"
+    );
+    assert.ok(
+      exhaustedLogs.every(
+        (line) =>
+          line.includes(tenantR.organizationId) && !line.includes("chk-r1-")
+      ),
+      "the log names the store, never the provider's reference"
+    );
+    const ledgerR = await rearmLedger(tenantR.organizationId);
+    assert.equal(ledgerR.length, 1, "one ledger row for the store and link");
+    assert.match(
+      ledgerR[0] ?? "",
+      new RegExp(
+        `^command:refund_rearm_exhausted:${tenantR.organizationId}:[0-9a-f]{32}$`
+      )
+    );
     current = await record(tenantR);
     assert.equal(current?.refund_rearm_attempts, 10);
     assert.equal(current?.revoked_cancel_at_period_end, false);
     tests.push(
-      "a provider that refuses is tried again after 1 h, 2 h, 4 h, 8 h, 16 h and then every 24 h (never before), and the 10th failure stops the net for the store and is reported as exhausted (billing_refund_rearm_exhausted)"
+      "a provider that refuses is tried again after 1 h, 2 h, 4 h, 8 h, 16 h and then every 24 h (never before), and the 10th failure stops the net for the store, is reported and logged as exhausted (billing_refund_rearm_exhausted) and opens one occurrence of the incident billing_refund_pending / refund_rearm_exhausted with one ledger row for the store and link; an 11th pass and the sweep add none"
+    );
+
+    // the incident of a stopped net the pass could not write is written by the next sweep, once
+    const tenantS = await newTenant("stopped net without incident");
+    await owner.pool.query(
+      `INSERT INTO public.organization_billing
+         (organization_id, state, provider, provider_ref, revoked_through, revoked_reason, revoked_cycle_months,
+          refund_rearm_attempts, refund_rearm_at)
+       VALUES ($1, 'free', 'gate_other', 'chk-s1-' || gen_random_uuid(), $2, 'refund', 1, 10, $3)`,
+      [tenantS.organizationId, at(24 * 60), at(60)]
+    );
+    const beforeSweep = await rearmIncidents();
+    const silencedSweep = console.error;
+    console.error = () => undefined;
+    let firstSweep: number;
+    let secondSweep: number;
+    try {
+      firstSweep = await billing.recordPendingRefundIncidents(at(61), 1000);
+      secondSweep = await billing.recordPendingRefundIncidents(at(62), 1000);
+    } finally {
+      console.error = silencedSweep;
+    }
+    assert.ok(firstSweep >= 1);
+    assert.equal(secondSweep, 0, "a second sweep adds nothing");
+    assert.equal(await rearmIncidents(), beforeSweep + 1);
+    assert.equal((await rearmLedger(tenantS.organizationId)).length, 1);
+    // a new link is another link: its own stop would be a new occurrence, the old one is not repeated
+    await billing.attachProvider(
+      tenantS.organizationId,
+      "gate_other",
+      ref("chk-s2")
+    );
+    assert.equal(
+      await billing.recordPendingRefundIncidents(at(63), 1000),
+      0,
+      "a new link clears the memory of the stopped net"
+    );
+    tests.push(
+      "a stopped net whose incident is missing (the database failed in its pass) gets it from the next sweep of the incidents, once; a new link clears the memory"
     );
 
     // the owner's refund still pending after 24 hours: one incident per store and request
@@ -961,15 +1069,27 @@ async function run() {
       () =>
         withRuntimeSqlContext(tenantUrl, tenantA, (client) =>
           client.query(
-            "SELECT public.record_billing_refund_pending_incident($1::uuid)",
+            "SELECT public.record_billing_refund_pending_incident($1::uuid, 'refund_not_completed')",
             [randomUUID()]
           )
         ),
       "42501",
       "only the billing role records the incident"
     );
+    for (const cause of ["refund_unknown", null]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Two causes, one after the other.
+      await expectSqlState(
+        () =>
+          owner.pool.query(
+            "SELECT public.record_billing_refund_pending_incident($1::uuid, $2::text)",
+            [randomUUID(), cause]
+          ),
+        "22023",
+        `the incident takes only its two causes (${String(cause)})`
+      );
+    }
     tests.push(
-      "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one, 23 hours none, a second pass none, a completed refund none; only the billing role executes the function"
+      "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one, 23 hours none, a second pass none, a completed refund none; only the billing role executes the function, and only with the causes refund_not_completed and refund_rearm_exhausted"
     );
 
     // ------------------------------------------------ 6. billing_cancellation_feedback

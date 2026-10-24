@@ -6012,7 +6012,7 @@
         },
         "operational_incidents_cause_allowed": {
           "name": "operational_incidents_cause_allowed",
-          "value": "(\"operational_incidents\".\"kind\" = 'queue_dead_letter' AND \"operational_incidents\".\"cause\" IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))\n        OR (\"operational_incidents\".\"kind\" = 'outbox_attempts_exhausted' AND \"operational_incidents\".\"cause\" = 'attempts_exhausted')\n        OR (\"operational_incidents\".\"kind\" = 'billing_reference_mismatch' AND \"operational_incidents\".\"cause\" IN ('reference_mismatch', 'reference_unresolved'))\n        OR (\"operational_incidents\".\"kind\" = 'billing_refund_pending' AND \"operational_incidents\".\"cause\" = 'refund_not_completed')"
+          "value": "(\"operational_incidents\".\"kind\" = 'queue_dead_letter' AND \"operational_incidents\".\"cause\" IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))\n        OR (\"operational_incidents\".\"kind\" = 'outbox_attempts_exhausted' AND \"operational_incidents\".\"cause\" = 'attempts_exhausted')\n        OR (\"operational_incidents\".\"kind\" = 'billing_reference_mismatch' AND \"operational_incidents\".\"cause\" IN ('reference_mismatch', 'reference_unresolved'))\n        OR (\"operational_incidents\".\"kind\" = 'billing_refund_pending' AND \"operational_incidents\".\"cause\" IN ('refund_not_completed', 'refund_rearm_exhausted'))"
         },
         "operational_incidents_subject_format": {
           "name": "operational_incidents_subject_format",

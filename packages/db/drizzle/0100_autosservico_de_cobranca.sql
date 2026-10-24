@@ -19,7 +19,8 @@
 -- * `admin_read_refund_window`: what the operator reads to check the window of a Pix refund asked by e-mail (ADR 0104,
 --   decision 8), under an open case of the same store, audited in the same transaction (`billing.refund_window_read`).
 -- * `record_billing_refund_pending_incident`: an owner's refund still not completed 24 hours after the request is an
---   operational incident (ADR 0085), one occurrence per store and request, counted on one row.
+--   operational incident (ADR 0085), one occurrence per store and request, counted on one row; so is the safety net
+--   stopped after its 10th failure (`refund_rearm_exhausted`), one occurrence per store and link.
 -- Each new policy and trigger takes an ACCESS EXCLUSIVE lock on a busy table: better to fail and deploy again than to queue.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 CREATE TABLE "billing_cancellation_feedback" (
@@ -70,7 +71,7 @@ ALTER TABLE "operational_incidents" ADD CONSTRAINT "operational_incidents_kind_a
 ALTER TABLE "operational_incidents" ADD CONSTRAINT "operational_incidents_cause_allowed" CHECK (("operational_incidents"."kind" = 'queue_dead_letter' AND "operational_incidents"."cause" IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))
         OR ("operational_incidents"."kind" = 'outbox_attempts_exhausted' AND "operational_incidents"."cause" = 'attempts_exhausted')
         OR ("operational_incidents"."kind" = 'billing_reference_mismatch' AND "operational_incidents"."cause" IN ('reference_mismatch', 'reference_unresolved'))
-        OR ("operational_incidents"."kind" = 'billing_refund_pending' AND "operational_incidents"."cause" = 'refund_not_completed'));--> statement-breakpoint
+        OR ("operational_incidents"."kind" = 'billing_refund_pending' AND "operational_incidents"."cause" IN ('refund_not_completed', 'refund_rearm_exhausted')));--> statement-breakpoint
 ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read'));--> statement-breakpoint
 ALTER TABLE "tenant_audit_event" ADD CONSTRAINT "tenant_audit_event_type_registered" CHECK ("tenant_audit_event"."event_type" IN ('billing.checkout_started', 'billing.command_in_progress', 'billing.command_rate_limited', 'billing.command_refused', 'billing.owner_renewal_cancel_requested', 'billing.refund_requested', 'customer.anonymized', 'data_export.downloaded', 'data_export.failed', 'data_export.ready', 'data_export.requested', 'offline_grant.issued', 'offline_grant.revoked', 'organization.closure_recovered', 'organization.closure_requested', 'organization.created', 'product.published_to_catalog', 'product.unpublished_from_catalog', 'public_catalog.profile_created', 'public_catalog.profile_updated', 'public_catalog.published', 'public_catalog.unpublished', 'billing.overdue_payment_opened', 'category.archived', 'category.created', 'category.deleted', 'category.renamed', 'category.restored', 'customer.archived', 'customer.created', 'customer.restored', 'customer.updated', 'expense.created', 'expense.restored', 'expense.updated', 'expense.voided', 'expense_category.archived', 'expense_category.created', 'expense_category.renamed', 'expense_category.restored', 'expense_rule.archived', 'expense_rule.created', 'expense_rule.generated', 'expense_rule.restored', 'expense_rule.updated', 'goal.cancelled', 'goal.completed', 'goal.created', 'goal.missed', 'goal.target_changed', 'goal.updated', 'inventory.movement_recorded', 'operational_selection.changed', 'payment_profile.archived', 'payment_profile.created', 'payment_profile.restored', 'payment_profile.updated', 'product.archived', 'product.created', 'product.deleted', 'product.media_removed', 'product.media_reordered', 'product.media_uploaded', 'product.restored', 'product.updated', 'product.variants_configured', 'product_variant.list_price_changed', 'product_variant.sku_changed', 'sale.cancelled', 'sale.confirmed', 'sale.returned', 'sale_customer_link.assigned', 'sale_customer_link.reassigned', 'sale_customer_link.unassigned'));--> statement-breakpoint
 CREATE POLICY "billing_cancellation_feedback_billing_runtime_insert" ON "billing_cancellation_feedback" AS PERMISSIVE FOR INSERT TO "polaris_billing_runtime" WITH CHECK (true);--> statement-breakpoint
@@ -162,30 +163,33 @@ ALTER TABLE public.tenant_audit_event ENABLE ALWAYS TRIGGER tenant_audit_event_b
 GRANT CREATE ON SCHEMA public TO polaris_outbox_owner;--> statement-breakpoint
 GRANT polaris_outbox_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 SET ROLE polaris_outbox_owner;--> statement-breakpoint
--- One row for the cause, as every incident: each store whose refund is still not completed 24 hours after the owner's
--- request adds one occurrence (the billing role calls this once per store and request, after writing that request's
--- ledger row) and moves `last_reference` to that ledger row, which names the store. No store, no amount, no reference
--- of the provider here.
-CREATE FUNCTION public.record_billing_refund_pending_incident(p_event uuid)
+-- One row for each cause, as every incident: each store whose refund is still not completed 24 hours after the owner's
+-- request (`refund_not_completed`), and each store and link whose safety net stopped after the 10th failure
+-- (`refund_rearm_exhausted`), adds one occurrence (the billing role calls this once per store and request, or store
+-- and link, after writing that ledger row) and moves `last_reference` to that ledger row, which names the store. No
+-- store, no amount, no reference of the provider here.
+CREATE FUNCTION public.record_billing_refund_pending_incident(p_event uuid, p_cause text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $function$
 BEGIN
-  IF p_event IS NULL THEN
+  IF p_event IS NULL OR p_cause IS NULL OR p_cause NOT IN ('refund_not_completed', 'refund_rearm_exhausted') THEN
     RAISE EXCEPTION 'invalid_billing_refund_pending_incident' USING ERRCODE = '22023';
   END IF;
   INSERT INTO public.operational_incidents AS incident (kind, cause, subject, last_reference)
-  VALUES ('billing_refund_pending', 'refund_not_completed', 'billing.refund_pending', p_event::text)
+  VALUES ('billing_refund_pending', p_cause,
+          CASE p_cause WHEN 'refund_not_completed' THEN 'billing.refund_pending' ELSE 'billing.refund_rearm' END,
+          p_event::text)
   ON CONFLICT (kind, cause, subject) DO UPDATE
      SET occurrence_count = incident.occurrence_count + 1,
          last_seen_at = pg_catalog.now(),
          last_reference = EXCLUDED.last_reference;
 END;
 $function$;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.record_billing_refund_pending_incident(uuid) FROM PUBLIC;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.record_billing_refund_pending_incident(uuid) TO polaris_billing_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.record_billing_refund_pending_incident(uuid, text) FROM PUBLIC;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.record_billing_refund_pending_incident(uuid, text) TO polaris_billing_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_outbox_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_outbox_owner;--> statement-breakpoint
@@ -290,7 +294,7 @@ DO $end_state$
 BEGIN
   IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p
        WHERE (p.oid = 'public.cap_billing_command_audit()'::regprocedure AND p.proowner = 'polaris_billing_audit_owner'::regrole)
-          OR (p.oid = 'public.record_billing_refund_pending_incident(uuid)'::regprocedure AND p.proowner = 'polaris_outbox_owner'::regrole)
+          OR (p.oid = 'public.record_billing_refund_pending_incident(uuid, text)'::regprocedure AND p.proowner = 'polaris_outbox_owner'::regrole)
           OR (p.oid = 'public.expire_billing_cancellation_feedback(integer)'::regprocedure AND p.proowner = 'polaris_privacy_owner'::regrole)
           OR (p.oid = 'public.admin_read_refund_window(uuid, uuid, text)'::regprocedure AND p.proowner = 'polaris_admin_owner'::regrole)) <> 4 THEN
     RAISE EXCEPTION 'the new functions do not have their owners';
