@@ -1,4 +1,5 @@
 import CheckIcon from "lucide-react/dist/esm/icons/check";
+import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
@@ -100,6 +101,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
@@ -633,6 +635,23 @@ export function UiGallery() {
               </ul>
             </ScrollArea>
           </Section>
+
+          <Section title="Abas">
+            <Tabs defaultValue="7">
+              <TabsList aria-label="Período">
+                <TabsTrigger value="7">7 dias</TabsTrigger>
+                <TabsTrigger value="30">30 dias</TabsTrigger>
+              </TabsList>
+              <TabsContent className="text-muted-foreground" value="7">
+                Os últimos 7 dias, dados de exemplo.
+              </TabsContent>
+              <TabsContent className="text-muted-foreground" value="30">
+                Os últimos 30 dias, dados de exemplo.
+              </TabsContent>
+            </Tabs>
+          </Section>
+
+          <ChartStates />
 
           <Section title="Caracteres das fontes">
             <div className="grid gap-2" data-testid="font-sample">

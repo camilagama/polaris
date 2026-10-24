@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { precacheBudgetPlugin } from "./pwa/precache-budget";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -44,5 +45,7 @@ export default defineConfig({
     serviceWorkerPlugin({
       source: fileURLToPath(new URL("./src/pwa/sw.ts", import.meta.url)),
     }),
+    // Only the charts line and its placement guard: the other lines are those of the production build.
+    precacheBudgetPlugin({ only: "charts" }),
   ],
 });

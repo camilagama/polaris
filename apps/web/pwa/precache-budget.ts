@@ -16,10 +16,16 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   warns past 44 KB and the build fails past the hard cap of 80 KB (see `REST_GROWTH_MODE`). The build prints
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
- * The production build fails past the font and primitives lines and past the hard cap of the rest line.
+ * - the charts chunk (`charts-*.js`, t285), gzipped, at most 8 KB, a line of its own: the drawing code of the charts
+ *   and d3-shape. It is in the precache so a chart opens offline, loaded on demand by the screen that asks for it and
+ *   never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
+ *   move for it. A guard fails the build when a module of `src/ui/charts/`, `d3-shape` or `d3-path` is in any other
+ *   chunk (`chartsPlacementProblems`).
+ * The production build fails past the font, primitives and charts lines and past the hard cap of the rest line.
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
+export const CHARTS_BUDGET_GZIP_BYTES = 8000;
 export type RestGrowthMode = "warn" | "block";
 
 /**
@@ -58,6 +64,15 @@ export const REST_BASELINE_GZIP_BYTES = {
 } as const;
 
 const FONT = /\.woff2?$/;
+const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
+/** The chunk the charts live in: the one the `import()` of `src/ui/charts/charts.ts` makes, named after that file. */
+const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
+/**
+ * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
+ * loader that every screen imports) and the libraries only they bring.
+ */
+const CHARTS_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]charts[\\/](?!on-demand\.tsx$)[^\\/]+\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:d3-shape|d3-path)[\\/])/;
 /**
  * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
  * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which
@@ -92,6 +107,8 @@ const INTERFACE_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/](?:ui[\\/]|lib[\\/]utils\.ts$)|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:tailwind-merge|class-variance-authority|clsx|lucide-react)[\\/])/;
 
 export interface PrecacheSize {
+  /** The charts chunk (`CHARTS_CHUNK`): a line of its own, apart from the rest. */
+  charts: number;
   fonts: number;
   /** The interface infrastructure (see `INTERFACE_MODULE`); counts in the +40 KB line with `rest`. */
   interface: number;
@@ -163,6 +180,7 @@ export function measurePrecache(
   readFile: (path: string) => Uint8Array,
   shares: Partial<PrecacheShares> = {}
 ): PrecacheSize {
+  let charts = 0;
   let fonts = 0;
   let primitives = 0;
   let infrastructure = 0;
@@ -174,13 +192,46 @@ export function measurePrecache(
       continue;
     }
     const gzip = gzipSync(bytes, { level: 9 }).byteLength;
+    if (CHARTS_CHUNK.test(path)) {
+      charts += gzip;
+      continue;
+    }
     const ofPrimitives = Math.round(gzip * (shares.primitives?.get(path) ?? 0));
     const ofInterface = Math.round(gzip * (shares.interface?.get(path) ?? 0));
     primitives += ofPrimitives;
     infrastructure += ofInterface;
     rest += gzip - ofPrimitives - ofInterface;
   }
-  return { fonts, interface: infrastructure, primitives, rest };
+  return { charts, fonts, interface: infrastructure, primitives, rest };
+}
+
+/**
+ * One problem for each module of the charts that is in a chunk other than the charts chunk (the ids are those of the
+ * modules of the bundle). A static import of a chart from a screen would put d3 in the shell's first script, outside
+ * the 8 KB line that was set for the chunk and with no way to see it there.
+ */
+export function chartsPlacementProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  return chunks
+    .filter((chunk) => !CHARTS_CHUNK.test(chunk.fileName))
+    .flatMap((chunk) =>
+      Object.keys(chunk.modules)
+        .filter((id) => CHARTS_MODULE.test(id))
+        .map(
+          (id) =>
+            `chart module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the charts chunk`
+        )
+    );
+}
+
+/** The line the build prints for the charts chunk: how much of the budget it uses, or that this build has none. */
+export function chartsLine(size: PrecacheSize): string {
+  if (size.charts === 0) {
+    return `CHARTS no charts chunk in this build (no screen asks for a chart yet), 0 B of ${CHARTS_BUDGET_GZIP_BYTES} B gzip`;
+  }
+  const left = CHARTS_BUDGET_GZIP_BYTES - size.charts;
+  return `CHARTS chunk ${size.charts} B gzip of ${CHARTS_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
 }
 
 export function restBaseline(offlineRuntime: boolean): number {
@@ -212,6 +263,15 @@ function restDescription(size: PrecacheSize, baseline: number): string {
   return `rest: ${restLine(size)} B gzip (interface infrastructure ${size.interface} B), +${restGrowth(size, baseline)} B over the baseline of ${baseline} B`;
 }
 
+/** The charts line alone: the chunk, gzipped, past its 8 KB (it blocks in any build that has the chunk). */
+export function chartsBudgetProblems(size: PrecacheSize): string[] {
+  return size.charts > CHARTS_BUDGET_GZIP_BYTES
+    ? [
+        `charts chunk: ${size.charts} B gzip, over the ${CHARTS_BUDGET_GZIP_BYTES} B budget`,
+      ]
+    : [];
+}
+
 export function budgetProblems(
   size: PrecacheSize,
   baseline: number,
@@ -228,6 +288,7 @@ export function budgetProblems(
       `Base UI primitives: ${size.primitives} B gzip, over the ${PRIMITIVES_BUDGET_GZIP_BYTES} B budget`
     );
   }
+  problems.push(...chartsBudgetProblems(size));
   const growth = restGrowth(size, baseline);
   if (growth > REST_GROWTH_HARD_CAP_GZIP_BYTES) {
     problems.push(
@@ -269,13 +330,20 @@ function growthLine(size: PrecacheSize, baseline: number): string {
   return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B)`;
 }
 
-/** Fails the production build of the shell when the precache goes past the budget. */
-export function precacheBudgetPlugin(): Plugin {
+/**
+ * Fails the production build of the shell when the precache goes past the budget. With `only: "charts"` it checks
+ * the charts line and the placement guard and nothing else: the build of the browser checks (`vite.pwa.config.ts`),
+ * which has the gallery and so the charts chunk that the production build has no screen to ask for yet.
+ */
+export function precacheBudgetPlugin(
+  options: { only?: "charts" } = {}
+): Plugin {
   let offlineRuntime = false;
   let shares: PrecacheShares = {
     interface: new Map(),
     primitives: new Map(),
   };
+  let placement: string[] = [];
   return {
     apply: "build",
     configResolved(config) {
@@ -295,6 +363,7 @@ export function precacheBudgetPlugin(): Plugin {
         interface: interfaceShares(chunks),
         primitives: primitiveShares(chunks),
       };
+      placement = chartsPlacementProblems(chunks);
     },
     name: "polaris:precache-budget",
     writeBundle(output) {
@@ -314,8 +383,18 @@ export function precacheBudgetPlugin(): Plugin {
         (path) => readFileSync(join(directory, path)),
         shares
       );
+      if (options.only === "charts") {
+        this.info(chartsLine(size));
+        const chartsProblems = [...placement, ...chartsBudgetProblems(size)];
+        if (chartsProblems.length > 0) {
+          this.error(
+            `Charts check of the browser-check build failed (ADR 0103): ${chartsProblems.join("; ")}`
+          );
+        }
+        return;
+      }
       const baseline = restBaseline(offlineRuntime);
-      const problems = budgetProblems(size, baseline);
+      const problems = [...budgetProblems(size, baseline), ...placement];
       // The gallery and the screens lab are for the browser checks only (main.tsx): never in the shell.
       problems.push(...testOnlyChunkProblems(paths));
       // The screen is the rest of the growth over the baseline once the interface infrastructure is taken out.
@@ -326,6 +405,7 @@ export function precacheBudgetPlugin(): Plugin {
         `precache (offline runtime ${offlineRuntime ? "on" : "off"}, baseline ${baseline} B): fonts ${size.fonts} B, Base UI primitives ${size.primitives} B gzip, interface infrastructure ${size.interface} B gzip, screen and the rest ${size.rest} B gzip (${signed(screen)} B over the baseline); rest line ${size.rest + size.interface} B gzip (${signed(growth)} B)`
       );
       this.info(growthLine(size, baseline));
+      this.info(chartsLine(size));
       for (const warning of budgetWarnings(size, baseline)) {
         this.warn(warning);
       }
