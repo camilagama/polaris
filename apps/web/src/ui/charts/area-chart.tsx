@@ -53,8 +53,8 @@ export interface AreaChartProps {
  * in a floating box that would cover the axis at 360 px.
  *
  * The drawing is an image for a screen reader (`role="img"` with the summary in `aria-label`); the way to walk
- * through the points without a pointer is a native range input, hidden and focusable, that speaks the date and the
- * value (`aria-valuetext`). The chart is a reinforcement and never the only source of a number: the caller writes the
+ * through the points without a pointer is a native range input laid over the drawing, transparent, that speaks the
+ * date and the value (`aria-valuetext`) and draws the 3 px focus outline around the chart. The chart is a reinforcement and never the only source of a number: the caller writes the
  * total and the best day beside it, and "Ver os números" shows the table. Movement is a fade-in of the opacity
  * only (`animate-rise`), which `prefers-reduced-motion` zeroes with the rest of the page.
  */

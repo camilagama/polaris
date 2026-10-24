@@ -14,7 +14,7 @@ import type { SparklineProps } from "./sparkline";
  * out of the chunk. It imports the others as types only; a guard in the budget plugin fails the build otherwise.
  */
 export type { AreaChartProps } from "./area-chart";
-export type { ChartColor, ChartDatum } from "./chart-geometry";
+export type { ChartDatum } from "./chart-geometry";
 export type { SparklineProps } from "./sparkline";
 
 type Charts = typeof import("./charts");

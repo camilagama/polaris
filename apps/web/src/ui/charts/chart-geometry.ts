@@ -28,12 +28,12 @@ export interface ChartMargin {
   top: number;
 }
 
-export interface ChartPoint extends ChartDatum {
+interface ChartPoint extends ChartDatum {
   x: number;
   y: number;
 }
 
-export interface ChartTick {
+interface ChartTick {
   value: number;
   y: number;
 }
