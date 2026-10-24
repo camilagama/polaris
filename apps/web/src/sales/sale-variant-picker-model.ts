@@ -6,7 +6,12 @@ import type {
 import { variantFullLabel } from "../inventory/stock-target";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
-import type { ItemDraft, Loadable } from "./sale-form-model";
+import {
+  type ItemDraft,
+  type Loadable,
+  NEW_PRODUCT_HREF,
+  NO_PRODUCT_MESSAGE,
+} from "./sale-form-model";
 
 /** How many matches the picker shows; typing narrows them down. */
 export const PICKER_RESULT_LIMIT = 20;
@@ -82,7 +87,7 @@ export function pickerOptions(
 export type PickerView =
   | { kind: "loading"; message: string }
   | { kind: "error"; message: string }
-  | { kind: "empty"; message: string }
+  | { href: string | null; kind: "empty"; message: string }
   | {
       kind: "ready";
       hint: string | null;
@@ -105,13 +110,14 @@ export function pickerView(
   }
   const text = query.trim();
   if (load.value.entries.length === 0) {
-    return {
-      kind: "empty",
-      message:
-        text === ""
-          ? "Nenhum produto ativo com variantes. Cadastre um produto no catálogo e dê entrada no estoque para vender."
-          : `Nenhuma variante encontrada para “${text}”. Confira o nome, a variante ou o SKU.`,
-    };
+    // a store with nothing to sell is taken to the form of a new product; a search with no match is not
+    return text === ""
+      ? { href: NEW_PRODUCT_HREF, kind: "empty", message: NO_PRODUCT_MESSAGE }
+      : {
+          href: null,
+          kind: "empty",
+          message: `Nenhuma variante encontrada para “${text}”. Confira o nome, a variante ou o SKU.`,
+        };
   }
   const options = pickerOptions(load.value.entries);
   return {

@@ -1,5 +1,8 @@
-import { receiveStock } from "@polaris/db/inventory-repository";
-import { createProduct } from "@polaris/db/product-repository";
+import { inventoryCount, receiveStock } from "@polaris/db/inventory-repository";
+import {
+  createProduct,
+  readProductCreation,
+} from "@polaris/db/product-repository";
 import {
   InvalidProductIdError,
   InvalidVariantListPriceError,
@@ -21,19 +24,31 @@ import {
   InvalidUnitCostError,
   InventoryCostLimitError,
 } from "@polaris/domain/inventory/inventory-cost";
+import { normalizeOpeningStockInput } from "@polaris/domain/inventory/opening-stock";
 import {
   InvalidReceiveStockInputError,
-  normalizeReceiveStockInput,
+  UnsupportedReceiveStockCommandVersionError,
 } from "@polaris/domain/inventory/receive-stock";
+import {
+  InvalidInventoryCountInputError,
+  UnsupportedInventoryCountCommandVersionError,
+} from "@polaris/domain/inventory/inventory-count";
+import {
+  type CreateProductWithOpeningStockDependencies,
+  createProductWithOpeningStock,
+  ProductCreateConflictError,
+} from "../../use-cases/create-product-with-opening-stock";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
-import { withCapability } from "./identity";
 
 /**
  * `product.create` (plan PR55): a product with its default variant and, when the
  * device says so, the opening stock, all in the one transaction the sync frame
  * opens: either everything exists afterwards or nothing does. The device names
  * the product and the variant (UUIDs it generated), so sales and stock commands
- * queued behind this one can already refer to them.
+ * queued behind this one can already refer to them. The work is the use case the
+ * RPC `product.create` runs too; the date of the opening stock is the one the
+ * device wrote in the command (a date after the store's today is refused), and
+ * a cost of `null` means the person did not know it.
  */
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,7 +56,8 @@ const uuidPattern =
 interface InitialStockPayload {
   occurredOn: string;
   quantity: number;
-  unitCost: string;
+  /** `null`: the cost of each unit is unknown (the stock opens without one). */
+  unitCost: string | null;
 }
 
 interface ProductCreatePayload {
@@ -83,7 +99,7 @@ function parseInitialStock(value: unknown): InitialStockPayload | null {
   if (
     typeof occurredOn !== "string" ||
     typeof quantity !== "number" ||
-    typeof unitCost !== "string"
+    !(typeof unitCost === "string" || unitCost === null)
   ) {
     throw new InvalidSyncPayloadError();
   }
@@ -92,7 +108,10 @@ function parseInitialStock(value: unknown): InitialStockPayload | null {
 
 const payloadErrors = [
   InvalidProductIdError,
+  InvalidInventoryCountInputError,
   InvalidReceiveStockInputError,
+  UnsupportedInventoryCountCommandVersionError,
+  UnsupportedReceiveStockCommandVersionError,
   InvalidUnitCostError,
   InvalidVariantListPriceError,
   InventoryCostLimitError,
@@ -139,9 +158,8 @@ function parsePayload(payload: unknown): ProductCreatePayload {
     normalizeProductVariantSku(parsed.sku);
     normalizeVariantListPrice(parsed.listPrice);
     if (parsed.initialStock) {
-      normalizeReceiveStockInput({
+      normalizeOpeningStockInput({
         commandId: productId,
-        commandVersion: 1,
         occurredOn: parsed.initialStock.occurredOn,
         quantity: parsed.initialStock.quantity,
         unitCost: parsed.initialStock.unitCost,
@@ -169,15 +187,23 @@ const PRODUCT_CREATE_CODES = {
 } as const;
 
 export function createProductCreateHandler(
-  dependencies: {
-    createProduct: typeof createProduct;
-    receiveStock: typeof receiveStock;
-  } = { createProduct, receiveStock }
+  dependencies: Partial<CreateProductWithOpeningStockDependencies> = {}
 ): SyncCommandHandler {
+  const useCaseDependencies: CreateProductWithOpeningStockDependencies = {
+    createProduct: dependencies.createProduct ?? createProduct,
+    inventoryCount: dependencies.inventoryCount ?? inventoryCount,
+    readProductCreation:
+      dependencies.readProductCreation ?? readProductCreation,
+    receiveStock: dependencies.receiveStock ?? receiveStock,
+  };
   return {
     capability: "product:create",
     classify: (error) => {
-      if (error instanceof ProductIdConflictError) {
+      if (
+        error instanceof ProductIdConflictError ||
+        // the same product named again with other data: refused under the code the devices already know
+        error instanceof ProductCreateConflictError
+      ) {
         return PRODUCT_CREATE_CODES.productIdConflict;
       }
       if (error instanceof ProductVariantSkuConflictError) {
@@ -193,37 +219,35 @@ export function createProductCreateHandler(
     },
     async execute(transaction, identity, payload, context) {
       const input = payload as ProductCreatePayload;
-      const product = await dependencies.createProduct(transaction, identity, {
-        categoryId: input.categoryId,
-        defaultVariantId: input.variantId,
-        description: input.description,
-        id: input.productId,
-        listPrice: input.listPrice,
-        name: input.name,
-        requestId: context.commandId,
-        sku: input.sku,
-      });
-      if (input.initialStock) {
-        // The lease and the role granted `inventory:adjust` (see `extraCapabilities`).
-        await dependencies.receiveStock(
-          transaction,
-          withCapability(identity, INVENTORY_ADJUST),
-          {
-            commandId: context.commandId,
-            commandVersion: 1,
-            occurredOn: input.initialStock.occurredOn,
-            quantity: input.initialStock.quantity,
-            requestId: context.commandId,
-            unitCost: input.initialStock.unitCost,
-            variantId: input.variantId,
-          }
-        );
-      }
+      const created = await createProductWithOpeningStock(
+        transaction,
+        identity,
+        {
+          categoryId: input.categoryId,
+          description: input.description,
+          initialStock: input.initialStock
+            ? {
+                // the command of the sync is the ledger command of the stock
+                commandId: context.commandId,
+                occurredOn: input.initialStock.occurredOn,
+                quantity: input.initialStock.quantity,
+                unitCost: input.initialStock.unitCost,
+              }
+            : null,
+          listPrice: input.listPrice,
+          name: input.name,
+          productId: input.productId,
+          requestId: context.commandId,
+          sku: input.sku,
+          variantId: input.variantId,
+        },
+        useCaseDependencies
+      );
       return {
-        initialQuantity: input.initialStock?.quantity ?? 0,
-        productId: product.id,
+        initialQuantity: created.initialQuantity,
+        productId: created.product.id,
         variantId: input.variantId,
-        version: product.version,
+        version: created.product.version,
       };
     },
     extraCapabilities: (payload) =>

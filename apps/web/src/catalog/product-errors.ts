@@ -1,4 +1,19 @@
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  legalAcceptanceMessage,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
+
+/** The same product named again with other data than the first try, which was saved: the list shows the saved one. */
+const PRODUCT_ALREADY_CREATED =
+  "Este produto já foi cadastrado, com outros dados. Veja a lista e confira antes de cadastrar de novo.";
+
+export function isProductAlreadyCreated(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "CONFLICT" &&
+    rpcErrorReason(error) === "product_create_conflict"
+  );
+}
 
 export type ProductAction = "archive" | "restore";
 
@@ -28,6 +43,9 @@ export function productErrorMessage(
   }
   if (code === "NOT_FOUND") {
     return "O produto não existe mais nesta loja.";
+  }
+  if (isProductAlreadyCreated(error)) {
+    return PRODUCT_ALREADY_CREATED;
   }
   if (code === "CONFLICT" && action === "create") {
     return "A categoria selecionada não está mais disponível. Atualize a lista e tente novamente.";

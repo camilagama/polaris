@@ -4,7 +4,7 @@ import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { type ChangeEvent, type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -15,7 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/select";
-import type { CatalogView, ChoiceOption } from "./sale-form-model";
+import {
+  type CatalogView,
+  type ChoiceOption,
+  NEW_PRODUCT_LABEL,
+} from "./sale-form-model";
 
 /** The words of the "who splits the installments" field, shared by the payment profiles and the sale. */
 export const INSTALLMENT_PLAN_LABEL = "Quem parcela";
@@ -301,5 +305,23 @@ export function CatalogNotice({ onRetry, view }: CatalogNoticeProps) {
       </Alert>
     );
   }
-  return <p className="text-muted-foreground text-support">{view.message}</p>;
+  return (
+    <div className="grid justify-items-start gap-3">
+      <p className="text-muted-foreground text-support">{view.message}</p>
+      {view.href ? <NewProductLink href={view.href} /> : null}
+    </div>
+  );
+}
+
+/** The way out of a sale with nothing to sell: the form of a new product, as a button. */
+export function NewProductLink({ href }: { href: string }) {
+  return (
+    <a
+      className={buttonVariants({ variant: "outline" })}
+      data-slot="button"
+      href={href}
+    >
+      {NEW_PRODUCT_LABEL}
+    </a>
+  );
 }

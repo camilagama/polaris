@@ -136,6 +136,11 @@ const gates: Gate[] = [
   ["offline-sale", "verify-offline-sale-gate.ts"],
   // lives in apps/web: it needs the real offline client and the real server handlers
   ["offline-e2e", "../../../apps/web/scripts/verify-offline-e2e-gate.ts"],
+  // lives in apps/web: the use case of a product with its price and opening stock, on the real schema (AC-24)
+  [
+    "product-opening-stock",
+    "../../../apps/web/scripts/verify-product-opening-stock-gate.ts",
+  ],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,

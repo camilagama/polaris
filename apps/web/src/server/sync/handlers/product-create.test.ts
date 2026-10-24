@@ -7,6 +7,7 @@ import {
 import { InventoryOccurredInFutureError } from "@polaris/domain/inventory/inventory";
 import { InvalidUnitCostError } from "@polaris/domain/inventory/inventory-cost";
 import { describe, expect, it, vi } from "vitest";
+import { ProductCreateConflictError } from "../../use-cases/create-product-with-opening-stock";
 import { InvalidSyncPayloadError } from "../push";
 import { createProductCreateHandler } from "./product-create";
 
@@ -23,14 +24,17 @@ const identity = {
 
 function handlerWith(
   createProduct = vi.fn(() => Promise.resolve({ id: productId, version: 1 })),
-  receiveStock = vi.fn(() => Promise.resolve({}))
+  receiveStock = vi.fn(() => Promise.resolve({})),
+  inventoryCount = vi.fn(() => Promise.resolve({}))
 ) {
   return {
     createProduct,
     handler: createProductCreateHandler({
       createProduct: createProduct as never,
+      inventoryCount: inventoryCount as never,
       receiveStock: receiveStock as never,
     }),
+    inventoryCount,
     receiveStock,
   };
 }
@@ -145,11 +149,61 @@ describe("product.create handler", () => {
         occurredOn: "2026-10-14",
         quantity: 5,
         requestId: commandId,
-        unitCost: "12.5",
+        unitCost: "12.500000",
         variantId,
       }
     );
     expect(result).toMatchObject({ initialQuantity: 5 });
+  });
+
+  it("opens the stock as a count from zero when the cost is unknown (a receipt always carries a cost)", async () => {
+    const { handler, inventoryCount, receiveStock } = handlerWith();
+    const payload = handler.parse({
+      ...minimal,
+      initialStock: { ...stock, unitCost: null },
+    });
+    const transaction = {} as never;
+    const result = await handler.execute(transaction, identity, payload, {
+      baseVersion: null,
+      commandId,
+    });
+    expect(receiveStock).not.toHaveBeenCalled();
+    expect(inventoryCount).toHaveBeenCalledWith(
+      transaction,
+      { ...identity, capability: "inventory:adjust" },
+      {
+        commandId,
+        commandVersion: 1,
+        expectedVersion: 0,
+        occurredOn: "2026-10-14",
+        physicalQuantity: 5,
+        requestId: commandId,
+        valuationUnitCost: null,
+        variantId,
+      }
+    );
+    expect(result).toMatchObject({ initialQuantity: 5 });
+  });
+
+  it("still asks for inventory:adjust when the cost is unknown", () => {
+    const { handler } = handlerWith();
+    const payload = handler.parse({
+      ...minimal,
+      initialStock: { ...stock, unitCost: null },
+    });
+    expect(handler.extraCapabilities?.(payload)).toEqual(["inventory:adjust"]);
+  });
+
+  it("refuses an unknown cost with a quantity the ledger would refuse", () => {
+    const { handler } = handlerWith();
+    for (const quantity of [0, -1, 1.5, 2_147_483_648]) {
+      expect(() =>
+        handler.parse({
+          ...minimal,
+          initialStock: { ...stock, quantity, unitCost: null },
+        })
+      ).toThrow(InvalidSyncPayloadError);
+    }
   });
 
   it("does not take the stock if the product was refused", async () => {
@@ -169,6 +223,9 @@ describe("product.create handler", () => {
   it("classifies the expected refusals, and nothing else", () => {
     const { handler } = handlerWith();
     expect(handler.classify(new ProductIdConflictError())).toBe(
+      "product_id_conflict"
+    );
+    expect(handler.classify(new ProductCreateConflictError())).toBe(
       "product_id_conflict"
     );
     expect(handler.classify(new ProductVariantSkuConflictError())).toBe(

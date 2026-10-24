@@ -520,10 +520,15 @@ export interface ChoiceOption {
   label: string;
 }
 
+/** A store without a product is taken to the form of a new one (`/products?novo=1`), with this text and this button. */
+export const NO_PRODUCT_MESSAGE = "Cadastre um produto para vender.";
+export const NEW_PRODUCT_HREF = "/products?novo=1";
+export const NEW_PRODUCT_LABEL = "Cadastrar produto";
+
 export type CatalogView =
   | { kind: "loading"; message: string }
   | { kind: "error"; message: string }
-  | { kind: "empty"; message: string }
+  | { href?: string | undefined; kind: "empty"; message: string }
   | { kind: "ready"; options: ChoiceOption[] };
 
 /** Message for a failed read of products, profiles, variants or stock. */
@@ -558,9 +563,9 @@ export function productsView(
     .sort((left, right) => left.label.localeCompare(right.label, "pt-BR"));
   if (options.length === 0) {
     return {
+      href: NEW_PRODUCT_HREF,
       kind: "empty",
-      message:
-        "Nenhum produto ativo. Cadastre um produto no catálogo e dê entrada no estoque para vender.",
+      message: NO_PRODUCT_MESSAGE,
     };
   }
   return { kind: "ready", options };

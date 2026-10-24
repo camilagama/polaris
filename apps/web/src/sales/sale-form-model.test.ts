@@ -627,7 +627,11 @@ describe("loading and empty states", () => {
 
   it("reports an empty catalog and still allows selling without a profile", () => {
     const products = productsView({ status: "ready", value: [] });
-    expect(products.kind).toBe("empty");
+    expect(products).toEqual({
+      href: "/products?novo=1",
+      kind: "empty",
+      message: "Cadastre um produto para vender.",
+    });
     const profiles = profilesView({ status: "ready", value: [] });
     expect(profiles).toMatchObject({ kind: "empty" });
     expect("message" in profiles && profiles.message).toContain("Sem perfil");
