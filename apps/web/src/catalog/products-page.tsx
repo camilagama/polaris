@@ -2,7 +2,6 @@ import type { ProductReadModel } from "@polaris/contracts";
 import {
   type ChangeEvent,
   type FormEvent,
-  type MouseEvent,
   useCallback,
   useEffect,
   useRef,
@@ -22,14 +21,14 @@ import { filterByName } from "./product-search-model";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import {
   ActionFeedback,
-  isProductListStatus,
   LoadErrorNotice,
   OFFLINE_NOTICE_ID,
   OfflineNotice,
+  PRODUCT_STATUS_OPTIONS,
   ProductSearch,
-  ProductStatusNav,
   ProductsHeader,
 } from "./products-page-parts";
+import { StatusNav } from "./screen-parts";
 import { useProductsData } from "./use-products-data";
 import type { ProductLinkFailure } from "./products-link-model";
 import { useProductsLink } from "./use-products-link";
@@ -376,14 +375,11 @@ export function ProductsPage() {
     }
   }, [handleProductAction, undoProduct]);
 
-  const handleStatusClick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      const value = event.currentTarget.dataset.productStatus;
-      if (value && isProductListStatus(value)) {
-        setStatus(value);
-        openOnly({});
-        setDraft(emptyDraft);
-      }
+  const handleStatus = useCallback(
+    (value: ProductListStatus) => {
+      setStatus(value);
+      openOnly({});
+      setDraft(emptyDraft);
     },
     [openOnly]
   );
@@ -490,7 +486,12 @@ export function ProductsPage() {
         ) : null}
 
         <ProductSearch onChange={handleQueryChange} value={query} />
-        <ProductStatusNav onSelect={handleStatusClick} status={status} />
+        <StatusNav
+          label="Estado dos produtos"
+          onSelect={handleStatus}
+          options={PRODUCT_STATUS_OPTIONS}
+          value={status}
+        />
 
         {loadError ? (
           <LoadErrorNotice message={loadError} onRetry={handleRetryList} />

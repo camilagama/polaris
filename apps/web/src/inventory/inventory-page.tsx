@@ -13,11 +13,12 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { ButtonGroup } from "@/ui/button-group";
 import { Card } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Skeleton } from "@/ui/skeleton";
+import { StatusNav } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
@@ -53,10 +54,6 @@ const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 /** A link on a line of its own: it gets the 48 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
-
-function isStockFilter(value: string | undefined): value is StockFilter {
-  return STOCK_FILTERS.some(([filter]) => filter === value);
-}
 
 function isStockAction(value: string | undefined): value is StockAction {
   return STOCK_ACTIONS.some((action) => action === value);
@@ -175,16 +172,28 @@ function StockItem({
   );
 }
 
-interface StateCardProps {
-  children: ReactNode;
-  role?: "status" | undefined;
+/** The empty state: a card with one line, centered under the toolbar. */
+function StateCard({ children }: { children: ReactNode }) {
+  return (
+    <Card className="items-center px-(--card-spacing) text-center">
+      <p className="text-muted-foreground">{children}</p>
+    </Card>
+  );
 }
 
-/** The loading and empty states: a card with one line, centered under the toolbar. */
-function StateCard({ children, role }: StateCardProps) {
+const LOADING_ROWS = [0, 1, 2];
+
+/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
+function LoadingCard({ message }: { message: string }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center" role={role}>
-      <p className="text-muted-foreground">{children}</p>
+    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+      <p className="sr-only">{message}</p>
+      {LOADING_ROWS.map((row) => (
+        <div aria-hidden="true" className="grid gap-1.5" key={row}>
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      ))}
     </Card>
   );
 }
@@ -231,12 +240,7 @@ export function InventoryPage() {
     [filters.unknownCost, setFilters]
   );
   const handleFilter = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      const { stockFilter } = event.currentTarget.dataset;
-      if (isStockFilter(stockFilter)) {
-        setFilters({ stock: stockFilter });
-      }
-    },
+    (stock: StockFilter) => setFilters({ stock }),
     [setFilters]
   );
   const handleOpen = useCallback(
@@ -300,21 +304,12 @@ export function InventoryPage() {
           </InputGroup>
         </Field>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          <ButtonGroup aria-label="Filtrar por saldo">
-            {STOCK_FILTERS.map(([value, label]) => (
-              <Button
-                aria-pressed={filters.stock === value}
-                className="aria-pressed:border-foreground/70 aria-pressed:bg-secondary aria-pressed:font-semibold"
-                data-stock-filter={value}
-                key={value}
-                onClick={handleFilter}
-                type="button"
-                variant="outline"
-              >
-                {label}
-              </Button>
-            ))}
-          </ButtonGroup>
+          <StatusNav
+            label="Filtrar por saldo"
+            onSelect={handleFilter}
+            options={STOCK_FILTERS}
+            value={filters.stock}
+          />
           <Button
             aria-pressed={filters.unknownCost}
             className="aria-pressed:border-foreground/70 aria-pressed:bg-secondary aria-pressed:font-semibold"
@@ -359,9 +354,7 @@ export function InventoryPage() {
         </p>
       ) : null}
 
-      {view.kind === "loading" ? (
-        <StateCard role="status">{view.message}</StateCard>
-      ) : null}
+      {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
