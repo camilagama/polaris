@@ -222,7 +222,10 @@ async function assertOldCheckoutMadeNoSubscription(
  * renewal the hourly safety net had not cancelled yet would stay alive once the new link clears its memory
  * (`revoked_*`), and charge again with no organization behind it. Only a link a subscription came from
  * (`provider_subscription_id`); a checkout nobody paid is the next check's. The checkout is refused if the provider
- * cannot cancel it (`provider_unavailable`): the swap is never made with the old renewal alive.
+ * cannot cancel it (`provider_unavailable`): the swap is never made with the old renewal alive. The rule reads the
+ * link, not the state: in `trial_setup` too (the card paid at the provider and a fact stored the `sub_`, but the
+ * trial's fact not applied yet), the old subscription is cancelled, since once the new link replaces it its trial
+ * would run and charge with no organization behind it (ADR 0104, emenda de 24/10, item 1).
  */
 async function cancelOldRenewal(
   dependencies: StartCheckoutDependencies,
@@ -746,10 +749,12 @@ export async function refundCurrentPeriod(
           recordsCancellation: record !== null && grantsPro(record.state),
           requestId: input.requestId,
         });
+    // the operator's refund: the paid charge of the period in force, whichever it is (ADR 0066)
     const outcome = await port.refundCurrentPeriod(
       link.providerRef,
       now,
-      link.providerSubscriptionId
+      link.providerSubscriptionId,
+      "any_paid"
     );
     let result: "nothing_to_refund" | "refund_requested";
     if (typeof outcome === "string") {

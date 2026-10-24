@@ -57,11 +57,18 @@ const link = {
   providerSubscriptionId: "sub_link0001",
 };
 
+/** The `billing_events` row of the first charge (`first_charge_event_id`). */
+const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+
 /** Paid by card on 10/10 at 15:00 in São Paulo; the store's clock is 12/10 09:00 (inside the window). */
 const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,
   cycleMonths: 1,
+  firstCharge: {
+    eventId: FIRST_CHARGE_EVENT,
+    periodEndsAt: sp("2026-11-11T00:00:00"),
+  },
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:00:00"),
   firstChargeOn: "2026-10-10",
@@ -729,7 +736,7 @@ describe("the audit of the request is written after the billing, with the type o
     }
   );
 
-  it("passes the signal of each call to the port of the provider, and none to the read of whether it refunds", async () => {
+  it("passes a signal to every port it builds: the timeout's to each call to the provider, and one that never aborts to the read of whether it refunds", async () => {
     const fixture = setup();
 
     await call(fixture, "requestRefund");
@@ -738,15 +745,21 @@ describe("the audit of the request is written after the billing, with the type o
       ([, provider, portOptions]) => ({ portOptions, provider })
     );
     expect(options.every(({ provider }) => provider === "asaas")).toBe(true);
-    const signed = options.filter(
-      ({ portOptions }) => portOptions?.signal !== undefined
+    expect(
+      options.every(
+        ({ portOptions }) => portOptions?.signal instanceof AbortSignal
+      )
+    ).toBe(true);
+    const timed = options.filter(({ portOptions }) =>
+      fixture.signals.includes(portOptions?.signal as AbortSignal)
     );
-    expect(signed.map(({ portOptions }) => portOptions)).toEqual(
+    expect(timed.map(({ portOptions }) => portOptions)).toEqual(
       fixture.signals.map((signal) => ({ signal }))
     );
     expect(fixture.signals).toHaveLength(2);
-    // the first request of the command asks only whether the port refunds, with no signal
-    expect(options[0]?.portOptions).toEqual({});
+    // the first request of the command asks only whether the port refunds: no request goes through that port
+    expect(fixture.signals).not.toContain(options[0]?.portOptions?.signal);
+    expect(options[0]?.portOptions?.signal?.aborted).toBe(false);
   });
 });
 

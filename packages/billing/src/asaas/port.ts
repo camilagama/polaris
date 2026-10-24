@@ -2,6 +2,7 @@ import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import type { FetchLike } from "../http";
 import { AMOUNT_PLACEHOLDER, stringifyWithAmount } from "../json";
 import {
+  assertFirstCharge,
   type BillingProviderPort,
   type CheckoutReturnUrls,
   type PrepareSubscriptionInput,
@@ -9,6 +10,7 @@ import {
   ProviderNotFoundError,
   ProviderRejectedError,
   ProviderResponseMalformedError,
+  requireRecordedFirstCharge,
 } from "../provider-port";
 import { createAsaasClient } from "./client";
 import { asaasPaymentPageUrl } from "./payment-page";
@@ -16,6 +18,7 @@ import { newPolarisReference } from "./ids";
 import {
   type AsaasPayment,
   asaasCycle,
+  chargePeriodEndsAt,
   overdueCharge,
   pickAsaasCheckout,
   pickAsaasPayment,
@@ -261,7 +264,13 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       }
       return events;
     },
-    async refundCurrentPeriod(providerRef, now, providerSubscriptionId) {
+    async refundCurrentPeriod(
+      providerRef,
+      now,
+      providerSubscriptionId,
+      refundable
+    ) {
+      requireRecordedFirstCharge(refundable);
       // read first: a refund of a charge that is not paid is a 400 whose text says nothing usable
       for (const subscription of await subscriptionsOf(
         providerRef,
@@ -274,6 +283,11 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
           now
         );
         if (charge) {
+          // the owner's refund: only the first charge recorded, never one the provider put in its place
+          assertFirstCharge(
+            refundable,
+            chargePeriodEndsAt(charge, subscription)
+          );
           await client.refundPayment(charge.id);
           return "refund_requested";
         }

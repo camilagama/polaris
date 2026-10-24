@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FetchInit, FetchLike } from "../http";
 import { parseProviderJson } from "../json";
 import {
+  NotFirstChargeError,
   type PrepareSubscriptionInput,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
@@ -10,6 +11,7 @@ import {
 } from "../provider-port";
 import { WooviCustomerMismatchError } from "./customer";
 import {
+  installmentPeriodEndsAt,
   pickWooviInstallment,
   pickWooviSubscription,
   reconcileWooviSubscription,
@@ -833,7 +835,12 @@ describe("refundCurrentPeriod", () => {
       );
 
       const error = await failureOf(() =>
-        portWith(fetch, config).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+        portWith(fetch, config).refundCurrentPeriod(
+          SUBSCRIPTION_ID,
+          NOW,
+          null,
+          "any_paid"
+        )
       );
 
       expect(error).toBeInstanceOf(ProviderNotConfiguredError);
@@ -850,7 +857,9 @@ describe("refundCurrentPeriod", () => {
 
     const outcome = await refundingPort(fetch).refundCurrentPeriod(
       SUBSCRIPTION_ID,
-      NOW
+      NOW,
+      null,
+      "any_paid"
     );
 
     const post = calls.find((call) => call.method === "POST");
@@ -880,6 +889,63 @@ describe("refundCurrentPeriod", () => {
     });
   });
 
+  describe("with the first charge recorded (the owner's refund, ADR 0104)", () => {
+    const FIRST_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+    const firstPeriod = () =>
+      installmentPeriodEndsAt(
+        pickWooviInstallment(parsed(installmentJson())),
+        pickWooviSubscription(parsed(subscriptionJson()))
+      );
+    const paid = () =>
+      fakeWoovi(
+        getSubscription(),
+        getInstallments(installmentJson()),
+        refundRoute()
+      );
+
+    it("refunds the installment in force when it pays the first charge's period", async () => {
+      const { calls, fetch } = paid();
+
+      const outcome = await refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        { eventId: FIRST_EVENT, periodEndsAt: firstPeriod() }
+      );
+
+      expect(outcome).toMatchObject({ kind: "refund_requested" });
+      expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    });
+
+    it("refuses, asking for no refund, when the installment in force pays another period", async () => {
+      const { calls, fetch } = paid();
+
+      const error = await failureOf(() =>
+        refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW, null, {
+          eventId: FIRST_EVENT,
+          periodEndsAt: new Date(firstPeriod().getTime() - 1),
+        })
+      );
+
+      expect(error).toBeInstanceOf(NotFirstChargeError);
+      expect(calls.some((call) => call.method === "POST")).toBe(false);
+    });
+
+    it("refuses with no first charge recorded, before it reads anything from Woovi", async () => {
+      const { calls, fetch } = paid();
+
+      const error = await failureOf(() =>
+        refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW, null, {
+          eventId: null,
+          periodEndsAt: firstPeriod(),
+        })
+      );
+
+      expect(error).toBeInstanceOf(NotFirstChargeError);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   it("uses the latest paid installment, not an earlier one", async () => {
     const { calls, fetch } = fakeWoovi(
       getSubscription(),
@@ -893,7 +959,12 @@ describe("refundCurrentPeriod", () => {
       refundRoute()
     );
 
-    await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW);
+    await refundingPort(fetch).refundCurrentPeriod(
+      SUBSCRIPTION_ID,
+      NOW,
+      null,
+      "any_paid"
+    );
 
     expect(
       JSON.parse(calls.find((call) => call.method === "POST")?.body ?? "")
@@ -925,7 +996,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     expect(
-      await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      await refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -937,7 +1013,12 @@ describe("refundCurrentPeriod", () => {
       refundRoute()
     );
     expect(
-      await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      await refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).toBe("nothing_to_refund");
   });
 
@@ -953,7 +1034,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     await expect(
-      refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -968,7 +1054,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     await expect(
-      refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -982,7 +1073,9 @@ describe("refundCurrentPeriod", () => {
 
     const outcome = await refundingPort(fetch).refundCurrentPeriod(
       SUBSCRIPTION_ID,
-      NOW
+      NOW,
+      null,
+      "any_paid"
     );
 
     const text = JSON.stringify(outcome);

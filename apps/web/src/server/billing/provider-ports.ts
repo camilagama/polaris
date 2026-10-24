@@ -19,7 +19,8 @@ export interface BillingPortOptions {
   randomUuid?: () => string;
   /**
    * Aborts every request of the port to the provider (ADR 0104: one call of an owner's command waits at most 15 s),
-   * on top of the client's own timeout per request.
+   * on top of the client's own timeout per request. The owner's commands always pass one (their `portFor` requires
+   * it); the operator's commands rely on the client's timeout alone.
    */
   signal?: AbortSignal;
 }

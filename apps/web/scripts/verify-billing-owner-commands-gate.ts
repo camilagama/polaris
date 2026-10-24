@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import type {
   BillingProviderPort,
+  RefundableCharge,
   RefundOutcome,
 } from "@polaris/billing/provider-port";
 import { ProviderUnavailableError } from "@polaris/billing/provider-port";
@@ -67,6 +68,8 @@ interface FakeProvider {
   cancel: () => Promise<
     "already_cancelled" | "cancelled" | "nothing_to_cancel"
   >;
+  /** The first charge each refund was asked for (ADR 0104: only that one is refunded). */
+  firstCharges: RefundableCharge[];
   refund: () => Promise<RefundOutcome>;
 }
 
@@ -75,6 +78,7 @@ function fakeProvider(): FakeProvider & { port: BillingProviderPort } {
   const provider: FakeProvider = {
     calls: [],
     cancel: () => Promise.resolve("cancelled"),
+    firstCharges: [],
     refund: () => Promise.resolve("refund_requested"),
   };
   const port = {
@@ -88,8 +92,9 @@ function fakeProvider(): FakeProvider & { port: BillingProviderPort } {
     prepareSubscription: () => Promise.reject(new Error("not in this gate")),
     provider: "asaas",
     readState: () => Promise.resolve([]),
-    refundCurrentPeriod: () => {
+    refundCurrentPeriod: (_providerRef, _now, _subscriptionId, firstCharge) => {
       provider.calls.push("refundCurrentPeriod");
+      provider.firstCharges.push(firstCharge);
       return provider.refund();
     },
     refundsEnabled: true,
@@ -211,7 +216,12 @@ async function run() {
         "applied",
         `${label}: the first charge applies`
       );
-      return { periodEndsAt, providerRef, tenant };
+      return {
+        firstChargeEventId: paid.eventId,
+        periodEndsAt,
+        providerRef,
+        tenant,
+      };
     };
     const row = async (tenant: TenantFixture) =>
       (
@@ -282,6 +292,38 @@ async function run() {
     assert.equal(read.link?.providerRef, shopZ.providerRef);
     assert.equal(read.refundRequestedAt, null);
     assert.equal(read.refundRequestId, null);
+    assert.deepEqual(
+      read.firstCharge,
+      { eventId: shopZ.firstChargeEventId, periodEndsAt: shopZ.periodEndsAt },
+      "the first charge's event and the period its own fact paid for"
+    );
+    // the first charge's event is read only within the store: another store's event reads as no period
+    const shopY = await paidStore("other", new Date(clock.getTime() - DAY));
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET first_charge_event_id = $2::uuid WHERE organization_id = $1",
+      [shopZ.tenant.organizationId, shopY.firstChargeEventId]
+    );
+    assert.deepEqual(
+      (await billing.readOwnerCommandRecord(shopZ.tenant.organizationId))
+        .firstCharge,
+      { eventId: shopY.firstChargeEventId, periodEndsAt: null },
+      "another store's event gives no period (the owner's refund refuses)"
+    );
+    // and a period that is not an ISO instant reads as none, never failing the read
+    await owner.pool.query(
+      `UPDATE public.billing_events SET fact = jsonb_set(fact, '{periodEndsAt}', '"not a date"')
+        WHERE id = $1::uuid`,
+      [shopY.firstChargeEventId]
+    );
+    assert.equal(
+      (await billing.readOwnerCommandRecord(shopY.tenant.organizationId))
+        .firstCharge.periodEndsAt,
+      null
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET first_charge_event_id = $2::uuid WHERE organization_id = $1",
+      [shopZ.tenant.organizationId, shopZ.firstChargeEventId]
+    );
     const none = await billing.readOwnerCommandRecord(randomUUID());
     assert.equal(none.state, "free");
     assert.equal(none.link, null);
@@ -290,7 +332,7 @@ async function run() {
       false
     );
     tests.push(
-      "the commands read the database's clock, the record with its link and the anchor (no record reads as Free with no link), and ask the ledger for their own fact by its ID"
+      "the commands read the database's clock, the record with its link, the anchor and the first charge (its event and the period its own fact paid for, none for another store's event or a malformed period; no record reads as Free with no link), and ask the ledger for their own fact by its ID"
     );
 
     // ------------------------------------------------ 1. the refund decides by the state (decision 1 of the design)
@@ -312,6 +354,11 @@ async function run() {
     );
     assert.equal(first.audit, "billing.refund_requested");
     assert.deepEqual(providerA.calls, ["cancelRenewal", "refundCurrentPeriod"]);
+    assert.deepEqual(
+      providerA.firstCharges,
+      [{ eventId: shopA.firstChargeEventId, periodEndsAt: shopA.periodEndsAt }],
+      "the refund is asked only for the first charge recorded"
+    );
     let current = await row(shopA.tenant);
     assert.equal(
       current?.cancel_at_period_end,
@@ -614,6 +661,7 @@ async function run() {
       await held;
       return "cancelled";
     };
+    const shopFree = await newTenant("cheap refusal");
     const holding = ownerCancelRenewal(dependencies(providerI), {
       organizationId: shopI.tenant.organizationId,
       requestId: randomUUID(),
@@ -658,6 +706,27 @@ async function run() {
       ),
       "command_in_progress"
     );
+    // a refusal that calls nothing does not ask for the isolate's lock: it answers what it is meanwhile
+    assert.equal(
+      await refusalOf(
+        ownerCancelRenewal(dependencies(fakeProvider()), {
+          organizationId: shopFree.organizationId,
+          requestId: randomUUID(),
+        })
+      ),
+      "nothing_to_cancel",
+      "a store with nothing to cancel is answered while this isolate's lock is held"
+    );
+    assert.equal(
+      await refusalOf(
+        ownerRequestRefund(dependencies(fakeProvider()), {
+          organizationId: shopFree.organizationId,
+          requestId: randomUUID(),
+        })
+      ),
+      "nothing_to_refund",
+      "a store with nothing to refund is answered while this isolate's lock is held"
+    );
     // 20 commands of 20 stores at once on the same pool: one at most takes the lock, and a third store's webhook goes on
     const crowdOutcomes = await Promise.all(
       crowd.map((shop) =>
@@ -700,7 +769,7 @@ async function run() {
     });
     assert.notEqual(afterLoop.status, "received");
     tests.push(
-      "the lock never waits: with a command holding it while the provider answers, a webhook of the same store is processed on the same pool, a second command of the same store from another isolate is command_in_progress in under 1 s, this isolate's other commands are refused at once (one lock per isolate), and 20 commands at once leave the pool to a third store's webhook; the 20 one after the other all go through"
+      "the lock never waits: with a command holding it while the provider answers, a webhook of the same store is processed on the same pool, a second command of the same store from another isolate is command_in_progress in under 1 s, this isolate's other commands are refused at once (one lock per isolate) while its refusals that call nothing (nothing_to_cancel, nothing_to_refund) are answered without the lock, and 20 commands at once leave the pool to a third store's webhook; the 20 one after the other all go through"
     );
 
     // the limit: one every 30 s, and 10 an hour, without calling the provider

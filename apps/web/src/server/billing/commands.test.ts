@@ -1721,10 +1721,12 @@ describe("refundCurrentPeriod", () => {
           request
         )
       ).resolves.toBe(answer);
+      // the operator's refund: the paid charge in force, whichever it is
       expect(port.refundCurrentPeriod).toHaveBeenCalledWith(
         link.providerRef,
         now,
-        link.providerSubscriptionId
+        link.providerSubscriptionId,
+        "any_paid"
       );
     }
   );
@@ -2506,6 +2508,43 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
 
     expect(port.cancelRenewal).not.toHaveBeenCalled();
     expect(port.prepareSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels it in trial_setup too, when a subscription already came from the link: the card paid at the provider, the trial's fact not applied yet", async () => {
+    const order: string[] = [];
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => {
+        order.push("cancel");
+        return Promise.resolve("cancelled" as const);
+      }),
+      prepareSubscription: vi.fn(() => {
+        order.push("prepare");
+        return Promise.resolve(prepared);
+      }),
+    });
+    const store = fakeStore({
+      readRecord: vi.fn(() =>
+        Promise.resolve({
+          accessEndsAt: null,
+          cancelAtPeriodEnd: false,
+          state: "trial_setup",
+        })
+      ),
+      startTrial: vi.fn(() => {
+        order.push("trial");
+        return Promise.resolve({});
+      }),
+    });
+
+    await startCardCheckout({ now: () => now, port, store }, input);
+
+    // the old subscription would start its trial and charge with no organization behind it once the new link
+    // replaces it: it is cancelled before the trial is reserved again and the new checkout is made
+    expect(port.cancelRenewal).toHaveBeenCalledWith(
+      link.providerRef,
+      link.providerSubscriptionId
+    );
+    expect(order).toEqual(["cancel", "trial", "prepare"]);
   });
 
   it("applies the same rule to the Pix checkout: the card's old renewal is cancelled through the other provider's port, before the Pix is prepared", async () => {

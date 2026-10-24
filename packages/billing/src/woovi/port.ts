@@ -3,17 +3,20 @@ import { newPolarisReference } from "../asaas/ids";
 import type { FetchLike } from "../http";
 import { AMOUNT_PLACEHOLDER, stringifyWithAmount } from "../json";
 import {
+  assertFirstCharge,
   type BillingProviderPort,
   type CheckoutHandoff,
   type PrepareSubscriptionInput,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderResponseMalformedError,
+  requireRecordedFirstCharge,
 } from "../provider-port";
 import { createWooviClient, type WooviClient } from "./client";
 import { alignWooviCustomer } from "./customer";
 import { isWooviGlobalId } from "./ids";
 import {
+  installmentPeriodEndsAt,
   pickWooviEndToEndId,
   pickWooviInstallment,
   pickWooviSubscription,
@@ -290,11 +293,17 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       ).map(pickWooviInstallment);
       return reconcileWooviSubscription({ installments, now, subscription });
     },
-    async refundCurrentPeriod(providerRef, now, providerSubscriptionId) {
+    async refundCurrentPeriod(
+      providerRef,
+      now,
+      providerSubscriptionId,
+      refundable
+    ) {
       if (config.refundEnabled !== true) {
         // the refund of an installment is not proven in the sandbox yet (S3.2): nothing is called
         throw new ProviderNotConfiguredError();
       }
+      requireRecordedFirstCharge(refundable);
       const subscription = await subscriptionOf(
         providerRef,
         providerSubscriptionId
@@ -309,6 +318,11 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       if (!installment) {
         return "nothing_to_refund";
       }
+      // the owner's refund: only the first charge recorded, never one the provider put in its place
+      assertFirstCharge(
+        refundable,
+        installmentPeriodEndsAt(installment, subscription)
+      );
       const endToEndId = pickWooviEndToEndId(
         raw[installments.indexOf(installment)]
       );

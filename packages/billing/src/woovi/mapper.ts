@@ -257,6 +257,17 @@ function event(
   };
 }
 
+/**
+ * The period the installment pays: its charge day plus the subscription's cycle (AC-5). The same instant its
+ * `charge_succeeded` fact carries, so the owner's refund tells the first charge by it (`assertFirstCharge`).
+ */
+export function installmentPeriodEndsAt(
+  installment: WooviInstallment,
+  subscription: WooviSubscription
+): Date {
+  return paidPeriodEndsAt(installment.chargeOn, cycleOf(subscription));
+}
+
 function chargeSucceeded(
   installment: WooviInstallment,
   subscription: WooviSubscription,
@@ -270,8 +281,7 @@ function chargeSucceeded(
       : {}),
     cycleMonths,
     occurredAt,
-    // the period the installment pays: its charge day plus the subscription's cycle (AC-5)
-    periodEndsAt: paidPeriodEndsAt(installment.chargeOn, cycleMonths),
+    periodEndsAt: installmentPeriodEndsAt(installment, subscription),
     type: "charge_succeeded",
   };
 }

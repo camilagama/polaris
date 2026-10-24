@@ -1,5 +1,6 @@
 import {
   type BillingProviderPort,
+  NotFirstChargeError,
   ProviderNotConfiguredError,
   ProviderUnavailableError,
   type RefundOutcome,
@@ -45,6 +46,9 @@ const link = {
   providerSubscriptionId: "sub_link0001",
 };
 
+/** The `billing_events` row of the first charge (`first_charge_event_id`). */
+const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+
 /**
  * Paid by card on 10/10 at 15:00 in São Paulo (the window of the right of withdrawal ends 17/10 at 23:59:59), a
  * price that is not the first charge's amount, so the response is told apart.
@@ -53,6 +57,10 @@ const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,
   cycleMonths: 12,
+  firstCharge: {
+    eventId: FIRST_CHARGE_EVENT,
+    periodEndsAt: sp("2026-11-11T00:00:00"),
+  },
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:00:00"),
   firstChargeOn: "2026-10-10",
@@ -86,7 +94,8 @@ interface WorldOptions {
 /**
  * The store and the provider's port in memory, with one log of every call that matters in order. The store applies
  * what the real one would apply of a fact (a cancellation sets `cancelAtPeriodEnd`, a refund revokes the payment)
- * and keeps the anchor of the first refund request; the database's clock answers one second later on each read.
+ * and keeps the anchor of the first refund request; the database's clock answers one second later on each read under
+ * the lock (the read before it, of the refusals that call nothing, does not move it).
  */
 function world(options: WorldOptions = {}) {
   const log: string[] = [];
@@ -102,11 +111,13 @@ function world(options: WorldOptions = {}) {
   const state: {
     anchorNull: boolean;
     claim: boolean;
+    inLock: boolean;
     locked: boolean;
     portThrows: boolean;
   } = {
     anchorNull: false,
     claim: options.claim ?? true,
+    inLock: false,
     locked: options.locked ?? false,
     portThrows: options.portThrows ?? false,
   };
@@ -129,7 +140,7 @@ function world(options: WorldOptions = {}) {
     }),
     refundsEnabled: options.refundsEnabled ?? true,
   };
-  const portFor = vi.fn((_provider: string, _signal?: AbortSignal) => {
+  const portFor = vi.fn((_provider: string, _signal: AbortSignal) => {
     if (state.portThrows) {
       throw new ProviderNotConfiguredError();
     }
@@ -161,6 +172,10 @@ function world(options: WorldOptions = {}) {
       return Promise.resolve(state.claim);
     }),
     databaseNow: vi.fn(() => {
+      if (!state.inLock) {
+        // the read before the lock, for the refusals that call nothing: the clock does not move for it
+        return Promise.resolve(new Date(clock.now.getTime()));
+      }
       const read = new Date(clock.now.getTime() + 1000 * clock.reads);
       clock.reads += 1;
       return Promise.resolve(read);
@@ -207,11 +222,16 @@ function world(options: WorldOptions = {}) {
       }
     ),
     withOrganizationLock: vi.fn(
-      (_organizationId: string, operation: () => Promise<unknown>) => {
+      async (_organizationId: string, operation: () => Promise<unknown>) => {
         if (state.locked) {
-          return Promise.reject(new BillingCommandInProgressError());
+          throw new BillingCommandInProgressError();
         }
-        return operation();
+        state.inLock = true;
+        try {
+          return await operation();
+        } finally {
+          state.inLock = false;
+        }
       }
     ),
   };
@@ -335,7 +355,7 @@ describe.each([
     );
 
     expect(providerCalled(w)).toBe(0);
-    expect(w.portFor).not.toHaveBeenCalled();
+    expect(w.dependencies.timeoutSignal).not.toHaveBeenCalled();
     expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
     expect(w.store.anchorRefundRequest).not.toHaveBeenCalled();
     expect(w.store.recordEvent).not.toHaveBeenCalled();
@@ -370,13 +390,17 @@ describe.each([
     await expect(first?.value).resolves.toEqual(sp("2026-10-10T16:00:00"));
   });
 
-  it("does not touch the store when the lock is refused, so the clock is not read either", async () => {
+  it("with the lock refused, has only read the record before it: nothing counted, anchored or written", async () => {
     const w = world({ locked: true, record });
 
     await run(w).catch(() => undefined);
 
-    expect(w.store.databaseNow).not.toHaveBeenCalled();
-    expect(w.store.readOwnerCommandRecord).not.toHaveBeenCalled();
+    expect(w.store.readOwnerCommandRecord).toHaveBeenCalledTimes(1);
+    expect(w.store.withOrganizationLock).toHaveBeenCalledTimes(1);
+    expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
+    expect(w.store.anchorRefundRequest).not.toHaveBeenCalled();
+    expect(w.store.recordEvent).not.toHaveBeenCalled();
+    expect(w.store.recordCancellationFeedback).not.toHaveBeenCalled();
   });
 });
 
@@ -833,11 +857,16 @@ describe("ownerRequestRefund", () => {
         organizationId,
         NOON_10
       );
-      // the refund is judged with the same reading, not with the later one of the cancellation
+      // the refund is judged with the same reading, not with the later one of the cancellation, and only for the
+      // first charge recorded
       expect(w.port.refundCurrentPeriod).toHaveBeenCalledWith(
         link.providerRef,
         NOON_10,
-        link.providerSubscriptionId
+        link.providerSubscriptionId,
+        {
+          eventId: FIRST_CHARGE_EVENT,
+          periodEndsAt: sp("2026-11-11T00:00:00"),
+        }
       );
       expect(outcome.audit).toBe("billing.refund_requested");
       expect(w.record.refundRequestId).toBe(REQUEST);
@@ -1281,6 +1310,174 @@ describe("ownerRequestRefund", () => {
   });
 });
 
+describe("the refusals that call nothing come before the lock (the isolate's one command lock)", () => {
+  // `locked`: the lock is refused, as when another command of this isolate (of any store) holds the one it allows
+  it.each([
+    [
+      "ownerCancelRenewal, nothing_to_cancel with no link",
+      cancel,
+      { link: null },
+      "nothing_to_cancel",
+    ],
+    [
+      "ownerCancelRenewal, nothing_to_cancel out of trial, paid or grace",
+      cancel,
+      { state: "free_over_limit" as const },
+      "nothing_to_cancel",
+    ],
+    [
+      "ownerRequestRefund, nothing_to_refund with no link",
+      (w: World) => refund(w),
+      { link: null },
+      "nothing_to_refund",
+    ],
+    [
+      "ownerRequestRefund, nothing_to_refund with no first charge event",
+      (w: World) => refund(w),
+      { firstCharge: { eventId: null, periodEndsAt: null } },
+      "nothing_to_refund",
+    ],
+    [
+      "ownerOpenOverduePayment, no_overdue_payment out of grace",
+      overdue,
+      {},
+      "no_overdue_payment",
+    ],
+  ] as const)(
+    "%s: answered with the lock taken elsewhere, without asking for it",
+    async (_name, run, record, code) => {
+      const w = world({ locked: true, record });
+
+      await expectRefusal(run(w), code, "billing.command_refused");
+
+      expect(w.store.withOrganizationLock).not.toHaveBeenCalled();
+      expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
+      expect(providerCalled(w)).toBe(0);
+    }
+  );
+
+  it("ownerCancelRenewal, already_cancelled: answered with the lock taken elsewhere, without asking for it", async () => {
+    const w = world({ locked: true, record: { cancelAtPeriodEnd: true } });
+
+    const outcome = await cancel(w);
+
+    expect(outcome).toEqual({
+      audit: "billing.command_refused",
+      response: {
+        accessEndsAt: activeRecord.accessEndsAt,
+        result: "already_cancelled",
+      },
+    });
+    expect(w.store.withOrganizationLock).not.toHaveBeenCalled();
+    expect(providerCalled(w)).toBe(0);
+  });
+
+  it("ownerRequestRefund, refund_via_support: answered with the lock taken elsewhere, without asking for it", async () => {
+    const w = world({ locked: true, refundsEnabled: false });
+
+    await expectRefusal(
+      refund(w),
+      "refund_via_support",
+      "billing.command_refused"
+    );
+
+    expect(w.store.withOrganizationLock).not.toHaveBeenCalled();
+    expect(w.store.anchorRefundRequest).not.toHaveBeenCalled();
+  });
+
+  it("ownerRequestRefund, the window closed with no anchor: judged at the database's clock before the lock, and not counted in the limit", async () => {
+    const w = world({ locked: true, now: sp("2026-10-18T00:00:00") });
+
+    await expectRefusal(
+      refund(w),
+      "nothing_to_refund",
+      "billing.command_refused"
+    );
+
+    expect(w.store.databaseNow).toHaveBeenCalledTimes(1);
+    expect(w.store.withOrganizationLock).not.toHaveBeenCalled();
+    expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
+  });
+
+  it("still judges under the lock what the read before it let through: a cancellation seen meanwhile is already_cancelled, with no provider", async () => {
+    const w = world();
+    w.store.readOwnerCommandRecord
+      .mockResolvedValueOnce({ ...activeRecord })
+      .mockResolvedValueOnce({ ...activeRecord, cancelAtPeriodEnd: true });
+
+    const outcome = await cancel(w);
+
+    expect(outcome.response.result).toBe("already_cancelled");
+    expect(w.store.withOrganizationLock).toHaveBeenCalledTimes(1);
+    expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
+    expect(providerCalled(w)).toBe(0);
+  });
+
+  it("still judges under the lock what the read before it let through: a refund whose link went away meanwhile is nothing_to_refund", async () => {
+    const w = world();
+    w.store.readOwnerCommandRecord
+      .mockResolvedValueOnce({ ...activeRecord })
+      .mockResolvedValueOnce({ ...activeRecord, link: null });
+
+    await expectRefusal(
+      refund(w),
+      "nothing_to_refund",
+      "billing.command_refused"
+    );
+
+    expect(w.store.withOrganizationLock).toHaveBeenCalledTimes(1);
+    expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
+    expect(providerCalled(w)).toBe(0);
+  });
+});
+
+describe("the owner's refund refunds only the first charge recorded (first_charge_event_id)", () => {
+  it.each([
+    ["no event", { eventId: null, periodEndsAt: sp("2026-11-11T00:00:00") }],
+    [
+      "no period of that event",
+      { eventId: FIRST_CHARGE_EVENT, periodEndsAt: null },
+    ],
+  ])(
+    "refuses with nothing_to_refund when the record has %s, cancelling and refunding nothing",
+    async (_label, firstCharge) => {
+      const w = world({ record: { firstCharge } });
+
+      await expectRefusal(
+        refund(w),
+        "nothing_to_refund",
+        "billing.command_refused"
+      );
+
+      expect(providerCalled(w)).toBe(0);
+      expect(w.store.anchorRefundRequest).not.toHaveBeenCalled();
+    }
+  );
+
+  it("answers refund_pending, refunding nothing, when the port finds another charge in force, and tells the operator's log why", async () => {
+    const w = world();
+    w.port.refundCurrentPeriod.mockImplementationOnce(() => {
+      w.log.push("refund");
+      return Promise.reject(new NotFirstChargeError());
+    });
+
+    const outcome = await refund(w);
+
+    expect(outcome.response.result).toBe("refund_pending");
+    expect(w.port.refundCurrentPeriod).toHaveBeenCalledWith(
+      link.providerRef,
+      expect.any(Date),
+      link.providerSubscriptionId,
+      activeRecord.firstCharge
+    );
+    expect(w.log).not.toContain("recordEvent:charge_refunded");
+    expect(w.record.revoked).toBeNull();
+    expect(everythingLogged()).toContain(
+      "billing_owner_refund_not_first_charge"
+    );
+  });
+});
+
 describe("the provider calls' deadlines", () => {
   it("gives one call at most 15 s, below the 60 s the lock's idle transaction lasts", async () => {
     const w = world();
@@ -1298,12 +1495,63 @@ describe("the provider calls' deadlines", () => {
 
     await refund(w);
 
-    const signed = w.portFor.mock.calls.filter(([, signal]) => signal);
-    expect(w.signals.length).toBe(2);
-    expect(signed.map(([, signal]) => signal)).toEqual(
-      w.signals.map((entry) => entry.signal)
+    const timed = w.signals.map((entry) => entry.signal);
+    const signed = w.portFor.mock.calls.filter(([, signal]) =>
+      timed.includes(signal)
     );
+    expect(w.signals.length).toBe(2);
+    expect(signed.map(([, signal]) => signal)).toEqual(timed);
     expect(signed.every(([provider]) => provider === "asaas")).toBe(true);
+    // the read of refundsEnabled (no request goes through it) also gets a signal, one that never aborts
+    const others = w.portFor.mock.calls.filter(
+      ([, signal]) => !timed.includes(signal)
+    );
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every(([, signal]) => signal instanceof AbortSignal)).toBe(
+      true
+    );
+    expect(others.some(([, signal]) => signal.aborted)).toBe(false);
+  });
+
+  it("answers in time, and makes no next call, when the port ignores the signal (AbortSignal required, ADR 0104)", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = world();
+      // the real deadline: an AbortSignal after `ms` on the (fake) timers
+      w.dependencies.timeoutSignal.mockImplementation((ms: number) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms);
+        w.signals.push({ controller, ms, signal: controller.signal });
+        return controller.signal;
+      });
+      // a port that never looks at its signal: it answers 20 s later, past the 15 s of the call
+      w.port.cancelRenewal.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve("cancelled" as const), 20_000);
+          })
+      );
+      let settled = false;
+      const pending = failureOf(refund(w)).finally(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(PROVIDER_CALL_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const error = await pending;
+
+      expect(error).toBeInstanceOf(OwnerCommandProviderFailure);
+      expect(error).toMatchObject({ audit: "billing.refund_requested" });
+      // the late answer of the ignored call changes nothing: no fact, no refund, no next call
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(w.port.cancelRenewal).toHaveBeenCalledTimes(1);
+      expect(w.port.refundCurrentPeriod).not.toHaveBeenCalled();
+      expect(w.store.recordEvent).not.toHaveBeenCalled();
+      expect(w.signals).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([

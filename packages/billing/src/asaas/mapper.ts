@@ -287,8 +287,11 @@ function cycleOf(subscription: AsaasSubscription): BillingCycleMonths {
   return subscription.cycleMonths;
 }
 
-/** The period the charge paid for: its original due date plus the subscription's cycle (AC-5). */
-function chargePeriodEndsAt(
+/**
+ * The period the charge paid for: its original due date plus the subscription's cycle (AC-5). The same instant its
+ * `charge_succeeded` fact carries, so the owner's refund tells the first charge by it (`assertFirstCharge`).
+ */
+export function chargePeriodEndsAt(
   payment: AsaasPayment,
   subscription: AsaasSubscription
 ): Date {
