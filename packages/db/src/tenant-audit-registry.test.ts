@@ -11,6 +11,8 @@ const migration = readFileSync(
   "utf8"
 );
 
+const DROP_COLUMN = /drop column/i;
+
 describe("the migration of the tenant audit registry", () => {
   it("holds the CHECK and the class column the domain registry builds", () => {
     expect(migration).toContain(
@@ -20,6 +22,6 @@ describe("the migration of the tenant audit registry", () => {
     expect(migration).toContain(
       `ALTER COLUMN "event_class" SET EXPRESSION AS (${tenantAuditEventClassSql()})`
     );
-    expect(migration).not.toMatch(/drop column/i);
+    expect(migration).not.toMatch(DROP_COLUMN);
   });
 });

@@ -1255,7 +1255,7 @@ async function run() {
       "the cap's owner is the only new reader of the tenant audit"
     );
     // an accepted request is invisible to it, whatever the statement asks
-    const accepted = await scalar<string>(
+    const accepted = await scalar<string | undefined>(
       "SELECT id::text AS value FROM public.tenant_audit_event WHERE event_type NOT IN ('billing.command_rate_limited', 'billing.command_in_progress', 'billing.command_refused') LIMIT 1"
     );
     if (accepted !== undefined) {
