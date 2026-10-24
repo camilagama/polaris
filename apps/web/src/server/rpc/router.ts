@@ -272,7 +272,8 @@ import {
 import type { WorkerBindings } from "../environment";
 import {
   InvalidEconomicsPeriodError,
-  type readPeriodResult,
+  InvalidTopProductsError,
+  type readPeriodSummary,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
 import type { DataExportRepository } from "./data-export-handlers";
@@ -377,7 +378,7 @@ interface RpcRouterDependencies {
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
-  readPeriodResult: typeof readPeriodResult;
+  readPeriodSummary: typeof readPeriodSummary;
   readAcceptedLegalVersions: typeof readAcceptedLegalVersions;
   recordLegalAcceptance: typeof recordLegalAcceptance;
   deleteCategory: typeof deleteCategory;
@@ -786,6 +787,7 @@ const badRequestRpcErrors = [
     InvalidExpenseRuleError,
     InvalidGoalError,
     InvalidEconomicsPeriodError,
+    InvalidTopProductsError,
   ],
   [
     InvalidDeviceLabelError,
@@ -1476,7 +1478,7 @@ export function createRpcRouter(
     withAuthenticatedRequestContext: authenticatedRequest,
   });
   const reportHandlers = createReportRpcHandlers({
-    readPeriodResult: overrides.readPeriodResult,
+    readPeriodSummary: overrides.readPeriodSummary,
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });

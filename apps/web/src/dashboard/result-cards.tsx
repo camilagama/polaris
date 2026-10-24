@@ -1,9 +1,9 @@
-import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import { formatQuantity } from "../lib/format";
+import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import {
   formatMoneyOrDash,
   formatPercentOrDash,
@@ -66,7 +66,7 @@ function IncompleteBadge() {
 }
 
 /** The six figures of the period; a figure that does not exist shows a dash. A loss keeps its minus sign. */
-export function ResultCards({ summary }: { summary: PeriodSummaryReadModel }) {
+export function ResultCards({ summary }: { summary: StoredPeriodSummary }) {
   const { cards, quality } = summary;
   const incomplete = isIncompleteEstimate(quality);
   const negative = cards.operatingResult.trim().startsWith("-");

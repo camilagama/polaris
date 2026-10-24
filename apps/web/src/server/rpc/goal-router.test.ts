@@ -1,6 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { GoalReadModel } from "@polaris/contracts";
+import type { PeriodReadCounts } from "@polaris/db/economics-repository";
 import type {
   TenantRequestIdentity,
   TenantRequestTransaction,
@@ -12,7 +13,8 @@ import {
   GoalVersionConflictError,
   InvalidGoalError,
 } from "@polaris/domain/goals/goal";
-import { describe, expect, it, vi } from "vitest";
+import { logger } from "@polaris/observability/logger";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import type { TenantRequestContextInput } from "../tenant-request-context";
@@ -97,7 +99,61 @@ function tenantStub(
   };
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("goal RPCs", () => {
+  it("listing records the rows each goal's period read, summed, with the opaque organization only", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    const reads = (sales: number): PeriodReadCounts => ({
+      adjustments: 0,
+      cancellations: 0,
+      items: sales * 2,
+      linkedExpenses: 0,
+      operatingExpenses: 1,
+      payments: sales,
+      returnLines: 0,
+      sales,
+    });
+    await client(
+      createRpcRouter({
+        goalRepository: {
+          evaluateActiveGoals: (_transaction, _identity, onRead) => {
+            onRead?.(reads(30));
+            onRead?.(reads(366));
+            return Promise.resolve([]);
+          },
+          listGoals: () => Promise.resolve([{ ...row, name: "Meta secreta" }]),
+          listPausedGoalIds: () => Promise.resolve([]),
+          settleGoals: () => Promise.resolve([]),
+        },
+        withTenantRequestContext: tenantStub(),
+      })
+    ).goal.list({ organizationId });
+    const calls = info.mock.calls.filter(
+      ([event]) => event === "goal_list_read"
+    );
+    expect(calls).toHaveLength(1);
+    const fields = calls[0]?.[1] as Record<string, unknown>;
+    expect(fields).toMatchObject({
+      goals: 1,
+      measuredPeriods: 2,
+      organizationId,
+      reads: {
+        items: 792,
+        operatingExpenses: 2,
+        payments: 396,
+        sales: 396,
+      },
+      settlementsAsked: 0,
+    });
+    expect(fields.responseBytes).toBeGreaterThan(0);
+    const text = JSON.stringify(fields);
+    expect(text).not.toContain("Meta secreta");
+    expect(text).not.toContain(row.target);
+  });
+
   it("listing evaluates in a repeatable-read snapshot, settles in a second transaction and reads the goals as they are then", async () => {
     const calls: { capability: string; isolationLevel?: string }[] = [];
     const evaluateActiveGoals = vi.fn(async () => [

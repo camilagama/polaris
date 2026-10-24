@@ -1,9 +1,10 @@
-import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import type { PreferenceStorage } from "./current-organization-model";
 import {
   clearPeriodSummaryCaches,
+  isPeriodSummary,
   readPeriodSummaryCache,
+  type StoredPeriodSummary,
   writePeriodSummaryCache,
 } from "./period-summary-cache";
 
@@ -16,7 +17,7 @@ const summaryOf = (
   month: string,
   generatedAt = `${month}-28T12:00:00.000Z`,
   netSales = "130.00"
-): PeriodSummaryReadModel => ({
+): StoredPeriodSummary => ({
   cards: {
     items: 3,
     marginPercent: "52.69",
@@ -330,5 +331,99 @@ describe("the last confirmed result kept for opening the dashboard without a con
     expect(readPeriodSummaryCache(refusing, ORG, "2026-10")).toBeNull();
     expect(readPeriodSummaryCache(null, ORG, "2026-10")).toBeNull();
     expect(() => clearPeriodSummaryCaches(refusing)).not.toThrow();
+  });
+});
+
+describe("the daily series and the ranking in a kept summary", () => {
+  const PRODUCT = "0199c2d0-0000-7000-8000-00000000b001";
+  const withSeries = (): StoredPeriodSummary => ({
+    ...summaryOf("2026-10"),
+    daily: Array.from({ length: 28 }, (_, index) => ({
+      date: `2026-10-${String(index + 1).padStart(2, "0")}`,
+      netSales: index === 0 ? "130.00" : "0.00",
+      salesCount: index === 0 ? 2 : 0,
+    })),
+    topProducts: [
+      {
+        deleted: false,
+        name: "Camiseta",
+        netSales: "130.00",
+        productId: PRODUCT,
+        quantity: 3,
+      },
+    ],
+  });
+
+  it("accepts a copy written before the series existed, and one with the series and the ranking", () => {
+    expect(isPeriodSummary(summaryOf("2026-10"))).toBe(true);
+    expect(isPeriodSummary(withSeries())).toBe(true);
+    const { storage } = memoryStorage();
+    writePeriodSummaryCache(storage, ORG, "2026-10", withSeries(), ALLOWED);
+    expect(readPeriodSummaryCache(storage, ORG, "2026-10")).toEqual(
+      withSeries()
+    );
+  });
+
+  it.each([
+    ["a series that is not a list", { daily: "130.00" }],
+    ["an empty series", { daily: [] }],
+    [
+      "a series that skips a day",
+      {
+        daily: withSeries().daily?.filter((day) => day.date !== "2026-10-10"),
+      },
+    ],
+    [
+      "a series that stops before the end of the period",
+      { daily: withSeries().daily?.slice(0, 27) },
+    ],
+    [
+      "a day with a negative count",
+      {
+        daily: withSeries().daily?.map((day, index) =>
+          index === 3 ? { ...day, salesCount: -1 } : day
+        ),
+      },
+    ],
+    [
+      "a day with an amount that is not text",
+      {
+        daily: withSeries().daily?.map((day, index) =>
+          index === 3 ? { ...day, netSales: 0 } : day
+        ),
+      },
+    ],
+    ["a ranking that is not a list", { topProducts: {} }],
+    [
+      "a ranked product without an ID",
+      {
+        topProducts: [
+          { deleted: false, name: "x", netSales: "1.00", quantity: 1 },
+        ],
+      },
+    ],
+    [
+      "a ranked product with no units",
+      {
+        topProducts: [
+          {
+            deleted: false,
+            name: "x",
+            netSales: "0.00",
+            productId: PRODUCT,
+            quantity: 0,
+          },
+        ],
+      },
+    ],
+  ])("refuses %s, and the screen falls back to no copy", (_label, broken) => {
+    const malformed = { ...withSeries(), ...broken };
+    expect(isPeriodSummary(malformed)).toBe(false);
+    const { storage, values } = memoryStorage();
+    values.set(
+      keyOf(ORG, "2026-10"),
+      JSON.stringify({ month: "2026-10", summary: malformed })
+    );
+    expect(readPeriodSummaryCache(storage, ORG, "2026-10")).toBeNull();
   });
 });

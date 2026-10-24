@@ -8,8 +8,10 @@ import { createDatabase } from "../src/client";
 import {
   EconomicsSnapshotRequiredError,
   InvalidEconomicsPeriodError,
+  InvalidTopProductsError,
   readPeriodFacts,
   readPeriodResult,
+  readPeriodSummary,
 } from "../src/economics-repository";
 import {
   createExpense,
@@ -17,6 +19,7 @@ import {
   voidExpense,
 } from "../src/expense-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
+import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
@@ -480,6 +483,180 @@ async function run() {
     }
     tests.push(
       "reading a period needs report:read and a repeatable-read snapshot, and an inverted, impossible or longer-than-366-days period is refused as invalid input"
+    );
+
+    // ---------------- 6. the daily series and the most sold products (D2)
+    // a retroactive sale five days ago, of a product deleted afterwards
+    const p3 = await createSellableProduct(rt, tenantA, "E-P3 excluído", {
+      cost: "5.00",
+      quantity: 1,
+    });
+    const s5 = await as(tenantA, "sale:create", (tx, identity) =>
+      confirmSale(tx, identity, {
+        adjustments: [],
+        commandId: randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "45.00",
+            listedUnitPrice: "45.00",
+            quantity: 1,
+            variantId: p3.variantId,
+          },
+        ],
+        occurredAt: recentInstant(24 * 5),
+        payment: { anticipationRequested: false, method: "pix" },
+        paymentProfile: null,
+        requestId: randomUUID(),
+      })
+    );
+    await as(tenantA, "product:update", (tx, identity) =>
+      deleteProduct(tx, identity, {
+        expectedVersion: p3.version,
+        id: p3.productId,
+        requestId: randomUUID(),
+      })
+    );
+    const s5Date = (
+      await admin.pool.query<{ day: string }>(
+        "SELECT to_char(occurred_on, 'YYYY-MM-DD') AS day FROM public.sales WHERE id = $1",
+        [s5.sale.id]
+      )
+    ).rows[0]?.day;
+    assert.ok(s5Date && s5Date < today && s5Date >= period.from);
+
+    const summary = await asReport(tenantA, (tx, identity) =>
+      readPeriodSummary(tx, identity, period, { topProducts: 10 })
+    );
+    const cents = (value: string) => BigInt(value.replace(".", ""));
+    assert.equal(summary.daily.length, 8);
+    assert.deepEqual(
+      summary.daily.map((day) => day.date),
+      Array.from({ length: 8 }, (_, index) => dateFrom(period.from, index))
+    );
+    assert.equal(
+      summary.daily.reduce((total, day) => total + cents(day.netSales), 0n),
+      cents(summary.result.netSales)
+    );
+    assert.equal(
+      summary.daily.reduce((total, day) => total + day.salesCount, 0),
+      summary.result.salesCount
+    );
+    assert.equal(summary.result.netSales, "488.70");
+    assert.equal(summary.result.salesCount, 4);
+    for (const day of summary.daily) {
+      // biome-ignore lint/performance/noAwaitInLoops: each day is read as its own period
+      const alone = await asReport(tenantA, (tx, identity) =>
+        readPeriodResult(tx, identity, { from: day.date, to: day.date })
+      );
+      assert.equal(day.netSales, alone.netSales, `net sales of ${day.date}`);
+      assert.equal(day.salesCount, alone.salesCount, `sales of ${day.date}`);
+    }
+    assert.equal(
+      summary.daily.find((day) => day.date === s5Date)?.salesCount ?? 0,
+      1 +
+        [s1, s2, s3].filter((entry) => entry.sale.occurredOn === s5Date).length
+    );
+    // independent SQL: the count of not cancelled sales per commercial date
+    const perDay = await admin.pool.query<{ day: string; sales: number }>(
+      `SELECT to_char(s.occurred_on, 'YYYY-MM-DD') AS day, count(*)::int AS sales
+         FROM public.sales s
+        WHERE s.organization_id = $1 AND s.occurred_on BETWEEN $2::date AND $3::date
+          AND NOT EXISTS (SELECT 1 FROM public.sale_cancellations c WHERE c.organization_id = s.organization_id AND c.sale_id = s.id)
+        GROUP BY 1`,
+      [tenantA.organizationId, period.from, period.to]
+    );
+    const oracleDays = new Map(
+      perDay.rows.map((entry) => [entry.day, entry.sales])
+    );
+    for (const day of summary.daily) {
+      assert.equal(day.salesCount, oracleDays.get(day.date) ?? 0);
+    }
+    tests.push(
+      "the daily series has one entry per date of the period, adds up to the period's net sales (488.70) and sales (4), each day equals the period summary of that day alone (the cancelled sale is zero on its date, the return lowers the date of its sale, the retroactive sale sits on its commercial date), and an independent SQL count per date agrees"
+    );
+
+    assert.deepEqual(summary.topProducts, [
+      {
+        deleted: false,
+        name: "Produto E-P1",
+        netSales: "413.70",
+        productId: p1.productId,
+        quantity: 6,
+      },
+      {
+        deleted: true,
+        name: "Produto E-P3 excluído",
+        netSales: "45.00",
+        productId: p3.productId,
+        quantity: 1,
+      },
+      {
+        deleted: false,
+        name: "Produto E-P2 sem custo",
+        netSales: "30.00",
+        productId: p2.productId,
+        quantity: 1,
+      },
+    ]);
+    assert.equal(
+      summary.topProducts?.reduce((total, entry) => total + entry.quantity, 0),
+      summary.result.unitsSold
+    );
+    assert.equal(
+      summary.topProducts?.reduce(
+        (total, entry) => total + cents(entry.netSales),
+        0n
+      ),
+      cents(summary.result.netSales)
+    );
+    assert.equal(summary.reads.products, 3);
+    assert.equal(summary.reads.sales, 5);
+    tests.push(
+      "the most sold products rank by units net of returns (P1 6, then the deleted P3 and P2 with 1 each, by net sales), carry the current name and say when the product was deleted, add up to the units sold and the net sales, and leave out the cancelled sale"
+    );
+
+    const two = await asReport(tenantA, (tx, identity) =>
+      readPeriodSummary(tx, identity, period, { topProducts: 1 })
+    );
+    assert.deepEqual(
+      two.topProducts?.map((entry) => entry.productId),
+      [p1.productId]
+    );
+    const unranked = await asReport(tenantA, (tx, identity) =>
+      readPeriodSummary(tx, identity, period)
+    );
+    assert.equal(unranked.topProducts, undefined);
+    assert.equal(unranked.reads.products, 0);
+    assert.deepEqual(unranked.daily, summary.daily);
+    const otherSummary = await asReport(tenantB, (tx, identity) =>
+      readPeriodSummary(tx, identity, period, { topProducts: 10 })
+    );
+    assert.deepEqual(otherSummary.topProducts, []);
+    assert.ok(
+      otherSummary.daily.every(
+        (day) => day.netSales === "0.00" && day.salesCount === 0
+      )
+    );
+    for (const topProducts of [0, 11, 1.5]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
+      await assert.rejects(
+        () =>
+          asReport(tenantA, (tx, identity) =>
+            readPeriodSummary(tx, identity, period, { topProducts })
+          ),
+        InvalidTopProductsError
+      );
+    }
+    await assert.rejects(
+      () =>
+        as(tenantA, "sale:read", (tx, identity) =>
+          readPeriodSummary(tx, identity, period, { topProducts: 3 })
+        ),
+      TenantAuthorizationError
+    );
+    tests.push(
+      "the ranking is cut at the limit and only when asked (without it no product is read), another organization sees an all-zero series and no product, a limit outside 1..10 is refused and another capability is not enough"
     );
 
     console.log(

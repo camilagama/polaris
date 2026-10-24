@@ -362,7 +362,35 @@ const periodSummary = z.object({
     processingFees: z.string(),
     returns: z.string(),
   }),
+  /**
+   * Every date of the period, in order, with the net sales and the count of
+   * the sales of that commercial date (ADR 0056, D2). A day without sales is
+   * "0.00" and 0; the series adds up to `cards.netSales` and `cards.salesCount`.
+   */
+  daily: z.array(
+    z.object({
+      date: z.string(),
+      netSales: z.string(),
+      salesCount: z.number().int().nonnegative(),
+    })
+  ),
   period: z.object({ from: z.string(), to: z.string() }),
+  /**
+   * The most sold products of the period, by units net of returns, only when
+   * asked for (`topProducts` in the input). The name is the product's current
+   * one; a deleted product says so.
+   */
+  topProducts: z
+    .array(
+      z.object({
+        deleted: z.boolean(),
+        name: z.string(),
+        netSales: z.string(),
+        productId: z.string().uuid(),
+        quantity: z.number().int().positive(),
+      })
+    )
+    .optional(),
   /** How complete the estimate is: what was left out is never counted as zero. */
   quality: z.object({
     anticipationFeesUnknown: z.number().int().nonnegative(),
@@ -1662,6 +1690,8 @@ export const polarisContract = {
           from: expenseCalendarDate,
           organizationId: z.string().trim().min(1),
           to: expenseCalendarDate,
+          /** Also rank this many most sold products (the same read of the period). */
+          topProducts: z.number().int().min(1).max(10).optional(),
         })
       )
       .output(periodSummary),

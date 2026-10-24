@@ -47,6 +47,8 @@ export interface SaleItemFact {
   /** Charged (negotiated) unit price, BRL decimal text. */
   chargedUnitPrice: string;
   position: number;
+  /** The product sold (it never changes after the sale); needed only to rank products. */
+  productId?: string;
   quantity: number;
   /** Cost snapshot (up to six places) or null when it was unknown. */
   unitCost: string | null;
@@ -72,6 +74,8 @@ export interface SaleFact {
   /** Amounts of the active expenses linked to this sale. */
   linkedExpenses: string[];
   items: SaleItemFact[];
+  /** The commercial date (`YYYY-MM-DD`); needed only to split a period by day. */
+  occurredOn?: string;
   processingFee: string | null;
   /** Every line of every return of the sale. */
   returnLines: SaleReturnLineFact[];
@@ -245,30 +249,33 @@ function validateFact(sale: SaleFact): void {
   }
 }
 
-/** The economics of one sale. A cancelled sale is all zeros and not counted. */
-export function saleEconomics(sale: SaleFact): SaleEconomics {
-  validateFact(sale);
-  if (sale.cancelled) {
-    return emptySale();
-  }
-  const unknown = emptyUnknown();
-  const items = new Map(sale.items.map((item) => [item.position, item]));
-
-  const grossSales = sum(sale.items.map(lineValue));
-  const discounts = sum(
+/** The sale's discount adjustments. */
+function discountsOf(sale: SaleFact): Money {
+  return sum(
     sale.adjustments
       .filter((adjustment) => adjustment.kind === "discount")
       .map((adjustment) => money(adjustment.amount))
   );
-  const commercialSurcharges = sum(
-    sale.adjustments
-      .filter((adjustment) => adjustment.kind !== "discount")
-      .map((adjustment) => money(adjustment.amount))
-  );
+}
 
-  // Returned units give back their price minus their share of the discounts.
-  // The share is taken on the item's total returned quantity (not line by line),
-  // so splitting a return into several never changes what is given back.
+interface ItemReturn {
+  /** Units of the item that came back. */
+  units: number;
+  /** What they give back: their charged price minus their share of the discounts. */
+  value: Money;
+}
+
+/**
+ * What each returned item gives back, by position. The share of the discounts
+ * is taken on the item's total returned quantity (not line by line), so
+ * splitting a return into several never changes what is given back.
+ */
+function itemReturns(
+  sale: SaleFact,
+  discounts: Money,
+  grossSales: Money
+): Map<number, ItemReturn> {
+  const items = new Map(sale.items.map((item) => [item.position, item]));
   const allocation = allocateDiscount(
     sale.items,
     discounts.minorUnits,
@@ -281,8 +288,7 @@ export function saleEconomics(sale: SaleFact): SaleEconomics {
       (returnedByItem.get(line.itemPosition) ?? 0) + line.returnedQuantity
     );
   }
-  let returns = ZERO;
-  let unitsReturned = 0;
+  const given = new Map<number, ItemReturn>();
   for (const [position, returned] of returnedByItem) {
     const item = items.get(position) as SaleItemFact;
     const value = money(item.chargedUnitPrice).multiplyByQuantity(returned);
@@ -293,8 +299,37 @@ export function saleEconomics(sale: SaleFact): SaleEconomics {
         BigInt(item.quantity)
       )
     );
-    returns = returns.add(value.subtract(discountShare));
-    unitsReturned += returned;
+    given.set(position, {
+      units: returned,
+      value: value.subtract(discountShare),
+    });
+  }
+  return given;
+}
+
+/** The economics of one sale. A cancelled sale is all zeros and not counted. */
+export function saleEconomics(sale: SaleFact): SaleEconomics {
+  validateFact(sale);
+  if (sale.cancelled) {
+    return emptySale();
+  }
+  const unknown = emptyUnknown();
+  const items = new Map(sale.items.map((item) => [item.position, item]));
+
+  const grossSales = sum(sale.items.map(lineValue));
+  const discounts = discountsOf(sale);
+  const commercialSurcharges = sum(
+    sale.adjustments
+      .filter((adjustment) => adjustment.kind !== "discount")
+      .map((adjustment) => money(adjustment.amount))
+  );
+
+  const given = itemReturns(sale, discounts, grossSales);
+  let returns = ZERO;
+  let unitsReturned = 0;
+  for (const entry of given.values()) {
+    returns = returns.add(entry.value);
+    unitsReturned += entry.units;
   }
 
   // COGS in exact decimals, rounded half-up once for the sale.
@@ -364,6 +399,49 @@ export function saleEconomics(sale: SaleFact): SaleEconomics {
   };
 }
 
+export interface SaleItemEconomics {
+  /** Net sales of the item: its value minus its share of the discounts and what its returns gave back. */
+  netSales: Money;
+  position: number;
+  productId: string | undefined;
+  /** Units sold minus units returned. */
+  unitsSold: number;
+}
+
+/**
+ * The share of each item in the sale's net sales and units, with the same
+ * rules as `saleEconomics`: the discount split by value (largest remainder)
+ * and the returns net of their discount share. The items add up to the sale
+ * exactly; a cancelled sale has none.
+ */
+export function saleItemEconomics(sale: SaleFact): SaleItemEconomics[] {
+  validateFact(sale);
+  if (sale.cancelled) {
+    return [];
+  }
+  // each price is read once: this runs for every item of the period when products are ranked
+  const values = sale.items.map(lineValue);
+  const grossSales = sum(values);
+  const discounts = discountsOf(sale);
+  const allocation = allocateDiscount(
+    sale.items,
+    discounts.minorUnits,
+    grossSales.minorUnits
+  );
+  const given = itemReturns(sale, discounts, grossSales);
+  return sale.items.map((item, index) => {
+    const returned = given.get(item.position);
+    return {
+      netSales: (values[index] as Money)
+        .subtract(Money.fromMinorUnits(allocation.get(item.position) ?? 0n))
+        .subtract(returned?.value ?? ZERO),
+      position: item.position,
+      productId: item.productId,
+      unitsSold: item.quantity - (returned?.units ?? 0),
+    };
+  });
+}
+
 export interface PeriodResult {
   /** Item lines of the counted (not cancelled) sales. */
   itemLines: number;
@@ -415,9 +493,13 @@ const AMOUNT_FIELDS = [
  */
 export function periodResult(
   sales: readonly SaleFact[],
-  operatingExpenses: readonly string[]
+  operatingExpenses: readonly string[],
+  /** `saleEconomics` of each sale, in the same order, when the caller already has it. */
+  economics: readonly SaleEconomics[] = sales.map(saleEconomics)
 ): PeriodResult {
-  const economics = sales.map(saleEconomics);
+  if (economics.length !== sales.length) {
+    throw new InvalidSaleFactError();
+  }
   const total = (field: (typeof AMOUNT_FIELDS)[number]) =>
     sum(economics.map((entry) => money(entry[field])));
   const contributionMargin = total("contributionMargin");
