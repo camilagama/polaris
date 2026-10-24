@@ -1029,6 +1029,29 @@ async function run() {
         randomUUID(),
       ]
     );
+    // revoked by a dispute: a chargeback ends the refund (as refundWindowOf), a won dispute leaves it owed
+    const tenantChargeback = await newTenant("pending refund chargeback");
+    const tenantWon = await newTenant("pending refund won");
+    for (const [tenant, reason] of [
+      [tenantChargeback, "chargeback"],
+      [tenantWon, "won"],
+    ] as const) {
+      await owner.pool.query(
+        `INSERT INTO public.organization_billing
+           (organization_id, state, access_ends_at, cycle_months, cancel_at_period_end, provider, provider_ref,
+            refund_requested_at, refund_request_id, revoked_through, revoked_reason, revoked_cycle_months,
+            revoked_cancel_at_period_end)
+         VALUES ($1, 'free', NULL, NULL, false, 'asaas', 'chk-d1-' || gen_random_uuid(), $2, $3, $4, $5::text,
+                 CASE WHEN $5::text = 'won' THEN NULL ELSE 1 END, $5::text <> 'won')`,
+        [
+          tenant.organizationId,
+          new Date(anchorNow.getTime() - 25 * HOUR),
+          randomUUID(),
+          new Date(anchorNow.getTime() + 20 * DAY),
+          reason,
+        ]
+      );
+    }
     const before = await incidentCount();
     const silenced = console.error;
     console.error = () => undefined;
@@ -1049,12 +1072,19 @@ async function run() {
     const after = await incidentCount();
     const pendingLedger = await owner.pool.query<{ organization_id: string }>(
       "SELECT organization_id FROM public.billing_events WHERE provider = 'polaris' AND fact ->> 'type' = 'refund_pending' AND organization_id = ANY($1::text[])",
-      [[tenantP.organizationId, tenantQ.organizationId]]
+      [
+        [
+          tenantP.organizationId,
+          tenantQ.organizationId,
+          tenantChargeback.organizationId,
+          tenantWon.organizationId,
+        ],
+      ]
     );
     assert.deepEqual(
-      pendingLedger.rows.map((entry) => entry.organization_id),
-      [tenantP.organizationId],
-      "the request 25 hours old makes one ledger row; the one 23 hours old none"
+      pendingLedger.rows.map((entry) => entry.organization_id).sort(),
+      [tenantP.organizationId, tenantWon.organizationId].sort(),
+      "the request 25 hours old makes one ledger row (a won dispute too); the one 23 hours old and the chargeback none"
     );
     assert.ok(firstIncidents >= 1);
     assert.equal(secondIncidents, 0, "a second pass adds nothing");
@@ -1098,7 +1128,7 @@ async function run() {
       );
     }
     tests.push(
-      "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one, 23 hours none, a second pass none, a completed refund none; only the billing role executes the function, and only with the causes refund_not_completed and refund_rearm_exhausted"
+      "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one (a won dispute too), 23 hours none, a chargeback none, a second pass none, a completed refund none; only the billing role executes the function, and only with the causes refund_not_completed and refund_rearm_exhausted"
     );
 
     // ------------------------------------------------ 6. billing_cancellation_feedback

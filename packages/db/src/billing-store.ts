@@ -25,6 +25,7 @@ import {
   welcomeNotice,
 } from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
+import type { PlanViewRecord } from "@polaris/domain/billing/plan-view";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import {
   outboxEvent,
@@ -179,6 +180,13 @@ export interface RefundRearmReport {
   scanned: number;
 }
 
+/** What the owner's read of the plan needs of the record; nothing of the provider but its name. */
+export interface OwnerPlanRecord extends PlanViewRecord {
+  cycleMonths: BillingCycleMonths | null;
+  /** Neither the organization nor the person used the trial (AS-12). */
+  trialAvailable: boolean;
+}
+
 /** What one hourly pass of the welcome's sweep did (ADR 0104, decision 6). */
 export interface WelcomeNoticeReport {
   /** Stores of the last 24 hours whose oldest owner had no welcome yet. */
@@ -280,6 +288,15 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
+  /**
+   * The billing role's part of the owner's read of the plan (ADR 0104, decision 2): the record with the columns of
+   * migration 0100 (the tenant never reads them) and whether the trial is still the person's to take, for this
+   * organization and this person (`userId` is the session's, never the client's). No record reads as Free.
+   */
+  readOwnerPlan: (
+    organizationId: string,
+    userId: string
+  ) => Promise<OwnerPlanRecord>;
   /**
    * The retry by state of the renewal cancellations the closures asked for
    * (ADR 0074, L4): every organization in closure whose renewal is still alive
@@ -1541,11 +1558,14 @@ const REFUND_REARM_EXHAUSTED_KEY = `'command:refund_rearm_exhausted:' || organiz
 const REFUND_REARM_DUE = `(refund_rearm_at IS NULL
   OR refund_rearm_at + make_interval(hours => LEAST(power(2, refund_rearm_attempts - 1)::integer, 24)) - interval '5 minutes' <= $1::timestamptz)`;
 
-/** An owner's refund request of the current link still not completed 24 hours later, read against `$1`. */
+/**
+ * An owner's refund request of the current link still not completed 24 hours later, read against `$1`. The revocation
+ * clause says what `refundPendingOf` says (none, or a won dispute): the screen and the incident never disagree.
+ */
 const REFUND_PENDING_CONDITION = `refund_requested_at IS NOT NULL
   AND refund_requested_at <= $1::timestamptz - interval '24 hours'
   AND provider IS NOT NULL AND provider_ref IS NOT NULL
-  AND revoked_reason IS DISTINCT FROM 'refund'`;
+  AND (revoked_reason IS NULL OR revoked_reason = 'won')`;
 
 /** The ledger key of a pending refund: one per store and request (the moment of the request, to the microsecond). */
 const REFUND_PENDING_KEY = `'command:refund_pending:' || organization_id || ':' || to_char(refund_requested_at AT TIME ZONE 'UTC', 'YYYYMMDD"T"HH24MISSUS')`;
@@ -2102,6 +2122,76 @@ export function createBillingStore(
       );
       const [row] = result.rows;
       return row ? toRecord(row) : null;
+    },
+    async readOwnerPlan(organizationId, userId) {
+      const record = await pool.query<{
+        access_ends_at: Date | null;
+        cancel_at_period_end: boolean;
+        cycle_months: number | null;
+        first_charge_amount: string | null;
+        first_charge_at: Date | null;
+        first_charge_on: string | null;
+        price_amount: string | null;
+        provider: string | null;
+        refund_requested_at: Date | null;
+        revoked_reason: string | null;
+        revoked_through: Date | null;
+        state: string;
+        trial_started_at: Date | null;
+      }>(
+        // the money as text with its two decimals (money.md), the day as São Paulo's text: no parser in between
+        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, provider, trial_started_at,
+                revoked_through, revoked_reason, to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on,
+                first_charge_at, round(first_charge_amount, 2)::text AS first_charge_amount,
+                round(price_amount, 2)::text AS price_amount, refund_requested_at
+           FROM public.organization_billing WHERE organization_id = $1`,
+        [organizationId]
+      );
+      const claim = await pool.query<{ consumed_at: Date | null }>(
+        "SELECT consumed_at FROM public.billing_trial_claims WHERE user_id = $1",
+        [userId]
+      );
+      const [held] = claim.rows;
+      // a claim reserved and not consumed is still the person's to take
+      const personTrialUsed = held !== undefined && held.consumed_at !== null;
+      const [row] = record.rows;
+      if (!row) {
+        return {
+          accessEndsAt: null,
+          cancelAtPeriodEnd: false,
+          cycleMonths: null,
+          firstChargeAmount: null,
+          firstChargeAt: null,
+          firstChargeOn: null,
+          priceAmount: null,
+          provider: null,
+          refundRequestedAt: null,
+          revoked: null,
+          state: "free",
+          trialAvailable: !personTrialUsed,
+        };
+      }
+      const revokedReason =
+        row.revoked_through !== null &&
+        (row.revoked_reason === "refund" ||
+          row.revoked_reason === "chargeback" ||
+          row.revoked_reason === "won")
+          ? row.revoked_reason
+          : null;
+      return {
+        accessEndsAt: row.access_ends_at,
+        cancelAtPeriodEnd: row.cancel_at_period_end,
+        cycleMonths: cycle(row.cycle_months),
+        firstChargeAmount: row.first_charge_amount,
+        firstChargeAt: row.first_charge_at,
+        firstChargeOn: row.first_charge_on,
+        priceAmount: row.price_amount,
+        provider: row.provider,
+        refundRequestedAt: row.refund_requested_at,
+        revoked: revokedReason ? { reason: revokedReason } : null,
+        state: row.state as BillingState,
+        trialAvailable: row.trial_started_at === null && !personTrialUsed,
+      };
     },
     async rearmRenewalCancellations(minAgeSeconds, limit, providers) {
       const result = await pool.query<{

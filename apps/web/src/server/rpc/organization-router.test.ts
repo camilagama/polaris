@@ -19,12 +19,15 @@ const session = { user: { emailVerified: true, id: "session-user-17" } };
 
 type Overrides = NonNullable<Parameters<typeof createRpcRouter>[0]>;
 
-function createClient(overrides: Record<string, unknown>) {
+function createClient(
+  overrides: Record<string, unknown>,
+  bindings: WorkerBindings = testBindings
+) {
   const app = createServerApp({
     rpcRouter: createRpcRouter(overrides as unknown as Overrides),
   });
   const link = new RPCLink({
-    fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
+    fetch: (request) => Promise.resolve(app.fetch(request, bindings)),
     headers: { origin: "https://polaris.example.invalid" },
     method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
@@ -32,6 +35,7 @@ function createClient(overrides: Record<string, unknown>) {
   return createORPCClient(link) as unknown as {
     organization: {
       listMine: (input?: unknown) => Promise<{
+        billingSelfService: boolean;
         organizations: Array<{
           id: string;
           name: string;
@@ -71,8 +75,32 @@ describe("organization.listMine", () => {
     });
 
     await expect(client.organization.listMine()).resolves.toEqual({
+      billingSelfService: false,
       organizations: [],
     });
+  });
+
+  it("says whether the owner's billing self-service is on, only for the exact text true (ADR 0104)", async () => {
+    const listFor = (flag: string | undefined) =>
+      createClient(
+        {
+          listUserOrganizations: () => Promise.resolve([]),
+          withAuthenticatedRequestContext: authenticated(),
+        },
+        flag === undefined
+          ? testBindings
+          : { ...testBindings, BILLING_SELF_SERVICE_ENABLED: flag }
+      ).organization.listMine();
+
+    await expect(listFor("true")).resolves.toMatchObject({
+      billingSelfService: true,
+    });
+    for (const flag of [undefined, "false", "TRUE", "1", " true"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one flag value at a time, for a clear failure
+      await expect(listFor(flag)).resolves.toMatchObject({
+        billingSelfService: false,
+      });
+    }
   });
 
   it("lists only what the repository returns for the session user, ignoring the input", async () => {
@@ -95,7 +123,7 @@ describe("organization.listMine", () => {
         organizationId: "someone-elses-organization",
         userId: "attacker-controlled-id",
       })
-    ).resolves.toEqual({ organizations: [mine] });
+    ).resolves.toEqual({ billingSelfService: false, organizations: [mine] });
     expect(listUserOrganizations).toHaveBeenCalledTimes(1);
     expect(listUserOrganizations.mock.calls[0]?.[1]).toBe(session.user.id);
   });

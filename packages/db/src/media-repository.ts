@@ -199,26 +199,36 @@ async function assertProductMediaCapacity(
     1,
     productImages
   );
-  // images of deleted products no longer count; archived ones still do
-  await assertRoomFor(transaction, scope, "images.active.max", 1, async () => {
-    const [row] = await transaction
-      .select({ total: count() })
-      .from(productMedia)
-      .innerJoin(
-        products,
-        and(
-          eq(products.organizationId, productMedia.organizationId),
-          eq(products.id, productMedia.productId)
-        )
+  await assertRoomFor(transaction, scope, "images.active.max", 1, () =>
+    countActiveImages(transaction, organizationId)
+  );
+}
+
+/**
+ * The images counted against `images.active.max`: images of deleted products no longer count; archived ones still
+ * do. The owner's read of the plan counts with this same query (ADR 0104).
+ */
+export async function countActiveImages(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+): Promise<number> {
+  const [row] = await transaction
+    .select({ total: count() })
+    .from(productMedia)
+    .innerJoin(
+      products,
+      and(
+        eq(products.organizationId, productMedia.organizationId),
+        eq(products.id, productMedia.productId)
       )
-      .where(
-        and(
-          eq(productMedia.organizationId, organizationId),
-          isNull(products.deletedAt)
-        )
-      );
-    return row?.total ?? 0;
-  });
+    )
+    .where(
+      and(
+        eq(productMedia.organizationId, organizationId),
+        isNull(products.deletedAt)
+      )
+    );
+  return row?.total ?? 0;
 }
 
 export async function findMediaUploadCommand(
