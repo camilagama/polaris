@@ -435,12 +435,50 @@ test("AC-26: a Venda sem produto diz 'Cadastre um produto para vender.' e leva a
   await expect(button).toHaveAttribute("href", "/products?novo=1");
   await button.click();
   await expect(page).toHaveURL(NEW_PRODUCT_URL);
+  // the address opens the form of a new product, with the focus on its title
   await expect(
-    page.getByRole("heading", { exact: true, name: "Produtos" })
+    page.getByRole("heading", { exact: true, name: "Novo produto" })
   ).toBeVisible();
+  await expect(page.getByLabel("Nome do produto")).toBeVisible();
 });
 
-test("AC-26: uma busca sem resultado numa loja com produtos não oferece o cadastro", async ({
+test("AC-25 pela Venda: do botão 'Cadastrar produto' da Venda a um produto pronto para vender são 6 ações", async ({
+  page,
+}, testInfo) => {
+  const bodies = await openScreen(page, { path: "/sales" });
+  let actions = 0;
+  const tap = async (locator: Locator) => {
+    actions += 1;
+    await locator.click();
+  };
+  const fill = async (locator: Locator, text: string) => {
+    actions += 1;
+    await locator.fill(text);
+  };
+
+  await tap(page.getByRole("link", { name: "Cadastrar produto" }));
+  await expect(page.getByLabel("Nome do produto")).toBeVisible();
+  await fill(page.getByLabel("Nome do produto"), "Camiseta básica");
+  await fill(page.getByLabel("Preço de venda"), "49,90");
+  await fill(page.getByLabel("Quantos você tem agora"), "10");
+  await fill(page.getByLabel("Custo de cada unidade (opcional)"), "12,5");
+  await tap(submit(page));
+  await expect(
+    page.getByText("Produto “Camiseta básica” cadastrado.")
+  ).toBeVisible();
+  expect(only(bodies).initialStock?.quantity).toBe(10);
+
+  testInfo.annotations.push({
+    description: `${actions} ações (pesquisa de staging: ${STAGING_ACTIONS})`,
+    type: "AC-25 pela Venda",
+  });
+  console.log(
+    `AC-25 pela Venda: ${actions} ações (limite ${MAX_ACTIONS}, pesquisa ${STAGING_ACTIONS})`
+  );
+  expect(actions).toBeLessThanOrEqual(MAX_ACTIONS);
+});
+
+test("AC-26: uma busca sem resultado não oferece o cadastro", async ({
   page,
 }) => {
   await openScreen(page, { path: "/sales" });

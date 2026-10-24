@@ -104,7 +104,9 @@ describe("inventory.listBalances", () => {
     const result = await client.inventory.listBalances({ organizationId });
 
     expect(observedCapability).toBe("inventory:read");
+    // the default cost filter is "all": the answer is the one before the filter existed
     expect(listInventoryBalances).toHaveBeenCalledWith({}, identity, {
+      cost: "all",
       cursor: null,
       includeArchived: false,
       limit: 50,
@@ -147,12 +149,48 @@ describe("inventory.listBalances", () => {
     });
 
     expect(listInventoryBalances).toHaveBeenCalledWith({}, identity, {
+      cost: "all",
       cursor: "abc",
       includeArchived: true,
       limit: 20,
       query: "azul",
       stock: "without_stock",
     });
+  });
+
+  it("forwards the unknown-cost filter and rejects any other cost value", async () => {
+    const listInventoryBalances = vi.fn(
+      async (
+        _transaction: unknown,
+        _identity: typeof identity,
+        _options: unknown
+      ) => ({ entries: [], nextCursor: null })
+    );
+    const client = createClient({
+      listInventoryBalances,
+      withTenantRequestContext: (request: TenantContextRequest) =>
+        request.operation({}, identity),
+    });
+
+    await client.inventory.listBalances({
+      cost: "unknown",
+      limit: 100,
+      organizationId,
+      productStatus: "active",
+    });
+    expect(listInventoryBalances).toHaveBeenCalledWith({}, identity, {
+      cost: "unknown",
+      cursor: null,
+      includeArchived: false,
+      limit: 100,
+      query: null,
+      stock: "all",
+    });
+
+    await expect(
+      client.inventory.listBalances({ cost: "known", organizationId })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(listInventoryBalances).toHaveBeenCalledTimes(1);
   });
 
   it("re-reads exactly the requested variants and rejects malformed ids", async () => {

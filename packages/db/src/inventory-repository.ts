@@ -946,7 +946,11 @@ export const MAX_INVENTORY_BALANCE_LIST_LIMIT = 100;
 export type InventoryStockFilter = "all" | "with_stock" | "without_stock";
 type InventoryVariantOptionName = "color" | "model" | "size";
 
+export type InventoryCostFilter = "all" | "unknown";
+
 export interface ListInventoryBalancesOptions {
+  /** "unknown": only variants whose average cost is null (or that have no balance row). */
+  cost?: InventoryCostFilter;
   cursor?: string | null;
   /** Archived products stay listed (their stock may still need a write-off). */
   includeArchived?: boolean;
@@ -1103,6 +1107,10 @@ export async function listInventoryBalances(
     conditions.push(sql`${quantity} > 0`);
   } else if (options.stock === "without_stock") {
     conditions.push(sql`${quantity} = 0`);
+  }
+  if (options.cost === "unknown") {
+    // after the LEFT JOIN: a variant without a balance row reads null too
+    conditions.push(isNull(inventoryBalances.movingAverageCost));
   }
   const queryText = options.query?.trim();
   if (queryText) {

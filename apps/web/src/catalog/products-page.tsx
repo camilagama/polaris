@@ -42,12 +42,38 @@ import {
   ProductsHeader,
 } from "./products-page-parts";
 import { useProductsData } from "./use-products-data";
+import type { ProductLinkFailure } from "./products-link-model";
+import { useProductsLink } from "./use-products-link";
 
 function countTextFor(shown: number, total: number, query: string): string {
   if (query.trim() !== "") {
     return `${shown} de ${total}`;
   }
   return `${total} ${total === 1 ? "produto" : "produtos"}`;
+}
+
+/**
+ * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
+ * a server that is out says it once (the list's alert, which also reads the product again).
+ */
+function linkFeedbackError(
+  error: string | null,
+  failure: ProductLinkFailure | null,
+  listIsShown: boolean,
+  retry: () => void
+): {
+  fromLink: boolean;
+  message: string | null;
+  onRetry: (() => void) | undefined;
+} {
+  if (error === null && failure && listIsShown) {
+    return {
+      fromLink: true,
+      message: failure.message,
+      onRetry: failure.retryable ? retry : undefined,
+    };
+  }
+  return { fromLink: false, message: error, onRetry: undefined };
 }
 
 export function ProductsPage() {
@@ -68,6 +94,10 @@ export function ProductsPage() {
   // the product the last action archived: the notice offers to restore it
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the product of the address could not be read: what to say and whether trying again can help
+  const [linkFailure, setLinkFailure] = useState<ProductLinkFailure | null>(
+    null
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   // the names of the product the open form creates: born with the first try, kept for its retries, dropped with the form
   const newProductNames = useRef<NewProductIds | null>(null);
@@ -118,6 +148,7 @@ export function ProductsPage() {
       setMediaProductId(panel.media ?? null);
       setVariantsProductId(panel.variants ?? null);
       setError(null);
+      setLinkFailure(null);
       setNotice(null);
       setUndoProduct(null);
     },
@@ -220,6 +251,37 @@ export function ProductsPage() {
     ]
   );
 
+  // `?produto=` and `?novo=1`: the panel the address names opens and takes the focus on its title
+  const formHeadingRef = useRef<HTMLDivElement>(null);
+  const [formStartsOnHeading, setFormStartsOnHeading] = useState(false);
+  const { retry: retryLink } = useProductsLink(workspace, organizationId, {
+    onNew: () => {
+      openOnly({ form: true });
+      setDraft(emptyDraft);
+      setFormStartsOnHeading(true);
+    },
+    onNotice: (message) => {
+      setLinkFailure(null);
+      setError(message);
+      focusFeedback();
+    },
+    onProduct: (product) => {
+      setStatus(product.status === "archived" ? "archived" : "active");
+      openOnly({ variants: product.id });
+      setDraft(emptyDraft);
+    },
+    onReadFailed: setLinkFailure,
+  });
+  const handleRetryLink = useCallback(() => {
+    setLinkFailure(null);
+    retryLink();
+  }, [retryLink]);
+  // the list's "Tentar novamente" also reads the product of the address again, so the panel opens on the second try
+  const handleRetryList = useCallback(() => {
+    handleRetryLink();
+    refresh();
+  }, [handleRetryLink, refresh]);
+
   const handleNew = useCallback(() => {
     if (formOpen) {
       // what was typed is not thrown away by a tap on the button: the person goes back to the form
@@ -228,12 +290,14 @@ export function ProductsPage() {
       );
       return;
     }
+    setFormStartsOnHeading(false);
     openOnly({ form: true });
     setDraft(emptyDraft);
   }, [formOpen, openOnly]);
 
   const handleEdit = useCallback(
     (product: ProductReadModel) => {
+      setFormStartsOnHeading(false);
       openOnly({ editing: product.id, form: true });
       setDraft({
         ...emptyDraft,
@@ -277,12 +341,7 @@ export function ProductsPage() {
     setMediaProductId(null);
   }, [focusRow, mediaProductId]);
 
-  // the variants panel and the images panel open away from the row that asked: the person is taken to them
-  useEffect(() => {
-    if (variantsProductId) {
-      focusLater(() => variantsHeadingRef.current?.focus());
-    }
-  }, [variantsProductId]);
+  // the images panel opens away from the row that asked: the person is taken to it
   useEffect(() => {
     if (mediaProductId) {
       focusLater(() => mediaHeadingRef.current?.focus());
@@ -389,11 +448,32 @@ export function ProductsPage() {
   );
   const variantsProduct =
     products.find((product) => product.id === variantsProductId) ?? null;
+  // the variants panel opens away from the row that asked (or from an address that named the product, which
+  // is drawn only once its list has come): the person is taken to it when it is on the screen
+  const variantsPanelId = variantsProduct?.id ?? null;
+  useEffect(() => {
+    if (variantsPanelId) {
+      focusLater(() => variantsHeadingRef.current?.focus());
+    }
+  }, [variantsPanelId]);
   const mediaProduct =
     products.find((product) => product.id === mediaProductId) ?? null;
   const visibleProducts = filterByName(products, query);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
+  const feedbackError = linkFeedbackError(
+    error,
+    linkFailure,
+    listIsShown,
+    handleRetryLink
+  );
+  // the person is taken to the alert of the address when it appears (not before: the list's own may replace it)
+  const linkAlertShown = feedbackError.fromLink;
+  useEffect(() => {
+    if (linkAlertShown) {
+      focusFeedback();
+    }
+  }, [focusFeedback, linkAlertShown]);
 
   return (
     <div className="products-page" ref={rootRef}>
@@ -405,8 +485,9 @@ export function ProductsPage() {
         />
         {isOffline ? <OfflineNotice /> : null}
         <ActionFeedback
-          error={error}
+          error={feedbackError.message}
           notice={notice}
+          onRetryError={feedbackError.onRetry}
           onUndo={undoProduct ? handleUndoArchive : undefined}
           regionRef={feedbackRef}
           undoDisabled={isOffline || pendingAction !== null}
@@ -418,10 +499,12 @@ export function ProductsPage() {
             categories={categories}
             draft={draft}
             editingProduct={editingProduct}
+            headingRef={formHeadingRef}
             isPending={pendingAction === "create" || pendingAction === "update"}
             onCancel={handleCancelForm}
             onChange={handleDraftChange}
             onSubmit={handleSubmit}
+            startOnHeading={formStartsOnHeading}
           />
         ) : null}
         {variantsProduct ? (
@@ -448,7 +531,7 @@ export function ProductsPage() {
         <ProductStatusNav onSelect={handleStatusClick} status={status} />
 
         {loadError ? (
-          <LoadErrorNotice message={loadError} onRetry={refresh} />
+          <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
         ) : (
           <ProductList
             categories={categories}

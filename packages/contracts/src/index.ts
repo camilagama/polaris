@@ -1858,6 +1858,9 @@ export const polarisContract = {
     listBalances: oc
       .input(
         z.object({
+          // "unknown" keeps the variants whose average cost is not known,
+          // including those with no balance row yet.
+          cost: z.enum(["all", "unknown"]).default("all"),
           cursor: z.string().min(1).max(512).optional(),
           limit: z.number().int().min(1).max(100).default(50),
           organizationId: z.string().trim().min(1),

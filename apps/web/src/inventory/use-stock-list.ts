@@ -50,17 +50,21 @@ interface StockList {
  */
 export function useStockList(
   organizationId: string,
-  local: LocalWorkspace | null = null
+  local: LocalWorkspace | null = null,
+  initialFilters: Partial<StockFilters> = {}
 ): StockList {
-  const [filters, setFiltersState] = useState(defaultStockFilters);
+  const [filters, setFiltersState] = useState<StockFilters>(() => ({
+    ...defaultStockFilters,
+    ...initialFilters,
+  }));
   const [state, setState] = useState(initialStockListState);
   const [reloadVersion, setReloadVersion] = useState(0);
   const latest = useRef(0);
   const debouncedQuery = useDebouncedValue(filters.query, SEARCH_DELAY_MS);
-  const { includeArchived, stock } = filters;
+  const { includeArchived, stock, unknownCost } = filters;
   const effective = useMemo<StockFilters>(
-    () => ({ includeArchived, query: debouncedQuery, stock }),
-    [debouncedQuery, includeArchived, stock]
+    () => ({ includeArchived, query: debouncedQuery, stock, unknownCost }),
+    [debouncedQuery, includeArchived, stock, unknownCost]
   );
 
   const localWriter = local?.stores.writer;
@@ -78,11 +82,14 @@ export function useStockList(
           if (request !== latest.current) {
             return;
           }
-          const { entries } = filterLocalStockEntries(localStockEntries(rows), {
-            productStatus: effective.includeArchived ? "all" : "active",
-            query: effective.query,
-            stock: effective.stock,
-          });
+          // the device never holds the cost (ADR 0031): "Sem custo" has nothing to list here
+          const { entries } = effective.unknownCost
+            ? { entries: [] }
+            : filterLocalStockEntries(localStockEntries(rows), {
+                productStatus: effective.includeArchived ? "all" : "active",
+                query: effective.query,
+                stock: effective.stock,
+              });
           setState((current) =>
             stockLoaded(current, { entries, nextCursor: null })
           );

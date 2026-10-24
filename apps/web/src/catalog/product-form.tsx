@@ -3,6 +3,7 @@ import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUpIcon from "lucide-react/dist/esm/icons/chevron-up";
 import {
   type FormEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
@@ -45,10 +46,14 @@ interface ProductFormProps {
   categories: CategoryReadModel[];
   draft: ProductDraft;
   editingProduct: ProductReadModel | null;
+  /** Where the focus goes when the form is opened by an address (`?novo=1`): the title. */
+  headingRef?: RefObject<HTMLDivElement | null>;
   isPending: boolean;
   onCancel: () => void;
   onChange: (field: keyof ProductDraft, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  /** The form came from an address: the first focus is on the title, not on the name. */
+  startOnHeading?: boolean;
 }
 
 function submitLabelFor(isPending: boolean, editing: boolean): string {
@@ -63,10 +68,12 @@ export function ProductForm({
   categories,
   draft,
   editingProduct,
+  headingRef,
   isPending,
   onCancel,
   onChange,
   onSubmit,
+  startOnHeading = false,
 }: ProductFormProps) {
   const [showRequired, setShowRequired] = useState(false);
   const editing = editingProduct !== null;
@@ -79,13 +86,21 @@ export function ProductForm({
   const openingErrors = showRequired ? (opening?.errors ?? {}) : {};
 
   // opening the form (a new product, or an edit of another one) puts the cursor in the name; the details are open
-  // for an edit, where the category and the description are what changes
+  // for an edit, where the category and the description are what changes;
+  // opened by an address, the first focus is on the title and the next Tab reaches the name
   const formKey = editingProduct?.id ?? "new";
+  const firstFocus = useRef<boolean>(true);
   useEffect(() => {
     setShowRequired(false);
     setDetailsOpen(formKey !== "new");
-    focusLater(() => formRef.current?.querySelector("input")?.focus());
-  }, [formKey]);
+    const onTitle = firstFocus.current && startOnHeading;
+    firstFocus.current = false;
+    focusLater(() =>
+      onTitle
+        ? headingRef?.current?.focus()
+        : formRef.current?.querySelector("input")?.focus()
+    );
+  }, [formKey, headingRef, startOnHeading]);
 
   const handleName = useCallback(
     (value: string) => onChange("name", value),
@@ -153,9 +168,11 @@ export function ProductForm({
         ref={formRef}
       >
         <CardHeader>
-          <CardTitle aria-level={2} id="product-form-heading" role="heading">
-            {editing ? "Editar produto" : "Novo produto"}
-          </CardTitle>
+          <div className="outline-none" ref={headingRef} tabIndex={-1}>
+            <CardTitle aria-level={2} id="product-form-heading" role="heading">
+              {editing ? "Editar produto" : "Novo produto"}
+            </CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 min-[48rem]:grid-cols-3">
           <ProductTextField

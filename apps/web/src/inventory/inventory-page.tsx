@@ -37,6 +37,7 @@ import {
   stockCountText,
   stockListView,
   stockMoreView,
+  readStockLinkFilters,
 } from "./stock-list-model";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockList } from "./use-stock-list";
@@ -200,8 +201,12 @@ export function InventoryPage() {
   const offlineWorkspace =
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
+  // `?filtro=sem-saldo` / `?filtro=sem-custo` open the list already filtered
+  const [linkFilters] = useState(() =>
+    readStockLinkFilters(window.location.search)
+  );
   const { applyBalance, filters, loadMore, reload, setFilters, state } =
-    useStockList(organizationId, offlineWorkspace);
+    useStockList(organizationId, offlineWorkspace, linkFilters);
   const [open, setOpen] = useState<OpenCommand | null>(null);
   const today = useMemo(
     () => calendarDayInTimezone(new Date(), organization.timezone),
@@ -209,6 +214,8 @@ export function InventoryPage() {
   );
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state);
+  const countText =
+    state.status === "ready" ? stockCountText(state, filters, offline) : null;
 
   const handleQuery = useCallback(
     (event: ChangeEvent<HTMLInputElement>) =>
@@ -218,6 +225,10 @@ export function InventoryPage() {
   const handleArchived = useCallback(
     (checked: boolean) => setFilters({ includeArchived: checked }),
     [setFilters]
+  );
+  const handleUnknownCost = useCallback(
+    () => setFilters({ unknownCost: !filters.unknownCost }),
+    [filters.unknownCost, setFilters]
   );
   const handleFilter = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -304,6 +315,15 @@ export function InventoryPage() {
               </Button>
             ))}
           </ButtonGroup>
+          <Button
+            aria-pressed={filters.unknownCost}
+            className="aria-pressed:border-foreground/70 aria-pressed:bg-secondary aria-pressed:font-semibold"
+            onClick={handleUnknownCost}
+            type="button"
+            variant="outline"
+          >
+            Sem custo
+          </Button>
           <Field className="min-h-ctl-md w-auto" orientation="horizontal">
             <Checkbox
               checked={filters.includeArchived}
@@ -326,7 +346,7 @@ export function InventoryPage() {
         className="min-h-5 text-muted-foreground text-support"
         role="status"
       >
-        {state.status === "ready" ? stockCountText(state) : " "}
+        {countText ?? " "}
       </p>
 
       {view.kind === "ready" ? (

@@ -49,6 +49,16 @@ const unavailable = rpc(
   503
 );
 
+/** The body without its scripts: what the person reads and what the markup carries, not the bundle. */
+const bodyMarkup = (page: Page) =>
+  page.evaluate(() => {
+    const copy = document.body.cloneNode(true) as HTMLElement;
+    for (const script of copy.querySelectorAll("script")) {
+      script.remove();
+    }
+    return copy.innerHTML;
+  });
+
 const product = (n: number, name: string, status = "active") => ({
   archivedAt: null,
   categoryId: null,
@@ -82,7 +92,7 @@ const CONFIGURATION = {
 
 // ---- the lab: the device's collections, a seeded catalog ----------------------------------------------------
 
-async function openProductsLab(page: Page, stored = "claro") {
+async function openProductsLab(page: Page, stored = "claro", search = "") {
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
@@ -90,7 +100,9 @@ async function openProductsLab(page: Page, stored = "claro") {
     route.fulfill(rpc(CONFIGURATION))
   );
   await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=products&catalog=seeded");
+  await page.goto(
+    `/offline-screens-lab?screen=products&catalog=seeded${search}`
+  );
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(page.getByTestId("message")).toContainText(
@@ -241,15 +253,77 @@ test("a 320 px nada transborda: a lista, o formulário com erro, as variantes e 
   await expectNoSidewaysScroll(page);
 });
 
+// ---- the addresses in the lab: the product is looked up in the copy on the device ----------------------------
+
+test("?produto=<uuid> no aparelho: abre o painel do produto ativo e o do arquivado, e o que não existe diz 'não encontrado'", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page, "claro", `&produto=${id(21)}`);
+  await expect(
+    page.getByRole("region", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
+    })
+  ).toHaveCount(1);
+
+  // an archived one: the tab changes and the panel of that product opens
+  await page.goto(
+    `/offline-screens-lab?screen=products&catalog=seeded&produto=${id(26)}`
+  );
+  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(
+    page.getByRole("region", { name: "Jaqueta de inverno" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Arquivados" })
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre painel", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page, "claro", `&produto=${id(99)}`);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Produto não encontrado. Escolha um produto na lista."
+  );
+  await expect(page.getByRole("region")).toHaveCount(0);
+  expect(await bodyMarkup(page)).not.toContain(id(99));
+});
+
+test("?novo=1 no aparelho abre o formulário de um produto novo com o foco no título", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page, "claro", "&novo=1");
+  await expect(
+    page.getByRole("region", { name: "Novo produto" })
+  ).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Novo produto" }),
+    })
+  ).toHaveCount(1);
+});
+
 // ---- the real route, with the API answered here ---------------------------------------------------------------
 
 interface ServerOptions {
   /** One answer per call of `product/list`, in order; the last one repeats. */
   lists: ReadonlyArray<(route: Route) => Promise<void>>;
   others?: Record<string, (route: Route) => Promise<void>>;
+  /** The address to open, with its query: `/products?novo=1`. */
+  path?: string;
 }
 
-async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
+async function openServerScreen(
+  page: Page,
+  { lists, others, path = "/products" }: ServerOptions
+) {
   let calls = 0;
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -277,7 +351,7 @@ async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
     const handler = others?.[procedure];
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
-  await page.goto("/products");
+  await page.goto(path);
   await expect(
     page.getByRole("heading", { exact: true, name: "Produtos" })
   ).toBeVisible();
@@ -285,6 +359,251 @@ async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
 
 const answer = (products: unknown[]) => (route: Route) =>
   route.fulfill(rpc({ products }));
+
+const LIST_STATUS = /"status":"(\w+)"/;
+
+/** `product/list` answered by the status the screen asked for (the address lookup asks for "all"). */
+const answerByStatus =
+  (byStatus: Record<string, unknown[]>) => (route: Route) => {
+    const body = route.request().postData() ?? "";
+    const status = LIST_STATUS.exec(body)?.[1] ?? "active";
+    return route.fulfill(rpc({ products: byStatus[status] ?? [] }));
+  };
+
+const OTHER_STORE_PRODUCT = id(99);
+
+// ---- the addresses: ?produto=<uuid> and ?novo=1 ----------------------------------------------------------------
+
+const variantsOf = {
+  "product/getVariants": (route: Route) => route.fulfill(rpc(CONFIGURATION)),
+};
+
+test("?produto=<uuid> abre o painel do produto, rola até ele e leva o foco ao título", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  const many = Array.from({ length: 12 }, (_, index) =>
+    product(index + 1, `Produto ${String(index + 1).padStart(2, "0")}`)
+  );
+  await openServerScreen(page, {
+    lists: [answerByStatus({ active: many, all: many })],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  const panel = page.getByRole("region", { name: "Produto 01" });
+  await expect(panel).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Produto 01" }),
+    })
+  ).toHaveCount(1);
+  await expect(panel.getByRole("heading", { level: 2 })).toBeInViewport();
+  // closing it gives the focus back to the row, as when it is opened by the menu
+  await panel.getByRole("button", { name: "Fechar" }).click();
+  await expect(menuOf(page, "Produto 01")).toBeFocused();
+});
+
+test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' abre o painel com o foco no título", async ({
+  page,
+}) => {
+  const catalog = [product(1, "Camiseta do teste")];
+  const server = { up: false as boolean };
+  await openServerScreen(page, {
+    lists: [
+      (route) =>
+        server.up
+          ? answerByStatus({ active: catalog, all: catalog })(route)
+          : route.fulfill(unavailable),
+    ],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText(
+    "O catálogo está temporariamente indisponível."
+  );
+  await expect(page.getByText("Não foi possível abrir o produto.")).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("region")).toHaveCount(0);
+  server.up = true;
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
+  const panel = page.getByRole("region", { name: "Camiseta do teste" });
+  await expect(panel).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
+    })
+  ).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o próprio 'Tentar novamente' e abre o painel", async ({
+  page,
+}) => {
+  const catalog = [product(1, "Camiseta do teste")];
+  let linkUp = false;
+  await openServerScreen(page, {
+    lists: [
+      (route) => {
+        const asksAll = (route.request().postData() ?? "").includes(
+          '"status":"all"'
+        );
+        return asksAll && !linkUp
+          ? route.fulfill(unavailable)
+          : answerByStatus({ active: catalog, all: catalog })(route);
+      },
+    ],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText(
+    "Não foi possível abrir o produto. Tente novamente."
+  );
+  await expect(page.getByText("Camiseta do teste")).toBeVisible();
+  // the person is taken to the alert, which is where the button is
+  await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
+  linkUp = true;
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(
+    page.getByRole("region", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
+    })
+  ).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o painel dele", async ({
+  page,
+}) => {
+  const archived = product(1, "Jaqueta de inverno", "archived");
+  await openServerScreen(page, {
+    lists: [
+      answerByStatus({ active: [], all: [archived], archived: [archived] }),
+    ],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  await expect(
+    page.getByRole("region", { name: "Jaqueta de inverno" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Arquivados" })
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+for (const [label, productId] of [
+  ["que não existe", id(98)],
+  ["de outra loja (a leitura da loja não o devolve)", OTHER_STORE_PRODUCT],
+  ["removido", id(21)],
+] as const) {
+  test(`?produto=<uuid> ${label} diz o mesmo "Produto não encontrado" e não escreve o endereço`, async ({
+    page,
+  }) => {
+    const removed = product(1, "Calça removida", "deleted");
+    await openServerScreen(page, {
+      lists: [
+        answerByStatus({
+          active: [product(2, "Calça jeans")],
+          all: label === "removido" ? [removed] : [product(2, "Calça jeans")],
+        }),
+      ],
+      others: variantsOf,
+      path: `/products?produto=${productId}`,
+    });
+    const alert = page.getByRole("alert");
+    await expect(alert).toHaveText(
+      "Produto não encontrado. Escolha um produto na lista."
+    );
+    // the alert takes the focus (as the result of any action), and no panel opens
+    await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
+    await expect(page.getByRole("region")).toHaveCount(0);
+    await expect(page.getByText("Calça jeans")).toBeVisible();
+    expect(await bodyMarkup(page)).not.toContain(productId);
+    expect(await bodyMarkup(page)).not.toContain("Calça removida");
+  });
+}
+
+for (const value of [
+  "",
+  "abc",
+  "<script>alert(1)</script>",
+  `${id(21)}x`,
+  "00000000-0000-0000-0000-000000000000",
+]) {
+  test(`?produto=${value || "(vazio)"} não é um endereço de produto: a lista abre sem painel, sem aviso e sem o valor`, async ({
+    page,
+  }) => {
+    await openServerScreen(page, {
+      lists: [answerByStatus({ active: [product(1, "Camiseta do teste")] })],
+      others: variantsOf,
+      path: `/products?produto=${encodeURIComponent(value)}`,
+    });
+    await expect(page.getByText("Camiseta do teste")).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("region")).toHaveCount(0);
+    if (value !== "") {
+      expect(await bodyMarkup(page)).not.toContain(value);
+    }
+  });
+}
+
+test("?novo=1 abre o formulário de um produto novo, rola até ele e leva o foco ao título; o próximo Tab chega ao nome", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openServerScreen(page, {
+    lists: [answer([])],
+    path: "/products?novo=1",
+  });
+  const form = page.getByRole("region", { name: "Novo produto" });
+  await expect(form).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Novo produto" }),
+    })
+  ).toHaveCount(1);
+  await expect(form.getByRole("heading", { level: 2 })).toBeInViewport();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+});
+
+test("depois de ?novo=1, abrir o formulário pelo botão volta a levar o foco ao nome", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    path: "/products?novo=1",
+  });
+  await expect(
+    page.getByRole("region", { name: "Novo produto" })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+});
+
+for (const value of ["", "0", "true", "2", "<script>alert(1)</script>"]) {
+  test(`?novo=${value || "(vazio)"} não abre o formulário e o valor não aparece na tela`, async ({
+    page,
+  }) => {
+    await openServerScreen(page, {
+      lists: [answer([product(1, "Camiseta do teste")])],
+      path: `/products?novo=${encodeURIComponent(value)}`,
+    });
+    await expect(page.getByText("Camiseta do teste")).toBeVisible();
+    await expect(page.getByRole("region")).toHaveCount(0);
+    if (value.startsWith("<")) {
+      expect(await bodyMarkup(page)).not.toContain(value);
+    }
+  });
+}
 
 test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e some quando a leitura dá certo", async ({
   page,
