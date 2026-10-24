@@ -3,6 +3,7 @@ import {
   EntitlementLimitReachedError,
 } from "@polaris/domain/billing/entitlements";
 import { implement, ORPCError } from "@orpc/server";
+import { rememberLimitRefusals } from "./limit-refusal-log";
 import {
   EntitlementVariantLockedError,
   OperationalSelectionError,
@@ -1350,8 +1351,9 @@ export function createRpcRouter(
   const authenticatedRequest =
     overrides.withAuthenticatedRequestContext ??
     withAuthenticatedRequestContext;
-  const tenantRequest =
-    overrides.withTenantRequestContext ?? withTenantRequestContext;
+  const tenantRequest = rememberLimitRefusals(
+    overrides.withTenantRequestContext ?? withTenantRequestContext
+  );
   const createOrganization =
     overrides.createInitialOrganization ?? createInitialOrganization;
   const createOnboardingDatabase =

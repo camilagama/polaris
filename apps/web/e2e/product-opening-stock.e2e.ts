@@ -22,6 +22,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+/** What the limit text must never say: the category, the Assinatura, archiving, the product as the unit. */
+const FORBIDDEN_IN_LIMIT_TEXT = /categoria|assinatura|arquiv|produtos/i;
 const QUANTITY_FOR_COST_TEXT = /Informe quantos você tem para guardar o custo/;
 const NEW_PRODUCT_URL = /\/products\?novo=1$/;
 const UUID =
@@ -337,6 +339,54 @@ test("o produto já cadastrado com outros dados diz isso e não culpa a categori
   await submit(page).click();
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[1]?.productId).not.toBe(bodies[0]?.productId);
+});
+
+test("o limite de variantes do plano diz isso, mantém o que foi digitado, leva o foco à mensagem e o envio seguinte repete o mesmo produto (corte 61b, AC-5)", async ({
+  page,
+}) => {
+  const LIMIT_TEXT =
+    "Seu plano chegou ao limite de variantes. Nada foi cadastrado.";
+  const bodies = await openScreen(page, {
+    creates: [
+      (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: { reason: "entitlement_limit_reached" },
+              defined: false,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    ],
+  });
+  await openForm(page);
+  await page.getByLabel("Nome do produto").fill("Camiseta básica");
+  await page.getByLabel("Quantos você tem agora").fill("10");
+  await page.getByLabel("Custo de cada unidade").fill("12,5");
+  await submit(page).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveText(LIMIT_TEXT);
+  // not the category's text, not the Assinatura, not a way out the screen cannot keep
+  await expect(alert).not.toContainText(FORBIDDEN_IN_LIMIT_TEXT);
+  // the focus is on the message (the region the other errors of the screen use)
+  await expect(page.locator(":focus")).toContainText(LIMIT_TEXT);
+  // nothing typed is lost and the button works again
+  await expect(page.getByLabel("Nome do produto")).toHaveValue(
+    "Camiseta básica"
+  );
+  await expect(page.getByLabel("Quantos você tem agora")).toHaveValue("10");
+  await expect(page.getByLabel("Custo de cada unidade")).toHaveValue("12,5");
+  await expect(submit(page)).toBeEnabled();
+
+  // a retry is the same product: the saved one would come back as saved, never as the limit
+  await submit(page).click();
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(bodies[1]?.productId).toBe(bodies[0]?.productId);
 });
 
 test("Mais detalhes: a categoria e a descrição ficam fechadas, abrem sob pedido e a descrição digitada vai junto", async ({
