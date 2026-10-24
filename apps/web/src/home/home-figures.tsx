@@ -134,7 +134,7 @@ type TopProducts = NonNullable<PeriodSummaryReadModel["topProducts"]>;
 export function TopProductsBlock({ products }: { products: TopProducts }) {
   return (
     <HomeBlock id="home-top" title="Mais vendidos do mês">
-      <ol className="grid">
+      <ol className="grid min-w-0">
         {products.map((product, index) => {
           const content = (
             <>
@@ -149,7 +149,7 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
           );
           const row = "flex min-h-12 items-center gap-3 py-1";
           return (
-            <li className="border-t first:border-t-0" key={product.productId}>
+            <li className="min-w-0 border-t first:border-t-0" key={product.productId}>
               {product.deleted ? (
                 // a deleted product has no panel to open: the line has no link
                 <span className={row}>{content}</span>

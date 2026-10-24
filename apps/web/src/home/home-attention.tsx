@@ -36,9 +36,9 @@ export function AttentionBlock({
   return (
     <HomeBlock id="home-attention" title="Precisa de atenção">
       {lines.length > 0 ? (
-        <ul className="grid">
+        <ul className="grid min-w-0">
           {lines.map((line) => (
-            <li className="border-t first:border-t-0" key={line.id}>
+            <li className="min-w-0 border-t first:border-t-0" key={line.id}>
               <a
                 className="focus-ring flex min-h-12 items-center gap-2 rounded-sm py-1 hover:bg-muted/60"
                 href={line.href}
