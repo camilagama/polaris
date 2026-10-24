@@ -96,11 +96,9 @@ async function useEveryControl(page: Page) {
   await anticipation.click();
   await expect(anticipation).toBeChecked();
   await page
-    .getByRole("combobox", { exact: true, name: "Modalidade do parcelamento" })
+    .getByRole("combobox", { exact: true, name: "Quem parcela" })
     .click();
-  await page
-    .getByRole("option", { exact: true, name: "Parcelado pelo lojista" })
-    .click();
+  await page.getByRole("option", { exact: true, name: "Lojista (eu)" }).click();
   const profile = page.getByRole("combobox", {
     exact: true,
     name: "Perfil de pagamento",

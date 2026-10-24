@@ -330,7 +330,7 @@ describe("validation errors before calling the server", () => {
       "Informe o número de parcelas."
     );
     expect(result.errors[formFieldKeys.installmentPlan]).toBe(
-      "Escolha a modalidade do parcelamento."
+      "Escolha quem parcela."
     );
     form = updatePayment(form, {
       installmentPlan: "issuer",

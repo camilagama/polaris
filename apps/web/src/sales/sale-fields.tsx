@@ -17,6 +17,14 @@ import {
 } from "@/ui/select";
 import type { CatalogView, ChoiceOption } from "./sale-form-model";
 
+/** The words of the "who splits the installments" field, shared by the payment profiles and the sale. */
+export const INSTALLMENT_PLAN_LABEL = "Quem parcela";
+export const INSTALLMENT_PLAN_PLACEHOLDER = "Escolha quem parcela";
+export const INSTALLMENT_PLAN_OPTIONS: ChoiceOption[] = [
+  { id: "merchant", label: "Lojista (eu)" },
+  { id: "issuer", label: "Emissor (banco)" },
+];
+
 /* The fields of the sale screen on the components of src/ui (ADR 0103): label, control, help and error, with
    the error and help ids in aria-describedby, as the old fields had. */
 

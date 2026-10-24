@@ -5,7 +5,13 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
-import { SelectField, TextField } from "../sales/sale-fields";
+import {
+  INSTALLMENT_PLAN_LABEL,
+  INSTALLMENT_PLAN_OPTIONS,
+  INSTALLMENT_PLAN_PLACEHOLDER,
+  SelectField,
+  TextField,
+} from "../sales/sale-fields";
 import {
   decimalInputValue,
   type FeeDraft,
@@ -37,10 +43,6 @@ const feeModeOptions: ReadonlyArray<{ id: FeeMode; label: string }> = [
   { id: "fixed", label: "Valor fixo" },
   { id: "percentage", label: "Percentual" },
   { id: "fixed_and_percentage", label: "Fixo e percentual" },
-];
-const planOptions = [
-  { id: "merchant", label: "Lojista (eu)" },
-  { id: "issuer", label: "Emissor (banco)" },
 ];
 
 interface FeeFieldsProps {
@@ -189,10 +191,10 @@ function RuleEditor({
             />
             <SelectField
               id={ruleFieldId(rule, "plan")}
-              label="Quem parcela"
+              label={INSTALLMENT_PLAN_LABEL}
               onChange={handlePlan}
-              options={planOptions}
-              placeholder="Escolha"
+              options={INSTALLMENT_PLAN_OPTIONS}
+              placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
               value={rule.installmentPlan}
             />
           </>
