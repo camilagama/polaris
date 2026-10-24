@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="512"
+  height="512"
+  viewBox="0 0 512 512"
+>
+  <title>Polaris</title>
+  <rect width="512" height="512" fill="#171614" />
+  <rect
+    x="244.736"
+    y="229.717"
+    width="22.528"
+    height="122.027"
+    rx="11.264"
+    fill="#eeede9"
+  />
+  <circle cx="256.000" cy="184.661" r="25.344" fill="#37c695" />
+</svg>

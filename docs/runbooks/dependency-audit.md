@@ -44,10 +44,15 @@ O responsável pelo CI decide aceitar uma exceção que dure além do prazo (o `
 
 Justificativa do risco: `braces` só expande os padrões de glob que o `ultracite` monta a partir de arquivos do próprio repositório, na máquina de quem desenvolve; não há entrada de rede ou de usuário, e o pacote não entra em nenhum Worker nem no navegador. O pior efeito é a ferramenta local travar.
 
-Na revisão: rodar `bun pm view braces versions`; reavaliar também o override do `sharp` (tabela seguinte); se houver versão acima da 3.0.3, aplicar o passo 3 e remover a linha da tabela. Se o `ultracite` deixar de depender de `braces`, remover também.
+Na revisão: rodar `bun pm view braces versions`; reavaliar também os overrides (tabela seguinte); se houver versão acima da 3.0.3, aplicar o passo 3 e remover a linha da tabela. Se o `ultracite` deixar de depender de `braces`, remover também.
 
 ## Overrides vigentes
 
-| Override | Motivo | Remover quando |
-| --- | --- | --- |
-| `sharp: 0.35.5` | `miniflare` (via `wrangler` e `@cloudflare/vite-plugin`) fixa `sharp@0.35.4`, afetado por [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) (falha na dependência `librsvg`, corrigida na 0.35.5). `sharp` só roda no emulador local (`miniflare`), não no Worker implantado. | O `miniflare` instalado depender de `sharp >= 0.35.5`. |
+Todo override ativo do `package.json` raiz fica nesta tabela, com motivo, data e condição de remoção. Override novo ou removido muda a tabela no mesmo PR; na revisão de cada exceção acima, conferir também se a condição de remoção destas linhas já vale (`bun pm why <pacote>` mostra quem ainda fixa a versão antiga).
+
+| Override | Desde | Motivo | Remover quando |
+| --- | --- | --- | --- |
+| `sharp: 0.35.5` | 18/10/2026 (#136) | Advisory: `miniflare` (via `wrangler` e `@cloudflare/vite-plugin`) fixa `sharp@0.35.4`, afetado por [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) (falha na dependência `librsvg`, corrigida na 0.35.5). `sharp` só roda no emulador local (`miniflare`), não no Worker implantado. | Todos os `miniflare` do lock (`bun pm why miniflare`; há mais de uma versão) dependerem de `sharp >= 0.35.5`. |
+| `zod: 4.6.7` (raiz) | 23/10/2026 (#272) | Advisory e incompatibilidade: `@polaris/contracts` pede `^4.6.6` por causa de [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), mas `@cloudflare/vitest-plugin` pina o zod em versão exata (4.6.5, vulnerável). O override raiz põe todos na 4.6.7. Custa cerca de 194 B gzip no precache (ADR 0103). | Quando `@cloudflare/vitest-plugin` deixar de pinar versão exata do zod (conferir com `bun pm why zod`: a linha do plugin deve pedir faixa que inclua a 4.6.7 ou mais nova). |
+| `undici: 7.30.1` só sob `miniflare` | 24/10/2026 (#278) | Advisory: `miniflare` fixa `undici@7.29.1` (exato), afetado por [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c), corrigida na 7.30.1. Só roda no emulador local e nos testes (`@cloudflare/vitest-plugin`, `@cloudflare/vite-plugin`, `wrangler`), nunca no Worker implantado. O override é por pai para não mexer no `undici@8` do `webdriver`. | Todos os `miniflare` do lock (`bun pm why miniflare`; há mais de uma versão) dependerem de `undici >= 7.30.1`. |
+| `undici: 7.30.1` só sob `cheerio` | 24/10/2026 (#278) | Advisory: `cheerio` (via `webdriverio`, ferramenta de teste em dispositivo real) pede `undici@^7.19.0`, e o lock o mantinha em versão afetada por [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c). Só roda em ferramenta de desenvolvimento. | O `bun.lock` resolver o `undici` do `cheerio` para `>= 7.30.1` sem o override (testar removendo o override e rodando `bun install`; o `cheerio` instalado pode também já pedir `undici >= 7.30.1`). |
