@@ -35,7 +35,7 @@ const FLAT = series([500, 500, 500, 500, 500, 500, 500], 23);
 
 const money = (value: number) => formatBrlAmount(value.toFixed(2));
 
-/** "R$ 1,5 mil" on the top line and the bare figure on the others; the gallery's own, the screens write theirs. */
+/** "1,5 mil" and the bare figure, with no "R$" (the reading line above the chart has the unit); the gallery's own, the screens write theirs. */
 function axisMoney(value: number) {
   if (value >= 1000) {
     return `${String(value / 1000).replace(".", ",")} mil`;

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
    `h-ctl-md` (32 px with a mouse, 36 px with touch), each tab has a 48 px touch area (`touch-hit`) and the keyboard
    focus is the 3 px outline (`focus-ring`). Horizontal only and one style (the segmented list on the muted
    strip): the vertical layout and the `line` variant of the registry come back with the first screen that needs
-   them. The active tab changes with no movement: opacity is the only motion. The open panel is a tab stop (Base UI
+   them. The active tab changes with no movement: background and color fade, nothing slides or scales. The open panel is a tab stop (Base UI
    gives it `tabIndex` 0), so it draws the same focus outline. */
 function Tabs({ className, ...props }: TabsPrimitive.Root.Props) {
   return (
