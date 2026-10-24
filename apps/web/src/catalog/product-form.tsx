@@ -1,6 +1,7 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import {
   type FormEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
@@ -32,10 +33,14 @@ interface ProductFormProps {
   categories: CategoryReadModel[];
   draft: ProductDraft;
   editingProduct: ProductReadModel | null;
+  /** Where the focus goes when the form is opened by an address (`?novo=1`): the title. */
+  headingRef?: RefObject<HTMLDivElement | null>;
   isPending: boolean;
   onCancel: () => void;
   onChange: (field: keyof ProductDraft, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  /** The form came from an address: the first focus is on the title, not on the name. */
+  startOnHeading?: boolean;
 }
 
 function submitLabelFor(isPending: boolean, editing: boolean): string {
@@ -50,22 +55,32 @@ export function ProductForm({
   categories,
   draft,
   editingProduct,
+  headingRef,
   isPending,
   onCancel,
   onChange,
   onSubmit,
+  startOnHeading = false,
 }: ProductFormProps) {
   const [showRequired, setShowRequired] = useState(false);
   const nameRef = useRef<HTMLDivElement>(null);
   const nameMissing = draft.name.trim() === "";
   const nameError = showRequired && nameMissing ? NAME_REQUIRED : undefined;
 
-  // opening the form (a new product, or an edit of another one) puts the cursor in the name
+  // opening the form (a new product, or an edit of another one) puts the cursor in the name;
+  // opened by an address, the first focus is on the title and the next Tab reaches the name
   const formKey = editingProduct?.id ?? "new";
+  const firstFocus = useRef<boolean>(true);
   useEffect(() => {
     setShowRequired(false);
-    focusLater(() => nameRef.current?.querySelector("input")?.focus());
-  }, [formKey]);
+    const onTitle = firstFocus.current && startOnHeading;
+    firstFocus.current = false;
+    focusLater(() =>
+      onTitle
+        ? headingRef?.current?.focus()
+        : nameRef.current?.querySelector("input")?.focus()
+    );
+  }, [formKey, headingRef, startOnHeading]);
 
   const handleName = useCallback(
     (value: string) => onChange("name", value),
@@ -110,9 +125,11 @@ export function ProductForm({
     <Card aria-labelledby="product-form-heading" role="region">
       <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
         <CardHeader>
-          <CardTitle aria-level={2} id="product-form-heading" role="heading">
-            {editingProduct ? "Editar produto" : "Novo produto"}
-          </CardTitle>
+          <div className="outline-none" ref={headingRef} tabIndex={-1}>
+            <CardTitle aria-level={2} id="product-form-heading" role="heading">
+              {editingProduct ? "Editar produto" : "Novo produto"}
+            </CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 min-[48rem]:grid-cols-2">
           <div className="min-w-0" ref={nameRef}>

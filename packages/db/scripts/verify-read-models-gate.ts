@@ -7,7 +7,12 @@ import {
   listInventoryBalances,
 } from "../src/inventory-repository";
 import { listUserOrganizations } from "../src/organization-membership-query";
-import { archiveProduct, deleteProduct } from "../src/product-repository";
+import {
+  archiveProduct,
+  createProduct,
+  deleteProduct,
+  listProducts,
+} from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { listSales } from "../src/sale-query-repository";
@@ -282,6 +287,159 @@ async function run() {
     );
     tests.push(
       "inventory.listBalances orders by product name, hides removed products (and archived ones unless asked), reads sold-out variants as zero, filters by stock and text with literal wildcards, re-reads chosen variants, paginates by keyset without gaps or repeats, rejects a malformed cursor and is scoped to the organization"
+    );
+
+    // ------------- 2b. the unknown-cost filter (a tenant of its own: the lists above stay as they were)
+    const tenantC = await createTenantFixture(admin.pool, "read C");
+    const readBalancesOf = (
+      options: Parameters<typeof listInventoryBalances>[2],
+      tenant = tenantC
+    ) =>
+      withTenantAs(
+        runtimeDatabase.db,
+        tenant,
+        "inventory:read",
+        (transaction, identity) =>
+          listInventoryBalances(transaction, identity, options)
+      );
+    await createSellableProduct(rt, tenantC, "Custo conhecido", {
+      cost: "2.00",
+      quantity: 4,
+    });
+    await createSellableProduct(rt, tenantC, "Custo contado", {
+      cost: null,
+      quantity: 3,
+    }); // a balance row whose average cost is null
+    const archivedUnknown = await createSellableProduct(
+      rt,
+      tenantC,
+      "Custo arquivado",
+      { cost: null, quantity: 2 }
+    );
+    await withTenantAs(
+      runtimeDatabase.db,
+      tenantC,
+      "product:update",
+      (transaction, identity) =>
+        archiveProduct(transaction, identity, {
+          expectedVersion: archivedUnknown.version,
+          id: archivedUnknown.productId,
+        })
+    );
+    // no balance row at all: the LEFT JOIN reads null
+    const withoutRowProduct = await withTenantAs(
+      runtimeDatabase.db,
+      tenantC,
+      "product:create",
+      (transaction, identity) =>
+        createProduct(transaction, identity, {
+          name: "Produto Sem linha de saldo",
+          requestId: randomUUID(),
+        })
+    );
+    // `/products?produto=<uuid>` looks the product up in this list: another store's id is not in it
+    const productIdsOf = (tenant: typeof tenantC) =>
+      withTenantAs(
+        runtimeDatabase.db,
+        tenant,
+        "catalog:read",
+        (transaction, identity) =>
+          listProducts(transaction, identity, { status: "all" })
+      ).then((list) => list.map((item) => item.id));
+    assert.ok(
+      (await productIdsOf(tenantC)).includes(withoutRowProduct.id),
+      "the owner store lists its own product"
+    );
+    assert.equal(
+      (await productIdsOf(tenantA)).includes(withoutRowProduct.id),
+      false,
+      "another store's product id is not in the list a product link is resolved against"
+    );
+    const namesOf = (page: { entries: { productName: string }[] }) =>
+      page.entries.map((entry) => entry.productName);
+    const allCosts = await readBalancesOf({ limit: 100 });
+    assert.deepEqual(
+      namesOf(allCosts),
+      [
+        "Produto Custo conhecido",
+        "Produto Custo contado",
+        "Produto Sem linha de saldo",
+      ],
+      "cost: all (and no cost option) lists every active variant, as before the filter"
+    );
+    assert.deepEqual(
+      namesOf(await readBalancesOf({ cost: "all", limit: 100 })),
+      namesOf(allCosts),
+      "cost: all is the same answer as no cost option"
+    );
+    const unknownCosts = await readBalancesOf({ cost: "unknown", limit: 100 });
+    assert.deepEqual(
+      namesOf(unknownCosts),
+      ["Produto Custo contado", "Produto Sem linha de saldo"],
+      "cost: unknown keeps the null-cost balance and the variant without a balance row"
+    );
+    const withoutRow = unknownCosts.entries.find(
+      (entry) => entry.productName === "Produto Sem linha de saldo"
+    );
+    assert.equal(withoutRow?.version, 0);
+    assert.equal(withoutRow?.quantity, 0);
+    assert.equal(withoutRow?.movingAverageCost, null);
+    assert.deepEqual(
+      unknownCosts.entries,
+      allCosts.entries.filter((entry) => entry.movingAverageCost === null),
+      "the filtered list is the unfiltered list minus the known costs: one query, one count"
+    );
+    assert.deepEqual(
+      namesOf(
+        await readBalancesOf({
+          cost: "unknown",
+          includeArchived: true,
+          limit: 100,
+        })
+      ),
+      [
+        "Produto Custo arquivado",
+        "Produto Custo contado",
+        "Produto Sem linha de saldo",
+      ],
+      "an archived variant with an unknown cost shows only when archived products are asked for"
+    );
+    assert.deepEqual(
+      namesOf(
+        await readBalancesOf({
+          cost: "unknown",
+          limit: 100,
+          stock: "without_stock",
+        })
+      ),
+      ["Produto Sem linha de saldo"],
+      "the cost filter combines with the stock filter"
+    );
+    const unknownWalked: string[] = [];
+    let unknownCursor: string | null = null;
+    const readUnknownPage = (after: string | null) =>
+      readBalancesOf({ cost: "unknown", cursor: after, limit: 1 });
+    for (let page = 0; page < 4; page += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each page needs the previous cursor
+      const next = await readUnknownPage(unknownCursor);
+      unknownWalked.push(...namesOf(next));
+      unknownCursor = next.nextCursor;
+      if (!unknownCursor) {
+        break;
+      }
+    }
+    assert.deepEqual(
+      unknownWalked,
+      namesOf(unknownCosts),
+      "the unknown-cost list paginates without gaps or repeats"
+    );
+    assert.deepEqual(
+      (await readBalances({ cost: "unknown", limit: 100 }, tenantA)).entries,
+      [],
+      "another organization's unknown-cost variants are not listed"
+    );
+    tests.push(
+      "inventory.listBalances cost: unknown keeps the variants with a null average cost, including the one without a balance row, equals the unfiltered list minus the known costs, combines with the stock and archived filters, paginates by keyset and stays inside the organization; cost: all changes nothing; a product id of another store is not in the product list a link is resolved against"
     );
 
     // -------------------------------------------- 3. the filtered sale history

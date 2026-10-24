@@ -31,6 +31,7 @@ import {
   ProductsHeader,
 } from "./products-page-parts";
 import { useProductsData } from "./use-products-data";
+import { useProductsLink } from "./use-products-link";
 
 function countTextFor(shown: number, total: number, query: string): string {
   if (query.trim() !== "") {
@@ -184,6 +185,26 @@ export function ProductsPage() {
     ]
   );
 
+  // `?produto=` and `?novo=1`: the panel the address names opens and takes the focus on its title
+  const formHeadingRef = useRef<HTMLDivElement>(null);
+  const [formStartsOnHeading, setFormStartsOnHeading] = useState(false);
+  useProductsLink(workspace, organizationId, {
+    onNew: () => {
+      openOnly({ form: true });
+      setDraft(emptyDraft);
+      setFormStartsOnHeading(true);
+    },
+    onNotice: (message) => {
+      setError(message);
+      focusFeedback();
+    },
+    onProduct: (product) => {
+      setStatus(product.status === "archived" ? "archived" : "active");
+      openOnly({ variants: product.id });
+      setDraft(emptyDraft);
+    },
+  });
+
   const handleNew = useCallback(() => {
     if (formOpen) {
       // what was typed is not thrown away by a tap on the button: the person goes back to the form
@@ -192,12 +213,14 @@ export function ProductsPage() {
       );
       return;
     }
+    setFormStartsOnHeading(false);
     openOnly({ form: true });
     setDraft(emptyDraft);
   }, [formOpen, openOnly]);
 
   const handleEdit = useCallback(
     (product: ProductReadModel) => {
+      setFormStartsOnHeading(false);
       openOnly({ editing: product.id, form: true });
       setDraft({
         categoryId: product.categoryId ?? "",
@@ -240,12 +263,7 @@ export function ProductsPage() {
     setMediaProductId(null);
   }, [focusRow, mediaProductId]);
 
-  // the variants panel and the images panel open away from the row that asked: the person is taken to them
-  useEffect(() => {
-    if (variantsProductId) {
-      focusLater(() => variantsHeadingRef.current?.focus());
-    }
-  }, [variantsProductId]);
+  // the images panel opens away from the row that asked: the person is taken to it
   useEffect(() => {
     if (mediaProductId) {
       focusLater(() => mediaHeadingRef.current?.focus());
@@ -351,6 +369,14 @@ export function ProductsPage() {
   );
   const variantsProduct =
     products.find((product) => product.id === variantsProductId) ?? null;
+  // the variants panel opens away from the row that asked (or from an address that named the product, which
+  // is drawn only once its list has come): the person is taken to it when it is on the screen
+  const variantsPanelId = variantsProduct?.id ?? null;
+  useEffect(() => {
+    if (variantsPanelId) {
+      focusLater(() => variantsHeadingRef.current?.focus());
+    }
+  }, [variantsPanelId]);
   const mediaProduct =
     products.find((product) => product.id === mediaProductId) ?? null;
   const visibleProducts = filterByName(products, query);
@@ -380,10 +406,12 @@ export function ProductsPage() {
             categories={categories}
             draft={draft}
             editingProduct={editingProduct}
+            headingRef={formHeadingRef}
             isPending={pendingAction === "create" || pendingAction === "update"}
             onCancel={handleCancelForm}
             onChange={handleDraftChange}
             onSubmit={handleSubmit}
+            startOnHeading={formStartsOnHeading}
           />
         ) : null}
         {variantsProduct ? (

@@ -17,6 +17,7 @@ import {
   stockMoreLoaded,
   stockMoreStarted,
   stockMoreView,
+  readStockLinkFilters,
   stockRows,
 } from "./stock-list-model";
 
@@ -71,7 +72,12 @@ describe("stockListRequest", () => {
     expect(
       stockListRequest(
         organizationId,
-        { includeArchived: true, query: "  azul ", stock: "with_stock" },
+        {
+          includeArchived: true,
+          query: "  azul ",
+          stock: "with_stock",
+          unknownCost: false,
+        },
         "next-cursor"
       )
     ).toEqual({
@@ -84,6 +90,44 @@ describe("stockListRequest", () => {
     });
   });
 
+  it("asks the server for the variants without a known cost, with no stock filter", () => {
+    expect(
+      stockListRequest(
+        organizationId,
+        { ...defaultStockFilters, unknownCost: true },
+        null
+      )
+    ).toEqual({
+      cost: "unknown",
+      limit: STOCK_PAGE_SIZE,
+      organizationId,
+      productStatus: "active",
+      stock: "all",
+    });
+  });
+
+  it("combines the unknown cost with the stock filter in one read", () => {
+    expect(
+      stockListRequest(
+        organizationId,
+        { ...defaultStockFilters, stock: "without_stock", unknownCost: true },
+        null
+      )
+    ).toMatchObject({ cost: "unknown", stock: "without_stock" });
+  });
+
+  it("never sends a cost option unless the unknown cost is asked for", () => {
+    for (const stock of ["all", "with_stock", "without_stock"] as const) {
+      expect(
+        stockListRequest(
+          organizationId,
+          { ...defaultStockFilters, stock },
+          null
+        )
+      ).not.toHaveProperty("cost");
+    }
+  });
+
   it("leaves out a blank search", () => {
     expect(
       stockListRequest(
@@ -92,6 +136,45 @@ describe("stockListRequest", () => {
         null
       )
     ).not.toHaveProperty("query");
+  });
+});
+
+describe("readStockLinkFilters", () => {
+  it("reads the two addresses the Início links to", () => {
+    expect(readStockLinkFilters("?filtro=sem-saldo")).toEqual({
+      stock: "without_stock",
+      unknownCost: false,
+    });
+    for (const search of ["?filtro=sem-custo", "?x=1&filtro=sem-custo"]) {
+      expect(readStockLinkFilters(search)).toEqual({
+        stock: "all",
+        unknownCost: true,
+      });
+    }
+  });
+
+  it("opens the plain list for anything else", () => {
+    for (const search of [
+      "",
+      "?",
+      "?filtro=",
+      "?filtro=todas",
+      "?filtro=SEM-CUSTO",
+      "?filtro=unknown_cost",
+      "?filtro=sem-custo%00",
+      "?filtro=<script>alert(1)</script>",
+    ]) {
+      expect(readStockLinkFilters(search)).toEqual({
+        stock: "all",
+        unknownCost: false,
+      });
+    }
+  });
+
+  it("takes the first of two values", () => {
+    expect(
+      readStockLinkFilters("?filtro=sem-saldo&filtro=sem-custo").stock
+    ).toBe("without_stock");
   });
 });
 
@@ -285,6 +368,29 @@ describe("views", () => {
     expect(
       stockListView(ready([]), { ...defaultStockFilters, query: "x" })
     ).toMatchObject({ kind: "empty", showCatalogLink: false });
+  });
+
+  it("says why the list without a cost is empty, online and without connection", () => {
+    const filters = { ...defaultStockFilters, unknownCost: true };
+    expect(stockEmptyMessage(filters)).toBe("Todas as variantes têm custo.");
+    expect(stockEmptyMessage(filters, true)).toBe(
+      "O custo médio só aparece com conexão."
+    );
+    expect(stockListView(ready([]), filters, true)).toMatchObject({
+      kind: "empty",
+      message: "O custo médio só aparece com conexão.",
+      showCatalogLink: false,
+    });
+  });
+
+  it("says so when the unknown cost and the stock filter leave nothing", () => {
+    expect(
+      stockEmptyMessage({
+        ...defaultStockFilters,
+        stock: "without_stock",
+        unknownCost: true,
+      })
+    ).toBe("Nenhuma variante sem custo com esse saldo.");
   });
 
   it("describes the load-more control and the count", () => {
