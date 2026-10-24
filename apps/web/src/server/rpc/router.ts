@@ -53,6 +53,7 @@ import {
   InvalidInventoryBalanceCursorError,
   inventoryCount,
   listInventoryBalances,
+  organizationToday,
   receiveStock,
   writeOffStock,
 } from "@polaris/db/inventory-repository";
@@ -82,6 +83,7 @@ import {
   deleteProduct,
   getProductVariants,
   listProducts,
+  readProductCreation,
   restoreProduct,
   setProductVariantListPrice,
   setProductVariantSku,
@@ -118,6 +120,7 @@ import {
   ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
   ProductDescriptionError,
+  ProductIdConflictError,
   ProductLifecycleError,
   ProductNameError,
   ProductNotFoundError,
@@ -302,6 +305,10 @@ import {
   CreateInitialOrganizationError,
   createInitialOrganization,
 } from "../use-cases/create-initial-organization";
+import {
+  createProductWithOpeningStock,
+  ProductCreateConflictError,
+} from "../use-cases/create-product-with-opening-stock";
 import { pingSystem } from "../use-cases/system-ping";
 import {
   type BillingRpcOverrides,
@@ -372,6 +379,8 @@ interface RpcRouterDependencies {
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
   createProduct: typeof createProduct;
+  /** The one use case of `product.create` (the sync command runs it too); tests give a fake one. */
+  createProductWithOpeningStock: typeof createProductWithOpeningStock;
   createSaleReturn: typeof createSaleReturn;
   expenseRepository: Partial<ExpenseRepository>;
   dataExportRepository: Partial<DataExportRepository>;
@@ -399,6 +408,8 @@ interface RpcRouterDependencies {
   listProducts: typeof listProducts;
   listSales: typeof listSales;
   listUserOrganizations: typeof listUserOrganizations;
+  /** Today's date in the store's time zone: the date of the opening stock the server records. */
+  organizationToday: typeof organizationToday;
   pullSyncChanges: typeof pullSyncChanges;
   readBootstrapPage: typeof readBootstrapPage;
   receiveStock: typeof receiveStock;
@@ -886,6 +897,8 @@ const conflictRpcErrors = [
     ProductDefaultVariantSkuConflictError,
     ProductDefaultVariantStockHistoryConflictError,
     ProductVariantSkuConflictError,
+    ProductIdConflictError,
+    ProductCreateConflictError,
   ],
   [
     ProductVariantsAlreadyConfiguredError,
@@ -1351,6 +1364,9 @@ export function createRpcRouter(
   const renameTenantCategory = overrides.renameCategory ?? renameCategory;
   const listTenantProducts = overrides.listProducts ?? listProducts;
   const createTenantProduct = overrides.createProduct ?? createProduct;
+  const createTenantProductWithOpeningStock =
+    overrides.createProductWithOpeningStock ?? createProductWithOpeningStock;
+  const tenantToday = overrides.organizationToday ?? organizationToday;
   const getTenantProductVariants =
     overrides.getProductVariants ?? getProductVariants;
   const configureTenantProductVariants =
@@ -1745,13 +1761,34 @@ export function createRpcRouter(
         const product = await tenantRequest({
           bindings: context.bindings,
           capability: "product:create",
-          operation: (transaction, identity) =>
-            createTenantProduct(transaction, identity, {
-              categoryId: input.categoryId ?? null,
-              description: input.description ?? null,
-              name: input.name,
-              requestId: requestAuditId(context.requestId),
-            }),
+          operation: async (transaction, identity) => {
+            // the opening stock is dated today in the store's time zone, read here on the server
+            const occurredOn = input.initialStock
+              ? await tenantToday(transaction, identity)
+              : "";
+            const created = await createTenantProductWithOpeningStock(
+              transaction,
+              identity,
+              {
+                categoryId: input.categoryId ?? null,
+                description: input.description ?? null,
+                initialStock: input.initialStock ?? null,
+                listPrice: input.listPrice ?? null,
+                name: input.name,
+                productId: input.productId,
+                requestId: requestAuditId(context.requestId),
+                variantId: input.variantId,
+              },
+              occurredOn,
+              {
+                createProduct: createTenantProduct,
+                inventoryCount: overrides.inventoryCount ?? inventoryCount,
+                readProductCreation,
+                receiveStock: receiveTenantStock,
+              }
+            );
+            return created.product;
+          },
           request: context.request,
           requestedOrganizationId: input.organizationId,
         });

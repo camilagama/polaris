@@ -66,6 +66,20 @@ export class TenantAuthorizationError extends Error {
 }
 
 /**
+ * Checks one more capability against the role the transaction read from `memberships`, for a use case that
+ * needs more than the capability the request was opened with (a product with opening stock needs
+ * `inventory:adjust` besides `product:create`). It throws before any write, so a refusal leaves nothing behind.
+ */
+export function requireCapabilityInTransaction(
+  identity: Pick<TenantRequestIdentity, "role">,
+  capability: string
+): void {
+  if (!hasCapabilityForRole(identity.role, capability)) {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+}
+
+/**
  * Runs the synthetic PR11 RLS fixture callback with transaction-local scope.
  * This helper is for the isolated POC table; product tenant queries use
  * withAuthorizedTenantTransaction below.

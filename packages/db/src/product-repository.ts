@@ -244,6 +244,86 @@ export async function countOrganizationVariants(
   return row?.total ?? 0;
 }
 
+/** What a product of this organization was created with: the product, its default variant and its first stock movement. */
+export interface ProductCreationRecord {
+  /** The first movement of the variant when it is a receipt or an inventory count; the opening stock, if any. */
+  opening: { quantity: number; unitCost: string | null } | null;
+  product: typeof products.$inferSelect;
+  variant: { id: string; listPrice: string | null; sku: string | null };
+}
+
+/**
+ * Reads back a product created earlier, by its ID, so a repeated creation can be told from a conflicting one.
+ * `variantId` picks the variant when the caller named it; otherwise it is the default one. The product of
+ * another organization is not found (the row is hidden by RLS and the organization is in the filter).
+ */
+export async function readProductCreation(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  input: { productId: string; variantId?: string | undefined }
+): Promise<ProductCreationRecord | null> {
+  const [product] = await transaction
+    .select(productColumns)
+    .from(products)
+    .where(
+      and(
+        eq(products.id, input.productId),
+        eq(products.organizationId, identity.organizationId)
+      )
+    )
+    .limit(1);
+  if (!product) {
+    return null;
+  }
+  const [variant] = await transaction
+    .select({
+      id: productVariants.id,
+      listPrice: productVariants.listPrice,
+      sku: productVariants.sku,
+    })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.organizationId, identity.organizationId),
+        eq(productVariants.productId, input.productId),
+        input.variantId === undefined
+          ? eq(productVariants.isDefault, true)
+          : eq(productVariants.id, input.variantId)
+      )
+    )
+    .limit(1);
+  if (!variant) {
+    return null;
+  }
+  const [first] = await transaction
+    .select({
+      movementType: stockMovements.movementType,
+      quantityDelta: stockMovements.quantityDelta,
+      unitCost: stockMovements.unitCost,
+    })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, identity.organizationId),
+        eq(stockMovements.variantId, variant.id)
+      )
+    )
+    .orderBy(asc(stockMovements.variantSequence))
+    .limit(1);
+  const isOpening =
+    first !== undefined &&
+    (first.movementType === "receipt" ||
+      first.movementType === "inventory_count");
+  return {
+    opening:
+      isOpening && first
+        ? { quantity: first.quantityDelta, unitCost: first.unitCost }
+        : null,
+    product,
+    variant,
+  };
+}
+
 export async function createProduct(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,

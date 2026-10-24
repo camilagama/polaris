@@ -9,15 +9,26 @@ import {
   useState,
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { createProduct, keepLocalRow } from "./product-commands";
-import { type ProductAction, productErrorMessage } from "./product-errors";
+import {
+  createProduct,
+  keepLocalRow,
+  type NewProductIds,
+  newProductIds,
+} from "./product-commands";
+import {
+  isProductAlreadyCreated,
+  type ProductAction,
+  productErrorMessage,
+} from "./product-errors";
 import { emptyDraft, type ProductDraft, ProductForm } from "./product-form";
 import { ProductList, type ProductListStatus } from "./product-list";
 import { ProductMediaPanel } from "./product-media-panel";
+import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import {
@@ -40,7 +51,7 @@ function countTextFor(shown: number, total: number, query: string): string {
 }
 
 export function ProductsPage() {
-  const { organizationId } = useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
   const [status, setStatus] = useState<ProductListStatus>("active");
   const { categories, isLoading, loadError, products, refresh, syncStates } =
@@ -58,6 +69,8 @@ export function ProductsPage() {
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  // the names of the product the open form creates: born with the first try, kept for its retries, dropped with the form
+  const newProductNames = useRef<NewProductIds | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -99,6 +112,7 @@ export function ProductsPage() {
       media?: string | null;
       variants?: string | null;
     }) => {
+      newProductNames.current = null;
       setEditingProductId(panel.editing ?? null);
       setFormOpen(panel.form ?? false);
       setMediaProductId(panel.media ?? null);
@@ -153,19 +167,40 @@ export function ProductsPage() {
               : `O produto “${result.product.name}” continua sem alterações.`
           );
         } else {
+          // the form has checked the fields before it sends; the same check gives what to send
+          const opening = validateOpening(draft).value;
+          if (!opening) {
+            return;
+          }
+          newProductNames.current ??= newProductIds();
           setNotice(
-            await createProduct(workspace, organizationId, {
-              categoryId,
-              description,
-              name: draft.name,
-            })
+            await createProduct(
+              workspace,
+              organizationId,
+              {
+                categoryId,
+                description,
+                initialStock: opening.initialStock,
+                listPrice: opening.listPrice,
+                name: draft.name,
+              },
+              {
+                ids: newProductNames.current,
+                today: calendarDayInTimezone(new Date(), organization.timezone),
+              }
+            )
           );
+          newProductNames.current = null;
         }
         setEditingProductId(null);
         setFormOpen(false);
         setDraft(emptyDraft);
         refresh();
       } catch (cause: unknown) {
+        if (isProductAlreadyCreated(cause)) {
+          // the first try was saved with other data: the next one is a new product, not a retry
+          newProductNames.current = null;
+        }
         setError(productErrorMessage(cause, action));
         refresh();
       } finally {
@@ -177,6 +212,7 @@ export function ProductsPage() {
       draft,
       editingProductId,
       focusFeedback,
+      organization.timezone,
       organizationId,
       products,
       refresh,
@@ -200,6 +236,7 @@ export function ProductsPage() {
     (product: ProductReadModel) => {
       openOnly({ editing: product.id, form: true });
       setDraft({
+        ...emptyDraft,
         categoryId: product.categoryId ?? "",
         description: product.description ?? "",
         name: product.name,
@@ -342,6 +379,7 @@ export function ProductsPage() {
       draft,
       editingProduct
         ? {
+            ...emptyDraft,
             categoryId: editingProduct.categoryId ?? "",
             description: editingProduct.description ?? "",
             name: editingProduct.name,

@@ -2078,3 +2078,15 @@ Desenho t269 v2, aprovado na rodada desenho-t269 (23/10/2026).
 | Gate `economics` | Em revisão | Série com venda retroativa, devolução e cancelamento conferida dia a dia contra o resumo daquele dia e contra contagem SQL independente; ranking com produto excluído; outra loja vê série zerada; limite fora de 1..10 recusado. PostgreSQL 18 local e CI. |
 | Semeadura `qa-` | Em revisão | `packages/db/scripts/seed-qa-store.ts` (operador; só loja `qa-`, só banco marcado `staging` ou PostgreSQL local com `--local`, nada sem `--apply`). Não foi rodado em staging. |
 | Medida | Parcial | Local (PostgreSQL 18, 60 dias): 20 vendas/dia ≈ 367 KB por abertura (A + B), 50/dia ≈ 932 KB; o plano da consulta de vendas lê todas as vendas da loja (20 mil para 1.254 do mês), o que pelo critério do desenho pede o índice 1b. CPU e egress em staging pendentes (roteiro no PR). |
+
+### Início (F2), PR 3: produto com estoque de abertura num passo (t297; emenda do ADR 0035; sem migration)
+
+Desenho t269 v2, §3 (AC-24 a AC-26).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Caso de uso | Em revisão | `createProductWithOpeningStock` (`server/use-cases/`): as duas capabilities conferidas contra o papel da transação antes de qualquer escrita (`requireCapabilityInTransaction`); produto com variante e preço; estoque como recebimento com custo ou como contagem a partir do zero sem custo; repetição relida e comparada (nunca chama o estoque de novo). Domínio: `normalizeOpeningStockInput`. |
+| RPC e sincronização | Em revisão | `product.create` ganha `productId`, `variantId`, `listPrice` e `initialStock` (`commandId`, `quantity`, `unitCost` ou nulo); a data do estoque é a de hoje no fuso da loja, lida no servidor. O manipulador `product-create` da sincronização chama o mesmo caso de uso e aceita `unitCost: null`. Conflito de repetição: `product_create_conflict`. |
+| Formulário e Venda | Em revisão | Nome, preço, quantos você tem e custo à vista; categoria e descrição sob "Mais detalhes". Venda sem produto: "Cadastre um produto para vender." com o botão "Cadastrar produto" (`/products?novo=1`, que chega com o PR da t286). |
+| Gate `product-opening-stock` | Em revisão | Caso de uso na base real: recebimento, contagem sem custo, custo 0, só o produto; falha forçada no estoque sem sobra; repetições e conflitos; duas chamadas ao mesmo tempo; produto de outra loja; manipulador da sincronização. Só roda no PostgreSQL 18 do CI (não rodado localmente: sem PostgreSQL na máquina da tarefa). |
+| Provas no navegador | Em revisão | `e2e/product-opening-stock.e2e.ts` (os três casos, a repetição, a contagem de ações do AC-25, a Venda sem produto, o formulário aberto a 360 e 320 px) e a jornada `produto` do e2e-real (SQL do produto, da variante, do movimento e do saldo). |

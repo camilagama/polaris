@@ -559,6 +559,22 @@ function requireSaleCapability(identity: TenantRequestIdentity): void {
   }
 }
 
+/** Today's calendar date in the organization's time zone (`YYYY-MM-DD`): the date of a movement the server dates. */
+export async function organizationToday(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity
+): Promise<string> {
+  const [organization] = await transaction
+    .select({ timezone: organizations.timezone })
+    .from(organizations)
+    .where(eq(organizations.id, identity.organizationId))
+    .limit(1);
+  if (!organization) {
+    throw new TenantAuthorizationError("tenant_access_denied");
+  }
+  return calendarDateInTimeZone(new Date(), organization.timezone);
+}
+
 // Operator-dated movements (receipt, write-off, count) cannot be dated after the
 // organization's today. Replays were answered before this check, and sale
 // movements have their own commercial-date rules.
@@ -574,17 +590,7 @@ async function assertOperatorDateNotInFuture(
   if (!(operatorDated && input.occurredOn)) {
     return;
   }
-  const [organization] = await transaction
-    .select({ timezone: organizations.timezone })
-    .from(organizations)
-    .where(eq(organizations.id, identity.organizationId))
-    .limit(1);
-  if (!organization) {
-    throw new TenantAuthorizationError("tenant_access_denied");
-  }
-  if (
-    input.occurredOn > calendarDateInTimeZone(new Date(), organization.timezone)
-  ) {
+  if (input.occurredOn > (await organizationToday(transaction, identity))) {
     throw new InventoryOccurredInFutureError();
   }
 }

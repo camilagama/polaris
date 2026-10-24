@@ -2097,8 +2097,23 @@ export const polarisContract = {
         z.object({
           categoryId: z.string().uuid().nullable().optional(),
           description: z.string().max(5000).nullable().optional(),
+          // The opening stock of the product, if the person says how many they have. The commandId is born once
+          // per opening of the form, as the product and variant IDs: the retry of a try whose answer was lost names
+          // them again and is told from a conflicting one on the server. A null cost is "cost unknown".
+          initialStock: z
+            .object({
+              commandId: z.string().uuid(),
+              quantity: z.number().int().positive().max(2_147_483_647),
+              unitCost: z.string().trim().min(1).max(64).nullable(),
+            })
+            .nullable()
+            .optional(),
+          // The BRL list price of the default variant, with at most two decimals.
+          listPrice: z.string().trim().min(1).max(64).nullable().optional(),
           name: productNameSchema,
           organizationId: z.string().trim().min(1),
+          productId: z.string().uuid().optional(),
+          variantId: z.string().uuid().optional(),
         })
       )
       .output(product),
