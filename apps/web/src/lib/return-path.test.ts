@@ -4,6 +4,8 @@ import { isSafeAuthCallbackPath, parseReturnPath } from "./return-path";
 describe("parseReturnPath", () => {
   it.each([
     "/",
+    // the return of the checkout lands on the Início, with its mark (t268 reads it)
+    "/?assinatura=concluida",
     "/sales",
     "/sales/history?x=1",
     "/inventory?q=caf%C3%A9",

@@ -428,3 +428,18 @@ export function validateGoalEdit(
     input: { name: trimmed === "" ? null : trimmed, target: target.value },
   };
 }
+
+/**
+ * `/dashboard?meta=…`, the two links of the Início (AC-11): `nova` opens the form of a new goal, `lista` takes the
+ * person to the goals. Anything else, or none, is the screen as it is; the value is never shown.
+ */
+export function readGoalsLink(search: string): "list" | "new" | null {
+  switch (new URLSearchParams(search).get("meta")) {
+    case "nova":
+      return "new";
+    case "lista":
+      return "list";
+    default:
+      return null;
+  }
+}

@@ -5,6 +5,7 @@ import { mediaListBody, solidPng } from "../e2e/media-fixtures";
 import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
+import { serveHome } from "./ui-home-states";
 import { resultAnswers } from "./ui-result-states";
 import { addSheet, rulesOutsideTailwindLayers } from "./ui-shell-isolation";
 import { serveStockRows } from "./ui-stock-states";
@@ -818,9 +819,30 @@ const SCREENS = [
   ...SALE_DETAIL_SCREENS,
   ...PAYMENT_SCREENS,
   {
+    // with the figures read: the cards, the goal, the ranking and the chart of the charts chunk
+    name: "Início no shell",
+    open: (page: Page) =>
+      openInShell(
+        page,
+        "/",
+        async () => {
+          await expect(
+            page.getByRole("heading", { level: 1, name: "Início" })
+          ).toBeVisible();
+          await expect(
+            page
+              .getByRole("region", { name: "Vendas por dia" })
+              .getByRole("img")
+          ).toBeVisible();
+        },
+        {},
+        serveHome
+      ),
+  },
+  {
     name: "Venda no shell",
     open: (page: Page) =>
-      openInShell(page, "/", () =>
+      openInShell(page, "/sales", () =>
         expect(
           page.getByRole("heading", { level: 1, name: "Nova venda" })
         ).toBeVisible()

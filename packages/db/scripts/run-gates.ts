@@ -70,6 +70,8 @@ const gates: Gate[] = [
   ["expense-recurrence", "verify-expense-recurrence-gate.ts"],
   ["economics", "verify-economics-gate.ts"],
   ["goals", "verify-goals-gate.ts"],
+  // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
+  ["home-writes", "verify-home-writes-gate.ts"],
   ["billing-catalog", "verify-billing-catalog-gate.ts"],
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
@@ -280,6 +282,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "goals",
+    "home-writes",
     "billing-catalog",
     "entitlements",
     "billing-lifecycle",

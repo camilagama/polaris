@@ -27,7 +27,7 @@ const RANGE = /<input[^>]*type="range"[^>]*>/;
 const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
 const STOP_COLORS = /stop-color="([^"]*)"/g;
 const SVG_TEXT = /<text[^>]*>([^<]*)<\/text>/g;
-const READING_LINE = /<p[^>]*aria-live="polite"[^>]*>.*23\/10.*R\$ 520/;
+const READING_LINE = /<p[^>]*data-chart-reading=""[^>]*>.*23\/10.*R\$ 520/;
 const TOP_LABEL_X = /<text[^>]*x="(\d+(?:\.\d+)?)"[^>]*>R\$ 2 mil/;
 const abbreviate = (value: number) => `${value / 1000} mil`;
 
@@ -59,9 +59,13 @@ describe("AreaChart", () => {
     expect(input).toContain("pointer-events-none");
   });
 
-  it("reads the day in focus (the last) in a polite line above the drawing", () => {
+  it("reads the day in focus (the last) in a line above the drawing, not live: the keyboard control speaks it", () => {
     expect(markup).toMatch(READING_LINE);
-    expect(markup.indexOf("aria-live")).toBeLessThan(markup.indexOf("<svg"));
+    expect(markup.indexOf("data-chart-reading")).toBeLessThan(
+      markup.indexOf("<svg")
+    );
+    // said once, by the control (Petković, PR 283): a live line would repeat it
+    expect(markup).not.toContain("aria-live");
   });
 
   it("labels the axes: money in the two lines the series fills, four dates on a phone", () => {
@@ -105,7 +109,7 @@ describe("AreaChart", () => {
       <AreaChart data={[]} formatValue={money} label="Sem vendas" width={328} />
     );
     expect(empty).toMatch(IMG_SVG);
-    expect(empty).not.toContain("aria-live");
+    expect(empty).not.toContain("data-chart-reading");
     expect(empty).not.toMatch(RANGE);
     expect(empty).not.toContain("NaN");
   });

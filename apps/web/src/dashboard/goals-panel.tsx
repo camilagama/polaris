@@ -2,7 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
@@ -13,6 +13,7 @@ import {
   type GoalCreateInput,
   type GoalEditInput,
   groupGoals,
+  readGoalsLink,
 } from "./goal-model";
 import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
 import { type GoalsState, useGoals } from "./use-goals";
@@ -153,7 +154,9 @@ export function GoalsPanel({
   const { reload, state } = useGoals(organizationId);
   const { busy, cancel, clearFeedback, create, feedback, update } =
     useGoalCommands(organizationId, reload);
-  const [creating, setCreating] = useState(false);
+  // the address the Início links to, read once: `?meta=nova` opens the form, `?meta=lista` goes to the goals
+  const [link] = useState(() => readGoalsLink(window.location.search));
+  const [creating, setCreating] = useState(link === "new");
   const [formCount, setFormCount] = useState(0);
 
   const closeForm = useCallback(() => {
@@ -165,6 +168,27 @@ export function GoalsPanel({
     setCreating(true);
     focusLater(() => document.getElementById("goal-create-kind")?.focus());
   }, [clearFeedback]);
+  useEffect(() => {
+    if (link !== null) {
+      // the link did its work: a reload or a step back is the screen as it is, not the form opening again
+      const url = new URL(window.location.href);
+      url.searchParams.delete("meta");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+    }
+    if (link === "new") {
+      focusLater(() => document.getElementById("goal-create-kind")?.focus());
+    } else if (link === "list") {
+      focusLater(() => {
+        const heading = document.getElementById(HEADING_ID);
+        heading?.scrollIntoView({ block: "start" });
+        heading?.focus({ preventScroll: true });
+      });
+    }
+  }, [link]);
   const handleRetry = useCallback(() => {
     reload();
   }, [reload]);

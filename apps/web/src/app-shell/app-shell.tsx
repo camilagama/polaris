@@ -4,6 +4,7 @@ import ClockIcon from "lucide-react/dist/esm/icons/clock";
 import CreditCardIcon from "lucide-react/dist/esm/icons/credit-card";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
 import GlobeIcon from "lucide-react/dist/esm/icons/globe";
+import HouseIcon from "lucide-react/dist/esm/icons/house";
 import LayoutGridIcon from "lucide-react/dist/esm/icons/layout-grid";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
 import ReceiptTextIcon from "lucide-react/dist/esm/icons/receipt-text";
@@ -87,12 +88,14 @@ const OrganizationSetup = lazy(() =>
 
 /** The icon of each destination (lucide, one module each). */
 const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
+  attention: TriangleAlertIcon,
   categories: LayoutGridIcon,
   customers: UsersIcon,
   dashboard: BarChart3Icon,
   devices: SmartphoneIcon,
   expenses: ReceiptTextIcon,
   history: ClockIcon,
+  home: HouseIcon,
   inventory: PackageIcon,
   "payment-profiles": CreditCardIcon,
   products: TagIcon,
@@ -232,7 +235,8 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
           ) : null}
           <LogoutControl onAttention={showLogoutAttention} />
           {isMobile ? null : (
-            <LegalLinks className="gap-x-4 gap-y-1 text-muted-foreground text-xs" />
+            // with touch, the 48 px areas of "Sair" and of the links would meet: 12 px more between them
+            <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs" />
           )}
         </div>
       </SidebarFooter>
@@ -241,13 +245,15 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
 }
 
 /**
- * The bar of destinations of the phone: Vender, Histórico, Estoque, Resultado and "Mais", which opens the rest
+ * The bar of destinations of the phone: Início, Vender, Histórico, Estoque and "Mais", which opens the rest
  * (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
- * screens of its area (`aria-current="true"`): Estoque on Produtos, Categorias and Clientes, Resultado on Despesas.
- * "Mais" carries it on the screens of no destination of the bar.
+ * screens of its area (`aria-current="true"`): Estoque on Produtos, Categorias and Clientes. "Mais" carries it on
+ * the screens of no destination of the bar (Resultado, Despesas, Pendências...), and the number of operations of
+ * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
   const { mobileTrigger, openMobile, setOpenMobile } = useSidebar();
+  const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
   const openMore = useCallback(() => setOpenMobile(true), [setOpenMobile]);
   const marked = navId === null ? null : bottomBarMark(navId);
   const moreCurrent = marked === "more";
@@ -299,7 +305,18 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         type="button"
       >
         {moreCurrent ? mark : null}
-        <EllipsisIcon aria-hidden />
+        <span className="relative">
+          <EllipsisIcon aria-hidden />
+          {rejected > 0 ? (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
+              data-attention-count=""
+            >
+              {rejected > 99 ? "99+" : rejected}
+            </span>
+          ) : null}
+        </span>
         Mais
       </button>
     </nav>

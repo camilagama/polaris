@@ -5,7 +5,6 @@ import {
   formatGoalDate,
   formatGoalPercent,
   formatGoalValue,
-  type GoalDraft,
   goalBadgeVariant,
   goalFinalDate,
   goalKindLabel,
@@ -18,6 +17,8 @@ import {
   groupGoals,
   newGoalDraft,
   parseGoalTarget,
+  readGoalsLink,
+  type GoalDraft,
   validateGoalDraft,
   validateGoalEdit,
 } from "./goal-model";
@@ -338,5 +339,24 @@ describe("validateGoalEdit", () => {
     expect(wrong.input).toBeNull();
     expect(wrong.errors.name).toBeDefined();
     expect(wrong.errors.target).toBeDefined();
+  });
+});
+
+describe("readGoalsLink (the links of the Início, AC-11)", () => {
+  it("opens the form with ?meta=nova and the list with ?meta=lista", () => {
+    expect(readGoalsLink("?meta=nova")).toBe("new");
+    expect(readGoalsLink("?meta=lista")).toBe("list");
+  });
+
+  it("ignores anything else, never reflecting it", () => {
+    for (const search of [
+      "",
+      "?meta=",
+      "?meta=NOVA",
+      "?meta=<script>",
+      "?outra=nova",
+    ]) {
+      expect(readGoalsLink(search)).toBeNull();
+    }
   });
 });

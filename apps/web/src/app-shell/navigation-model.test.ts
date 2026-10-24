@@ -11,8 +11,9 @@ import {
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the ten areas in workflow order, each once", () => {
+  it("lists the eleven areas in workflow order, each once, the Início first", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
+      "Início",
       "Vender",
       "Histórico",
       "Estoque",
@@ -24,8 +25,8 @@ describe("main menu", () => {
       "Perfis de pagamento",
       "Catálogo público",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(10);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(10);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(11);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(11);
   });
 
   it("groups the sidebar as in the v5.1 shell, Aparelhos last in Configurações", () => {
@@ -33,7 +34,7 @@ describe("main menu", () => {
       (group) => [group.label, group.items.map((item) => item.label)]
     );
     expect(groups).toEqual([
-      [null, ["Vender", "Histórico"]],
+      [null, ["Início", "Vender", "Histórico"]],
       ["Catálogo", ["Estoque", "Produtos", "Categorias", "Clientes"]],
       ["Resultado", ["Despesas", "Resultado"]],
       [
@@ -43,12 +44,12 @@ describe("main menu", () => {
     ]);
   });
 
-  it("the bottom bar of the phone has four destinations of the menu; the rest is under Mais", () => {
+  it("the bottom bar of the phone is Início, Vender, Histórico and Estoque; the rest is under Mais", () => {
     expect(
       BOTTOM_BAR_IDS.map(
         (id) => NAV_ITEMS.find((item) => item.id === id)?.label
       )
-    ).toEqual(["Vender", "Histórico", "Estoque", "Resultado"]);
+    ).toEqual(["Início", "Vender", "Histórico", "Estoque"]);
   });
 
   it("marks the destination of the area on the bottom bar, and Mais only for the screens of no destination", () => {
@@ -62,16 +63,24 @@ describe("main menu", () => {
     ).toEqual({
       categories: "inventory",
       customers: "inventory",
-      dashboard: "dashboard",
+      dashboard: "more",
       devices: "more",
-      expenses: "dashboard",
+      expenses: "more",
       history: "history",
+      home: "home",
       inventory: "inventory",
       "payment-profiles": "more",
       products: "inventory",
       "public-catalog": "more",
       sale: "sale",
     });
+  });
+
+  it("marks Mais on Pendências, a screen of no item of the menu", () => {
+    const route = resolveRoute("/attention");
+    expect(route).toMatchObject({ id: "attention", navId: "attention" });
+    expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
+    expect(bottomBarMark("attention")).toBe("more");
   });
 
   it("does not offer the customer-of-a-sale page, which opens from a sale of the history", () => {
@@ -92,11 +101,22 @@ describe("main menu", () => {
 });
 
 describe("resolveRoute", () => {
-  it("opens the sale screen at the root instead of categories", () => {
-    expect(resolveRoute("/")).toMatchObject({
+  it("opens the Início at the root, and the sale at /sales", () => {
+    expect(resolveRoute("/")).toEqual({
+      // nothing to type: the notice says the screen loads by itself
+      connectionForm: false,
+      id: "home",
+      kind: "page",
+      navId: "home",
+      // every figure is read from the server and there is no copy on the device yet (the PR 6 brings it)
+      onlineOnly: true,
+      title: "Início",
+    });
+    expect(resolveRoute("/sales")).toMatchObject({
       id: "sale",
       kind: "page",
       navId: "sale",
+      title: "Nova venda",
     });
   });
 
@@ -124,6 +144,7 @@ describe("resolveRoute", () => {
 
   it("marks the screens that work only online, and not the ones that work from the device (U-54)", () => {
     for (const path of [
+      "/",
       "/public-catalog",
       "/payment-profiles",
       "/expenses",
