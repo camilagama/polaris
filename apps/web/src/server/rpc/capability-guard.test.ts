@@ -10,8 +10,13 @@ import { describe, expect, it } from "vitest";
  * - in `server/sync/handlers/`, by the signed lease that `sync.push` required and the role the database
  *   revalidated (ADR 0033): only the handlers listed below, so a new one is a conscious decision.
  * Anywhere else under `server/`, `withCapability(` is refused, and so is importing it under another name.
+ * `apps/admin` does not use it today, so the name is refused there, in any file, until someone extends this guard
+ * on purpose (ADR 0035, amendment of 24/10/2026).
  */
 const SERVER = new URL("../", import.meta.url);
+const ADMIN = new URL("../../../../admin/src/", import.meta.url);
+const SOURCE_FILE = /\.[cm]?tsx?$/;
+const WITH_CAPABILITY_NAME = /\bwithCapability\b/;
 
 /** The folders whose functions must check the role before re-issuing the identity. */
 const CHECKED_FOLDERS = ["rpc/", "use-cases/"];
@@ -115,6 +120,49 @@ function serverSources(): Map<string, string> {
       ])
   );
 }
+
+/** The files of `apps/admin/src` (path relative to it, tests included) that name `withCapability` outside comments. */
+function adminUsers(files: ReadonlyMap<string, string>): string[] {
+  return [...files]
+    .filter(([, source]) => WITH_CAPABILITY_NAME.test(withoutComments(source)))
+    .map(([path]) => path);
+}
+
+describe("withCapability in apps/admin", () => {
+  it("is not imported or called until this guard is extended on purpose", () => {
+    const names = readdirSync(ADMIN, { encoding: "utf8", recursive: true });
+    const files = new Map(
+      names
+        .filter((name) => SOURCE_FILE.test(name))
+        .map((name) => [
+          name.split("\\").join("/"),
+          readFileSync(new URL(name, ADMIN), "utf8"),
+        ])
+    );
+    // the scan reaches the admin sources
+    expect(files.size).toBeGreaterThan(0);
+    expect(adminUsers(files)).toEqual([]);
+  });
+
+  it("sees an import, a call and a renamed import, and not a comment", () => {
+    expect(
+      adminUsers(
+        new Map([
+          [
+            "a.ts",
+            'import { withCapability } from "@polaris/db/tenant-transaction";',
+          ],
+          ["b.ts", "const next = withCapability(identity, X);"],
+          [
+            "c.tsx",
+            'import { withCapability as elevate } from "@polaris/db/tenant-transaction";',
+          ],
+          ["d.ts", "// withCapability(identity, X)\n/* withCapability */"],
+        ])
+      )
+    ).toEqual(["a.ts", "b.ts", "c.tsx"]);
+  });
+});
 
 describe("withCapability under server/", () => {
   it("is used only after requireCapabilityInTransaction in the same function, or in a handler the lease covers", () => {
