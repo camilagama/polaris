@@ -30,3 +30,7 @@ O PR60 do plano pede o app shell, a navegação offline e o versionamento de ass
 - **Biblioteca de PWA (Workbox e plugins):** muito mais código e política embutida do que as três coisas de que o app precisa, e uma dependência a mais para auditar; o worker próprio tem poucas linhas e testes.
 - **Cache de respostas da API para "funcionar offline":** é exatamente o que o plano proíbe; o offline dos dados é o banco local e o outbox, com revalidação de autorização.
 - **`skipWaiting` e `clients.claim()` na instalação:** trocariam os arquivos sob um app em uso e quebrariam os pedaços preguiçosos de páginas abertas.
+
+## Emenda (24/10/2026): origem dos ícones do manifesto
+
+O PR 280 trocou os ícones do app pela variante tinta (o "i" da marca sobre `#171614`), e o PR 287 apagou `apps/web/scripts/generate-pwa-icons.mjs`, o gerador da estrela de quatro pontas sobre o verde da marca. A linha "Instalável" da Decisão foi reescrita no PR 287 sem nota datada; esta emenda a registra. A origem dos ícones passou a ser `design/icone-app/` (SVG "any", maskable e `apple-touch-icon`). Os PNG de `apps/web/public/icons/` não têm script nem receita de geração no repositório (a ferramenta usada não foi registrada). O desenho do service worker, o precache e as provas deste ADR não mudam.
