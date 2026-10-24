@@ -1434,7 +1434,10 @@ describe("the refusals that call nothing come before the lock (the isolate's one
 describe("the owner's refund refunds only the first charge recorded (first_charge_event_id)", () => {
   it.each([
     ["no event", { eventId: null, periodEndsAt: sp("2026-11-11T00:00:00") }],
-    ["no period of that event", { eventId: FIRST_CHARGE_EVENT, periodEndsAt: null }],
+    [
+      "no period of that event",
+      { eventId: FIRST_CHARGE_EVENT, periodEndsAt: null },
+    ],
   ])(
     "refuses with nothing_to_refund when the record has %s, cancelling and refunding nothing",
     async (_label, firstCharge) => {

@@ -315,7 +315,10 @@ function alreadyCancelled(
 ): OwnerCommandOutcome<OwnerCancelRenewalResponse> {
   return {
     audit: "billing.command_refused",
-    response: { accessEndsAt: record.accessEndsAt, result: "already_cancelled" },
+    response: {
+      accessEndsAt: record.accessEndsAt,
+      result: "already_cancelled",
+    },
   };
 }
 

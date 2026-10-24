@@ -216,7 +216,12 @@ async function run() {
         "applied",
         `${label}: the first charge applies`
       );
-      return { firstChargeEventId: paid.eventId, periodEndsAt, providerRef, tenant };
+      return {
+        firstChargeEventId: paid.eventId,
+        periodEndsAt,
+        providerRef,
+        tenant,
+      };
     };
     const row = async (tenant: TenantFixture) =>
       (
