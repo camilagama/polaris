@@ -2113,6 +2113,17 @@ Desenho t269 v2, §3 (AC-24 a AC-26).
 | Gate `product-opening-stock` | Em revisão | Caso de uso na base real: recebimento, contagem sem custo, custo 0, só o produto; falha forçada no estoque sem sobra; repetições e conflitos; duas chamadas ao mesmo tempo; produto de outra loja; manipulador da sincronização. Só roda no PostgreSQL 18 do CI (não rodado localmente: sem PostgreSQL na máquina da tarefa). |
 | Provas no navegador | Em revisão | `e2e/product-opening-stock.e2e.ts` (os três casos, a repetição, a contagem de ações do AC-25, a Venda sem produto, o formulário aberto a 360 e 320 px) e a jornada `produto` do e2e-real (SQL do produto, da variante, do movimento e do saldo). |
 
+### Início (F2), PR 5: o Início em `/` com rede (t314; sem migration)
+
+Desenho t269 v2, §4, §5 e o uso dos gráficos do §6 (corte do Início, menos os critérios sem conexão, que são do PR 6).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Rota e navegação | Em revisão | `/` abre o Início (`home`), Vender fica em `/sales`; lateral começa por Início; barra do celular Início · Vender · Histórico · Estoque · Mais (Resultado, Despesas e Pendências sob Mais, com o número de operações que precisam de atenção no ícone). Manifesto com a descrição "Vendas, estoque e resultado da sua loja." e o atalho "Nova venda" (`/sales`); `start_url`, `scope` e `id` continuam `/`. |
+| Blocos com rede | Em revisão | `apps/web/src/home/`: Nova venda sem leitura nenhuma; Hoje, mês, Mais vendidos e gráfico do `periodSummary` (A e B); Meta por `goal.list({status: "all"})`; Precisa de atenção (aparelho, sem custo, sem saldo); checklist da loja sem venda com "Dar entrada no estoque"; erro e esqueleto por bloco; atualização ao voltar à tela, ao voltar o foco (30 s) e na meia-noite da loja. Chunk do Início 8,21 KB gzip (teto 9 KB). |
+| AC-23 | Em revisão | Gate `home-writes` (`packages/db/scripts/verify-home-writes-gate.ts`): `pg_stat_user_tables` antes e depois das leituras do Início, sem meta vencida (zero escrita) e com meta vencida (só `goals` e a auditoria, uma vez). Jornada `inicio` do e2e-real. Só roda no PostgreSQL 18 do CI. |
+| Provas no navegador | Em revisão | `e2e/home.e2e.ts` (ordem a 360 e 1280, Nova venda, vender e voltar, checklist e beco do estoque, meta, erro por bloco com 500, 429, sem marca, 401 e `/rpc` lento, viradas de dia e mês com relógio controlado, foco); estados de tela em `e2e-pwa/ui-home-states.ts`. |
+
 ### Navegação e componentes (F3.1a): Tabs e Skeleton nas telas de lista (t300; sem migration)
 
 Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Sem mudança de texto, de filtro nem de endereço.

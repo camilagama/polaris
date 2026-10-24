@@ -26,7 +26,7 @@ function utcDate(day: string): Date {
 }
 
 /** A calendar day `days` away from `day` (YYYY-MM-DD), with no time zone in the way. */
-export function addDays(day: string, days: number): string {
+function addDays(day: string, days: number): string {
   return new Date(utcDate(day).getTime() + days * DAY)
     .toISOString()
     .slice(0, 10);
@@ -108,7 +108,7 @@ export function msUntilNextMidnight(
 }
 
 /** Re-reading when the tab comes back is limited to once every 30 s (§ 5.1). */
-export const FOCUS_REFRESH_MS = 30_000;
+const FOCUS_REFRESH_MS = 30_000;
 
 export function shouldRefreshOnReturn(
   lastReadAt: number,
@@ -214,7 +214,7 @@ const MONTH_NAMES = [
 ] as const;
 
 /** "outubro" for a day of October. */
-export function monthName(day: string): string {
+function monthName(day: string): string {
   return MONTH_NAMES[Number(day.slice(5, 7)) - 1] ?? day.slice(0, 7);
 }
 

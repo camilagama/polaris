@@ -67,11 +67,7 @@ export function BlockSkeleton({
       <Skeleton aria-hidden="true" className="h-4 w-24" />
       <Skeleton aria-hidden="true" className="h-8 w-40" />
       {Array.from({ length: lines }, (_, index) => (
-        <Skeleton
-          aria-hidden="true"
-          className="h-4 w-full"
-          key={index}
-        />
+        <Skeleton aria-hidden="true" className="h-4 w-full" key={index} />
       ))}
     </Card>
   );

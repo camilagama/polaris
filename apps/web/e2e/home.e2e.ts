@@ -110,8 +110,8 @@ function balance(index: number) {
     quantity: 0,
     sku: null,
     updatedAt: null,
-    variantId: `0199c2d0-0000-7000-8000-0000000002${String(index).padStart(2, "0")}`,
     values: [],
+    variantId: `0199c2d0-0000-7000-8000-0000000002${String(index).padStart(2, "0")}`,
     version: 0,
   };
 }
@@ -489,9 +489,10 @@ test.describe("loja com venda", () => {
 
     const top = region(page, "Mais vendidos do mês");
     await expect(top.getByRole("link")).toHaveCount(1);
-    await expect(
-      top.getByRole("link", { name: SHIRT })
-    ).toHaveAttribute("href", `/products?produto=${PRODUCT}`);
+    await expect(top.getByRole("link", { name: SHIRT })).toHaveAttribute(
+      "href",
+      `/products?produto=${PRODUCT}`
+    );
     // a deleted product is listed without a link
     await expect(top).toContainText("Boné antigo");
 
@@ -580,6 +581,32 @@ test.describe("loja com venda", () => {
       .getByRole("link", { name: "Vender" })
       .click();
     await page.waitForURL(SALES_PATH);
+  });
+
+  test("vender e voltar: o Hoje e a série já trazem a venda, sem recarregar (§ 5.1)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer({ ...SOLD, days: { ...SOLD.days } });
+    await openHome(page, server);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await newSale(page).click();
+    await page.waitForURL(SALES_PATH);
+    const before = periodCalls(server).length;
+    // the sale confirmed on /sales: the server now counts it in today
+    server.scenario.days["2026-10-23"] = [52_010, 3];
+    await page
+      .getByRole("navigation", { exact: true, name: "Destinos" })
+      .getByRole("link", { name: "Início" })
+      .click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Início" })
+    ).toBeVisible();
+    await expect(region(page, "Hoje")).toContainText("R$ 520,10");
+    await expect(region(page, "Hoje")).toContainText(
+      "Vendas líquidas · 3 vendas"
+    );
+    expect(periodCalls(server).length).toBeGreaterThan(before);
   });
 });
 

@@ -1,7 +1,11 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { resolveRoute } from "../../app-shell/navigation-model";
+import {
+  bottomBarMark,
+  NAV_ITEMS,
+  resolveRoute,
+} from "../../app-shell/navigation-model";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { logoutDestination } from "../../lib/sign-in-path";
 import type { LogoutWorkspace } from "../logout-guard";
@@ -254,12 +258,14 @@ describe("the sync status line at the top of Mais", () => {
 });
 
 describe("the attention page route", () => {
-  it("exists, outside the main menu", () => {
+  it("exists, outside the main menu, and the bottom bar marks Mais on it", () => {
     expect(resolveRoute("/attention")).toMatchObject({
       id: "attention",
       kind: "page",
-      navId: null,
+      navId: "attention",
     });
+    expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
+    expect(bottomBarMark("attention")).toBe("more");
   });
 });
 

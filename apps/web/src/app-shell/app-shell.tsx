@@ -309,7 +309,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           {rejected > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground leading-4 tabular-nums"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
               {rejected > 99 ? "99+" : rejected}

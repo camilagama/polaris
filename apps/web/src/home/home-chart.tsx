@@ -67,12 +67,7 @@ function ChartFailed() {
   return online ? (
     <div className="grid justify-items-start gap-2">
       <p className="text-muted-foreground text-support">O gráfico não abriu.</p>
-      <Button
-        onClick={reloadPage}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
+      <Button onClick={reloadPage} size="sm" type="button" variant="outline">
         Tentar novamente
       </Button>
     </div>
