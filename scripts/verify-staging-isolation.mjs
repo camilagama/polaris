@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
- * - the web of staging is not at exactly https://dash.araute.app with workers_dev off, or production uses a host of staging;
+ * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production uses a host of staging;
  * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
@@ -32,19 +32,26 @@ const ENVIRONMENT_SUFFIX = /-(local|staging)$/;
 const POOLER = /pooler/i;
 const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // The web of staging is served at this host by a Custom Domain created outside the config (ADR 0097):
-// an exact string, so another subdomain, http, a path or userinfo never matches. The catalog stays on workers.dev.
+// an exact string, so another subdomain, http, a path or userinfo never matches. The catalog of staging
+// follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
+export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
 const TRAILING_DOTS = /\.+$/;
-const STAGING_CATALOG_ORIGIN =
-  /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/;
+// the workers.dev hosts of the staging Workers, which production never uses either
+const STAGING_WORKERS_DEV =
+  /^polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev$/;
+const STAGING_FIXED_ORIGIN = {
+  BETTER_AUTH_BASE_URL: STAGING_WEB_ORIGIN,
+  CATALOG_ORIGIN: STAGING_CATALOG_ORIGIN,
+};
 const STAGING_URLS = {
   BETTER_AUTH_BASE_URL: {
     accepts: (value) => value === STAGING_WEB_ORIGIN,
     says: `exactly ${STAGING_WEB_ORIGIN}`,
   },
   CATALOG_ORIGIN: {
-    accepts: (value) => STAGING_CATALOG_ORIGIN.test(value),
-    says: "the workers.dev URL of the staging catalog Worker",
+    accepts: (value) => value === STAGING_CATALOG_ORIGIN,
+    says: `exactly ${STAGING_CATALOG_ORIGIN}`,
   },
 };
 // binding kinds staging does not use: any of them in env.staging (or in the build) could reach another resource
@@ -290,6 +297,11 @@ function checkStagingBlock(app, where, staging, problems) {
       `${where}: workers_dev must be false (the origin check accepts only ${STAGING_WEB_ORIGIN})`
     );
   }
+  if (app === "catalog" && staging.workers_dev !== false) {
+    problems.push(
+      `${where}: workers_dev must be false (the catalog is served only at ${STAGING_CATALOG_ORIGIN})`
+    );
+  }
   if (app === "admin") {
     checkAdminNotExposed(where, staging, problems);
   }
@@ -397,7 +409,7 @@ function checkStagingResources(where, staging, problems) {
   }
   if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
     problems.push(
-      `${where}: staging has no routes (the web Custom Domain is managed outside the config)`
+      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
     );
   }
   for (const [name, rule] of Object.entries(STAGING_URLS)) {
@@ -575,13 +587,15 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
+  const stagingHosts = [
+    ...Object.values(STAGING_FIXED_ORIGIN).map(hostOf),
+    ...Object.keys(STAGING_URLS).map((key) => hostOf(staging.vars?.[key])),
+  ];
   for (const variable of Object.keys(STAGING_URLS)) {
     const host = hostOf(production.vars?.[variable]);
     if (
       host !== undefined &&
-      (host === hostOf(staging.vars?.[variable]) ||
-        (variable === "BETTER_AUTH_BASE_URL" &&
-          host === hostOf(STAGING_WEB_ORIGIN)))
+      (stagingHosts.includes(host) || STAGING_WORKERS_DEV.test(host))
     ) {
       problems.push(
         `${app}: env.production vars.${variable} must not use the host of staging`

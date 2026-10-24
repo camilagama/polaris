@@ -54,12 +54,14 @@
     "staging": {
       "name": "polaris-catalog-staging",
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
-      "workers_dev": true,
+      // Served at catalogo.araute.app by a Custom Domain created outside this file (ADR 0097, runbook staging.md):
+      // no `routes` here, and workers.dev is off because CATALOG_ORIGIN is the only public origin.
+      "workers_dev": false,
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         "POLARIS_SITE_URL": "",
-        "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev"
+        "CATALOG_ORIGIN": "https://catalogo.araute.app"
       },
       "observability": {
         "enabled": true,
