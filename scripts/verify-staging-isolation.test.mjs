@@ -324,17 +324,97 @@ describe("the staging isolation check", () => {
       "CATALOGO.araute.app./*",
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.production routes[1] must not use the host of staging",
-      "web: env.production routes[2] must not use the host of staging",
+      "web: env.production routes[1] must not use or reach a host of staging",
+      "web: env.production routes[2] must not use or reach a host of staging",
     ]);
     production.routes = undefined;
     production.route = "dash.araute.app/*";
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.production route must not use the host of staging",
+      "web: env.production route must not use or reach a host of staging",
     ]);
-    // a malformed list is not a crash
+    // a malformed list fails closed, and is not a crash
     production.route = undefined;
     production.routes = { pattern: "dash.araute.app/*" };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production routes must be a list (routes deve ser lista)",
+    ]);
+  });
+
+  it("refuses a wildcard route of production that reaches a host of staging", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    for (const pattern of [
+      "*.araute.app/*",
+      "*/*",
+      "*araute.app/*",
+      "*.app/*",
+      "*.AraUte.app./*",
+      "*.workers.dev/*",
+      "polaris-web-staging.*.workers.dev/*",
+      "dash.araute.app*",
+      "*.minhaconta.workers.dev/*",
+      "https://*.araute.app/*",
+      " *.araute.app/*",
+    ]) {
+      production.routes = [pattern];
+      expect(findIsolationProblems(entries), pattern).toEqual([
+        "web: env.production routes[0] must not use or reach a host of staging",
+      ]);
+    }
+    production.routes = undefined;
+    production.route = { pattern: "*.araute.app/*", zone_name: "araute.app" };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must not use or reach a host of staging",
+    ]);
+  });
+
+  it("fails closed on a route of production that is not a pattern", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.route = ["dash.araute.app/*"];
+    production.routes = [{ zone_name: "araute.app" }, 7];
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must be a pattern string or an object with a pattern string",
+      "web: env.production routes[0] must be a pattern string or an object with a pattern string",
+      "web: env.production routes[1] must be a pattern string or an object with a pattern string",
+    ]);
+    production.route = undefined;
+    for (const routes of [null, "app.example.com/*", 7]) {
+      production.routes = routes;
+      expect(findIsolationProblems(entries)).toEqual([
+        "web: env.production routes must be a list (routes deve ser lista)",
+      ]);
+    }
+  });
+
+  it("lets a route of production that cannot reach staging pass", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.routes = [
+      "*.example.com/*",
+      "app.araute.app/*",
+      { custom_domain: true, pattern: "loja.araute.app" },
+      "*.dash.araute.app/*",
+    ];
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("sweeps objects and lists in the variables of production as JSON text", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.X = { url: "https://dash.araute.app" };
+    production.vars.Y = ["https://catalogo.araute.app"];
+    production.vars.W = { list: ["ok", "a\ndash.araute.app"] };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.X must not use the host of staging",
+      "web: env.production vars.Y must not use the host of staging",
+      "web: env.production vars.W must not use the host of staging",
+    ]);
+    production.vars.W = undefined;
+    production.vars.X = { n: 1, on: true, url: "https://app.example.com" };
+    production.vars.Y = ["https://app.example.com"];
+    production.vars.Z = null;
+    production.vars.B = false;
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
