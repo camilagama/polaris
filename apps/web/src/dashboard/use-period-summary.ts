@@ -86,6 +86,8 @@ export function usePeriodSummary(organizationId: string, month: string) {
           from: bounds.from,
           organizationId,
           to: bounds.to,
+          // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
+          topProducts: 3,
         });
         if (!isPeriodSummary(summary)) {
           // not what the server sends (a captive portal page, a proxy): as if it had not answered

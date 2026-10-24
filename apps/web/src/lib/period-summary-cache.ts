@@ -11,6 +11,9 @@ import type { PreferenceStorage } from "./current-organization-model";
  */
 const KEY_PREFIX = "polaris.offline.periodSummary.";
 
+/** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
+export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
+
 /**
  * A summary as kept on the device: a copy written before the daily series
  * existed has no `daily` (the screen then draws no series for that month), and
@@ -314,12 +317,15 @@ export function readPeriodSummaryCache(
   }
 }
 
-/** Forgets the summaries of every organization (the session ended). */
+/** Forgets the summaries of every organization and the Início's copies with them (the session ended). */
 export function clearPeriodSummaryCaches(
   preference: PreferenceStorage | null
 ): void {
   try {
-    for (const key of keysWithPrefix(preference, KEY_PREFIX)) {
+    for (const key of [
+      ...keysWithPrefix(preference, KEY_PREFIX),
+      ...keysWithPrefix(preference, HOME_COPY_KEY_PREFIX),
+    ]) {
       preference?.removeItem(key);
     }
   } catch {

@@ -39,7 +39,23 @@ function Miniature({ values }: { values: readonly number[] }) {
   );
 }
 
-export function TodayBlock({ figures }: { figures: HomeFigures }) {
+/** Hoje; `shown` false when the figures are a copy of another day of the store (§ 7.2): never yesterday's as today's. */
+export function TodayBlock({
+  figures,
+  shown = true,
+}: {
+  figures: HomeFigures;
+  shown?: boolean;
+}) {
+  if (!shown) {
+    return (
+      <HomeBlock id="home-today" title="Hoje">
+        <p className="text-muted-foreground">
+          Sem números de hoje neste aparelho
+        </p>
+      </HomeBlock>
+    );
+  }
   const today = todayFigures(figures.month.daily ?? [], figures.today);
   const week = lastDays(
     figures.before.daily ?? [],

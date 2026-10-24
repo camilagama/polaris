@@ -9,7 +9,7 @@ import {
   goalProgressWidth,
   goalTitle,
 } from "../dashboard/goal-model";
-import { type GoalView, goalPeriodShort } from "./home-model";
+import { type GoalView, goalPeriodShort, type OfflineGoal } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import type { Block } from "./use-home";
 
@@ -71,7 +71,30 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
   );
 }
 
-function SettledGoal({ goal }: { goal: GoalReadModel }) {
+/** A goal kept on the device whose period ended: its result is the server's to say (§ 7.3), so no percent. */
+function EndedGoal({ goal }: { goal: GoalReadModel }) {
+  return (
+    <>
+      <div className="grid gap-0.5">
+        <p className="font-medium">{goalTitle(goal)}</p>
+        <p className="text-muted-foreground text-support">
+          {goalPeriodShort(goal)}
+        </p>
+      </div>
+      <p className="text-support">
+        Esta meta terminou. O resultado sai com conexão.
+      </p>
+    </>
+  );
+}
+
+function SettledGoal({
+  goal,
+  online = true,
+}: {
+  goal: GoalReadModel;
+  online?: boolean;
+}) {
   const reached = goal.status === "completed";
   return (
     <>
@@ -91,9 +114,11 @@ function SettledGoal({ goal }: { goal: GoalReadModel }) {
           {`Chegou a ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)}.`}
         </p>
       )}
-      <a className={cn(LINK, "w-fit")} href="/dashboard?meta=nova">
-        Definir meta
-      </a>
+      {online ? (
+        <a className={cn(LINK, "w-fit")} href="/dashboard?meta=nova">
+          Definir meta
+        </a>
+      ) : null}
     </>
   );
 }
@@ -140,6 +165,38 @@ export function GoalBlock({
           </a>
         </div>
       ) : null}
+    </HomeBlock>
+  );
+}
+
+/**
+ * The goal without a connection (§ 7.3, § 7.4): the one the card showed, kept on the device, by the rule of the
+ * period; with no copy, "Metas só com conexão.". Setting or seeing the other goals needs the connection: no link.
+ */
+export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
+  let content: React.ReactNode;
+  switch (goal.kind) {
+    case "active":
+      content = goal.ended ? (
+        <EndedGoal goal={goal.goal} />
+      ) : (
+        <ActiveGoal goal={goal.goal} others={0} />
+      );
+      break;
+    case "settled":
+      content = <SettledGoal goal={goal.goal} online={false} />;
+      break;
+    case "none":
+      content = (
+        <p className="text-muted-foreground">Nenhuma meta em andamento.</p>
+      );
+      break;
+    default:
+      content = <p className="text-muted-foreground">Metas só com conexão.</p>;
+  }
+  return (
+    <HomeBlock id="home-goal" title="Meta">
+      {content}
     </HomeBlock>
   );
 }

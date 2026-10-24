@@ -1,19 +1,30 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  browserConnection,
+  useConnectionReturn,
+  workerAnswers,
+} from "../lib/browser-connection";
+import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
-import { isSessionOver } from "../offline/runtime/session-ended";
 import {
   isPeriodSummary,
   type StoredPeriodSummary,
+  writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
 import { isLegalAcceptanceRefusal, rpcErrorCode } from "../lib/rpc-error";
+import { isSigningOut } from "../lib/sign-out";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
+import { isSessionOver } from "../offline/runtime/session-ended";
+import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
   type BalancesPage,
   homePeriods,
   homeReads,
   msUntilNextMidnight,
   noSaleCounted,
+  pickGoal,
   shouldRefreshOnReturn,
   storeToday,
 } from "./home-model";
@@ -27,6 +38,11 @@ import {
  * history (a sale confirmed on `/sales` is then in the figures) and at the next midnight of the store, taken from the
  * server's clock; when the month of the server is not the one asked for, the figures are read again for it (§ 5.1).
  * A 401 is the shell's to say ("Entrar de novo"): the blocks say nothing more, and the copies of the results go away.
+ *
+ * Without a connection nothing is read (§ 7): the page shows the device's copy, which every read that worked keeps
+ * (only with the offline runtime, for a role that reads the results, and never once the session is ending). A read
+ * with no answer asks the probe: when the Worker is not there either, it is the lack of a connection, not an error of
+ * the block (§ 7.1); everything is read again when the connection comes back, keeping what is on the screen.
  */
 
 /** A block's state: still reading, read, failed (and whether trying again can help) or not shown at all. */
@@ -79,6 +95,26 @@ function refusesSession(error: unknown): boolean {
   );
 }
 
+/** A read with no answer at all, and the probe does not find the Worker either: no connection (§ 7.1). */
+async function noConnection(error: unknown): Promise<boolean> {
+  return rpcErrorCode(error) === undefined && !(await workerAnswers());
+}
+
+/** Keeps the copy only with the runtime on, for a role that reads the results, and never while the session ends. */
+function keepCopy(
+  readsReport: boolean,
+  keep: (storage: ReturnType<typeof browserStorage>) => void
+) {
+  if (
+    OFFLINE_RUNTIME_ENABLED &&
+    readsReport &&
+    !isSigningOut() &&
+    !isSessionOver()
+  ) {
+    keep(browserStorage());
+  }
+}
+
 /** Trying again only helps when the server did not answer or was out; a refusal stays a refusal. */
 function failed(error: unknown): { retryable: boolean; status: "error" } {
   const code = rpcErrorCode(error);
@@ -126,9 +162,12 @@ async function readFigures(
 async function readChecklist(
   organizationId: string,
   readsStock: boolean
-): Promise<HomeChecklist | null> {
+): Promise<HomeChecklist | "sold" | null> {
   const sold = await orpcClient.sale.list({ limit: 1, organizationId });
-  if (sold.sales.length > 0 || !readsStock) {
+  if (sold.sales.length > 0) {
+    return "sold";
+  }
+  if (!readsStock) {
     return null;
   }
   const [product] = (
@@ -248,6 +287,20 @@ export function useHome(
         }
         const ready = { ...figures, today };
         if (ticket === sequence.current.numbers) {
+          keepCopy(reads.report, (storage) => {
+            writePeriodSummaryCache(
+              storage,
+              organizationId,
+              today.slice(0, 7),
+              ready.month,
+              { offlineRuntimeEnabled: true, signingOut: false }
+            );
+            const change: Partial<HomeCopy> = { before: ready.before };
+            if (!noSaleCounted(ready.month, ready.before)) {
+              change.hadSale = true;
+            }
+            writeHomeCopy(storage, organizationId, change);
+          });
           setMidnightAt(
             Date.now() +
               msUntilNextMidnight(Date.now() + skew.current, timezone)
@@ -256,7 +309,10 @@ export function useHome(
         settle(ticket, "figures", { block: { data: ready, status: "ready" } });
         return ready;
       } catch (error) {
-        settle(ticket, "figures", { error }, keep);
+        // no connection: the page shows the copy (§ 7.4); the read is made again when the connection is back
+        if (!(await noConnection(error))) {
+          settle(ticket, "figures", { error }, keep);
+        }
         return null;
       }
     },
@@ -274,7 +330,13 @@ export function useHome(
         return;
       }
       try {
-        const data = await readChecklist(organizationId, reads.inventory);
+        const read = await readChecklist(organizationId, reads.inventory);
+        if (read === "sold" && ticket === sequence.current.numbers) {
+          keepCopy(reads.report, (storage) =>
+            writeHomeCopy(storage, organizationId, { hadSale: true })
+          );
+        }
+        const data = read === "sold" ? null : read;
         settle(ticket, "checklist", { block: { data, status: "ready" } });
       } catch (error) {
         // not knowing whether the store sold, the figures stand with their empty states
@@ -287,7 +349,7 @@ export function useHome(
         );
       }
     },
-    [organizationId, reads.inventory, reads.sales, settle]
+    [organizationId, reads.inventory, reads.report, reads.sales, settle]
   );
 
   const loadGoals = useCallback(
@@ -305,12 +367,26 @@ export function useHome(
           organizationId,
           status: "all",
         });
+        if (ticket === sequence.current.goals) {
+          // the goal the card shows, as it shows it now (§ 7.3)
+          const today = calendarDayInTimezone(
+            new Date(Date.now() + skew.current),
+            timezone
+          );
+          keepCopy(reads.report, (storage) =>
+            writeHomeCopy(storage, organizationId, {
+              goal: pickGoal(goals, today, timezone),
+            })
+          );
+        }
         settle(ticket, "goals", { block: { data: goals, status: "ready" } });
       } catch (error) {
-        settle(ticket, "goals", { error }, keep);
+        if (!(await noConnection(error))) {
+          settle(ticket, "goals", { error }, keep);
+        }
       }
     },
-    [organizationId, reads.goals, settle]
+    [organizationId, reads.goals, reads.report, settle, timezone]
   );
 
   const loadStock = useCallback(
@@ -334,7 +410,9 @@ export function useHome(
         );
         settle(ticket, "stock", { block: { data, status: "ready" } });
       } catch (error) {
-        settle(ticket, "stock", { error }, keep);
+        if (!(await noConnection(error))) {
+          settle(ticket, "stock", { error }, keep);
+        }
       }
     },
     [organizationId, reads.inventory, reads.unknownCost, settle]
@@ -372,6 +450,10 @@ export function useHome(
   /** Reads every block; `keep` leaves what is on screen while the new answer comes (a refresh, not an opening). */
   const loadAll = useCallback(
     (keep: boolean) => {
+      // no read without a connection: the copy is on the screen, and the return of the connection reads
+      if (!browserConnection.isOnline()) {
+        return;
+      }
       lastReadAt.current = Date.now();
       setState((now) => ({ ...now, sessionRefused: false }));
       loadNumbersAndStock(keep);
@@ -385,6 +467,10 @@ export function useHome(
       loadAll(true);
     }
   }, [loadAll]);
+
+  // the connection is back: everything is read again, keeping on the screen what is there (the tab of the chart, the
+  // scroll) until the answers come
+  const online = useConnectionReturn(refresh);
 
   useEffect(() => {
     const tickets = sequence.current;
@@ -438,5 +524,7 @@ export function useHome(
     [loadNumbersAndStock]
   );
   const retryGoals = useCallback(() => loadGoalsAgain(false), [loadGoalsAgain]);
-  return { reads, retryFigures, retryGoals, state };
+  /** The server's clock as the device estimates it from the last answer (the device's own before any). */
+  const serverNow = useCallback(() => Date.now() + skew.current, []);
+  return { online, reads, retryFigures, retryGoals, serverNow, state };
 }
