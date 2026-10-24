@@ -53,9 +53,13 @@
 @tailwindcss/vite@4.3.3
 @tybys/wasm-util@0.10.4
 @tybys/wasm-util@0.10.4
+@types/d3-path@3.1.1
+@types/d3-shape@3.1.8
 axe-core@4.14.0
 class-variance-authority@0.7.1
 clsx@2.1.1
+d3-path@3.1.0
+d3-shape@3.2.0
 detect-libc@2.1.2
 enhanced-resolve@5.26.0
 fdir@6.5.0

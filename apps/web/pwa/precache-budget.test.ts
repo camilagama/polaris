@@ -12,6 +12,10 @@ import { describe, expect, it } from "vitest";
 import {
   budgetProblems,
   budgetWarnings,
+  CHARTS_BUDGET_GZIP_BYTES,
+  chartsBudgetProblems,
+  chartsLine,
+  chartsPlacementProblems,
   FONT_BUDGET_BYTES,
   interfaceShares,
   measurePrecache,
@@ -28,6 +32,8 @@ import {
 
 const GROWTH_LINE =
   /PRECACHE-GROWTH total \d+ B gzip, growth [+-]?\d+ B over the baseline of \d+ B \(reference \+44000 B/;
+
+const CHARTS_LINE = /CHARTS chunk \d+ B gzip of 8000 B \(\d+ B left\)/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
 
@@ -93,6 +99,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
   it("passes at the limits and fails one byte past each of them", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const atLimit = {
+      charts: 0,
       fonts: FONT_BUDGET_BYTES,
       interface: 0,
       primitives: PRIMITIVES_BUDGET_GZIP_BYTES,
@@ -114,6 +121,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(REST_GROWTH_MODE).toBe("warn");
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const withGrowth = (growth: number) => ({
+      charts: 0,
       fonts: 0,
       interface: 0,
       primitives: 0,
@@ -158,6 +166,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
   it("blocks past the reference when the mode goes back to block (the cut step)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const over = {
+      charts: 0,
       fonts: 0,
       interface: 0,
       primitives: 0,
@@ -176,6 +185,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(restBaseline(true)).toBe(REST_BASELINE_GZIP_BYTES.offlineRuntimeOn);
     // the build of the e2e on the real stack with the runtime on: +87 KB against the other baseline, +9 KB against its own
     const runtimeOn = {
+      charts: 0,
       fonts: 52_528,
       interface: 0,
       primitives: 0,
@@ -265,6 +275,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
   it("counts the interface infrastructure in the rest line (control: it does not escape it by moving out of the rest)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const atLimit = {
+      charts: 0,
       fonts: 0,
       interface: 15_000,
       primitives: 0,
@@ -446,5 +457,191 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
     expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(44_000);
     expect(REST_GROWTH_HARD_CAP_GZIP_BYTES).toBe(80_000);
+  });
+});
+
+describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
+  const random = (length: number) =>
+    new Uint8Array(length).map((_, index) => (index * 7919) % 251);
+  const asSize = (charts: number) => ({
+    charts,
+    fonts: 0,
+    interface: 0,
+    primitives: 0,
+    rest: 0,
+  });
+
+  it("counts the charts chunk in a line of its own: not in the rest, not in the interface share", () => {
+    const files: Record<string, Uint8Array> = {
+      "assets/charts-Dk3jf9.js": random(10_000),
+      "assets/index-abc.js": random(10_000),
+    };
+    const size = measurePrecache(
+      Object.keys(files),
+      (path) => files[path] as Uint8Array,
+      {
+        // even a share that says the chunk is all interface code does not move it to the rest line
+        interface: new Map([["assets/charts-Dk3jf9.js", 1]]),
+      }
+    );
+    expect(size.charts).toBeGreaterThan(0);
+    expect(size.interface).toBe(0);
+    const withoutCharts = measurePrecache(["assets/index-abc.js"], (path) =>
+      path === "assets/index-abc.js" ? random(10_000) : bytes(0)
+    );
+    expect(size.rest).toBe(withoutCharts.rest);
+    // a name that only starts like it is another chunk
+    const other = measurePrecache(["assets/charts-page-abc.css"], () =>
+      random(1000)
+    );
+    expect(other.charts).toBe(0);
+  });
+
+  it("passes at 8 000 B gzip and fails one byte past it, in any build that has the chunk", () => {
+    expect(CHARTS_BUDGET_GZIP_BYTES).toBe(8000);
+    expect(chartsBudgetProblems(asSize(8000))).toEqual([]);
+    expect(chartsBudgetProblems(asSize(8001))).toEqual([
+      expect.stringContaining("charts chunk: 8001 B gzip, over the 8000 B"),
+    ]);
+    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+    expect(
+      budgetProblems({ ...asSize(8001), rest: baseline }, baseline)
+    ).toEqual([expect.stringContaining("charts chunk")]);
+    expect(
+      budgetProblems({ ...asSize(8000), rest: baseline }, baseline)
+    ).toEqual([]);
+  });
+
+  it("prints the line the review greps for, with the bytes left or the excess, or that the build has no chunk", () => {
+    expect(chartsLine(asSize(0))).toBe(
+      "CHARTS no charts chunk in this build (no screen asks for a chart yet), 0 B of 8000 B gzip"
+    );
+    expect(chartsLine(asSize(5321))).toBe(
+      "CHARTS chunk 5321 B gzip of 8000 B (2679 B left)"
+    );
+    expect(chartsLine(asSize(8000))).toContain("(0 B left)");
+    expect(chartsLine(asSize(8100))).toContain("over by 100 B");
+  });
+
+  it("fails a chart module, d3-shape or d3-path in a chunk that is not the charts chunk (control: in its own chunk it passes)", () => {
+    const chart = "/repo/apps/web/src/ui/charts/area-chart.tsx";
+    const d3 =
+      "/repo/node_modules/.bun/d3-shape@3.2.0/node_modules/d3-shape/src/line.js";
+    const loader = "/repo/apps/web/src/ui/charts/on-demand.tsx";
+    expect(
+      chartsPlacementProblems([
+        {
+          fileName: "assets/charts-Dk3jf9.js",
+          modules: {
+            [chart]: { renderedLength: 1 },
+            [d3]: { renderedLength: 1 },
+          },
+        },
+        {
+          fileName: "assets/index-abc.js",
+          modules: { [loader]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([]);
+    expect(
+      chartsPlacementProblems([
+        {
+          fileName: "assets/sale-def.js",
+          modules: {
+            [chart]: { renderedLength: 1 },
+            [d3]: { renderedLength: 1 },
+          },
+        },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "chart module /repo/apps/web/src/ui/charts/area-chart.tsx is in assets/sale-def.js"
+      ),
+      expect.stringContaining(
+        "chart module d3-shape/src/line.js is in assets/sale-def.js"
+      ),
+    ]);
+  });
+
+  it("the plugin fails the build over 8 KB or with d3 outside the chunk, and prints the line (over a real output directory)", () => {
+    const run = (
+      options: { only?: "charts" },
+      files: Record<string, Uint8Array>,
+      bundle: { fileName: string; modules: Record<string, unknown> }[] = []
+    ) => {
+      const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      for (const [name, content] of Object.entries(files)) {
+        writeFileSync(join(directory, "assets", name), content);
+      }
+      const said = { error: [] as string[], info: [] as string[] };
+      const plugin = precacheBudgetPlugin(options);
+      (plugin.configResolved as (config: unknown) => void)({ env: {} });
+      const context = {
+        environment: { name: "client" },
+        error: (message: string) => said.error.push(message),
+        info: (message: string) => said.info.push(message),
+        warn: () => undefined,
+      };
+      try {
+        (
+          plugin.generateBundle as (
+            this: unknown,
+            options: unknown,
+            bundle: unknown
+          ) => void
+        ).call(
+          context,
+          {},
+          Object.fromEntries(
+            bundle.map((chunk) => [chunk.fileName, { type: "chunk", ...chunk }])
+          )
+        );
+        (
+          plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+        ).call(context, { dir: directory });
+      } finally {
+        rmSync(directory, { force: true, recursive: true });
+      }
+      return said;
+    };
+    // a build with no chunk says so, and passes
+    const none = run({}, { "app-abc.js": random(2000) });
+    expect(none.error).toEqual([]);
+    expect(none.info.join("\n")).toContain(
+      "CHARTS no charts chunk in this build"
+    );
+    // 3 KB of bytes that do not compress: under the line, printed with what is left
+    const small = run({}, { "charts-Dk3jf9.js": randomBytes(3000) });
+    expect(small.error).toEqual([]);
+    expect(small.info.join("\n")).toMatch(CHARTS_LINE);
+    // 9 KB: over the line, in the production build and in the build of the browser checks
+    const big = { "charts-Dk3jf9.js": randomBytes(9000) };
+    expect(run({}, big).error).toEqual([
+      expect.stringContaining("charts chunk"),
+    ]);
+    const onlyCharts = run({ only: "charts" }, big);
+    expect(onlyCharts.error).toEqual([expect.stringContaining("charts chunk")]);
+    expect(onlyCharts.info.join("\n")).toContain("over by");
+    // the build of the browser checks looks at nothing else: a rest far past the hard cap is not its business
+    expect(
+      run({ only: "charts" }, { "app-abc.js": randomBytes(1_200_000) }).error
+    ).toEqual([]);
+    // d3 in the first script: fails in both builds
+    const misplaced = [
+      {
+        fileName: "assets/index-abc.js",
+        modules: {
+          "/repo/node_modules/d3-shape/src/line.js": { renderedLength: 1 },
+        },
+      },
+    ];
+    expect(run({}, { "index-abc.js": random(500) }, misplaced).error).toEqual([
+      expect.stringContaining("outside the charts chunk"),
+    ]);
+    expect(
+      run({ only: "charts" }, { "index-abc.js": random(500) }, misplaced).error
+    ).toEqual([expect.stringContaining("outside the charts chunk")]);
   });
 });
