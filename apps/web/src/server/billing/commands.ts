@@ -62,18 +62,26 @@ export class BillingCommandError extends Error {
   }
 }
 
-/** Picks the price of the Pro cycle among the active prices; a cycle with none is not offered. */
+/**
+ * Picks the price of the Pro cycle among the active prices, with its catalog ID (recorded with the link, ADR
+ * 0104); a cycle with none is not offered.
+ */
 export function checkoutPriceOf(
-  prices: readonly { amount: string; intervalMonths: number; planId: string }[],
+  prices: readonly {
+    amount: string;
+    id: string;
+    intervalMonths: number;
+    planId: string;
+  }[],
   cycleMonths: BillingCycleMonths
-): string {
+): { amount: string; priceId: string } {
   const price = prices.find(
     (entry) => entry.planId === "pro" && entry.intervalMonths === cycleMonths
   );
   if (!price) {
     throw new BillingCommandError("cycle_not_offered");
   }
-  return price.amount;
+  return { amount: price.amount, priceId: price.id };
 }
 
 /**
@@ -113,6 +121,8 @@ export interface StartCheckoutInput {
   cycleMonths: BillingCycleMonths;
   /** The organization of the server's context, never the client's claim. */
   organizationId: string;
+  /** The catalog ID of `amount` (`billing_prices.id`), recorded with the link. */
+  priceId: string;
   trial: boolean;
   /** The authenticated user of the session: the trial is once per person. */
   userId: string;
@@ -252,17 +262,24 @@ async function openCheckout<K extends CheckoutHandoff["kind"]>(
       // document may have been linked and approved while this one waited for it
       await assertOldCheckoutMadeNoSubscription(dependencies, input, now, ids);
     }
-    const prepared = await options.prepare(firstChargeDateOf(now, input.trial));
+    const firstChargeOn = firstChargeDateOf(now, input.trial);
+    const prepared = await options.prepare(firstChargeOn);
     let replaced: Awaited<ReturnType<typeof store.attachProvider>> = null;
     try {
       if (prepared.handoff.kind !== options.kind) {
         // the card is typed on the provider's page, the Pix is authorized in the bank: anything else is not this checkout
         throw new Error("billing_unexpected_handoff");
       }
+      // what was sent to the provider stays with the link: the price and the day of the first charge (ADR 0104)
       replaced = await store.attachProvider(
         input.organizationId,
         port.provider,
-        prepared.providerRef
+        prepared.providerRef,
+        {
+          firstChargeOn,
+          priceAmount: input.amount,
+          priceId: input.priceId,
+        }
       );
     } catch (error: unknown) {
       await port.discardCheckout(prepared.checkoutId).catch((discard) => {

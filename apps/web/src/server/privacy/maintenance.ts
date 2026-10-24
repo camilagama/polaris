@@ -7,7 +7,12 @@ export const CLOSURE_SWEEP_MAX_BATCHES = 10;
 /** Above this many organizations put into the purge by the closure period in a day, the run raises an alert. */
 export const CLOSURE_AUTO_PURGE_ALERT_PER_DAY = 5;
 
+/** Reasons of a cancelled renewal deleted per call, and how many calls one run makes at most. */
+export const CANCELLATION_FEEDBACK_EXPIRY_BATCH = 500;
+
 export interface PrivacyMaintenanceReport {
+  /** Reasons of a cancelled renewal deleted 12 months after they were recorded (ADR 0104). */
+  cancellationFeedbackExpired: number;
   closedOrganizations: number;
   /** Notices of a closure milestone written to go out by this run, each with its outbox event (ADR 0102, amended). */
   closureNoticesRecorded: number;
@@ -58,12 +63,14 @@ export function closureAutoPurgeVolumeHigh(
  * are bounded, so a backlog is worked off over several hourly runs instead of one long one; neither moves
  * anything back nor deletes anything. Last, whatever the switch, the notices of the milestones whose date
  * arrived are written (the request, D minus 30 and minus 7, D, and a purge pushed by the release of a legal
- * hold), after the schedule, so the notice of D minus 7 goes out with it.
+ * hold), after the schedule, so the notice of D minus 7 goes out with it. And the reasons of a cancelled renewal
+ * past their 12 months are deleted (ADR 0104).
  */
 export async function runPrivacyMaintenance(
   client: Pick<
     PrivacyMaintenanceClient,
     | "countPurgesHeldBack"
+    | "expireCancellationFeedback"
     | "finalizeExpiredClosures"
     | "recordClosureNotices"
     | "scheduleClosedOrganizationPurges"
@@ -109,7 +116,22 @@ export async function runPrivacyMaintenance(
     }
   }
   const purgesHeldBack = await client.countPurgesHeldBack();
+  // the reasons of a cancelled renewal leave 12 months after the day they were recorded (retention class
+  // `billing_cancellation_feedback`); a backlog is worked off over several runs
+  let cancellationFeedbackExpired = 0;
+  for (let batch = 0; batch < CLOSURE_SWEEP_MAX_BATCHES; batch += 1) {
+    const removed =
+      // biome-ignore lint/performance/noAwaitInLoops: each batch decides whether another is needed.
+      await client.expireCancellationFeedback(
+        CANCELLATION_FEEDBACK_EXPIRY_BATCH
+      );
+    cancellationFeedbackExpired += removed;
+    if (removed < CANCELLATION_FEEDBACK_EXPIRY_BATCH) {
+      break;
+    }
+  }
   return {
+    cancellationFeedbackExpired,
     closedOrganizations,
     closureNoticesOverdue,
     closureNoticesRecorded,

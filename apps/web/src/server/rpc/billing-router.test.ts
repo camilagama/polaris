@@ -38,8 +38,8 @@ const billingBindings: WorkerBindings = {
 };
 
 const prices = [
-  { amount: "24.90", intervalMonths: 1, planId: "pro" },
-  { amount: "249.00", intervalMonths: 12, planId: "pro" },
+  { amount: "24.90", id: "pro-1", intervalMonths: 1, planId: "pro" },
+  { amount: "249.00", id: "pro-12", intervalMonths: 12, planId: "pro" },
 ];
 
 type Overrides = NonNullable<Parameters<typeof createRpcRouter>[0]>;
@@ -174,7 +174,9 @@ describe("billing.startCheckout", () => {
     expect(fixture.store.attachProvider).toHaveBeenCalledWith(
       serverOrganizationId,
       "asaas",
-      "chk-1"
+      "chk-1",
+      // the catalog's price of the cycle, with its ID, stays with the link (ADR 0104)
+      expect.objectContaining({ priceAmount: "249.00", priceId: "pro-12" })
     );
     expect(fixture.store.readRecord).toHaveBeenCalledWith(serverOrganizationId);
     expect(JSON.stringify(fixture.store.startTrial.mock.calls)).not.toContain(
@@ -596,7 +598,8 @@ describe("billing.startCheckout by Pix Automático", () => {
     expect(fixture.store.attachProvider).toHaveBeenCalledWith(
       serverOrganizationId,
       "woovi",
-      "woovi-ref-1"
+      "woovi-ref-1",
+      expect.objectContaining({ priceAmount: "249.00", priceId: "pro-12" })
     );
     expect(fixture.store.close).toHaveBeenCalledTimes(1);
     // the answer waits for the minimum time (here, the instant sleep the test gave)

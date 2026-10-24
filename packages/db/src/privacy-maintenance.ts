@@ -157,6 +157,11 @@ export interface PrivacyMaintenanceClient {
   ) => Promise<{ expiresAt: Date; totalBytes: number }>;
   /** The second sweep found nothing left: the purge is over. */
   completeOrganizationPurgeSweep: (organizationId: string) => Promise<boolean>;
+  /**
+   * Deletes the reasons of a cancelled renewal recorded more than 12 months ago (ADR 0104, retention class
+   * `billing_cancellation_feedback`), at most `limit`; returns how many.
+   */
+  expireCancellationFeedback: (limit: number) => Promise<number>;
   /** Makes finished and failed exports unavailable when their time is up; returns how many. */
   expireDataExports: (
     failedKeepHours: number,
@@ -352,6 +357,13 @@ export function createPrivacyMaintenanceClient(
         [organizationId]
       );
       return result.rows[0]?.completed === true;
+    },
+    async expireCancellationFeedback(limit) {
+      const result = await pool.query<{ removed: number }>(
+        "SELECT public.expire_billing_cancellation_feedback($1::integer) AS removed",
+        [limit]
+      );
+      return Number(result.rows[0]?.removed ?? 0);
     },
     async expireDataExports(failedKeepHours, limit) {
       const result = await pool.query<{ expired: number }>(

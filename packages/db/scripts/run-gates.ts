@@ -74,6 +74,9 @@ const gates: Gate[] = [
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
   ["billing-trial-claims", "verify-billing-trial-claims-gate.ts"],
+  // the owner's billing self-service (ADR 0104, 0100): the new columns, the first charge, the limit, the safety net,
+  // the reason of a cancellation, the audit of the requests and its cap, the operator's read of the window
+  ["billing-self-service", "verify-billing-self-service-gate.ts"],
   ["operational-selection", "verify-operational-selection-gate.ts"],
   ["entitlement-grants", "verify-entitlement-grants-gate.ts"],
   ["public-catalog", "verify-public-catalog-gate.ts"],
@@ -281,6 +284,7 @@ const suites: Record<string, string[]> = {
     "entitlements",
     "billing-lifecycle",
     "billing-trial-claims",
+    "billing-self-service",
     "operational-selection",
     "entitlement-grants",
     "public-catalog",

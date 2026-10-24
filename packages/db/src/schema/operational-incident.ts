@@ -19,10 +19,11 @@ const adminOwnerRole = "polaris_admin_owner";
 
 /**
  * Operational incidents (plan PR111, ADR 0085): something the platform itself must look at, kept
- * apart from any tenant. Today three kinds: a queue message that ended in the dead-letter queue, an
+ * apart from any tenant. Today four kinds: a queue message that ended in the dead-letter queue, an
  * outbox event that passed the cap of delivery attempts and a billing fact whose subscription reference
  * did not match the record's or never found a subscription (ADR 0087; the subject is
- * `billing.<fact type>`). One row per cause (kind, cause and subject, the event type or `unknown`),
+ * `billing.<fact type>`), and an owner's refund still not completed 24 hours after the request (ADR 0104; the
+ * subject is `billing.refund_pending`, the reference the ledger row of that store's request). One row per cause (kind, cause and subject, the event type or `unknown`),
  * never per message: the next occurrence of a cause adds to the count and moves the last occurrence. It holds codes, counts, dates and one opaque reference, never the
  * body of a message or anything a person typed.
  *
@@ -57,13 +58,14 @@ export const operationalIncidents = pgTable(
     ),
     check(
       "operational_incidents_kind_allowed",
-      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted', 'billing_reference_mismatch')`
+      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted', 'billing_reference_mismatch', 'billing_refund_pending')`
     ),
     check(
       "operational_incidents_cause_allowed",
       sql`(${table.kind} = 'queue_dead_letter' AND ${table.cause} IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))
         OR (${table.kind} = 'outbox_attempts_exhausted' AND ${table.cause} = 'attempts_exhausted')
-        OR (${table.kind} = 'billing_reference_mismatch' AND ${table.cause} IN ('reference_mismatch', 'reference_unresolved'))`
+        OR (${table.kind} = 'billing_reference_mismatch' AND ${table.cause} IN ('reference_mismatch', 'reference_unresolved'))
+        OR (${table.kind} = 'billing_refund_pending' AND ${table.cause} = 'refund_not_completed')`
     ),
     check(
       "operational_incidents_subject_format",

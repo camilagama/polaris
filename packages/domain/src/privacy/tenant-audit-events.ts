@@ -22,6 +22,15 @@ export type TenantAuditEventClass = (typeof TENANT_AUDIT_EVENT_CLASSES)[number];
  * auditing the members (`tenantAuditEventClassOf` and the unit test enforce it).
  */
 export const TENANT_AUDIT_EVENT_TYPES = Object.freeze({
+  // the owner's billing requests (ADR 0104, decision 3): the three capped refusals are `security` too, because the
+  // `operational` class only expires after the purge and a live store would keep them forever
+  "billing.checkout_started": "security",
+  "billing.command_in_progress": "security",
+  "billing.command_rate_limited": "security",
+  "billing.command_refused": "security",
+  "billing.overdue_payment_opened": "operational",
+  "billing.owner_renewal_cancel_requested": "security",
+  "billing.refund_requested": "security",
   "category.archived": "operational",
   "category.created": "operational",
   "category.deleted": "operational",

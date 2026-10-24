@@ -249,7 +249,7 @@ describe("purge jobs", () => {
     for (const job of RETENTION_PURGE_JOBS) {
       const policy = retentionPolicy(job.class);
       expect(policy.status).toBe("aprovada");
-      expect(["duration", "closure_calendar_days"]).toContain(
+      expect(["calendar_months", "duration", "closure_calendar_days"]).toContain(
         policy.period.kind
       );
     }

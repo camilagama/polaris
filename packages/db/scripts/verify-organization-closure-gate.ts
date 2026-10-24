@@ -1016,6 +1016,9 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => row.policyname),
       [
+        // the reasons of a cancelled renewal past their 12 months, read and deleted by its expiry (ADR 0104)
+        "billing_cancellation_feedback_privacy_owner_delete",
+        "billing_cancellation_feedback_privacy_owner_select",
         // the notices of the closure milestones (ADR 0102, amended): written, read and settled by its functions
         "closure_notices_privacy_owner_insert",
         "closure_notices_privacy_owner_select",
