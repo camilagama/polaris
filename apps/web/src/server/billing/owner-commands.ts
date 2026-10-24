@@ -213,6 +213,54 @@ async function recordCancellation(
   return (await store.processEvent(stored.id, at)).status;
 }
 
+/**
+ * `recordCancellation` after the provider acted: a failure of the inbox there is the provider's call's (audited as
+ * accepted, `billing_provider_unavailable`), and the request's repeat writes the same fact again (a duplicate) and
+ * processes it.
+ */
+async function recordOrFail(
+  dependencies: OwnerCommandDependencies,
+  audit: OwnerCommandAudit,
+  input: Parameters<typeof recordCancellation>[1]
+): Promise<string> {
+  try {
+    return await recordCancellation(dependencies, input);
+  } catch (error: unknown) {
+    logger.warn("billing_owner_cancellation_record_failed", {
+      ...describeError(error),
+      organizationId: opaqueId(input.organizationId),
+      provider: input.link.provider,
+    });
+    throw new OwnerCommandProviderFailure(audit, { cause: error });
+  }
+}
+
+/** The optional reason, after `cancelled` only: its failure loses the reason, never the cancellation. */
+async function keepReason(
+  dependencies: OwnerCommandDependencies,
+  record: OwnerCommandRecord,
+  reason: string | null | undefined,
+  ids: { organizationId: ReturnType<typeof opaqueId>; provider: string }
+): Promise<void> {
+  const text = reason?.trim() ?? "";
+  if (text.length === 0) {
+    return;
+  }
+  await dependencies.store
+    .recordCancellationFeedback({
+      cycleMonths: record.cycleMonths,
+      reason: text,
+      state: record.state as "active" | "grace" | "trialing",
+    })
+    .catch((error: unknown) => {
+      // nothing of the text goes to the log
+      logger.warn("billing_cancellation_feedback_failed", {
+        ...describeError(error),
+        ...ids,
+      });
+    });
+}
+
 export interface OwnerCancelRenewalInput {
   organizationId: string;
   /** Optional, 1 to 500 characters; kept with no store and no person, never logged. */
@@ -256,7 +304,15 @@ export async function ownerCancelRenewal(
       eventId &&
       (await store.hasLedgerEvent(link.provider, eventId))
     ) {
-      // the request's own cancellation, repeated (its audit failed): the same answer, no second reason
+      // the request's own cancellation, repeated (its audit failed): the same answer, no second reason. A fact
+      // stored and not applied (the processing failed) is processed again first: the ledger keeps its own moment
+      if (!record.cancelAtPeriodEnd && grantsPro(record.state)) {
+        await recordOrFail(dependencies, accepted, {
+          link,
+          organizationId: input.organizationId,
+          providerEventId: eventId,
+        });
+      }
       return {
         audit: accepted,
         response: { accessEndsAt: record.accessEndsAt, result: "cancelled" },
@@ -296,27 +352,12 @@ export async function ownerCancelRenewal(
       logger.warn("billing_owner_cancel_renewal_not_found", ids);
       throw new OwnerCommandRefusal("nothing_to_cancel", accepted);
     }
-    const processed = await recordCancellation(dependencies, {
+    const processed = await recordOrFail(dependencies, accepted, {
       link,
       organizationId: input.organizationId,
       providerEventId: eventId,
     });
-    const reason = input.reason?.trim() ?? "";
-    if (reason.length > 0) {
-      await store
-        .recordCancellationFeedback({
-          cycleMonths: record.cycleMonths,
-          reason,
-          state: record.state as "active" | "grace" | "trialing",
-        })
-        .catch((error: unknown) => {
-          // the reason is lost, the cancellation stands; nothing of the text goes to the log
-          logger.warn("billing_cancellation_feedback_failed", {
-            ...describeError(error),
-            ...ids,
-          });
-        });
-    }
+    await keepReason(dependencies, record, input.reason, ids);
     logger.info("billing_owner_cancel_renewal", {
       ...ids,
       reason: `${result}:${processed}`,
@@ -356,21 +397,29 @@ export async function ownerRequestRefund(
     const now = await store.databaseNow();
     const record = await store.readOwnerCommandRecord(input.organizationId);
     const { link } = record;
-    if (!link || record.firstChargeAt === null) {
-      // no first charge recorded: no window (it fails closed)
+    if (!link) {
       throw new OwnerCommandRefusal(
         "nothing_to_refund",
         "billing.command_refused"
       );
     }
     if (!refundsHere(dependencies, link.provider)) {
+      // first of all (Pix until S3.2): no anchor, no limit
       throw new OwnerCommandRefusal(
         "refund_via_support",
         "billing.command_refused"
       );
     }
+    if (record.firstChargeAt === null || record.firstChargeAmount === null) {
+      // no first charge recorded: no window (it fails closed), and no amount is ever made up
+      throw new OwnerCommandRefusal(
+        "nothing_to_refund",
+        "billing.command_refused"
+      );
+    }
     if (record.revoked?.reason === "refund") {
       return await refundAlreadyDone(dependencies, {
+        firstChargeAmount: record.firstChargeAmount,
         firstChargeAt: record.firstChargeAt,
         link,
         record,
@@ -437,6 +486,7 @@ function refundsHere(
 async function refundAlreadyDone(
   dependencies: OwnerCommandDependencies,
   input: {
+    firstChargeAmount: string;
     firstChargeAt: Date;
     link: CommandLink;
     record: OwnerCommandRecord;
@@ -452,7 +502,7 @@ async function refundAlreadyDone(
   return {
     audit: recognized ? REFUND_ACCEPTED : "billing.command_refused",
     response: {
-      amount: input.record.firstChargeAmount ?? "0.00",
+      amount: input.firstChargeAmount,
       result: "refund_requested",
       until: new Date(
         refundWindowClosesAt(input.firstChargeAt).getTime() - 1000
@@ -554,7 +604,7 @@ async function cancelBeforeOwnerRefund(
     // the record can hold the cancellation only while it gives Pro, as in the operator's command
     return cancelled;
   }
-  const processed = await recordCancellation(dependencies, {
+  const processed = await recordOrFail(dependencies, REFUND_ACCEPTED, {
     link,
     organizationId: input.organizationId,
     providerEventId: await refundCancelEventId(

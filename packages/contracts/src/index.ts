@@ -1318,8 +1318,14 @@ const billingRequestId = z
 const billingCancelRenewalInput = z
   .object({
     organizationId: z.string().trim().min(1),
-    // optional; kept with no store and no person, never logged (the screen asks for no personal data)
-    reason: z.string().trim().max(500).optional(),
+    // optional; kept with no store and no person, never logged (the screen asks for no personal data); no control,
+    // format (bidirectional, zero-width) or unassigned characters but line breaks and tabs
+    reason: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^(?:[^\p{C}]|[\n\t])*$/u)
+      .optional(),
     requestId: billingRequestId,
   })
   .strict();

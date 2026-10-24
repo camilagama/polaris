@@ -2467,6 +2467,20 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
     expect(store.attachProvider).not.toHaveBeenCalled();
   });
 
+  it("goes on when the provider no longer knows the old subscription (404): nothing is left to renew", async () => {
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => Promise.reject(new ProviderNotFoundError())),
+    });
+
+    const result = await startCardCheckout(
+      { now: () => now, port, store: fakeStore() },
+      input
+    );
+
+    expect(result.handoff.url).toBe(CHECKOUT_URL);
+    expect(port.prepareSubscription).toHaveBeenCalledTimes(1);
+  });
+
   it("does not call the provider for an old link that no subscription came from", async () => {
     const port = fakePort();
     const store = fakeStore({

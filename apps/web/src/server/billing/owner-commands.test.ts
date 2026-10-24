@@ -535,9 +535,10 @@ describe("ownerCancelRenewal", () => {
     expect(w.store.recordCancellationFeedback).toHaveBeenCalledTimes(1);
   });
 
-  it("recognizes its own request by the fact's ID even when the record shows no cancellation yet", async () => {
+  it("recognizes its own request by the fact's ID even when the record shows no cancellation yet, and processes that fact again", async () => {
     const w = world();
-    w.ledger.add(await cancelRenewalEventId(REQUEST, link.providerRef));
+    const eventId = await cancelRenewalEventId(REQUEST, link.providerRef);
+    w.ledger.add(eventId);
 
     const outcome = await cancel(w, { reason: "again" });
 
@@ -545,6 +546,32 @@ describe("ownerCancelRenewal", () => {
     expect(w.store.claimProviderCommand).not.toHaveBeenCalled();
     expect(providerCalled(w)).toBe(0);
     expect(w.store.recordCancellationFeedback).not.toHaveBeenCalled();
+    // the fact stored and not applied (its processing failed) goes through the inbox again, under its own ID
+    expect(w.store.recordEvent).toHaveBeenCalledTimes(1);
+    expect(w.store.recordEvent.mock.calls[0]?.[0]).toMatchObject({
+      providerEventId: eventId,
+    });
+    expect(w.store.processEvent).toHaveBeenCalledTimes(1);
+    expect(w.record.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it("audits as accepted, with billing_provider_unavailable, a cancellation the provider made whose fact the inbox could not write; the repeat writes it", async () => {
+    const w = world();
+    w.store.recordEvent.mockImplementationOnce(() =>
+      Promise.reject(new Error("connection terminated"))
+    );
+
+    await expectProviderFailure(
+      cancel(w),
+      "billing.owner_renewal_cancel_requested"
+    );
+    expect(w.port.cancelRenewal).toHaveBeenCalledTimes(1);
+    expect(w.record.cancelAtPeriodEnd).toBe(false);
+
+    const again = await cancel(w);
+
+    expect(again.response.result).toBe("cancelled");
+    expect(w.record.cancelAtPeriodEnd).toBe(true);
   });
 
   it("does not recognize a refund's cancellation fact (refund_cancel) of the same request ID: it goes the normal way", async () => {
@@ -1191,6 +1218,29 @@ describe("ownerRequestRefund", () => {
       const outcome = await refund(w, OTHER_REQUEST);
 
       expect(outcome.audit).toBe("billing.command_refused");
+    });
+
+    it("answers nothing_to_refund, never a made-up amount, when the first charge's amount is not recorded", async () => {
+      const w = world({ record: { ...done, firstChargeAmount: null } });
+
+      await expectRefusal(
+        refund(w),
+        "nothing_to_refund",
+        "billing.command_refused"
+      );
+    });
+
+    it("sends Pix to support first, even without a first charge recorded", async () => {
+      const w = world({
+        record: { firstChargeAmount: null, firstChargeAt: null },
+        refundsEnabled: false,
+      });
+
+      await expectRefusal(
+        refund(w),
+        "refund_via_support",
+        "billing.command_refused"
+      );
     });
 
     it("keeps sending Pix to support even after a refund (the first step wins)", async () => {

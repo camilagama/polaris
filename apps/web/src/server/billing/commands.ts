@@ -247,6 +247,10 @@ async function cancelOldRenewal(
       link.providerSubscriptionId
     );
   } catch (error: unknown) {
+    if (error instanceof ProviderNotFoundError) {
+      // the provider no longer knows the old subscription: nothing left to renew
+      return;
+    }
     logger.warn("billing_checkout_old_renewal_cancel_failed", {
       ...describeError(error),
       ...ids,

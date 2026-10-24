@@ -231,10 +231,22 @@ export interface ReplacedProviderReference {
   providerRef: string;
 }
 
-/** How many command locks are held at once in this isolate (ADR 0104, decision 4: one at most). */
+/**
+ * The command lock this isolate holds (ADR 0104, decision 4: one at most). `since` and `holder` belong to the store:
+ * a hold older than `STALE_COMMAND_LOCK_MS` (a query left hanging, a request cut off before its `finally`) no longer
+ * counts, so one stuck command never refuses the isolate's commands for good.
+ */
 export interface CommandLockCounter {
   held: number;
+  holder?: object;
+  since?: number;
 }
+
+/**
+ * Longer than the 60 s after which PostgreSQL ends the lock's idle transaction: past it the advisory lock is gone
+ * anyway, and the isolate's count is not trusted either.
+ */
+const STALE_COMMAND_LOCK_MS = 75_000;
 
 export interface BillingStoreOptions {
   /**
@@ -2695,15 +2707,30 @@ export function createBillingStore(
         throw new TypeError("invalid_organization_id");
       }
       const locks = options.commandLocks ?? isolateCommandLocks;
+      const startedAt = Date.now();
       if (locks.held > 0) {
-        // one command lock per isolate: a second command (of any store) never takes the pool's last connections
-        throw new BillingCommandInProgressError();
+        if (startedAt - (locks.since ?? startedAt) <= STALE_COMMAND_LOCK_MS) {
+          // one command lock per isolate: a second command (of any store) never takes the pool's last connections
+          throw new BillingCommandInProgressError();
+        }
+        // a hold that outlived its transaction: the database already let the advisory lock go
+        logger.warn("billing_command_lock_stale", {
+          durationMs: startedAt - (locks.since ?? startedAt),
+        });
       }
-      locks.held += 1;
+      const holder = {};
+      locks.held = 1;
+      locks.holder = holder;
+      locks.since = startedAt;
       try {
         return await holdOrganizationLock(organizationId, operation);
       } finally {
-        locks.held -= 1;
+        // only its own hold: a stale one taken over since is the newer command's
+        if (locks.holder === holder) {
+          locks.held = 0;
+          locks.holder = undefined;
+          locks.since = undefined;
+        }
       }
     },
     async withPayerLock(key, operation) {
