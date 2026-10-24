@@ -1,8 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classifyChanges } from "./ci-changed.mjs";
+import { classifyChanges, OPERATIONS_FILES } from "./ci-changed.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
@@ -114,6 +114,92 @@ function adminDependents() {
       readFileSync(path.join(root, manifest), "utf8").includes("@polaris/admin")
     ) {
       hits.push(`${manifest} -> @polaris/admin`);
+    }
+  }
+  return hits;
+}
+
+/** The operation scripts the browser gate skips (the proof is the import-graph test below). */
+const EXPECTED_OPERATIONS_FILES = [
+  "scripts/smoke-staging.mjs",
+  "scripts/smoke-staging.test.mjs",
+  "scripts/verify-staging-isolation.mjs",
+  "scripts/verify-staging-isolation.test.mjs",
+  "scripts/verify-migration-compat.mjs",
+  "scripts/verify-migration-compat.test.mjs",
+  "scripts/admin-production-guard.test.mjs",
+  "scripts/gate5-real-devices.sh",
+  "scripts/e2e-flaky-report.mjs",
+  "scripts/e2e-flaky-report.test.mjs",
+  ".github/workflows/deploy-staging.yml",
+];
+
+/** True when `specifier`, written in `file`, resolves to the repository path `target`. */
+function resolvesTo(file, specifier, target) {
+  return (
+    specifier.startsWith(".") &&
+    path.relative(root, path.resolve(path.dirname(file), specifier)) === target
+  );
+}
+
+/** Text that names `target` by a relative path (`../../scripts/x.mjs`, `new URL("../scripts/x.mjs", ...)`). */
+function namesByRelativePath(text, target) {
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:\\.\\./)+${escaped}`).test(text);
+}
+
+/** Where the browser gate's own code lives: the specs it runs, the client it builds and serves, the shared packages. */
+const GATE_SURFACE = [
+  /^apps\/web\/(e2e|e2e-pwa|pwa|poc|public|src)\//,
+  /^apps\/web\/(playwright|vite)[^/]*\.[cm]?ts$/,
+  /^apps\/catalog\/(e2e|src)\//,
+  /^apps\/catalog\/(playwright|vite)[^/]*\.[cm]?ts$/,
+  /^packages\/(?!db\/)/,
+];
+
+/** Files that name `target` by its bare file name (`spawn("scripts/x.mjs")`, `join(root, ".github/workflows", "x.yml")`). */
+function namesByBareName(text, target) {
+  return text.includes(path.basename(target));
+}
+
+/** Every file of apps/web (Playwright configs included), apps/catalog and packages/ that reaches a file of `targets`. */
+function operationsDependents(targets) {
+  const hits = [];
+  const workspaces = [
+    "apps/web",
+    "apps/catalog",
+    ...readdirSync(path.join(root, "packages")).map(
+      (name) => `packages/${name}`
+    ),
+  ];
+  for (const workspace of workspaces) {
+    const files = sourceFiles(path.join(root, workspace));
+    for (const entry of readdirSync(path.join(root, workspace), {
+      withFileTypes: true,
+    })) {
+      if (
+        entry.isFile() &&
+        (CONFIG_FILE.test(entry.name) || entry.name === "package.json")
+      ) {
+        files.push(path.join(root, workspace, entry.name));
+      }
+    }
+    for (const file of files) {
+      const relative = path.relative(root, file);
+      const text = readFileSync(file, "utf8");
+      const specifiers = SOURCE_FILE.test(file) ? importSpecifiers(text) : [];
+      const onSurface =
+        GATE_SURFACE.some((pattern) => pattern.test(relative)) ||
+        relative.endsWith("/package.json");
+      for (const target of targets) {
+        if (
+          specifiers.some((specifier) => resolvesTo(file, specifier, target)) ||
+          namesByRelativePath(text, target) ||
+          (onSurface && namesByBareName(text, target))
+        ) {
+          hits.push(`${relative} -> ${target}`);
+        }
+      }
     }
   }
   return hits;
@@ -260,6 +346,59 @@ describe("which CI jobs a change affects", () => {
     }
   });
 
+  it("skips the browser gate for the operation scripts and the staging deploy workflow", () => {
+    expect(OPERATIONS_FILES).toEqual(EXPECTED_OPERATIONS_FILES);
+    for (const file of EXPECTED_OPERATIONS_FILES) {
+      expect(classifyChanges(["docs/a.md", file]).browser, file).toBe(false);
+      expect(classifyChanges([file]).browser, file).toBe(false);
+    }
+    expect(
+      classifyChanges(EXPECTED_OPERATIONS_FILES).browser,
+      "all together"
+    ).toBe(false);
+  });
+
+  it("keeps running the browser gate for what can change what it proves", () => {
+    for (const file of [
+      "scripts/generate-color-tokens.mjs",
+      "scripts/generate-color-tokens.test.mjs",
+      "scripts/ci-changed.mjs",
+      "scripts/ci-changed.test.mjs",
+      "scripts/workerd-harness.mjs",
+      "scripts/workerd-harness.test.mjs",
+      "scripts/verify-import-boundaries.mjs",
+      "scripts/a-new-script.mjs",
+      ".github/workflows/ci.yml",
+      "scripts/smoke-staging.mjs.bak",
+      "scripts/sub/smoke-staging.mjs",
+    ]) {
+      expect(classifyChanges(["docs/a.md", file]).browser, file).toBe(true);
+    }
+  });
+
+  it("runs the browser gate when an operation script comes with a relevant change", () => {
+    expect(
+      classifyChanges(["scripts/smoke-staging.mjs", "apps/web/src/lib/x.ts"])
+        .browser
+    ).toBe(true);
+  });
+
+  it("leaves the e2e job as it was: the flaky report and the workflows still run it, the other operation scripts do not", () => {
+    for (const file of [
+      "scripts/e2e-flaky-report.mjs",
+      ".github/workflows/deploy-staging.yml",
+    ]) {
+      expect(classifyChanges([file]).e2e, file).toBe(true);
+    }
+    for (const file of EXPECTED_OPERATIONS_FILES.filter(
+      (name) =>
+        name !== "scripts/e2e-flaky-report.mjs" &&
+        name !== ".github/workflows/deploy-staging.yml"
+    )) {
+      expect(classifyChanges([file]).e2e, file).toBe(false);
+    }
+  });
+
   it("runs the browser gate when an Admin change comes with a relevant one", () => {
     expect(
       classifyChanges(["apps/admin/src/app.ts", "apps/web/src/lib/x.ts"])
@@ -329,5 +468,89 @@ describe("the Admin app is outside the browser gate's import graph", () => {
     );
     expect(reachesAdminApp(file, "./admin/x")).toBe(false);
     expect(reachesAdminApp(file, "../../../admin-extra/x")).toBe(false);
+  });
+});
+
+// The proof behind OPERATIONS_FILES: the gate builds apps/web and apps/catalog
+// (and the packages they use) and runs the Playwright configs of apps/web, so
+// skipping it for these files is only sound while none of those reaches them.
+// If this fails, take the file out of OPERATIONS_FILES instead of weakening it.
+describe("the operation scripts are outside the browser gate's import graph", () => {
+  it("lists only files that exist (a renamed script must leave the list)", () => {
+    for (const file of OPERATIONS_FILES) {
+      expect(existsSync(path.join(root, file)), file).toBe(true);
+    }
+  });
+
+  it("is reached by no source, config or manifest of apps/web, apps/catalog or packages/", () => {
+    expect(operationsDependents(OPERATIONS_FILES)).toEqual([]);
+  });
+
+  it("does see the workerd harness, which the Vitest configs of apps/web import (so it stays out of the list)", () => {
+    expect(OPERATIONS_FILES).not.toContain("scripts/workerd-harness.mjs");
+    expect(operationsDependents(["scripts/workerd-harness.mjs"])).toContain(
+      "apps/web/vitest.workers-db.config.ts -> scripts/workerd-harness.mjs"
+    );
+  });
+
+  it("recognises the ways a file can name an operation script", () => {
+    expect(
+      namesByBareName(
+        'spawn("bun", ["scripts/smoke-staging.mjs"])',
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(true);
+    expect(
+      namesByBareName(
+        'join(root, ".github/workflows", "deploy-staging.yml")',
+        ".github/workflows/deploy-staging.yml"
+      )
+    ).toBe(true);
+    expect(
+      namesByBareName("scripts/smoke.mjs", "scripts/smoke-staging.mjs")
+    ).toBe(false);
+    const file = path.join(root, "apps/web/playwright.x.config.ts");
+    expect(
+      resolvesTo(
+        file,
+        "../../scripts/smoke-staging.mjs",
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(true);
+    expect(
+      resolvesTo(
+        file,
+        "./scripts/smoke-staging.mjs",
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(false);
+    expect(
+      resolvesTo(file, "scripts/smoke-staging.mjs", "scripts/smoke-staging.mjs")
+    ).toBe(false);
+    expect(
+      namesByRelativePath(
+        'new URL("../../scripts/smoke-staging.mjs", import.meta.url)',
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(true);
+    expect(
+      namesByRelativePath(
+        '"test": "node ../../scripts/gate5-real-devices.sh"',
+        "scripts/gate5-real-devices.sh"
+      )
+    ).toBe(true);
+    // the Worker scripts of apps/web have their own scripts/ folder
+    expect(
+      namesByRelativePath(
+        'import "../scripts/serve-static.mjs"',
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(false);
+    expect(
+      namesByRelativePath(
+        "run it with scripts/gate5-real-devices.sh",
+        "scripts/gate5-real-devices.sh"
+      )
+    ).toBe(false);
   });
 });
