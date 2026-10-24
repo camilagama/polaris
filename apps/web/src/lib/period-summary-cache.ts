@@ -24,9 +24,9 @@ export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 /** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
-const moneyPattern = /^-?\d{1,12}(?:\.\d{1,2})?$/;
-/** A percent as the server writes it (two places for the margin, one for a goal): the same shape, a shorter whole. */
-const percentPattern = /^-?\d{1,9}(?:\.\d{1,2})?$/;
+const moneyPattern = /^-?\d{1,18}(?:\.\d{1,2})?$/;
+/** A percent as the server writes it (two places for the margin, one for a goal): the same shape. */
+const percentPattern = /^-?\d{1,20}(?:\.\d{1,2})?$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -117,10 +117,16 @@ function isQuality(value: unknown): boolean {
   );
 }
 
-export const isDate = (value: unknown) =>
-  isText(value) &&
-  datePattern.test(value) &&
-  !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`));
+/** A date that exists: `Date.parse` rolls "2026-02-30" over into March, so the day is read back and compared. */
+export function isDate(value: unknown): value is string {
+  if (!(isText(value) && datePattern.test(value))) {
+    return false;
+  }
+  const time = Date.parse(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === value
+  );
+}
 
 function isPeriod(value: unknown): boolean {
   return isDictionary(value) && isDate(value.from) && isDate(value.to);
@@ -144,15 +150,7 @@ function isDaily(value: unknown, period: unknown): boolean {
   if (value === undefined) {
     return true;
   }
-  if (
-    !(
-      Array.isArray(value) &&
-      isDictionary(period) &&
-      isText(period.from) &&
-      datePattern.test(period.from) &&
-      !Number.isNaN(Date.parse(`${period.from}T00:00:00.000Z`))
-    )
-  ) {
+  if (!(Array.isArray(value) && isDictionary(period) && isDate(period.from))) {
     return false;
   }
   const { from } = period;

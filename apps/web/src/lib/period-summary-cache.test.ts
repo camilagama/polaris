@@ -169,6 +169,14 @@ describe("the last confirmed result kept for opening the dashboard without a con
       })
     ).toBeNull();
 
+    // a date that does not exist is not read as the next month's day
+    for (const date of ["2026-13-45", "2026-02-30", "2026-04-31"]) {
+      expect(
+        broken((summary) => {
+          summary.period = { from: "2026-10-01", to: date };
+        })
+      ).toBeNull();
+    }
     // text that is not money or a percent is not a copy: a sum or a figure on screen would break on it
     for (const [group, field, text] of [
       ["cards", "netSales", "R$ 130,00"],

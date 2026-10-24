@@ -320,6 +320,7 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
     ["um alvo que não é texto", { target: 1000 }],
     ["uma data de fim impossível de ler", { endsOn: "31/10/2026" }],
     ["uma data de fim que não existe", { endsOn: "2026-13-45" }],
+    ["um 30 de fevereiro", { endsOn: "2026-02-30" }],
     ["uma data de começo que não existe", { startsOn: "2026-13-45" }],
     ["um alvo que não é dinheiro", { target: "mil reais" }],
     ["um valor atingido que não é dinheiro", { achievedValue: "R$ 400,00" }],
