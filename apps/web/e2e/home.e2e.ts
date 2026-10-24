@@ -121,12 +121,23 @@ class FakeServer {
   scenario: Scenario;
   /** The server's clock (Node's, not the page's: the page's clock is Playwright's). */
   now = NOON;
+  /** No network at all, with `navigator.onLine` still true: nothing of the Worker answers, `/health` neither. */
+  down: boolean = Boolean(false);
+  /** Who the session is and which store it reads: the second person of the same browser is another user and store. */
+  user = { email: "inicio@exemplo.com.br", id: USER_ID };
+  organization = {
+    id: ORGANIZATION_ID,
+    name: "Loja do Início",
+    role: "owner",
+    timezone: "America/Sao_Paulo",
+  };
+  signOutCalls = 0;
   readonly calls: Array<{ input: Record<string, unknown>; procedure: string }> =
     [];
   /** Answers of a procedure replaced by a failure, a hold or a missing mark. */
   readonly broken = new Map<
     string,
-    "401" | "429" | "500" | "slow" | "unmarked"
+    "401" | "403" | "429" | "500" | "slow" | "unmarked"
   >();
 
   constructor(scenario: Scenario) {
@@ -262,6 +273,9 @@ class FakeServer {
   }
 }
 
+/** What the Worker answers: the RPC and the auth endpoints. */
+const WORKER_PATHS = /\/(rpc|api)\//;
+
 const HOME_PROCEDURES = new Set([
   "goal/list",
   "inventory/listBalances",
@@ -271,8 +285,12 @@ const HOME_PROCEDURES = new Set([
 
 async function serve(page: Page, server: FakeServer) {
   // a read with no answer is judged by the probe of /health: it answers, so it was an isolated failure (not offline)
-  await serveHealth(page);
+  await serveHealth(page, () => server.down);
   await page.route("**/rpc/**", async (route) => {
+    if (server.down) {
+      await route.abort("internetdisconnected");
+      return;
+    }
     const procedure = new URL(route.request().url()).pathname.replace(
       "/rpc/",
       ""
@@ -295,6 +313,10 @@ async function serve(page: Page, server: FakeServer) {
       await route.fulfill(failure("TOO_MANY_REQUESTS", 429));
       return;
     }
+    if (broken === "403") {
+      await route.fulfill(failure("FORBIDDEN", 403));
+      return;
+    }
     if (broken === "401") {
       await route.fulfill(failure("UNAUTHORIZED", 401));
       return;
@@ -310,28 +332,27 @@ async function serve(page: Page, server: FakeServer) {
     );
   });
   await page.route("**/rpc/organization/listMine", (route) =>
-    route.fulfill(
-      json({
-        organizations: [
-          {
-            id: ORGANIZATION_ID,
-            name: "Loja do Início",
-            role: "owner",
-            timezone: "America/Sao_Paulo",
-          },
-        ],
-      })
-    )
+    server.down
+      ? route.abort("internetdisconnected")
+      : route.fulfill(json({ organizations: [server.organization] }))
   );
   await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({
-      body: JSON.stringify({
-        user: { email: "inicio@exemplo.com.br", id: USER_ID },
-      }),
+    server.down
+      ? route.abort("internetdisconnected")
+      : route.fulfill({
+          body: JSON.stringify({ user: server.user }),
+          contentType: "application/json",
+          headers: { ...WORKER_MARK },
+        })
+  );
+  await page.route("**/api/auth/sign-out", (route) => {
+    server.signOutCalls += 1;
+    return route.fulfill({
+      body: "{}",
       contentType: "application/json",
       headers: { ...WORKER_MARK },
-    })
-  );
+    });
+  });
   await page.route("**/rpc/device/*", (route) =>
     route.fulfill(json({ device: DEVICE, devices: [DEVICE] }))
   );
@@ -346,8 +367,8 @@ async function serve(page: Page, server: FakeServer) {
         expiresAt,
         grantId: "0199c2d0-0000-7000-8000-000000000901",
         issuedAt,
-        organizationId: ORGANIZATION_ID,
-        userId: USER_ID,
+        organizationId: server.organization.id,
+        userId: server.user.id,
       }),
       LEASE_KEY
     );
@@ -374,6 +395,10 @@ async function serve(page: Page, server: FakeServer) {
   );
   await page.route("**/rpc/sync/pull", (route) =>
     route.fulfill(json({ changes: [], hasMore: false, nextCursor: "0" }))
+  );
+  // registered last, so asked first: with the network down nothing of the Worker answers
+  await page.route(WORKER_PATHS, (route) =>
+    server.down ? route.abort("internetdisconnected") : route.fallback()
   );
 }
 
@@ -584,58 +609,6 @@ test.describe("loja com venda", () => {
       .getByRole("link", { name: "Vender" })
       .click();
     await page.waitForURL(SALES_PATH);
-  });
-
-  test("sem rede: só o título e Nova venda ativa, com o aviso de conexão e nenhum bloco em erro; tocar pede a Venda", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 740, width: 360 });
-    const server = new FakeServer(SOLD);
-    await openHome(page, server);
-    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
-    await page.context().setOffline(true);
-    const notice = page
-      .getByRole("status")
-      .filter({ hasText: "Sem internet." });
-    await expect(notice).toContainText(
-      "Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar."
-    );
-    await expect(region(page, "Hoje")).toHaveCount(0);
-    await expect(region(page, "Precisa de atenção")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(
-      page.getByText("Não foi possível carregar os números da loja.")
-    ).toHaveCount(0);
-    await expect(newSale(page)).toBeVisible();
-    await expect(newSale(page)).not.toHaveAttribute("aria-disabled", "true");
-    // no read while there is no connection; the ones that come when it is back are the opening's
-    const reads = server.calls.length;
-    await page.clock.runFor(31_000);
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    expect(server.calls.length).toBe(reads);
-    // the app is served by the service worker offline (e2e-pwa/app-shell.e2e.ts); this harness has none, so the
-    // proof here is that the touch asks for /sales
-    await expect(newSale(page)).toHaveAttribute("href", "/sales");
-    const toSales = page.waitForRequest(
-      (request) =>
-        request.isNavigationRequest() &&
-        new URL(request.url()).pathname === "/sales"
-    );
-    await newSale(page).click();
-    await toSales;
-  });
-
-  test("a rede volta: o Início lê de novo e os blocos reaparecem, sem recarregar", async ({
-    page,
-  }) => {
-    const server = new FakeServer(SOLD);
-    await openHome(page, server);
-    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
-    await page.context().setOffline(true);
-    await expect(region(page, "Hoje")).toHaveCount(0);
-    await page.context().setOffline(false);
-    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
-    await expect(page.getByText("Sem internet.")).toHaveCount(0);
   });
 
   for (const width of [360, 320]) {
@@ -1017,5 +990,464 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     await expect(
       page.getByText("Não foi possível carregar os números da loja.")
     ).toHaveCount(0);
+  });
+});
+
+const SYNCED = /sincronizado/i;
+const OFFLINE_KEYS = /^polaris\.offline\.(home|periodSummary)\./;
+
+/** The keys of the Início's copy (A and B) in this browser. */
+const copyKeys = (page: Page) =>
+  page.evaluate(
+    (pattern) =>
+      Object.keys(localStorage)
+        .filter((key) => new RegExp(pattern).test(key))
+        .sort(),
+    OFFLINE_KEYS.source
+  );
+
+/** Opens the Início with the server, waits for its copy on the device, and leaves it ready to be cut. */
+async function openWithCopy(page: Page, server: FakeServer) {
+  await openHome(page, server);
+  await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+  await expect.poll(() => copyKeys(page)).toHaveLength(2);
+  // the offline runtime finished opening (a usable lease, the collections in place): a sale can be kept offline
+  await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+    timeout: 20_000,
+  });
+}
+
+/** Opens the page again with no network at all but `navigator.onLine` true, the device's clock at `at`. */
+async function reopenWithoutNetwork(page: Page, server: FakeServer, at = NOON) {
+  server.down = true;
+  await page.clock.setSystemTime(new Date(at));
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Início" })
+  ).toBeVisible({ timeout: 20_000 });
+}
+
+const OFFLINE_SALE =
+  "Você pode vender sem internet. A venda é enviada quando a conexão voltar.";
+const NO_COPY = "Sem internet e sem números guardados neste aparelho";
+
+test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
+  test("com cópia, a rede cai: os números ficam como último resultado confirmado, a meta, a linha do aparelho e os avisos só com conexão", async ({
+    page,
+  }) => {
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    const reads = server.calls.length;
+    await page.context().setOffline(true);
+
+    await expect(
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(page.getByText("Atualizado até")).toHaveCount(0);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(region(page, "Outubro")).toContainText("R$ 2.660,60");
+    await expect(region(page, "Mais vendidos do mês")).toContainText(
+      "Camiseta básica"
+    );
+    await expect(region(page, "Vendas por dia")).toBeVisible();
+    await expect(region(page, "Meta")).toContainText("Meta de outubro");
+    await expect(region(page, "Meta")).toContainText("53,4%");
+    await expect(region(page, "Meta")).not.toContainText("Ver as outras");
+    await expect(region(page, "Precisa de atenção")).toContainText(
+      "Avisos do estoque só com conexão."
+    );
+    await expect(region(page, "Precisa de atenção")).not.toContainText(
+      "sem saldo"
+    );
+    await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
+    await expect(newSale(page)).toHaveAttribute("href", "/sales");
+    await expect(
+      page.getByText("Não foi possível carregar os números da loja.")
+    ).toHaveCount(0);
+    // the Início is no longer an online-only screen: the shell does not cover it with its notice
+    await expect(
+      page.getByText("Esta tela precisa de conexão.", { exact: false })
+    ).toHaveCount(0);
+    // no read while offline, not even when the tab comes back
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    expect(server.calls.length).toBe(reads);
+  });
+
+  test("a rede volta: o Início lê de novo e diz 'Atualizado até', sem esqueleto", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.context().setOffline(true);
+    await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
+    const reads = periodCalls(server).length;
+    await page.context().setOffline(false);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(reads);
+    await expect(
+      page.getByText("Atualizado até 23/10/2026 12:00")
+    ).toBeVisible();
+    await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+  });
+
+  test("a aba do gráfico e a rolagem sobrevivem à queda e à volta da conexão", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    const chart = region(page, "Vendas por dia");
+    await chart.getByRole("tab", { name: "30 dias" }).click();
+    await chart.scrollIntoViewIfNeeded();
+    const scrolled = await page.evaluate(() => window.scrollY);
+    expect(scrolled).toBeGreaterThan(0);
+    const thirty = chart.getByRole("tab", { name: "30 dias" });
+    // the blocks above the chart change height offline (the sentence under "Nova venda", the stock's lines): the
+    // proof is that the page does not jump back to the top and the chart stays in view, not the exact pixel
+    const kept = async () => {
+      await expect(thirty).toBeInViewport();
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(
+        scrolled / 2
+      );
+    };
+
+    await page.context().setOffline(true);
+    await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
+    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await kept();
+
+    const reads = periodCalls(server).length;
+    await page.context().setOffline(false);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(reads);
+    await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
+    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await kept();
+  });
+
+  test("aberto sem resposta do Worker e com navigator.onLine verdadeiro: a cópia, nunca um erro", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+    await expect(
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+        exact: true,
+      })
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("sem cópia: 'sem números', sem zeros; metas só com conexão; Nova venda continua", async ({
+    page,
+  }) => {
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY, {
+      timeout: 20_000,
+    });
+    await expect(page.getByText("R$")).toHaveCount(0);
+    await expect(region(page, "Outubro")).toContainText(NO_COPY);
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    await expect(page.getByText("Ver os números")).toHaveCount(0);
+    await expect(region(page, "Meta")).toContainText("Metas só com conexão.");
+    await expect(region(page, "Precisa de atenção")).toContainText(
+      "Avisos do estoque só com conexão."
+    );
+    await expect(newSale(page)).toHaveAttribute("href", "/sales");
+  });
+
+  for (const [hours, stale] of [
+    [23, false],
+    [25, true],
+  ] as const) {
+    test(`cópia de ${hours} h: ${stale ? "diz que pode estar desatualizada" : "sem o aviso de idade"}, e o Hoje não é de outro dia`, async ({
+      page,
+    }) => {
+      const server = new FakeServer(SOLD);
+      await openWithCopy(page, server);
+      await reopenWithoutNetwork(page, server, NOON + hours * HOUR);
+      const line = page.locator("#home-updated");
+      await expect(line).toContainText(
+        "Último resultado confirmado: 23/10/2026 12:00",
+        { timeout: 20_000 }
+      );
+      if (stale) {
+        await expect(line).toContainText(
+          "Estes números podem estar desatualizados."
+        );
+      } else {
+        await expect(line).not.toContainText("desatualizados");
+      }
+      await expect(region(page, "Hoje")).toContainText(
+        "Sem números de hoje neste aparelho"
+      );
+      await expect(region(page, "Hoje")).not.toContainText("R$ 320,10");
+      // the month is still the confirmed one, said as such
+      await expect(region(page, "Outubro")).toContainText("R$ 2.660,60");
+    });
+  }
+
+  test("relógio do aparelho atrasado: a idade e o Hoje seguem o horário do servidor", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON - 2 * DAY);
+    await expect(page.locator("#home-updated")).toContainText(
+      "Estes números podem estar desatualizados.",
+      { timeout: 20_000 }
+    );
+    await expect(region(page, "Hoje")).toContainText(
+      "Sem números de hoje neste aparelho"
+    );
+  });
+
+  test("meta guardada: no último dia em andamento, no dia seguinte 'Esta meta terminou'", async ({
+    page,
+  }) => {
+    const server = new FakeServer({
+      ...SOLD,
+      goals: [goal({ endsOn: "2026-10-24", startsOn: "2026-10-18" })],
+    });
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + DAY);
+    await expect(region(page, "Meta")).toContainText("53,4%", {
+      timeout: 20_000,
+    });
+    await page.clock.setSystemTime(new Date(NOON + 2 * DAY));
+    await page.reload();
+    await expect(region(page, "Meta")).toContainText(
+      "Esta meta terminou. O resultado sai com conexão.",
+      { timeout: 20_000 }
+    );
+    await expect(region(page, "Meta")).not.toContainText("%");
+  });
+
+  test("cópia antiga sem a série: os totais aparecem e nada da série é desenhado", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (!new RegExp(pattern).test(key)) {
+          continue;
+        }
+        const kept = JSON.parse(localStorage.getItem(key) ?? "{}");
+        if (kept.summary) {
+          kept.summary.daily = undefined;
+        }
+        if (kept.before) {
+          kept.before.daily = undefined;
+        }
+        localStorage.setItem(key, JSON.stringify(kept));
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    await expect(region(page, "Outubro")).toContainText("R$ 2.660,60", {
+      timeout: 20_000,
+    });
+    await expect(region(page, "Hoje")).toContainText(
+      "Sem números de hoje neste aparelho"
+    );
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    await expect(page.getByText("a mais que no mesmo período")).toHaveCount(0);
+  });
+
+  test("cópia malformada: descartada, vale 'sem números', e a tela não cai", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("polaris.offline.home.")) {
+          localStorage.setItem(key, '{"before":{"period":1},"hadSale":"sim"');
+        }
+      }
+    });
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY, {
+      timeout: 20_000,
+    });
+    await expect(newSale(page)).toBeVisible();
+  });
+
+  test("troca de usuário no mesmo navegador: nenhum número de A aparece para B", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    // A's session ends with no "Sair" (it expired): B signs in on the same browser, with B's own store
+    server.user = { email: "outra@exemplo.com.br", id: "outra-pessoa" };
+    server.organization = {
+      ...server.organization,
+      id: "0199c2d0-0000-7000-8000-00000000b002",
+      name: "Loja da outra pessoa",
+    };
+    server.scenario = { ...SOLD, days: {}, everSold: false };
+    await page.reload();
+    await expect(page.getByText("Atualizado até 23/10/2026 12:00")).toBeVisible(
+      {
+        timeout: 20_000,
+      }
+    );
+    await page.context().setOffline(true);
+    await expect(
+      page
+        .getByText(OFFLINE_SALE)
+        .or(page.getByText("Sem internet: para vender é preciso conexão."))
+    ).toBeVisible();
+    await expect(page.getByText("R$ 320,10")).toHaveCount(0);
+    await expect(page.getByText("R$ 2.660,60")).toHaveCount(0);
+    await expect(page.getByText("Camiseta básica")).toHaveCount(0);
+  });
+
+  test("a meia-noite da loja passa com a página aberta sem rede: o Hoje da cópia deixa de valer", async ({
+    page,
+  }) => {
+    // 23:50 of 23/10 in Brasília
+    const lateEvening = Date.parse("2026-10-24T02:50:00.000Z");
+    const server = new FakeServer(SOLD);
+    server.now = lateEvening;
+    await page.clock.install({ time: new Date(lateEvening) });
+    await serve(page, server);
+    await page.goto("/");
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    await expect.poll(() => copyKeys(page)).toHaveLength(2);
+    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+      timeout: 20_000,
+    });
+    await page.context().setOffline(true);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(15 * 60_000);
+    await expect(region(page, "Hoje")).toContainText(
+      "Sem números de hoje neste aparelho"
+    );
+    await expect(region(page, "Outubro")).toContainText("R$ 2.660,60");
+  });
+
+  test("aberto sem rede, a rede volta: a cópia fica na tela até a leitura responder, sem esqueleto", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    // the network is back, and the server takes its time to answer
+    server.broken.set("report/periodSummary", "slow");
+    server.down = false;
+    const asked = periodCalls(server).length;
+    await page.clock.runFor(10_000);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(page.getByText("Carregando os números de hoje…")).toHaveCount(
+      0
+    );
+    await expect(
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00")
+    ).toBeVisible();
+    server.broken.delete("report/periodSummary");
+    await expect(page.getByText("Atualizado até 23/10/2026 12:00")).toBeVisible(
+      {
+        timeout: 20_000,
+      }
+    );
+  });
+
+  test("sem cópia a 1280: a mesma grade da tela com cópia, e os cartões não trocam de lugar quando a rede volta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY, {
+      timeout: 20_000,
+    });
+    await expect(region(page, "Outubro")).toContainText(NO_COPY);
+    const places = async () => ({
+      attention: await region(page, "Precisa de atenção").boundingBox(),
+      month: await region(page, "Outubro").boundingBox(),
+      today: await region(page, "Hoje").boundingBox(),
+    });
+    const before = await places();
+    // Hoje on the left, the month on the right in the same row, Meta and Atenção below them
+    expect(before.month?.x ?? 0).toBeGreaterThan(
+      (before.today?.x ?? 0) + (before.today?.width ?? 0)
+    );
+    expect(before.month?.y).toBe(before.today?.y);
+    const bottom = (before.today?.y ?? 0) + (before.today?.height ?? 0);
+    expect(before.attention?.y ?? 0).toBeGreaterThan(bottom);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+
+    server.down = false;
+    await page.clock.runFor(10_000);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    const after = await places();
+    // the sentence under "Nova venda" goes with the connection and moves the row by a few pixels: the order does not
+    expect(after.today?.x).toBe(before.today?.x);
+    expect(after.month?.x).toBe(before.month?.x);
+    expect(after.month?.y).toBe(after.today?.y);
+  });
+
+  test("o servidor recusa os números (FORBIDDEN): a cópia da loja é apagada e não volta sem rede", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+    await page.context().setOffline(true);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY);
+    await expect(page.getByText("R$ 320,10")).toHaveCount(0);
+  });
+
+  test("Sair apaga a cópia do Início antes de sair (A e B do aparelho)", async ({
+    page,
+  }) => {
+    // "Sair" in the sidebar (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await expect.poll(() => server.signOutCalls).toBe(1);
+    // the page leaves while this is asked: a question cut by the navigation is asked again
+    await expect
+      .poll(() => copyKeys(page).catch(() => ["navegando"]))
+      .toEqual([]);
   });
 });

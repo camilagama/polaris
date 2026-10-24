@@ -1,4 +1,6 @@
 /// <reference lib="dom" />
+import { readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { expect } from "@playwright/test";
 import {
   checkForUpdate,
@@ -6,6 +8,9 @@ import {
   runningVersion,
   test,
 } from "./support";
+import { dropChartsChunkFromCaches, serveHome } from "./ui-home-states";
+
+const CHARTS_FILE = /^charts-[\w-]+\.js$/;
 
 test("uma nova versão aparece como aviso, sem recarregar sozinha, e só troca quando a pessoa pede", async ({
   buildVersion,
@@ -62,4 +67,41 @@ test("a primeira instalação não é anunciada como atualização", async ({
   await expect(
     page.getByRole("status", { name: "Atualização do aplicativo" })
   ).toHaveCount(0);
+});
+
+test("um documento antigo pede o pedaço do gráfico de um build já limpo: os números ficam, 'O gráfico não abriu.' e Tentar novamente", async ({
+  app,
+  buildVersion,
+  page,
+}) => {
+  buildVersion("1");
+  await serveHome(page, { signedIn: true });
+  // the figures wait until the build is cleaned: only then does the Início ask for the chunk
+  let release: () => void = () => undefined;
+  const cleaned = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc/report/periodSummary", async (route) => {
+    await cleaned;
+    await route.fallback();
+  });
+  await openControlled(page);
+  // a newer build went out and the files of this one are gone: from the server and from the worker's caches
+  const assets = join(app.outDir, "assets");
+  for (const file of readdirSync(assets).filter((name) =>
+    CHARTS_FILE.test(name)
+  )) {
+    rmSync(join(assets, file));
+  }
+  await dropChartsChunkFromCaches(page);
+  release();
+  const chart = page.getByRole("region", { name: "Vendas por dia" });
+  await expect(chart).toContainText("O gráfico não abriu.", {
+    timeout: 20_000,
+  });
+  await expect(
+    chart.getByRole("button", { name: "Tentar novamente" })
+  ).toBeVisible();
+  await expect(chart).toContainText("Melhor dia");
+  await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$");
 });

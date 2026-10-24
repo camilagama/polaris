@@ -1,4 +1,5 @@
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
+import { useCallback } from "react";
 import { Button } from "@/ui/button";
 import { OnDemandAreaChart } from "@/ui/charts/on-demand";
 import {
@@ -159,14 +160,29 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   );
 }
 
-export function ChartBlock({ figures }: { figures: HomeFigures }) {
+/** The tab of the chart: the page keeps it, so it outlasts the connection going and coming back. */
+export type ChartDays = "7" | "30";
+
+export function ChartBlock({
+  days,
+  figures,
+  onDays,
+}: {
+  days: ChartDays;
+  figures: HomeFigures;
+  onDays: (days: ChartDays) => void;
+}) {
+  const choose = useCallback(
+    (value: unknown) => onDays(value === "30" ? "30" : "7"),
+    [onDays]
+  );
   return (
     <HomeBlock
       className="lg:col-start-1 lg:row-start-2"
       id="home-chart"
       title="Vendas por dia"
     >
-      <Tabs defaultValue="7">
+      <Tabs onValueChange={choose} value={days}>
         <TabsList aria-label="Período do gráfico">
           <TabsTrigger value="7">7 dias</TabsTrigger>
           <TabsTrigger value="30">30 dias</TabsTrigger>

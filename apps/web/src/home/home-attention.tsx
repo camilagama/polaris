@@ -10,10 +10,13 @@ import type { Block } from "./use-home";
  * fails they give way to one sentence (§ 5.2 (c)).
  */
 export function AttentionBlock({
+  offline = false,
   refused,
   soldWithoutCost,
   stock,
 }: {
+  /** No connection, for a role that reads the stock: its lines wait for the connection, said in one sentence. */
+  offline?: boolean;
   refused: number;
   soldWithoutCost: number | null;
   stock: Block<{
@@ -30,7 +33,7 @@ export function AttentionBlock({
   });
   const loading = stock.status === "loading";
   // without the stock's reads (a role that does not read it) nothing was checked: no "Nada precisa de atenção"
-  if (lines.length === 0 && stock.status === "hidden") {
+  if (lines.length === 0 && stock.status === "hidden" && !offline) {
     return null;
   }
   return (
@@ -53,12 +56,20 @@ export function AttentionBlock({
           ))}
         </ul>
       ) : null}
-      {lines.length === 0 && !loading && stock.status !== "error" ? (
+      {lines.length === 0 &&
+      !loading &&
+      stock.status !== "error" &&
+      !offline ? (
         <p className="text-muted-foreground">Nada precisa de atenção agora.</p>
       ) : null}
       {loading ? (
         <p className="text-muted-foreground text-support" role="status">
           Conferindo o estoque…
+        </p>
+      ) : null}
+      {offline ? (
+        <p className="text-muted-foreground text-support">
+          Avisos do estoque só com conexão.
         </p>
       ) : null}
       {stock.status === "error" ? (

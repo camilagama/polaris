@@ -458,3 +458,79 @@ export function homeReads(role: string): HomeReads {
     unknownCost: can("inventory:read"),
   };
 }
+
+/** After this long from the server's read, the copy says its numbers may be out of date (AC-31 emendado: 24 h). */
+const COPY_FRESH_MS = 24 * 3_600_000;
+/** A device clock this far before the server's read is wrong: nothing of the copy is taken as of today. */
+const CLOCK_BEHIND_MS = 5 * 60_000;
+
+/**
+ * How the copy stands now (§ 7.2): out of date after 24 h of its read, and today's only on the store's day of the
+ * read. Both from the server's clock (`generatedAt`); a device clock before it is wrong, so the copy is neither today's
+ * nor vouched for (the "Hoje" and the age use the server's read, never the device's date alone).
+ */
+export function copyStanding(
+  confirmedAt: string,
+  readAt: string,
+  now: number,
+  timezone: string | null
+): { stale: boolean; todayShown: boolean } {
+  const age = now - Date.parse(confirmedAt);
+  const clockBehind = now < Date.parse(readAt) - CLOCK_BEHIND_MS;
+  return {
+    stale: clockBehind || age > COPY_FRESH_MS,
+    todayShown:
+      !clockBehind &&
+      storeToday(readAt, timezone) ===
+        calendarDayInTimezone(new Date(now), timezone),
+  };
+}
+
+/** The line under the title when the figures are the device's copy (AC-28, AC-31). */
+export function copyLine(confirmed: string, stale: boolean): string {
+  return stale
+    ? `${confirmed}. Estes números podem estar desatualizados.`
+    : confirmed;
+}
+
+/** The goal of the card without a connection (§ 7.3, emenda (ii) do ADR 0056). */
+export type OfflineGoal =
+  | { ended: boolean; goal: GoalReadModel; kind: "active" }
+  | { goal: GoalReadModel; kind: "settled" }
+  | { kind: "online-only" };
+
+/**
+ * The goal kept on the device, as it can be told now: an active one is "em andamento" only while today, in the
+ * store's zone, is inside its period; after its end it says the result comes with the connection, with no percent.
+ * A goal paused by the plan stays as it was read. With no goal kept (or none to show any more), goals are only with
+ * a connection: the device cannot know whether one was set elsewhere since.
+ */
+export function offlineGoal(
+  view: GoalView | null,
+  today: string,
+  timezone: string | null
+): OfflineGoal {
+  if (view === null) {
+    return { kind: "online-only" };
+  }
+  if (view.kind === "active") {
+    return {
+      ended: !view.goal.paused && today > view.goal.endsOn,
+      goal: view.goal,
+      kind: "active",
+    };
+  }
+  if (view.kind === "settled") {
+    // the same 7 days as with a connection, counted from today
+    const kept = pickGoal([view.goal], today, timezone);
+    return kept.kind === "settled" ? kept : { kind: "online-only" };
+  }
+  return { kind: "online-only" };
+}
+
+/** What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. */
+export function newSaleOfflineText(canSellOffline: boolean): string {
+  return canSellOffline
+    ? "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
+    : "Sem internet: para vender é preciso conexão.";
+}

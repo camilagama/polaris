@@ -103,13 +103,12 @@ describe("main menu", () => {
 describe("resolveRoute", () => {
   it("opens the Início at the root, and the sale at /sales", () => {
     expect(resolveRoute("/")).toEqual({
-      // nothing to type: the notice says the screen loads by itself
-      connectionForm: false,
+      connectionForm: true,
       id: "home",
       kind: "page",
       navId: "home",
-      // every figure is read from the server and there is no copy on the device yet (the PR 6 brings it)
-      onlineOnly: true,
+      // offline it shows the device's copy, or says per block what waits for the connection (§ 7.4)
+      onlineOnly: false,
       title: "Início",
     });
     expect(resolveRoute("/sales")).toMatchObject({
@@ -144,7 +143,6 @@ describe("resolveRoute", () => {
 
   it("marks the screens that work only online, and not the ones that work from the device (U-54)", () => {
     for (const path of [
-      "/",
       "/public-catalog",
       "/payment-profiles",
       "/expenses",
@@ -155,6 +153,7 @@ describe("resolveRoute", () => {
       expect(resolveRoute(path)).toMatchObject({ onlineOnly: true });
     }
     for (const path of [
+      "/",
       "/sales",
       "/sales/history",
       "/inventory",

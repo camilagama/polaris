@@ -778,6 +778,8 @@ export const SCREENS: UiScreen[] = [
   homeScreen("com vendas", homeStates.sold),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
+  homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),
+  homeScreen("sem rede, sem cópia", homeStates.offlineNoCopy),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),

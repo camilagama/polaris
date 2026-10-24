@@ -39,7 +39,23 @@ function Miniature({ values }: { values: readonly number[] }) {
   );
 }
 
-export function TodayBlock({ figures }: { figures: HomeFigures }) {
+/** Hoje; `shown` false when the figures are a copy of another day of the store (§ 7.2): never yesterday's as today's. */
+export function TodayBlock({
+  figures,
+  shown = true,
+}: {
+  figures: HomeFigures;
+  shown?: boolean;
+}) {
+  if (!shown) {
+    return (
+      <HomeBlock id="home-today" title="Hoje">
+        <p className="text-muted-foreground">
+          Sem números de hoje neste aparelho
+        </p>
+      </HomeBlock>
+    );
+  }
   const today = todayFigures(figures.month.daily ?? [], figures.today);
   const week = lastDays(
     figures.before.daily ?? [],
@@ -70,11 +86,11 @@ export function TodayBlock({ figures }: { figures: HomeFigures }) {
 export function MonthBlock({ figures }: { figures: HomeFigures }) {
   const { before, month, today } = figures;
   const { cards, quality } = month;
-  const comparison = monthComparison(
-    before.daily ?? [],
-    month.daily ?? [],
-    today
-  );
+  // a copy kept before the series existed has the totals only: no comparison and no miniature, never zeros
+  const series = before.daily !== undefined && month.daily !== undefined;
+  const comparison = series
+    ? monthComparison(before.daily ?? [], month.daily ?? [], today)
+    : null;
   const negative = cards.operatingResult.trim().startsWith("-");
   return (
     <HomeBlock
@@ -117,11 +133,13 @@ export function MonthBlock({ figures }: { figures: HomeFigures }) {
             Não é lucro líquido nem dinheiro já recebido.
           </p>
           {comparison ? <p className="text-support">{comparison}</p> : null}
-          <Miniature
-            values={monthUntilToday(month.daily ?? [], today).map((day) =>
-              chartValue(day.netSales)
-            )}
-          />
+          {series ? (
+            <Miniature
+              values={monthUntilToday(month.daily ?? [], today).map((day) =>
+                chartValue(day.netSales)
+              )}
+            />
+          ) : null}
         </>
       )}
     </HomeBlock>

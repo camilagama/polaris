@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the e2e-pwa helpers are read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
-import { serveHealth, WORKER_MARK } from "./worker-mark";
+import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The reads of the Início (`/`) answered by the test, synthetic data only: the month and the days before it with the
@@ -215,7 +215,7 @@ export async function serveHome(
   page: Page,
   { failing = false, fresh = false, signedIn = false }: HomeServed = {}
 ) {
-  // the Início is an online-only route: without a marked answer of /health the tab is offline and it reads nothing
+  // without a marked answer of /health the tab is offline: the Início reads nothing and shows its copy, if any
   await serveHealth(page);
   if (signedIn) {
     await page.route("**/rpc/**", (route) =>
@@ -269,6 +269,154 @@ async function openHome(
   await page.evaluate(() => document.fonts.ready);
 }
 
+/** The keys of the Início's copy: A under the period summary's key, the rest under the Início's own. */
+const COPY_KEYS = /^polaris\.offline\.(home|periodSummary)\./;
+
+/** The charts chunk of a build, by its path. */
+const CHARTS_CHUNK_PATH = /\/assets\/charts-[\w-]+\.js$/;
+
+const HOME_READS = [
+  "goal/list",
+  "inventory/listBalances",
+  "report/periodSummary",
+  "sale/list",
+];
+
+/**
+ * The Início without a connection (§ 7.4), in the lab of the screens (`/offline-screens-lab?screen=home`): its
+ * runtime is ready with a usable lease, as the copy asks. The page reads once with the network (and keeps its copy),
+ * then the network goes; with `copy` false the copy is dropped first, so the page has nothing to show but the
+ * sentence. The lab's own controls are hidden at the end: what is measured is the screen alone.
+ */
+async function openHomeOffline(page: Page, copy: boolean) {
+  await readHomeInLab(page);
+  if (!copy) {
+    await dropHomeCopy(page);
+  }
+  await cutHomeNetwork(page);
+  await page
+    .getByText(
+      copy
+        ? "Último resultado confirmado"
+        : "Sem internet e sem números guardados neste aparelho",
+      { exact: false }
+    )
+    .first()
+    .waitFor();
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
+      (element as HTMLElement).hidden = true;
+    }
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
+  await page.evaluate(() => document.fonts.ready);
+}
+
+const labNetworks = new WeakMap<Page, { down: boolean }>();
+
+/** The keys of the Início's copy kept in this browser. */
+const homeCopyKeys = (page: Page) =>
+  page.evaluate(
+    (pattern) =>
+      Object.keys(localStorage).filter((key) => new RegExp(pattern).test(key)),
+    COPY_KEYS.source
+  );
+
+/** Drops the Início's copy from this browser. */
+async function dropHomeCopy(page: Page) {
+  await page.evaluate(
+    (keys) => {
+      for (const key of keys) {
+        localStorage.removeItem(key);
+      }
+    },
+    await homeCopyKeys(page)
+  );
+}
+
+/** Takes the network away: nothing of the Worker answers, and the browser says it is offline. */
+export async function cutHomeNetwork(page: Page) {
+  const network = labNetworks.get(page);
+  if (network) {
+    network.down = true;
+  }
+  await page.context().setOffline(true);
+}
+
+/** Starts the lab's runtime as `user` and waits until the Início shows. */
+export async function startHomeLab(page: Page, user: string) {
+  await page.goto("/offline-screens-lab?screen=home");
+  await page.getByLabel("Usuário").fill(user);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await page
+    .getByTestId("message")
+    .filter({ hasText: "Iniciar: ok (ready)" })
+    .waitFor({ timeout: 20_000 });
+}
+
+/**
+ * The Início in the lab of the screens with the network: the runtime ready with a usable lease, the figures read
+ * with the chart drawn, and the copy kept. Returns the lab's user, to start it again on the same device.
+ */
+export async function readHomeInLab(page: Page): Promise<string> {
+  await page.clock.setFixedTime(new Date(NOW));
+  const network: { down: boolean } = { down: Boolean(false) };
+  labNetworks.set(page, network);
+  await page.route("**/rpc/**", (route: Route) => {
+    const asked = new URL(route.request().url()).pathname.replace(
+      RPC_PREFIX,
+      ""
+    );
+    if (network.down || !HOME_READS.includes(asked)) {
+      return route.abort("internetdisconnected");
+    }
+    return route.fulfill(
+      answer(
+        asked,
+        (route.request().postDataJSON() as { json?: Record<string, unknown> })
+          .json ?? {},
+        { failing: false, fresh: false }
+      )
+    );
+  });
+  // after the catch-all above: the last route registered is the first asked
+  await serveLabWorker(page);
+  const user = `inicio-${crypto.randomUUID()}`;
+  await startHomeLab(page, user);
+  await page
+    .getByRole("region", { name: "Vendas por dia" })
+    .getByRole("img")
+    .waitFor();
+  // biome-ignore lint/performance/noAwaitInLoops: waits for the copy the read keeps
+  for (let tries = 0; (await homeCopyKeys(page)).length < 2; tries += 1) {
+    if (tries > 50) {
+      throw new Error("o Início não guardou a cópia");
+    }
+    await page.waitForTimeout(100);
+  }
+  return user;
+}
+
+/** Takes the charts chunk out of every cache of the service worker. */
+export const dropChartsChunkFromCaches = (page: Page) =>
+  page.evaluate(async (pattern) => {
+    const names = await caches.keys();
+    await Promise.all(
+      names.map(async (name) => {
+        const cache = await caches.open(name);
+        const requests = await cache.keys();
+        await Promise.all(
+          requests
+            .filter((request) =>
+              new RegExp(pattern).test(new URL(request.url).pathname)
+            )
+            .map((request) => cache.delete(request))
+        );
+      })
+    );
+  }, CHARTS_CHUNK_PATH.source);
+
 /** The states of the Início the interface guardrails measure (`ui-screens.ts`). */
 export const homeStates = {
   /** The numbers did not load: the alert with "Tentar novamente", Meta and Atenção still there. */
@@ -278,6 +426,10 @@ export const homeStates = {
         .getByText("Não foi possível carregar os números da loja.")
         .waitFor()
     ),
+  /** No connection, no copy on the device: the sentence in place of the figures, goals and stock only with it. */
+  offlineNoCopy: (page: Page) => openHomeOffline(page, false),
+  /** No connection, with the copy: the last confirmed figures, the goal kept, the device's line. */
+  offlineWithCopy: (page: Page) => openHomeOffline(page, true),
   /** A store that never sold and has no product: the checklist, Meta and Atenção. */
   fresh: (page: Page) =>
     openHome(page, { fresh: true }, (opened) =>
