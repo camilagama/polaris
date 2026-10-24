@@ -315,7 +315,7 @@ async function openHomeOffline(page: Page, copy: boolean) {
 const labNetworks = new WeakMap<Page, { down: boolean }>();
 
 /** The keys of the Início's copy kept in this browser. */
-export const homeCopyKeys = (page: Page) =>
+const homeCopyKeys = (page: Page) =>
   page.evaluate(
     (pattern) =>
       Object.keys(localStorage).filter((key) => new RegExp(pattern).test(key)),
@@ -323,7 +323,7 @@ export const homeCopyKeys = (page: Page) =>
   );
 
 /** Drops the Início's copy from this browser. */
-export async function dropHomeCopy(page: Page) {
+async function dropHomeCopy(page: Page) {
   await page.evaluate(
     (keys) => {
       for (const key of keys) {
