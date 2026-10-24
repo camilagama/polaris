@@ -55,20 +55,30 @@ const STAGING_FIXED_HOST = {
 const ATTEMPTS = 3;
 const TIMEOUT_MS = 10_000;
 
-/** An https origin of a staging Worker (workers.dev or the fixed host of that Worker), with no path, query or credentials. */
+/**
+ * An https origin of a staging Worker, with no path, query or credentials: the `catalog` key accepts
+ * only its fixed host; the `web` key accepts its fixed host or a workers.dev one.
+ */
 function isStagingOrigin(key, origin) {
   try {
     const url = new URL(origin);
     return (
       url.protocol === "https:" &&
       url.origin === origin &&
-      // TODO(pós STAGING_CATALOG_URL): the workers.dev of the catalog is accepted only for the transition; it leaves in a short PR after the variable changes to the new host (drop STAGING_HOST for the `catalog` key only, since the web shares it).
-      (STAGING_HOST.test(url.host) || url.host === STAGING_FIXED_HOST[key])
+      (url.host === STAGING_FIXED_HOST[key] ||
+        (key === "web" && STAGING_HOST.test(url.host)))
     );
   } catch {
     return false;
   }
 }
+
+/** One refusal message per key: each Worker accepts its own hosts only. */
+const REFUSAL = {
+  catalog:
+    "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path",
+  web: "web: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path",
+};
 
 /** The code of a network failure (ENOTFOUND, ETIMEDOUT), never its message. */
 function reasonOf(error) {
@@ -112,9 +122,7 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 export async function runSmoke(origins, fetchImpl = fetch, pause = wait) {
   for (const [key, origin] of Object.entries(origins)) {
     if (!isStagingOrigin(key, origin)) {
-      return [
-        `${key}: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path`,
-      ];
+      return [REFUSAL[key]];
     }
   }
   const failures = [];
