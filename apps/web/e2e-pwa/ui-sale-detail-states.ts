@@ -13,13 +13,17 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const RPC_PREFIX = /^.*\/rpc\//;
 
-async function serveSale(page: Page, withReturn: boolean) {
+async function serveSale(page: Page, withReturn: boolean, hold = false) {
   const answers = saleDetailAnswers({ withReturn });
   await page.route("**/rpc/{sale,customer}/**", (route: Route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       RPC_PREFIX,
       ""
     );
+    if (hold && procedure === "sale/get") {
+      // the server never answers: the detail stays loading
+      return new Promise<void>(() => undefined);
+    }
     const answer = answers[procedure];
     return answer === undefined
       ? route.abort("internetdisconnected")
@@ -36,9 +40,10 @@ async function openSaleLab(
   page: Page,
   screen: "sale-customer" | "sale-detail",
   heading: string,
-  withReturn = true
+  withReturn = true,
+  hold = false
 ) {
-  await serveSale(page, withReturn);
+  await serveSale(page, withReturn, hold);
   await serveLabWorker(page);
   await page.goto(
     `/offline-screens-lab?screen=${screen}&saleId=${DETAIL_SALE_ID}`
@@ -52,8 +57,10 @@ async function openSaleLab(
   await page
     .getByRole("heading", { exact: true, level: 1, name: heading })
     .waitFor();
-  // the customer panel is read: its current customer is on screen
-  await page.getByText("Ângela Souza").first().waitFor();
+  if (!hold) {
+    // the customer panel is read: its current customer is on screen
+    await page.getByText("Ângela Souza").first().waitFor();
+  }
 }
 
 /** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
@@ -94,6 +101,16 @@ export const saleDetailStates = {
   async detail(page: Page) {
     await openDetail(page);
     await page.getByRole("button", { name: "Registrar devolução" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The read of the sale does not answer: the line for the screen reader and the skeleton of the receipt (t300). */
+  async loading(page: Page) {
+    await openSaleLab(page, "sale-detail", "Detalhe da venda", true, true);
+    await page
+      .getByRole("status")
+      .getByText("Carregando venda…")
+      .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
 

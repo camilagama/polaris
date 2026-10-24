@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -131,12 +132,13 @@ async function openStockLab(
 
 async function useEveryControl(page: Page) {
   // the filters: the balance, the archived products (the mug has no balance and is archived) and the search
-  const filter = page.getByRole("group", { name: "Filtrar por saldo" });
-  await filter.getByRole("button", { name: "Sem saldo" }).click();
-  await expect(
-    filter.getByRole("button", { name: "Sem saldo" })
-  ).toHaveAttribute("aria-pressed", "true");
-  await filter.getByRole("button", { name: "Todas" }).click();
+  const filter = page.getByRole("tablist", { name: "Filtrar por saldo" });
+  await filter.getByRole("tab", { name: "Sem saldo" }).click();
+  await expect(filter.getByRole("tab", { name: "Sem saldo" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await filter.getByRole("tab", { name: "Todas" }).click();
   await page
     .getByRole("checkbox", { name: "Incluir produtos arquivados" })
     .click();
@@ -212,10 +214,26 @@ for (const theme of THEMES) {
 
 const stockFilter = (page: Page, name: string) =>
   page
-    .getByRole("group", { name: "Filtrar por saldo" })
-    .getByRole("button", { name });
+    .getByRole("tablist", { name: "Filtrar por saldo" })
+    .getByRole("tab", { name });
 const unknownCostFilter = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Sem custo" });
+
+test("as abas de saldo: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name.includes("mobile"),
+    "o teclado é o do desktop"
+  );
+  await openStockLab(page, "claro");
+  await expectTabsKeyboard(page, "Filtrar por saldo", ["Todas", "Com saldo"]);
+  // the arrows chose the tab: the list was asked again with the filter, and back to the plain one
+  await expect.poll(() => listRequests.at(-1) ?? "").toContain('"stock":"all"');
+  expect(
+    listRequests.some((body) => body.includes('"stock":"with_stock"'))
+  ).toBe(true);
+});
 
 /** What the person can read or a script of the page could read back: the body without its scripts. */
 const bodyMarkup = (page: Page) =>
@@ -236,7 +254,7 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
   });
   await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
   await expect(stockFilter(page, "Todas")).toHaveAttribute(
-    "aria-pressed",
+    "aria-selected",
     "true"
   );
   await expect(page.getByText("Camiseta do teste")).toBeVisible();
@@ -263,7 +281,7 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   });
   await stockFilter(page, "Sem saldo").click();
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
-    "aria-pressed",
+    "aria-selected",
     "true"
   );
   await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
@@ -307,7 +325,7 @@ test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas t�
     search: "&filtro=sem-saldo",
   });
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
-    "aria-pressed",
+    "aria-selected",
     "true"
   );
   await expect(unknownCostFilter(page)).toHaveAttribute(
@@ -333,7 +351,7 @@ for (const value of [
       search: `&filtro=${encodeURIComponent(value)}`,
     });
     await expect(stockFilter(page, "Todas")).toHaveAttribute(
-      "aria-pressed",
+      "aria-selected",
       "true"
     );
     await expect(unknownCostFilter(page)).toHaveAttribute(
@@ -351,7 +369,7 @@ for (const value of [
 }
 
 for (const width of [360, 320]) {
-  test(`o botão 'Sem custo' tem o tamanho dos outros e cabe em ${width} px, com a lista e com o painel aberto`, async ({
+  test(`as abas do saldo e o botão 'Sem custo' têm a mesma altura e cabem em ${width} px, com a lista e com o painel aberto`, async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width });
@@ -364,18 +382,20 @@ for (const width of [360, 320]) {
       const own = [...document.querySelectorAll("button")].find(
         (button) => button.textContent === "Sem custo"
       );
-      const buttons = [...(group?.querySelectorAll("button") ?? []), own].map(
-        (button) => button?.getBoundingClientRect()
-      );
+      const tabs = group?.querySelectorAll('[role="tab"]') ?? [];
+      const boxes = [group, own].map((item) => item?.getBoundingClientRect());
       return {
-        heights: buttons.map((box) => Math.round(box?.height ?? 0)),
-        past: buttons.filter(
+        heights: boxes.map((box) => Math.round(box?.height ?? 0)),
+        past: [
+          ...boxes,
+          ...[...tabs].map((tab) => tab.getBoundingClientRect()),
+        ].filter(
           (box) => (box?.right ?? Number.POSITIVE_INFINITY) > window.innerWidth
         ).length,
-        total: buttons.length,
+        tabs: tabs.length,
       };
     });
-    expect(measured.total).toBe(4);
+    expect(measured.tabs).toBe(3);
     expect(measured.past).toBe(0);
     expect(new Set(measured.heights).size).toBe(1);
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window

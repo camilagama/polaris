@@ -2,10 +2,11 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseReadModel,
 } from "@polaris/contracts";
-import { type MouseEvent, useCallback } from "react";
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { StatusNav } from "../catalog/screen-parts";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
@@ -22,12 +23,6 @@ const statusTabs: ReadonlyArray<readonly [ExpenseStatusFilter, string]> = [
   ["active", "Ativas"],
   ["voided", "Anuladas"],
 ];
-
-function isStatusFilter(
-  value: string | undefined
-): value is ExpenseStatusFilter {
-  return value === "active" || value === "voided";
-}
 
 interface ExpenseFiltersBarProps {
   categories: readonly ExpenseCategoryReadModel[];
@@ -48,12 +43,7 @@ export function ExpenseFiltersBar({
     [filters, onChange]
   );
   const handleStatus = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      const value = event.currentTarget.dataset.expenseStatus;
-      if (isStatusFilter(value)) {
-        onChange({ ...filters, status: value });
-      }
-    },
+    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
     [filters, onChange]
   );
   const handleCategory = useCallback(
@@ -79,24 +69,12 @@ export function ExpenseFiltersBar({
           value={categoryId}
         />
       </div>
-      {/* Active or voided: a line under the selected one, the buttons say which is pressed (as in Produtos) */}
-      <nav
-        aria-label="Situação das despesas"
-        className="flex gap-4 border-border border-b"
-      >
-        {statusTabs.map(([value, label]) => (
-          <button
-            aria-pressed={status === value}
-            className="focus-ring touch-hit relative -mb-px inline-flex h-ctl-lg items-center border-transparent border-b-2 font-medium text-muted-foreground transition-colors hover:text-foreground aria-pressed:border-foreground aria-pressed:text-foreground"
-            data-expense-status={value}
-            key={value}
-            onClick={handleStatus}
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <StatusNav
+        label="Situação das despesas"
+        onSelect={handleStatus}
+        options={statusTabs}
+        value={status}
+      />
     </div>
   );
 }
