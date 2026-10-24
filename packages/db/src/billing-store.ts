@@ -322,6 +322,31 @@ export interface BillingStore {
    * keeps it).
    */
   withPayerLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+  /**
+   * Runs `operation` while holding the organization's command lock (ADR 0066,
+   * emenda de 23/10): two commands that call the provider for the same
+   * organization never run at once, and the second decides by the state the
+   * first left. The lock is never waited for: when another command holds it,
+   * this fails at once with `BillingCommandInProgressError`, so a loop of
+   * commands cannot fill the pool. Like the payer's lock, it is a
+   * transaction-scoped advisory lock on its own connection, and the
+   * transaction ends if it sits idle for 60 s. Webhooks and the maintenance
+   * never take it: the inbox orders the facts.
+   */
+  withOrganizationLock: <T>(
+    organizationId: string,
+    operation: () => Promise<T>
+  ) => Promise<T>;
+}
+
+/** Another command holds the organization's lock; nothing was done, and a retry later is safe. */
+export class BillingCommandInProgressError extends Error {
+  readonly code = "command_in_progress";
+
+  constructor() {
+    super("command_in_progress");
+    this.name = "BillingCommandInProgressError";
+  }
 }
 
 /** The key of the payer's lock: 8 hex digits of a keyed digest of the document. */
@@ -1683,6 +1708,31 @@ export function createBillingStore(
         providerRef: row.provider_ref,
         providerSubscriptionId: row.provider_subscription_id,
       }));
+    },
+    async withOrganizationLock(organizationId, operation) {
+      if (!uuidPattern.test(organizationId)) {
+        throw new TypeError("invalid_organization_id");
+      }
+      return await inTransaction(pool, async (client) => {
+        // the connection sits idle while the operation runs on others (see withPayerLock)
+        const ignore = () => undefined;
+        client.on("error", ignore);
+        try {
+          await client.query(
+            "SET LOCAL idle_in_transaction_session_timeout = '60s'"
+          );
+          const result = await client.query<{ taken: boolean }>(
+            "SELECT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended($1, 0)) AS taken",
+            [`polaris.billing.organization:${organizationId.toLowerCase()}`]
+          );
+          if (!result.rows[0]?.taken) {
+            throw new BillingCommandInProgressError();
+          }
+          return await operation();
+        } finally {
+          client.off("error", ignore);
+        }
+      });
     },
     async withPayerLock(key, operation) {
       if (!payerLockKeyPattern.test(key)) {

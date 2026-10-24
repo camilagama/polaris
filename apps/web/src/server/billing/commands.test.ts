@@ -2,15 +2,17 @@ import {
   type BillingProviderPort,
   type PreparedSubscription,
   type PrepareSubscriptionInput,
+  ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderRejectedError,
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import { WooviCustomerMismatchError } from "@polaris/billing/woovi/customer";
-import type {
-  BillingStore,
-  UnclaimedTrialEvent,
+import {
+  BillingCommandInProgressError,
+  type BillingStore,
+  type UnclaimedTrialEvent,
 } from "@polaris/db/billing-store";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { logger } from "@polaris/observability/logger";
@@ -34,14 +36,16 @@ import {
   payerCustomerKey,
   payerLockKey,
   reconcileOrganization,
+  refundCancelEventId,
   refundCurrentPeriod,
+  type StartPixCheckoutDependencies,
   settleUnclaimedTrials,
   startCardCheckout,
-  type StartPixCheckoutDependencies,
   startPixCheckout,
 } from "./commands";
 
 const CANCEL_RENEWAL_EVENT_ID = /^command:cancel_renewal:req-42:[0-9a-f]{32}$/;
+const REFUND_CANCEL_EVENT_ID = /^command:refund_cancel:req-42:[0-9a-f]{32}$/;
 const EIGHT_HEX = /^[\da-f]{8}$/;
 const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
 
@@ -75,6 +79,7 @@ function fakePort(overrides: Partial<BillingProviderPort> = {}) {
     refundCurrentPeriod: vi.fn(() =>
       Promise.resolve("refund_requested" as const)
     ),
+    refundsEnabled: true,
     ...overrides,
   };
   return port as unknown as Mocked<BillingProviderPort>;
@@ -97,6 +102,10 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     recordEvent: vi.fn(() => Promise.resolve({ duplicate: false, id: "ev-1" })),
     settleUnclaimedTrial: vi.fn(() => Promise.resolve("cancelled")),
     startTrial: vi.fn(() => Promise.resolve({})),
+    withOrganizationLock: vi.fn(
+      (_organizationId: string, operation: () => Promise<unknown>) =>
+        operation()
+    ),
     ...overrides,
   } as unknown as Mocked<BillingStore>;
 }
@@ -1645,6 +1654,13 @@ describe("reconcileOrganization", () => {
 });
 
 describe("refundCurrentPeriod", () => {
+  const request = { organizationId, requestId: "req-refund-1" };
+  const active = { cancelAtPeriodEnd: false, state: "active" };
+
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
   it("is not_linked without a link", async () => {
     const port = fakePort();
     const store = fakeStore({
@@ -1654,9 +1670,10 @@ describe("refundCurrentPeriod", () => {
     await expect(
       refundCurrentPeriod(
         { now: () => now, portFor: () => port, store },
-        organizationId
+        request
       )
     ).resolves.toBe("not_linked");
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
     expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
   });
 
@@ -1670,7 +1687,7 @@ describe("refundCurrentPeriod", () => {
       await expect(
         refundCurrentPeriod(
           { now: () => now, portFor: () => port, store: fakeStore() },
-          organizationId
+          request
         )
       ).resolves.toBe(answer);
       expect(port.refundCurrentPeriod).toHaveBeenCalledWith(
@@ -1680,6 +1697,220 @@ describe("refundCurrentPeriod", () => {
       );
     }
   );
+
+  it("cancels the renewal and writes it before it refunds", async () => {
+    const calls: string[] = [];
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => {
+        calls.push("cancel");
+        return Promise.resolve("cancelled" as const);
+      }),
+      refundCurrentPeriod: vi.fn(() => {
+        calls.push("refund");
+        return Promise.resolve("refund_requested" as const);
+      }),
+    });
+    const store = fakeStore({
+      processEvent: vi.fn(() => {
+        calls.push("process");
+        return Promise.resolve({ status: "applied" });
+      }),
+      readRecord: vi.fn(() => Promise.resolve(active)),
+      recordEvent: vi.fn(() => {
+        calls.push("record");
+        return Promise.resolve({ duplicate: false, id: "ev-cancel" });
+      }),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).resolves.toBe("refund_requested");
+
+    expect(calls).toEqual(["cancel", "record", "process", "refund"]);
+    expect(port.cancelRenewal).toHaveBeenCalledWith(
+      link.providerRef,
+      link.providerSubscriptionId
+    );
+    expect(store.recordEvent).toHaveBeenCalledWith({
+      fact: { occurredAt: now, type: "subscription_cancelled" },
+      organizationId,
+      provider: "asaas",
+      providerEventId: await refundCancelEventId(
+        request.requestId,
+        link.providerRef
+      ),
+      providerRef: link.providerRef,
+    });
+    expect(store.processEvent).toHaveBeenCalledWith("ev-cancel", now);
+  });
+
+  it("refunds nothing when the cancellation fails", async () => {
+    const port = fakePort({
+      cancelRenewal: vi.fn(() =>
+        Promise.reject(new ProviderUnavailableError())
+      ),
+    });
+    const store = fakeStore({
+      readRecord: vi.fn(() => Promise.resolve(active)),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
+    expect(store.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not cancel again a renewal the record already shows cancelled", async () => {
+    const port = fakePort();
+    const store = fakeStore({
+      readRecord: vi.fn(() =>
+        Promise.resolve({ cancelAtPeriodEnd: true, state: "active" })
+      ),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).resolves.toBe("refund_requested");
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(store.recordEvent).not.toHaveBeenCalled();
+    expect(port.refundCurrentPeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancel ok, refund fails, a repeat with another request ID: one cancellation and one refund", async () => {
+    // the record as the inbox leaves it: the cancellation fact applied sets cancelAtPeriodEnd
+    const record = { ...active };
+    const cancellations: string[] = [];
+    const store = fakeStore({
+      processEvent: vi.fn(() => {
+        record.cancelAtPeriodEnd = true;
+        return Promise.resolve({ status: "applied" });
+      }),
+      readRecord: vi.fn(() => Promise.resolve({ ...record })),
+      recordEvent: vi.fn((event: { providerEventId: string }) => {
+        cancellations.push(event.providerEventId);
+        return Promise.resolve({ duplicate: false, id: "ev-cancel" });
+      }),
+    });
+    const port = fakePort({
+      refundCurrentPeriod: vi
+        .fn()
+        .mockRejectedValueOnce(new ProviderUnavailableError())
+        .mockResolvedValueOnce("refund_requested"),
+    });
+    const dependencies = { now: () => now, portFor: () => port, store };
+
+    await expect(
+      refundCurrentPeriod(dependencies, request)
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+    await expect(
+      refundCurrentPeriod(dependencies, {
+        organizationId,
+        requestId: "req-refund-2",
+      })
+    ).resolves.toBe("refund_requested");
+
+    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
+    expect(cancellations).toEqual([
+      await refundCancelEventId(request.requestId, link.providerRef),
+    ]);
+    expect(port.refundCurrentPeriod).toHaveBeenCalledTimes(2);
+  });
+
+  it("still cancels at the provider when the record no longer gives Pro, without writing a fact it would ignore", async () => {
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => Promise.resolve("already_cancelled" as const)),
+      refundCurrentPeriod: vi.fn(() =>
+        Promise.resolve("nothing_to_refund" as const)
+      ),
+    });
+    const store = fakeStore({
+      readRecord: vi.fn(() =>
+        Promise.resolve({ cancelAtPeriodEnd: false, state: "free" })
+      ),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).resolves.toBe("nothing_to_refund");
+    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
+    expect(store.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("writes the cancellation when the provider had it cancelled but the record did not", async () => {
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => Promise.resolve("already_cancelled" as const)),
+    });
+    const store = fakeStore({
+      readRecord: vi.fn(() => Promise.resolve(active)),
+    });
+
+    await refundCurrentPeriod(
+      { now: () => now, portFor: () => port, store },
+      request
+    );
+    expect(store.recordEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("touches nothing at a provider that cannot refund here (Woovi before S3.2)", async () => {
+    const port = fakePort({ refundsEnabled: false });
+    const store = fakeStore({
+      readRecord: vi.fn(() => Promise.resolve(active)),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).rejects.toBeInstanceOf(ProviderNotConfiguredError);
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
+    expect(store.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("runs under the organization's lock, and a lock held elsewhere does nothing", async () => {
+    const port = fakePort();
+    const store = fakeStore({
+      readRecord: vi.fn(() => Promise.resolve(active)),
+      withOrganizationLock: vi.fn(() =>
+        Promise.reject(new BillingCommandInProgressError())
+      ),
+    });
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).rejects.toBeInstanceOf(BillingCommandInProgressError);
+    expect(store.withOrganizationLock).toHaveBeenCalledWith(
+      organizationId,
+      expect.any(Function)
+    );
+    expect(store.readProviderLink).not.toHaveBeenCalled();
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
+  });
+
+  it("names the cancellation apart from the owner's, one per request and subscription", async () => {
+    const id = await refundCancelEventId("req-42", link.providerRef);
+    expect(id).toMatch(REFUND_CANCEL_EVENT_ID);
+    expect(id).not.toBe(await cancelRenewalEventId("req-42", link.providerRef));
+    expect(await refundCancelEventId("req-42", "another-ref")).not.toBe(id);
+  });
 
   describe("when the port returns the refund's own fact (Woovi)", () => {
     const refundEvent = {
@@ -1695,7 +1926,6 @@ describe("refundCurrentPeriod", () => {
     };
 
     it("writes the fact through the inbox with the organization, processes it, and returns refund_requested", async () => {
-      vi.spyOn(console, "info").mockImplementation(() => undefined);
       const calls: string[] = [];
       const port = fakePort({
         provider: "woovi" as never,
@@ -1721,7 +1951,7 @@ describe("refundCurrentPeriod", () => {
       await expect(
         refundCurrentPeriod(
           { now: () => now, portFor: () => port, store },
-          organizationId
+          request
         )
       ).resolves.toBe("refund_requested");
 
@@ -1738,12 +1968,11 @@ describe("refundCurrentPeriod", () => {
     });
 
     it("writes nothing when the port answers with a string (the older behavior)", async () => {
-      vi.spyOn(console, "info").mockImplementation(() => undefined);
       const store = fakeStore();
 
       await refundCurrentPeriod(
         { now: () => now, portFor: () => fakePort(), store },
-        organizationId
+        request
       );
 
       expect(store.recordEvent).not.toHaveBeenCalled();

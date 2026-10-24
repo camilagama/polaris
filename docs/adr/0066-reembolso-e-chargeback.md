@@ -45,3 +45,24 @@ O plano (PR84) pede: reembolso integral remove o Pro; chargeback remove o Pro im
 - **Restaurar a partir do evento do provedor sem lembrar o ciclo:** a restauração voltaria com um ciclo que não era o da assinatura, e sem o cancelamento.
 - **Tratar o fato como obsoleto quando chega atrás de outro:** um reembolso atrasado deixaria o Pro de quem recebeu o dinheiro de volta.
 - **Exigir igualdade exata do fim do período:** um arredondamento diferente do provedor reviveria o acesso de um pagamento devolvido ou ignoraria uma reversão legítima.
+
+## Emenda de 23/10/2026: reembolso e chargeback também cancelam a renovação
+
+**Contexto.** No sandbox do Asaas (23/10, desenho t268), reembolsar a cobrança confirmada deixou a assinatura `ACTIVE`; com o vencimento movido para hoje, o Asaas criou uma cobrança nova no cartão guardado. Na Woovi, `POST /api/v1/refund` devolve um Pix e não toca a recorrência. A cobrança seguinte, quando confirmada, é "um pagamento de período novo" e devolveria o Pro (decisão acima), cobrando de novo quem pediu o dinheiro de volta.
+
+**Decisão.**
+- **Reembolsar é desistir: o comando de reembolso cancela a renovação antes de reembolsar.** Passo 1: cancelar no provedor e gravar `subscription_cancelled` pela caixa de entrada, com o ID `command:refund_cancel:<requestId>:<digest da referência>` (prefixo próprio, para não ser lido como o cancelamento pedido pelo dono). Passo 2: o reembolso. Um cancelamento que falha não reembolsa nada; um reembolso que falha depois dele deixa "Pro até o fim do período", e repetir o pedido termina o reembolso. Na ordem inversa, uma falha deixaria a loja sem Pro e com a renovação viva.
+- **Decide pelo estado, sob a trava da loja.** O comando roda com a trava de comandos da loja (`withOrganizationLock`, `pg_try_advisory_xact_lock` sem fila: ocupada, responde `command_in_progress` na hora, sem nada feito) e lê o registro: se `cancel_at_period_end` já é verdadeiro (o dono, um pedido anterior cujo reembolso falhou, o encerramento), pula o passo 1. Repetir com outro `requestId` não grava um segundo cancelamento. O webhook e a manutenção não pegam essa trava: a caixa de entrada já ordena os fatos.
+- **Um provedor que não pode reembolsar ali não cancela nada.** A porta diz se reembolsa (`refundsEnabled`); na Woovi, enquanto `WOOVI_REFUND_ENABLED` estiver desligada, o comando responde `billing_provider_not_configured` antes do passo 1, e a renovação fica como estava.
+- **Com o registro fora do Pro** (o reembolso já tirou o acesso), o passo 1 ainda chama o provedor, para não deixar viva uma assinatura que cobraria, mas não grava fato: o registro não guarda cancelamento fora do Pro e o ignoraria.
+- **Chargeback:** não nasce de comando nosso, então não há passo 1 a fazer antes. A renovação de quem contestou é cancelada pela rede de segurança horária (abaixo).
+- **Rede de segurança (PR seguinte, com limite por passada e recuo por loja):** a manutenção cancela a renovação de lojas com `revoked_reason` `refund` ou `chargeback` (nunca `won`: o lojista venceu a disputa), vínculo ainda vivo e renovação não cancelada, só no vínculo atual (uma nova assinatura zera os `revoked_*` e não é tocada). Até ela entrar, o operador cancela pelo comando `cancel` do Gate 7.
+
+**Consequências.**
+- O reembolso pelo comando do operador (Gate 7) e, depois, o arrependimento do dono têm o mesmo caminho; a resposta não muda (`refund_requested`, `nothing_to_refund`, `not_linked`).
+- Pedir o reembolso cancela a renovação mesmo quando o provedor não acha cobrança a devolver: o pedido é de desistência. O comando do dono só chega ao passo 1 com a janela do arrependimento aberta.
+- A prova no Gate 7 é a do QA: depois do reembolso, `GET` da assinatura com `deleted: true`, nenhuma cobrança `PENDING` não apagada, uma varredura horária sem fato novo e a mesma contagem em `billing_events`; o controle negativo é o reembolso sem cancelar, que gera a cobrança nova.
+
+**Limites aceitos.**
+- O reembolso depois do cancelamento na Woovi não foi provado (S3.2); por isso o comando segue desligado nela.
+- A trava segura uma conexão do papel de billing enquanto o provedor responde, como a do pagador (ADR 0101).

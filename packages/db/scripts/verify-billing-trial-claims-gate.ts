@@ -5,6 +5,7 @@ import type { BillingFact } from "@polaris/domain/billing/facts";
 import { Client } from "pg";
 import {
   type AbandonedTrialCheckout,
+  BillingCommandInProgressError,
   createBillingStore,
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
@@ -1779,6 +1780,73 @@ async function main() {
       );
       tests.push(
         "Pix checkout (cobrança PR 6): the hourly reconciliation lists a link that may still change access whatever its age and one on Free only for 8 days, of that provider and within its limit; the payer's lock serializes the same key, leaves another key alone, is released by an operation that throws and refuses a key that is not 8 hex digits"
+      );
+
+      // the organization's command lock (ADR 0066, emenda de 23/10): never waited for
+      const lockedOrganization = randomUUID();
+      let releaseCommand: () => void = () => undefined;
+      const commandHeld = new Promise<void>((resolve) => {
+        releaseCommand = resolve;
+      });
+      let commandEntered: () => void = () => undefined;
+      const commandInside = new Promise<void>((resolve) => {
+        commandEntered = resolve;
+      });
+      const command = billing.withOrganizationLock(
+        lockedOrganization,
+        async () => {
+          commandEntered();
+          await commandHeld;
+          return "first";
+        }
+      );
+      await commandInside;
+      const refusedAt = Date.now();
+      await assert.rejects(
+        () =>
+          billing.withOrganizationLock(lockedOrganization.toUpperCase(), () =>
+            Promise.resolve("second")
+          ),
+        BillingCommandInProgressError,
+        "a second command of the same organization fails at once"
+      );
+      assert.ok(
+        Date.now() - refusedAt < 5000,
+        "the refusal does not wait for the lock"
+      );
+      assert.equal(
+        await billing.withOrganizationLock(randomUUID(), () =>
+          Promise.resolve("other")
+        ),
+        "other",
+        "another organization goes on"
+      );
+      // the lock is only the command's: the same organization's other work on the pool goes on
+      assert.equal(await billing.readRecord(lockedOrganization), null);
+      releaseCommand();
+      assert.equal(await command, "first");
+      await assert.rejects(() =>
+        billing.withOrganizationLock(lockedOrganization, () =>
+          Promise.reject(new Error("command gate operation"))
+        )
+      );
+      assert.equal(
+        await billing.withOrganizationLock(lockedOrganization, () =>
+          Promise.resolve("again")
+        ),
+        "again",
+        "an operation that throws releases the lock"
+      );
+      await Promise.all(
+        ["", "not-a-uuid", `${lockedOrganization}0`].map((id) =>
+          assert.rejects(
+            () => billing.withOrganizationLock(id, () => Promise.resolve()),
+            TypeError
+          )
+        )
+      );
+      tests.push(
+        "Refund command (ADR 0066, emenda de 23/10): the organization's command lock refuses a second command of the same organization at once (BillingCommandInProgressError, whatever the case of the ID), leaves another organization and the record reads alone, is released by an operation that throws and refuses an ID that is not a UUID"
       );
     }
 
