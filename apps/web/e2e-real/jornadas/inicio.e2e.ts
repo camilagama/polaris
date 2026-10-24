@@ -45,6 +45,11 @@ test("início: a venda de hoje aparece em Hoje e abrir a tela não grava nada no
   const of = (now: Stats, table: string) =>
     now.get(table) ?? { scans: 0, writes: 0 };
 
+  // the browser's first `get-session` records the access of its address on the session row (auth.ts,
+  // `recordSessionIpChange`): an access of the sign-in, not of the Início, so it is made before the measurement
+  const session = await page.request.get("/api/auth/get-session");
+  expect(session.ok()).toBe(true);
+
   const seededFrom = await stats();
   const candle = await seedProduct(
     rpc,
