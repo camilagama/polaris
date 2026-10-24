@@ -268,9 +268,9 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       providerRef,
       now,
       providerSubscriptionId,
-      firstCharge
+      refundable
     ) {
-      requireRecordedFirstCharge(firstCharge);
+      requireRecordedFirstCharge(refundable);
       // read first: a refund of a charge that is not paid is a 400 whose text says nothing usable
       for (const subscription of await subscriptionsOf(
         providerRef,
@@ -285,7 +285,7 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
         if (charge) {
           // the owner's refund: only the first charge recorded, never one the provider put in its place
           assertFirstCharge(
-            firstCharge,
+            refundable,
             chargePeriodEndsAt(charge, subscription)
           );
           await client.refundPayment(charge.id);

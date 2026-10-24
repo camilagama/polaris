@@ -749,10 +749,12 @@ export async function refundCurrentPeriod(
           recordsCancellation: record !== null && grantsPro(record.state),
           requestId: input.requestId,
         });
+    // the operator's refund: the paid charge of the period in force, whichever it is (ADR 0066)
     const outcome = await port.refundCurrentPeriod(
       link.providerRef,
       now,
-      link.providerSubscriptionId
+      link.providerSubscriptionId,
+      "any_paid"
     );
     let result: "nothing_to_refund" | "refund_requested";
     if (typeof outcome === "string") {

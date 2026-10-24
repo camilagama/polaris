@@ -238,7 +238,9 @@ describe("billingProviderPortOf", () => {
         const error = await port
           .refundCurrentPeriod(
             SUBSCRIPTION_ID,
-            new Date("2026-10-28T15:00:00Z")
+            new Date("2026-10-28T15:00:00Z"),
+            null,
+            "any_paid"
           )
           .then(
             () => null,

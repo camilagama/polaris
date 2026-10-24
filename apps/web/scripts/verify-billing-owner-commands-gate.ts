@@ -297,6 +297,33 @@ async function run() {
       { eventId: shopZ.firstChargeEventId, periodEndsAt: shopZ.periodEndsAt },
       "the first charge's event and the period its own fact paid for"
     );
+    // the first charge's event is read only within the store: another store's event reads as no period
+    const shopY = await paidStore("other", new Date(clock.getTime() - DAY));
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET first_charge_event_id = $2::uuid WHERE organization_id = $1",
+      [shopZ.tenant.organizationId, shopY.firstChargeEventId]
+    );
+    assert.deepEqual(
+      (await billing.readOwnerCommandRecord(shopZ.tenant.organizationId))
+        .firstCharge,
+      { eventId: shopY.firstChargeEventId, periodEndsAt: null },
+      "another store's event gives no period (the owner's refund refuses)"
+    );
+    // and a period that is not an ISO instant reads as none, never failing the read
+    await owner.pool.query(
+      `UPDATE public.billing_events SET fact = jsonb_set(fact, '{periodEndsAt}', '"not a date"')
+        WHERE id = $1::uuid`,
+      [shopY.firstChargeEventId]
+    );
+    assert.equal(
+      (await billing.readOwnerCommandRecord(shopY.tenant.organizationId))
+        .firstCharge.periodEndsAt,
+      null
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET first_charge_event_id = $2::uuid WHERE organization_id = $1",
+      [shopZ.tenant.organizationId, shopZ.firstChargeEventId]
+    );
     const none = await billing.readOwnerCommandRecord(randomUUID());
     assert.equal(none.state, "free");
     assert.equal(none.link, null);
@@ -305,7 +332,7 @@ async function run() {
       false
     );
     tests.push(
-      "the commands read the database's clock, the record with its link, the anchor and the first charge (its event and the period its fact paid for; no record reads as Free with no link), and ask the ledger for their own fact by its ID"
+      "the commands read the database's clock, the record with its link, the anchor and the first charge (its event and the period its own fact paid for, none for another store's event or a malformed period; no record reads as Free with no link), and ask the ledger for their own fact by its ID"
     );
 
     // ------------------------------------------------ 1. the refund decides by the state (decision 1 of the design)

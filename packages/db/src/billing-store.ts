@@ -2335,13 +2335,16 @@ export function createBillingStore(
                 round(first_charge_amount, 2)::text AS first_charge_amount,
                 round(price_amount, 2)::text AS price_amount, refund_requested_at, refund_request_id::text AS refund_request_id,
                 first_charge_event_id::text AS first_charge_event_id,
-                -- the period the first charge paid for, as its own fact says (the store's own event, applied)
-                (SELECT (charge.fact ->> 'periodEndsAt')::timestamptz
+                -- the period the first charge paid for, as its own fact says (the store's own event); a value that
+                -- is not an ISO instant reads as none, and the owner's refund refuses (it fails closed)
+                (SELECT CASE
+                          WHEN (charge.fact ->> 'periodEndsAt') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                          THEN (charge.fact ->> 'periodEndsAt')::timestamptz
+                        END
                    FROM public.billing_events AS charge
                   WHERE charge.id = billing.first_charge_event_id
                     AND charge.organization_id = billing.organization_id
-                    AND charge.fact_type = 'charge_succeeded'
-                    AND pg_catalog.jsonb_typeof(charge.fact -> 'periodEndsAt') = 'string') AS first_charge_period_ends_at
+                    AND charge.fact_type = 'charge_succeeded') AS first_charge_period_ends_at
            FROM public.organization_billing AS billing WHERE organization_id = $1`,
         [organizationId]
       );

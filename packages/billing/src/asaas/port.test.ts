@@ -401,7 +401,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
     expect(calls.length).toBeGreaterThan(0);
@@ -410,7 +410,7 @@ describe("refundCurrentPeriod", () => {
   it("does nothing when the reference has no subscription", async () => {
     const { calls, fetch } = fakeAsaas(() => ({ text: list([]) }));
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -425,7 +425,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("refund_requested");
     const posts = calls.filter((call) => call.method === "POST");
     expect(posts).toHaveLength(1);
@@ -520,7 +520,7 @@ describe("refundCurrentPeriod", () => {
           : undefined
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("refund_requested");
     expect(
       calls.filter((call) => call.method === "POST").map((call) => call.url)
@@ -539,7 +539,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -552,7 +552,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -569,7 +569,7 @@ describe("refundCurrentPeriod", () => {
       )
     );
     await expect(
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid")
     ).resolves.toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -983,7 +983,12 @@ describe("a stored subscription ID (sub_) is read directly, never by the list sc
     readState: (fetch: FetchLike, sub?: string) =>
       portWith(fetch).readState(CHECKOUT_ID, now, sub),
     refundCurrentPeriod: (fetch: FetchLike, sub?: string) =>
-      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, now, sub),
+      portWith(fetch).refundCurrentPeriod(
+        CHECKOUT_ID,
+        now,
+        sub ?? null,
+        "any_paid"
+      ),
   };
 
   describe.each(Object.entries(operations))("%s", (_name, run) => {

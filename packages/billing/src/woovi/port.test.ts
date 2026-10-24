@@ -835,7 +835,12 @@ describe("refundCurrentPeriod", () => {
       );
 
       const error = await failureOf(() =>
-        portWith(fetch, config).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+        portWith(fetch, config).refundCurrentPeriod(
+          SUBSCRIPTION_ID,
+          NOW,
+          null,
+          "any_paid"
+        )
       );
 
       expect(error).toBeInstanceOf(ProviderNotConfiguredError);
@@ -852,7 +857,9 @@ describe("refundCurrentPeriod", () => {
 
     const outcome = await refundingPort(fetch).refundCurrentPeriod(
       SUBSCRIPTION_ID,
-      NOW
+      NOW,
+      null,
+      "any_paid"
     );
 
     const post = calls.find((call) => call.method === "POST");
@@ -952,7 +959,12 @@ describe("refundCurrentPeriod", () => {
       refundRoute()
     );
 
-    await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW);
+    await refundingPort(fetch).refundCurrentPeriod(
+      SUBSCRIPTION_ID,
+      NOW,
+      null,
+      "any_paid"
+    );
 
     expect(
       JSON.parse(calls.find((call) => call.method === "POST")?.body ?? "")
@@ -984,7 +996,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     expect(
-      await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      await refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).toBe("nothing_to_refund");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -996,7 +1013,12 @@ describe("refundCurrentPeriod", () => {
       refundRoute()
     );
     expect(
-      await refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      await refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).toBe("nothing_to_refund");
   });
 
@@ -1012,7 +1034,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     await expect(
-      refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -1027,7 +1054,12 @@ describe("refundCurrentPeriod", () => {
     );
 
     await expect(
-      refundingPort(fetch).refundCurrentPeriod(SUBSCRIPTION_ID, NOW)
+      refundingPort(fetch).refundCurrentPeriod(
+        SUBSCRIPTION_ID,
+        NOW,
+        null,
+        "any_paid"
+      )
     ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -1041,7 +1073,9 @@ describe("refundCurrentPeriod", () => {
 
     const outcome = await refundingPort(fetch).refundCurrentPeriod(
       SUBSCRIPTION_ID,
-      NOW
+      NOW,
+      null,
+      "any_paid"
     );
 
     const text = JSON.stringify(outcome);

@@ -1721,10 +1721,12 @@ describe("refundCurrentPeriod", () => {
           request
         )
       ).resolves.toBe(answer);
+      // the operator's refund: the paid charge in force, whichever it is
       expect(port.refundCurrentPeriod).toHaveBeenCalledWith(
         link.providerRef,
         now,
-        link.providerSubscriptionId
+        link.providerSubscriptionId,
+        "any_paid"
       );
     }
   );

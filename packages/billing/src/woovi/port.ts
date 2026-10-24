@@ -297,13 +297,13 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       providerRef,
       now,
       providerSubscriptionId,
-      firstCharge
+      refundable
     ) {
       if (config.refundEnabled !== true) {
         // the refund of an installment is not proven in the sandbox yet (S3.2): nothing is called
         throw new ProviderNotConfiguredError();
       }
-      requireRecordedFirstCharge(firstCharge);
+      requireRecordedFirstCharge(refundable);
       const subscription = await subscriptionOf(
         providerRef,
         providerSubscriptionId
@@ -320,7 +320,7 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       }
       // the owner's refund: only the first charge recorded, never one the provider put in its place
       assertFirstCharge(
-        firstCharge,
+        refundable,
         installmentPeriodEndsAt(installment, subscription)
       );
       const endToEndId = pickWooviEndToEndId(

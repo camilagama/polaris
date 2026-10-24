@@ -166,16 +166,19 @@ export interface BillingProviderPort {
    * Refunds in full the charge of the period in force at `now`; never part of
    * it, never an earlier one. A provider whose refund sends no webhook tied to
    * the subscription (Woovi) answers the fact too, and the command writes it
-   * through the inbox. With `firstCharge` (the owner's refund, ADR 0104), it
-   * refunds only that charge: when the charge in force pays another period, or
-   * no first charge was recorded, it throws `NotFirstChargeError` and asks the
-   * provider for no refund (it fails closed).
+   * through the inbox. `charge` says which charge may be refunded, and every
+   * caller says it: the owner's refund (ADR 0104) passes the first charge
+   * recorded, and only that one is refunded (when the charge in force pays
+   * another period, or no first charge was recorded, it throws
+   * `NotFirstChargeError` and asks the provider for no refund: it fails
+   * closed); the operator's refund passes `"any_paid"`, the paid charge of the
+   * period in force, whichever it is.
    */
   refundCurrentPeriod: (
     providerRef: string,
     now: Date,
-    providerSubscriptionId?: string | null,
-    firstCharge?: RecordedFirstCharge
+    providerSubscriptionId: string | null,
+    charge: RefundableCharge
   ) => Promise<RefundOutcome>;
   /**
    * Whether `refundCurrentPeriod` may call the provider here. The refund
@@ -197,6 +200,12 @@ export interface RecordedFirstCharge {
   periodEndsAt: Date | null;
 }
 
+/**
+ * Which charge `refundCurrentPeriod` may refund: the first one recorded (the owner's), or the paid one in force,
+ * whichever it is (the operator's).
+ */
+export type RefundableCharge = "any_paid" | RecordedFirstCharge;
+
 /** The charge the port would refund is not the first one recorded, or none was recorded: nothing was refunded. */
 export class NotFirstChargeError extends Error {
   readonly code = "refund_not_first_charge";
@@ -207,13 +216,11 @@ export class NotFirstChargeError extends Error {
   }
 }
 
-/** Before the provider is read: a check asked for with no first charge recorded refuses at once. */
-export function requireRecordedFirstCharge(
-  firstCharge: RecordedFirstCharge | undefined
-): void {
+/** Before the provider is read: the first charge asked for, with none recorded, refuses at once. */
+export function requireRecordedFirstCharge(charge: RefundableCharge): void {
   if (
-    firstCharge !== undefined &&
-    (firstCharge.eventId === null || firstCharge.periodEndsAt === null)
+    charge !== "any_paid" &&
+    (charge.eventId === null || charge.periodEndsAt === null)
   ) {
     throw new NotFirstChargeError();
   }
@@ -221,13 +228,16 @@ export function requireRecordedFirstCharge(
 
 /** Before the refund is asked for: the charge in force must pay the first charge's period, to the millisecond. */
 export function assertFirstCharge(
-  firstCharge: RecordedFirstCharge | undefined,
+  charge: RefundableCharge,
   chargePeriodEndsAt: Date
 ): void {
-  requireRecordedFirstCharge(firstCharge);
+  if (charge === "any_paid") {
+    return;
+  }
   if (
-    firstCharge?.periodEndsAt &&
-    firstCharge.periodEndsAt.getTime() !== chargePeriodEndsAt.getTime()
+    charge.eventId === null ||
+    charge.periodEndsAt === null ||
+    charge.periodEndsAt.getTime() !== chargePeriodEndsAt.getTime()
   ) {
     throw new NotFirstChargeError();
   }

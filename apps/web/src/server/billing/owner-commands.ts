@@ -29,8 +29,8 @@ import { cancelRenewalEventId, refundCancelEventId } from "./commands";
  * from a read with no lock, so they never take the isolate's one command lock. Under the organization's command lock
  * (never waited for), each command reads the record again and judges all of it again (what the screen showed, and
  * what the read before the lock saw, are never trusted), reads the database's clock once and judges every rule with
- * it, counts the store's limit before it calls the provider and calls it with a deadline. Nothing of the provider, of the payer
- * or of the reason of the cancellation reaches a log: only codes and opaque IDs.
+ * it, counts the store's limit before it calls the provider and calls it with a deadline. Nothing of the provider,
+ * of the payer or of the reason of the cancellation reaches a log: only codes and opaque IDs.
  */
 
 /** The audit types of the owner's requests (the database's registry, migration 0100). */
@@ -443,8 +443,9 @@ export interface OwnerRefundResponse {
  * after that, the operator's work), without one at `now`, and open it writes the anchor (its own autocommitted
  * statement, before the provider, the first request wins). Then the renewal is cancelled first unless the record
  * already shows it cancelled (a repeat with another request ID never writes a second cancellation), and the refund
- * of the first charge recorded only. A refund that fails, or finds another charge in force, after that is `refund_pending` (the renewal is cancelled, a repeat finishes it); a cancellation
- * that fails refunds nothing and keeps the anchor.
+ * of the first charge recorded only. A refund that fails, or finds another charge in force, after that is
+ * `refund_pending` (the renewal is cancelled, a repeat finishes it); a cancellation that fails refunds nothing and
+ * keeps the anchor.
  */
 export async function ownerRequestRefund(
   dependencies: OwnerCommandDependencies,
@@ -511,7 +512,7 @@ const REFUND_ACCEPTED = "billing.refund_requested";
 
 type ProviderCall = ReturnType<typeof providerCalls>;
 
-/** The first charge a refund refunds, recorded in full; `refunded` once the period's payment was revoked as a refund. */
+/** The first charge a refund refunds, recorded in full; `refunded` once the period's payment was revoked. */
 interface Refundable {
   firstCharge: RecordedFirstCharge;
   firstChargeAmount: string;
@@ -731,8 +732,8 @@ async function cancelBeforeOwnerRefund(
 /**
  * Step 2: the refund of the period in force, only if it is the first charge recorded (`firstCharge`: the port refuses
  * another one, or none, before it asks for the refund). Done, it is `refund_requested` (Asaas's fact comes back by
- * webhook; Woovi's is written now through the inbox). Nothing to refund with the anchor in time, a failure or the budget run
- * out is `refund_pending` (AS-42): the renewal is cancelled, and a repeat finishes it.
+ * webhook; Woovi's is written now through the inbox). Nothing to refund with the anchor in time, a failure or the
+ * budget run out is `refund_pending` (AS-42): the renewal is cancelled, and a repeat finishes it.
  */
 async function refundStep(
   dependencies: OwnerCommandDependencies,
