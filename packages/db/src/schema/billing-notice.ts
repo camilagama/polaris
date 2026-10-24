@@ -82,10 +82,10 @@ export const billingNotices = pgTable(
       "billing_notices_user_only_for_welcome",
       sql`(${table.kind} = 'welcome') = (${table.userId} IS NOT NULL)`
     ),
-    // an opaque key: no space, no control character, short
+    // an opaque key: no space, no control character, no "@" (never an e-mail), short
     check(
       "billing_notices_dedupe_key_format",
-      sql`char_length(${table.dedupeKey}) BETWEEN 1 AND 200 AND ${table.dedupeKey} !~ '[[:space:][:cntrl:]]'`
+      sql`char_length(${table.dedupeKey}) BETWEEN 1 AND 200 AND ${table.dedupeKey} !~ '[[:space:][:cntrl:]@]'`
     ),
     check(
       "billing_notices_outcome_coherent",

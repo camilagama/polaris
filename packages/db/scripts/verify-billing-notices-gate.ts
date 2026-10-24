@@ -306,6 +306,11 @@ async function run() {
         "billing_notices_dedupe_key_format",
       ],
       [
+        "a key with an e-mail",
+        [store1.organizationId, "charge_receipt", "maria@example.com", null],
+        "billing_notices_dedupe_key_format",
+      ],
+      [
         "a key longer than 200",
         [store1.organizationId, "charge_receipt", "a".repeat(201), null],
         "billing_notices_dedupe_key_format",
@@ -363,7 +368,7 @@ async function run() {
       "billing_notices_welcome_user_unique"
     );
     tests.push(
-      "billing_notices has forced row security, one policy per role and command (none for the tenant or PUBLIC) and the exact grants: the billing role records five columns, reads and marks four; the purge reads and deletes; the recipient's owner and the welcome's owner read their columns; no other runtime holds anything; the checks refuse a kind outside the domain's list, a welcome without its person and a notice of the cycle with one, a key with a space, a line break, empty or too long, two outcomes, a failure without its code and a reason as free text; one notice per store, kind and key, and one welcome per person across stores"
+      "billing_notices has forced row security, one policy per role and command (none for the tenant or PUBLIC) and the exact grants: the billing role records five columns, reads and marks four; the purge reads and deletes; the recipient's owner and the welcome's owner read their columns; no other runtime holds anything; the checks refuse a kind outside the domain's list, a welcome without its person and a notice of the cycle with one, a key with a space, a line break, an \"@\", empty or too long, two outcomes, a failure without its code and a reason as free text; one notice per store, kind and key, and one welcome per person across stores"
     );
 
     // ------------------------------------------------------------------ 2. what the billing role does with a notice
@@ -522,7 +527,28 @@ async function run() {
             JSON.stringify({ noticeId: "not-a-uuid" }),
             "billing.notice:not-a-uuid",
           ],
-          ["42501", "22P02"],
+          ["42501"],
+        ],
+        // one notice has one key: the uuid only as PostgreSQL writes it
+        [
+          "the notice's ID in capitals",
+          [
+            store2.organizationId,
+            "billing.notice",
+            JSON.stringify({ noticeId: notice2.toUpperCase() }),
+            `billing.notice:${notice2.toUpperCase()}`,
+          ],
+          ["42501"],
+        ],
+        [
+          "the notice's ID without hyphens",
+          [
+            store2.organizationId,
+            "billing.notice",
+            JSON.stringify({ noticeId: notice2.replaceAll("-", "") }),
+            `billing.notice:${notice2.replaceAll("-", "")}`,
+          ],
+          ["42501"],
         ],
       ];
       for (const [label, values, states] of refusals) {
@@ -576,7 +602,7 @@ async function run() {
     ]);
     assert.deepEqual(await outboxOf(store2.organizationId), []);
     tests.push(
-      "the billing role writes the outbox event of a notice of the same store (billing.notice, pending, no attempt, the body with the notice's ID alone, the key from it) and nothing else: another type, the export's type, the notice of another store, a notice that does not exist, another key, a body with a key beside the notice and an ID that is not a uuid fail; the status, the attempts and the time are not its columns; it reads no event"
+      "the billing role writes the outbox event of a notice of the same store (billing.notice, pending, no attempt, the body with the notice's ID alone, the key from it) and nothing else: another type, the export's type, the notice of another store, a notice that does not exist, another key, a body with a key beside the notice, an ID that is not a uuid and the same ID in capitals or without hyphens fail (one notice, one key); the status, the attempts and the time are not its columns; it reads no event"
     );
 
     // ------------------------------------------------------------------ 4. the recipient

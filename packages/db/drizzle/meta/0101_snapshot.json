@@ -1,5 +1,5 @@
 {
-  "id": "6516914d-6cb3-4b19-8de8-7cf9edd1ae3b",
+  "id": "110e5ccd-5e02-4a6c-88bd-871da90919db",
   "prevId": "d1bb5e9d-5105-4e81-99b6-b19d15337b5d",
   "version": "7",
   "dialect": "postgresql",
@@ -924,7 +924,7 @@
         },
         "billing_notices_dedupe_key_format": {
           "name": "billing_notices_dedupe_key_format",
-          "value": "char_length(\"billing_notices\".\"dedupe_key\") BETWEEN 1 AND 200 AND \"billing_notices\".\"dedupe_key\" !~ '[[:space:][:cntrl:]]'"
+          "value": "char_length(\"billing_notices\".\"dedupe_key\") BETWEEN 1 AND 200 AND \"billing_notices\".\"dedupe_key\" !~ '[[:space:][:cntrl:]@]'"
         },
         "billing_notices_outcome_coherent": {
           "name": "billing_notices_outcome_coherent",

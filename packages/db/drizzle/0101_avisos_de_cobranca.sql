@@ -39,7 +39,7 @@ CREATE TABLE "billing_notices" (
 	CONSTRAINT "billing_notices_dedupe_unique" UNIQUE("organization_id","kind","dedupe_key"),
 	CONSTRAINT "billing_notices_kind_allowed" CHECK ("billing_notices"."kind" IN ('trial_started', 'trial_charge_eve', 'first_charge_failed', 'renewal_failed', 'access_ended', 'charge_receipt', 'renewal_cancelled', 'refund_confirmed', 'annual_renewal_reminder', 'welcome')),
 	CONSTRAINT "billing_notices_user_only_for_welcome" CHECK (("billing_notices"."kind" = 'welcome') = ("billing_notices"."user_id" IS NOT NULL)),
-	CONSTRAINT "billing_notices_dedupe_key_format" CHECK (char_length("billing_notices"."dedupe_key") BETWEEN 1 AND 200 AND "billing_notices"."dedupe_key" !~ '[[:space:][:cntrl:]]'),
+	CONSTRAINT "billing_notices_dedupe_key_format" CHECK (char_length("billing_notices"."dedupe_key") BETWEEN 1 AND 200 AND "billing_notices"."dedupe_key" !~ '[[:space:][:cntrl:]@]'),
 	CONSTRAINT "billing_notices_outcome_coherent" CHECK ((CASE WHEN "billing_notices"."sent_at" IS NULL THEN 0 ELSE 1 END
           + CASE WHEN "billing_notices"."failed_at" IS NULL THEN 0 ELSE 1 END
           + CASE WHEN "billing_notices"."skipped_reason" IS NULL THEN 0 ELSE 1 END) <= 1
@@ -85,7 +85,9 @@ CREATE POLICY memberships_billing_owner_select_owner ON public.memberships
   USING (role = 'owner' AND status = 'active');--> statement-breakpoint
 -- The outbox of the billing role (decision 11): only this type, only pending and untouched, the body with the notice's ID
 -- and nothing else, the key the body names, and a notice of the same store. The body is the domain's
--- (`OUTBOX_EVENT_KEYS`), as the closure notices' policy (0088).
+-- (`OUTBOX_EVENT_KEYS`), as the closure notices' policy (0088). The ID is taken only in the form PostgreSQL writes a
+-- uuid (lower case, with hyphens), so one notice has one key, a malformed ID is a refusal and never an error, and the
+-- notice is found by its primary key.
 GRANT INSERT (organization_id, type, event, idempotency_key, correlation_id) ON TABLE public.event_outbox TO polaris_billing_runtime;--> statement-breakpoint
 CREATE POLICY event_outbox_billing_runtime_insert_notice ON public.event_outbox
   AS PERMISSIVE FOR INSERT TO polaris_billing_runtime
@@ -94,7 +96,8 @@ CREATE POLICY event_outbox_billing_runtime_insert_notice ON public.event_outbox
     AND pg_catalog.jsonb_typeof(event -> 'noticeId') = 'string'
     AND idempotency_key = type || ':' || (event ->> 'noticeId')
     AND EXISTS (SELECT 1 FROM public.billing_notices AS n
-                 WHERE n.id = (event_outbox.event ->> 'noticeId')::uuid
+                 WHERE n.id = (CASE WHEN event_outbox.event ->> 'noticeId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                                    THEN (event_outbox.event ->> 'noticeId')::uuid END)
                    AND n.organization_id = event_outbox.organization_id));--> statement-breakpoint
 GRANT CREATE ON SCHEMA public TO polaris_notice_recipient_owner;--> statement-breakpoint
 GRANT polaris_notice_recipient_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
