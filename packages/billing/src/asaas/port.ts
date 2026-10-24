@@ -113,7 +113,8 @@ function checkoutBody(
 export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
   const client = createAsaasClient(config);
   // the sandbox's payment page only with the sandbox's API (the client already ties the key to the host)
-  const sandbox = URL.parse(config.baseUrl)?.hostname === "api-sandbox.asaas.com";
+  const sandbox =
+    URL.parse(config.baseUrl)?.hostname === "api-sandbox.asaas.com";
 
   /**
    * The subscription a checkout created. `providerRef` is the checkout's ID, and

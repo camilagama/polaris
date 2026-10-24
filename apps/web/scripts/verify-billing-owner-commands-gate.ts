@@ -589,7 +589,10 @@ async function run() {
     // ------------------------------------------------ 4. the lock never waits, and the limit
     // the stores of the scenario first, one after the other (the pool is not the point of their setup)
     const shopJ = await paidStore("isolate", new Date(clock.getTime() - DAY));
-    const shopK = await paidStore("third store", new Date(clock.getTime() - DAY));
+    const shopK = await paidStore(
+      "third store",
+      new Date(clock.getTime() - DAY)
+    );
     const crowd: Awaited<ReturnType<typeof paidStore>>[] = [];
     for (let index = 0; index < 20; index += 1) {
       crowd.push(

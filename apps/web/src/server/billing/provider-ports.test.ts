@@ -164,7 +164,9 @@ describe("billingProviderPortOf", () => {
         { fetch: fetchFake, signal: controller.signal }
       );
 
-      await port.hasSubscription(WOOVI_SUBSCRIPTION_ID, null).catch(() => undefined);
+      await port
+        .hasSubscription(WOOVI_SUBSCRIPTION_ID, null)
+        .catch(() => undefined);
 
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.every((signal) => signal.aborted)).toBe(true);

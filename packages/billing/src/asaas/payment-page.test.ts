@@ -5,13 +5,13 @@ const production = { sandbox: false };
 const sandbox = { sandbox: true };
 
 describe("asaasPaymentPageUrl", () => {
-  it.each([
-    "https://www.asaas.com/i/abc",
-    "https://asaas.com/i/abc",
-  ])("accepts %s", (url) => {
-    expect(asaasPaymentPageUrl(url, production)).toBe(url);
-    expect(asaasPaymentPageUrl(url, sandbox)).toBe(url);
-  });
+  it.each(["https://www.asaas.com/i/abc", "https://asaas.com/i/abc"])(
+    "accepts %s",
+    (url) => {
+      expect(asaasPaymentPageUrl(url, production)).toBe(url);
+      expect(asaasPaymentPageUrl(url, sandbox)).toBe(url);
+    }
+  );
 
   it("refuses a host that only ends with asaas.com", () => {
     expect(
@@ -51,19 +51,19 @@ describe("asaasPaymentPageUrl", () => {
 
   it("refuses a javascript: address", () => {
     expect(
-      asaasPaymentPageUrl("javascript:alert(1)//www.asaas.com/i/abc", production)
+      asaasPaymentPageUrl(
+        "javascript:alert(1)//www.asaas.com/i/abc",
+        production
+      )
     ).toBeNull();
   });
 
-  it.each([
-    undefined,
-    null,
-    42,
-    {},
-    ["https://www.asaas.com/i/abc"],
-  ])("refuses what is not a string (%j)", (value) => {
-    expect(asaasPaymentPageUrl(value, production)).toBeNull();
-  });
+  it.each([undefined, null, 42, {}, ["https://www.asaas.com/i/abc"]])(
+    "refuses what is not a string (%j)",
+    (value) => {
+      expect(asaasPaymentPageUrl(value, production)).toBeNull();
+    }
+  );
 
   it("refuses an address that is not a URL", () => {
     expect(asaasPaymentPageUrl("not a url", production)).toBeNull();

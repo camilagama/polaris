@@ -36,7 +36,10 @@ describe("billing.cancelRenewal input: the optional reason (ADR 0104, decision 3
   it.each([
     ["no reason", base],
     ["a reason", { ...base, reason: "Achei caro." }],
-    ["line breaks and tabs", { ...base, reason: "Achei caro.\n\tVolto depois." }],
+    [
+      "line breaks and tabs",
+      { ...base, reason: "Achei caro.\n\tVolto depois." },
+    ],
     ["500 characters", { ...base, reason: "a".repeat(500) }],
   ])("takes %s", async (_name, input) => {
     expect(await accepts(cancelRenewal, input)).toBe(true);
@@ -60,22 +63,20 @@ describe("billing.cancelRenewal input: the optional reason (ADR 0104, decision 3
 });
 
 describe("the request ID of the owner's commands", () => {
-  it.each([
-    "requestRefund",
-    "openOverduePayment",
-    "cancelRenewal",
-  ] as const)("%s takes a UUID and refuses anything else", async (name) => {
-    const procedure = polarisContract.billing[name];
-    expect(await accepts(procedure, base)).toBe(true);
-    expect(await accepts(procedure, { ...base, requestId: REQUEST.toUpperCase() })).toBe(true);
-    const refused = await Promise.all(
-      [
-        "abc",
-        "00000000-0000-0000-0000-000000000000",
-        `${REQUEST}0`,
-        "",
-      ].map((requestId) => accepts(procedure, { ...base, requestId }))
-    );
-    expect(refused).toEqual([false, false, false, false]);
-  });
+  it.each(["requestRefund", "openOverduePayment", "cancelRenewal"] as const)(
+    "%s takes a UUID and refuses anything else",
+    async (name) => {
+      const procedure = polarisContract.billing[name];
+      expect(await accepts(procedure, base)).toBe(true);
+      expect(
+        await accepts(procedure, { ...base, requestId: REQUEST.toUpperCase() })
+      ).toBe(true);
+      const refused = await Promise.all(
+        ["abc", "00000000-0000-0000-0000-000000000000", `${REQUEST}0`, ""].map(
+          (requestId) => accepts(procedure, { ...base, requestId })
+        )
+      );
+      expect(refused).toEqual([false, false, false, false]);
+    }
+  );
 });

@@ -238,8 +238,8 @@ export interface ReplacedProviderReference {
  */
 export interface CommandLockCounter {
   held: number;
-  holder?: object;
-  since?: number;
+  holder?: object | undefined;
+  since?: number | undefined;
 }
 
 /**
@@ -346,7 +346,10 @@ export interface BillingStore {
   /** The grant with this ID, or null. A command that names its own ID reads this first, so a repeat later is the same grant whatever its relative duration. */
   findEntitlementGrant: (id: string) => Promise<StoredEntitlementGrant | null>;
   /** Whether the ledger holds this provider's event ID (a command's own fact: `command:cancel_renewal:…`, `command:refund_cancel:…`). */
-  hasLedgerEvent: (provider: string, providerEventId: string) => Promise<boolean>;
+  hasLedgerEvent: (
+    provider: string,
+    providerEventId: string
+  ) => Promise<boolean>;
   /** Applies one stored event to its organization; safe to call again for an event already processed. */
   processEvent: (eventId: string, now?: Date) => Promise<ProcessedBillingEvent>;
   /** The provider link of the organization, or null when none is attached. */
@@ -355,12 +358,16 @@ export interface BillingStore {
   ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
   /** What the owner's commands read under the lock (`OwnerCommandRecord`); no record reads as Free with no link. */
-  readOwnerCommandRecord: (organizationId: string) => Promise<OwnerCommandRecord>;
+  readOwnerCommandRecord: (
+    organizationId: string
+  ) => Promise<OwnerCommandRecord>;
   /**
    * Keeps the optional reason of a cancelled renewal (ADR 0104, decision 3) in `billing_cancellation_feedback`, with
    * no store and no person; the day is São Paulo's, set by the database. The text never reaches a log.
    */
-  recordCancellationFeedback: (input: CancellationFeedbackInput) => Promise<void>;
+  recordCancellationFeedback: (
+    input: CancellationFeedbackInput
+  ) => Promise<void>;
   /**
    * The billing role's part of the owner's read of the plan (ADR 0104, decision 2): the record with the columns of
    * migration 0100 (the tenant never reads them) and whether the trial is still the person's to take, for this
