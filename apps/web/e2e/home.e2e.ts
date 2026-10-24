@@ -4,7 +4,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
-import { WORKER_MARK } from "./worker-mark";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The Início at `/` with a connection (desenho t269 v2, § 4 and § 5; corte inicio.md AC-1 to AC-23), in the real app
@@ -270,6 +270,8 @@ const HOME_PROCEDURES = new Set([
 ]);
 
 async function serve(page: Page, server: FakeServer) {
+  // a read with no answer is judged by the probe of /health: it answers, so it was an isolated failure (not offline)
+  await serveHealth(page);
   await page.route("**/rpc/**", async (route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       "/rpc/",
@@ -583,6 +585,93 @@ test.describe("loja com venda", () => {
       .click();
     await page.waitForURL(SALES_PATH);
   });
+
+  test("sem rede: só o título e Nova venda ativa, com o aviso de conexão e nenhum bloco em erro; tocar pede a Venda", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await page.context().setOffline(true);
+    const notice = page
+      .getByRole("status")
+      .filter({ hasText: "Sem internet." });
+    await expect(notice).toContainText("Esta tela precisa de conexão.");
+    await expect(region(page, "Hoje")).toHaveCount(0);
+    await expect(region(page, "Precisa de atenção")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.getByText("Não foi possível carregar os números da loja.")
+    ).toHaveCount(0);
+    await expect(newSale(page)).toBeVisible();
+    await expect(newSale(page)).not.toHaveAttribute("aria-disabled", "true");
+    // no read while there is no connection; the ones that come when it is back are the opening's
+    const reads = server.calls.length;
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    expect(server.calls.length).toBe(reads);
+    // the app is served by the service worker offline (e2e-pwa/app-shell.e2e.ts); this harness has none, so the
+    // proof here is that the touch asks for /sales
+    await expect(newSale(page)).toHaveAttribute("href", "/sales");
+    const toSales = page.waitForRequest(
+      (request) =>
+        request.isNavigationRequest() &&
+        new URL(request.url()).pathname === "/sales"
+    );
+    await newSale(page).click();
+    await toSales;
+  });
+
+  test("a rede volta: o Início lê de novo e os blocos reaparecem, sem recarregar", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await page.context().setOffline(true);
+    await expect(region(page, "Hoje")).toHaveCount(0);
+    await page.context().setOffline(false);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(page.getByText("Sem internet.")).toHaveCount(0);
+  });
+
+  for (const width of [360, 320]) {
+    test(`a linha da atenção quebra o texto em vez de cortá-lo, com a seta centrada (${width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await openHome(page, new FakeServer(SOLD));
+      const link = region(page, "Precisa de atenção").getByRole("link").first();
+      await expect(link).toContainText("Informe para as próximas vendas.");
+      const measure = await link.evaluate((anchor) => {
+        const text = anchor.querySelector("span");
+        const arrow = anchor.querySelector("svg");
+        if (!(text && arrow)) {
+          throw new Error("a linha sem texto ou sem seta");
+        }
+        const line = Number.parseFloat(getComputedStyle(text).lineHeight);
+        const box = anchor.getBoundingClientRect();
+        const mark = arrow.getBoundingClientRect();
+        return {
+          arrowOffset: Math.abs(
+            mark.top + mark.height / 2 - (box.top + box.height / 2)
+          ),
+          cut: text.scrollWidth > text.clientWidth,
+          ellipsis: getComputedStyle(text).textOverflow,
+          lines: Math.round(text.getBoundingClientRect().height / line),
+          overflowsPage:
+            document.documentElement.scrollWidth >
+            document.documentElement.clientWidth,
+        };
+      });
+      expect(measure.ellipsis).toBe("clip");
+      expect(measure.cut).toBe(false);
+      expect(measure.lines).toBeGreaterThanOrEqual(2);
+      expect(measure.arrowOffset).toBeLessThanOrEqual(1);
+      expect(measure.overflowsPage).toBe(false);
+    });
+  }
 
   test("vender e voltar: o Hoje e a série já trazem a venda, sem recarregar (§ 5.1)", async ({
     page,

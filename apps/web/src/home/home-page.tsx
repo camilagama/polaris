@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import { formatUpdatedUntil } from "../dashboard/dashboard-model";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
@@ -108,7 +109,25 @@ function figureBlocks(
   };
 }
 
-export function HomePage() {
+/** The title and "Nova venda": the part of the page that depends on no read (and on no connection). */
+function HomeHeader({ updated }: { updated: string | null }) {
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="grid gap-1">
+        <h1 className="text-title">Início</h1>
+        <p
+          className="min-h-5 text-muted-foreground text-support"
+          id="home-updated"
+        >
+          {updated}
+        </p>
+      </div>
+      <NewSale />
+    </header>
+  );
+}
+
+function HomeWithReads() {
   const { organization, organizationId } = useCurrentOrganization();
   const { timezone } = organization;
   const { retryFigures, retryGoals, state } = useHome(
@@ -130,20 +149,13 @@ export function HomePage() {
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-        <div className="grid gap-1">
-          <h1 className="text-title">Início</h1>
-          <p
-            className="min-h-5 text-muted-foreground text-support"
-            id="home-updated"
-          >
-            {figures
-              ? formatUpdatedUntil(figures.month.generatedAt, timezone)
-              : null}
-          </p>
-        </div>
-        <NewSale />
-      </header>
+      <HomeHeader
+        updated={
+          figures
+            ? formatUpdatedUntil(figures.month.generatedAt, timezone)
+            : null
+        }
+      />
       <div
         aria-busy={state.figures.status === "loading"}
         className="grid gap-4 lg:grid-cols-2 lg:items-start"
@@ -175,6 +187,22 @@ export function HomePage() {
         </div>
         {blocks.chart}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Offline the Início reads nothing and shows only the title and "Nova venda" (the shell's connection notice
+ * says why: `/` is an online-only route until the Início has a copy on the device); the reads start when the
+ * connection comes back, as when the page opens.
+ */
+export function HomePage() {
+  const online = useConnectionOnline();
+  return online ? (
+    <HomeWithReads />
+  ) : (
+    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
+      <HomeHeader updated={null} />
     </div>
   );
 }

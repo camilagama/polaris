@@ -11,8 +11,8 @@ export function NotFoundPage({ pathname }: NotFoundPageProps) {
     <StatePanel
       actions={
         <>
-          <a className={buttonVariants()} data-slot="button" href="/sales">
-            Ir para Vender
+          <a className={buttonVariants()} data-slot="button" href="/">
+            Ir para o Início
           </a>
           <a
             className={buttonVariants({ variant: "outline" })}

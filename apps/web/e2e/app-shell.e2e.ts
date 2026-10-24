@@ -4,7 +4,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
-import { WORKER_MARK } from "./worker-mark";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The shell v5.1 (t225): the sidebar of the desktop, the bottom bar and "Mais" of the phone, the theme and "Sair",
@@ -48,6 +48,8 @@ const inputOf = (route: Route) =>
 /** The server of a test: a signed-in person with one store, and nothing queued. */
 async function serve(page: Page) {
   const state = { signOutCalls: 0 };
+  // the Início reads in vain here (every other /rpc is cut): the probe finds the Worker, so it is not "offline"
+  await serveHealth(page);
   await page.route("**/rpc/**", (route) => route.abort("internetdisconnected"));
   await page.route("**/rpc/organization/listMine", (route) =>
     route.fulfill(json({ organizations: ORGANIZATIONS }))

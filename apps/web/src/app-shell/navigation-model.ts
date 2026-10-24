@@ -200,12 +200,14 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
 /**
  * Screens that read and save on the server and have no copy on the device: offline they cannot work, so the
  * state chip says that instead of "tudo guardado neste aparelho" (U-54). The ones that work from the device
- * (home, sale, history, stock, products, customers, result) are not here.
+ * (sale, history, stock, products, customers, result) are not here. The Início is: it reads the server for every
+ * figure and has no copy on the device until it gets one, so offline it shows only "Nova venda".
  */
 const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "account-security",
   "categories",
   "expenses",
+  "home",
   "payment-profiles",
   "public-catalog",
   "sale-customer",
@@ -218,6 +220,7 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
  * once it loaded (`useConnectionNoticeForm`).
  */
 const ONLINE_ONLY_WITHOUT_FORM: readonly RouteId[] = [
+  "home",
   "public-catalog",
   "sale-detail",
 ];

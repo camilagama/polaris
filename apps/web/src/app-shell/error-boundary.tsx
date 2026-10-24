@@ -53,9 +53,9 @@ export class ErrorBoundary extends Component<
             <a
               className={buttonVariants({ variant: "outline" })}
               data-slot="button"
-              href="/sales"
+              href="/"
             >
-              Ir para Vender
+              Ir para o Início
             </a>
           </>
         }

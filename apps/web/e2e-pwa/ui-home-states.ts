@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the e2e-pwa helpers are read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
-import { WORKER_MARK } from "./worker-mark";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The reads of the Início (`/`) answered by the test, synthetic data only: the month and the days before it with the
@@ -215,6 +215,8 @@ export async function serveHome(
   page: Page,
   { failing = false, fresh = false, signedIn = false }: HomeServed = {}
 ) {
+  // the Início is an online-only route: without a marked answer of /health the tab is offline and it reads nothing
+  await serveHealth(page);
   if (signedIn) {
     await page.route("**/rpc/**", (route) =>
       route.abort("internetdisconnected")
