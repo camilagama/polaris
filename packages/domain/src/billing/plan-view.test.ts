@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  historyMonthsOf,
   nextChargeOf,
   type PlanViewRecord,
   planMethodOf,
@@ -239,6 +240,21 @@ describe("refundPendingOf (AS-42)", () => {
     expect(refundPendingOf(active)).toBe(false);
   });
 
+  it("says what refundWindowOf says about the revocation: a chargeback ends it, a won dispute does not", () => {
+    const at = sp("2026-10-12T12:00:00");
+    for (const [revoked, pending] of [
+      [null, true],
+      [{ reason: "won" as const }, true],
+      [{ reason: "refund" as const }, false],
+      [{ reason: "chargeback" as const }, false],
+    ] as const) {
+      const record = { ...asked, revoked };
+      expect(refundPendingOf(record)).toBe(pending);
+      // the window is open under the same revocations that keep the fact (when the window's other conditions hold)
+      expect(refundWindowOf(record, at) !== null).toBe(pending);
+    }
+  });
+
   it("stays true after the 72 hours and the window, when the offer is gone: the request is the operator's, not forgotten", () => {
     const late = sp("2026-10-15T10:00:01");
     expect(refundWindowOf(asked, late)).toBeNull();
@@ -294,5 +310,23 @@ describe("recoveryOf (AS-43) and planMethodOf", () => {
     expect(planMethodOf("woovi")).toBe("pix_automatic");
     expect(planMethodOf(null)).toBeNull();
     expect(planMethodOf("other")).toBeNull();
+  });
+});
+
+describe("historyMonthsOf (AS-24, D1)", () => {
+  it("is 0 without a sale and 1 when the first sale is this month", () => {
+    expect(historyMonthsOf(null, "2026-10-24")).toBe(0);
+    expect(historyMonthsOf("2026-10-01", "2026-10-24")).toBe(1);
+    expect(historyMonthsOf("2026-10-24", "2026-10-24")).toBe(1);
+  });
+
+  it("counts every calendar month from the first sale to now, both included", () => {
+    expect(historyMonthsOf("2026-01-15", "2026-10-03")).toBe(10);
+    expect(historyMonthsOf("2025-12-31", "2026-01-01")).toBe(2);
+    expect(historyMonthsOf("2024-10-24", "2026-10-24")).toBe(25);
+  });
+
+  it("never goes below 1 for a first sale dated after today", () => {
+    expect(historyMonthsOf("2026-12-01", "2026-10-24")).toBe(1);
   });
 });

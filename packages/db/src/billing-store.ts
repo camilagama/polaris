@@ -1558,11 +1558,14 @@ const REFUND_REARM_EXHAUSTED_KEY = `'command:refund_rearm_exhausted:' || organiz
 const REFUND_REARM_DUE = `(refund_rearm_at IS NULL
   OR refund_rearm_at + make_interval(hours => LEAST(power(2, refund_rearm_attempts - 1)::integer, 24)) - interval '5 minutes' <= $1::timestamptz)`;
 
-/** An owner's refund request of the current link still not completed 24 hours later, read against `$1`. */
+/**
+ * An owner's refund request of the current link still not completed 24 hours later, read against `$1`. The revocation
+ * clause says what `refundPendingOf` says (none, or a won dispute): the screen and the incident never disagree.
+ */
 const REFUND_PENDING_CONDITION = `refund_requested_at IS NOT NULL
   AND refund_requested_at <= $1::timestamptz - interval '24 hours'
   AND provider IS NOT NULL AND provider_ref IS NOT NULL
-  AND revoked_reason IS DISTINCT FROM 'refund'`;
+  AND (revoked_reason IS NULL OR revoked_reason = 'won')`;
 
 /** The ledger key of a pending refund: one per store and request (the moment of the request, to the microsecond). */
 const REFUND_PENDING_KEY = `'command:refund_pending:' || organization_id || ':' || to_char(refund_requested_at AT TIME ZONE 'UTC', 'YYYYMMDD"T"HH24MISSUS')`;

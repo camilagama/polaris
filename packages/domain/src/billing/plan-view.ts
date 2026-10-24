@@ -164,12 +164,33 @@ export function refundOfferOf(
  * The renewal was cancelled by the owner's refund request and the refund is not completed (AS-42). The 72 hours
  * (ADR 0104, decision 3) only limit until when the app completes the request, and the offer of `refundWindowOf`
  * goes with them; the fact stays until the refund arrives or the owner links a provider again (the link clears the
- * anchor).
+ * anchor). A revocation other than a won dispute (a refund done, a chargeback) ends it, as it closes the window of
+ * `refundWindowOf`; a store back to Free at the end of the cycle without revocation still owes the refund.
  */
 export function refundPendingOf(record: PlanViewRecord): boolean {
   return (
-    record.refundRequestedAt !== null && record.revoked?.reason !== "refund"
+    record.refundRequestedAt !== null &&
+    (record.revoked === null || record.revoked.reason === "won")
   );
+}
+
+/**
+ * The calendar months the store keeps history of (AS-24, D1): from the month of the first confirmed sale to the
+ * current month, both counted, in the store's calendar. The first sale counts even if it was cancelled later. No
+ * sale is 0; a first sale in the current month is 1. Both dates are `AAAA-MM-DD` in the store's time zone.
+ */
+export function historyMonthsOf(
+  firstSaleOn: string | null,
+  today: string
+): number {
+  if (firstSaleOn === null) {
+    return 0;
+  }
+  const months = (date: string) => {
+    const [year, month] = date.split("-").map(Number);
+    return (year ?? 0) * 12 + (month ?? 1) - 1;
+  };
+  return Math.max(1, months(today) - months(firstSaleOn) + 1);
 }
 
 /**

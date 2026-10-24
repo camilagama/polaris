@@ -173,11 +173,13 @@ async function run() {
       "INSERT INTO public.goals (organization_id, kind, target, starts_on, ends_on) VALUES ($1, 'sale_count', 5, '2026-10-01', '2026-10-31')",
       [shop.organizationId]
     );
-    const read = (tenant: TenantFixture) =>
+    const read = (tenant: TenantFixture, clock?: Date) =>
       withTenantAs(db, tenant, "billing:manage", (transaction, identity) =>
-        readOwnerPlanTenantFacts(transaction, {
-          organizationId: identity.organizationId,
-        })
+        readOwnerPlanTenantFacts(
+          transaction,
+          { organizationId: identity.organizationId },
+          clock
+        )
       );
     const facts = await read(shop);
     // what the database itself counts, by queries of the gate's own
@@ -200,8 +202,12 @@ async function run() {
              WHERE m.organization_id = $1 AND p.deleted_at IS NULL) AS images,
            (SELECT count(*)::int FROM public.goals WHERE organization_id = $1 AND status = 'active') AS goals,
            (SELECT count(*)::int FROM public.sales WHERE organization_id = $1) AS sales,
-           (SELECT count(DISTINCT to_char(occurred_on, 'YYYY-MM'))::int FROM public.sales WHERE organization_id = $1)
-             AS history_months,
+           (SELECT CASE WHEN count(*) = 0 THEN 0
+                        ELSE (extract(year FROM (now() AT TIME ZONE 'America/Sao_Paulo')::date) * 12
+                              + extract(month FROM (now() AT TIME ZONE 'America/Sao_Paulo')::date)
+                              - extract(year FROM min(occurred_on)) * 12 - extract(month FROM min(occurred_on)) + 1)::int
+                        END
+              FROM public.sales WHERE organization_id = $1) AS history_months,
            (SELECT count(*)::int FROM public.products WHERE organization_id = $1 AND deleted_at IS NULL) AS products`,
       [shop.organizationId]
     );
@@ -219,6 +225,7 @@ async function run() {
     });
     assert.equal(facts.kept.sales, 2);
     assert.equal(facts.kept.products, 2);
+    // 1, or 2 when the gate runs in the first hours of a month (the sales are 3 h old); the exact values are proved in 1b
     assert.ok(facts.kept.historyMonths >= 1 && facts.kept.historyMonths <= 2);
     // the tenant's part never needed the columns of 0100: the tenant role still cannot read them
     for (const column of [
@@ -250,6 +257,47 @@ async function run() {
     );
     tests.push(
       "the usage is counted as assertRoomFor counts it (archived counts, deleted does not) and what the store keeps matches SQL of its own"
+    );
+
+    // ------------------------------------------------ 1b. the months of history (AS-24, D1): from the first sale to now
+    const emptyShop = await newTenant("empty history");
+    assert.equal((await read(emptyShop)).kept.historyMonths, 0);
+    const saleIds = (
+      await owner.pool.query<{ id: string }>(
+        "SELECT id FROM public.sales WHERE organization_id = $1 ORDER BY id",
+        [shop.organizationId]
+      )
+    ).rows.map((row) => row.id);
+    const [firstSale, secondSale] = saleIds;
+    assert.ok(firstSale && secondSale);
+    const setSaleDays = async (first: string, second: string) => {
+      for (const [id, on] of [
+        [firstSale, first],
+        [secondSale, second],
+      ] as const) {
+        await owner.pool.query(
+          "UPDATE public.sales SET occurred_on = $2 WHERE organization_id = $1 AND id = $3",
+          [shop.organizationId, on, id]
+        );
+      }
+    };
+    const monthsAt = async (instant: string) =>
+      (await read(shop, new Date(instant))).kept.historyMonths;
+    // the first sale in the current month is 1
+    await setSaleDays("2026-10-02", "2026-10-20");
+    assert.equal(await monthsAt("2026-10-24T15:00:00Z"), 1);
+    // sales only in January and October of the same year: ten calendar months, not two
+    await setSaleDays("2026-01-15", "2026-10-03");
+    assert.equal(await monthsAt("2026-10-24T15:00:00Z"), 10);
+    // the turn of the year
+    await setSaleDays("2025-12-31", "2025-12-31");
+    assert.equal(await monthsAt("2026-01-01T15:00:00Z"), 2);
+    // the store's midnight, not UTC's: 22:30 of 31/10 in São Paulo is still October, 00:30 of 01/11 is November
+    await setSaleDays("2026-10-31", "2026-10-31");
+    assert.equal(await monthsAt("2026-11-01T01:30:00Z"), 1);
+    assert.equal(await monthsAt("2026-11-01T03:30:00Z"), 2);
+    tests.push(
+      "the months of history count the calendar months from the first sale to the current one in the store's calendar (empty 0, this month 1, January to October 10, turn of the year, São Paulo midnight)"
     );
 
     const activePrices = (
