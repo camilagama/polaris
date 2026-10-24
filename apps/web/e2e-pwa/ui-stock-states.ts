@@ -227,7 +227,10 @@ export const stockStates = {
     await openStockLab(page, {
       answer: () => new Promise<void>(() => undefined),
     });
-    await page.getByText("Carregando o estoque…").waitFor();
+    await page
+      .getByRole("status")
+      .getByText("Carregando o estoque…")
+      .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
 

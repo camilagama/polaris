@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -118,6 +119,20 @@ async function openProductsLab(page: Page, stored = "claro", search = "") {
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
 
+test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name.includes("mobile"),
+    "o teclado é o do desktop"
+  );
+  await openProductsLab(page);
+  await expectTabsKeyboard(page, "Estado dos produtos", [
+    "Ativos",
+    "Arquivados",
+  ]);
+});
+
 async function useEveryControl(page: Page) {
   // the menu of a row, and the form of an edit with its category
   await menuOf(page, "Camiseta do teste").click();
@@ -164,7 +179,7 @@ async function useEveryControl(page: Page) {
   await expect(page.getByText("Calça jeans")).toBeVisible();
   await expect(page.getByText("Boné aba reta")).toHaveCount(0);
   await page.getByLabel("Buscar produto").fill("");
-  await page.getByRole("button", { name: "Arquivados" }).click();
+  await page.getByRole("tab", { name: "Arquivados" }).click();
   await expect(page.getByText("Jaqueta de inverno")).toBeVisible();
   await expect(page.getByRole("button", { name: "Novo produto" })).toHaveCount(
     0
@@ -278,9 +293,10 @@ test("?produto=<uuid> no aparelho: abre o painel do produto ativo e o do arquiva
   await expect(
     page.getByRole("region", { name: "Jaqueta de inverno" })
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Arquivados" })
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Arquivados" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
 });
 
 test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre painel", async ({
@@ -493,9 +509,10 @@ test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o painel d
   await expect(
     page.getByRole("region", { name: "Jaqueta de inverno" })
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Arquivados" })
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Arquivados" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
 });
 
 for (const [label, productId] of [
@@ -894,7 +911,7 @@ test("restaurar pelo menu de um produto arquivado diz o resultado", async ({
         ),
     },
   });
-  await page.getByRole("button", { name: "Arquivados" }).click();
+  await page.getByRole("tab", { name: "Arquivados" }).click();
   await menuOf(page, "Jaqueta de inverno").click();
   await page.getByRole("menuitem", { name: "Restaurar" }).click();
   await expect(
@@ -909,7 +926,7 @@ test("o menu de um produto arquivado tem Restaurar e não tem Imagens nem Arquiv
   await openServerScreen(page, {
     lists: [answer([product(1, "Jaqueta de inverno", "archived")])],
   });
-  await page.getByRole("button", { name: "Arquivados" }).click();
+  await page.getByRole("tab", { name: "Arquivados" }).click();
   await menuOf(page, "Jaqueta de inverno").click();
   await expect(page.getByRole("menuitem", { name: "Restaurar" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Variantes" })).toBeVisible();

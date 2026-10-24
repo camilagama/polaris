@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -293,7 +294,7 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
   expect(removed).toHaveLength(1);
 
   // a removed category is only read: no menu, and the reason in words
-  await page.getByRole("button", { name: "Removidas" }).click();
+  await page.getByRole("tab", { name: "Removidas" }).click();
   await expect(page.getByText("não pode ser restaurada")).toBeVisible();
   await expect(menuOf(page, "Camisetas")).toHaveCount(0);
 });
@@ -317,7 +318,7 @@ test("Categorias: arquivar pelo menu diz o resultado e a aba de arquivadas ofere
     page.getByText("Categoria “Camisetas” arquivada.")
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Arquivadas" }).click();
+  await page.getByRole("tab", { name: "Arquivadas" }).click();
   const row = page.locator("[data-category-id]", { hasText: "Camisetas" });
   await expect(row).toContainText("Arquivada");
   await menuOf(page, "Camisetas").click();
@@ -327,6 +328,30 @@ test("Categorias: arquivar pelo menu diz o resultado e a aba de arquivadas ofere
   await expect(
     page.getByRole("menuitem", { exact: true, name: "Arquivar" })
   ).toHaveCount(0);
+});
+
+test("Categorias: as abas de estado têm setas, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "o teclado é o do desktop"
+  );
+  await openScreen(page, "/categories", "Categorias", {
+    "category/list": listByStatus({
+      active: [category(1, "Camisetas")],
+      archived: [category(2, "Calçados", "archived")],
+    }),
+  });
+  await expectTabsKeyboard(page, "Estado das categorias", [
+    "Ativas",
+    "Arquivadas",
+  ]);
+  await expect(page.getByRole("tab")).toHaveText([
+    "Ativas",
+    "Arquivadas",
+    "Removidas",
+  ]);
 });
 
 test("Categorias a 320 px: nada transborda na lista, na confirmação de remover e no nome longo", async ({
@@ -369,6 +394,23 @@ const customer = (n: number, name: string, extra: object = {}) => ({
   updatedAt: DAY,
   version: 1,
   ...extra,
+});
+
+test("Clientes: as abas de estado têm setas, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "o teclado é o do desktop"
+  );
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await expectTabsKeyboard(page, "Estado dos clientes", [
+    "Ativos",
+    "Arquivados",
+  ]);
 });
 
 test("Clientes: sem nome o campo diz o que falta, com o cursor nele, e nada é enviado", async ({

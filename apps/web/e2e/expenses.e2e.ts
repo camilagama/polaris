@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { expectTabsKeyboard } from "./tabs-keyboard";
 import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
@@ -481,6 +482,20 @@ test("um valor inválido é recusado na tela, sem chamar o servidor", async ({
   expect(server.expenses).toHaveLength(0);
 });
 
+test("as abas Ativas e Anuladas: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name.includes("mobile"),
+    "o teclado é o do desktop"
+  );
+  await openExpenses(page, new FakeExpenseServer());
+  await expectTabsKeyboard(page, "Situação das despesas", [
+    "Ativas",
+    "Anuladas",
+  ]);
+});
+
 test("anular tira a despesa do período, aparece em Anuladas e pode ser reativada", async ({
   page,
 }) => {
@@ -497,7 +512,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page.getByRole("button", { name: "Anular despesa Panfletos" }).click();
   await expect(row(page, "Panfletos")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Anuladas" }).click();
+  await page.getByRole("tab", { name: "Anuladas" }).click();
   await expect(row(page, "Panfletos")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Editar despesa Panfletos" })
@@ -506,7 +521,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page
     .getByRole("button", { name: "Reativar despesa Panfletos" })
     .click();
-  await page.getByRole("button", { name: "Ativas" }).click();
+  await page.getByRole("tab", { name: "Ativas" }).click();
   await expect(row(page, "Panfletos")).toBeVisible();
 });
 

@@ -3,7 +3,7 @@ import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import SearchIcon from "lucide-react/dist/esm/icons/search";
-import type { ChangeEvent, MouseEvent, Ref } from "react";
+import type { ChangeEvent, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -11,14 +11,12 @@ import type { ProductListStatus } from "./product-list";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
 
-const productStatuses: ReadonlyArray<readonly [ProductListStatus, string]> = [
+export const PRODUCT_STATUS_OPTIONS: ReadonlyArray<
+  readonly [ProductListStatus, string]
+> = [
   ["active", "Ativos"],
   ["archived", "Arquivados"],
 ];
-
-export function isProductListStatus(value: string): value is ProductListStatus {
-  return value === "active" || value === "archived";
-}
 
 interface HeaderProps {
   buttonRef: Ref<HTMLButtonElement>;
@@ -179,33 +177,5 @@ export function ProductSearch({ onChange, value }: SearchProps) {
         value={value}
       />
     </InputGroup>
-  );
-}
-
-interface StatusNavProps {
-  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
-  status: ProductListStatus;
-}
-
-/** Active or archived: a line under the selected one, the buttons say which is pressed. */
-export function ProductStatusNav({ onSelect, status }: StatusNavProps) {
-  return (
-    <nav
-      aria-label="Estado dos produtos"
-      className="flex gap-4 border-border border-b"
-    >
-      {productStatuses.map(([value, label]) => (
-        <button
-          aria-pressed={status === value}
-          className="focus-ring touch-hit relative -mb-px inline-flex h-ctl-lg items-center border-transparent border-b-2 font-medium text-muted-foreground transition-colors hover:text-foreground aria-pressed:border-foreground aria-pressed:text-foreground"
-          data-product-status={value}
-          key={value}
-          onClick={onSelect}
-          type="button"
-        >
-          {label}
-        </button>
-      ))}
-    </nav>
   );
 }
