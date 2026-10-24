@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { productErrorMessage } from "./product-errors";
+import { isProductAlreadyCreated, productErrorMessage } from "./product-errors";
 
 const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
@@ -42,6 +42,18 @@ describe("mensagem de erro de produto", () => {
     expect(productErrorMessage(refusal("CONFLICT"))).toContain(
       "mudou em outra solicitação"
     );
+  });
+
+  it("o produto repetido com outros dados diz que já foi cadastrado, e não culpa a categoria", () => {
+    const repeated = refusal("CONFLICT", "product_create_conflict");
+    expect(productErrorMessage(repeated, "create")).toBe(
+      "Este produto já foi cadastrado, com outros dados. Veja a lista e confira antes de cadastrar de novo."
+    );
+    expect(isProductAlreadyCreated(repeated)).toBe(true);
+    expect(isProductAlreadyCreated(refusal("CONFLICT"))).toBe(false);
+    expect(
+      isProductAlreadyCreated(refusal("CONFLICT", "product_id_conflict"))
+    ).toBe(false);
   });
 
   it("os demais códigos e o erro sem código", () => {

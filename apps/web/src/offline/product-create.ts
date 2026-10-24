@@ -9,7 +9,7 @@ import {
   normalizeProductVariantSku,
   normalizeVariantListPrice,
 } from "@polaris/domain/catalog/product";
-import { normalizeReceiveStockInput } from "@polaris/domain/inventory/receive-stock";
+import { normalizeOpeningStockInput } from "@polaris/domain/inventory/opening-stock";
 import { uuidv7 } from "../lib/uuidv7";
 import type { LocalWriter } from "./bootstrap";
 import type { OutboxCommand } from "./outbox/command";
@@ -36,8 +36,8 @@ interface OfflineProductInput {
     /** Calendar date of the receipt, `YYYY-MM-DD`. */
     occurredOn: string;
     quantity: number;
-    /** BRL cost per unit as decimal text. */
-    unitCost: string;
+    /** BRL cost per unit as decimal text; `null` when the person does not know it. */
+    unitCost: string | null;
   } | null;
   /** BRL list price as decimal text, if any. */
   listPrice?: string | null;
@@ -66,7 +66,7 @@ type ProductCreatePayload = {
   initialStock: {
     occurredOn: string;
     quantity: number;
-    unitCost: string;
+    unitCost: string | null;
   } | null;
   listPrice: string | null;
   name: string;
@@ -143,10 +143,9 @@ function normalizeInput(
 ): Omit<ProductCreatePayload, "productId" | "variantId"> {
   const initialStock = input.initialStock ?? null;
   if (initialStock) {
-    // Throws the receive-stock domain errors for a quantity, cost or date the server would refuse.
-    normalizeReceiveStockInput({
+    // Throws the stock domain errors for a quantity, cost or date the server would refuse.
+    normalizeOpeningStockInput({
       commandId: ids.productId,
-      commandVersion: 1,
       occurredOn: initialStock.occurredOn,
       quantity: initialStock.quantity,
       unitCost: initialStock.unitCost,
@@ -160,7 +159,7 @@ function normalizeInput(
       ? {
           occurredOn: initialStock.occurredOn,
           quantity: initialStock.quantity,
-          unitCost: initialStock.unitCost.trim(),
+          unitCost: initialStock.unitCost?.trim() ?? null,
         }
       : null,
     listPrice: normalizeVariantListPrice(input.listPrice),

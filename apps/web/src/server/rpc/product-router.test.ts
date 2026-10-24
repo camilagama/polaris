@@ -8,15 +8,18 @@ import { CategoryInUseError } from "@polaris/domain/catalog/category";
 import {
   InvalidVariantListPriceError,
   ProductDefaultVariantSkuConflictError,
+  ProductIdConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
+import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
+import { ProductCreateConflictError } from "../use-cases/create-product-with-opening-stock";
 import { createRpcRouter } from "./router";
 
 const testBindings = {
@@ -492,6 +495,180 @@ describe("product RPCs", () => {
     expect(second.name).toBe(first.name);
     expect(observedCapability).toBe("product:create");
     expect(createProduct).toHaveBeenCalledTimes(2);
+  });
+
+  describe("product.create with the price and the opening stock", () => {
+    const productId = "0199c2d0-0000-7000-8000-0000000000b1";
+    const variantId = "0199c2d0-0000-7000-8000-0000000000b2";
+    const commandId = "0199c2d0-0000-7000-8000-0000000000a1";
+    const created = {
+      initialQuantity: 5,
+      product: { ...productRow, id: productId },
+      repeated: false,
+      variantId,
+    };
+
+    function routerWith(overrides: Record<string, unknown>) {
+      return createRpcRouter({
+        withTenantRequestContext: (input: {
+          operation: (
+            transaction: unknown,
+            authorizedIdentity: typeof identity
+          ) => Promise<unknown>;
+        }) => tenantContext(input),
+        ...overrides,
+      } as unknown as Parameters<typeof createRpcRouter>[0]);
+    }
+
+    it("forwards the IDs, the price and the stock, dated today in the store's time zone", async () => {
+      const createProductWithOpeningStock = vi.fn(() =>
+        Promise.resolve(created)
+      );
+      const organizationToday = vi.fn(() => Promise.resolve("2026-10-24"));
+      const client = createRpcClient(
+        routerWith({ createProductWithOpeningStock, organizationToday })
+      );
+
+      const product = await client.product.create({
+        initialStock: { commandId, quantity: 5, unitCost: "12.50" },
+        listPrice: "49.90",
+        name: "Bolsa",
+        organizationId: identity.organizationId,
+        productId,
+        variantId,
+      });
+
+      expect(product.id).toBe(productId);
+      expect(organizationToday).toHaveBeenCalledTimes(1);
+      expect(createProductWithOpeningStock).toHaveBeenCalledWith(
+        expect.anything(),
+        identity,
+        expect.objectContaining({
+          initialStock: {
+            commandId,
+            occurredOn: "2026-10-24",
+            quantity: 5,
+            unitCost: "12.50",
+          },
+          listPrice: "49.90",
+          name: "Bolsa",
+          productId,
+          variantId,
+        }),
+        expect.anything()
+      );
+    });
+
+    it("accepts an unknown cost as null and does not read the date when there is no stock", async () => {
+      const createProductWithOpeningStock = vi.fn(() =>
+        Promise.resolve(created)
+      );
+      const organizationToday = vi.fn(() => Promise.resolve("2026-10-24"));
+      const client = createRpcClient(
+        routerWith({ createProductWithOpeningStock, organizationToday })
+      );
+
+      await client.product.create({
+        initialStock: { commandId, quantity: 3, unitCost: null },
+        name: "Bolsa",
+        organizationId: identity.organizationId,
+      });
+      expect(organizationToday).toHaveBeenCalledTimes(1);
+
+      await client.product.create({
+        name: "Bolsa",
+        organizationId: identity.organizationId,
+      });
+      expect(organizationToday).toHaveBeenCalledTimes(1);
+      expect(createProductWithOpeningStock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        identity,
+        expect.objectContaining({ initialStock: null, listPrice: null }),
+        expect.anything()
+      );
+    });
+
+    it("refuses a stock the contract does not accept before any work", async () => {
+      const createProductWithOpeningStock = vi.fn(() =>
+        Promise.resolve(created)
+      );
+      const client = createRpcClient(
+        routerWith({ createProductWithOpeningStock })
+      );
+      const bad = [
+        { commandId, quantity: 0, unitCost: null },
+        { commandId, quantity: 1.5, unitCost: null },
+        { commandId, quantity: 2_147_483_648, unitCost: null },
+        { commandId, quantity: 1, unitCost: "" },
+        { commandId: "not-a-uuid", quantity: 1, unitCost: null },
+      ];
+      for (const initialStock of bad) {
+        // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
+        await expect(
+          client.product.create({
+            initialStock,
+            name: "Bolsa",
+            organizationId: identity.organizationId,
+          })
+        ).rejects.toBeDefined();
+      }
+      expect(createProductWithOpeningStock).not.toHaveBeenCalled();
+    });
+
+    it("answers a conflicting repeat as a conflict with its reason", async () => {
+      const client = createRpcClient(
+        routerWith({
+          createProductWithOpeningStock: () =>
+            Promise.reject(new ProductCreateConflictError()),
+        })
+      );
+      await expect(
+        client.product.create({
+          name: "Bolsa",
+          organizationId: identity.organizationId,
+          productId,
+        })
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        data: { reason: "product_create_conflict" },
+      });
+    });
+
+    it("answers a product ID that is taken by another store as a conflict, not as a server error", async () => {
+      const client = createRpcClient(
+        routerWith({
+          createProductWithOpeningStock: () =>
+            Promise.reject(new ProductIdConflictError()),
+        })
+      );
+      await expect(
+        client.product.create({
+          name: "Bolsa",
+          organizationId: identity.organizationId,
+          productId,
+        })
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        data: { reason: "product_id_conflict" },
+      });
+    });
+
+    it("answers a role without inventory:adjust as forbidden, with no reason", async () => {
+      const client = createRpcClient(
+        routerWith({
+          createProductWithOpeningStock: () =>
+            Promise.reject(new TenantAuthorizationError("capability_denied")),
+          organizationToday: () => Promise.resolve("2026-10-24"),
+        })
+      );
+      await expect(
+        client.product.create({
+          initialStock: { commandId, quantity: 1, unitCost: null },
+          name: "Bolsa",
+          organizationId: identity.organizationId,
+        })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
   });
 
   it("requires product:update and forwards the optimistic version", async () => {

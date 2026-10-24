@@ -119,16 +119,19 @@ describe("pickerView", () => {
     });
     expect(
       pickerView({ status: "ready", value: { entries: [], more: false } }, "")
-    ).toMatchObject({
+    ).toEqual({
+      href: "/products?novo=1",
       kind: "empty",
-      message: expect.stringContaining("Cadastre"),
+      message: "Cadastre um produto para vender.",
     });
     expect(
       pickerView(
         { status: "ready", value: { entries: [], more: false } },
         " azul "
       )
-    ).toMatchObject({
+    ).toEqual({
+      // a search with no match is not a store without products: no way to the form of a new one
+      href: null,
       kind: "empty",
       message:
         "Nenhuma variante encontrada para “azul”. Confira o nome, a variante ou o SKU.",

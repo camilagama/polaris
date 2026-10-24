@@ -247,9 +247,12 @@ async function openMenu(page: Page, name: string) {
   await page.getByRole("button", { name: `Mais ações para ${name}` }).click();
 }
 
-async function registerProduct(page: Page, name: string) {
+async function registerProduct(page: Page, name: string, quantity?: string) {
   await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill(name);
+  if (quantity) {
+    await page.getByLabel("Quantos você tem agora").fill(quantity);
+  }
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
 }
 
@@ -287,8 +290,13 @@ test.describe("produtos", () => {
       page.getByText("Cadastrar funciona e é enviado depois")
     ).toBeVisible();
 
-    await registerProduct(page, "Bolsa Couro");
-    await expect(page.getByText("salvo neste aparelho")).toBeVisible();
+    await registerProduct(page, "Bolsa Couro", "10");
+    // the notice confirms the stock the person typed
+    await expect(
+      page.getByText(
+        "Produto “Bolsa Couro” salvo neste aparelho com 10 unidades. Ele será enviado quando a conexão voltar."
+      )
+    ).toBeVisible();
     const bag = productRow(page, "Bolsa Couro");
     await expect(bag).toContainText("Aguardando envio");
     await expect(bag).toContainText(

@@ -16,6 +16,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
+import { NewProductLink } from "./sale-fields";
 import type { Loadable } from "./sale-form-model";
 import {
   pickerErrorMessage,
@@ -186,7 +187,10 @@ export function VariantSearch({
         </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <p className="text-muted-foreground text-support">{view.message}</p>
+        <div className="grid justify-items-start gap-3">
+          <p className="text-muted-foreground text-support">{view.message}</p>
+          {view.href ? <NewProductLink href={view.href} /> : null}
+        </div>
       ) : null}
       {view.kind === "ready" ? (
         <>

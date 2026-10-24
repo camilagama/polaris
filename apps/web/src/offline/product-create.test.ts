@@ -128,6 +128,32 @@ describe("creating a product offline", () => {
     expect((await outbox.snapshot()).commands).toHaveLength(1);
   });
 
+  it("takes an opening stock without a cost: the command carries a null cost and the stock shows at once", async () => {
+    const { create, writer } = await setup();
+    const { command } = await create({
+      initialStock: { occurredOn: "2026-10-14", quantity: 4, unitCost: null },
+      name: "Caneca",
+    });
+    expect((command.payload as { initialStock: unknown }).initialStock).toEqual(
+      { occurredOn: "2026-10-14", quantity: 4, unitCost: null }
+    );
+    expect(writer.stock(uuid(301))).toMatchObject({ quantity: 4 });
+  });
+
+  it("refuses an opening stock with an unknown cost that the server would refuse", async () => {
+    const { create, outbox } = await setup();
+    for (const quantity of [0, 1.5, 2_147_483_648]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
+      await expect(
+        create({
+          initialStock: { occurredOn: "2026-10-14", quantity, unitCost: null },
+          name: "A",
+        })
+      ).rejects.toBeInstanceOf(Error);
+    }
+    expect((await outbox.snapshot()).commands).toEqual([]);
+  });
+
   it("without opening stock there is no inventory row and no stock in the command", async () => {
     const { create, writer } = await setup();
     const { command } = await create({ name: "Meia" });

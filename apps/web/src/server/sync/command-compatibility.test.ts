@@ -143,6 +143,20 @@ async function currentPayloads() {
     paymentProfile: { expectedVersion: 3, id: uuid(601) },
     reader: writer,
   });
+  // a product whose opening stock has no known cost (the stock opens as a count from zero, ADR 0035)
+  await createOfflineProduct({
+    ...common(),
+    input: {
+      categoryId: null,
+      description: null,
+      initialStock: { occurredOn, quantity: 4, unitCost: null },
+      listPrice: null,
+      name: "Bolsa de palha",
+      sku: null,
+    },
+    newProductId: () => uuid(303),
+    newVariantId: () => uuid(304),
+  });
   const { commands } = await outbox.snapshot();
   return commands.map((command) => ({
     baseVersion: command.baseVersion,
