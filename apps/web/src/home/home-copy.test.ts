@@ -319,6 +319,32 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
   it.each([
     ["um alvo que não é texto", { target: 1000 }],
     ["uma data de fim impossível de ler", { endsOn: "31/10/2026" }],
+    ["uma data de fim que não existe", { endsOn: "2026-13-45" }],
+    ["uma data de começo que não existe", { startsOn: "2026-13-45" }],
+    ["um alvo que não é dinheiro", { target: "mil reais" }],
+    ["um valor atingido que não é dinheiro", { achievedValue: "R$ 400,00" }],
+    [
+      "um andamento cujo valor não é dinheiro",
+      {
+        progress: {
+          percent: "40.0",
+          periodEnded: false,
+          reached: false,
+          value: "quatrocentos",
+        },
+      },
+    ],
+    [
+      "um andamento cujo percentual não é número",
+      {
+        progress: {
+          percent: "40%",
+          periodEnded: false,
+          reached: false,
+          value: "400.00",
+        },
+      },
+    ],
     ["um campo paused que não é booleano", { paused: "no" }],
     ["um tipo de meta desconhecido", { kind: "visits" }],
     ["um status desconhecido", { status: "done" }],
@@ -329,6 +355,32 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
       read({
         ...valid(),
         goal: keptGoal(activeView(broken as Partial<GoalReadModel>)),
+      })
+    ).toBeNull();
+  });
+
+  it("descarta a cópia cujo B tem texto que não é dinheiro nem percentual", () => {
+    const withCards = (change: Record<string, unknown>) => {
+      const before = september();
+      return {
+        ...valid(),
+        before: { ...before, cards: { ...before.cards, ...change } },
+      };
+    };
+    expect(read(withCards({ marginPercent: "52,69 %" }))).toBeNull();
+    expect(read(withCards({ ticket: "R$ 65,00" }))).toBeNull();
+    expect(read(withCards({ netSales: "<b>130</b>" }))).toBeNull();
+    expect(
+      read(withCards({ marginPercent: null, ticket: null }))
+    ).not.toBeNull();
+  });
+
+  it("descarta a cópia cujo B tem uma data que não existe", () => {
+    const before = september();
+    expect(
+      read({
+        ...valid(),
+        before: { ...before, period: { from: "2026-09-01", to: "2026-13-45" } },
       })
     ).toBeNull();
   });

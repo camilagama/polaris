@@ -490,7 +490,7 @@ export function copyStanding(
 export function copyLine(confirmed: string, stale: boolean): string {
   return stale
     ? `${confirmed}. Estes números podem estar desatualizados.`
-    : `${confirmed}.`;
+    : confirmed;
 }
 
 /** The goal of the card without a connection (§ 7.3, emenda (ii) do ADR 0056). */
@@ -531,6 +531,6 @@ export function offlineGoal(
 /** What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. */
 export function newSaleOfflineText(canSellOffline: boolean): string {
   return canSellOffline
-    ? "Você pode vender sem internet; a venda é enviada quando voltar"
-    : "Sem internet: para vender é preciso conexão";
+    ? "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
+    : "Sem internet: para vender é preciso conexão.";
 }

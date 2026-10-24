@@ -169,6 +169,28 @@ describe("the last confirmed result kept for opening the dashboard without a con
       })
     ).toBeNull();
 
+    // text that is not money or a percent is not a copy: a sum or a figure on screen would break on it
+    for (const [group, field, text] of [
+      ["cards", "netSales", "R$ 130,00"],
+      ["cards", "operatingResult", "38.505"],
+      ["cards", "ticket", "sem ticket"],
+      ["cards", "marginPercent", "52,69%"],
+      ["chain", "cogs", "<b>60</b>"],
+      ["chain", "grossSales", ""],
+    ] as const) {
+      expect(
+        broken((summary) => {
+          (summary[group] as Record<string, unknown>)[field] = text;
+        })
+      ).toBeNull();
+    }
+    expect(
+      broken((summary) => {
+        (summary.cards as Record<string, unknown>).marginPercent = null;
+        (summary.cards as Record<string, unknown>).ticket = null;
+      })
+    ).not.toBeNull();
+
     values.set(keyOf(ORG, "2026-10"), "{not json");
     expect(readPeriodSummaryCache(storage, ORG, "2026-10")).toBeNull();
     values.set(keyOf(ORG, "2026-10"), "[]");

@@ -25,6 +25,8 @@ export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 /** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
 const moneyPattern = /^-?\d{1,12}(?:\.\d{1,2})?$/;
+/** A percent as the server writes it (two places for the margin, one for a goal): the same shape, a shorter whole. */
+const percentPattern = /^-?\d{1,9}(?:\.\d{1,2})?$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,7 +45,6 @@ const MISSING_CODES: readonly string[] = [
 const QUALITY_LEVELS: readonly string[] = ["complete", "no_data", "partial"];
 const CARD_COUNTS = ["items", "salesCount"] as const;
 const CARD_TEXTS = ["netSales", "operatingResult"] as const;
-const CARD_NULLABLE_TEXTS = ["marginPercent", "ticket"] as const;
 const CHAIN_TEXTS = [
   "anticipationFees",
   "cogs",
@@ -76,7 +77,12 @@ function isDictionary(value: unknown): value is Dictionary {
 }
 
 const isText = (value: unknown): value is string => typeof value === "string";
-const isNullableText = (value: unknown) => value === null || isText(value);
+/** Money text, which a sum on screen can read. */
+export const isMoney = (value: unknown): value is string =>
+  isText(value) && moneyPattern.test(value);
+/** Percent text, which the screen can write. */
+export const isPercent = (value: unknown): value is string =>
+  isText(value) && percentPattern.test(value);
 const isCount = (value: unknown) =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;
 
@@ -92,8 +98,9 @@ function isCards(value: unknown): boolean {
   return (
     isDictionary(value) &&
     hasAll(value, CARD_COUNTS, isCount) &&
-    hasAll(value, CARD_TEXTS, isText) &&
-    hasAll(value, CARD_NULLABLE_TEXTS, isNullableText)
+    hasAll(value, CARD_TEXTS, isMoney) &&
+    (value.marginPercent === null || isPercent(value.marginPercent)) &&
+    (value.ticket === null || isMoney(value.ticket))
   );
 }
 
@@ -110,7 +117,7 @@ function isQuality(value: unknown): boolean {
   );
 }
 
-const isDate = (value: unknown) =>
+export const isDate = (value: unknown) =>
   isText(value) &&
   datePattern.test(value) &&
   !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`));
@@ -155,8 +162,7 @@ function isDaily(value: unknown, period: unknown): boolean {
       (day, index) =>
         isDictionary(day) &&
         day.date === dateAfter(from, index) &&
-        isText(day.netSales) &&
-        moneyPattern.test(day.netSales) &&
+        isMoney(day.netSales) &&
         isCount(day.salesCount)
     ) &&
     (value.at(-1) as Dictionary).date === period.to
@@ -173,7 +179,7 @@ function isTopProducts(value: unknown): boolean {
           isDictionary(entry) &&
           typeof entry.deleted === "boolean" &&
           isText(entry.name) &&
-          isText(entry.netSales) &&
+          isMoney(entry.netSales) &&
           isText(entry.productId) &&
           uuidPattern.test(entry.productId) &&
           isCount(entry.quantity) &&
@@ -189,7 +195,7 @@ export function isPeriodSummary(value: unknown): value is StoredPeriodSummary {
     isInstant(value.generatedAt) &&
     isCards(value.cards) &&
     isDictionary(value.chain) &&
-    hasAll(value.chain, CHAIN_TEXTS, isText) &&
+    hasAll(value.chain, CHAIN_TEXTS, isMoney) &&
     isPeriod(value.period) &&
     isDaily(value.daily, value.period) &&
     isTopProducts(value.topProducts) &&

@@ -3,6 +3,9 @@ import { GOAL_KINDS } from "@polaris/domain/goals/goal";
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
   HOME_COPY_KEY_PREFIX,
+  isDate,
+  isMoney,
+  isPercent,
   isPeriodSummary,
   readPeriodSummaryCache,
   type StoredPeriodSummary,
@@ -35,7 +38,6 @@ export interface HomeCopy {
 
 type Dictionary = Record<string, unknown>;
 
-const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const GOAL_STATUSES: readonly unknown[] = [
   "active",
   "cancelled",
@@ -49,7 +51,6 @@ function isDictionary(value: unknown): value is Dictionary {
 
 const isText = (value: unknown): value is string => typeof value === "string";
 const isNullableText = (value: unknown) => value === null || isText(value);
-const isDate = (value: unknown) => isText(value) && datePattern.test(value);
 const isInstant = (value: unknown) =>
   isText(value) && !Number.isNaN(Date.parse(value));
 
@@ -58,9 +59,9 @@ function isProgress(value: unknown): boolean {
     value === null ||
     (isDictionary(value) &&
       typeof value.periodEnded === "boolean" &&
-      isNullableText(value.percent) &&
+      (value.percent === null || isPercent(value.percent)) &&
       typeof value.reached === "boolean" &&
-      isText(value.value))
+      isMoney(value.value))
   );
 }
 
@@ -68,7 +69,7 @@ function isProgress(value: unknown): boolean {
 function isGoal(value: unknown): value is GoalReadModel {
   return (
     isDictionary(value) &&
-    isNullableText(value.achievedValue) &&
+    (value.achievedValue === null || isMoney(value.achievedValue)) &&
     isDate(value.endsOn) &&
     isText(value.id) &&
     (GOAL_KINDS as readonly unknown[]).includes(value.kind) &&
@@ -78,7 +79,7 @@ function isGoal(value: unknown): value is GoalReadModel {
     (value.settledAt === null || isInstant(value.settledAt)) &&
     isDate(value.startsOn) &&
     GOAL_STATUSES.includes(value.status) &&
-    isText(value.target)
+    isMoney(value.target)
   );
 }
 

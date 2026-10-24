@@ -1028,7 +1028,7 @@ async function reopenWithoutNetwork(page: Page, server: FakeServer, at = NOON) {
 }
 
 const OFFLINE_SALE =
-  "Você pode vender sem internet; a venda é enviada quando voltar";
+  "Você pode vender sem internet. A venda é enviada quando a conexão voltar.";
 const NO_COPY = "Sem internet e sem números guardados neste aparelho";
 
 test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
@@ -1041,7 +1041,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.context().setOffline(true);
 
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00.", {
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
         exact: true,
       })
     ).toBeVisible();
@@ -1135,7 +1135,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await reopenWithoutNetwork(page, server, NOON + HOUR);
     expect(await page.evaluate(() => navigator.onLine)).toBe(true);
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00.", {
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
         exact: true,
       })
     ).toBeVisible({ timeout: 20_000 });
@@ -1160,7 +1160,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       timeout: 20_000,
     });
     await expect(page.getByText("R$")).toHaveCount(0);
-    await expect(region(page, "Outubro")).toHaveCount(0);
+    await expect(region(page, "Outubro")).toContainText(NO_COPY);
     await expect(region(page, "Vendas por dia")).toHaveCount(0);
     await expect(page.getByText("Ver os números")).toHaveCount(0);
     await expect(region(page, "Meta")).toContainText("Metas só com conexão.");
@@ -1182,7 +1182,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       await reopenWithoutNetwork(page, server, NOON + hours * HOUR);
       const line = page.locator("#home-updated");
       await expect(line).toContainText(
-        "Último resultado confirmado: 23/10/2026 12:00.",
+        "Último resultado confirmado: 23/10/2026 12:00",
         { timeout: 20_000 }
       );
       if (stale) {
@@ -1310,7 +1310,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(
       page
         .getByText(OFFLINE_SALE)
-        .or(page.getByText("Sem internet: para vender é preciso conexão"))
+        .or(page.getByText("Sem internet: para vender é preciso conexão."))
     ).toBeVisible();
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);
     await expect(page.getByText("R$ 2.660,60")).toHaveCount(0);
@@ -1363,7 +1363,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       0
     );
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00.")
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00")
     ).toBeVisible();
     server.broken.delete("report/periodSummary");
     await expect(page.getByText("Atualizado até 23/10/2026 12:00")).toBeVisible(
@@ -1371,6 +1371,55 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
         timeout: 20_000,
       }
     );
+  });
+
+  test("sem cópia a 1280: a mesma grade da tela com cópia, e os cartões não trocam de lugar quando a rede volta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY, {
+      timeout: 20_000,
+    });
+    await expect(region(page, "Outubro")).toContainText(NO_COPY);
+    const places = async () => ({
+      attention: await region(page, "Precisa de atenção").boundingBox(),
+      month: await region(page, "Outubro").boundingBox(),
+      today: await region(page, "Hoje").boundingBox(),
+    });
+    const before = await places();
+    // Hoje on the left, the month on the right in the same row, Meta and Atenção below them
+    expect(before.month?.x ?? 0).toBeGreaterThan(
+      (before.today?.x ?? 0) + (before.today?.width ?? 0)
+    );
+    expect(before.month?.y).toBe(before.today?.y);
+    const bottom = (before.today?.y ?? 0) + (before.today?.height ?? 0);
+    expect(before.attention?.y ?? 0).toBeGreaterThan(bottom);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+
+    server.down = false;
+    await page.clock.runFor(10_000);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    const after = await places();
+    // the sentence under "Nova venda" goes with the connection and moves the row by a few pixels: the order does not
+    expect(after.today?.x).toBe(before.today?.x);
+    expect(after.month?.x).toBe(before.month?.x);
+    expect(after.month?.y).toBe(after.today?.y);
   });
 
   test("o servidor recusa os números (FORBIDDEN): a cópia da loja é apagada e não volta sem rede", async ({

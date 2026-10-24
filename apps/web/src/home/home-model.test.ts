@@ -603,10 +603,10 @@ describe("offlineGoal (§ 7.3)", () => {
 describe("newSaleOfflineText (AC-30)", () => {
   it("promete a venda sem internet só quando o aparelho pode vender", () => {
     expect(newSaleOfflineText(true)).toBe(
-      "Você pode vender sem internet; a venda é enviada quando voltar"
+      "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
     );
     expect(newSaleOfflineText(false)).toBe(
-      "Sem internet: para vender é preciso conexão"
+      "Sem internet: para vender é preciso conexão."
     );
   });
 });

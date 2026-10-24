@@ -29,6 +29,7 @@ import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import {
   copyLine,
   type GoalView,
+  monthTitle,
   newSaleOfflineText,
   pickGoal,
 } from "./home-model";
@@ -42,6 +43,8 @@ import { type HomeFigures, type HomeState, useHome } from "./use-home";
  * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
  * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
  */
+
+const NO_COPY_TEXT = "Sem internet e sem números guardados neste aparelho";
 
 /** "Nova venda", and without a connection what it can do then (AC-30), said under it. */
 function NewSale({ offlineText }: { offlineText: string | null }) {
@@ -168,6 +171,7 @@ function pageBlocks({
   retryFigures,
   state,
   timezone,
+  today,
 }: {
   chart: { days: ChartDays; onDays: (days: ChartDays) => void };
   offline: OfflineHome | null;
@@ -175,6 +179,7 @@ function pageBlocks({
   retryFigures: () => void;
   state: HomeState;
   timezone: string | null;
+  today: string;
 }): { blocks: Blocks; updated: string | null } {
   if (offline === null) {
     return {
@@ -189,7 +194,7 @@ function pageBlocks({
     return { blocks: NO_BLOCKS, updated: null };
   }
   if (offline.figures === null) {
-    return { blocks: NO_FIGURES, updated: null };
+    return { blocks: noFigures(today), updated: null };
   }
   return {
     blocks: readBlocks(offline.figures, chart, offline.figures.todayShown),
@@ -200,19 +205,27 @@ function pageBlocks({
   };
 }
 
-/** Without a connection and with no copy: no figure at all, never a zero (§ 7.4). */
-const NO_FIGURES: Blocks = {
-  chart: null,
-  main: (
-    <HomeBlock className="lg:col-span-2" id="home-today" title="Hoje">
-      <p className="text-muted-foreground">
-        Sem internet e sem números guardados neste aparelho
-      </p>
-    </HomeBlock>
-  ),
-  ranking: null,
-  wide: true,
-};
+/**
+ * Without a connection and with no copy: no figure at all, never a zero (§ 7.4). The cards keep the places they have
+ * with the copy (Hoje on the left, the month on the right), so nothing changes places when the connection is back.
+ */
+function noFigures(today: string): Blocks {
+  return {
+    chart: null,
+    main: (
+      <>
+        <HomeBlock id="home-today" title="Hoje">
+          <p className="text-muted-foreground">{NO_COPY_TEXT}</p>
+        </HomeBlock>
+        <HomeBlock id="home-month" title={monthTitle(today)}>
+          <p className="text-muted-foreground">{NO_COPY_TEXT}</p>
+        </HomeBlock>
+      </>
+    ),
+    ranking: null,
+    wide: true,
+  };
+}
 
 /** The title and "Nova venda": the part of the page that depends on no read (and on no connection). */
 function HomeHeader({
@@ -395,6 +408,7 @@ export function HomePage() {
         retryFigures,
         state,
         timezone,
+        today,
       });
   const goalBlock = pickGoalBlock({
     goal,

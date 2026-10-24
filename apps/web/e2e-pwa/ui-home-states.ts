@@ -301,6 +301,7 @@ async function openHomeOffline(page: Page, copy: boolean) {
         : "Sem internet e sem números guardados neste aparelho",
       { exact: false }
     )
+    .first()
     .waitFor();
   await page.evaluate(() => {
     for (const element of document.querySelectorAll("[data-lab-chrome]")) {
