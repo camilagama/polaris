@@ -19,6 +19,7 @@
     "./billing/facts": "./src/billing/facts.ts",
     "./billing/grants": "./src/billing/grants.ts",
     "./billing/operational-selection": "./src/billing/operational-selection.ts",
+    "./billing/plan-view": "./src/billing/plan-view.ts",
     "./billing/provider-period": "./src/billing/provider-period.ts",
     "./billing/renewal-cancellation": "./src/billing/renewal-cancellation.ts",
     "./billing/subscription-state": "./src/billing/subscription-state.ts",

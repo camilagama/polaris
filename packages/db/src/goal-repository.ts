@@ -131,6 +131,20 @@ export async function listPausedGoalIds(
   );
 }
 
+/** The goals counted against `goals.active.max`; the owner's read of the plan counts with this same query (ADR 0104). */
+export async function countActiveGoals(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+): Promise<number> {
+  const [{ active } = { active: 0 }] = await transaction
+    .select({ active: sql<number>`count(*)::int` })
+    .from(goals)
+    .where(
+      and(eq(goals.organizationId, organizationId), eq(goals.status, "active"))
+    );
+  return active;
+}
+
 export async function createGoal(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -141,18 +155,8 @@ export async function createGoal(
     input,
     await organizationToday(transaction, identity)
   );
-  const countActive = async () => {
-    const [{ active } = { active: 0 }] = await transaction
-      .select({ active: sql<number>`count(*)::int` })
-      .from(goals)
-      .where(
-        and(
-          eq(goals.organizationId, identity.organizationId),
-          eq(goals.status, "active")
-        )
-      );
-    return active;
-  };
+  const countActive = () =>
+    countActiveGoals(transaction, identity.organizationId);
   // the plan's limit (1 on Free, 3 on Pro), then the technical ceiling
   await assertRoomFor(
     transaction,

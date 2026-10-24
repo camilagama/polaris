@@ -13,6 +13,7 @@ import type {
 import type { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import type { RenewalCancellationStatus } from "@polaris/domain/billing/renewal-cancellation";
 import type { RenewalStatusReader } from "../billing/renewal-status";
+import { billingSelfServiceEnabled } from "../billing/self-service";
 import type { WorkerBindings } from "../environment";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -93,6 +94,8 @@ export function createOrganizationRpcHandlers(
           // The user comes from the verified session; the input has no
           // organization or user field to trust.
           operation: async (database, session) => ({
+            // the same flag `billing.readPlan` asks first (ADR 0104): the client shows "Assinatura" only with it on
+            billingSelfService: billingSelfServiceEnabled(context.bindings),
             organizations: await listRepository(database, session.user.id),
           }),
           request: context.request,

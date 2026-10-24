@@ -83,6 +83,12 @@ export interface WorkerBindings {
   BILLING_PAYER_KEY?: string;
   /** The billing role (webhooks, the sweep of expired access): never the tenant's. */
   BILLING_HYPERDRIVE?: HyperdriveBinding;
+  /**
+   * `true` turns on the owner's billing self-service (ADR 0104, decision 1): the "Assinatura" item, `billing.readPlan`,
+   * the owner's commands and the billing e-mails. Anything else (and absent) leaves it off; off in every environment
+   * until the responsible turns it on.
+   */
+  BILLING_SELF_SERVICE_ENABLED?: string;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
   /**

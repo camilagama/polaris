@@ -20,6 +20,8 @@
     "CLOSURE_AUTO_PURGE_ENABLED": "false",
     // the e-mail of the closure notices (ADR 0102, amended): off until the responsible turns it on
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+    // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
+    "BILLING_SELF_SERVICE_ENABLED": "false",
     // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
     // on it is published and the service worker had time to update every device (release checklist)
     "LEGAL_ACCEPTANCE_ENFORCED": "false"
@@ -216,6 +218,7 @@
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+        "BILLING_SELF_SERVICE_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://catalogo.araute.app",
@@ -357,6 +360,7 @@
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+        "BILLING_SELF_SERVICE_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",

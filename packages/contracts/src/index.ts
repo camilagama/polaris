@@ -1225,6 +1225,85 @@ const billingCheckoutCycle = z.union([
   z.literal(12),
 ]);
 
+const billingAmount = z.string().regex(/^\d+\.\d{2}$/);
+const billingMethod = z.enum(["card", "pix_automatic"]);
+const planCount = z.number().int().nonnegative();
+
+/**
+ * The owner's read of the plan (ADR 0104, decision 2; design t268 v2, §3). Every object is strict, so a key the
+ * server adds by mistake (a provider reference, a payer, a payload) fails the answer instead of reaching the client
+ * (AS-2). The amounts are text with two decimals (money.md); the days are São Paulo's.
+ */
+export const billingPlanView = z
+  .object({
+    // the end of the paid access or of the grace; in a trial the screen shows only `nextCharge`
+    accessEndsAt: z.string().datetime().nullable(),
+    cycleMonths: billingCheckoutCycle.nullable(),
+    kept: z
+      .object({
+        historyMonths: planCount,
+        products: planCount,
+        sales: planCount,
+      })
+      .strict(),
+    limits: z
+      .object({
+        goals: planCount.nullable(),
+        images: planCount.nullable(),
+        variants: planCount.nullable(),
+      })
+      .strict(),
+    method: billingMethod.nullable(),
+    nextCharge: z
+      .object({
+        amount: billingAmount,
+        on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .strict()
+      .nullable(),
+    offer: z
+      .object({
+        methods: z.array(billingMethod),
+        prices: z.array(
+          z
+            .object({
+              amount: billingAmount,
+              cycleMonths: billingCheckoutCycle,
+            })
+            .strict()
+        ),
+      })
+      .strict(),
+    // "provider_retries" enters by amendment, once the Gate 7 proves Woovi's calendar
+    recovery: z.literal("provider_page").nullable(),
+    refund: z
+      .object({
+        amount: billingAmount,
+        until: z.string().datetime(),
+        via: z.enum(["app", "suporte"]),
+      })
+      .strict()
+      .nullable(),
+    refundPending: z.boolean(),
+    renewalCancelled: z.boolean(),
+    resubscribeFrom: z.string().datetime().nullable(),
+    state: z.enum([
+      "free",
+      "free_over_limit",
+      "trial_setup",
+      "trialing",
+      "active",
+      "grace",
+    ]),
+    trialAvailable: z.boolean(),
+    usage: z
+      .object({ goals: planCount, images: planCount, variants: planCount })
+      .strict(),
+  })
+  .strict();
+
+export type BillingPlanView = z.infer<typeof billingPlanView>;
+
 /** No control, format (zero-width, bidirectional) or unassigned characters: the name shows in the payer's bank. */
 const payerNamePattern = /^[^\p{C}]+$/u;
 
@@ -1640,6 +1719,11 @@ export const polarisContract = {
       .output(z.object({ unpublished: z.number().int().nonnegative() })),
   },
   billing: {
+    // The plan as its owner reads it (ADR 0104, decision 2): only with `billing:manage`, behind
+    // BILLING_SELF_SERVICE_ENABLED. The output is strict and closed: nothing personal and nothing of the provider.
+    readPlan: oc
+      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .output(billingPlanView),
     // Starts the Pro subscription at the payment provider (ADR 0101): the
     // provider's hosted page, where the payer types the card, or the Pix
     // Automático authorization at Woovi. Only the owner (`billing:manage`); the
@@ -1959,8 +2043,12 @@ export const polarisContract = {
     // No organization ID on purpose: the server reads the authenticated
     // user's active memberships, so the client learns its organizations here
     // instead of remembering an ID.
+    // `billingSelfService`: BILLING_SELF_SERVICE_ENABLED is on (ADR 0104), so the owner's "Assinatura" may show.
     listMine: oc.output(
-      z.object({ organizations: z.array(organizationMembership) })
+      z.object({
+        billingSelfService: z.boolean(),
+        organizations: z.array(organizationMembership),
+      })
     ),
     // The owner's own organizations whose closure can still be undone. Not tenant-scoped:
     // an organization in closure no longer opens as a tenant.
