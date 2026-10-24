@@ -160,7 +160,11 @@ export function ProductForm({
   const DetailsIcon = detailsOpen ? ChevronUpIcon : ChevronDownIcon;
 
   return (
-    <Card aria-labelledby="product-form-heading" role="region">
+    <Card
+      aria-labelledby="product-form-heading"
+      className="@container"
+      role="region"
+    >
       <form
         className="grid gap-4"
         noValidate
@@ -174,9 +178,9 @@ export function ProductForm({
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 min-[48rem]:grid-cols-3">
+        <CardContent className="grid @min-[32rem]:grid-cols-2 @min-[45rem]:grid-cols-3 gap-4">
           <ProductTextField
-            className="min-[48rem]:col-span-3"
+            className="col-span-full"
             error={nameError}
             id="product-name"
             label="Nome do produto"
@@ -219,7 +223,7 @@ export function ProductForm({
             </>
           )}
           <Collapsible
-            className="grid gap-4 min-[48rem]:col-span-3"
+            className="col-span-full grid gap-4"
             onOpenChange={setDetailsOpen}
             open={detailsOpen}
           >
@@ -232,7 +236,7 @@ export function ProductForm({
             </CollapsibleTrigger>
             {/* kept mounted while closed: what was typed in it survives closing and opening */}
             <CollapsiblePanel
-              className="grid gap-4 min-[48rem]:grid-cols-2"
+              className="grid @min-[32rem]:grid-cols-2 gap-4"
               keepMounted
             >
               <SelectField
@@ -244,7 +248,7 @@ export function ProductForm({
                 value={draft.categoryId === "" ? NO_CATEGORY : draft.categoryId}
               />
               <ProductTextAreaField
-                className="min-[48rem]:col-span-2"
+                className="col-span-full"
                 id="product-description"
                 label="Descrição"
                 onChange={handleDescription}
