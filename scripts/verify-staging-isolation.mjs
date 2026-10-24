@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
- * - the web of staging is not at exactly https://dash.araute.app with workers_dev off, or production uses a host of staging;
+ * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
  * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
@@ -32,19 +32,22 @@ const ENVIRONMENT_SUFFIX = /-(local|staging)$/;
 const POOLER = /pooler/i;
 const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // The web of staging is served at this host by a Custom Domain created outside the config (ADR 0097):
-// an exact string, so another subdomain, http, a path or userinfo never matches. The catalog stays on workers.dev.
+// an exact string, so another subdomain, http, a path or userinfo never matches. The catalog of staging
+// follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
-const TRAILING_DOTS = /\.+$/;
-const STAGING_CATALOG_ORIGIN =
-  /^https:\/\/polaris-catalog-staging\.[a-z0-9-]+\.workers\.dev$/;
+export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
+const STAGING_FIXED_ORIGIN = {
+  BETTER_AUTH_BASE_URL: STAGING_WEB_ORIGIN,
+  CATALOG_ORIGIN: STAGING_CATALOG_ORIGIN,
+};
 const STAGING_URLS = {
   BETTER_AUTH_BASE_URL: {
     accepts: (value) => value === STAGING_WEB_ORIGIN,
     says: `exactly ${STAGING_WEB_ORIGIN}`,
   },
   CATALOG_ORIGIN: {
-    accepts: (value) => STAGING_CATALOG_ORIGIN.test(value),
-    says: "the workers.dev URL of the staging catalog Worker",
+    accepts: (value) => value === STAGING_CATALOG_ORIGIN,
+    says: `exactly ${STAGING_CATALOG_ORIGIN}`,
   },
 };
 // binding kinds staging does not use: any of them in env.staging (or in the build) could reach another resource
@@ -290,6 +293,11 @@ function checkStagingBlock(app, where, staging, problems) {
       `${where}: workers_dev must be false (the origin check accepts only ${STAGING_WEB_ORIGIN})`
     );
   }
+  if (app === "catalog" && staging.workers_dev !== false) {
+    problems.push(
+      `${where}: workers_dev must be false (the catalog is served only at ${STAGING_CATALOG_ORIGIN})`
+    );
+  }
   if (app === "admin") {
     checkAdminNotExposed(where, staging, problems);
   }
@@ -397,7 +405,7 @@ function checkStagingResources(where, staging, problems) {
   }
   if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
     problems.push(
-      `${where}: staging has no routes (the web Custom Domain is managed outside the config)`
+      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
     );
   }
   for (const [name, rule] of Object.entries(STAGING_URLS)) {
@@ -547,12 +555,106 @@ export function findIsolationProblems(entries) {
   return problems;
 }
 
-/** The lowercase host of a URL without a trailing dot (a name that resolves the same), or undefined when the value is not a URL. */
-function hostOf(value) {
-  try {
-    return new URL(value).hostname.toLowerCase().replace(TRAILING_DOTS, "");
-  } catch {
-    // not a URL: no host
+// A host of staging written anywhere in a text: a whole URL, a bare host, a route pattern, a sender
+// ("Polaris <no-reply@dash.araute.app>") or a list. The host is bounded on both sides, so another name
+// that merely contains it (`foo.dash.araute.app`, `dash.araute.app.example.com`) is not the host of staging; a
+// trailing dot is the same name, and the case does not matter.
+const HOSTS_OF_STAGING = [
+  ...Object.values(STAGING_FIXED_ORIGIN).map((origin) =>
+    new URL(origin).hostname.replaceAll(".", String.raw`\.`)
+  ),
+  String.raw`polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev`,
+];
+const STAGING_HOST_IN_TEXT = new RegExp(
+  String.raw`(?<![a-z0-9.-])(${HOSTS_OF_STAGING.join("|")})(?![a-z0-9-]|\.[a-z0-9])`,
+  "i"
+);
+
+/** The strings of `route` and `routes` (a string, or an object with `pattern`) of an environment, each with how the problem names it. */
+function productionRoutes(production) {
+  const found = [];
+  const routeOf = (route) =>
+    typeof route === "string" ? route : route?.pattern;
+  if (production.route !== undefined) {
+    found.push(["route", routeOf(production.route)]);
+  }
+  if (Array.isArray(production.routes)) {
+    for (const [index, route] of production.routes.entries()) {
+      found.push([`routes[${index}]`, routeOf(route)]);
+    }
+  }
+  return found;
+}
+
+// The hosts a route pattern must not reach: the fixed hosts of staging and the workers.dev of each staging Worker.
+// The account's subdomain is not in the config: the sample takes the one the pattern names (a `*` stands for any),
+// so `*.<account>.workers.dev/*` is caught whatever the account is.
+const STAGING_FIXED_HOSTS = Object.values(STAGING_FIXED_ORIGIN).map(
+  (origin) => new URL(origin).hostname
+);
+const TRAILING_DOT = /\.$/;
+const REGEX_SPECIAL = /[.+?^${}()|[\]\\-]/g;
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+const WORKERS_DEV_ACCOUNT = /\.([a-z0-9-]+)\.workers\.dev$/i;
+
+/** The host of a route pattern, in lower case, without scheme, path or trailing dot. */
+function routeHost(pattern) {
+  return pattern
+    .trim()
+    .replace(URL_SCHEME, "")
+    .split("/")[0]
+    .replace(TRAILING_DOT, "");
+}
+
+/** The host of a route pattern as a regular expression: `*` is any run of characters, the rest is literal. */
+function routeHostExpression(host) {
+  const literal = host
+    .split("*")
+    .map((part) => part.replaceAll(REGEX_SPECIAL, String.raw`\$&`))
+    .join(".*");
+  return new RegExp(`^${literal}$`, "i");
+}
+
+function routeReachesStaging(pattern) {
+  const host = routeHost(pattern);
+  const account = WORKERS_DEV_ACCOUNT.exec(host)?.[1] ?? "account";
+  const expression = routeHostExpression(host);
+  return [
+    ...STAGING_FIXED_HOSTS,
+    ...WORKERS.map((app) => `polaris-${app}-staging.${account}.workers.dev`),
+  ].some((staging) => expression.test(staging));
+}
+
+/**
+ * No variable and no route of production may name or reach a host of staging: the host is what matters, not the
+ * variable's name. The sweep covers `vars` and routes (not services, triggers or Hyperdrive). Objects and lists
+ * in `vars` are swept string by string; numbers and booleans carry no host.
+ */
+function checkProductionHosts(app, production, problems) {
+  const isStaging = (value) =>
+    typeof value === "string" && STAGING_HOST_IN_TEXT.test(value);
+  for (const [variable, value] of Object.entries(production.vars ?? {})) {
+    if (stringsOf(value).some(([, text]) => isStaging(text))) {
+      problems.push(
+        `${app}: env.production vars.${variable} must not use the host of staging`
+      );
+    }
+  }
+  if (production.routes !== undefined && !Array.isArray(production.routes)) {
+    problems.push(
+      `${app}: env.production routes must be a list (routes deve ser lista)`
+    );
+  }
+  for (const [where, route] of productionRoutes(production)) {
+    if (typeof route !== "string") {
+      problems.push(
+        `${app}: env.production ${where} must be a pattern string or an object with a pattern string`
+      );
+    } else if (isStaging(route) || routeReachesStaging(route)) {
+      problems.push(
+        `${app}: env.production ${where} must not use or reach a host of staging`
+      );
+    }
   }
 }
 
@@ -575,19 +677,7 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
-  for (const variable of Object.keys(STAGING_URLS)) {
-    const host = hostOf(production.vars?.[variable]);
-    if (
-      host !== undefined &&
-      (host === hostOf(staging.vars?.[variable]) ||
-        (variable === "BETTER_AUTH_BASE_URL" &&
-          host === hostOf(STAGING_WEB_ORIGIN)))
-    ) {
-      problems.push(
-        `${app}: env.production vars.${variable} must not use the host of staging`
-      );
-    }
-  }
+  checkProductionHosts(app, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (
