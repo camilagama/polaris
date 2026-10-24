@@ -1849,6 +1849,37 @@ describe("refundCurrentPeriod", () => {
     expect(store.recordEvent).not.toHaveBeenCalled();
   });
 
+  it.each(["trialing", "grace"])(
+    "writes the cancellation of a record in %s (it gives Pro)",
+    async (state) => {
+      const store = fakeStore({
+        readRecord: vi.fn(() =>
+          Promise.resolve({ cancelAtPeriodEnd: false, state })
+        ),
+      });
+
+      await refundCurrentPeriod(
+        { now: () => now, portFor: () => fakePort(), store },
+        request
+      );
+      expect(store.recordEvent).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("still cancels at the provider without a record, and writes nothing", async () => {
+    const port = fakePort();
+    const store = fakeStore();
+
+    await expect(
+      refundCurrentPeriod(
+        { now: () => now, portFor: () => port, store },
+        request
+      )
+    ).resolves.toBe("refund_requested");
+    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
+    expect(store.recordEvent).not.toHaveBeenCalled();
+  });
+
   it("writes the cancellation when the provider had it cancelled but the record did not", async () => {
     const port = fakePort({
       cancelRenewal: vi.fn(() => Promise.resolve("already_cancelled" as const)),

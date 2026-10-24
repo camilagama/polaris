@@ -324,14 +324,17 @@ export interface BillingStore {
   withPayerLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
   /**
    * Runs `operation` while holding the organization's command lock (ADR 0066,
-   * emenda de 23/10): two commands that call the provider for the same
-   * organization never run at once, and the second decides by the state the
-   * first left. The lock is never waited for: when another command holds it,
+   * emenda de 23/10): two commands that take it never run at once for the same
+   * organization, and the second decides by the state the first left. Today
+   * only the refund takes it; the cancellation commands and the closure's
+   * consumer do not (their second fact is ignored by the record). The lock is
+   * never waited for: when another command holds it,
    * this fails at once with `BillingCommandInProgressError`, so a loop of
    * commands cannot fill the pool. Like the payer's lock, it is a
    * transaction-scoped advisory lock on its own connection, and the
-   * transaction ends if it sits idle for 60 s. Webhooks and the maintenance
-   * never take it: the inbox orders the facts.
+   * transaction ends if it sits idle for 60 s (an operation longer than that
+   * loses the lock and its commit fails; a repeat is safe). Webhooks and the
+   * maintenance never take it: the inbox orders the facts.
    */
   withOrganizationLock: <T>(
     organizationId: string,

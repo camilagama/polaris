@@ -660,10 +660,9 @@ export async function refundCurrentPeriod(
     }
     const record = await store.readRecord(input.organizationId);
     const renewal = record?.cancelAtPeriodEnd
-      ? "already_cancelled"
+      ? "record_shows_cancelled"
       : await cancelBeforeRefund(dependencies, {
           link,
-          now,
           organizationId: input.organizationId,
           port,
           // the record can hold the cancellation only while it gives Pro
@@ -708,19 +707,20 @@ async function cancelBeforeRefund(
   dependencies: RefundCommandDependencies,
   input: {
     link: BillingProviderLink;
-    now: Date;
     organizationId: string;
     port: BillingProviderPort;
     recordsCancellation: boolean;
     requestId: string;
   }
-): Promise<"already_cancelled" | "cancelled" | "nothing_to_cancel"> {
-  const { link, now, port } = input;
+): Promise<string> {
+  const { link, port } = input;
   const result = await port.cancelRenewal(
     link.providerRef,
     link.providerSubscriptionId
   );
   if (result !== "nothing_to_cancel" && input.recordsCancellation) {
+    // the moment after the provider answered: a fact that arrived meanwhile must not make it stale
+    const now = dependencies.now?.() ?? new Date();
     const stored = await dependencies.store.recordEvent({
       fact: { occurredAt: now, type: "subscription_cancelled" },
       organizationId: input.organizationId,
@@ -731,7 +731,9 @@ async function cancelBeforeRefund(
       ),
       providerRef: link.providerRef,
     });
-    await dependencies.store.processEvent(stored.id, now);
+    const processed = await dependencies.store.processEvent(stored.id, now);
+    // the log tells a cancellation the record did not take (ignored, failed) from one it did
+    return `${result}:${processed.status}`;
   }
   return result;
 }
