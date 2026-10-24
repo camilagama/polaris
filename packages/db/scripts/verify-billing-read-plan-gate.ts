@@ -132,21 +132,22 @@ async function run() {
       const fingerprint = createHash("sha256")
         .update(randomUUID())
         .digest("hex");
-      const asset = await owner.pool.query<{ id: string }>(
-        `INSERT INTO public.media_assets
-           (organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width)
-         VALUES ($1, 4, 'image/webp', 2, $2, $3, $4, 2) RETURNING id`,
+      // one statement: the asset must be linked to its product before the transaction ends (deferred trigger)
+      await owner.pool.query(
+        `WITH asset AS (
+           INSERT INTO public.media_assets
+             (organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width)
+           VALUES ($1, 4, 'image/webp', 2, $3, $4, $5, 2) RETURNING id
+         )
+         INSERT INTO public.product_media (organization_id, product_id, media_asset_id, position)
+         SELECT $1, $2, asset.id, (SELECT count(*) FROM public.product_media WHERE product_id = $2) FROM asset`,
         [
           shop.organizationId,
+          productId,
           fingerprint,
           `media/v2/${shop.organizationId}/${productId}/${uploadCommandId}/${fingerprint}/${randomUUID()}.webp`,
           uploadCommandId,
         ]
-      );
-      await owner.pool.query(
-        `INSERT INTO public.product_media (organization_id, product_id, media_asset_id, position)
-         VALUES ($1, $2, $3, (SELECT count(*) FROM public.product_media WHERE product_id = $2))`,
-        [shop.organizationId, productId, asset.rows[0]?.id]
       );
     }
     await withTenantAs(db, shop, "product:update", (transaction, identity) =>
