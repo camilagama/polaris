@@ -225,17 +225,25 @@ describe("refundOfferOf (R-1, AS-44)", () => {
 });
 
 describe("refundPendingOf (AS-42)", () => {
-  it("is true from the request until the refund is completed or the request expires", () => {
-    const asked = { ...active, refundRequestedAt: sp("2026-10-12T10:00:00") };
-    expect(refundPendingOf(asked, sp("2026-10-12T10:01:00"))).toBe(true);
+  const asked = { ...active, refundRequestedAt: sp("2026-10-12T10:00:00") };
+
+  it("is true from the request until the refund is completed", () => {
+    expect(refundPendingOf(asked)).toBe(true);
     expect(
-      refundPendingOf(
-        { ...asked, revoked: { reason: "refund" }, state: "free" },
-        sp("2026-10-12T10:02:00")
-      )
+      refundPendingOf({
+        ...asked,
+        revoked: { reason: "refund" },
+        state: "free",
+      })
     ).toBe(false);
-    expect(refundPendingOf(asked, sp("2026-10-15T10:00:01"))).toBe(false);
-    expect(refundPendingOf(active, sp("2026-10-12T10:01:00"))).toBe(false);
+    expect(refundPendingOf(active)).toBe(false);
+  });
+
+  it("stays true after the 72 hours and the window, when the offer is gone: the request is the operator's, not forgotten", () => {
+    const late = sp("2026-10-15T10:00:01");
+    expect(refundWindowOf(asked, late)).toBeNull();
+    expect(refundOfferOf(asked, late, true)).toBeNull();
+    expect(refundPendingOf(asked)).toBe(true);
   });
 });
 

@@ -168,6 +168,11 @@ async function run() {
     await confirmPlainSale({ adminPool: owner.pool, db }, shop, [
       { quantity: 2, variantId: sold.variantId },
     ]);
+    // one active goal, so the count of goals is proved above zero (an owner query: the gate's role does not write goals)
+    await owner.pool.query(
+      "INSERT INTO public.goals (organization_id, kind, target, starts_on, ends_on) VALUES ($1, 'sale_count', 5, '2026-10-01', '2026-10-31')",
+      [shop.organizationId]
+    );
     const read = (tenant: TenantFixture) =>
       withTenantAs(db, tenant, "billing:manage", (transaction, identity) =>
         readOwnerPlanTenantFacts(transaction, {
@@ -206,7 +211,7 @@ async function run() {
       images: counted.images,
       variants: counted.variants,
     });
-    assert.deepEqual(facts.usage, { goals: 0, images: 3, variants: 2 });
+    assert.deepEqual(facts.usage, { goals: 1, images: 3, variants: 2 });
     assert.deepEqual(facts.kept, {
       historyMonths: counted.history_months,
       products: counted.products,

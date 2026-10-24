@@ -160,10 +160,15 @@ export function refundOfferOf(
     : { ...window, via: refundsEnabled ? "app" : "suporte" };
 }
 
-/** The owner asked for the refund and it is not completed yet, while it may still be (AS-42). */
-export function refundPendingOf(record: PlanViewRecord, now: Date): boolean {
+/**
+ * The renewal was cancelled by the owner's refund request and the refund is not completed (AS-42). The 72 hours
+ * (ADR 0104, decision 3) only limit until when the app completes the request, and the offer of `refundWindowOf`
+ * goes with them; the fact stays until the refund arrives or the owner links a provider again (the link clears the
+ * anchor).
+ */
+export function refundPendingOf(record: PlanViewRecord): boolean {
   return (
-    record.refundRequestedAt !== null && refundWindowOf(record, now) !== null
+    record.refundRequestedAt !== null && record.revoked?.reason !== "refund"
   );
 }
 

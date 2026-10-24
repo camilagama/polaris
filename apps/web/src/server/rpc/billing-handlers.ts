@@ -22,6 +22,7 @@ import {
   refundPendingOf,
   resubscribeFromOf,
 } from "@polaris/domain/billing/plan-view";
+import { logger } from "@polaris/observability/logger";
 import {
   BillingCommandError,
   checkoutPriceOf,
@@ -276,11 +277,15 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
   ): BillingPlanView => {
     const { values } = facts.entitlements;
     // the port of the record's provider says whether it refunds; one that cannot be built sends the owner to support
-    const refundsEnabled =
+    const port =
       record.firstChargeAt !== null && record.provider !== null
-        ? (portOrNull(bindings, record.provider)?.refundsEnabled ?? false)
-        : false;
-    const refund = refundOfferOf(record, now, refundsEnabled);
+        ? portOrNull(bindings, record.provider)
+        : null;
+    const refund = refundOfferOf(record, now, port?.refundsEnabled ?? false);
+    if (refund !== null && port === null && record.provider !== null) {
+      // the offer goes to support because the port is not built: counted, with the provider and nothing of the store
+      logger.warn("billing_port_unavailable", { provider: record.provider });
+    }
     const resubscribeFrom = resubscribeFromOf(record);
     return {
       accessEndsAt: record.accessEndsAt?.toISOString() ?? null,
@@ -311,7 +316,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
         until: refund.until.toISOString(),
         via: refund.via,
       },
-      refundPending: refundPendingOf(record, now),
+      refundPending: refundPendingOf(record),
       renewalCancelled: record.cancelAtPeriodEnd,
       resubscribeFrom: resubscribeFrom?.toISOString() ?? null,
       state: record.state,

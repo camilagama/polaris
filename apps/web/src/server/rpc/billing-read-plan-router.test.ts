@@ -9,6 +9,7 @@ import {
   INITIAL_PLAN_CATALOG,
   resolveEntitlements,
 } from "@polaris/domain/billing/entitlements";
+import { logger } from "@polaris/observability/logger";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -155,6 +156,8 @@ function setup(
   options: {
     bindings?: WorkerBindings;
     facts?: OwnerPlanTenantFacts;
+    /** The clock of the read; 12/10 09:00 in São Paulo by default. */
+    now?: Date;
     /** The providers whose port can be built, and whether each refunds. */
     ports?: Record<string, { refundsEnabled: boolean }>;
     record?: OwnerPlanRecord;
@@ -205,7 +208,7 @@ function setup(
   const router = createRpcRouter({
     billing: {
       createBillingStore,
-      now: () => sp("2026-10-12T09:00:00"),
+      now: () => options.now ?? sp("2026-10-12T09:00:00"),
       providerPortOf,
       readOwnerPlanTenantFacts,
     },
@@ -515,6 +518,46 @@ describe("billing.readPlan: what it answers", () => {
     expect(plan.refund).toMatchObject({ via: "suporte" });
   });
 
+  /** The arguments of the calls of the event, whatever else the process warns about. */
+  const unavailable = (warn: { mock: { calls: unknown[][] } }) =>
+    warn.mock.calls
+      .filter(([event]) => event === "billing_port_unavailable")
+      .map(([, fields]) => [fields]);
+
+  it("counts the port that could not be built when the offer goes to support, with the provider and nothing of the store", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      await read(
+        setup({
+          ports: { woovi: { refundsEnabled: true } },
+          record: activeRecord,
+        })
+      );
+      expect(unavailable(warn)).toEqual([[{ provider: "asaas" }]]);
+      warn.mockClear();
+      // a port that is built, a Pix sent to support by choice and Free are not a failure
+      await read(setup({ record: activeRecord }));
+      await read(
+        setup({
+          ports: { woovi: { refundsEnabled: false } },
+          record: { ...activeRecord, provider: "woovi" },
+        })
+      );
+      await read(setup());
+      // a port not built with the window closed offers nothing, so there is nothing to send to support
+      await read(
+        setup({
+          now: sp("2026-10-20T09:00:00"),
+          ports: { woovi: { refundsEnabled: true } },
+          record: activeRecord,
+        })
+      );
+      expect(unavailable(warn)).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("refunds Pix in the app once the Woovi port refunds (WOOVI_REFUND_ENABLED)", async () => {
     const plan = await read(
       setup({
@@ -543,6 +586,44 @@ describe("billing.readPlan: what it answers", () => {
       refundPending: true,
       renewalCancelled: true,
     });
+  });
+
+  it("keeps the refund pending 73 hours after a request the provider did not complete, with no offer left (AS-42, ADR 0104 decision 3)", async () => {
+    const requestedAt = sp("2026-10-12T08:00:00");
+    const plan = await read(
+      setup({
+        now: new Date(requestedAt.getTime() + 73 * 3_600_000),
+        record: {
+          ...activeRecord,
+          cancelAtPeriodEnd: true,
+          refundRequestedAt: requestedAt,
+        },
+      })
+    );
+
+    expect(plan).toMatchObject({
+      nextCharge: null,
+      refund: null,
+      refundPending: true,
+      renewalCancelled: true,
+    });
+  });
+
+  it("a refund completed after the 72 hours is no longer pending (AS-42)", async () => {
+    const requestedAt = sp("2026-10-12T08:00:00");
+    const plan = await read(
+      setup({
+        now: new Date(requestedAt.getTime() + 73 * 3_600_000),
+        record: {
+          ...activeRecord,
+          refundRequestedAt: requestedAt,
+          revoked: { reason: "refund" },
+          state: "free",
+        },
+      })
+    );
+
+    expect(plan).toMatchObject({ refund: null, refundPending: false });
   });
 
   it("with the renewal cancelled, says from when a new subscription may start (AS-27)", async () => {
