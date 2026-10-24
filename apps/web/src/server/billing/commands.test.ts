@@ -310,6 +310,8 @@ describe("startCardCheckout", () => {
               providerRef: "c6d42a6f-0000-4000-8000-0000000000bb",
             })
           ),
+          // a checkout nobody paid: no subscription, no old renewal to cancel
+          readProviderLink: vi.fn(() => Promise.resolve(null)),
         }),
       },
       input
@@ -775,7 +777,20 @@ describe("startPixCheckout", () => {
     dependencies: Omit<StartPixCheckoutDependencies, "payerKey">,
     request: Parameters<typeof startPixCheckout>[1]
   ) {
-    return startPixCheckout({ payerKey: SECRET, ...dependencies }, request);
+    return startPixCheckout(
+      {
+        payerKey: SECRET,
+        // the store's old link is a card subscription already ended at Asaas
+        portFor: () =>
+          fakePort({
+            cancelRenewal: vi.fn(() =>
+              Promise.resolve("already_cancelled" as const)
+            ),
+          }),
+        ...dependencies,
+      },
+      request
+    );
   }
 
   let consoleSpies: ReturnType<typeof vi.spyOn>[];
@@ -2325,5 +2340,206 @@ describe("BillingCommandError", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe("trial_in_progress");
     expect(error.message).toBe("trial_in_progress");
+  });
+});
+
+describe("the old link's renewal is cancelled before a new checkout (ADR 0104, PR 296)", () => {
+  const SUBSCRIPTION_REF = "woovi-sub-ref-0001";
+  const pixPrepared: PreparedSubscription = {
+    checkoutId: "woovi-checkout-0001",
+    handoff: {
+      emv: "00020126580014br.gov.bcb.pix0136EMV6304ABCD",
+      kind: "pix_authorization",
+      url: "https://woovi-sandbox.com/pay/secret",
+    },
+    providerRef: SUBSCRIPTION_REF,
+  };
+  const oldWooviLink = {
+    provider: "woovi",
+    providerRef: "old-woovi-ref-0001",
+    providerSubscriptionId: "old-woovi-sub-0001",
+  };
+
+  beforeEach(() => {
+    for (const method of ["debug", "info", "warn", "error", "log"] as const) {
+      vi.spyOn(console, method).mockImplementation(() => undefined);
+    }
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("cancels the subscription of the old link at the provider before the new subscription is prepared", async () => {
+    const order: string[] = [];
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => {
+        order.push("cancel");
+        return Promise.resolve("cancelled" as const);
+      }),
+      prepareSubscription: vi.fn(() => {
+        order.push("prepare");
+        return Promise.resolve(prepared);
+      }),
+    });
+    const store = fakeStore();
+
+    await startCardCheckout({ now: () => now, port, store }, input);
+
+    expect(port.cancelRenewal).toHaveBeenCalledWith(
+      link.providerRef,
+      link.providerSubscriptionId
+    );
+    expect(order).toEqual(["cancel", "prepare"]);
+  });
+
+  it("reaches the old provider's own port when the old link is of the other provider", async () => {
+    const cardPort = fakePort();
+    const wooviPort = fakePort({ provider: "woovi" as never });
+    const portFor = vi.fn((_provider: string) => wooviPort);
+    const store = fakeStore({
+      readProviderLink: vi.fn(() => Promise.resolve(oldWooviLink)),
+    });
+
+    await startCardCheckout(
+      { now: () => now, port: cardPort, portFor, store },
+      input
+    );
+
+    expect(portFor).toHaveBeenCalledWith("woovi");
+    expect(wooviPort.cancelRenewal).toHaveBeenCalledWith(
+      oldWooviLink.providerRef,
+      oldWooviLink.providerSubscriptionId
+    );
+    expect(cardPort.cancelRenewal).not.toHaveBeenCalled();
+    expect(cardPort.prepareSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the checkout's own port, not portFor, when the old link is of the same provider", async () => {
+    const port = fakePort();
+    const portFor = vi.fn((_provider: string) => fakePort());
+
+    await startCardCheckout(
+      { now: () => now, port, portFor, store: fakeStore() },
+      input
+    );
+
+    expect(portFor).not.toHaveBeenCalled();
+    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses with billing_provider_not_configured, creating nothing, when the old link is of another provider and no port for it is given", async () => {
+    const port = fakePort();
+    const store = fakeStore({
+      readProviderLink: vi.fn(() => Promise.resolve(oldWooviLink)),
+    });
+
+    await expect(
+      startCardCheckout({ now: () => now, port, store }, input)
+    ).rejects.toMatchObject({
+      code: "billing_provider_not_configured",
+    });
+
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(port.prepareSubscription).not.toHaveBeenCalled();
+    expect(store.startTrial).not.toHaveBeenCalled();
+    expect(store.attachProvider).not.toHaveBeenCalled();
+  });
+
+  it("refuses with provider_unavailable, creating nothing, when the provider cannot cancel the old renewal", async () => {
+    const port = fakePort({
+      cancelRenewal: vi.fn(() => Promise.reject(new Error("socket hang up"))),
+    });
+    const store = fakeStore();
+
+    const error = await startCardCheckout(
+      { now: () => now, port, store },
+      input
+    ).then(
+      () => null,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(ProviderUnavailableError);
+    expect(error).toMatchObject({ code: "provider_unavailable" });
+    expect(port.prepareSubscription).not.toHaveBeenCalled();
+    expect(store.startTrial).not.toHaveBeenCalled();
+    expect(store.attachProvider).not.toHaveBeenCalled();
+  });
+
+  it("does not call the provider for an old link that no subscription came from", async () => {
+    const port = fakePort();
+    const store = fakeStore({
+      readProviderLink: vi.fn(() =>
+        Promise.resolve({ ...link, providerSubscriptionId: null })
+      ),
+    });
+
+    await startCardCheckout({ now: () => now, port, store }, input);
+
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(port.prepareSubscription).toHaveBeenCalledTimes(1);
+    expect(store.attachProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call the provider when the organization has no link at all", async () => {
+    const port = fakePort();
+    const store = fakeStore({
+      readProviderLink: vi.fn(() => Promise.resolve(null)),
+    });
+
+    await startCardCheckout({ now: () => now, port, store }, input);
+
+    expect(port.cancelRenewal).not.toHaveBeenCalled();
+    expect(port.prepareSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the same rule to the Pix checkout: the card's old renewal is cancelled through the other provider's port, before the Pix is prepared", async () => {
+    const order: string[] = [];
+    const asaasPort = fakePort({
+      cancelRenewal: vi.fn(() => {
+        order.push("cancel");
+        return Promise.resolve("cancelled" as const);
+      }),
+    });
+    const pixPort = fakePort({
+      prepareSubscription: vi.fn(() => {
+        order.push("prepare");
+        return Promise.resolve(pixPrepared);
+      }),
+      provider: "woovi" as never,
+    });
+    const portFor = vi.fn((_provider: string) => asaasPort);
+    const store = fakeStore({
+      withPayerLock: vi.fn(
+        (_lockKey: string, operation: () => Promise<unknown>) => operation()
+      ),
+    });
+
+    await startPixCheckout(
+      {
+        elapsedMs: vi
+          .fn()
+          .mockReturnValueOnce(0)
+          .mockReturnValue(PIX_CHECKOUT_MINIMUM_MS),
+        now: () => now,
+        payerKey: "a".repeat(32),
+        port: pixPort,
+        portFor,
+        sleep: () => Promise.resolve(),
+        store,
+      },
+      {
+        ...input,
+        payer: {
+          email: "pagador.pix@example.com",
+          name: "Pagador Pix de Teste",
+          taxId: "52998224725",
+        },
+      }
+    );
+
+    expect(portFor).toHaveBeenCalledWith("asaas");
+    expect(order).toEqual(["cancel", "prepare"]);
   });
 });

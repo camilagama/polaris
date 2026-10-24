@@ -9,6 +9,7 @@ import {
   checkedLinkFile,
   cycleOf,
   Gate7RefusedError,
+  refundReport,
 } from "./gate7-asaas-guard";
 
 const sandbox = {
@@ -418,4 +419,23 @@ describe("cycleOf", () => {
       expect(refusal(() => cycleOf(value)).code).toBe("gate7_cycle_invalid");
     }
   );
+});
+
+describe("refundReport", () => {
+  it("prints the renewal cancelled also when the refund found nothing to refund", () => {
+    expect(refundReport("nothing_to_refund", true)).toEqual({
+      refund: "nothing_to_refund",
+      renovacao: "renovação cancelada",
+    });
+    expect(refundReport("refund_requested", true).renovacao).toBe(
+      "renovação cancelada"
+    );
+  });
+
+  it("says the renewal is alive when the record shows it so", () => {
+    expect(refundReport("not_linked", false)).toEqual({
+      refund: "not_linked",
+      renovacao: "renovação ativa",
+    });
+  });
 });

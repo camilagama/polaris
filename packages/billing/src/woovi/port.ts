@@ -277,6 +277,8 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
         providerRef: created.id,
       };
     },
+    // Pix Automático has no page to pay an installment that failed: Woovi tries again by itself (ADR 0104, decision 9)
+    overduePaymentPage: () => Promise.resolve(null),
     provider: "woovi",
     async readState(providerRef, now, providerSubscriptionId) {
       const subscription = await subscriptionOf(

@@ -991,3 +991,17 @@ describe("refundCurrentPeriod", () => {
     }
   });
 });
+
+describe("overduePaymentPage", () => {
+  it("gives null without calling Woovi (Pix Automático has no page to pay a failed installment)", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(installmentJson())
+    );
+
+    await expect(
+      portWith(fetch).overduePaymentPage(SUBSCRIPTION_ID, null)
+    ).resolves.toBeNull();
+    expect(calls).toEqual([]);
+  });
+});

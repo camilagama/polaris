@@ -571,6 +571,24 @@ export function reconcileAsaasSubscription(input: {
  * charged back, an unpaid one or a period already over gives null: a repeated
  * request never falls back to an earlier charge.
  */
+/**
+ * The newest charge of the subscription that fell due unpaid (`OVERDUE`), the one the owner pays on the provider's
+ * page in grace (ADR 0104, decision 3), or null. Only a charge the subscription owns (`ownsCharge`).
+ */
+export function overdueCharge(
+  payments: readonly AsaasPayment[],
+  subscription: AsaasSubscription
+): AsaasPayment | null {
+  return (
+    byDueDate(
+      payments.filter(
+        (payment) =>
+          ownsCharge(payment, subscription) && payment.status === "OVERDUE"
+      )
+    ).at(-1) ?? null
+  );
+}
+
 export function refundableCharge(
   payments: readonly AsaasPayment[],
   subscription: AsaasSubscription,

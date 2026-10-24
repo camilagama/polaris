@@ -81,6 +81,12 @@ const gates: Gate[] = [
   ["billing-self-service", "verify-billing-self-service-gate.ts"],
   // the owner's read of the plan (ADR 0104, PR C): the usage as the writes count it, the grant, each state
   ["billing-read-plan", "verify-billing-read-plan-gate.ts"],
+  // the owner's commands (ADR 0104, PR D), with the real store and inbox: the refund by state, the anchor, the
+  // database's clock, the lock that never waits and the limit; lives in apps/web, where the commands are
+  [
+    "billing-owner-commands",
+    "../../../apps/web/scripts/verify-billing-owner-commands-gate.ts",
+  ],
   ["operational-selection", "verify-operational-selection-gate.ts"],
   ["entitlement-grants", "verify-entitlement-grants-gate.ts"],
   ["public-catalog", "verify-public-catalog-gate.ts"],
@@ -298,6 +304,7 @@ const suites: Record<string, string[]> = {
     "billing-trial-claims",
     "billing-self-service",
     "billing-read-plan",
+    "billing-owner-commands",
     "billing-notices",
     "operational-selection",
     "entitlement-grants",

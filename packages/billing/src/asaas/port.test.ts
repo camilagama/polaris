@@ -19,6 +19,8 @@ const PAYER_TAX_ID = "529.982.247-25";
 const CARD_TOKEN = "tok_FAKE_0000-1111-2222";
 const INVOICE_URL = "https://sandbox.asaas.com/i/fake_invoice_abc";
 
+const API_BASE = /^https:\/\/api(-sandbox)?\.asaas\.com\/v3/;
+
 interface Call {
   body?: string;
   headers: Record<string, string>;
@@ -35,7 +37,7 @@ function fakeAsaas(...routes: Route[]) {
     const call: Call = {
       headers: init.headers,
       method: init.method,
-      url: url.replace(BASE_URL, ""),
+      url: url.replace(API_BASE, ""),
       ...(init.body === undefined ? {} : { body: init.body }),
     };
     calls.push(call);
@@ -91,6 +93,7 @@ function payment(
     deleted?: boolean;
     due?: string;
     id?: string;
+    invoiceUrl?: string;
     status?: string;
     subscription?: string;
   } = {}
@@ -100,10 +103,11 @@ function payment(
     deleted = false,
     due = "2026-10-19",
     id = "pay_one111",
+    invoiceUrl = INVOICE_URL,
     status = "CONFIRMED",
     subscription: sub = "sub_abc123",
   } = overrides;
-  return `{"object":"payment","id":"${id}","dateCreated":"${created}","customer":"cus_000FAKE","subscription":"${sub}","value":24.90,"netValue":23.91,"billingType":"CREDIT_CARD","status":"${status}","dueDate":"${due}","originalDueDate":"${due}","confirmedDate":"${due}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"},"invoiceUrl":"${INVOICE_URL}","transactionReceiptUrl":"${INVOICE_URL}/r","externalReference":null,"deleted":${deleted},"refunds":null,"customerName":"${PAYER_NAME}","email":"${PAYER_EMAIL}","cpfCnpj":"${PAYER_TAX_ID}"}`;
+  return `{"object":"payment","id":"${id}","dateCreated":"${created}","customer":"cus_000FAKE","subscription":"${sub}","value":24.90,"netValue":23.91,"billingType":"CREDIT_CARD","status":"${status}","dueDate":"${due}","originalDueDate":"${due}","confirmedDate":"${due}","creditCard":{"creditCardNumber":"1234","creditCardBrand":"VISA","creditCardToken":"${CARD_TOKEN}"},"invoiceUrl":"${invoiceUrl}","transactionReceiptUrl":"${INVOICE_URL}/r","externalReference":null,"deleted":${deleted},"refunds":null,"customerName":"${PAYER_NAME}","email":"${PAYER_EMAIL}","cpfCnpj":"${PAYER_TAX_ID}"}`;
 }
 
 const input = (
@@ -750,6 +754,128 @@ describe("hasSubscription", () => {
     await expect(
       portWith(fetch).hasSubscription(CHECKOUT_ID)
     ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+});
+
+describe("overduePaymentPage", () => {
+  const routes = (...charges: string[]): Route[] => [
+    (call) =>
+      call.url.includes("/subscriptions/sub_abc123/payments")
+        ? { text: list(charges) }
+        : undefined,
+    (call) =>
+      call.url.startsWith("/subscriptions?")
+        ? { text: list([subscription()]) }
+        : undefined,
+  ];
+  /** A port against production (a production key and base), where the sandbox's page host is not allowed. */
+  const productionPort = (fetch: FetchLike) =>
+    createAsaasPort({
+      apiKey: "$aact_prod_FAKE_TEST_KEY",
+      appBaseUrl: APP_URL,
+      baseUrl: "https://api.asaas.com/v3",
+      fetch,
+      randomUuid: () => UUID,
+      timeoutMs: 5000,
+    });
+
+  it("gives the invoiceUrl of the newest OVERDUE charge of the subscription", async () => {
+    const { fetch } = fakeAsaas(
+      ...routes(
+        payment({
+          due: "2026-08-19",
+          id: "pay_old001",
+          invoiceUrl: "https://sandbox.asaas.com/i/old",
+          status: "OVERDUE",
+        }),
+        payment({
+          due: "2026-10-19",
+          id: "pay_new001",
+          invoiceUrl: "https://sandbox.asaas.com/i/newest",
+          status: "OVERDUE",
+        }),
+        payment({
+          due: "2026-09-19",
+          id: "pay_mid001",
+          invoiceUrl: "https://sandbox.asaas.com/i/middle",
+          status: "OVERDUE",
+        }),
+        payment({
+          due: "2026-11-19",
+          id: "pay_next01",
+          invoiceUrl: "https://sandbox.asaas.com/i/pending",
+          status: "PENDING",
+        })
+      )
+    );
+
+    await expect(
+      portWith(fetch).overduePaymentPage(CHECKOUT_ID, null)
+    ).resolves.toBe("https://sandbox.asaas.com/i/newest");
+  });
+
+  it("gives null when no charge is OVERDUE", async () => {
+    const { calls, fetch } = fakeAsaas(
+      ...routes(
+        payment({ id: "pay_pend01", status: "PENDING" }),
+        payment({ id: "pay_paid01", status: "CONFIRMED" })
+      )
+    );
+
+    await expect(
+      portWith(fetch).overduePaymentPage(CHECKOUT_ID, null)
+    ).resolves.toBeNull();
+    expect(calls.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("throws ProviderResponseMalformedError when the invoiceUrl is of another host", async () => {
+    const { fetch } = fakeAsaas(
+      ...routes(
+        payment({
+          invoiceUrl: "https://sandbox.asaas.com.evil.example/i/x",
+          status: "OVERDUE",
+        })
+      )
+    );
+
+    await expect(
+      portWith(fetch).overduePaymentPage(CHECKOUT_ID, null)
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+  });
+
+  it("accepts the sandbox's page only with the sandbox's API base", async () => {
+    const overdue = payment({
+      invoiceUrl: "https://sandbox.asaas.com/i/abc",
+      status: "OVERDUE",
+    });
+
+    await expect(
+      portWith(fakeAsaas(...routes(overdue)).fetch).overduePaymentPage(
+        CHECKOUT_ID,
+        null
+      )
+    ).resolves.toBe("https://sandbox.asaas.com/i/abc");
+    await expect(
+      productionPort(fakeAsaas(...routes(overdue)).fetch).overduePaymentPage(
+        CHECKOUT_ID,
+        null
+      )
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+  });
+
+  it("accepts the production page host with the production base", async () => {
+    const { fetch } = fakeAsaas(
+      ...routes(
+        payment({
+          invoiceUrl: "https://www.asaas.com/i/abc",
+          status: "OVERDUE",
+        })
+      )
+    );
+
+    await expect(
+      productionPort(fetch).overduePaymentPage(CHECKOUT_ID, null)
+    ).resolves.toBe("https://www.asaas.com/i/abc");
   });
 });
 

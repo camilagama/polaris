@@ -10,6 +10,10 @@ import {
   type OwnerPlanTenantFacts,
   readOwnerPlanTenantFacts,
 } from "@polaris/db/plan-read-repository";
+import {
+  type BillingRequestAuditType,
+  recordBillingRequestAudit,
+} from "@polaris/db/tenant-audit";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { grantsPro } from "@polaris/domain/billing/entitlements";
 import { isBillingCycleMonths } from "@polaris/domain/billing/facts";
@@ -22,13 +26,23 @@ import {
   refundPendingOf,
   resubscribeFromOf,
 } from "@polaris/domain/billing/plan-view";
-import { logger } from "@polaris/observability/logger";
+import { logger, opaqueId } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import {
   BillingCommandError,
   checkoutPriceOf,
   startCardCheckout,
   startPixCheckout,
 } from "../billing/commands";
+import {
+  type OwnerCommandDependencies,
+  type OwnerCommandOutcome,
+  OwnerCommandProviderFailure,
+  OwnerCommandRefusal,
+  ownerCancelRenewal,
+  ownerOpenOverduePayment,
+  ownerRequestRefund,
+} from "../billing/owner-commands";
 import { billingSelfServiceEnabled } from "../billing/self-service";
 import {
   type BillingPortOptions,
@@ -48,6 +62,13 @@ export interface BillingRpcOverrides {
   listBillingPrices?: typeof listBillingPrices;
   /** The server's clock of the plan's read; tests give their own. */
   now?: () => Date;
+  /** The owner's commands' clocks (the 45 s budget and the 15 s per call); tests give their own. */
+  ownerCommandTiming?: Pick<
+    OwnerCommandDependencies,
+    "elapsedMs" | "timeoutSignal"
+  >;
+  /** The audit of the owner's billing requests; tests give their own (a failure after the billing, ADR 0104). */
+  recordBillingRequestAudit?: typeof recordBillingRequestAudit;
   /** The tenant's part of the plan's read; tests give their own. */
   readOwnerPlanTenantFacts?: typeof readOwnerPlanTenantFacts;
   /** The Pix checkout's waits (its minimum answer time); tests give their own. */
@@ -158,6 +179,34 @@ function readPlanRefusalOf(error: unknown): ORPCError<string, unknown> | null {
   return null;
 }
 
+/** The refusals and failures of the owner's commands (ADR 0104, decision 3), each with its own reason. */
+function ownerCommandRpcError(
+  error: unknown,
+  fallback: (error: unknown) => never
+): never {
+  if (error instanceof OwnerCommandRefusal) {
+    throw new ORPCError("CONFLICT", {
+      cause: error,
+      data: { reason: error.code },
+    });
+  }
+  if (error instanceof OwnerCommandProviderFailure) {
+    throw new ORPCError("SERVICE_UNAVAILABLE", {
+      cause: error,
+      data: { reason: "billing_provider_unavailable" },
+    });
+  }
+  return billingRpcError(error, fallback);
+}
+
+/** The audit type a command's refusal or failure names, if it is one of the owner's commands'. */
+function auditOfFailure(error: unknown): BillingRequestAuditType | null {
+  return error instanceof OwnerCommandRefusal ||
+    error instanceof OwnerCommandProviderFailure
+    ? error.audit
+    : null;
+}
+
 /**
  * The owner starts the Pro subscription (ADR 0101): the card at Asaas, or Pix
  * Automático at Woovi (the payer's name, document and e-mail go to Woovi and
@@ -230,12 +279,21 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
                 ...dependencies.pixTiming,
                 payerKey,
                 port,
+                portFor: (other) => portOf(context.bindings, other),
                 store,
               },
               { ...checkout, payer: input.payer }
             );
           }
-          return await startCardCheckout({ port, store }, checkout);
+          return await startCardCheckout(
+            {
+              port,
+              // the old link may be the other provider's: its renewal is cancelled before a new checkout
+              portFor: (other) => portOf(context.bindings, other),
+              store,
+            },
+            checkout
+          );
         } finally {
           await store.close().catch(() => undefined);
         }
@@ -389,5 +447,208 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
     }
   );
 
-  return { readPlan, startCheckout };
+  const recordAudit =
+    dependencies.recordBillingRequestAudit ?? recordBillingRequestAudit;
+
+  /**
+   * The molde of the owner's three commands (ADR 0104, decision 3). The flag first, so with it off everyone gets the
+   * same answer. The tenant transaction authorizes (`billing:manage`, the server's organization; the client's ID is
+   * only the context asked for); then, outside it, the billing role runs the command under the store's lock; then a
+   * tenant transaction of its own writes the audit of the request with the type the outcome names (one row per
+   * request ID and type). An outcome whose audit cannot be written answers `billing_audit_unavailable`, never
+   * success: the client repeats with the same request ID, which the command recognizes. A refusal or a failure
+   * whose audit is lost still answers what it is.
+   */
+  /** The tenant transaction of an owner's command: it authorizes and answers the server's organization. */
+  const authorizeOwner = async (
+    context: BillingRpcContext,
+    requestedOrganizationId: string
+  ): Promise<string> => {
+    try {
+      return await dependencies.withTenantRequestContext({
+        bindings: context.bindings,
+        capability: CAPABILITY,
+        operation: (_transaction, identity) =>
+          Promise.resolve(identity.organizationId),
+        request: context.request,
+        requestedOrganizationId,
+      });
+    } catch (error: unknown) {
+      if (error instanceof ORPCError) {
+        throw error;
+      }
+      throw (
+        readPlanRefusalOf(error) ??
+        billingRpcError(error, dependencies.toRpcError)
+      );
+    }
+  };
+
+  /** The tenant transaction of its own that writes the audit of the request; false when it could not be written. */
+  const auditRequest = async (
+    context: BillingRpcContext,
+    input: {
+      eventType: BillingRequestAuditType;
+      organizationId: string;
+      requestId: string;
+      requestedOrganizationId: string;
+    }
+  ): Promise<boolean> => {
+    try {
+      await dependencies.withTenantRequestContext({
+        bindings: context.bindings,
+        capability: CAPABILITY,
+        operation: (transaction, identity) =>
+          recordAudit(transaction, identity, {
+            eventType: input.eventType,
+            requestId: input.requestId,
+          }),
+        request: context.request,
+        requestedOrganizationId: input.requestedOrganizationId,
+      });
+      return true;
+    } catch (error: unknown) {
+      logger.warn("billing_request_audit_failed", {
+        ...describeError(error),
+        eventType: input.eventType,
+        organizationId: opaqueId(input.organizationId),
+      });
+      return false;
+    }
+  };
+
+  /**
+   * The molde of the owner's three commands (ADR 0104, decision 3). The flag first, so with it off everyone gets the
+   * same answer. The tenant transaction authorizes (`billing:manage`, the server's organization; the client's ID is
+   * only the context asked for); then, outside it, the billing role runs the command under the store's lock; then a
+   * tenant transaction of its own writes the audit of the request with the type the outcome names (one row per
+   * request ID and type). An outcome whose audit cannot be written answers `billing_audit_unavailable`, never
+   * success: the client repeats with the same request ID, which the command recognizes. A refusal or a failure
+   * whose audit is lost still answers what it is.
+   */
+  const runOwnerCommand = async <T>(
+    context: BillingRpcContext,
+    input: { organizationId: string; requestId: string },
+    command: (
+      commandDependencies: OwnerCommandDependencies,
+      organizationId: string,
+      requestId: string
+    ) => Promise<OwnerCommandOutcome<T>>
+  ): Promise<T> => {
+    if (!billingSelfServiceEnabled(context.bindings)) {
+      throw new ORPCError("NOT_FOUND", {
+        data: { reason: "billing_self_service_off" },
+      });
+    }
+    const requestId = input.requestId.toLowerCase();
+    const organizationId = await authorizeOwner(context, input.organizationId);
+    const connectionString =
+      context.bindings.BILLING_HYPERDRIVE?.connectionString;
+    if (!connectionString) {
+      throw new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: "billing_not_configured" },
+      });
+    }
+    const store = createStore(connectionString);
+    let outcome: OwnerCommandOutcome<T> | null = null;
+    let failure: unknown = null;
+    try {
+      outcome = await command(
+        {
+          ...dependencies.ownerCommandTiming,
+          portFor: (provider, signal) =>
+            portOf(context.bindings, provider, signal ? { signal } : {}),
+          store,
+        },
+        organizationId,
+        requestId
+      );
+    } catch (error: unknown) {
+      failure = error;
+    } finally {
+      await store.close().catch(() => undefined);
+    }
+    const eventType = outcome?.audit ?? auditOfFailure(failure);
+    const audited =
+      eventType === null ||
+      (await auditRequest(context, {
+        eventType,
+        organizationId,
+        requestId,
+        requestedOrganizationId: input.organizationId,
+      }));
+    if (outcome !== null) {
+      if (!audited) {
+        // the act was done and is in the billing ledger: the client is told it could not be confirmed
+        throw new ORPCError("SERVICE_UNAVAILABLE", {
+          data: { reason: "billing_audit_unavailable" },
+        });
+      }
+      return outcome.response;
+    }
+    if (failure instanceof ORPCError) {
+      throw failure;
+    }
+    return ownerCommandRpcError(failure, dependencies.toRpcError);
+  };
+
+  const cancelRenewal = implementContract.billing.cancelRenewal.handler(
+    async ({ context, input }) => {
+      const response = await runOwnerCommand(
+        context,
+        input,
+        (commandDependencies, organizationId, requestId) =>
+          ownerCancelRenewal(commandDependencies, {
+            organizationId,
+            reason: input.reason ?? null,
+            requestId,
+          })
+      );
+      return {
+        accessEndsAt: response.accessEndsAt?.toISOString() ?? null,
+        result: response.result,
+      };
+    }
+  );
+
+  const requestRefund = implementContract.billing.requestRefund.handler(
+    async ({ context, input }) => {
+      const response = await runOwnerCommand(
+        context,
+        input,
+        (commandDependencies, organizationId, requestId) =>
+          ownerRequestRefund(commandDependencies, { organizationId, requestId })
+      );
+      return {
+        amount: response.amount,
+        result: response.result,
+        until: response.until.toISOString(),
+      };
+    }
+  );
+
+  const openOverduePayment =
+    implementContract.billing.openOverduePayment.handler(
+      async ({ context, input }) => {
+        const response = await runOwnerCommand(
+          context,
+          input,
+          (commandDependencies, organizationId, requestId) =>
+            ownerOpenOverduePayment(commandDependencies, {
+              organizationId,
+              requestId,
+            })
+        );
+        // the payer's page: never logged; the client opens it with `noopener`
+        return { handoff: { kind: "redirect" as const, url: response.url } };
+      }
+    );
+
+  return {
+    cancelRenewal,
+    openOverduePayment,
+    readPlan,
+    requestRefund,
+    startCheckout,
+  };
 }

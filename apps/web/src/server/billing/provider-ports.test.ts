@@ -95,6 +95,96 @@ describe("billingProviderPortOf", () => {
     );
   });
 
+  describe("the caller's signal (ADR 0104: one call of an owner's command)", () => {
+    const CHECKOUT_ID = "c6d42a6f-0000-4000-8000-000000000001";
+    const WOOVI_SUBSCRIPTION_ID = btoa(
+      "PaymentSubscription:0123456789abcdef01234567"
+    );
+    const emptyList = () =>
+      Promise.resolve(
+        new Response(
+          '{"object":"list","hasMore":false,"totalCount":0,"limit":100,"offset":0,"data":[]}',
+          { headers: { "content-type": "application/json" }, status: 200 }
+        )
+      );
+
+    it("hands the fetch a signal that is already aborted when the caller's signal is", async () => {
+      const seen: AbortSignal[] = [];
+      const fetchFake = vi.fn((_url: string | URL, init?: RequestInit) => {
+        seen.push(init?.signal as AbortSignal);
+        return emptyList();
+      });
+      const controller = new AbortController();
+      controller.abort();
+      const port = billingProviderPortOf(valid, "asaas", {
+        fetch: fetchFake,
+        signal: controller.signal,
+      });
+
+      await port.hasSubscription(CHECKOUT_ID, null).catch(() => undefined);
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.aborted).toBe(true);
+    });
+
+    it("aborts the request in flight when the caller's signal aborts later, on top of the client's own timeout", async () => {
+      const seen: AbortSignal[] = [];
+      const fetchFake = vi.fn((_url: string | URL, init?: RequestInit) => {
+        seen.push(init?.signal as AbortSignal);
+        return emptyList();
+      });
+      const controller = new AbortController();
+      const port = billingProviderPortOf(valid, "asaas", {
+        fetch: fetchFake,
+        signal: controller.signal,
+      });
+
+      await port.hasSubscription(CHECKOUT_ID, null);
+      expect(seen[0]?.aborted).toBe(false);
+      controller.abort();
+
+      expect(seen[0]?.aborted).toBe(true);
+    });
+
+    it("keeps the Woovi port on the same rule", async () => {
+      const seen: AbortSignal[] = [];
+      const fetchFake = vi.fn((_url: string | URL, init?: RequestInit) => {
+        seen.push(init?.signal as AbortSignal);
+        return Promise.resolve(new Response("{}", { status: 404 }));
+      });
+      const controller = new AbortController();
+      controller.abort();
+      const port = billingProviderPortOf(
+        {
+          ...valid,
+          WOOVI_APP_ID: "fake-app-id",
+          WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+        },
+        "woovi",
+        { fetch: fetchFake, signal: controller.signal }
+      );
+
+      await port.hasSubscription(WOOVI_SUBSCRIPTION_ID, null).catch(() => undefined);
+
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((signal) => signal.aborted)).toBe(true);
+    });
+
+    it("without a signal, the request carries only the client's own and it is not aborted", async () => {
+      const seen: AbortSignal[] = [];
+      const fetchFake = vi.fn((_url: string | URL, init?: RequestInit) => {
+        seen.push(init?.signal as AbortSignal);
+        return emptyList();
+      });
+      const port = billingProviderPortOf(valid, "asaas", { fetch: fetchFake });
+
+      await port.hasSubscription(CHECKOUT_ID, null);
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.aborted).toBe(false);
+    });
+  });
+
   describe("Woovi (Pix Automático, cobrança PR 6)", () => {
     const woovi = {
       ...valid,

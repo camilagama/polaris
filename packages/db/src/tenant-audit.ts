@@ -65,3 +65,44 @@ export async function recordTenantAuditEvent(
     requestId: input.requestId ?? null,
   });
 }
+
+/** The audit types of the owner's billing requests (ADR 0104, decision 3), one row per request ID and type. */
+export type BillingRequestAuditType = Extract<
+  TenantAuditEventType,
+  | "billing.command_in_progress"
+  | "billing.command_rate_limited"
+  | "billing.command_refused"
+  | "billing.overdue_payment_opened"
+  | "billing.owner_renewal_cancel_requested"
+  | "billing.refund_requested"
+>;
+
+/**
+ * Appends the audit of one of the owner's billing requests (ADR 0104, decision 3) to an existing tenant transaction:
+ * `entity_type = 'billing_request'` and `entity_id` = the client's request ID, so the same request audited twice is
+ * one row (the partial unique index of migration 0100, `ON CONFLICT DO NOTHING` without `RETURNING`: the tenant only
+ * inserts, and the cap's trigger drops the 11th refusal of the hour in silence). Nothing is counted here.
+ */
+export async function recordBillingRequestAudit(
+  transaction: TenantRequestTransaction,
+  identity: TenantAuditIdentity,
+  input: { eventType: BillingRequestAuditType; requestId: string }
+): Promise<void> {
+  const identityValues = [identity.organizationId, identity.userId];
+  if (
+    identityValues.some((value) => !value.trim() || value !== value.trim()) ||
+    !uuidPattern.test(input.requestId)
+  ) {
+    throw new TenantAuditEventError();
+  }
+  await transaction
+    .insert(tenantAuditEvents)
+    .values({
+      actorUserId: identity.userId,
+      entityId: input.requestId.toLowerCase(),
+      entityType: "billing_request",
+      eventType: input.eventType,
+      organizationId: identity.organizationId,
+    })
+    .onConflictDoNothing();
+}
