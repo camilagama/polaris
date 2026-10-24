@@ -2078,3 +2078,14 @@ Desenho t269 v2, aprovado na rodada desenho-t269 (23/10/2026).
 | Gate `economics` | Em revisão | Série com venda retroativa, devolução e cancelamento conferida dia a dia contra o resumo daquele dia e contra contagem SQL independente; ranking com produto excluído; outra loja vê série zerada; limite fora de 1..10 recusado. PostgreSQL 18 local e CI. |
 | Semeadura `qa-` | Em revisão | `packages/db/scripts/seed-qa-store.ts` (operador; só loja `qa-`, só banco marcado `staging` ou PostgreSQL local com `--local`, nada sem `--apply`). Não foi rodado em staging. |
 | Medida | Parcial | Local (PostgreSQL 18, 60 dias): 20 vendas/dia ≈ 367 KB por abertura (A + B), 50/dia ≈ 932 KB; o plano da consulta de vendas lê todas as vendas da loja (20 mil para 1.254 do mês), o que pelo critério do desenho pede o índice 1b. CPU e egress em staging pendentes (roteiro no PR). |
+
+### Início (F2), PR 2: filtro "sem custo" e endereços diretos (t286; sem migration)
+
+Desenho t269 v2, seção 2.3.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| `inventory.listBalances` | Em revisão | `cost: "all" \| "unknown"` (padrão `all`: a resposta de hoje não muda). `unknown` acrescenta `inventory_balances.moving_average_cost IS NULL` depois do `LEFT JOIN`, então a variante sem linha de saldo entra. A lista e a contagem são a mesma consulta. |
+| Estoque | Em revisão | `/inventory?filtro=sem-saldo` e `?filtro=sem-custo` abrem a lista filtrada. "Sem custo" é um botão de alternar à parte (combina com o filtro de saldo na mesma leitura). Sem conexão não há custo no aparelho: o botão diz "O custo médio só aparece com conexão." Valor desconhecido abre a lista sem filtro e não aparece na tela. |
+| Produtos | Em revisão | `/products?produto=<uuid>` abre o painel de Variantes do produto (também de um arquivado, trocando a aba) e `?novo=1` abre o formulário; os dois rolam até o painel e levam o foco ao título. UUID inválido ou `novo` diferente de `1` abre a lista simples. Produto que não existe, removido ou de outra loja diz o mesmo "Produto não encontrado. Escolha um produto na lista." |
+| Provas | Parcial | Teste do contrato (padrão `all` e `unknown`), unitários dos dois leitores de endereço, e2e dos quatro endereços e dos valores inválidos (o valor não aparece na tela), medidas a 320 e 360 px com o painel aberto. Gate `read-models` ampliado com `unknown` com e sem linha de saldo, igual à lista sem filtro menos os custos conhecidos, e outra loja fora da lista; **só roda no CI (PostgreSQL 18)**: não foi executado localmente. |
