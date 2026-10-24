@@ -137,7 +137,7 @@ class FakeServer {
   /** Answers of a procedure replaced by a failure, a hold or a missing mark. */
   readonly broken = new Map<
     string,
-    "401" | "429" | "500" | "slow" | "unmarked"
+    "401" | "403" | "429" | "500" | "slow" | "unmarked"
   >();
 
   constructor(scenario: Scenario) {
@@ -311,6 +311,10 @@ async function serve(page: Page, server: FakeServer) {
     }
     if (broken === "429") {
       await route.fulfill(failure("TOO_MANY_REQUESTS", 429));
+      return;
+    }
+    if (broken === "403") {
+      await route.fulfill(failure("FORBIDDEN", 403));
       return;
     }
     if (broken === "401") {
@@ -1311,6 +1315,76 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);
     await expect(page.getByText("R$ 2.660,60")).toHaveCount(0);
     await expect(page.getByText("Camiseta básica")).toHaveCount(0);
+  });
+
+  test("a meia-noite da loja passa com a página aberta sem rede: o Hoje da cópia deixa de valer", async ({
+    page,
+  }) => {
+    // 23:50 of 23/10 in Brasília
+    const lateEvening = Date.parse("2026-10-24T02:50:00.000Z");
+    const server = new FakeServer(SOLD);
+    server.now = lateEvening;
+    await page.clock.install({ time: new Date(lateEvening) });
+    await serve(page, server);
+    await page.goto("/");
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    await expect.poll(() => copyKeys(page)).toHaveLength(2);
+    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+      timeout: 20_000,
+    });
+    await page.context().setOffline(true);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(15 * 60_000);
+    await expect(region(page, "Hoje")).toContainText(
+      "Sem números de hoje neste aparelho"
+    );
+    await expect(region(page, "Outubro")).toContainText("R$ 2.660,60");
+  });
+
+  test("aberto sem rede, a rede volta: a cópia fica na tela até a leitura responder, sem esqueleto", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    // the network is back, and the server takes its time to answer
+    server.broken.set("report/periodSummary", "slow");
+    server.down = false;
+    const asked = periodCalls(server).length;
+    await page.clock.runFor(10_000);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(page.getByText("Carregando os números de hoje…")).toHaveCount(
+      0
+    );
+    await expect(
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00.")
+    ).toBeVisible();
+    server.broken.delete("report/periodSummary");
+    await expect(page.getByText("Atualizado até 23/10/2026 12:00")).toBeVisible(
+      {
+        timeout: 20_000,
+      }
+    );
+  });
+
+  test("o servidor recusa os números (FORBIDDEN): a cópia da loja é apagada e não volta sem rede", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+    await page.context().setOffline(true);
+    await expect(region(page, "Hoje")).toContainText(NO_COPY);
+    await expect(page.getByText("R$ 320,10")).toHaveCount(0);
   });
 
   test("Sair apaga a cópia do Início antes de sair (A e B do aparelho)", async ({

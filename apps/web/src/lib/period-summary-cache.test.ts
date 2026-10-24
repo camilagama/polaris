@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PreferenceStorage } from "./current-organization-model";
 import {
+  clearOrganizationResultCopies,
   clearPeriodSummaryCaches,
   isPeriodSummary,
   readPeriodSummaryCache,
@@ -406,6 +407,26 @@ describe("the daily series and the ranking in a kept summary", () => {
         ),
       },
     ],
+    [
+      "a period that ends on a date that is not one",
+      { period: { from: "2026-10-01", to: "x" } },
+    ],
+    [
+      "a day with an amount that is not money",
+      {
+        daily: withSeries().daily?.map((day, index) =>
+          index === 3 ? { ...day, netSales: "abc" } : day
+        ),
+      },
+    ],
+    [
+      "a day with an amount of three decimals",
+      {
+        daily: withSeries().daily?.map((day, index) =>
+          index === 3 ? { ...day, netSales: "1.234" } : day
+        ),
+      },
+    ],
     ["a ranking that is not a list", { topProducts: {} }],
     [
       "a ranked product without an ID",
@@ -438,5 +459,66 @@ describe("the daily series and the ranking in a kept summary", () => {
       JSON.stringify({ month: "2026-10", summary: malformed })
     );
     expect(readPeriodSummaryCache(storage, ORG, "2026-10")).toBeNull();
+  });
+});
+
+describe("a day's amount in the kept series", () => {
+  it.each(["-12.5", "320.10", "0", "-0.01"])("accepts %s", (netSales) => {
+    const summary: StoredPeriodSummary = {
+      ...summaryOf("2026-10"),
+      daily: Array.from({ length: 28 }, (_, index) => ({
+        date: `2026-10-${String(index + 1).padStart(2, "0")}`,
+        netSales: index === 3 ? netSales : "0.00",
+        salesCount: 0,
+      })),
+    };
+    expect(isPeriodSummary(summary)).toBe(true);
+  });
+});
+
+describe("forgetting the copies of one organization (clearOrganizationResultCopies)", () => {
+  it("removes the months and the Início's copy of that organization only", () => {
+    const { storage, values } = memoryStorage();
+    for (const organization of [ORG, OTHER]) {
+      writePeriodSummaryCache(
+        storage,
+        organization,
+        "2026-10",
+        summaryOf("2026-10"),
+        ALLOWED
+      );
+      writePeriodSummaryCache(
+        storage,
+        organization,
+        "2026-09",
+        summaryOf("2026-09"),
+        ALLOWED
+      );
+      values.set(`polaris.offline.home.${organization}`, "{}");
+    }
+    values.set("polaris.offline.paymentProfiles.x", "[]");
+    values.set("polaris.preferredOrganizationId", ORG);
+
+    clearOrganizationResultCopies(storage, ORG);
+
+    expect([...values.keys()].sort()).toEqual([
+      `polaris.offline.home.${OTHER}`,
+      "polaris.offline.paymentProfiles.x",
+      keyOf(OTHER, "2026-09"),
+      keyOf(OTHER, "2026-10"),
+      "polaris.preferredOrganizationId",
+    ]);
+  });
+
+  it("does not throw without usable storage", () => {
+    expect(() => clearOrganizationResultCopies(null, ORG)).not.toThrow();
+    const refusing: PreferenceStorage = {
+      getItem: () => null,
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => undefined,
+    };
+    expect(() => clearOrganizationResultCopies(refusing, ORG)).not.toThrow();
   });
 });

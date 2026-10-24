@@ -590,12 +590,12 @@ describe("offlineGoal (§ 7.3)", () => {
     ).toEqual({ goal: settled, kind: "settled" });
     expect(
       offlineGoal({ goal: settled, kind: "settled" }, "2026-10-22", zone)
-    ).toEqual({ kind: "none" });
+    ).toEqual({ kind: "online-only" });
   });
 
-  it("sem meta, continua sem meta", () => {
+  it("sem meta, a meta só vem com conexão", () => {
     expect(offlineGoal({ kind: "none" }, "2026-10-15", zone)).toEqual({
-      kind: "none",
+      kind: "online-only",
     });
   });
 });

@@ -215,7 +215,7 @@ export async function serveHome(
   page: Page,
   { failing = false, fresh = false, signedIn = false }: HomeServed = {}
 ) {
-  // the Início is an online-only route: without a marked answer of /health the tab is offline and it reads nothing
+  // without a marked answer of /health the tab is offline: the Início reads nothing and shows its copy, if any
   await serveHealth(page);
   if (signedIn) {
     await page.route("**/rpc/**", (route) =>

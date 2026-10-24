@@ -122,7 +122,7 @@ function keepCopies(m: Modules, stored: Map<string, string>) {
     );
     m.home.writeHomeCopy(storage, organization, {
       before: summaryOf("2026-09-01", "2026-09-30", AT),
-      goal: { kind: "none" },
+      goal: { at: AT, view: { kind: "none" } },
       hadSale: true,
     });
     m.payments.writePaymentProfileCache(storage, organization, [profile]);

@@ -148,6 +148,9 @@ const activeView = (overrides: Partial<GoalReadModel> = {}): GoalView => ({
   others: 0,
 });
 
+/** The goal as the copy keeps it: the view and when the device read it. */
+const keptGoal = (view: GoalView = activeView(), at = READ_B) => ({ at, view });
+
 /** What is stored under the key of the Início, as an object. */
 const stored = (values: Map<string, string>): HomeCopy =>
   JSON.parse(values.get(KEY) as string);
@@ -155,11 +158,11 @@ const stored = (values: Map<string, string>): HomeCopy =>
 describe("keeping the Início's copy (writeHomeCopy)", () => {
   it("guarda o que o servidor disse numa organização sem cópia anterior", () => {
     const { storage, values } = memoryStorage();
-    writeHomeCopy(storage, ORG, { before: september(), goal: activeView() });
+    writeHomeCopy(storage, ORG, { before: september(), goal: keptGoal() });
 
     expect(stored(values)).toEqual({
       before: september(),
-      goal: activeView(),
+      goal: keptGoal(),
       hadSale: false,
     });
   });
@@ -168,7 +171,7 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
     const { storage, values } = memoryStorage();
     writeHomeCopy(storage, ORG, {
       before: september(),
-      goal: activeView(),
+      goal: keptGoal(),
       hadSale: true,
     });
     const newer = september("2026-10-16T14:00:00.000Z");
@@ -176,26 +179,26 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
 
     expect(stored(values)).toEqual({
       before: newer,
-      goal: activeView(),
+      goal: keptGoal(),
       hadSale: true,
     });
   });
 
   it("troca a meta pela meta nova e mantém o B", () => {
     const { storage, values } = memoryStorage();
-    writeHomeCopy(storage, ORG, { before: september(), goal: activeView() });
-    writeHomeCopy(storage, ORG, { goal: { kind: "none" } });
+    writeHomeCopy(storage, ORG, { before: september(), goal: keptGoal() });
+    writeHomeCopy(storage, ORG, { goal: keptGoal({ kind: "none" }) });
 
     expect(stored(values)).toEqual({
       before: september(),
-      goal: { kind: "none" },
+      goal: keptGoal({ kind: "none" }),
       hadSale: false,
     });
   });
 
   it("uma meta null explícita apaga a meta guardada", () => {
     const { storage, values } = memoryStorage();
-    writeHomeCopy(storage, ORG, { goal: activeView() });
+    writeHomeCopy(storage, ORG, { goal: keptGoal() });
     writeHomeCopy(storage, ORG, { goal: null });
 
     expect(stored(values).goal).toBeNull();
@@ -248,7 +251,7 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
   };
   const valid = (): Record<string, unknown> => ({
     before: september(),
-    goal: activeView(),
+    goal: keptGoal(),
     hadSale: false,
   });
 
@@ -256,13 +259,13 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
     const { storage } = memoryStorage();
     writeHomeCopy(storage, ORG, {
       before: september(),
-      goal: activeView(),
+      goal: keptGoal(),
       hadSale: true,
     });
 
     expect(readHomeCopy(storage, ORG)).toEqual({
       before: september(),
-      goal: activeView(),
+      goal: keptGoal(),
       hadSale: true,
     });
   });
@@ -323,18 +326,41 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
     ["um settledAt que não é um instante", { settledAt: "ontem" }],
   ])("descarta a cópia cuja meta tem %s", (_label, broken) => {
     expect(
-      read({ ...valid(), goal: activeView(broken as Partial<GoalReadModel>) })
+      read({
+        ...valid(),
+        goal: keptGoal(activeView(broken as Partial<GoalReadModel>)),
+      })
     ).toBeNull();
   });
 
   it("descarta uma meta ativa com outras metas que não é um inteiro", () => {
     expect(
-      read({ ...valid(), goal: { ...activeView(), others: 1.5 } })
+      read({
+        ...valid(),
+        goal: keptGoal({ ...activeView(), others: 1.5 } as never),
+      })
     ).toBeNull();
     expect(
-      read({ ...valid(), goal: { ...activeView(), others: -1 } })
+      read({
+        ...valid(),
+        goal: keptGoal({ ...activeView(), others: -1 } as never),
+      })
     ).toBeNull();
-    expect(read({ ...valid(), goal: { kind: "other" } })).toBeNull();
+    expect(
+      read({ ...valid(), goal: keptGoal({ kind: "other" } as never) })
+    ).toBeNull();
+  });
+
+  it("descarta a cópia cuja meta tem um at que não é um instante", () => {
+    expect(
+      read({ ...valid(), goal: keptGoal(activeView(), "ontem") })
+    ).toBeNull();
+    expect(read({ ...valid(), goal: keptGoal(activeView(), "") })).toBeNull();
+    expect(read({ ...valid(), goal: { view: activeView() } })).toBeNull();
+  });
+
+  it("descarta a cópia antiga em que a meta era o GoalView sem o at", () => {
+    expect(read({ ...valid(), goal: activeView() })).toBeNull();
   });
 
   it("descarta a cópia em que hadSale não é booleano ou falta", () => {
@@ -464,7 +490,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
     writePeriodSummaryCache(storage, ORG, "2026-10", october(), ALLOWED);
     writeHomeCopy(storage, ORG, {
       before: september(),
-      goal: activeView(),
+      goal: keptGoal(),
       ...copy,
     });
     return storage;
@@ -508,7 +534,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
 
   it("sem o A do mês, a meta guardada também fica de fora", () => {
     const { storage } = memoryStorage();
-    writeHomeCopy(storage, ORG, { before: september(), goal: activeView() });
+    writeHomeCopy(storage, ORG, { before: september(), goal: keptGoal() });
     const home = offlineHome(storage, ORG, ZONE, NOW, true);
 
     expect(home.figures).toBeNull();
@@ -524,5 +550,94 @@ describe("what the Início shows without a connection (offlineHome)", () => {
       true
     );
     expect(home.figures).toMatchObject({ stale: true, todayShown: false });
+  });
+
+  it("o outubro regravado pelo Resultado em 05/11 não mostra 31/10 como hoje", () => {
+    const { storage } = memoryStorage();
+    const readAt = "2026-11-05T15:00:00.000Z";
+    writePeriodSummaryCache(storage, ORG, "2026-10", october(readAt), ALLOWED);
+    writeHomeCopy(storage, ORG, {
+      before: september("2026-11-05T14:00:00.000Z"),
+      goal: keptGoal(activeView(), readAt),
+    });
+    const home = offlineHome(
+      storage,
+      ORG,
+      ZONE,
+      Date.parse("2026-11-05T18:00:00.000Z"),
+      true
+    );
+
+    expect(home.figures).toMatchObject({ today: "2026-10-31", stale: false });
+    expect(home.figures?.todayShown).toBe(false);
+  });
+
+  it("a confirmação e o desatualizado contam a meta lida há 25 h, com A e B de 1 h atrás", () => {
+    const { storage } = memoryStorage();
+    const hour = 3_600_000;
+    const aAt = new Date(NOW - hour).toISOString();
+    const bAt = new Date(NOW - hour).toISOString();
+    const goalAt = new Date(NOW - 25 * hour).toISOString();
+    writePeriodSummaryCache(storage, ORG, "2026-10", october(aAt), ALLOWED);
+    writeHomeCopy(storage, ORG, {
+      before: september(bAt),
+      goal: keptGoal(activeView(), goalAt),
+    });
+    const home = offlineHome(storage, ORG, ZONE, NOW, true);
+    expect(home.figures).toMatchObject({ confirmedAt: goalAt, stale: true });
+
+    // the same figures with a goal read as recently as they were: not stale
+    writeHomeCopy(storage, ORG, { goal: keptGoal(activeView(), aAt) });
+    expect(offlineHome(storage, ORG, ZONE, NOW, true).figures).toMatchObject({
+      confirmedAt: bAt,
+      stale: false,
+    });
+  });
+
+  it("um relógio do aparelho atrasado 3 dias não mantém 'em andamento' a meta que terminou antes da leitura", () => {
+    // A read on 15/10; the goal ended on 14/10; the device says 12/10
+    const { storage } = memoryStorage();
+    writePeriodSummaryCache(storage, ORG, "2026-10", october(), ALLOWED);
+    writeHomeCopy(storage, ORG, {
+      before: september(),
+      goal: keptGoal(activeView({ endsOn: "2026-10-14" })),
+    });
+    const home = offlineHome(
+      storage,
+      ORG,
+      ZONE,
+      Date.parse("2026-10-12T18:00:00.000Z"),
+      true
+    );
+
+    expect(home.goal).toMatchObject({ ended: true, kind: "active" });
+  });
+
+  it("uma exceção ao montar devolve 'sem números' e a meta só com conexão", () => {
+    const throwing: PreferenceStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => undefined,
+      setItem: () => undefined,
+    };
+
+    expect(offlineHome(throwing, ORG, ZONE, NOW, true)).toEqual({
+      figures: null,
+      goal: { kind: "online-only" },
+    });
+  });
+
+  it("uma meta guardada como 'none' vira meta só com conexão", () => {
+    const home = offlineHome(
+      kept({ goal: keptGoal({ kind: "none" }) }),
+      ORG,
+      ZONE,
+      NOW,
+      true
+    );
+
+    expect(home.figures).not.toBeNull();
+    expect(home.goal).toEqual({ kind: "online-only" });
   });
 });
