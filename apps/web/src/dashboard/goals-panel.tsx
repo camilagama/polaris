@@ -169,6 +169,16 @@ export function GoalsPanel({
     focusLater(() => document.getElementById("goal-create-kind")?.focus());
   }, [clearFeedback]);
   useEffect(() => {
+    if (link !== null) {
+      // the link did its work: a reload or a step back is the screen as it is, not the form opening again
+      const url = new URL(window.location.href);
+      url.searchParams.delete("meta");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+    }
     if (link === "new") {
       focusLater(() => document.getElementById("goal-create-kind")?.focus());
     } else if (link === "list") {

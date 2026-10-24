@@ -87,6 +87,8 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   );
   const total = sumNetSales(series);
   const best = bestDay(series);
+  // a period of returns only (net below zero) still has a drawing: "Sem vendas" is for a period with nothing
+  const sold = series.some((day) => chartValue(day.netSales) !== 0);
   const range = `de ${shortDate(series[0]?.date ?? figures.today)} a ${shortDate(figures.today)}`;
   return (
     <div className="grid gap-3">
@@ -101,7 +103,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           <span className="text-support">{bestDayText(series)}</span>
         ) : null}
       </p>
-      {best ? (
+      {sold ? (
         <OnDemandAreaChart
           axisUnit="R$"
           data={series.map((day) => ({
@@ -112,7 +114,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           formatAxis={axisMoney}
           formatValue={moneyText}
           height={days === 7 ? 180 : 220}
-          label={`Vendas líquidas por dia, ${range}: ${formatBrlAmount(total)} no total; ${bestDayText(series)}`}
+          label={`Vendas líquidas por dia, ${range}: ${formatBrlAmount(total)} no total`}
           rangeLabel={`Dia, últimos ${days} dias`}
         />
       ) : (

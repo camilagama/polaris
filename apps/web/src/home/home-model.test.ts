@@ -231,7 +231,7 @@ describe("monthComparison (AC-7)", () => {
       sold("30.00", "2026-10-31")
     );
     expect(monthComparison(before, same, "2026-10-02")).toBe(
-      "O mesmo que no mesmo período de setembro"
+      "Igual ao mesmo período de setembro"
     );
   });
 
@@ -242,7 +242,7 @@ describe("monthComparison (AC-7)", () => {
     // 31 October against 30 days of September
     ["2026-10-31", "2026-09-01", "2026-09-30", "R$ 1,00 a mais"],
     // 30 November against 30 days of October
-    ["2026-11-30", "2026-10-01", "2026-10-31", "O mesmo"],
+    ["2026-11-30", "2026-10-01", "2026-10-31", "Igual ao"],
   ])(
     "on %s compares with the previous month cut to its length",
     (today, from, to, start) => {
@@ -334,10 +334,11 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
       status: "cancelled",
       updatedAt: "2026-10-05T12:00:00.000Z",
     });
-    expect(pickGoal([settled, cancelled], "2026-10-08", zone)).toMatchObject({
+    // settled on 01/10 of the store: shown from 01/10 to 07/10, seven days, and gone on the eighth
+    expect(pickGoal([settled, cancelled], "2026-10-07", zone)).toMatchObject({
       kind: "settled",
     });
-    expect(pickGoal([settled, cancelled], "2026-10-09", zone)).toEqual({
+    expect(pickGoal([settled, cancelled], "2026-10-08", zone)).toEqual({
       kind: "none",
     });
     expect(pickGoal([cancelled], "2026-10-08", zone)).toEqual({ kind: "none" });

@@ -259,7 +259,7 @@ export function monthComparison(
   ).minorUnits;
   const name = monthName(previousFirst);
   if (difference === 0n) {
-    return `O mesmo que no mesmo período de ${name}`;
+    return `Igual ao mesmo período de ${name}`;
   }
   const amount = formatBrlAmount(
     Money.fromMinorUnits(difference < 0n ? -difference : difference).toString()
@@ -295,7 +295,8 @@ export function pickGoal(
   if (first) {
     return { goal: first, kind: "active", others: active.length - 1 };
   }
-  const since = addDays(today, -SETTLED_SHOWN_DAYS);
+  // today and the 6 days before it: 7 days of the store's calendar
+  const since = addDays(today, 1 - SETTLED_SHOWN_DAYS);
   const recent = settled.find(
     (goal) =>
       (goal.status === "completed" || goal.status === "missed") &&

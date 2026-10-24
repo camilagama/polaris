@@ -303,25 +303,60 @@ async function run() {
         return writes === 0 ? [] : [[table, writes] as const];
       });
 
-    /** Measures one opening; waits until the reads themselves show in the statistics, so they were flushed. */
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+    const sameStats = (one: Stats, other: Stats) =>
+      one.size === other.size &&
+      [...one].every(
+        ([table, now]) =>
+          other.get(table)?.writes === now.writes &&
+          other.get(table)?.scans === now.scans
+      );
+
+    /**
+     * The statistics after an opening, once they are all in: the opening's backend is gone from `pg_stat_activity`
+     * (it flushes on exit), its reads show (the scans of `sales` went up: a measurement that saw nothing fails here
+     * instead of passing with zero writes), and two readings in a row agree (no table of it still arriving).
+     */
+    const statsAfterOpening = async (before: Stats) => {
+      let backends = 1;
+      for (let tries = 0; tries < 50; tries += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: polling until the opening's backend has exited
+        const result = await admin.pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM pg_stat_activity WHERE usename = $1",
+          [loginRole]
+        );
+        backends = Number(result.rows[0]?.count ?? 1);
+        if (backends === 0) {
+          break;
+        }
+        await sleep(200);
+      }
+      assert.equal(backends, 0, "the opening's backend exited");
+      let now = await statsWhen(
+        (read) => scansOf(read, "sales") > scansOf(before, "sales")
+      );
+      assert.ok(
+        scansOf(now, "sales") > scansOf(before, "sales"),
+        "the reads of the opening show in pg_stat_user_tables (the statistics were flushed)"
+      );
+      for (let tries = 0; tries < 20; tries += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: polling until two readings agree
+        await sleep(300);
+        const next = await stats();
+        if (sameStats(next, now)) {
+          return next;
+        }
+        now = next;
+      }
+      assert.fail("the statistics settled after the opening");
+    };
+
+    /** Measures one opening: the tables it wrote, once every statistic of it arrived. */
     const measure = async () => {
       const before = await stats();
       const read = await openHome();
-      let after = await stats();
-      for (
-        let tries = 0;
-        tries < 50 &&
-        (after.get("sales")?.scans ?? 0) <= (before.get("sales")?.scans ?? 0);
-        tries += 1
-      ) {
-        // biome-ignore lint/performance/noAwaitInLoops: polling the statistics until the closed backend flushed them
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        after = await stats();
-      }
-      assert.ok(
-        (after.get("sales")?.scans ?? 0) > (before.get("sales")?.scans ?? 0),
-        "the reads of the opening show in pg_stat_user_tables (the statistics were flushed)"
-      );
+      const after = await statsAfterOpening(before);
       return { read, writes: changed(before, after) };
     };
 
@@ -359,9 +394,7 @@ async function run() {
       (now) => writesOf(now, "goals") > writesOf(beforeInsert, "goals")
     );
     await openHome();
-    const afterSettle = await statsWhen(
-      (now) => writesOf(now, "goals") > writesOf(beforeSettle, "goals")
-    );
+    const afterSettle = await statsAfterOpening(beforeSettle);
     const settling = changed(beforeSettle, afterSettle);
     assert.ok(
       settling.some(([table]) => table === "goals"),
@@ -380,9 +413,7 @@ async function run() {
 
     const beforeAgain = await stats();
     await openHome();
-    const afterAgain = await statsWhen(
-      (now) => scansOf(now, "sales") > scansOf(beforeAgain, "sales")
-    );
+    const afterAgain = await statsAfterOpening(beforeAgain);
     assert.deepEqual(
       changed(beforeAgain, afterAgain),
       [],
@@ -392,6 +423,8 @@ async function run() {
       "with a goal whose period ended, the opening writes only its settling (the goal and its audit event, the write goal.list already makes), and the next opening writes nothing"
     );
 
+    // the setup check and the two measurements ran: a gate that skipped one never prints "passed"
+    assert.equal(tests.length, 3, "every check of the gate ran");
     console.log(
       JSON.stringify(
         {

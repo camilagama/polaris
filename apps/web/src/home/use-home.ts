@@ -1,10 +1,9 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
+import { isSessionOver } from "../offline/runtime/session-ended";
 import {
-  clearPeriodSummaryCaches,
   isPeriodSummary,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
@@ -111,17 +110,13 @@ async function readSummary(
 async function readFigures(
   organizationId: string,
   today: string
-): Promise<HomeFigures> {
+): Promise<Omit<HomeFigures, "today">> {
   const { before, month } = homePeriods(today);
   const [monthSummary, beforeSummary] = await Promise.all([
     readSummary(organizationId, month.from, month.to, 3),
     readSummary(organizationId, before.from, before.to),
   ]);
-  return {
-    before: beforeSummary,
-    month: monthSummary,
-    today: storeToday(monthSummary.generatedAt, null),
-  };
+  return { before: beforeSummary, month: monthSummary };
 }
 
 /**
@@ -172,6 +167,8 @@ async function readStock(
     productStatus: "active",
     stock: "without_stock",
   });
+  // awaited below, after C: a failure of S meanwhile is not an unhandled rejection
+  withoutStock.catch(() => undefined);
   const unknownCost = (await withUnknownCost)
     ? await orpcClient.inventory.listBalances({
         cost: "unknown",
@@ -193,7 +190,9 @@ export function useHome(
 ) {
   const reads = useMemo(() => homeReads(role), [role]);
   const [state, setState] = useState<HomeState>(LOADING);
-  const sequence = useRef(0);
+  // one ticket for the figures and what hangs on them (checklist, stock), one for the goals: a retry of one block
+  // makes the answers of that block still on the way stale, never the other's
+  const sequence = useRef({ goals: 0, numbers: 0 });
   const lastReadAt = useRef(0);
   // the server's clock minus the device's, from the last answer: the turn of the day follows the server
   const skew = useRef(0);
@@ -204,18 +203,24 @@ export function useHome(
     <K extends "checklist" | "figures" | "goals" | "stock">(
       ticket: number,
       key: K,
-      outcome: { block: HomeState[K] } | { error: unknown }
+      outcome: { block: HomeState[K] } | { error: unknown },
+      keep = false
     ) => {
-      if (ticket !== sequence.current) {
+      if (ticket !== sequence.current[key === "goals" ? "goals" : "numbers"]) {
         return;
       }
+      // the copies go with the 401 in `orpc.ts` (`endSessionHere`); the missing acceptance keeps them
       if ("error" in outcome && refusesSession(outcome.error)) {
-        clearPeriodSummaryCaches(browserStorage());
         setState((now) => ({ ...now, sessionRefused: true }));
         return;
       }
       const block = "block" in outcome ? outcome.block : failed(outcome.error);
-      setState((now) => ({ ...now, [key]: block }));
+      // a refresh that fails leaves the figures read before on the screen: they are still the last confirmed ones
+      setState((now) =>
+        "error" in outcome && keep && now[key].status === "ready"
+          ? now
+          : { ...now, [key]: block }
+      );
     },
     []
   );
@@ -242,7 +247,7 @@ export function useHome(
           figures = await readFigures(organizationId, today);
         }
         const ready = { ...figures, today };
-        if (ticket === sequence.current) {
+        if (ticket === sequence.current.numbers) {
           setMidnightAt(
             Date.now() +
               msUntilNextMidnight(Date.now() + skew.current, timezone)
@@ -251,7 +256,7 @@ export function useHome(
         settle(ticket, "figures", { block: { data: ready, status: "ready" } });
         return ready;
       } catch (error) {
-        settle(ticket, "figures", { error });
+        settle(ticket, "figures", { error }, keep);
         return null;
       }
     },
@@ -302,14 +307,18 @@ export function useHome(
         });
         settle(ticket, "goals", { block: { data: goals, status: "ready" } });
       } catch (error) {
-        settle(ticket, "goals", { error });
+        settle(ticket, "goals", { error }, keep);
       }
     },
     [organizationId, reads.goals, settle]
   );
 
   const loadStock = useCallback(
-    async (ticket: number, figures: Promise<HomeFigures | null>) => {
+    async (
+      ticket: number,
+      figures: Promise<HomeFigures | null>,
+      keep: boolean
+    ) => {
       if (!reads.inventory) {
         settle(ticket, "stock", { block: { status: "hidden" } });
         return;
@@ -325,7 +334,7 @@ export function useHome(
         );
         settle(ticket, "stock", { block: { data, status: "ready" } });
       } catch (error) {
-        settle(ticket, "stock", { error });
+        settle(ticket, "stock", { error }, keep);
       }
     },
     [organizationId, reads.inventory, reads.unknownCost, settle]
@@ -341,25 +350,48 @@ export function useHome(
     [loadChecklist, loadFigures]
   );
 
+  /** The figures and what hangs on them (the checklist, and the stock, which waits for them only to decide on C). */
+  const loadNumbersAndStock = useCallback(
+    (keep: boolean) => {
+      sequence.current.numbers += 1;
+      const ticket = sequence.current.numbers;
+      const { checklist, figures } = loadNumbers(ticket, keep);
+      checklist.catch(() => undefined);
+      loadStock(ticket, figures, keep).catch(() => undefined);
+    },
+    [loadNumbers, loadStock]
+  );
+  const loadGoalsAgain = useCallback(
+    (keep: boolean) => {
+      sequence.current.goals += 1;
+      loadGoals(sequence.current.goals, keep).catch(() => undefined);
+    },
+    [loadGoals]
+  );
+
   /** Reads every block; `keep` leaves what is on screen while the new answer comes (a refresh, not an opening). */
   const loadAll = useCallback(
     (keep: boolean) => {
-      sequence.current += 1;
-      const ticket = sequence.current;
       lastReadAt.current = Date.now();
       setState((now) => ({ ...now, sessionRefused: false }));
-      const { checklist, figures } = loadNumbers(ticket, keep);
-      checklist.catch(() => undefined);
-      loadGoals(ticket, keep).catch(() => undefined);
-      loadStock(ticket, figures).catch(() => undefined);
+      loadNumbersAndStock(keep);
+      loadGoalsAgain(keep);
     },
-    [loadGoals, loadNumbers, loadStock]
+    [loadGoalsAgain, loadNumbersAndStock]
   );
+  /** A refresh, unless the session already ended here: its notice is on the screen, and every read would be a 401. */
+  const refresh = useCallback(() => {
+    if (!isSessionOver()) {
+      loadAll(true);
+    }
+  }, [loadAll]);
 
   useEffect(() => {
+    const tickets = sequence.current;
     loadAll(false);
     return () => {
-      sequence.current += 1;
+      tickets.goals += 1;
+      tickets.numbers += 1;
     };
   }, [loadAll]);
 
@@ -370,12 +402,12 @@ export function useHome(
         document.visibilityState === "visible" &&
         shouldRefreshOnReturn(lastReadAt.current, Date.now())
       ) {
-        loadAll(true);
+        refresh();
       }
     };
     const restored = (event: PageTransitionEvent) => {
       if (event.persisted) {
-        loadAll(true);
+        refresh();
       }
     };
     document.addEventListener("visibilitychange", again);
@@ -386,7 +418,7 @@ export function useHome(
       window.removeEventListener("focus", again);
       window.removeEventListener("pageshow", restored);
     };
-  }, [loadAll]);
+  }, [refresh]);
 
   // the next midnight of the store: the day (and, on the 1st, the month) of every block changes
   useEffect(() => {
@@ -394,17 +426,17 @@ export function useHome(
       return;
     }
     const timer = window.setTimeout(
-      () => loadAll(true),
+      refresh,
       Math.max(0, midnightAt - Date.now())
     );
     return () => window.clearTimeout(timer);
-  }, [loadAll, midnightAt]);
+  }, [refresh, midnightAt]);
 
-  const retryFigures = useCallback(() => {
-    loadNumbers(sequence.current, false).checklist.catch(() => undefined);
-  }, [loadNumbers]);
-  const retryGoals = useCallback(() => {
-    loadGoals(sequence.current, false).catch(() => undefined);
-  }, [loadGoals]);
+  // "Tentar novamente" of the figures reads the stock again too: the line of the unknown cost waits for them
+  const retryFigures = useCallback(
+    () => loadNumbersAndStock(false),
+    [loadNumbersAndStock]
+  );
+  const retryGoals = useCallback(() => loadGoalsAgain(false), [loadGoalsAgain]);
   return { reads, retryFigures, retryGoals, state };
 }

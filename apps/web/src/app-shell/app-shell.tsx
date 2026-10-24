@@ -236,7 +236,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
           <LogoutControl onAttention={showLogoutAttention} />
           {isMobile ? null : (
             // with touch, the 48 px areas of "Sair" and of the links would meet: 12 px more between them
-            <LegalLinks className="gap-x-4 gap-y-1 text-muted-foreground text-xs touch:mt-3" />
+            <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs" />
           )}
         </div>
       </SidebarFooter>

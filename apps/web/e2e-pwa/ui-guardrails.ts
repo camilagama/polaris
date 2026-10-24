@@ -87,49 +87,43 @@ function isShown(element: Element) {
   );
 }
 
-/** In page: the 1 × 1 px of `sr-only`, as the skip link "Ir para o conteúdo" until it has the focus: not a target. */
+/**
+ * In page: hidden the way `sr-only` hides (absolute, 1 × 1 px, overflow hidden), as the skip link "Ir para o
+ * conteúdo" until it has the focus: not a target. A control that merely collapsed to 1 px is still measured.
+ */
 function isVisuallyHidden(element: Element) {
   const box = element.getBoundingClientRect();
-  return box.width <= 1 && box.height <= 1;
+  const style = getComputedStyle(element);
+  return (
+    box.width <= 1 &&
+    box.height <= 1 &&
+    style.position === "absolute" &&
+    style.overflow === "hidden"
+  );
 }
 
 /**
- * In page: the part of the page where a control can be touched, cut by every ancestor that scrolls or clips (the
- * list of a sidebar taller than the window scrolls under its foot: what is scrolled away is touched only after it
- * is scrolled back, and then the foot is not over it). Null when nothing of it is left: scrolled away, or visually
- * hidden (`isVisuallyHidden`).
+ * In page: the ancestors that cut what can be touched of a control (they scroll or clip), up to the first fixed
+ * layer (a fixed element escapes the clip of what is above it), each with its box.
  */
-function visibleClip(element: Element) {
-  const box = element.getBoundingClientRect();
-  if (isVisuallyHidden(element)) {
-    return null;
-  }
-  // the page itself scrolls: what is below the fold is measured, only an inner scroll cuts
-  const clip = {
-    bottom: Number.POSITIVE_INFINITY,
-    left: Number.NEGATIVE_INFINITY,
-    right: Number.POSITIVE_INFINITY,
-    top: Number.NEGATIVE_INFINITY,
-  };
+function clippingOwners(element: Element) {
+  const owners: Array<{ box: DOMRect; owner: Element }> = [];
   for (
-    let owner = element.parentElement;
-    owner && owner !== document.body;
-    owner = owner.parentElement
+    let node: Element | null = element;
+    node && node !== document.body;
+    node = node.parentElement
   ) {
-    const style = getComputedStyle(owner);
-    if (`${style.overflowX} ${style.overflowY}`.trim() === "visible visible") {
-      continue;
+    if (node !== element) {
+      const style = getComputedStyle(node);
+      if (`${style.overflowX} ${style.overflowY}` !== "visible visible") {
+        owners.push({ box: node.getBoundingClientRect(), owner: node });
+      }
     }
-    const rect = owner.getBoundingClientRect();
-    clip.top = Math.max(clip.top, rect.top);
-    clip.left = Math.max(clip.left, rect.left);
-    clip.bottom = Math.min(clip.bottom, rect.bottom);
-    clip.right = Math.min(clip.right, rect.right);
+    if (getComputedStyle(node).position === "fixed") {
+      break;
+    }
   }
-  const across =
-    Math.min(clip.right, box.right) - Math.max(clip.left, box.left);
-  const down = Math.min(clip.bottom, box.bottom) - Math.max(clip.top, box.top);
-  return across > 1 && down > 1 ? clip : null;
+  return owners;
 }
 
 /** In page: the closest ancestor (or the element) with `position: fixed`, or null for what scrolls with the page. */
@@ -163,7 +157,7 @@ const HELPERS = [
   labelOf,
   isShown,
   isVisuallyHidden,
-  visibleClip,
+  clippingOwners,
   fixedLayerOf,
   touchAreaOf,
   isInlineLink,
@@ -459,47 +453,79 @@ function touchTooSmall(
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]
-    .filter(isShown)
-    .flatMap((element) => {
-      const clip = visibleClip(element);
-      if (clip === null) {
-        return [];
+    .filter((element) => isShown(element) && !isVisuallyHidden(element))
+    .map((element) => ({
+      area: touchAreaOf(element),
+      element,
+      layer: fixedLayerOf(element),
+      owners: clippingOwners(element),
+    }));
+  type Control = (typeof controls)[number];
+  type Area = Control["area"];
+  /**
+   * The area of a control a tap can reach beside the other one: cut by the ancestors that scroll or clip it and do
+   * not hold the other (two items of one list that scrolls are compared whole, scrolled away or not; an item of the
+   * sidebar's list scrolled under its foot is only what shows above the foot). Null when nothing is left.
+   */
+  const reachable = (control: Control, other: Control): Area | null => {
+    const cut = { ...control.area };
+    for (const { box, owner } of control.owners) {
+      if (owner.contains(other.element)) {
+        break;
       }
-      // the touch area is cut where its scrolling ancestor cuts it: a tap there lands on what is over it
-      const area = touchAreaOf(element);
-      return [
-        {
-          area: {
-            bottom: Math.min(area.bottom, clip.bottom),
-            left: Math.max(area.left, clip.left),
-            right: Math.min(area.right, clip.right),
-            top: Math.max(area.top, clip.top),
-          },
-          element,
-        },
-      ];
+      cut.top = Math.max(cut.top, box.top);
+      cut.left = Math.max(cut.left, box.left);
+      cut.bottom = Math.min(cut.bottom, box.bottom);
+      cut.right = Math.min(cut.right, box.right);
+    }
+    return cut.right - cut.left > 1 && cut.bottom - cut.top > 1 ? cut : null;
+  };
+  const overlap = (one: Area, other: Area, shift: number) => ({
+    across: Math.min(one.right, other.right) - Math.max(one.left, other.left),
+    down:
+      Math.min(one.bottom + shift, other.bottom) -
+      Math.max(one.top + shift, other.top),
+  });
+  // how far the page can scroll from where it is: up to its end, back to its top
+  const scrolling = document.scrollingElement ?? document.documentElement;
+  const toEnd = Math.max(
+    0,
+    scrolling.scrollHeight - window.innerHeight - window.scrollY
+  );
+  const toTop = window.scrollY;
+  /** One control fused with the other (a button group, an input group) or inside it (a link in a clickable card). */
+  const joined = (first: Control, second: Control) =>
+    first.element.contains(second.element) ||
+    second.element.contains(first.element) ||
+    ["button-group", "input-group"].some((slot) => {
+      const group = first.element.closest(`[data-slot=${slot}]`);
+      return group && group === second.element.closest(`[data-slot=${slot}]`);
     });
+  /** How much the two areas overlap, across and down; zero or less is apart. */
+  const pairOverlap = (first: Control, second: Control) => {
+    const one = reachable(first, second);
+    const other = reachable(second, first);
+    if (joined(first, second) || one === null || other === null) {
+      return { across: 0, down: 0 };
+    }
+    if ((first.layer === null) === (second.layer === null)) {
+      return overlap(one, other, 0);
+    }
+    // a fixed bar (the bottom bar of the phone) over a control of the page that scrolls under it: a fault only when
+    // no scrolling takes them apart (a short page whose last control stays under the bar)
+    const [page, bar] = first.layer === null ? [one, other] : [other, one];
+    const atEnd = overlap(page, bar, -toEnd);
+    const atTop = overlap(page, bar, toTop);
+    return {
+      across: Math.min(atEnd.across, atTop.across),
+      down: Math.min(atEnd.down, atTop.down),
+    };
+  };
   const found: string[] = [];
   for (const [index, first] of controls.entries()) {
     for (const second of controls.slice(index + 1)) {
-      const fused = ["button-group", "input-group"].some((slot) => {
-        const group = first.element.closest(`[data-slot=${slot}]`);
-        return group && group === second.element.closest(`[data-slot=${slot}]`);
-      });
-      const nested =
-        first.element.contains(second.element) ||
-        second.element.contains(first.element);
-      // a fixed bar (the bottom bar of the phone) is over the page that scrolls under it: the padding of the page
-      // (`--app-bottom-bar`) is what keeps them apart, not where they happen to be with the page at the top
-      const layered =
-        fixedLayerOf(first.element) !== fixedLayerOf(second.element);
-      const across =
-        Math.min(first.area.right, second.area.right) -
-        Math.max(first.area.left, second.area.left);
-      const down =
-        Math.min(first.area.bottom, second.area.bottom) -
-        Math.max(first.area.top, second.area.top);
-      if (!(fused || nested || layered) && across > 1 && down > 1) {
+      const { across, down } = pairOverlap(first, second);
+      if (across > 1 && down > 1) {
         found.push(
           `a área de toque de ${labelOf(first.element)} se sobrepõe à de ${labelOf(second.element)} (${Math.round(across)} × ${Math.round(down)} px)`
         );

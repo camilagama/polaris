@@ -29,6 +29,10 @@ export function AttentionBlock({
     withoutStock: read?.withoutStock ?? null,
   });
   const loading = stock.status === "loading";
+  // without the stock's reads (a role that does not read it) nothing was checked: no "Nada precisa de atenção"
+  if (lines.length === 0 && stock.status === "hidden") {
+    return null;
+  }
   return (
     <HomeBlock id="home-attention" title="Precisa de atenção">
       {lines.length > 0 ? (

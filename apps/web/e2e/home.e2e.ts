@@ -33,6 +33,7 @@ const NOON = Date.parse("2026-10-23T15:00:00.000Z");
 const PRODUCT = "0199c2d0-0000-7000-8000-0000000000b1";
 const DELETED = "0199c2d0-0000-7000-8000-0000000000b2";
 const SALES_PATH = /\/sales$/;
+const DASHBOARD_PATH = /\/dashboard$/;
 const SHIRT = /Camiseta básica/;
 const PRODUCT_LINK =
   /\/products\?produto=0199c2d0-0000-7000-8000-0000000000b1$/;
@@ -505,7 +506,7 @@ test.describe("loja com venda", () => {
     await expect(chart).toContainText("Melhor dia: 18/10, R$ 1.840,00");
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total; Melhor dia: 18/10, R$ 1.840,00"
+      "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total"
     );
     await chart.getByRole("button", { name: "Ver os números" }).click();
     await expect(chart.getByRole("row")).toHaveCount(8);
@@ -751,8 +752,9 @@ test.describe("meta (AC-10, AC-11)", () => {
     await region(page, "Meta")
       .getByRole("link", { name: "Definir meta" })
       .click();
-    await page.waitForURL("**/dashboard?meta=nova");
     await expect(page.getByLabel("Indicador")).toBeFocused();
+    // the link did its work: a reload is the screen as it is, not the form again
+    await expect(page).toHaveURL(DASHBOARD_PATH);
   });
 });
 
@@ -897,5 +899,32 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     };
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(region(page, "Hoje")).toContainText("R$ 420,10");
+  });
+
+  test("uma releitura que falha deixa na tela os números já lidos", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    const before = periodCalls(server).length;
+    server.broken.set("report/periodSummary", "500");
+    await page.clock.runFor(31_000);
+    const failedRead = page.waitForResponse(
+      (response) =>
+        response.url().includes("/rpc/report/periodSummary") &&
+        response.status() === 500
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await failedRead;
+    expect(periodCalls(server).length).toBeGreaterThan(before);
+    // the answer was handled: the next frame has it
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(resolve))
+    );
+    await expect(region(page, "Hoje")).toContainText("R$ 320,10");
+    await expect(
+      page.getByText("Não foi possível carregar os números da loja.")
+    ).toHaveCount(0);
   });
 });
