@@ -16,11 +16,16 @@ const deviceSessionOwnerRole = "polaris_device_session_owner";
 const unverifiedUserOwnerRole = "polaris_unverified_user_owner";
 /** Owns `create_initial_organization()` (0095): only the user of the call, by `app.owner_scope.*`, to lock it. */
 const onboardingOwnerRole = "polaris_onboarding_owner";
-/** Owns the two functions of the closure notices (0091): only the user of the notice of the call (0098). */
+/**
+ * Owns the two functions of the closure notices (0091) and `billing_notice_recipient` (0101): only the user of the
+ * notice of the call (0098, 0101).
+ */
 const noticeRecipientOwnerRole = "polaris_notice_recipient_owner";
 const deviceSessionUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.device_session_user_id', true), '')`;
 const onboardingUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.onboarding_user_id', true), '')`;
 const noticeRecipientNoticeScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.notice_recipient_notice_id', true), '')`;
+// the setting as a uuid only when it is one (a malformed setting is false, never an error), compared by the primary key
+const billingNoticeRecipientScope = sql`(CASE WHEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true)::uuid END)`;
 /** The same predicate as the candidates of `purge_unverified_users()`: the owner never sees a verified user's rows. */
 const ofUnverifiedUser = (userId: unknown) =>
   sql`EXISTS (SELECT 1 FROM public."user" AS u WHERE u.id = ${userId} AND NOT u.email_verified)`;
@@ -92,6 +97,13 @@ export const user = pgTable(
       for: "select",
       to: noticeRecipientOwnerRole,
       using: sql`EXISTS (SELECT 1 FROM public.closure_notices AS n WHERE n.id::text = ${noticeRecipientNoticeScope} AND n.user_id = ${table.id})`,
+    }),
+    // the billing notice of the call (0101), by its ID (the function writes it from its uuid argument), while it is owed:
+    // the welcome's person, or an active owner of the notice's store for a notice of the billing cycle
+    pgPolicy("user_notice_recipient_owner_select_billing", {
+      for: "select",
+      to: noticeRecipientOwnerRole,
+      using: sql`EXISTS (SELECT 1 FROM public.billing_notices AS n WHERE n.id = ${billingNoticeRecipientScope} AND (n.user_id = ${table.id} OR (n.user_id IS NULL AND EXISTS (SELECT 1 FROM public.memberships AS m WHERE m.organization_id = n.organization_id AND m.user_id = ${table.id} AND m.role = 'owner' AND m.status = 'active'))))`,
     }),
   ]
 ).enableRLS();

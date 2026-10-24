@@ -8,6 +8,7 @@ import {
   type BillingSweepReport,
   REFUND_REARM_BATCH,
   type RefundRearmReport,
+  type WelcomeNoticeReport,
 } from "@polaris/db/billing-store";
 import { HANDLED_BILLING_PROVIDERS } from "@polaris/domain/billing/renewal-cancellation";
 import { logger, opaqueId } from "@polaris/observability/logger";
@@ -255,4 +256,26 @@ export async function runRefundSafetyNet(
     throw new Error("billing_refund_safety_net_incomplete");
   }
   return report;
+}
+
+/** The welcome's own switch (ADR 0104, decision 6): only the text `true` turns it on; off by default. */
+export function welcomeEmailEnabled(value: string | undefined): boolean {
+  return value === "true";
+}
+
+/**
+ * The hourly sweep of the welcome (E1, ADR 0104, decision 6): with `WELCOME_EMAIL_ENABLED` on, the welcome of the
+ * oldest owner of each store created in the last 24 hours that has none, with its outbox event; off, nothing is
+ * written (null), so turning it on later sends no late welcome. The e-mail itself is the consumer's (PR G): turn the
+ * switch on only with it deployed.
+ */
+export async function runWelcomeNoticeSweep(
+  bindings: { WELCOME_EMAIL_ENABLED?: string },
+  store: Pick<BillingStore, "recordWelcomeNotices">,
+  now: Date = new Date()
+): Promise<WelcomeNoticeReport | null> {
+  if (!welcomeEmailEnabled(bindings.WELCOME_EMAIL_ENABLED)) {
+    return null;
+  }
+  return await store.recordWelcomeNotices(now);
 }

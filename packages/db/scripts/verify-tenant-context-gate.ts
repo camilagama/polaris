@@ -414,7 +414,7 @@ async function main() {
       "SELECT tablename AS table_name, policyname AS policy_name, cmd AS command, " +
         "roles, qual AS using_expression, with_check " +
         "FROM pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_privacy_owner}', '{polaris_purge_owner}', '{polaris_retention_owner}', '{polaris_closed_export_reader}', '{polaris_notice_recipient_owner}', '{polaris_unverified_user_owner}', '{polaris_authorization_epoch_owner}', '{polaris_onboarding_owner}', '{polaris_billing_audit_owner}') ORDER BY tablename, policyname",
+        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_privacy_owner}', '{polaris_purge_owner}', '{polaris_retention_owner}', '{polaris_closed_export_reader}', '{polaris_notice_recipient_owner}', '{polaris_unverified_user_owner}', '{polaris_authorization_epoch_owner}', '{polaris_onboarding_owner}', '{polaris_billing_audit_owner}', '{polaris_billing_owner}') ORDER BY tablename, policyname",
       [["memberships", "organizations", "tenant_audit_event"]]
     );
     assert.deepEqual(

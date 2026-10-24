@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   runPrivacyMaintenance: vi.fn(),
   runRefundSafetyNet: vi.fn(),
   runUnclaimedTrialSettlement: vi.fn(),
+  runWelcomeNoticeSweep: vi.fn(),
   runWooviReconciliation: vi.fn(),
   unverifiedUserClose: vi.fn(),
   unverifiedUserPurge: vi.fn(),
@@ -100,6 +101,7 @@ vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runRefundSafetyNet: mocks.runRefundSafetyNet,
   runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
+  runWelcomeNoticeSweep: mocks.runWelcomeNoticeSweep,
   runWooviReconciliation: mocks.runWooviReconciliation,
 }));
 vi.mock("../src/server/billing/renewal-cancellation", () => ({
@@ -154,6 +156,7 @@ describe("the scheduled maintenance", () => {
     mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
     mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     mocks.runWooviReconciliation.mockResolvedValue(null);
+    mocks.runWelcomeNoticeSweep.mockResolvedValue(null);
     mocks.rearmRenewalCancellations.mockResolvedValue({
       inserted: 0,
       rearmed: 0,
@@ -359,6 +362,21 @@ describe("the scheduled maintenance", () => {
     );
     expect(mocks.runRefundSafetyNet).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ close: mocks.billingClose })
+    );
+    expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the welcome's sweep on the billing connection with the bindings, and a failure makes the run incomplete without stopping the rest (ADR 0104)", async () => {
+    mocks.runWelcomeNoticeSweep.mockRejectedValue(new Error("welcome_failed"));
+
+    await expect(
+      runScheduled({ ...configured, WELCOME_EMAIL_ENABLED: "true" })
+    ).rejects.toThrow("welcome_failed");
+    expect(mocks.runWelcomeNoticeSweep).toHaveBeenCalledWith(
+      expect.objectContaining({ WELCOME_EMAIL_ENABLED: "true" }),
       expect.objectContaining({ close: mocks.billingClose })
     );
     expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);

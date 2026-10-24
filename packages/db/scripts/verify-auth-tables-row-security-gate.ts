@@ -81,6 +81,8 @@ const OWNER_ONLY_TYPES = ["device_revoked", "unverified_user_deleted"];
 const DEVICE_SCOPE = "app.owner_scope.device_session_user_id";
 const ONBOARDING_SCOPE = "app.owner_scope.onboarding_user_id";
 const NOTICE_SCOPE = "app.owner_scope.notice_recipient_notice_id";
+const BILLING_NOTICE_SCOPE =
+  "app.owner_scope.billing_notice_recipient_notice_id";
 const ofUnverified = (table: string) =>
   `(EXISTS ( SELECT 1\n   FROM "user" u\n  WHERE ((u.id = ${table}.user_id) AND (NOT u.email_verified))))`;
 const deviceScope = `NULLIF(current_setting('${DEVICE_SCOPE}'::text, true), ''::text)`;
@@ -177,6 +179,13 @@ const EXPECTED_POLICIES: PolicyRow[] = [
     "SELECT",
     NOTICE_OWNER,
     `(EXISTS ( SELECT 1\n   FROM closure_notices n\n  WHERE (((n.id)::text = NULLIF(current_setting('${NOTICE_SCOPE}'::text, true), ''::text)) AND (n.user_id = "user".id))))`
+  ),
+  // the billing notice of the call (0101): the welcome's person, or an active owner of the store of a notice of the cycle
+  policy(
+    "user.user_notice_recipient_owner_select_billing",
+    "SELECT",
+    NOTICE_OWNER,
+    `(EXISTS ( SELECT 1\n   FROM billing_notices n\n  WHERE ((n.id =\n        CASE\n            WHEN (current_setting('${BILLING_NOTICE_SCOPE}'::text, true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) THEN (current_setting('${BILLING_NOTICE_SCOPE}'::text, true))::uuid\n            ELSE NULL::uuid\n        END) AND ((n.user_id = "user".id) OR ((n.user_id IS NULL) AND (EXISTS ( SELECT 1\n           FROM memberships m\n          WHERE ((m.organization_id = n.organization_id) AND (m.user_id = "user".id) AND (m.role = 'owner'::text) AND (m.status = 'active'::text)))))))))`
   ),
   policy(
     "user.user_onboarding_owner_lock",

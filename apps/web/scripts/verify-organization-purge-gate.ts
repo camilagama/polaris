@@ -500,6 +500,49 @@ function hasBothAuditClasses(rows: { event_class: string }[]) {
   return classes.has("security") && classes.has("operational");
 }
 
+/**
+ * The person whose store was purged opens another and gets a new welcome (ADR 0104, item 7, the effect accepted): the
+ * welcome left with the store, so the billing role records one again for the same person in the new store; a person who
+ * keeps a store keeps the one welcome.
+ */
+async function expectWelcomeAgainAfterPurge(context: {
+  billingUrl: string;
+  owner: { query: (text: string, values?: unknown[]) => Promise<unknown> };
+  purgedOwner: string;
+  witnessOwner: string;
+}): Promise<void> {
+  const reopened = randomUUID();
+  await context.owner.query(
+    "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, 'Loja reaberta', 'America/Sao_Paulo')",
+    [reopened]
+  );
+  await context.owner.query(
+    "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
+    [reopened, context.purgedOwner]
+  );
+  const billing = createDatabase(context.billingUrl, { maxConnections: 1 });
+  try {
+    const welcomeOf = (userId: string) =>
+      billing.pool.query(
+        `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id)
+         VALUES ($1, 'welcome', $2, now(), $2) ON CONFLICT DO NOTHING RETURNING id`,
+        [reopened, userId]
+      );
+    assert.equal(
+      (await welcomeOf(context.witnessOwner)).rowCount,
+      0,
+      "one welcome per person: the witness's owner keeps the one of its store"
+    );
+    assert.equal(
+      (await welcomeOf(context.purgedOwner)).rowCount,
+      1,
+      "the person of the purged store is welcomed again in the new one"
+    );
+  } finally {
+    await billing.pool.end();
+  }
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -903,6 +946,12 @@ async function run() {
         `INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at)
          VALUES ($1, 'variants.active.max', 3000, $2, 'admin:gate', now() - interval '1 day', now() + interval '2 days')`,
         [tenant.organizationId, `${GRANT_REASON} ${suffix}`]
+      );
+      // a notice of the billing cycle and the owner's welcome (ADR 0104, 0101): the purge takes both with the store
+      await owner.pool.query(
+        `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id)
+         VALUES ($1, 'charge_receipt', $2, now(), NULL), ($1, 'welcome', $3, now(), $3)`,
+        [tenant.organizationId, randomUUID(), tenant.userId]
       );
       // the owner's trial was used here (the trial per person, ADR 0101)
       await owner.pool.query(
@@ -1760,6 +1809,7 @@ async function run() {
       "event_outbox",
       "queue_processing",
       "queue_dead_letters",
+      "billing_notices",
     ]) {
       assert.ok(
         (targetBefore[table] ?? 0) > 0,
@@ -2257,6 +2307,19 @@ async function run() {
     assert.deepEqual(await auditRows(witness), witnessAuditBefore);
     tests.push(
       "every row of the tenant is gone, from sales and stock movements to the memberships, but not its audit (every row of both classes stays, immutable); the witness is untouched"
+    );
+
+    await expectWelcomeAgainAfterPurge({
+      billingUrl: await login(
+        "polaris_billing_runtime",
+        "polaris_purge_billing"
+      ),
+      owner: owner.pool,
+      purgedOwner: target.userId,
+      witnessOwner: witness.userId,
+    });
+    tests.push(
+      "the purge takes the store's notices of the billing cycle and its owner's welcome; the same person opens another store and gets a new welcome recorded, while a person who keeps a store keeps the one welcome"
     );
 
     const tombstoneRow = await owner.pool.query<{

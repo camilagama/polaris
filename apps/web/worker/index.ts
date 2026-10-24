@@ -17,6 +17,7 @@ import {
 import {
   runBillingMaintenance,
   runRefundSafetyNet,
+  runWelcomeNoticeSweep,
   runUnclaimedTrialSettlement,
   runWooviReconciliation,
 } from "../src/server/billing/maintenance";
@@ -143,7 +144,7 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * Applies the events that were received but not processed, then what time itself
  * causes, asks again for the renewal cancellations still owed, cancels the renewal
  * a refund or a chargeback left alive (and flags the owner's refunds still
- * pending, ADR 0104), reads Woovi's
+ * pending, ADR 0104), records the welcome of the new stores (with its switch on), reads Woovi's
  * subscriptions again (the reconciliation), then settles the trials no
  * reservation paid for (ADR 0101).
  */
@@ -186,6 +187,15 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
       providersNotConfigured: net.providersNotConfigured,
       rearm: { ...net.rearm },
     });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    // the welcome of the stores of the last 24 hours (ADR 0104, decision 6), only with its own switch on
+    const welcome = await runWelcomeNoticeSweep(env, store);
+    if (welcome) {
+      logger.info("billing_welcome_notices_complete", { ...welcome });
+    }
   } catch (error: unknown) {
     failures.push(error);
   }
