@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -148,6 +148,20 @@ function namesByRelativePath(text, target) {
   return new RegExp(`(?:\\.\\./)+${escaped}`).test(text);
 }
 
+/** Where the browser gate's own code lives: the specs it runs, the client it builds and serves, the shared packages. */
+const GATE_SURFACE = [
+  /^apps\/web\/(e2e|e2e-pwa|pwa|poc|public|src)\//,
+  /^apps\/web\/(playwright|vite)[^/]*\.[cm]?ts$/,
+  /^apps\/catalog\/(e2e|src)\//,
+  /^apps\/catalog\/(playwright|vite)[^/]*\.[cm]?ts$/,
+  /^packages\/(?!db\/)/,
+];
+
+/** Files that name `target` by its bare file name (`spawn("scripts/x.mjs")`, `join(root, ".github/workflows", "x.yml")`). */
+function namesByBareName(text, target) {
+  return text.includes(path.basename(target));
+}
+
 /** Every file of apps/web (Playwright configs included), apps/catalog and packages/ that reaches a file of `targets`. */
 function operationsDependents(targets) {
   const hits = [];
@@ -171,14 +185,19 @@ function operationsDependents(targets) {
       }
     }
     for (const file of files) {
+      const relative = path.relative(root, file);
       const text = readFileSync(file, "utf8");
       const specifiers = SOURCE_FILE.test(file) ? importSpecifiers(text) : [];
+      const onSurface =
+        GATE_SURFACE.some((pattern) => pattern.test(relative)) ||
+        relative.endsWith("/package.json");
       for (const target of targets) {
         if (
           specifiers.some((specifier) => resolvesTo(file, specifier, target)) ||
-          namesByRelativePath(text, target)
+          namesByRelativePath(text, target) ||
+          (onSurface && namesByBareName(text, target))
         ) {
-          hits.push(`${path.relative(root, file)} -> ${target}`);
+          hits.push(`${relative} -> ${target}`);
         }
       }
     }
@@ -457,6 +476,12 @@ describe("the Admin app is outside the browser gate's import graph", () => {
 // skipping it for these files is only sound while none of those reaches them.
 // If this fails, take the file out of OPERATIONS_FILES instead of weakening it.
 describe("the operation scripts are outside the browser gate's import graph", () => {
+  it("lists only files that exist (a renamed script must leave the list)", () => {
+    for (const file of OPERATIONS_FILES) {
+      expect(existsSync(path.join(root, file)), file).toBe(true);
+    }
+  });
+
   it("is reached by no source, config or manifest of apps/web, apps/catalog or packages/", () => {
     expect(operationsDependents(OPERATIONS_FILES)).toEqual([]);
   });
@@ -469,6 +494,21 @@ describe("the operation scripts are outside the browser gate's import graph", ()
   });
 
   it("recognises the ways a file can name an operation script", () => {
+    expect(
+      namesByBareName(
+        'spawn("bun", ["scripts/smoke-staging.mjs"])',
+        "scripts/smoke-staging.mjs"
+      )
+    ).toBe(true);
+    expect(
+      namesByBareName(
+        'join(root, ".github/workflows", "deploy-staging.yml")',
+        ".github/workflows/deploy-staging.yml"
+      )
+    ).toBe(true);
+    expect(
+      namesByBareName("scripts/smoke.mjs", "scripts/smoke-staging.mjs")
+    ).toBe(false);
     const file = path.join(root, "apps/web/playwright.x.config.ts");
     expect(
       resolvesTo(
