@@ -161,13 +161,16 @@ export function HomePage() {
           {state.sessionRefused ? null : (
             <GoalBlock block={state.goals} onRetry={retryGoals} view={goal} />
           )}
-          <AttentionBlock
-            refused={refused}
-            soldWithoutCost={
-              figures ? figures.month.quality.itemLinesWithUnknownCost : null
-            }
-            stock={state.sessionRefused ? { status: "hidden" } : state.stock}
-          />
+          {/* with the session refused nothing about the stock is known: only this device's own line can be said */}
+          {state.sessionRefused && refused === 0 ? null : (
+            <AttentionBlock
+              refused={refused}
+              soldWithoutCost={
+                figures ? figures.month.quality.itemLinesWithUnknownCost : null
+              }
+              stock={state.sessionRefused ? { status: "hidden" } : state.stock}
+            />
+          )}
           {blocks.ranking}
         </div>
         {blocks.chart}

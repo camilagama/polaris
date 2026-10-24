@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { productionPolicy, watchCspViolations } from "../e2e/csp-fixture";
 import { PWA_ORIGIN } from "../e2e/run-settings";
+import { serveHome } from "./ui-home-states";
 
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
@@ -221,4 +222,21 @@ test("controle: a CSP servida pelo servidor bloqueia um <style> injetado e a fix
   });
   await expect.poll(() => csp.events().length).toBeGreaterThan(0);
   expect(csp.events().join(" ")).toContain("style-src");
+});
+
+test("o Início abre com o gráfico sob a CSP do _headers, sem nenhuma violação (desenho t269, correção 6)", async ({
+  page,
+}) => {
+  const csp = await watchCspViolations(page);
+  await serveHome(page, { signedIn: true });
+  const response = await page.goto("/");
+  expect(response?.headers()["content-security-policy"]).toBe(productionPolicy);
+  const chart = page.getByRole("region", { name: "Vendas por dia" });
+  await expect(chart.getByRole("img")).toBeVisible({ timeout: 20_000 });
+  await chart.getByRole("tab", { name: "30 dias" }).click();
+  await expect(chart.getByRole("img")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Hoje" }).locator("svg")
+  ).toBeVisible();
+  expect(csp.violations()).toEqual([]);
 });

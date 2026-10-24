@@ -150,6 +150,7 @@ test.describe("desktop (1280 px)", () => {
     await expect(nav).toBeVisible();
     await expect(bottomBar(page)).toBeHidden();
     await expect(nav.getByRole("link")).toHaveText([
+      "Início",
       "Vender",
       "Histórico",
       "Estoque",
@@ -273,13 +274,17 @@ test.describe("celular (360 px)", () => {
     const bar = bottomBar(page);
     await expect(bar).toBeVisible();
     await expect(sidebar(page)).toBeHidden();
+    // Início, Vender, Histórico, Estoque and Mais (desenho t269 v2, § 4): the Início at one touch, Vender too
     await expect(bar.getByRole("link")).toHaveText([
+      "Início",
       "Vender",
       "Histórico",
       "Estoque",
-      "Resultado",
     ]);
     await expect(more(page)).toBeVisible();
+    await expect(bar.locator('[aria-current="page"]')).toHaveText("Início");
+    await bar.getByRole("link", { name: "Vender" }).click();
+    await page.waitForURL("**/sales");
     await expect(bar.locator('[aria-current="page"]')).toHaveText("Vender");
     // the bar is at the bottom of the screen and nothing scrolls sideways
     const box = await bar.boundingBox();
@@ -291,15 +296,17 @@ test.describe("celular (360 px)", () => {
     ).toBe(true);
 
     await page.goto("/products");
-    // Estoque marks its area (Produtos, Categorias, Clientes) and Resultado marks Despesas; Mais does not
+    // Estoque marks its area (Produtos, Categorias, Clientes); Mais does not
     await expect(bar.locator('[aria-current="page"]')).toHaveCount(0);
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
     await expect(bar.locator("[data-bottom-mark]")).toHaveCount(1);
     await more(page).click();
     const panel = page.getByRole("dialog", { name: "Mais" });
     await expect(panel).toBeVisible();
-    // the four of the bar are not repeated in Mais
+    // the four of the bar are not repeated in Mais; Resultado is there now
     await expect(panel.getByRole("link", { name: "Vender" })).toHaveCount(0);
+    await expect(panel.getByRole("link", { name: "Início" })).toHaveCount(0);
+    await expect(panel.getByRole("link", { name: "Resultado" })).toBeVisible();
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");
     await expect(
@@ -309,14 +316,13 @@ test.describe("celular (360 px)", () => {
     await page.waitForURL("**/customers");
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
 
-    await page.goto("/expenses");
-    await expect(bar.locator('[aria-current="true"]')).toHaveText("Resultado");
-    await expect(bar.locator("[data-bottom-mark]")).toHaveCount(1);
-
-    // only a screen of no destination of the bar marks Mais
-    await page.goto("/payment-profiles");
-    await expect(bar.locator("[aria-current]")).toHaveCount(0);
-    await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
+    // a screen of no destination of the bar marks Mais: Resultado and Despesas since the Início took their place
+    for (const path of ["/dashboard", "/expenses", "/payment-profiles"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one page at a time
+      await page.goto(path);
+      await expect(bar.locator("[aria-current]")).toHaveCount(0);
+      await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
+    }
   });
 
   test("Mais abre e fecha com o teclado, e o foco volta para o botão", async ({
