@@ -213,11 +213,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
-      # --pass-with-no-tests: a shard can end up with no file of a suite; the union of the
-      # four shards is still every test of both projects
-      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4 --pass-with-no-tests
+      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4
         working-directory: apps/web
-      - run: bun run test:pwa --shard=${{ matrix.shard }}/4 --pass-with-no-tests
+      - run: bun run test:pwa --shard=${{ matrix.shard }}/4
         working-directory: apps/web
       # The public catalog under its production CSP (ADR 0090): nonce on every inline
       # script, no inline style, hydration without violations, catalog_nonce_missing.
