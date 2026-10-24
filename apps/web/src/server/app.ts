@@ -35,6 +35,7 @@ import { createClosedExportRoutes } from "./routes/closed-exports";
 import { createDataExportRoutes } from "./routes/data-exports";
 import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
+import { logLimitRefusal } from "./rpc/limit-refusal-log";
 import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 
 type BackgroundTaskRunner = (promise: Promise<unknown>) => void;
@@ -82,10 +83,11 @@ export function createServerApp({
     clientInterceptors: [
       // Expected failures (4xx) are part of the contract; only server faults are logged.
       onError((error, options) => {
+        const { requestId } = options.context as { requestId?: string };
+        logLimitRefusal(error, requestId);
         if (error instanceof ORPCError && error.status < 500) {
           return;
         }
-        const { requestId } = options.context as { requestId?: string };
         logServerError({
           error,
           method: "POST",

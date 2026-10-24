@@ -486,6 +486,9 @@ describe("createProductWithOpeningStock", () => {
       await store.run(owner, withStock);
       const again = await store.run<{ repeated: boolean }>(owner, withStock);
       expect(again.repeated).toBe(true);
+      // corte 61b, AC-6: the repeat shows the saved product and writes nothing
+      expect(store.data.products.size).toBe(1);
+      expect(store.data.movements).toHaveLength(1);
     });
 
     it("answers the plan's limit as the limit when the product is not stored", async () => {
@@ -498,6 +501,8 @@ describe("createProductWithOpeningStock", () => {
           variantId: "0199c2d0-0000-7000-8000-0000000000d2",
         })
       ).rejects.toBeInstanceOf(EntitlementLimitReachedError);
+      // corte 61b, AC-6: the refusal creates nothing
+      expect(store.data.products.size).toBe(1);
     });
 
     it("gives the conflict of today for a product ID that belongs to another store", async () => {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isProductAlreadyCreated, productErrorMessage } from "./product-errors";
+import {
+  isProductAlreadyCreated,
+  isProductLimitReached,
+  productErrorMessage,
+} from "./product-errors";
+
+/** The limit text has no unit but the variant, no Assinatura, no archiving or deleting, and no number. */
+const NOT_IN_LIMIT_TEXT = /produtos|assinatura|arquiv|exclu|\d/i;
 
 const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
@@ -30,9 +37,6 @@ describe("mensagem de erro de produto", () => {
   });
 
   it("o conflito depende do que se fazia", () => {
-    expect(productErrorMessage(refusal("CONFLICT"), "create")).toContain(
-      "categoria selecionada"
-    );
     expect(productErrorMessage(refusal("CONFLICT"), "update")).toContain(
       "categoria pode ter sido arquivada"
     );
@@ -42,6 +46,48 @@ describe("mensagem de erro de produto", () => {
     expect(productErrorMessage(refusal("CONFLICT"))).toContain(
       "mudou em outra solicitação"
     );
+  });
+
+  it("o limite de variantes do plano tem texto próprio no cadastro, sem número, sem Assinatura e sem mandar arquivar", () => {
+    const limit = refusal("CONFLICT", "entitlement_limit_reached");
+    const text = productErrorMessage(limit, "create");
+    expect(text).toBe(
+      "Seu plano chegou ao limite de variantes. Nada foi cadastrado."
+    );
+    expect(isProductLimitReached(limit)).toBe(true);
+    expect(text).not.toMatch(NOT_IN_LIMIT_TEXT);
+    // only the registration says it; the other actions keep their texts
+    expect(productErrorMessage(limit, "update")).toContain("categoria pode");
+    expect(productErrorMessage(limit, "restore")).toContain(
+      "mudou em outra solicitação"
+    );
+    // the code decides first: the same reason under another code is not the limit
+    expect(
+      isProductLimitReached(refusal("BAD_REQUEST", "entitlement_limit_reached"))
+    ).toBe(false);
+    expect(isProductLimitReached(refusal("CONFLICT"))).toBe(false);
+  });
+
+  it("o texto da categoria vale só para os motivos de categoria; conflito sem motivo conhecido recebe o texto neutro", () => {
+    for (const reason of [
+      "product_category_unavailable",
+      "category_deleted",
+      "category_lifecycle_conflict",
+    ]) {
+      expect(
+        productErrorMessage(refusal("CONFLICT", reason), "create")
+      ).toContain("categoria selecionada");
+    }
+    const neutral =
+      "Não foi possível cadastrar o produto agora. Atualize a lista e tente novamente.";
+    for (const error of [
+      refusal("CONFLICT"),
+      refusal("CONFLICT", "motivo_que_nao_existe"),
+      refusal("CONFLICT", "product_id_conflict"),
+      refusal("CONFLICT", "entitlement_denied"),
+    ]) {
+      expect(productErrorMessage(error, "create")).toBe(neutral);
+    }
   });
 
   it("o produto repetido com outros dados diz que já foi cadastrado, e não culpa a categoria", () => {
