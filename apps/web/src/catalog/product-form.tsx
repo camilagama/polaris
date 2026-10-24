@@ -190,7 +190,7 @@ export function ProductForm({
                 error={openingErrors.listPrice}
                 id="product-list-price"
                 inputMode="decimal"
-                label="Preço de venda"
+                label="Preço de tabela"
                 onChange={handleListPrice}
                 optional
                 placeholder="Ex.: 49,90"
@@ -210,8 +210,9 @@ export function ProductForm({
                 error={openingErrors.unitCost}
                 id="product-unit-cost"
                 inputMode="decimal"
-                label="Custo de cada unidade (opcional)"
+                label="Custo de cada unidade"
                 onChange={handleUnitCost}
+                optional
                 placeholder="Ex.: 12,50"
                 value={draft.unitCost}
               />

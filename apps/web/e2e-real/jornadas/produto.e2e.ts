@@ -33,9 +33,9 @@ test("produto: categoria, produto, preço e estoque de abertura num passo aparec
   await page.goto("/products");
   await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill(productName);
-  await page.getByLabel("Preço de venda").fill(price);
+  await page.getByLabel("Preço de tabela").fill(price);
   await page.getByLabel("Quantos você tem agora").fill("10");
-  await page.getByLabel("Custo de cada unidade (opcional)").fill("12,50");
+  await page.getByLabel("Custo de cada unidade").fill("12,50");
   // the category is under "Mais detalhes"
   await page.getByRole("button", { name: "Mais detalhes" }).click();
   await page.getByRole("combobox", { exact: true, name: "Categoria" }).click();

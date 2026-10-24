@@ -106,3 +106,14 @@ export function validateOpening(draft: ProductOpeningDraft): OpeningValidation {
     },
   };
 }
+
+/** " com 10 unidades" when the product opened with stock: the notice confirms what the person typed. */
+export function openingUnitsText(input: {
+  initialStock: { quantity: number } | null;
+}): string {
+  const quantity = input.initialStock?.quantity;
+  if (!quantity) {
+    return "";
+  }
+  return ` com ${formatQuantity(quantity)} ${quantity === 1 ? "unidade" : "unidades"}`;
+}

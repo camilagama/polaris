@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   COST_INVALID,
   emptyOpeningDraft,
+  openingUnitsText,
   PRICE_INVALID,
   QUANTITY_FOR_COST,
   QUANTITY_INVALID,
@@ -111,5 +112,23 @@ describe("price and opening stock of a new product", () => {
     expect(validateOpening(draft({ unitCost: "abc" })).errors).toEqual({
       unitCost: COST_INVALID,
     });
+  });
+});
+
+describe("the stock in the notice of a new product", () => {
+  it("says how many units the product opened with, in the singular for one", () => {
+    expect(openingUnitsText({ initialStock: { quantity: 10 } })).toBe(
+      " com 10 unidades"
+    );
+    expect(openingUnitsText({ initialStock: { quantity: 1 } })).toBe(
+      " com 1 unidade"
+    );
+    expect(openingUnitsText({ initialStock: { quantity: 12_345 } })).toBe(
+      " com 12.345 unidades"
+    );
+  });
+
+  it("says nothing about stock when the product opened without it", () => {
+    expect(openingUnitsText({ initialStock: null })).toBe("");
   });
 });

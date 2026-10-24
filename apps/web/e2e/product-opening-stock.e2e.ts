@@ -142,12 +142,12 @@ test("quantidade e custo: o produto, o preço e o estoque de abertura vão numa 
   const bodies = await openScreen(page);
   await openForm(page);
   await page.getByLabel("Nome do produto").fill("Camiseta básica");
-  await page.getByLabel("Preço de venda").fill("49,90");
+  await page.getByLabel("Preço de tabela").fill("49,90");
   await page.getByLabel("Quantos você tem agora").fill("10");
-  await page.getByLabel("Custo de cada unidade (opcional)").fill("12,5");
+  await page.getByLabel("Custo de cada unidade").fill("12,5");
   await submit(page).click();
   await expect(
-    page.getByText("Produto “Camiseta básica” cadastrado.")
+    page.getByText("Produto “Camiseta básica” cadastrado com 10 unidades.")
   ).toBeVisible();
 
   const body = only(bodies);
@@ -174,7 +174,9 @@ test("quantidade sem custo: o estoque abre com o custo desconhecido (custo nulo)
   await page.getByLabel("Nome do produto").fill("Caneca");
   await page.getByLabel("Quantos você tem agora").fill("5");
   await submit(page).click();
-  await expect(page.getByText("Produto “Caneca” cadastrado.")).toBeVisible();
+  await expect(
+    page.getByText("Produto “Caneca” cadastrado com 5 unidades.")
+  ).toBeVisible();
 
   const body = only(bodies);
   expect(body.initialStock).toEqual({
@@ -209,7 +211,7 @@ test("custo sem quantidade: o erro fica no campo da quantidade, o foco vai a ele
   const bodies = await openScreen(page);
   await openForm(page);
   await page.getByLabel("Nome do produto").fill("Boné");
-  await page.getByLabel("Custo de cada unidade (opcional)").fill("8");
+  await page.getByLabel("Custo de cada unidade").fill("8");
   await submit(page).click();
 
   const quantity = page.getByLabel("Quantos você tem agora");
@@ -232,7 +234,9 @@ test("custo sem quantidade: o erro fica no campo da quantidade, o foco vai a ele
   // fixing it sends the product, with the cost
   await quantity.fill("3");
   await submit(page).click();
-  await expect(page.getByText("Produto “Boné” cadastrado.")).toBeVisible();
+  await expect(
+    page.getByText("Produto “Boné” cadastrado com 3 unidades.")
+  ).toBeVisible();
   expect(only(bodies).initialStock).toMatchObject({
     quantity: 3,
     unitCost: "8",
@@ -245,9 +249,9 @@ test("valores inválidos: cada campo diz o seu erro, o foco vai ao primeiro e na
   const bodies = await openScreen(page);
   await openForm(page);
   await page.getByLabel("Nome do produto").fill("Tênis");
-  await page.getByLabel("Preço de venda").fill("49,999");
+  await page.getByLabel("Preço de tabela").fill("49,999");
   await page.getByLabel("Quantos você tem agora").fill("1,5");
-  await page.getByLabel("Custo de cada unidade (opcional)").fill("abc");
+  await page.getByLabel("Custo de cada unidade").fill("abc");
   await submit(page).click();
 
   await expect(
@@ -261,7 +265,7 @@ test("valores inválidos: cada campo diz o seu erro, o foco vai ao primeiro e na
       "Use um valor em reais, com até 6 casas decimais. Ex.: 12,34."
     )
   ).toBeVisible();
-  await expect(page.getByLabel("Preço de venda")).toBeFocused();
+  await expect(page.getByLabel("Preço de tabela")).toBeFocused();
   expect(bodies).toHaveLength(0);
 });
 
@@ -278,14 +282,14 @@ test("a repetição de um envio sem resposta nomeia o mesmo produto, a mesma var
   await openForm(page);
   await page.getByLabel("Nome do produto").fill("Camiseta básica");
   await page.getByLabel("Quantos você tem agora").fill("10");
-  await page.getByLabel("Custo de cada unidade (opcional)").fill("12,5");
+  await page.getByLabel("Custo de cada unidade").fill("12,5");
   await submit(page).click();
   // the first try had no answer: the form stays, with what was typed
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page.getByLabel("Quantos você tem agora")).toHaveValue("10");
   await submit(page).click();
   await expect(
-    page.getByText("Produto “Camiseta básica” cadastrado.")
+    page.getByText("Produto “Camiseta básica” cadastrado com 10 unidades.")
   ).toBeVisible();
 
   expect(bodies).toHaveLength(2);
@@ -378,12 +382,12 @@ test("AC-25: do botão 'Novo produto' a um produto pronto para vender são 6 aç
 
   await tap(page.getByRole("button", { name: "Novo produto" }).first());
   await fill(page.getByLabel("Nome do produto"), "Camiseta básica");
-  await fill(page.getByLabel("Preço de venda"), "49,90");
+  await fill(page.getByLabel("Preço de tabela"), "49,90");
   await fill(page.getByLabel("Quantos você tem agora"), "10");
-  await fill(page.getByLabel("Custo de cada unidade (opcional)"), "12,5");
+  await fill(page.getByLabel("Custo de cada unidade"), "12,5");
   await tap(submit(page));
   await expect(
-    page.getByText("Produto “Camiseta básica” cadastrado.")
+    page.getByText("Produto “Camiseta básica” cadastrado com 10 unidades.")
   ).toBeVisible();
 
   // ready to sell: it has a price and a stock, with nothing left to open (variants, SKU and receipt are not needed)
@@ -459,12 +463,12 @@ test("AC-25 pela Venda: do botão 'Cadastrar produto' da Venda a um produto pron
   await tap(page.getByRole("link", { name: "Cadastrar produto" }));
   await expect(page.getByLabel("Nome do produto")).toBeVisible();
   await fill(page.getByLabel("Nome do produto"), "Camiseta básica");
-  await fill(page.getByLabel("Preço de venda"), "49,90");
+  await fill(page.getByLabel("Preço de tabela"), "49,90");
   await fill(page.getByLabel("Quantos você tem agora"), "10");
-  await fill(page.getByLabel("Custo de cada unidade (opcional)"), "12,5");
+  await fill(page.getByLabel("Custo de cada unidade"), "12,5");
   await tap(submit(page));
   await expect(
-    page.getByText("Produto “Camiseta básica” cadastrado.")
+    page.getByText("Produto “Camiseta básica” cadastrado com 10 unidades.")
   ).toBeVisible();
   expect(only(bodies).initialStock?.quantity).toBe(10);
 
@@ -527,9 +531,9 @@ for (const width of [360, 320]) {
     // the open state is what is measured: every field of the open form is at least 32 px tall (36 with touch)
     for (const label of [
       "Nome do produto",
-      "Preço de venda",
+      "Preço de tabela",
       "Quantos você tem agora",
-      "Custo de cada unidade (opcional)",
+      "Custo de cada unidade",
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each field is measured on its own
       const box = await page.getByLabel(label).boundingBox();
@@ -544,9 +548,9 @@ for (const width of [360, 320]) {
     await page
       .getByLabel("Nome do produto")
       .fill("Tênis com nome bem comprido para a janela estreita de um celular");
-    await page.getByLabel("Preço de venda").fill("abc");
+    await page.getByLabel("Preço de tabela").fill("abc");
     await page.getByLabel("Quantos você tem agora").fill("1,5");
-    await page.getByLabel("Custo de cada unidade (opcional)").fill("abc");
+    await page.getByLabel("Custo de cada unidade").fill("abc");
     await submit(page).click();
     await expect(
       page.getByText("Informe um valor em reais, como 59,90.")

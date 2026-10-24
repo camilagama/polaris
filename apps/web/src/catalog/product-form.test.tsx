@@ -57,9 +57,9 @@ describe("form of a new product", () => {
   it("shows the name, the price, the quantity and the cost, in that order, before the details", () => {
     const order = [
       "Nome do produto",
-      "Preço de venda",
+      "Preço de tabela",
       "Quantos você tem agora",
-      "Custo de cada unidade (opcional)",
+      "Custo de cada unidade",
       "Mais detalhes",
     ].map((text) => indexOfText(markup, text));
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -98,7 +98,7 @@ describe("form of an edit", () => {
   const markup = draw(product);
 
   it("has no price, quantity or cost: the stock is not edited here", () => {
-    expect(markup).not.toContain("Preço de venda");
+    expect(markup).not.toContain("Preço de tabela");
     expect(markup).not.toContain("Quantos você tem agora");
     expect(markup).not.toContain("Custo de cada unidade");
     expect(markup).toContain("Editar produto");

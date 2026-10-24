@@ -4,6 +4,7 @@ import { uuidv7 } from "../lib/uuidv7";
 import { createOfflineProduct } from "../offline/product-create";
 import type { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { toLocalProductRow } from "./local-products";
+import { openingUnitsText } from "./product-opening-model";
 
 export type Workspace = ReturnType<typeof useLocalWorkspace>;
 
@@ -76,7 +77,7 @@ export async function createProduct(
       productId: names.ids.productId,
       variantId: names.ids.variantId,
     });
-    return `Produto “${product.name}” cadastrado.`;
+    return `Produto “${product.name}” cadastrado${openingUnitsText(input)}.`;
   }
   const stores = workspace.runtime.context();
   if (!stores || stores.organizationId !== organizationId) {
@@ -103,7 +104,7 @@ export async function createProduct(
   if (workspace.online) {
     workspace.runtime.syncNow().catch(() => undefined);
     // the server has not answered yet: the row says "Aguardando envio" until it does
-    return `Produto “${name}” guardado. Enviando…`;
+    return `Produto “${name}” guardado${openingUnitsText(input)}. Enviando…`;
   }
-  return `Produto “${name}” salvo neste aparelho. Ele será enviado quando a conexão voltar.`;
+  return `Produto “${name}” salvo neste aparelho${openingUnitsText(input)}. Ele será enviado quando a conexão voltar.`;
 }
