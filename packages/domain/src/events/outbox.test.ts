@@ -61,7 +61,35 @@ describe("outboxEvent", () => {
       "data_export.requested",
       "billing.renewal_cancel_requested",
       "organization.closure_notice",
+      "billing.notice",
     ]);
+  });
+
+  it("takes a billing notice by its ID, and nothing beside it (ADR 0104)", () => {
+    const noticeId = "0199f0aa-2b3c-7d4e-8f90-123456789abc";
+    const notice = {
+      event: { noticeId },
+      idempotencyKey: outboxIdempotencyKey("billing.notice", noticeId),
+      organizationId: "org_1",
+      type: "billing.notice",
+    };
+    expect(outboxEvent(notice)).toEqual({
+      correlationId: null,
+      event: { noticeId },
+      idempotencyKey: `billing.notice:${noticeId}`,
+      organizationId: "org_1",
+      type: "billing.notice",
+    });
+    for (const event of [
+      { kind: "welcome", noticeId },
+      { noticeId: "owner@example.com" },
+      { userId: "user_1" },
+      {},
+    ]) {
+      expect(() => outboxEvent({ ...notice, event })).toThrow(
+        InvalidOutboxEventError
+      );
+    }
   });
 
   it("takes the notice of a closure milestone by its ID, and nothing beside it", () => {

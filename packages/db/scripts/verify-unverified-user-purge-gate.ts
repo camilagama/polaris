@@ -326,7 +326,27 @@ async function run() {
     const noAccount = await makeUser("no-account", { accounts: [] });
     // the last e-mail link stopped working a minute ago: nothing holds the user any more
     const linkPast = await makeUser("link-past", { linkExpiresInMinutes: -1 });
-    const owedFixtures = [everything, olderStill, noAccount, linkPast];
+    // a person who opened a store and left it (no membership any more), with a welcome skipped because the e-mail was
+    // never verified (ADR 0104, item 7): the account goes and the welcome with it, by the foreign key in cascade
+    const welcomed = await makeUser("welcomed");
+    const welcomeStore = `gate-unv-org-welcome-${suffix}`;
+    await owner.pool.query(
+      "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, 'Loja de teste', 'America/Sao_Paulo')",
+      [welcomeStore]
+    );
+    organizationIds.push(welcomeStore);
+    await owner.pool.query(
+      `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id, skipped_reason)
+       VALUES ($1, 'welcome', $2, now(), $2, 'email_not_verified')`,
+      [welcomeStore, welcomed]
+    );
+    const owedFixtures = [
+      everything,
+      olderStill,
+      noAccount,
+      linkPast,
+      welcomed,
+    ];
     const before = await owner.pool.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM public.auth_security_audit_event WHERE event_type = 'unverified_user_deleted'"
     );
@@ -391,6 +411,16 @@ async function run() {
       ).rows.length,
       0,
       "the account the user carried went with it"
+    );
+    assert.equal(
+      (
+        await owner.pool.query(
+          "SELECT 1 FROM public.billing_notices WHERE organization_id = $1 OR user_id = $2",
+          [welcomeStore, welcomed]
+        )
+      ).rows.length,
+      0,
+      "the welcome skipped for an e-mail never verified went with the account (ADR 0104, item 7)"
     );
     assert.equal(
       (
@@ -897,6 +927,11 @@ async function run() {
     await cleanup(
       "memberships",
       "DELETE FROM public.memberships WHERE organization_id = ANY ($1)",
+      [organizationIds]
+    );
+    await cleanup(
+      "billing notices",
+      "DELETE FROM public.billing_notices WHERE organization_id = ANY ($1)",
       [organizationIds]
     );
     await cleanup(

@@ -8,6 +8,8 @@ status: accepted
 
 > **Emenda de 24/10/2026 (migration 0100, ADR 0104):** são `security` os tipos `billing.checkout_started`, `billing.command_in_progress`, `billing.command_rate_limited`, `billing.command_refused`, `billing.owner_renewal_cancel_requested` e `billing.refund_requested`; `billing.overdue_payment_opened` é `operational`. A 0100 troca a expressão da coluna gerada `event_class` no lugar (`SET EXPRESSION`, sem recriar a coluna) e amplia o `CHECK` `tenant_audit_event_type_registered` com esses tipos.
 
+> **Emenda de 24/10/2026 (migration 0101, número provisório, ADR 0104):** `billing_notices` (os avisos de cobrança e o `welcome` da loja: IDs, datas e códigos, sem e-mail) entra em `PURGE_DELETE_ORDER`, antes de `event_outbox`, e `purge_organization_data` é recriada com a mesma assinatura, dono e grants, só com essa tabela a mais (gate `purge-functions`). São 38 tabelas. O papel do purge ganha `SELECT` e `DELETE` nela, com as políticas de `purge_pending` das outras. Efeito aceito: depois do purge, a pessoa que abrir outra loja recebe boas-vindas de novo.
+
 ## Contexto
 
 O encerramento (ADR 0074) revoga o acesso na hora e deixa os dados intactos durante a janela de recuperação de 30 dias. Depois, a organização fica `closed`. O purge só pode vir 90 dias depois do pedido de encerramento (decisão de 19/10/2026, que trocou os 30 dias iniciais por 90). O plano (PR107) pede o purge: banco, masters e derivados de imagem no R2, cache do catálogo, referências locais e recursos relacionados, de forma idempotente. Três ADRs deixaram requisitos para cá:

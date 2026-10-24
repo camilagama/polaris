@@ -35,6 +35,8 @@ const QUEUE_BY_EVENT_TYPE: Readonly<Record<OutboxEventType, QueueName>> =
     "billing.renewal_cancel_requested": "critical",
     // an e-mail of a milestone: a late one is still on time for the dates it names (7 days at least)
     "organization.closure_notice": "default",
+    // an e-mail of the billing cycle: the consumer checks it is still true before it goes out (ADR 0104)
+    "billing.notice": "default",
   });
 
 export interface QueueEnvelope {

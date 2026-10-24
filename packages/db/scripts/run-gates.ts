@@ -255,6 +255,13 @@ gates.push(
     localOnly: true,
     name: "catalog-worker",
     script: "verify-catalog-worker-gate.ts",
+  },
+  // the notices of the billing cycle and the welcome (ADR 0104, 0101): last, because its sweep of the welcome reads
+  // every store of the last 24 hours and records the welcome of the ones the other gates left
+  {
+    env: salesEnv,
+    name: "billing-notices",
+    script: "verify-billing-notices-gate.ts",
   }
 );
 
@@ -291,6 +298,7 @@ const suites: Record<string, string[]> = {
     "billing-trial-claims",
     "billing-self-service",
     "billing-read-plan",
+    "billing-notices",
     "operational-selection",
     "entitlement-grants",
     "public-catalog",

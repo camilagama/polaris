@@ -20,9 +20,17 @@ import {
   isValidGrantActor,
   normalizeGrant,
 } from "@polaris/domain/billing/grants";
+import {
+  type BillingNoticeMark,
+  welcomeNotice,
+} from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
 import type { PlanViewRecord } from "@polaris/domain/billing/plan-view";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
+import {
+  outboxEvent,
+  outboxIdempotencyKey,
+} from "@polaris/domain/events/outbox";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
 import { type PoolClient, Pool } from "pg";
@@ -179,6 +187,17 @@ export interface OwnerPlanRecord extends PlanViewRecord {
   trialAvailable: boolean;
 }
 
+/** What one hourly pass of the welcome's sweep did (ADR 0104, decision 6). */
+export interface WelcomeNoticeReport {
+  /** Stores of the last 24 hours whose oldest owner had no welcome yet. */
+  candidates: number;
+  /** Welcomes recorded now, each with its outbox event (a concurrent pass may have recorded the others). */
+  recorded: number;
+}
+
+/** The most stores one pass of the welcome's sweep reads. */
+export const WELCOME_NOTICE_BATCH = 100;
+
 /** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
 export interface ReplacedProviderReference {
   provider: string;
@@ -334,6 +353,17 @@ export interface BillingStore {
    * after the 10th try at the earliest. Reads at most `limit` stores of each cause. Answers how many were recorded now.
    */
   recordPendingRefundIncidents: (now?: Date, limit?: number) => Promise<number>;
+  /**
+   * The hourly sweep of the welcome (E1, ADR 0104, decision 6): for each store created in the last 24 hours, still
+   * active, whose oldest owner has no welcome and no older store, records the welcome of that person and its outbox
+   * event `billing.notice`, in one transaction (`welcome_notice_candidates` reads them; the database keeps one welcome
+   * per person). The caller runs it only with `WELCOME_EMAIL_ENABLED`: off, no row is written, so turning it on later
+   * sends no late welcome.
+   */
+  recordWelcomeNotices: (
+    now?: Date,
+    limit?: number
+  ) => Promise<WelcomeNoticeReport>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
     input: RecordBillingEventInput
@@ -509,6 +539,59 @@ function toRecord(row: BillingRow): BillingRecord {
         : null,
     trialConsumed: row.trial_started_at !== null,
   };
+}
+
+/**
+ * Records notices of one store in the caller's transaction and, for each one new, its outbox event `billing.notice`
+ * (ADR 0104, decision 7): the same notice again records nothing and writes no second event. The welcome carries its
+ * person; a notice of the billing cycle has none (the consumer reads the owner when it sends). Answers how many were new.
+ */
+async function recordNotices(
+  client: PoolClient,
+  organizationId: string,
+  marks: readonly BillingNoticeMark[]
+): Promise<number> {
+  let recorded = 0;
+  for (const mark of marks) {
+    // biome-ignore lint/performance/noAwaitInLoops: a notice and its event, one after the other, in one transaction
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [
+        organizationId,
+        mark.kind,
+        mark.dedupeKey,
+        mark.dueAt,
+        mark.kind === "welcome" ? mark.dedupeKey : null,
+      ]
+    );
+    const noticeId = inserted.rows[0]?.id;
+    if (!noticeId) {
+      continue;
+    }
+    const event = outboxEvent({
+      event: { noticeId },
+      idempotencyKey: outboxIdempotencyKey("billing.notice", noticeId),
+      organizationId,
+      type: "billing.notice",
+    });
+    // only the five columns the billing role may insert; its policy takes nothing but this event
+    await client.query(
+      `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
+       VALUES ($1, $2, $3::jsonb, $4, $5)`,
+      [
+        event.organizationId,
+        event.type,
+        JSON.stringify(event.event),
+        event.idempotencyKey,
+        randomUUID(),
+      ]
+    );
+    recorded += 1;
+  }
+  return recorded;
 }
 
 async function inTransaction<T>(
@@ -2229,6 +2312,25 @@ export function createBillingStore(
         throw new Error("billing_refund_pending_incident_failed");
       }
       return recorded;
+    },
+    async recordWelcomeNotices(now = new Date(), limit = WELCOME_NOTICE_BATCH) {
+      return await inTransaction(pool, async (client) => {
+        const candidates = await client.query<{
+          organization_id: string;
+          user_id: string;
+        }>(
+          "SELECT organization_id, user_id FROM public.welcome_notice_candidates($1)",
+          [limit]
+        );
+        let recorded = 0;
+        for (const candidate of candidates.rows) {
+          // biome-ignore lint/performance/noAwaitInLoops: one store after the other, in one transaction
+          recorded += await recordNotices(client, candidate.organization_id, [
+            welcomeNotice(candidate.user_id, now),
+          ]);
+        }
+        return { candidates: candidates.rows.length, recorded };
+      });
     },
     async recordEvent(input) {
       const fact = serializeBillingFact(input.fact);

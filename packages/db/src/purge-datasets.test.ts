@@ -33,6 +33,21 @@ const trialMigration = readFileSync(
   ),
   "utf8"
 );
+const NOTICES_MIGRATION = /^\d{4}_avisos_de_cobranca\.sql$/;
+// the notices of the billing cycle and the welcome join the purge in this one (ADR 0104): the latest that defines it
+const noticesMigration = readFileSync(
+  new URL(
+    readdirSync(drizzleDirectory).find((name) =>
+      NOTICES_MIGRATION.test(name)
+    ) ?? "missing-notices-migration.sql",
+    drizzleDirectory
+  ),
+  "utf8"
+);
+/** The list before the notices joined it: what 0080 and the trial migration hold. */
+const DELETE_ORDER_BEFORE_NOTICES = PURGE_DELETE_ORDER.filter(
+  (table) => table !== "billing_notices"
+);
 const billingStore = readFileSync(
   new URL("./billing-store.ts", import.meta.url),
   "utf8"
@@ -100,9 +115,12 @@ describe("the purge of the billing facts", () => {
     }
   });
 
-  it("is the same list in the latest migration that defines the function", () => {
+  it("is the same list in the migrations that define the function since the amount, the latest included", () => {
     expect(
       sqlArrays("kept_fact_keys text[] := ARRAY[", trialMigration)
+    ).toEqual([[...PURGE_BILLING_FACT_KEYS]]);
+    expect(
+      sqlArrays("kept_fact_keys text[] := ARRAY[", noticesMigration)
     ).toEqual([[...PURGE_BILLING_FACT_KEYS]]);
   });
 
@@ -130,14 +148,22 @@ describe("the purge of the billing facts", () => {
 });
 
 describe("the purge in the migration", () => {
-  it("deletes the tables of the list, in its order, in the function of the audit migration", () => {
+  it("deletes the tables of the list, in its order, in the function of the audit migration and of the later ones", () => {
     expect(
       sqlArrays("deleted_tables text[] := ARRAY[", auditMigration)
-    ).toEqual([[...PURGE_DELETE_ORDER]]);
+    ).toEqual([DELETE_ORDER_BEFORE_NOTICES]);
     // and in the one that recreated it with the amount: the same tables, and still no audit
     expect(
       sqlArrays("deleted_tables text[] := ARRAY[", trialMigration)
+    ).toEqual([DELETE_ORDER_BEFORE_NOTICES]);
+    // the latest: the notices of the billing cycle and the welcome, before the outbox events that name them
+    expect(
+      sqlArrays("deleted_tables text[] := ARRAY[", noticesMigration)
     ).toEqual([[...PURGE_DELETE_ORDER]]);
+    expect(noticesMigration).not.toMatch(GRANT_AUDIT_TO_PURGE_OWNER);
+    expect(noticesMigration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(
+      6
+    );
     expect(trialMigration).not.toMatch(GRANT_AUDIT_TO_PURGE_OWNER);
     expect(trialMigration.split(`'${PURGE_REMOVED_TEXT}'`).length - 1).toBe(6);
   });

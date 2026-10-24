@@ -522,11 +522,13 @@ async function run() {
         .map((row) => `${row.grantee}:${row.privilege}`)
         .sort(),
       [
+        // the notices of the billing cycle (ADR 0104, 0101): five columns, one type (gate billing-notices)
+        "polaris_billing_runtime:INSERT",
         "polaris_purge_owner:DELETE",
         "polaris_purge_owner:SELECT",
         `${runtimeRole}:INSERT`,
       ].sort(),
-      "only the tenant runtime holds a privilege, and it is INSERT; the purge owner reads and deletes, for the organization it purges (ADR 0081)"
+      "only the tenant runtime and the billing runtime hold a privilege, and it is INSERT; the purge owner reads and deletes, for the organization it purges (ADR 0081)"
     );
     const insertable = await owner.pool.query<{
       column_name: string;
@@ -549,6 +551,8 @@ async function run() {
       policies.rows.map((row) => [row.cmd, row.roles]),
       [
         ["DELETE", ["polaris_purge_owner"]],
+        // the notice of the billing cycle or the welcome (ADR 0104, 0101): its own policy, proved by the gate billing-notices
+        ["INSERT", ["polaris_billing_runtime"]],
         ["INSERT", [runtimeRole]],
         // the request of a closed organization's copy (ADR 0081), the cancellation of the renewal at the
         // closure (ADR 0074) and the notice of a closure milestone (ADR 0102), through the privacy owner's functions

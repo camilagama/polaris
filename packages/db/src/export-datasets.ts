@@ -59,6 +59,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
   Object.freeze({
     billing_events:
       "cobrança: lida só pelo papel de billing, fora do escopo do export do tenant",
+    billing_notices:
+      "avisos de cobrança e boas-vindas, só IDs, datas e códigos: lidos só pelo papel de billing, nunca pelo tenant",
     billing_trial_claims:
       "cobrança: o teste grátis da pessoa, lido só pelo papel de billing (antiabuso)",
     closure_notices:
