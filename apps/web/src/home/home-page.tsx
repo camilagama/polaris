@@ -15,7 +15,7 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { AttentionBlock } from "./home-attention";
 import { ChartBlock, type ChartDays } from "./home-chart";
-import { offlineHome } from "./home-copy";
+import { type OfflineHome, offlineHome } from "./home-copy";
 import {
   ChecklistBlock,
   MonthBlock,
@@ -145,6 +145,53 @@ function figureBlocks(
   return readBlocks(figures.data, chart);
 }
 
+const NO_BLOCKS: Blocks = {
+  chart: null,
+  main: null,
+  ranking: null,
+  wide: true,
+};
+
+/** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
+function pageBlocks({
+  chart,
+  offline,
+  readsReport,
+  retryFigures,
+  state,
+  timezone,
+}: {
+  chart: { days: ChartDays; onDays: (days: ChartDays) => void };
+  offline: OfflineHome | null;
+  readsReport: boolean;
+  retryFigures: () => void;
+  state: HomeState;
+  timezone: string | null;
+}): { blocks: Blocks; updated: string | null } {
+  if (offline === null) {
+    return {
+      blocks: figureBlocks(state, retryFigures, chart),
+      updated:
+        state.figures.status === "ready"
+          ? formatUpdatedUntil(state.figures.data.month.generatedAt, timezone)
+          : null,
+    };
+  }
+  if (!readsReport) {
+    return { blocks: NO_BLOCKS, updated: null };
+  }
+  if (offline.figures === null) {
+    return { blocks: NO_FIGURES, updated: null };
+  }
+  return {
+    blocks: readBlocks(offline.figures, chart, offline.figures.todayShown),
+    updated: copyLine(
+      formatLastConfirmed(offline.figures.confirmedAt, timezone),
+      offline.figures.stale
+    ),
+  };
+}
+
 /** Without a connection and with no copy: no figure at all, never a zero (§ 7.4). */
 const NO_FIGURES: Blocks = {
   chart: null,
@@ -184,6 +231,23 @@ function HomeHeader({
 }
 
 /**
+ * Whether the copy may stand in for the server (§ 7.2): the runtime on, a role that reads the results, the user's own
+ * lease in force (the runtime is ready only then) and no refusal of the session, here or by the runtime.
+ */
+function useCopyAllowed(readsReport: boolean, refused: boolean): boolean {
+  const snapshot = useRuntimeSnapshot();
+  const sessionOver = useSessionOver();
+  return (
+    OFFLINE_RUNTIME_ENABLED &&
+    readsReport &&
+    snapshot?.phase === "ready" &&
+    !snapshot.sessionRefused &&
+    !refused &&
+    !sessionOver
+  );
+}
+
+/**
  * The Início. With a connection, the reads of `useHome`; without one, the matrix of § 7.4: the device's copy (only
  * with the runtime on, for a role that reads the results, with the user's lease in force and no refusal of the
  * session), or "sem números" without it; the goal by the rule of § 7.3; the device's own line in "Precisa de
@@ -193,21 +257,17 @@ function HomeHeader({
 export function HomePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const { timezone } = organization;
-  const { online, reads, retryFigures, retryGoals, serverNow, state } =
-    useHome(organizationId, organization.role, timezone);
+  const { online, reads, retryFigures, retryGoals, serverNow, state } = useHome(
+    organizationId,
+    organization.role,
+    timezone
+  );
   const snapshot = useRuntimeSnapshot();
-  const sessionOver = useSessionOver();
+  const copyAllowed = useCopyAllowed(reads.report, state.sessionRefused);
   const canSellOffline = useLocalWorkspace(organizationId) !== null;
   const [days, setDays] = useState<ChartDays>("7");
   const chart = { days, onDays: setDays };
   const refused = snapshot?.counts.rejected ?? 0;
-  const copyAllowed =
-    OFFLINE_RUNTIME_ENABLED &&
-    reads.report &&
-    snapshot?.phase === "ready" &&
-    !snapshot.sessionRefused &&
-    !state.sessionRefused &&
-    !sessionOver;
   const offline = useMemo(
     () =>
       online
@@ -228,27 +288,16 @@ export function HomePage() {
     () => (goals ? pickGoal(goals, today, timezone) : null),
     [goals, today, timezone]
   );
-  let blocks: Blocks;
-  let updated: string | null = figures
-    ? formatUpdatedUntil(figures.month.generatedAt, timezone)
-    : null;
-  if (state.sessionRefused) {
-    blocks = { chart: null, main: null, ranking: null, wide: true };
-  } else if (offline === null) {
-    blocks = figureBlocks(state, retryFigures, chart);
-  } else if (!reads.report) {
-    blocks = { chart: null, main: null, ranking: null, wide: true };
-    updated = null;
-  } else if (offline.figures) {
-    blocks = readBlocks(offline.figures, chart, offline.figures.todayShown);
-    updated = copyLine(
-      formatLastConfirmed(offline.figures.confirmedAt, timezone),
-      offline.figures.stale
-    );
-  } else {
-    blocks = NO_FIGURES;
-    updated = null;
-  }
+  const { blocks, updated } = state.sessionRefused
+    ? { blocks: NO_BLOCKS, updated: null }
+    : pageBlocks({
+        chart,
+        offline,
+        readsReport: reads.report,
+        retryFigures,
+        state,
+        timezone,
+      });
   let goalBlock: React.ReactNode = null;
   if (offline && reads.goals) {
     goalBlock = <OfflineGoalBlock goal={offline.goal} />;
@@ -288,7 +337,9 @@ export function HomePage() {
                 figures ? figures.month.quality.itemLinesWithUnknownCost : null
               }
               stock={
-                state.sessionRefused || offline ? { status: "hidden" } : state.stock
+                state.sessionRefused || offline
+                  ? { status: "hidden" }
+                  : state.stock
               }
             />
           )}

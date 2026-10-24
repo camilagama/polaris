@@ -487,10 +487,7 @@ export function copyStanding(
 }
 
 /** The line under the title when the figures are the device's copy (AC-28, AC-31). */
-export function copyLine(
-  confirmed: string,
-  stale: boolean
-): string {
+export function copyLine(confirmed: string, stale: boolean): string {
   return stale
     ? `${confirmed}. Estes números podem estar desatualizados.`
     : `${confirmed}.`;

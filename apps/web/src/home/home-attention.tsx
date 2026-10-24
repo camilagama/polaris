@@ -56,7 +56,10 @@ export function AttentionBlock({
           ))}
         </ul>
       ) : null}
-      {lines.length === 0 && !loading && stock.status !== "error" && !offline ? (
+      {lines.length === 0 &&
+      !loading &&
+      stock.status !== "error" &&
+      !offline ? (
         <p className="text-muted-foreground">Nada precisa de atenção agora.</p>
       ) : null}
       {loading ? (
