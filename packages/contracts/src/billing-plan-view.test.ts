@@ -39,7 +39,7 @@ describe("billing.readPlan output (AS-2)", () => {
   ])(
     "refuses a key the list does not have in %s: a provider reference never leaves",
     (_label, pick) => {
-      const leaked = structuredClone(plan);
+      const leaked = JSON.parse(JSON.stringify(plan)) as BillingPlanView;
       Object.assign(pick(leaked) as object, { providerRef: "sub_123" });
 
       expect(billingPlanView.safeParse(leaked).success).toBe(false);

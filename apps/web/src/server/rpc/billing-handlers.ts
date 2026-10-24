@@ -315,7 +315,8 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
       renewalCancelled: record.cancelAtPeriodEnd,
       resubscribeFrom: resubscribeFrom?.toISOString() ?? null,
       state: record.state,
-      trialAvailable: record.trialAvailable,
+      // a running subscription is offered no trial, whatever the person's claim says
+      trialAvailable: record.trialAvailable && !grantsPro(record.state),
       usage: facts.usage,
     };
   };

@@ -87,7 +87,9 @@ describe("organization.listMine", () => {
           listUserOrganizations: () => Promise.resolve([]),
           withAuthenticatedRequestContext: authenticated(),
         },
-        { ...testBindings, BILLING_SELF_SERVICE_ENABLED: flag }
+        flag === undefined
+          ? testBindings
+          : { ...testBindings, BILLING_SELF_SERVICE_ENABLED: flag }
       ).organization.listMine();
 
     await expect(listFor("true")).resolves.toMatchObject({

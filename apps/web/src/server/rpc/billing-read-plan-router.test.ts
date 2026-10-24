@@ -36,6 +36,19 @@ const bindings: WorkerBindings = {
   },
 };
 
+/** The bindings with the flag set to `flag`, or without it. */
+function withFlag(flag: string | undefined): WorkerBindings {
+  const { BILLING_SELF_SERVICE_ENABLED: _flag, ...rest } = bindings;
+  return flag === undefined
+    ? rest
+    : { ...rest, BILLING_SELF_SERVICE_ENABLED: flag };
+}
+
+function withoutBillingRole(): WorkerBindings {
+  const { BILLING_HYPERDRIVE: _role, ...rest } = bindings;
+  return rest;
+}
+
 /** The keys the read may carry, and nothing else (AS-2): nothing personal and nothing of the provider. */
 const PLAN_KEYS = [
   "accessEndsAt",
@@ -241,7 +254,7 @@ describe("billing.readPlan: the flag", () => {
     "with BILLING_SELF_SERVICE_ENABLED %s answers NOT_FOUND billing_self_service_off before anything else",
     async (flag) => {
       const fixture = setup({
-        bindings: { ...bindings, BILLING_SELF_SERVICE_ENABLED: flag },
+        bindings: withFlag(flag),
       });
 
       await expect(read(fixture)).rejects.toMatchObject({
@@ -328,7 +341,7 @@ describe("billing.readPlan: authorization", () => {
 
   it("without the billing role answers SERVICE_UNAVAILABLE billing_not_configured", async () => {
     const fixture = setup({
-      bindings: { ...bindings, BILLING_HYPERDRIVE: undefined },
+      bindings: withoutBillingRole(),
     });
 
     await expect(read(fixture)).rejects.toMatchObject({
@@ -430,7 +443,7 @@ describe("billing.readPlan: what it answers", () => {
     ],
     [
       { woovi: { refundsEnabled: false } },
-      { ...bindings, BILLING_PAYER_KEY: bindings.BETTER_AUTH_SECRET },
+      { ...bindings, BILLING_PAYER_KEY: "a".repeat(32) },
       [],
     ],
     [{}, bindings, []],
@@ -562,6 +575,12 @@ describe("billing.readPlan: what it answers", () => {
       resubscribeFrom: null,
       state: "free",
     });
+  });
+
+  it("offers no trial while a subscription runs, even if neither the store nor the person used one", async () => {
+    await expect(
+      read(setup({ record: { ...activeRecord, trialAvailable: true } }))
+    ).resolves.toMatchObject({ trialAvailable: false });
   });
 
   it("offers the provider's page only in grace with the card (AS-43)", async () => {

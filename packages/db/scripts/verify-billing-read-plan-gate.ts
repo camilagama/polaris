@@ -1,6 +1,7 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { readOwnerPlanTenantFacts } from "../src/plan-read-repository";
@@ -17,6 +18,7 @@ import {
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
+  sqlState,
   runtimeRole,
   type TenantFixture,
   temporaryRuntimeUrl,
@@ -212,6 +214,34 @@ async function run() {
     assert.equal(facts.kept.sales, 2);
     assert.equal(facts.kept.products, 2);
     assert.ok(facts.kept.historyMonths >= 1 && facts.kept.historyMonths <= 2);
+    // the tenant's part never needed the columns of 0100: the tenant role still cannot read them
+    for (const column of [
+      "first_charge_amount",
+      "first_charge_at",
+      "first_charge_on",
+      "price_amount",
+      "price_id",
+      "refund_request_id",
+      "refund_requested_at",
+    ]) {
+      const privilege = await owner.pool.query<{ allowed: boolean }>(
+        "SELECT has_column_privilege($1, 'public.organization_billing', $2, 'SELECT') AS allowed",
+        [runtimeRole, column]
+      );
+      assert.equal(
+        privilege.rows[0]?.allowed,
+        false,
+        `the tenant reads ${column}`
+      );
+    }
+    await assert.rejects(
+      withTenantAs(db, shop, "billing:manage", (transaction) =>
+        transaction.execute(
+          sql`SELECT price_amount FROM public.organization_billing`
+        )
+      ),
+      (error: unknown) => sqlState(error) === "42501"
+    );
     tests.push(
       "the usage is counted as assertRoomFor counts it (archived counts, deleted does not) and what the store keeps matches SQL of its own"
     );
@@ -401,9 +431,15 @@ async function run() {
       );
       await owner.pool.query(
         `UPDATE public.organization_billing SET ${scenario.set} WHERE organization_id = $1`,
+        // exactly the parameters the statement names: PostgreSQL refuses one more
         [tenant.organizationId, `ref-${randomUUID()}`, firstChargeAt].slice(
           0,
-          scenario.set.includes("$3") ? 3 : 2
+          Math.max(
+            1,
+            ...[...scenario.set.matchAll(/\$(\d)/g)].map((match) =>
+              Number(match[1])
+            )
+          )
         )
       );
       const plan = await billing.readOwnerPlan(

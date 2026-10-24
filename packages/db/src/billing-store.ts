@@ -172,7 +172,6 @@ export interface RefundRearmReport {
   scanned: number;
 }
 
-/** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
 /** What the owner's read of the plan needs of the record; nothing of the provider but its name. */
 export interface OwnerPlanRecord extends PlanViewRecord {
   cycleMonths: BillingCycleMonths | null;
@@ -180,6 +179,7 @@ export interface OwnerPlanRecord extends PlanViewRecord {
   trialAvailable: boolean;
 }
 
+/** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
 export interface ReplacedProviderReference {
   provider: string;
   providerRef: string;
