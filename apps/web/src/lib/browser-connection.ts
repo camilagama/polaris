@@ -66,6 +66,8 @@ export { lockInBrowser, markInBrowser };
 export function useConnectionOnline(): boolean {
   return useSyncExternalStore(
     browserConnection.subscribe,
+    browserConnection.isOnline,
+    // markup rendered outside a browser (a test): nothing to doubt, as in `browserOnline`
     browserConnection.isOnline
   );
 }

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { Skeleton } from "@/ui/skeleton";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { SavedSalesCard } from "./offline-sale-panels";
@@ -26,17 +27,28 @@ function OfflineHistoryNotice() {
   );
 }
 
-/** A line of text in a card, for loading and empty: the same card the products and the stock use. */
-function StateCard({
-  children,
-  role,
-}: {
-  children: ReactNode;
-  role?: "status";
-}) {
+const LOADING_ROWS = [0, 1, 2];
+
+/** A line of text in a card, for empty: the same card the products and the stock use. */
+function StateCard({ children }: { children: ReactNode }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center" role={role}>
+    <Card className="items-center px-(--card-spacing) text-center">
       <p className="text-muted-foreground">{children}</p>
+    </Card>
+  );
+}
+
+/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
+function LoadingCard({ message }: { message: string }) {
+  return (
+    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+      <p className="sr-only">{message}</p>
+      {LOADING_ROWS.map((row) => (
+        <div aria-hidden="true" className="grid gap-1.5" key={row}>
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      ))}
     </Card>
   );
 }
@@ -74,7 +86,7 @@ export function SaleHistoryPage() {
         period={period}
       />
       {view.kind === "loading" && period === null ? (
-        <StateCard role="status">{view.message}</StateCard>
+        <LoadingCard message={view.message} />
       ) : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">

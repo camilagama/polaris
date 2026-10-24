@@ -9,6 +9,7 @@ import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
 import {
   categoryNameCountLabel,
   categoryNameIsTooLong,
@@ -18,6 +19,7 @@ interface CategoryFormProps {
   isPending: boolean;
   name: string;
   onNameChange: (value: string) => void;
+  online: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -28,6 +30,7 @@ export function CategoryForm({
   isPending,
   name,
   onNameChange,
+  online,
   onSubmit,
 }: CategoryFormProps) {
   const [showRequired, setShowRequired] = useState(false);
@@ -75,7 +78,11 @@ export function CategoryForm({
                   value={name}
                 />
               </InputGroup>
-              <Button disabled={isPending || tooLong} type="submit">
+              <Button
+                {...connectionControlProps(online)}
+                disabled={isPending || tooLong}
+                type="submit"
+              >
                 {isPending ? "Salvando…" : "Adicionar categoria"}
               </Button>
             </div>

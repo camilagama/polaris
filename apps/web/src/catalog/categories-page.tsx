@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
@@ -44,6 +45,7 @@ export function CategoriesPage() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  const online = useConnectionOnline();
 
   // typed and not sent: a new name, or a rename that differs from the current name
   const renamedCategory = categories.find(
@@ -104,6 +106,10 @@ export function CategoriesPage() {
   const handleCreate = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (!online) {
+        return;
+      }
       if (categoryNameIsTooLong(categoryName)) {
         setError(NAME_TOO_LONG);
         return;
@@ -126,11 +132,14 @@ export function CategoriesPage() {
         setPendingAction(null);
       }
     },
-    [categoryName, organizationId, refresh]
+    [categoryName, online, organizationId, refresh]
   );
 
   const runAction = useCallback(
     async (category: CategoryReadModel, action: CategoryAction) => {
+      if (!online) {
+        return;
+      }
       setPendingAction(`${action}:${category.id}`);
       setError(null);
       setNotice(null);
@@ -151,7 +160,7 @@ export function CategoriesPage() {
         focusFeedback();
       }
     },
-    [focusFeedback, organizationId, refresh]
+    [focusFeedback, online, organizationId, refresh]
   );
   const handleArchive = useCallback(
     (category: CategoryReadModel) => runAction(category, "archive"),
@@ -168,6 +177,9 @@ export function CategoriesPage() {
 
   const handleRenameSubmit = useCallback(
     async (category: CategoryReadModel) => {
+      if (!online) {
+        return;
+      }
       if (categoryNameIsTooLong(renameValue)) {
         setError(NAME_TOO_LONG);
         focusFeedback();
@@ -197,7 +209,7 @@ export function CategoriesPage() {
         focusFeedback();
       }
     },
-    [focusFeedback, organizationId, refresh, renameValue]
+    [focusFeedback, online, organizationId, refresh, renameValue]
   );
 
   const handleRenameStart = useCallback((category: CategoryReadModel) => {
@@ -245,6 +257,7 @@ export function CategoriesPage() {
         <CategoryForm
           isPending={pendingAction === "create"}
           name={categoryName}
+          online={online}
           onNameChange={setCategoryName}
           onSubmit={handleCreate}
         />
@@ -264,6 +277,7 @@ export function CategoriesPage() {
           onRenameStart={handleRenameStart}
           onRenameSubmit={handleRenameSubmit}
           onRestore={handleRestore}
+          online={online}
           pendingAction={pendingAction}
           pendingDeleteId={pendingDeleteId}
           renameValue={renameValue}

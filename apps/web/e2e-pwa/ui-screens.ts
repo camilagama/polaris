@@ -70,7 +70,8 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
  * check that lists the context. A new check, or a new axis for one, is a line here: the cost of the CI grows with
  * the contexts listed, not with the product of widths, themes and pointers.
  *
- * - overflow (1): the widths decide what fits; theme and pointer do not move a box;
+ * - overflow (1): the widths decide what fits; at 1280 it runs with a mouse and with touch (the context the touch
+ *   check loads anyway); the theme does not move a box;
  * - touch (2): the areas of 48 px exist with a coarse pointer, at the two phone widths and on a tablet;
  * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
  * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
@@ -81,7 +82,12 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
 export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
   axe: [light("360", true), { theme: "escuro", touch: true, viewport: "360" }],
   focus: [light("1280", false)],
-  overflow: [light("320", true), light("360", true), light("1280", false)],
+  overflow: [
+    light("320", true),
+    light("360", true),
+    light("1280", false),
+    light("1280", true),
+  ],
   touch: [light("320", true), light("360", true), light("1280", true)],
 };
 
@@ -753,6 +759,7 @@ export const SCREENS: UiScreen[] = [
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),
+  historyScreen("carregando", historyStates.loading),
   historyScreen("sem conexão", historyStates.offline),
   historyScreen("período invertido", historyStates.periodError),
   saleDetailScreen("aberto", saleDetailStates.detail),

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
+  NOME_60_LETRAS,
   PRODUCT_WITH_LONG_TEXT,
   PRODUCT_WITH_ONE_PHOTO,
   PRODUCT_WITH_PHOTOS,
@@ -169,6 +170,36 @@ for (const size of SIZES) {
     }) => {
       await open(page, `${FIXTURE}/nome-longo/p/${PRODUCT_WITH_LONG_TEXT}`);
       await expect(page.locator("main h1")).toHaveText(LONG_NAME);
+    });
+
+    test("o 'Voltar' da página do produto fica numa linha, com o nome inteiro no DOM e a seta no lugar (P-22)", async ({
+      page,
+    }) => {
+      expect(NOME_60_LETRAS).toHaveLength(60);
+      await open(page, `${FIXTURE}/nome-60/p/${PRODUCT_WITH_PHOTOS}`);
+      const back = page.locator(".crumbs .btn");
+      const name = back.locator("span");
+      await expect(name).toHaveText(NOME_60_LETRAS);
+      const box = await back.boundingBox();
+      // one line: the height of a control (a second line would add its own)
+      expect(box?.height ?? 99).toBeLessThanOrEqual(44);
+      // inside the window, with the arrow before the name on the same line
+      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(size.width);
+      const arrow = await back.locator("svg").boundingBox();
+      const nameBox = await name.boundingBox();
+      expect(arrow?.y ?? 0).toBeLessThan(
+        (nameBox?.y ?? 0) + (nameBox?.height ?? 0)
+      );
+      expect((arrow?.x ?? 0) + (arrow?.width ?? 0)).toBeLessThanOrEqual(
+        nameBox?.x ?? 0
+      );
+      // the name is cut with an ellipsis where it does not fit (at 360), whole where it does
+      const cut = await name.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      );
+      expect(cut).toBe(size.width === 360);
+      await expect(name).toHaveCSS("text-overflow", "ellipsis");
+      await expect(name).toHaveCSS("white-space", "nowrap");
     });
 
     test("o rodapé tem área de toque de 44 px", async ({ page }) => {

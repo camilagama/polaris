@@ -11,7 +11,9 @@ async function openLab(
   page: Page,
   user: string,
   screen:
+    | "categories"
     | "customers"
+    | "expenses"
     | "history"
     | "payment-profiles"
     | "products"
@@ -1170,6 +1172,8 @@ for (const mode of ["offline", "mentindo"] as const) {
       await create.focus();
       await page.keyboard.press("Enter");
       await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+      // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+      await page.waitForTimeout(500);
       expect(server.creates).toBe(0);
       // the connection returns: the list is read again (a read, never the POST)
       await rede(page, "ok");
@@ -1224,10 +1228,167 @@ for (const mode of ["offline", "mentindo"] as const) {
       await page.keyboard.press("Enter");
       await expect(page.getByLabel("Nome público")).toHaveValue("Loja da Ana");
       await expect(page.getByText("Perfil salvo.")).toHaveCount(0);
+      // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+      await page.waitForTimeout(500);
       expect(catalog.saves).toBe(0);
     });
   });
 }
+
+/** A request counted as the page sends it, even when the route that cuts the network aborts it. */
+function countRequests(page: Page, ends: string[]) {
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (ends.some((end) => path.endsWith(end))) {
+      sent.push(path);
+    }
+  });
+  return sent;
+}
+
+/** A button that needs the connection while there is none: off to the eye and to the reader, but still focusable. */
+async function expectOffWithReason(button: Locator) {
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  await expect(button).toHaveAttribute(
+    "aria-describedby",
+    "connection-required-text"
+  );
+  await expect(button).toHaveCSS("opacity", "0.5");
+}
+
+test.describe("P-2: Categorias e Despesas sem conexão", () => {
+  test("Categorias: 'Adicionar categoria' fica desligado com o motivo, não envia e o nome fica", async ({
+    page,
+  }) => {
+    await page.route("**/rpc/category/list", (route) =>
+      route.fulfill(
+        rpcAnswer({
+          categories: [
+            {
+              archivedAt: null,
+              createdAt: "2026-10-22T12:00:00.000Z",
+              deletedAt: null,
+              id: "0199c2d0-0000-7000-8000-0000000c0001",
+              name: "Camisetas",
+              organizationId: "0199c2d0-0000-7000-8000-00000000a001",
+              status: "active",
+              updatedAt: "2026-10-22T12:00:00.000Z",
+            },
+          ],
+        })
+      )
+    );
+    const sent = countRequests(page, ["/category/create"]);
+    await openLab(page, `user-${crypto.randomUUID()}`, "categories");
+    await start(page, "Categorias");
+    await expect(page.getByText("Camisetas")).toBeVisible();
+    await page.getByLabel("Nova categoria").fill("Calçados");
+    await rede(page, "offline");
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+
+    const add = page.getByRole("button", { name: "Adicionar categoria" });
+    await expectOffWithReason(add);
+    // only the keyboard reaches it (a click falls to what is below), so focus and Enter
+    await add.focus();
+    await page.keyboard.press("Enter");
+    // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+    await page.waitForTimeout(500);
+    expect(sent).toEqual([]);
+    await expect(page.getByLabel("Nova categoria")).toHaveValue("Calçados");
+
+    // the menu of the row opens (it sends nothing); the items that send are off with the reason
+    await page
+      .getByRole("button", { name: "Mais ações para Camisetas" })
+      .click();
+    await expectOffWithReason(
+      page.getByRole("menuitem", { exact: true, name: "Arquivar" })
+    );
+  });
+
+  test("Despesas: registrar e anular ficam desligados com o motivo e não enviam", async ({
+    page,
+  }) => {
+    const category = {
+      archivedAt: null,
+      createdAt: "2026-10-22T12:00:00.000Z",
+      groupKey: "operational",
+      id: "0199c2d0-0000-7000-8000-0000000c0002",
+      name: "Aluguel",
+      organizationId: "0199c2d0-0000-7000-8000-00000000a001",
+      status: "active",
+      systemKey: null,
+      updatedAt: "2026-10-22T12:00:00.000Z",
+      version: 1,
+    };
+    const expense = {
+      amount: "100.00",
+      categoryGroup: "operational",
+      categoryId: category.id,
+      categoryName: "Aluguel",
+      competenceOn: "2026-10-10",
+      createdAt: "2026-10-22T12:00:00.000Z",
+      description: "Aluguel de outubro",
+      id: "0199c2d0-0000-7000-8000-0000000c0003",
+      organizationId: "0199c2d0-0000-7000-8000-00000000a001",
+      payee: null,
+      recurringRuleId: null,
+      saleId: null,
+      status: "active",
+      updatedAt: "2026-10-22T12:00:00.000Z",
+      version: 1,
+      voidedAt: null,
+    };
+    await page.route("**/rpc/expense/listCategories", (route) =>
+      route.fulfill(rpcAnswer({ categories: [category] }))
+    );
+    await page.route("**/rpc/expense/listRules", (route) =>
+      route.fulfill(rpcAnswer({ rules: [] }))
+    );
+    await page.route("**/rpc/expense/list", (route) =>
+      route.fulfill(
+        rpcAnswer({
+          count: 1,
+          expenses: [expense],
+          nextCursor: null,
+          total: "100.00",
+        })
+      )
+    );
+    const sent = countRequests(page, ["/expense/create", "/expense/void"]);
+    await openLab(page, `user-${crypto.randomUUID()}`, "expenses");
+    await start(page, "Despesas");
+    await expect(page.getByText("Aluguel de outubro")).toBeVisible();
+    await page.getByLabel("Descrição").fill("Internet");
+    await rede(page, "offline");
+    await page
+      .getByRole("button", { exact: true, name: "Sincronizar" })
+      .click();
+    await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+
+    const save = page.getByRole("button", { name: "Registrar despesa" });
+    const voidIt = page.getByRole("button", {
+      name: "Anular despesa Aluguel de outubro",
+    });
+    await expectOffWithReason(save);
+    await expectOffWithReason(voidIt);
+    await save.focus();
+    await page.keyboard.press("Enter");
+    await voidIt.focus();
+    await page.keyboard.press("Enter");
+    // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
+    await page.waitForTimeout(500);
+    expect(sent).toEqual([]);
+    await expect(page.getByLabel("Descrição")).toHaveValue("Internet");
+    // "Editar" only opens the form: it stays on
+    await expect(
+      page.getByRole("button", { name: "Editar despesa Aluguel de outubro" })
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
 
 test.describe("conexão com prova", () => {
   test("U-60: o POST cortado diz que não sabe, não reenvia, e a releitura mostra a lista", async ({

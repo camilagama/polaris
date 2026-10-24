@@ -5,6 +5,7 @@ import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
   customerErrorMessage,
   customerStatusLabel,
+  formatCustomerPhone,
   hasCustomerContact,
   isCustomerListStatus,
   lockedReasonFor,
@@ -32,6 +33,21 @@ describe("the contact of a customer", () => {
     expect(hasCustomerContact({ ...draft, email: "ana@exemplo.com" })).toBe(
       true
     );
+  });
+});
+
+describe("the phone of a customer as the list shows it (P-15)", () => {
+  it("groups 11 digits as a mobile and 10 as a landline", () => {
+    expect(formatCustomerPhone("11900000003")).toBe("(11) 90000-0003");
+    expect(formatCustomerPhone("1130000003")).toBe("(11) 3000-0003");
+  });
+
+  it("leaves any other size, and anything typed with its own marks, as it was", () => {
+    expect(formatCustomerPhone("900000003")).toBe("900000003");
+    expect(formatCustomerPhone("+55 11 90000-0003")).toBe("+55 11 90000-0003");
+    expect(formatCustomerPhone("(11) 90000-0003")).toBe("(11) 90000-0003");
+    expect(formatCustomerPhone("5511900000003")).toBe("5511900000003");
+    expect(formatCustomerPhone("")).toBe("");
   });
 });
 

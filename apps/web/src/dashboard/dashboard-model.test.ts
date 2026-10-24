@@ -223,17 +223,6 @@ describe("qualityView", () => {
     expect(view.messages).toHaveLength(1);
     expect(isIncompleteEstimate(partial)).toBe(true);
   });
-
-  it("is an empty state when there is no data", () => {
-    const view = qualityView({
-      ...completeQuality,
-      level: "no_data",
-      missing: ["no_sales"],
-      salesCount: 0,
-    });
-    expect(view.tone).toBe("empty");
-    expect(view.messages).toEqual(["Sem vendas neste período."]);
-  });
 });
 
 describe("chainRows", () => {

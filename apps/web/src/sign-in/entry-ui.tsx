@@ -724,7 +724,10 @@ export function SubmitButton({
   return (
     <Button
       aria-busy={pending || undefined}
-      aria-describedby={blocked ? alertId : offBy}
+      aria-describedby={
+        [blocked ? alertId : undefined, offBy].filter(Boolean).join(" ") ||
+        undefined
+      }
       aria-disabled={off || undefined}
       className={cn("w-full", className)}
       disabled={disabled || pending}

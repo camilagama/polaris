@@ -16,6 +16,8 @@ import {
 } from "react";
 import { Button } from "@/ui/button";
 import { Field, FieldDescription, FieldTitle } from "@/ui/field";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
@@ -128,6 +130,7 @@ export function ExpenseRuleForm({
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<RuleDraft>(() => draftFrom(editing, today));
   useReportUnsentWork(isDraftChanged(draft, initialDraft));
+  const online = useConnectionOnline();
 
   // Active categories only; the one the edited rule already has stays
   // selectable even when it was archived since.
@@ -285,6 +288,7 @@ export function ExpenseRuleForm({
           Cancelar
         </Button>
         <Button
+          {...connectionControlProps(online)}
           className="h-auto min-h-ctl-md whitespace-normal"
           disabled={disabled}
           type="submit"
