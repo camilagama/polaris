@@ -18,6 +18,7 @@
     "./billing/entitlements": "./src/billing/entitlements.ts",
     "./billing/facts": "./src/billing/facts.ts",
     "./billing/grants": "./src/billing/grants.ts",
+    "./billing/notices": "./src/billing/notices.ts",
     "./billing/operational-selection": "./src/billing/operational-selection.ts",
     "./billing/provider-period": "./src/billing/provider-period.ts",
     "./billing/renewal-cancellation": "./src/billing/renewal-cancellation.ts",

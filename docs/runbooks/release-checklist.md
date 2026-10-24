@@ -190,6 +190,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
 - `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. Antes dele, o e-mail manda o dono pedir a cópia ou desfazer o encerramento num painel que não existe. Com o PR G, o link e o botão do e-mail apontam para essa tela. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
+- `WELCOME_EMAIL_ENABLED` (boas-vindas, E1, ADR 0104) só fica `"true"` com o consumidor de `billing.notice` no ar (PR G do F1), a base legal do E1 confirmada (EM-37) e a P48. Antes do consumidor, cada boas-vindas gravada vira evento sem handler: tentativas, DLQ e incidente. Ligada, a varredura horária grava as boas-vindas só das lojas criadas nas últimas 24 horas (não manda atrasadas).
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 

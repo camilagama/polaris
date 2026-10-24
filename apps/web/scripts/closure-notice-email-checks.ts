@@ -333,6 +333,14 @@ async function emailScenario(
   assert.deepEqual(
     ownerColumns.rows.map((row) => `${row.table_name}.${row.column_name}`),
     [
+      // the billing notices still owed, for billing_notice_recipient (0101, ADR 0104)
+      "billing_notices.failed_at",
+      "billing_notices.id",
+      "billing_notices.kind",
+      "billing_notices.organization_id",
+      "billing_notices.sent_at",
+      "billing_notices.skipped_reason",
+      "billing_notices.user_id",
       "closure_notices.dismissed_at",
       "closure_notices.failed_at",
       "closure_notices.id",
@@ -341,6 +349,8 @@ async function emailScenario(
       "closure_notices.skipped",
       "closure_notices.unverified_at",
       "closure_notices.user_id",
+      // when a membership began: the oldest owner a billing notice goes to (0101, billing_notice_recipient)
+      "memberships.created_at",
       "memberships.organization_id",
       "memberships.role",
       "memberships.status",

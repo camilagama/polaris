@@ -105,6 +105,13 @@ export interface WorkerBindings {
    * (and absent) leaves it off; the sign-up and `/aceite` record the acceptance either way.
    */
   LEGAL_ACCEPTANCE_ENFORCED?: string;
+  /**
+   * `true` turns on the hourly sweep of the welcome (E1, ADR 0104, decision 6): the stores of the last 24 hours get
+   * their welcome recorded, with its outbox event. Anything else leaves it off and writes nothing. Off in every
+   * environment: it goes on only with the consumer of `billing.notice` deployed (PR G), the legal basis checked (EM-37)
+   * and P48.
+   */
+  WELCOME_EMAIL_ENABLED?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
   IMAGES?: MediaImagesBinding;

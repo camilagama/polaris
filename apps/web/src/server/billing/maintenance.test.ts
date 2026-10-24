@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   runBillingMaintenance,
   runUnclaimedTrialSettlement,
+  runWelcomeNoticeSweep,
   runWooviReconciliation,
+  welcomeEmailEnabled,
 } from "./maintenance";
 
 const now = new Date("2026-10-14T12:00:00.000Z");
@@ -380,5 +382,37 @@ describe("the hourly reconciliation with Woovi", () => {
         truncated: true,
       })
     );
+  });
+});
+
+describe("the hourly sweep of the welcome (ADR 0104, decision 6)", () => {
+  const welcomeStore = () => ({
+    recordWelcomeNotices: vi.fn(() =>
+      Promise.resolve({ candidates: 2, recorded: 1 })
+    ),
+  });
+
+  it("is off unless the switch is exactly the text true", () => {
+    expect(welcomeEmailEnabled("true")).toBe(true);
+    for (const value of [undefined, "", "false", "TRUE", " true", "1"]) {
+      expect(welcomeEmailEnabled(value)).toBe(false);
+    }
+  });
+
+  it("writes nothing with the switch off, so turning it on later sends no late welcome", async () => {
+    const fake = welcomeStore();
+    expect(await runWelcomeNoticeSweep({}, fake, now)).toBeNull();
+    expect(
+      await runWelcomeNoticeSweep({ WELCOME_EMAIL_ENABLED: "false" }, fake, now)
+    ).toBeNull();
+    expect(fake.recordWelcomeNotices).not.toHaveBeenCalled();
+  });
+
+  it("records the welcomes with the switch on and reports them", async () => {
+    const fake = welcomeStore();
+    expect(
+      await runWelcomeNoticeSweep({ WELCOME_EMAIL_ENABLED: "true" }, fake, now)
+    ).toEqual({ candidates: 2, recorded: 1 });
+    expect(fake.recordWelcomeNotices).toHaveBeenCalledWith(now);
   });
 });

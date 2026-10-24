@@ -128,6 +128,10 @@ interface EventModel {
   queue: QueueName;
 }
 const EVENT_MODEL: Readonly<Record<string, EventModel>> = {
+  "billing.notice": {
+    keys: { noticeId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
+    queue: "default",
+  },
   "billing.renewal_cancel_requested": {
     // milliseconds since the epoch of the closure request
     keys: { requestedAt: integer({ max: 8_640_000_000_000_000, min: 1 }) },

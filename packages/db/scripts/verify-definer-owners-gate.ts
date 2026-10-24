@@ -29,6 +29,9 @@ import {
  *      organization) stays inside the scope or fails with 42501;
  *   8. (0100) the owner of the cap on the audit of the owner's refused billing requests: its function, its three
  *      columns of tenant_audit_event, its one policy, and that it is the only new reader of the tenant audit;
+ *   9. (0101) the owners of the two functions of the billing notices: `billing_notice_recipient` of the recipient's
+ *      owner (EXECUTE: the authentication role) and `welcome_notice_candidates` of the billing owner (EXECUTE: the billing
+ *      role), each with the exact functions, privileges and policies its owner holds after 0101;
  *   7. the real calls: the bump of a user in two organizations and of a user with no membership, the onboarding run again
  *      and with the organization of another tenant, a sync transaction with two organizations and a SAVEPOINT rolled back.
  * Everything a probe writes is rolled back; the fixtures of step 7 stay, as in the other gates.
@@ -1270,6 +1273,177 @@ async function run() {
     }
     tests.push(
       `the cap of the owner's refused billing requests (0100) is SECURITY DEFINER of ${AUDIT_CAP_OWNER} with a fixed search_path (EXECUTE: it and the migrator, for the CREATE TRIGGER); that owner reads exactly organization_id, event_type and created_at of tenant_audit_event under one policy of its own that names the three refusal types and reads no setting, sees no other type, and is the only reader of the tenant audit besides the retention owner`
+    );
+
+    // ------------------------------- 9. the owners of the two functions of the billing notices (0101, ADR 0104)
+    const ownedBy = async (role: string) => {
+      const ownFunctions = await client.query<{ name: string }>(
+        "SELECT p.oid::regprocedure::text AS name FROM pg_proc p WHERE p.proowner = $1::regrole ORDER BY 1",
+        [role]
+      );
+      const ownPrivileges = await client.query<{ privilege: string }>(
+        `SELECT c.relname || '.' || a.attname || ':' || x.privilege_type AS privilege
+           FROM pg_class c
+           JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+          CROSS JOIN LATERAL aclexplode(a.attacl) x
+          WHERE x.grantee = $1::regrole
+         UNION ALL
+         SELECT c.relname || ':' || x.privilege_type
+           FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) x
+          WHERE x.grantee = $1::regrole
+          ORDER BY 1`,
+        [role]
+      );
+      const ownPolicies = await client.query<{ policy: string }>(
+        "SELECT tablename || '.' || policyname AS policy FROM pg_policies WHERE $1 = ANY(roles) ORDER BY 1",
+        [role]
+      );
+      return {
+        functions: ownFunctions.rows.map((row) => row.name),
+        policies: ownPolicies.rows.map((row) => row.policy),
+        privileges: ownPrivileges.rows.map((row) => row.privilege),
+      };
+    };
+    const noticeFunctions = await client.query<{
+      config: string[] | null;
+      executors: string[];
+      name: string;
+      owner: string;
+      secdef: boolean;
+    }>(
+      `SELECT p.oid::regprocedure::text AS name, pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS secdef,
+              p.proconfig AS config,
+              ARRAY(SELECT pg_get_userbyid(x.grantee)::text FROM aclexplode(p.proacl) x
+                     WHERE x.privilege_type = 'EXECUTE' AND x.grantee <> p.proowner ORDER BY 1) AS executors
+         FROM pg_proc p
+        WHERE p.oid IN ('public.billing_notice_recipient(text, uuid)'::regprocedure,
+                        'public.welcome_notice_candidates(integer)'::regprocedure)
+        ORDER BY 1`
+    );
+    assert.deepEqual(
+      noticeFunctions.rows.map((row) => ({ ...row })),
+      [
+        {
+          config: ["search_path=pg_catalog, public, pg_temp"],
+          executors: ["polaris_auth_runtime"],
+          name: "billing_notice_recipient(text,uuid)",
+          owner: "polaris_notice_recipient_owner",
+          secdef: true,
+        },
+        {
+          config: ["search_path=pg_catalog, public, pg_temp"],
+          executors: ["polaris_billing_runtime"],
+          name: "welcome_notice_candidates(integer)",
+          owner: "polaris_billing_owner",
+          secdef: true,
+        },
+      ]
+    );
+    assert.deepEqual(await ownedBy("polaris_notice_recipient_owner"), {
+      functions: [
+        "billing_notice_recipient(text,uuid)",
+        "closure_notice_owner_unverified(uuid,text)",
+        "closure_notice_recipient(uuid,text)",
+      ],
+      policies: [
+        "billing_notices.billing_notices_recipient_owner_select_owed",
+        "closure_notices.closure_notices_recipient_owner_select_owed",
+        "closure_notices.closure_notices_recipient_owner_update_owed",
+        "memberships.memberships_recipient_owner_select_owner",
+        "user.user_notice_recipient_owner_select",
+        "user.user_notice_recipient_owner_select_billing",
+      ],
+      privileges: [
+        "billing_notices.failed_at:SELECT",
+        "billing_notices.id:SELECT",
+        "billing_notices.kind:SELECT",
+        "billing_notices.organization_id:SELECT",
+        "billing_notices.sent_at:SELECT",
+        "billing_notices.skipped_reason:SELECT",
+        "billing_notices.user_id:SELECT",
+        "closure_notices.dismissed_at:SELECT",
+        "closure_notices.failed_at:SELECT",
+        "closure_notices.id:SELECT",
+        "closure_notices.organization_id:SELECT",
+        "closure_notices.sent_at:SELECT",
+        "closure_notices.skipped:SELECT",
+        "closure_notices.unverified_at:SELECT",
+        "closure_notices.unverified_at:UPDATE",
+        "closure_notices.user_id:SELECT",
+        "memberships.created_at:SELECT",
+        "memberships.organization_id:SELECT",
+        "memberships.role:SELECT",
+        "memberships.status:SELECT",
+        "memberships.user_id:SELECT",
+        "user.email:SELECT",
+        "user.email_verified:SELECT",
+        "user.id:SELECT",
+      ],
+    });
+    assert.deepEqual(await ownedBy("polaris_billing_owner"), {
+      functions: [
+        "organization_exceeds_free_limits(text)",
+        "organization_free_limit_excess(text)",
+        "welcome_notice_candidates(integer)",
+      ],
+      policies: [
+        "billing_notices.billing_notices_billing_owner_select_welcome",
+        "goals.goals_billing_owner_select",
+        "memberships.memberships_billing_owner_select_owner",
+        "organizations.organizations_billing_owner_select_recent",
+        "plan_entitlements.plan_entitlements_billing_owner_read",
+        "product_media.product_media_billing_owner_select",
+        "product_variants.product_variants_billing_owner_select",
+        "products.products_billing_owner_select",
+      ],
+      privileges: [
+        "billing_notices.kind:SELECT",
+        "billing_notices.user_id:SELECT",
+        "goals.organization_id:SELECT",
+        "goals.status:SELECT",
+        "memberships.created_at:SELECT",
+        "memberships.organization_id:SELECT",
+        "memberships.role:SELECT",
+        "memberships.status:SELECT",
+        "memberships.user_id:SELECT",
+        "organizations.created_at:SELECT",
+        "organizations.id:SELECT",
+        "organizations.status:SELECT",
+        "plan_entitlements.key:SELECT",
+        "plan_entitlements.limit_value:SELECT",
+        "plan_entitlements.plan_id:SELECT",
+        "product_media.organization_id:SELECT",
+        "product_media.product_id:SELECT",
+        "product_variants.organization_id:SELECT",
+        "product_variants.product_id:SELECT",
+        "products.deleted_at:SELECT",
+        "products.id:SELECT",
+        "products.organization_id:SELECT",
+      ],
+    });
+    // the billing owner sees only the recent active stores, their owners and who has a welcome, whatever is asked
+    await rolledBack({}, "polaris_billing_owner", async () => {
+      assert.equal(
+        await rowCount(
+          "SELECT id FROM public.organizations WHERE status <> 'active' OR created_at <= now() - interval '24 hours'"
+        ),
+        0
+      );
+      assert.equal(
+        await rowCount(
+          "SELECT user_id FROM public.memberships WHERE role <> 'owner'"
+        ),
+        0
+      );
+      assert.equal(
+        await rowCount(
+          "SELECT user_id FROM public.billing_notices WHERE kind <> 'welcome'"
+        ),
+        0
+      );
+    });
+    tests.push(
+      "the two functions of the billing notices (0101) are SECURITY DEFINER with a fixed search_path: billing_notice_recipient of polaris_notice_recipient_owner (EXECUTE: the authentication role) and welcome_notice_candidates of polaris_billing_owner (EXECUTE: the billing role); each owner holds exactly its functions, privileges and policies, and the billing owner sees only the active stores of the last 24 hours, the owners and who has a welcome"
     );
   } finally {
     await client.end();

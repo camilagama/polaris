@@ -18,11 +18,14 @@
  *   be cancelled at the provider (ADR 0074, L4); the body names the closure cycle by the instant of its request.
  * - `organization.closure_notice`: a milestone of a closure arrived and its notice is to go out to the owner (ADR 0102,
  *   amended); the body names the notice, and the consumer reads its milestone, owner and dates itself.
+ * - `billing.notice`: a notice of the billing cycle, or the welcome, was recorded and is to go out (ADR 0104); the body
+ *   names the notice, and the consumer reads its kind, the billing record and the recipient itself.
  */
 export const OUTBOX_EVENT_TYPES = Object.freeze([
   "data_export.requested",
   "billing.renewal_cancel_requested",
   "organization.closure_notice",
+  "billing.notice",
 ] as const);
 
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
@@ -37,6 +40,7 @@ const OUTBOX_EVENT_KEYS: Readonly<Record<OutboxEventType, readonly string[]>> =
     // milliseconds since the epoch of the closure request: the cycle, never the subscription or the provider
     "billing.renewal_cancel_requested": Object.freeze(["requestedAt"]),
     "organization.closure_notice": Object.freeze(["noticeId"]),
+    "billing.notice": Object.freeze(["noticeId"]),
   });
 export type OutboxEventValue = string | number | boolean;
 export type OutboxEventBody = Readonly<Record<string, OutboxEventValue>>;
