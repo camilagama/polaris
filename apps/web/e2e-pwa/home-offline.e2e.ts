@@ -19,8 +19,10 @@ import {
 
 const CHARTS_CHUNK = /\/assets\/charts-[\w-]+\.js$/;
 
-/** Waits until the service worker controls the page: the precache, with the charts chunk, is in place. */
+/** Installs the app's service worker and waits until it controls the lab's page: the precache, with the charts chunk, is in place. */
 async function controlled(page: Page, user: string) {
+  // the labs do not register the worker; the app does, for the whole origin, the lab's page included
+  await page.goto("/");
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
