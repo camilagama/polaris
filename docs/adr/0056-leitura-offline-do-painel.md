@@ -27,6 +27,15 @@ Registro datado; a decisão acima continua valendo. Pedida pelo desenho do Iníc
 - **A cópia guardada é o resumo como o servidor o devolveu**, agora com a série e, se pedido, o ranking. A leitura da cópia valida `daily` e `topProducts` **quando existem**: uma cópia gravada antes da série continua válida (a tela só não desenha a série daquele mês) e uma série malformada (fora de ordem, com dia faltando ou sobrando) descarta a cópia inteira.
 - O contrato só cresce: o servidor sempre manda `daily`; o app novo aceita a cópia antiga sem ela.
 
+## Emenda (24/10/2026): a cópia do Início e a meta mostrada (ii)
+
+Registro datado; a decisão acima continua valendo, menos o item "Metas continuam só com conexão" no Início, que esta emenda troca. Pedida pelo desenho do Início (t269 v2, § 7) e aceita com a condição do Filipe.
+
+- **O Início guarda a sua cópia** sob `polaris.offline.home.<org>`: o resumo dos dias antes do mês (B), a meta que o cartão mostrou (como o servidor a devolveu) e a marca de que a loja já vendeu. O mês (A) fica na chave do resumo que já existe; o Resultado passa a pedir os mesmos três mais vendidos, para as duas telas gravarem o mesmo formato. Tudo validado pela forma na leitura (o que não confere vale "sem números"), com as mesmas condições da cópia do resumo: só com o runtime offline ligado, só para quem lê o resultado, nunca gravada depois de a saída começar nem depois de a sessão ser recusada nesta página, e apagada junto com ela (`clearPeriodSummaryCaches` apaga também o prefixo do Início, em "Sair", no "não autenticado" e na limpeza da saída).
+- **Só é lida com o acesso sem internet do usuário em vigor** (o runtime pronto com o lease dele) e só quando falta a conexão: uma leitura que fica sem resposta e cuja sonda também não acha o Worker é falta de conexão; um servidor que respondeu, mesmo com erro, nunca cai na cópia.
+- **A meta mostrada no Início é guardada como foi lida**, com o mesmo "Último resultado confirmado". Ela só aparece "em andamento" enquanto hoje, no fuso da loja, está dentro do período guardado; passado o fim, a tela diz "Esta meta terminou. O resultado sai com conexão.", sem percentual, porque a liquidação é do servidor. A meta pausada pelo plano aparece como foi lida. A tela de metas do Resultado continua só com conexão.
+- **Idade:** passadas 24 h do horário do servidor da leitura, a tela diz que os números podem estar desatualizados, sem escondê-los; o "Hoje" da cópia só vale no mesmo dia da loja da leitura. Um relógio do aparelho anterior à leitura conta como errado: a cópia não é de hoje e leva o aviso de idade.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.
