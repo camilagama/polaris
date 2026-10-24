@@ -194,6 +194,12 @@ export interface OwnerPlanRecord extends PlanViewRecord {
  */
 export interface OwnerCommandRecord extends PlanViewRecord {
   cycleMonths: BillingCycleMonths | null;
+  /**
+   * The first charge recorded on the current link (ADR 0104, desenho t268 §7): the ID of its `billing_events` row
+   * (`first_charge_event_id`) and the end of the period that fact says it paid for. The owner's refund refunds only
+   * that charge; either one null refuses (it fails closed).
+   */
+  firstCharge: { eventId: string | null; periodEndsAt: Date | null };
   /** The current link, or null when none is attached. */
   link: BillingProviderLink | null;
   /** The request ID that wrote `refundRequestedAt` (exact recognition of its own repeat). */
@@ -2309,7 +2315,9 @@ export function createBillingStore(
         cycle_months: number | null;
         first_charge_amount: string | null;
         first_charge_at: Date | null;
+        first_charge_event_id: string | null;
         first_charge_on: string | null;
+        first_charge_period_ends_at: Date | null;
         price_amount: string | null;
         provider: string | null;
         provider_ref: string | null;
@@ -2325,8 +2333,16 @@ export function createBillingStore(
                 provider_subscription_id, revoked_through, revoked_reason,
                 to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on, first_charge_at,
                 round(first_charge_amount, 2)::text AS first_charge_amount,
-                round(price_amount, 2)::text AS price_amount, refund_requested_at, refund_request_id::text AS refund_request_id
-           FROM public.organization_billing WHERE organization_id = $1`,
+                round(price_amount, 2)::text AS price_amount, refund_requested_at, refund_request_id::text AS refund_request_id,
+                first_charge_event_id::text AS first_charge_event_id,
+                -- the period the first charge paid for, as its own fact says (the store's own event, applied)
+                (SELECT (charge.fact ->> 'periodEndsAt')::timestamptz
+                   FROM public.billing_events AS charge
+                  WHERE charge.id = billing.first_charge_event_id
+                    AND charge.organization_id = billing.organization_id
+                    AND charge.fact_type = 'charge_succeeded'
+                    AND pg_catalog.jsonb_typeof(charge.fact -> 'periodEndsAt') = 'string') AS first_charge_period_ends_at
+           FROM public.organization_billing AS billing WHERE organization_id = $1`,
         [organizationId]
       );
       const [row] = result.rows;
@@ -2336,6 +2352,7 @@ export function createBillingStore(
           cancelAtPeriodEnd: false,
           cycleMonths: null,
           firstChargeAmount: null,
+          firstCharge: { eventId: null, periodEndsAt: null },
           firstChargeAt: null,
           firstChargeOn: null,
           link: null,
@@ -2359,6 +2376,10 @@ export function createBillingStore(
         cancelAtPeriodEnd: row.cancel_at_period_end,
         cycleMonths: cycle(row.cycle_months),
         firstChargeAmount: row.first_charge_amount,
+        firstCharge: {
+          eventId: row.first_charge_event_id,
+          periodEndsAt: row.first_charge_period_ends_at,
+        },
         firstChargeAt: row.first_charge_at,
         firstChargeOn: row.first_charge_on,
         link:

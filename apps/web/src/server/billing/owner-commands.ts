@@ -1,6 +1,8 @@
 import {
   type BillingProviderPort,
+  NotFirstChargeError,
   ProviderUnavailableError,
+  type RecordedFirstCharge,
 } from "@polaris/billing/provider-port";
 import {
   BillingCommandInProgressError,
@@ -22,9 +24,12 @@ import { cancelRenewalEventId, refundCancelEventId } from "./commands";
  * The owner's billing commands (ADR 0104, decision 3): cancel the renewal, ask for the refund of the right of
  * withdrawal, and open the provider's page of the charge that failed. The caller authorized the owner
  * (`billing:manage`, the server's organization) and writes the audit of the request afterwards, with the type each
- * outcome names here. Under the organization's command lock (never waited for), each command reads the record again
- * (what the screen showed is never trusted), reads the database's clock once and judges every rule with it, counts
- * the store's limit before it calls the provider and calls it with a deadline. Nothing of the provider, of the payer
+ * outcome names here. The refusals that call nothing (no link, nothing to cancel, already cancelled, the refund
+ * through support, no first charge, the window closed with no anchor, no overdue charge) are answered before the lock,
+ * from a read with no lock, so they never take the isolate's one command lock. Under the organization's command lock
+ * (never waited for), each command reads the record again and judges all of it again (what the screen showed, and
+ * what the read before the lock saw, are never trusted), reads the database's clock once and judges every rule with
+ * it, counts the store's limit before it calls the provider and calls it with a deadline. Nothing of the provider, of the payer
  * or of the reason of the cancellation reaches a log: only codes and opaque IDs.
  */
 
@@ -92,10 +97,13 @@ export interface OwnerCommandDependencies {
   /** A monotonic clock in ms (`performance.now`); a test gives its own. */
   elapsedMs?: () => number;
   /**
-   * The port of the provider an organization is linked to. `signal` aborts the provider's requests of one call
-   * (`PROVIDER_CALL_TIMEOUT_MS`, or what is left of `OWNER_COMMAND_BUDGET_MS`).
+   * The port of the provider an organization is linked to, built for one call. `signal` is required and the port
+   * must honor it: once it aborts (`PROVIDER_CALL_TIMEOUT_MS`, or what is left of `OWNER_COMMAND_BUDGET_MS`), every
+   * request of that port to the provider is aborted too, so nothing it started outlives the command's deadline. The
+   * command does not trust that alone: a call whose port ignores the signal is answered as the provider's failure
+   * when the signal aborts, and the command makes no next call.
    */
-  portFor: (provider: string, signal?: AbortSignal) => BillingProviderPort;
+  portFor: (provider: string, signal: AbortSignal) => BillingProviderPort;
   store: Pick<
     BillingStore,
     | "anchorRefundRequest"
@@ -111,6 +119,8 @@ export interface OwnerCommandDependencies {
   /** An `AbortSignal` that aborts after `ms` (`AbortSignal.timeout`); a test gives its own. */
   timeoutSignal?: (ms: number) => AbortSignal;
 }
+
+type CommandLink = NonNullable<OwnerCommandRecord["link"]>;
 
 const HOUR_MS = 3_600_000;
 const CANCELLABLE_STATES: ReadonlySet<string> = new Set([
@@ -261,6 +271,54 @@ async function keepReason(
     });
 }
 
+type CancelDecision =
+  | { kind: "already_cancelled" }
+  | { eventId: string; kind: "own_repeat" | "proceed"; link: CommandLink };
+
+/**
+ * What the owner's cancellation does with this record, in order: the request's own cancellation already in the
+ * ledger (`command:cancel_renewal`, by exact equality) is its repeat; a renewal already cancelled is
+ * `already_cancelled`; no link, or a record outside trial, paid or grace, is `nothing_to_cancel`; else it goes on.
+ * Judged before the lock (only the two refusals are answered there) and again under it.
+ */
+async function cancelDecisionOf(
+  dependencies: OwnerCommandDependencies,
+  record: OwnerCommandRecord,
+  requestId: string
+): Promise<CancelDecision> {
+  const { link } = record;
+  const eventId = link
+    ? await cancelRenewalEventId(requestId, link.providerRef)
+    : null;
+  if (
+    link &&
+    eventId &&
+    (await dependencies.store.hasLedgerEvent(link.provider, eventId))
+  ) {
+    return { eventId, kind: "own_repeat", link };
+  }
+  if (record.cancelAtPeriodEnd && grantsPro(record.state)) {
+    return { kind: "already_cancelled" };
+  }
+  if (!(link && eventId && CANCELLABLE_STATES.has(record.state))) {
+    throw new OwnerCommandRefusal(
+      "nothing_to_cancel",
+      "billing.command_refused"
+    );
+  }
+  return { eventId, kind: "proceed", link };
+}
+
+/** A renewal already cancelled: answered with no provider, no limit and no reason (EM-30). */
+function alreadyCancelled(
+  record: OwnerCommandRecord
+): OwnerCommandOutcome<OwnerCancelRenewalResponse> {
+  return {
+    audit: "billing.command_refused",
+    response: { accessEndsAt: record.accessEndsAt, result: "already_cancelled" },
+  };
+}
+
 export interface OwnerCancelRenewalInput {
   organizationId: string;
   /** Optional, 1 to 500 characters; kept with no store and no person, never logged. */
@@ -275,10 +333,11 @@ export interface OwnerCancelRenewalResponse {
 
 /**
  * The owner cancels the renewal (ADR 0104, decision 3): access already paid for runs to its end, the store is not
- * closed and nothing is refunded; in grace it ends the provider's new tries. Cancelling cannot be undone. The order
- * under the lock: the request's own cancellation already in the ledger (`command:cancel_renewal`, by exact
- * equality) is recognized and answered again with no provider call and no second reason; a renewal already cancelled
- * is `already_cancelled` with no provider call; no link, or a record outside trial, paid or grace, is
+ * closed and nothing is refunded; in grace it ends the provider's new tries. Cancelling cannot be undone. Before the
+ * lock, `already_cancelled` and `nothing_to_cancel` are answered from a read with no lock. The order under the lock
+ * (`cancelDecisionOf`, judged again): the request's own cancellation already in the ledger (`command:cancel_renewal`,
+ * by exact equality) is recognized and answered again with no provider call and no second reason; a renewal already
+ * cancelled is `already_cancelled` with no provider call; no link, or a record outside trial, paid or grace, is
  * `nothing_to_cancel`; then the store's limit, the provider and the fact through the inbox, and only after
  * `cancelled` the optional reason (its failure loses the reason, never the cancellation).
  */
@@ -288,22 +347,31 @@ export async function ownerCancelRenewal(
 ): Promise<OwnerCommandOutcome<OwnerCancelRenewalResponse>> {
   const accepted = "billing.owner_renewal_cancel_requested";
   const { store } = dependencies;
+  // the cheap refusals first, with no lock: they call nothing and must not take the isolate's one command lock
+  const seen = await store.readOwnerCommandRecord(input.organizationId);
+  if (
+    (await cancelDecisionOf(dependencies, seen, input.requestId)).kind ===
+    "already_cancelled"
+  ) {
+    return alreadyCancelled(seen);
+  }
   return await underLock(dependencies, input.organizationId, async () => {
     const now = await store.databaseNow();
     const record = await store.readOwnerCommandRecord(input.organizationId);
-    const { link } = record;
+    const decision = await cancelDecisionOf(
+      dependencies,
+      record,
+      input.requestId
+    );
+    if (decision.kind === "already_cancelled") {
+      return alreadyCancelled(record);
+    }
+    const { eventId, link } = decision;
     const ids = {
       organizationId: opaqueId(input.organizationId),
-      provider: link?.provider ?? "none",
+      provider: link.provider,
     };
-    const eventId = link
-      ? await cancelRenewalEventId(input.requestId, link.providerRef)
-      : null;
-    if (
-      link &&
-      eventId &&
-      (await store.hasLedgerEvent(link.provider, eventId))
-    ) {
+    if (decision.kind === "own_repeat") {
       // the request's own cancellation, repeated (its audit failed): the same answer, no second reason. A fact
       // stored and not applied (the processing failed) is processed again first: the ledger keeps its own moment
       if (!record.cancelAtPeriodEnd && grantsPro(record.state)) {
@@ -317,21 +385,6 @@ export async function ownerCancelRenewal(
         audit: accepted,
         response: { accessEndsAt: record.accessEndsAt, result: "cancelled" },
       };
-    }
-    if (record.cancelAtPeriodEnd && grantsPro(record.state)) {
-      return {
-        audit: "billing.command_refused",
-        response: {
-          accessEndsAt: record.accessEndsAt,
-          result: "already_cancelled",
-        },
-      };
-    }
-    if (!(link && eventId && CANCELLABLE_STATES.has(record.state))) {
-      throw new OwnerCommandRefusal(
-        "nothing_to_cancel",
-        "billing.command_refused"
-      );
     }
     await claimOrRefuse(dependencies, input.organizationId, now);
     const call = providerCalls(dependencies);
@@ -376,16 +429,18 @@ export interface OwnerRefundResponse {
 }
 
 /**
- * The owner asks for the refund of the right of withdrawal (ADR 0104, decision 3). Under the lock and with one clock
- * (the database's `now()`, read once): a provider that does not refund here (Pix until S3.2) is
- * `refund_via_support`, with no anchor and no limit; the request's own repeat (the anchor's `refund_request_id`, or
+ * The owner asks for the refund of the right of withdrawal (ADR 0104, decision 3). The refusals that call nothing
+ * (`refundRefusalOf`) are answered first from a read with no lock, and judged again under it. Under the lock and with
+ * one clock (the database's `now()`, read once): a provider that does not refund here (Pix until S3.2) is
+ * `refund_via_support`, with no anchor and no limit; no first charge recorded, or with no anchor a window already
+ * closed, is `nothing_to_refund` before the limit; the request's own repeat (the anchor's `refund_request_id`, or
  * its own `command:refund_cancel`, by exact equality) of a refund already done is answered again as accepted, and a
  * refund already done seen with another request ID gets the same answer audited as refused; then the store's limit;
  * then the window: with an anchor, judged at the anchor and only until 72 hours after it (`refund_window_expired`
  * after that, the operator's work), without one at `now`, and open it writes the anchor (its own autocommitted
  * statement, before the provider, the first request wins). Then the renewal is cancelled first unless the record
- * already shows it cancelled (a repeat with another request ID never writes a second cancellation), and the refund.
- * A refund that fails after that is `refund_pending` (the renewal is cancelled, a repeat finishes it); a cancellation
+ * already shows it cancelled (a repeat with another request ID never writes a second cancellation), and the refund
+ * of the first charge recorded only. A refund that fails, or finds another charge in force, after that is `refund_pending` (the renewal is cancelled, a repeat finishes it); a cancellation
  * that fails refunds nothing and keeps the anchor.
  */
 export async function ownerRequestRefund(
@@ -393,34 +448,21 @@ export async function ownerRequestRefund(
   input: { organizationId: string; requestId: string }
 ): Promise<OwnerCommandOutcome<OwnerRefundResponse>> {
   const { store } = dependencies;
+  // the cheap refusals first, with no lock and at the database's clock: they call nothing and must not take the
+  // isolate's one command lock
+  refundRefusalOf(
+    dependencies,
+    await store.readOwnerCommandRecord(input.organizationId),
+    await store.databaseNow()
+  );
   return await underLock(dependencies, input.organizationId, async () => {
     const now = await store.databaseNow();
     const record = await store.readOwnerCommandRecord(input.organizationId);
-    const { link } = record;
-    if (!link) {
-      throw new OwnerCommandRefusal(
-        "nothing_to_refund",
-        "billing.command_refused"
-      );
-    }
-    if (!refundsHere(dependencies, link.provider)) {
-      // first of all (Pix until S3.2): no anchor, no limit
-      throw new OwnerCommandRefusal(
-        "refund_via_support",
-        "billing.command_refused"
-      );
-    }
-    if (record.firstChargeAt === null || record.firstChargeAmount === null) {
-      // no first charge recorded: no window (it fails closed), and no amount is ever made up
-      throw new OwnerCommandRefusal(
-        "nothing_to_refund",
-        "billing.command_refused"
-      );
-    }
-    if (record.revoked?.reason === "refund") {
+    const { link, refundable } = refundRefusalOf(dependencies, record, now);
+    if (refundable.kind === "refunded") {
       return await refundAlreadyDone(dependencies, {
-        firstChargeAmount: record.firstChargeAmount,
-        firstChargeAt: record.firstChargeAt,
+        firstChargeAmount: refundable.firstChargeAmount,
+        firstChargeAt: refundable.firstChargeAt,
         link,
         record,
         requestId: input.requestId,
@@ -444,6 +486,7 @@ export async function ownerRequestRefund(
           requestId: input.requestId,
         });
     const result = await refundStep(dependencies, call, {
+      firstCharge: refundable.firstCharge,
       link,
       now,
       organizationId: input.organizationId,
@@ -464,7 +507,72 @@ export async function ownerRequestRefund(
 const REFUND_ACCEPTED = "billing.refund_requested";
 
 type ProviderCall = ReturnType<typeof providerCalls>;
-type CommandLink = NonNullable<OwnerCommandRecord["link"]>;
+
+/** The first charge a refund refunds, recorded in full; `refunded` once the period's payment was revoked as a refund. */
+interface Refundable {
+  firstCharge: RecordedFirstCharge;
+  firstChargeAmount: string;
+  firstChargeAt: Date;
+  kind: "open" | "refunded";
+}
+
+/**
+ * The refusals of the owner's refund that call nothing, in order, judged before the lock and again under it at the
+ * lock's clock: no link is `nothing_to_refund`; a provider that does not refund here (Pix until S3.2) is
+ * `refund_via_support`, with no anchor and no limit; no first charge recorded (its time, its amount, its event or the
+ * period that event paid) is `nothing_to_refund` (it fails closed, and no amount is ever made up); a refund already
+ * done goes on to its answer; and with no anchor, the window closed at `now` is `nothing_to_refund`, before the
+ * limit counts it.
+ */
+function refundRefusalOf(
+  dependencies: OwnerCommandDependencies,
+  record: OwnerCommandRecord,
+  now: Date
+): { link: CommandLink; refundable: Refundable } {
+  const { firstCharge, link } = record;
+  if (!link) {
+    throw new OwnerCommandRefusal(
+      "nothing_to_refund",
+      "billing.command_refused"
+    );
+  }
+  if (!refundsHere(dependencies, link.provider)) {
+    // first of all (Pix until S3.2): no anchor, no limit
+    throw new OwnerCommandRefusal(
+      "refund_via_support",
+      "billing.command_refused"
+    );
+  }
+  if (
+    record.firstChargeAt === null ||
+    record.firstChargeAmount === null ||
+    firstCharge.eventId === null ||
+    firstCharge.periodEndsAt === null
+  ) {
+    throw new OwnerCommandRefusal(
+      "nothing_to_refund",
+      "billing.command_refused"
+    );
+  }
+  const refundable = {
+    firstCharge,
+    firstChargeAmount: record.firstChargeAmount,
+    firstChargeAt: record.firstChargeAt,
+  };
+  if (record.revoked?.reason === "refund") {
+    return { link, refundable: { ...refundable, kind: "refunded" } };
+  }
+  if (
+    record.refundRequestedAt === null &&
+    refundWindowOf(record, now) === null
+  ) {
+    throw new OwnerCommandRefusal(
+      "nothing_to_refund",
+      "billing.command_refused"
+    );
+  }
+  return { link, refundable: { ...refundable, kind: "open" } };
+}
 
 /** Whether the provider refunds in the app here; a port that cannot be built refunds nothing (the read says support). */
 function refundsHere(
@@ -472,7 +580,9 @@ function refundsHere(
   provider: string
 ): boolean {
   try {
-    return dependencies.portFor(provider).refundsEnabled;
+    // only a property is read: no request goes through this port, so its signal never aborts
+    return dependencies.portFor(provider, new AbortController().signal)
+      .refundsEnabled;
   } catch {
     return false;
   }
@@ -616,14 +726,20 @@ async function cancelBeforeOwnerRefund(
 }
 
 /**
- * Step 2: the refund of the period in force. Done, it is `refund_requested` (Asaas's fact comes back by webhook;
- * Woovi's is written now through the inbox). Nothing to refund with the anchor in time, a failure or the budget run
+ * Step 2: the refund of the period in force, only if it is the first charge recorded (`firstCharge`: the port refuses
+ * another one, or none, before it asks for the refund). Done, it is `refund_requested` (Asaas's fact comes back by
+ * webhook; Woovi's is written now through the inbox). Nothing to refund with the anchor in time, a failure or the budget run
  * out is `refund_pending` (AS-42): the renewal is cancelled, and a repeat finishes it.
  */
 async function refundStep(
   dependencies: OwnerCommandDependencies,
   call: ProviderCall,
-  input: { link: CommandLink; now: Date; organizationId: string }
+  input: {
+    firstCharge: RecordedFirstCharge;
+    link: CommandLink;
+    now: Date;
+    organizationId: string;
+  }
 ): Promise<OwnerRefundResponse["result"]> {
   const { link, now } = input;
   const { store } = dependencies;
@@ -632,7 +748,8 @@ async function refundStep(
       port.refundCurrentPeriod(
         link.providerRef,
         now,
-        link.providerSubscriptionId
+        link.providerSubscriptionId,
+        input.firstCharge
       )
     );
     if (typeof outcome === "string") {
@@ -653,13 +770,32 @@ async function refundStep(
     await store.processEvent(stored.id, now);
     return "refund_requested";
   } catch (error: unknown) {
-    logger.warn("billing_owner_refund_failed", {
-      ...describeError(error),
-      organizationId: opaqueId(input.organizationId),
-      provider: link.provider,
-    });
+    // the charge in force is not the first one recorded (the provider reordered): nothing was refunded, and the
+    // operator's log says why; the renewal stays cancelled and the request waits as pending (AS-42)
+    logger.warn(
+      error instanceof NotFirstChargeError
+        ? "billing_owner_refund_not_first_charge"
+        : "billing_owner_refund_failed",
+      {
+        ...describeError(error),
+        organizationId: opaqueId(input.organizationId),
+        provider: link.provider,
+      }
+    );
     return "refund_pending";
   }
+}
+
+/** The link whose charge failed, in grace with the card (`recoveryOf`); anything else is `no_overdue_payment`. */
+function overdueLinkOf(record: OwnerCommandRecord): CommandLink {
+  const { link } = record;
+  if (!link || recoveryOf(record) !== "provider_page") {
+    throw new OwnerCommandRefusal(
+      "no_overdue_payment",
+      "billing.command_refused"
+    );
+  }
+  return link;
 }
 
 /**
@@ -673,16 +809,12 @@ export async function ownerOpenOverduePayment(
 ): Promise<OwnerCommandOutcome<{ url: string }>> {
   const accepted = "billing.overdue_payment_opened";
   const { store } = dependencies;
+  // the cheap refusal first, with no lock: it calls nothing and must not take the isolate's one command lock
+  overdueLinkOf(await store.readOwnerCommandRecord(input.organizationId));
   return await underLock(dependencies, input.organizationId, async () => {
     const now = await store.databaseNow();
     const record = await store.readOwnerCommandRecord(input.organizationId);
-    const { link } = record;
-    if (!link || recoveryOf(record) !== "provider_page") {
-      throw new OwnerCommandRefusal(
-        "no_overdue_payment",
-        "billing.command_refused"
-      );
-    }
+    const link = overdueLinkOf(record);
     await claimOrRefuse(dependencies, input.organizationId, now);
     const ids = {
       organizationId: opaqueId(input.organizationId),

@@ -1,7 +1,9 @@
+import { paidPeriodEndsAt } from "@polaris/domain/billing/provider-period";
 import { describe, expect, it } from "vitest";
 import type { FetchInit, FetchLike } from "../http";
 import type { PrepareSubscriptionInput } from "../provider-port";
 import {
+  NotFirstChargeError,
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "../provider-port";
@@ -429,6 +431,67 @@ describe("refundCurrentPeriod", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]?.url).toBe("/payments/pay_new001/refund");
     expect(calls.indexOf(posts[0] as Call)).toBe(calls.length - 1);
+  });
+
+  describe("with the first charge recorded (the owner's refund, ADR 0104)", () => {
+    const FIRST_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+    const paidFirst = () =>
+      fakeAsaas(
+        ...withCharges(
+          payment({ due: "2026-10-19", id: "pay_first1", status: "CONFIRMED" }),
+          payment({ due: "2026-11-19", id: "pay_next01", status: "PENDING" })
+        )
+      );
+
+    it("refunds the charge in force when it pays the first charge's period", async () => {
+      const { calls, fetch } = paidFirst();
+
+      await expect(
+        portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, {
+          eventId: FIRST_EVENT,
+          periodEndsAt: paidPeriodEndsAt("2026-10-19", 1),
+        })
+      ).resolves.toBe("refund_requested");
+
+      const posts = calls.filter((call) => call.method === "POST");
+      expect(posts.map((call) => call.url)).toEqual([
+        "/payments/pay_first1/refund",
+      ]);
+    });
+
+    it("refuses, asking for no refund, when the charge in force pays another period (the provider reordered)", async () => {
+      const { calls, fetch } = paidFirst();
+
+      await expect(
+        portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, {
+          eventId: FIRST_EVENT,
+          periodEndsAt: paidPeriodEndsAt("2026-09-19", 1),
+        })
+      ).rejects.toBeInstanceOf(NotFirstChargeError);
+
+      expect(calls.some((call) => call.method === "POST")).toBe(false);
+    });
+
+    it.each([
+      ["no event", { eventId: null, periodEndsAt: new Date(0) }],
+      ["no period", { eventId: FIRST_EVENT, periodEndsAt: null }],
+    ])(
+      "refuses with %s recorded, before it reads anything from Asaas",
+      async (_label, firstCharge) => {
+        const { calls, fetch } = paidFirst();
+
+        await expect(
+          portWith(fetch).refundCurrentPeriod(
+            CHECKOUT_ID,
+            NOW,
+            null,
+            firstCharge
+          )
+        ).rejects.toBeInstanceOf(NotFirstChargeError);
+
+        expect(calls).toEqual([]);
+      }
+    );
   });
 
   it("refunds the paid charge of a subscription already deleted (the refund command cancels the renewal first)", async () => {

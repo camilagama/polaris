@@ -557,7 +557,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
         {
           ...dependencies.ownerCommandTiming,
           portFor: (provider, signal) =>
-            portOf(context.bindings, provider, signal ? { signal } : {}),
+            portOf(context.bindings, provider, { signal }),
           store,
         },
         organizationId,
