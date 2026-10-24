@@ -10,6 +10,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { Skeleton } from "@/ui/skeleton";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { SaleCancelPanel } from "./sale-cancel-panel";
@@ -41,16 +42,27 @@ const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
 const LINK =
   "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-function StateCard({
-  children,
-  role,
-}: {
-  children: ReactNode;
-  role?: "status";
-}) {
+function StateCard({ children }: { children: ReactNode }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center" role={role}>
+    <Card className="items-center px-(--card-spacing) text-center">
       <p className="text-muted-foreground">{children}</p>
+    </Card>
+  );
+}
+
+const LOADING_ROWS = [0, 1, 2];
+
+/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
+function LoadingCard({ message }: { message: string }) {
+  return (
+    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+      <p className="sr-only">{message}</p>
+      {LOADING_ROWS.map((row) => (
+        <div aria-hidden="true" className="grid gap-1.5" key={row}>
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      ))}
     </Card>
   );
 }
@@ -109,7 +121,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
     <div className={UI_ROOT}>
       <SaleNoticeRegion notice={notice} />
       {load.status === "loading" ? (
-        <StateCard role="status">Carregando venda…</StateCard>
+        <LoadingCard message="Carregando venda…" />
       ) : null}
       {load.status === "error" ? (
         <Alert variant="destructive">
