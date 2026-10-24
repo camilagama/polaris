@@ -265,3 +265,28 @@ test("o endereço do site do Polaris não aparece em outra resposta", async ({
     }
   }
 });
+
+test("o catálogo nunca define cookie, em nenhuma rota pública", async ({
+  request,
+}) => {
+  // catalogo.araute.app é irmão do web em araute.app e serve conteúdo vindo das lojas (ADR 0097)
+  const paths = [
+    "/",
+    "/robots.txt",
+    "/loja-horizonte",
+    `/loja-horizonte/p/${PRODUCT_WITH_PHOTOS}`,
+    "/loja-horizonte/p/inexistente",
+    "/loja-horizonte/m/a/b",
+    "/nao-existe",
+  ];
+  for (const path of paths) {
+    // biome-ignore lint/performance/noAwaitInLoops: one path at a time, for a readable failure
+    const response = await request.get(`${FIXTURE}${path}`, {
+      maxRedirects: 0,
+    });
+    const cookies = response
+      .headersArray()
+      .filter(({ name }) => name.toLowerCase() === "set-cookie");
+    expect(cookies, path).toEqual([]);
+  }
+});

@@ -218,7 +218,7 @@
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
-        "CATALOG_ORIGIN": "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev",
+        "CATALOG_ORIGIN": "https://catalogo.araute.app",
         "OFFLINE_LEASE_KEY_ID": "staging-1"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
