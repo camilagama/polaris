@@ -45,9 +45,9 @@ export const REST_GROWTH_HARD_CAP_GZIP_BYTES = 80_000;
 /**
  * What going past `REST_GROWTH_BUDGET_GZIP_BYTES` does. "warn" until the cut step before the go-live (Phase 5
  * of the execution plan), by decision of the user on 23/10/2026 (ADR 0103, amendment of 23/10/2026): the build
- * prints the total, the reference and the excess, and the hard cap still fails. The cut step takes
- * `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the screens and goes back to "block"
- * with a firm ceiling. A constant, not an environment variable: changing it is a reviewed change.
+ * prints the total, the reference and the excess, and the hard cap still fails. The cut step took
+ * `tailwind-merge` out (about -8.6 KB gzip, measured in t266 and t320; `tailwindMergeProblems` fails a build that
+ * brings it back), trims the JS of the screens and goes back to "block" with a firm ceiling. A constant, not an environment variable: changing it is a reviewed change.
  */
 export const REST_GROWTH_MODE: RestGrowthMode = "warn";
 
@@ -99,12 +99,12 @@ const PRIMITIVE_MODULE =
 
 /**
  * The interface infrastructure: the components of `src/ui/`, `cn` (`src/lib/utils.ts`) and the libraries only
- * they bring (tailwind-merge, class-variance-authority, clsx) and the icon library (lucide-react), whose icons
+ * they bring (class-variance-authority, clsx) and the icon library (lucide-react), whose icons
  * count here even when a screen imports them. Paid once, with the base; it counts in the +40 KB line, apart
  * from the screen's own code. Never a primitive module.
  */
 const INTERFACE_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/](?:ui[\\/]|lib[\\/]utils\.ts$)|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:tailwind-merge|class-variance-authority|clsx|lucide-react)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/](?:ui[\\/]|lib[\\/]utils\.ts$)|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:class-variance-authority|clsx|lucide-react)[\\/])/;
 
 export interface PrecacheSize {
   /** The charts chunk (`CHARTS_CHUNK`): a line of its own, apart from the rest. */
@@ -222,6 +222,28 @@ export function chartsPlacementProblems(
           (id) =>
             `chart module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the charts chunk`
         )
+    );
+}
+
+/** The module of `tailwind-merge` in a bundle: the ids are those of the modules of the chunk. */
+const TAILWIND_MERGE_MODULE =
+  /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?tailwind-merge[\\/]/;
+
+/**
+ * One problem for each chunk that carries a module of `tailwind-merge` (t320): `cn` is `clsx` alone, and a part that
+ * needs a class of the caller to win has a variant or a prop for it (`src/lib/utils.ts`). The library comes back in
+ * about 8.6 KB gzip of the entry chunk, so the build fails instead of accepting it.
+ */
+export function tailwindMergeProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  return chunks
+    .filter((chunk) =>
+      Object.keys(chunk.modules).some((id) => TAILWIND_MERGE_MODULE.test(id))
+    )
+    .map(
+      (chunk) =>
+        `tailwind-merge is in ${chunk.fileName}: cn is clsx alone, give the part a variant or a prop instead`
     );
 }
 
@@ -363,7 +385,10 @@ export function precacheBudgetPlugin(
         interface: interfaceShares(chunks),
         primitives: primitiveShares(chunks),
       };
-      placement = chartsPlacementProblems(chunks);
+      placement = [
+        ...chartsPlacementProblems(chunks),
+        ...tailwindMergeProblems(chunks),
+      ];
     },
     name: "polaris:precache-budget",
     writeBundle(output) {

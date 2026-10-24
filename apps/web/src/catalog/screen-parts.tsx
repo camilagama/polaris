@@ -57,7 +57,7 @@ export function StatusNav<T extends string>({
 /** Loading, empty or no result of a list: a card with a few words, and what to do next when there is one. */
 export function ListNotice({ children }: { children: ReactNode }) {
   return (
-    <Card className="py-6">
+    <Card pad="6">
       <div className="grid justify-items-center gap-3 px-4 text-center">
         {children}
       </div>

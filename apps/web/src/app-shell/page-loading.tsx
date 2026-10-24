@@ -38,7 +38,7 @@ export function PageLoading({
           <div className="grid gap-3 rounded-xl bg-card p-3 shadow-xs ring-1 ring-foreground/[0.06] md:p-4">
             {ROWS.map((row) => (
               <div className="flex items-center gap-3" key={row}>
-                <Skeleton className="size-9 shrink-0 rounded-full" />
+                <Skeleton circle className="size-9 shrink-0" />
                 <div className="grid flex-1 gap-1.5">
                   <Skeleton className="h-3.5 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />

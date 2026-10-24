@@ -76,7 +76,7 @@ function CustomerMenu({
       >
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" width="wide">
         <DropdownMenuItem disabled={locked} onClick={handleEdit}>
           Editar
         </DropdownMenuItem>
@@ -355,7 +355,7 @@ export function CustomerList({
     );
   }
   return (
-    <Card className="gap-0 py-0">
+    <Card gap="none" pad="none">
       <ul aria-label="Clientes" className="divide-y divide-border">
         {customers.map((customer) => (
           <CustomerRow

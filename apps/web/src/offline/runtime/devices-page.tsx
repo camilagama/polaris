@@ -116,7 +116,8 @@ function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
     <>
       <Card
         aria-labelledby="devices-sign-in-title"
-        className="gap-3 px-(--card-spacing)"
+        className="px-(--card-spacing)"
+        gap="3"
         role="alert"
       >
         <h2 className="text-section" id="devices-sign-in-title">
@@ -165,7 +166,8 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
   return (
     <Card
       aria-labelledby="devices-left-title"
-      className="gap-3 px-(--card-spacing)"
+      className="px-(--card-spacing)"
+      gap="3"
       role="alert"
     >
       <h2 className="text-section" id="devices-left-title">

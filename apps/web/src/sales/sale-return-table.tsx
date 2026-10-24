@@ -24,8 +24,8 @@ import type {
 const CARD_ROW =
   "@max-3xl:grid @max-3xl:gap-1 @max-3xl:border-b @max-3xl:py-3 @max-3xl:hover:bg-transparent";
 const CARD_CELL =
-  "@max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
-const NUMBER_CELL = `${CARD_CELL} tabular-nums`;
+  "@max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
+const NUMBER_CELL = `${CARD_CELL} @max-3xl:py-0.5 tabular-nums`;
 /* the two fields of a card are one above the other: 12 px between them keeps their 48 px touch areas apart */
 const INPUT_CELL = `${CARD_CELL} @max-3xl:py-1.5`;
 
@@ -53,7 +53,7 @@ function QuantityInput({
         aria-invalid={error ? true : undefined}
         aria-label={label}
         autoComplete="off"
-        className="w-20"
+        width="20"
         disabled={disabled}
         id={id}
         inputMode="numeric"
@@ -173,7 +173,7 @@ export function ReturnTable({
           Itens da venda e quantidades para devolver
         </TableCaption>
         <TableHeader className="@max-3xl:sr-only">
-          <TableRow className="hover:bg-transparent">
+          <TableRow hover={false}>
             <TableHead scope="col">Item</TableHead>
             <TableHead scope="col">Vendido</TableHead>
             <TableHead scope="col">Já devolvido</TableHead>

@@ -7,11 +7,16 @@ import { Label } from "@/ui/label";
 /* Polaris v5.1: label 14/20, 6 px from label to control, help and error in 13/18 (the error weighs 500 and carries
    an icon, so color is never the only signal). A checked choice card has a `foreground/70` border and a
    `foreground/10` ring. */
-function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
+function FieldSet({
+  className,
+  gap = "4",
+  ...props
+}: React.ComponentProps<"fieldset"> & { gap?: "3" | "4" }) {
   return (
     <fieldset
       className={cn(
-        "flex min-w-0 flex-col gap-4 has-[>[data-slot=radio-group]]:gap-3",
+        "flex min-w-0 flex-col has-[>[data-slot=radio-group]]:gap-3",
+        gap === "3" ? "gap-3" : "gap-4",
         className
       )}
       data-slot="field-set"
@@ -20,15 +25,23 @@ function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   );
 }
 
+const legendSpace = { default: "mb-1.5", loose: "mb-3", none: "mb-0" } as const;
+
 function FieldLegend({
   className,
+  space = "default",
   variant = "legend",
   ...props
-}: React.ComponentProps<"legend"> & { variant?: "legend" | "label" }) {
+}: React.ComponentProps<"legend"> & {
+  /** The space under the legend: 6 px, none, or 12 px. */
+  space?: keyof typeof legendSpace;
+  variant?: "legend" | "label";
+}) {
   return (
     <legend
       className={cn(
-        "mb-1.5 font-medium data-[variant=label]:text-sm data-[variant=legend]:text-section",
+        "font-medium data-[variant=label]:text-sm data-[variant=legend]:text-section",
+        legendSpace[space],
         className
       )}
       data-slot="field-legend"
@@ -38,17 +51,39 @@ function FieldLegend({
   );
 }
 
+/* What a screen changes is a variant, not a class (the classes are not merged, t320): `width` (the field takes the
+   row, or only what it needs), `gap` (6 px, or 16 px beside a check box) and, in a horizontal field, `align`
+   (centered, or from the top for a control beside a text of several lines). */
 const fieldVariants = cva(
-  "group/field flex w-full gap-1.5 data-[invalid=true]:text-foreground",
+  "group/field flex data-[invalid=true]:text-foreground",
   {
+    compoundVariants: [
+      { align: "center", class: "items-center", orientation: "horizontal" },
+      { align: "start", class: "items-start", orientation: "horizontal" },
+    ],
     defaultVariants: {
+      align: "center",
+      gap: "default",
       orientation: "vertical",
+      width: "full",
     },
     variants: {
+      align: {
+        center: "",
+        start: "",
+      },
+      gap: {
+        default: "gap-1.5",
+        wide: "gap-4",
+      },
       orientation: {
         horizontal:
-          "flex-row items-center has-[>[data-slot=field-content]]:items-start *:data-[slot=field-label]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
+          "flex-row has-[>[data-slot=field-content]]:items-start *:data-[slot=field-label]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
         vertical: "flex-col *:w-full [&>.sr-only]:w-auto",
+      },
+      width: {
+        auto: "w-auto",
+        full: "w-full",
       },
     },
   }
@@ -57,13 +92,19 @@ const fieldVariants = cva(
 /* A label, its control and their texts. No role (the registry gives it "group"): one control is no group of
    controls, and a choice card would announce a nameless group inside its label. */
 function Field({
+  align,
   className,
+  gap,
   orientation = "vertical",
+  width,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
   return (
     <div
-      className={cn(fieldVariants({ orientation }), className)}
+      className={cn(
+        fieldVariants({ align, gap, orientation, width }),
+        className
+      )}
       data-orientation={orientation}
       data-slot="field"
       {...props}
@@ -85,14 +126,20 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 /* Around a `Field` it becomes a choice card: the whole card is the target and shows the focus outline. */
-function FieldLabel({ className, ...props }: React.ComponentProps<"label">) {
+function FieldLabel({
+  className,
+  plain = false,
+  ...props
+}: React.ComponentProps<"label"> & { plain?: boolean }) {
   return (
     <Label
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug has-[>[data-slot=field]]:has-[:focus-visible]:outline-3 has-[>[data-slot=field]]:has-[:focus-visible]:outline-ring has-[>[data-slot=field]]:has-[:focus-visible]:outline-offset-2 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-data-checked:border-foreground/70 has-[>[data-slot=field]]:bg-card has-data-checked:ring-1 has-data-checked:ring-foreground/10 has-[>[data-slot=field]]:transition-[border-color,box-shadow] has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:border-input *:data-[slot=field]:px-3 *:data-[slot=field]:py-2 group-data-[disabled=true]/field:opacity-50",
+        "group/field-label peer/field-label w-fit has-[>[data-slot=field]]:has-[:focus-visible]:outline-3 has-[>[data-slot=field]]:has-[:focus-visible]:outline-ring has-[>[data-slot=field]]:has-[:focus-visible]:outline-offset-2 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-data-checked:border-foreground/70 has-[>[data-slot=field]]:bg-card has-data-checked:ring-1 has-data-checked:ring-foreground/10 has-[>[data-slot=field]]:transition-[border-color,box-shadow] has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:border-input *:data-[slot=field]:px-3 *:data-[slot=field]:py-2 group-data-[disabled=true]/field:opacity-50",
         className
       )}
       data-slot="field-label"
+      leading={plain ? "5" : "snug"}
+      plain={plain}
       {...props}
     />
   );

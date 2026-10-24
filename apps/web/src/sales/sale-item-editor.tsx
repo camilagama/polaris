@@ -111,9 +111,10 @@ export function ItemEditor({
                 </p>
               ) : null}
               <Button
-                className="justify-self-start text-support"
+                className="justify-self-start"
                 onClick={handleClear}
                 size="sm"
+                text="support"
                 type="button"
                 variant="link"
               >
@@ -133,11 +134,11 @@ export function ItemEditor({
         {canRemove ? (
           <Button
             aria-label={`Remover item ${index + 1}`}
-            className="text-muted-foreground hover:text-destructive"
+            className="hover:text-destructive"
             onClick={handleRemove}
             size="icon"
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
           >
             <Trash2Icon aria-hidden="true" />
           </Button>

@@ -34,7 +34,10 @@ export function OperationFailureNotice({
   }
   return (
     <Alert variant="destructive">
-      <AlertDescription className="grid justify-items-start gap-3 [&_p:not(:last-child)]:mb-0">
+      <AlertDescription
+        className="grid justify-items-start gap-3"
+        paragraphs="tight"
+      >
         <p>{submission.failure.message}</p>
         {submission.confirmingDiscard ? (
           <>
@@ -45,10 +48,11 @@ export function OperationFailureNotice({
             </p>
             <div className="flex flex-wrap gap-3">
               <Button
-                className="h-auto min-h-ctl-md whitespace-normal py-1.5"
+                className="py-1.5"
                 onClick={onDiscardConfirm}
                 type="button"
                 variant="destructive"
+                wrap
               >
                 Sim, descartar esta tentativa
               </Button>

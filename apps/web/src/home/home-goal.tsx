@@ -48,7 +48,7 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
         <Progress
           aria-label={`Progresso de ${goalTitle(goal)}`}
           aria-valuetext={`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}, ${formatGoalPercent(progress.percent)}`}
-          className="gap-1.5"
+          gap="1.5"
           value={goalProgressWidth(progress.percent)}
         >
           <span className="flex w-full flex-wrap items-baseline justify-between gap-x-3 text-sm">

@@ -27,7 +27,10 @@ export function LegalAcceptanceNotice() {
       variant="warning"
     >
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
+      <AlertDescription
+        className="grid justify-items-start gap-2"
+        paragraphs="tight"
+      >
         <p>{ACCEPTANCE_NOTICE}</p>
         {unsent ? (
           <>

@@ -123,7 +123,7 @@ function RemoveButton({ action, hintId, onAction }: RemoveButtonProps) {
               remoção fica no histórico de atribuição.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-3">
+          <DialogFooter gap="3">
             <Button onClick={handleCancel} type="button" variant="outline">
               Cancelar
             </Button>
@@ -187,7 +187,7 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
 
 function Frame({ children, framed }: { children: ReactNode; framed: boolean }) {
   return framed ? (
-    <Card className="gap-0 py-0">
+    <Card gap="none" pad="none">
       <CardContent className="grid gap-4 py-(--card-spacing)">
         {children}
       </CardContent>

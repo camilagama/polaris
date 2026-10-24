@@ -289,9 +289,9 @@ export function ExpenseRuleForm({
         </Button>
         <Button
           {...connectionControlProps(online)}
-          className="h-auto min-h-ctl-md whitespace-normal"
           disabled={disabled}
           type="submit"
+          wrap
         >
           {submitLabel(saving, editing !== null)}
         </Button>

@@ -103,8 +103,9 @@ function ToastList() {
                 <ToastPrimitive.Action
                   render={
                     <Button
-                      className="mt-1 h-auto w-fit justify-start px-0 text-[0.8125rem]"
+                      className="mt-1 w-fit justify-start"
                       size="sm"
+                      text="13"
                       variant="link"
                     />
                   }
@@ -115,9 +116,9 @@ function ToastList() {
               aria-label="Fechar aviso"
               render={
                 <Button
-                  className="-my-1 -mr-1.5 text-muted-foreground hover:text-foreground"
+                  className="-my-1 -mr-1.5 hover:text-foreground"
                   size="icon-xs"
-                  variant="ghost"
+                  variant="ghost-muted"
                 />
               }
             >

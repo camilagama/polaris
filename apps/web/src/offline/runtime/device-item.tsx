@@ -116,7 +116,7 @@ export function RevokeForm({
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       ) : null}
-      <DialogFooter className="gap-3">
+      <DialogFooter gap="3">
         <Button
           aria-disabled={busy || undefined}
           onClick={busy ? undefined : onCancel}
@@ -129,10 +129,11 @@ export function RevokeForm({
           aria-describedby={offline ? reasonId : undefined}
           aria-disabled={blocked || undefined}
           // the label is long ("…e encerrar as outras sessões"): it wraps, so it fits a 320 px dialog
-          className="h-auto! min-h-ctl-md whitespace-normal py-1.5 text-center"
+          className="py-1.5 text-center"
           onClick={blocked ? undefined : onRevoke}
           type="button"
           variant="destructive"
+          wrap
         >
           {busy ? REVOKING_LABEL : confirmLabel(endOtherSessions)}
         </Button>
@@ -206,7 +207,7 @@ export function DeviceItem({
   }, []);
   return (
     <li>
-      <Card className="gap-2 px-(--card-spacing)">
+      <Card className="px-(--card-spacing)" gap="2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p className="font-medium [overflow-wrap:anywhere]">
             {row.labelText}
@@ -240,9 +241,9 @@ export function DeviceItem({
             </Button>
             <Dialog onOpenChange={handleOpenChange} open={confirming}>
               <DialogContent
-                className="sm:max-w-md"
                 finalFocus={finalFocus}
                 showCloseButton={false}
+                size="md"
               >
                 <RevokeBody
                   actionError={actionError}

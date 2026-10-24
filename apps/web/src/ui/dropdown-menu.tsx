@@ -10,18 +10,27 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
+/* The width of the menu: the trigger's width with at least 8 rem (`anchor`), at least 11 rem (`wide`: the row
+   actions of a list) or 10 rem exactly (`fixed`). A prop, not a class of the caller (the classes are not merged, t320). */
+const menuContentWidth = {
+  anchor: "w-(--anchor-width) min-w-32",
+  fixed: "w-40 min-w-32",
+  wide: "w-(--anchor-width) min-w-44",
+} as const;
+
 function DropdownMenuContent({
   align = "start",
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
   className,
+  width = "anchor",
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<
     MenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+  > & { width?: keyof typeof menuContentWidth }) {
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
@@ -33,7 +42,8 @@ function DropdownMenuContent({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "data-open:fade-in-0 data-closed:fade-out-0 z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md outline-none ring-1 ring-foreground/[0.06] duration-[140ms] data-closed:animate-out data-open:animate-in data-closed:overflow-hidden",
+            "data-open:fade-in-0 data-closed:fade-out-0 z-50 max-h-(--available-height) origin-(--transform-origin) overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md outline-none ring-1 ring-foreground/[0.06] duration-[140ms] data-closed:animate-out data-open:animate-in data-closed:overflow-hidden",
+            menuContentWidth[width],
             className
           )}
           data-slot="dropdown-menu-content"
@@ -188,4 +198,5 @@ export {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  menuContentWidth,
 };

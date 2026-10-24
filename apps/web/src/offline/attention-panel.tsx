@@ -170,7 +170,7 @@ function ItemCard({
   }, [item, onDiscard]);
   return (
     <li data-cause={item.cause}>
-      <Card className="gap-3 px-(--card-spacing)">
+      <Card className="px-(--card-spacing)" gap="3">
         <div className="flex items-start gap-2">
           <Icon
             aria-hidden="true"

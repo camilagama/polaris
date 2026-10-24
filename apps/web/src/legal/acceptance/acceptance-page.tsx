@@ -113,10 +113,10 @@ function PendingList({
             </p>
           </div>
           {item.changes ? (
-            <Alert className="bg-muted/60 text-foreground">
+            <Alert variant="muted">
               <InfoIcon aria-hidden="true" className="text-muted-foreground" />
               <AlertTitle>{ACCEPTANCE_WHAT_CHANGED}</AlertTitle>
-              <AlertDescription className="text-foreground">
+              <AlertDescription tone="foreground">
                 {item.changes}
               </AlertDescription>
             </Alert>
@@ -215,8 +215,9 @@ function AcceptanceForm({
       onSubmit={handleSubmit}
     >
       <Field
-        className="items-start gap-4"
+        align="start"
         data-invalid={boxMissing || undefined}
+        gap="wide"
         orientation="horizontal"
       >
         <Checkbox
@@ -229,10 +230,7 @@ function AcceptanceForm({
           ref={checkboxRef}
         />
         <div className="grid gap-1">
-          <FieldLabel
-            className="block font-normal leading-5"
-            htmlFor="acceptance-checkbox"
-          >
+          <FieldLabel htmlFor="acceptance-checkbox" plain>
             {acceptanceCheckboxLabel(pending)}
           </FieldLabel>
           {boxMissing ? (

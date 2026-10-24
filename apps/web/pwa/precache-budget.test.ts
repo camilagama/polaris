@@ -16,6 +16,7 @@ import {
   chartsBudgetProblems,
   chartsLine,
   chartsPlacementProblems,
+  tailwindMergeProblems,
   FONT_BUDGET_BYTES,
   interfaceShares,
   measurePrecache,
@@ -521,6 +522,37 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     );
     expect(chartsLine(asSize(8000))).toContain("(0 B left)");
     expect(chartsLine(asSize(8100))).toContain("over by 100 B");
+  });
+
+  it("fails a chunk that carries tailwind-merge, in the bun layout or the flat one (control: the same chunk without it passes)", () => {
+    const flat = "/repo/node_modules/tailwind-merge/dist/bundle-mjs.mjs";
+    const bun =
+      "/repo/node_modules/.bun/tailwind-merge@3.7.0/node_modules/tailwind-merge/dist/bundle-mjs.mjs";
+    const clsx =
+      "/repo/node_modules/.bun/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs";
+    expect(
+      tailwindMergeProblems([
+        {
+          fileName: "assets/index-abc.js",
+          modules: { [clsx]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([]);
+    expect(
+      tailwindMergeProblems([
+        {
+          fileName: "assets/index-abc.js",
+          modules: { [flat]: { renderedLength: 1 } },
+        },
+        {
+          fileName: "assets/sale-def.js",
+          modules: { [bun]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([
+      expect.stringContaining("tailwind-merge is in assets/index-abc.js"),
+      expect.stringContaining("tailwind-merge is in assets/sale-def.js"),
+    ]);
   });
 
   it("fails a chart module, d3-shape or d3-path in a chunk that is not the charts chunk (control: in its own chunk it passes)", () => {

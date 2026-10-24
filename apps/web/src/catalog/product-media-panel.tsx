@@ -761,7 +761,7 @@ export function ProductMediaPanel({
 
   return (
     <Card aria-labelledby="product-media-heading" ref={panelRef} role="region">
-      <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
+      <CardHeader layout="action">
         <div
           className="grid gap-0.5 outline-none"
           ref={headingRef}
@@ -860,7 +860,7 @@ export function ProductMediaPanel({
           {availableVariants.length > 0 ? (
             <FieldSet>
               <div className="grid gap-0.5">
-                <FieldLegend className="mb-0" variant="label">
+                <FieldLegend space="none" variant="label">
                   Associar também às variantes
                 </FieldLegend>
                 <FieldDescription>

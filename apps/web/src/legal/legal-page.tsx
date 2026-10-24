@@ -123,7 +123,7 @@ function renderBlock(block: Block, index: number): ReactNode {
       return (
         <Alert key={`callout-${index}`} role="note" variant="warning">
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertDescription className="text-sm/5 touch:text-base/6">
+          <AlertDescription size="reading">
             {renderInline(block.children)}
           </AlertDescription>
         </Alert>
@@ -174,15 +174,15 @@ function SectionView({ section }: { section: Section }) {
   }
   if (heading.id === ESSENTIAL_SECTION_ID) {
     return (
-      <Alert
-        aria-labelledby={heading.id}
-        className="bg-muted/60 text-foreground"
-        role="note"
-      >
+      <Alert aria-labelledby={heading.id} role="note" variant="muted">
         <h2 className={SECTION_TITLE} id={heading.id}>
           {heading.text}
         </h2>
-        <AlertDescription className="grid gap-3 text-foreground text-sm/5 touch:text-base/6">
+        <AlertDescription
+          className="grid gap-3"
+          tone="foreground"
+          size="reading"
+        >
           {blocks.map(renderBlock)}
         </AlertDescription>
       </Alert>
@@ -224,7 +224,7 @@ export function LegalDocumentView({ document, text }: LegalDocumentViewProps) {
         {LEGAL_DRAFT_NOTICE ? (
           <Alert role="note" variant="warning">
             <TriangleAlertIcon aria-hidden="true" />
-            <AlertDescription className="font-medium text-sm/5 touch:text-base/6">
+            <AlertDescription className="font-medium" size="reading">
               {LEGAL_DRAFT_NOTICE}
             </AlertDescription>
           </Alert>

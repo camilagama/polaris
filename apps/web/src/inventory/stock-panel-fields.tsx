@@ -69,7 +69,7 @@ function NoteField({
   return (
     <Field className="min-w-0 md:col-span-2" data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <InputGroup className="h-auto items-stretch">
+      <InputGroup shape="area">
         <InputGroupTextarea
           aria-describedby={describedBy(id, error, undefined)}
           aria-invalid={error ? true : undefined}

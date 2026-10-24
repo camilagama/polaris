@@ -343,7 +343,7 @@ export function ExpenseCategoriesPanel({
   return (
     <CollapsibleSection id="expense-categories" title="Categorias de despesa">
       <ActionNotice feedback={feedback} />
-      <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+      <Field className="min-h-ctl-md" orientation="horizontal" width="auto">
         <Checkbox
           checked={showArchived}
           id="expense-categories-archived"

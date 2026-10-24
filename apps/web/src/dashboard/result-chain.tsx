@@ -31,7 +31,7 @@ function rowClass(row: ChainRow): string | undefined {
 export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
   const rows = chainRows(summary.chain, summary.quality);
   return (
-    <Card aria-labelledby={CHAIN_TITLE_ID} className="gap-0 py-0" role="region">
+    <Card aria-labelledby={CHAIN_TITLE_ID} gap="none" pad="none" role="region">
       <CardHeader className="border-b py-(--card-spacing)">
         <CardTitle aria-level={2} id={CHAIN_TITLE_ID} role="heading">
           Como chegamos a este resultado
@@ -47,7 +47,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
         <TableHeader>
           <TableRow>
             <TableHead scope="col">Etapa</TableHead>
-            <TableHead className="text-right" scope="col">
+            <TableHead align="right" scope="col">
               Valor
             </TableHead>
           </TableRow>
@@ -55,10 +55,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
         <TableBody>
           {rows.map((row) => (
             <TableRow className={rowClass(row)} key={row.id}>
-              <TableHead
-                className="h-auto whitespace-normal py-2.5 align-top font-[weight:inherit] text-foreground text-sm"
-                scope="row"
-              >
+              <TableHead className="py-2.5" scope="row" variant="row">
                 {row.label}
                 {row.note ? (
                   <span className="mt-0.5 block font-normal text-warning text-xs italic">
@@ -68,9 +65,10 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
               </TableHead>
               <TableCell
                 className={cn(
-                  "text-right align-top tabular-nums",
+                  "text-right tabular-nums",
                   row.negative && row.kind !== "line" && "text-destructive"
                 )}
+                vertical="top"
               >
                 {row.value}
               </TableCell>

@@ -115,7 +115,7 @@ function GoalProgress({ goal }: { goal: GoalReadModel }) {
           de {targetText}
         </span>
       </span>
-      <ProgressValue className="font-medium text-foreground">
+      <ProgressValue className="font-medium" tone="foreground">
         {() => percentText}
       </ProgressValue>
     </Progress>
@@ -169,7 +169,7 @@ export function SettledGoalCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
-    <Card className="bg-muted/30 shadow-none">
+    <Card tone="quiet">
       <CardContent className="grid gap-3">
         <GoalHeader goal={goal} today={today} />
         <SettledResult goal={goal} timezone={timezone} />
@@ -238,7 +238,7 @@ function CancelDialog({
             não poderá ser desfeito.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-3">
+        <DialogFooter gap="3">
           <Button
             aria-disabled={busy || undefined}
             className={OFF}
@@ -262,8 +262,6 @@ function CancelDialog({
     </Dialog>
   );
 }
-
-const CANCEL_TEXT = "text-destructive hover:bg-destructive/10";
 
 interface ActiveActionsProps {
   busyKey: string | null;
@@ -305,12 +303,11 @@ function ActiveActions({
       {editing ? null : (
         <Button
           aria-label={`Cancelar meta ${title}`}
-          className={CANCEL_TEXT}
           disabled={busyKey !== null}
           onClick={onAskCancel}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="ghost-destructive"
         >
           Cancelar meta
         </Button>

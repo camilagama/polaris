@@ -29,18 +29,23 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   );
 }
 
+/* `width`: the trigger takes what its text needs (`fit`) or the row (`full`); it is a prop, not a class of the caller
+   (the classes are not merged, t320). */
 function SelectTrigger({
   className,
   size = "default",
+  width = "fit",
   children,
   ...props
 }: SelectPrimitive.Trigger.Props & {
   size?: "sm" | "default";
+  width?: "fit" | "full";
 }) {
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "touch-hit flex w-fit select-none items-center justify-between gap-1.5 whitespace-nowrap rounded-md border border-input bg-transparent pr-2 pl-3 text-sm outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[size=default]:h-ctl-md data-[size=sm]:h-ctl-sm data-popup-open:border-ring data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "touch-hit flex select-none items-center justify-between gap-1.5 whitespace-nowrap rounded-md border border-input bg-transparent pr-2 pl-3 text-sm outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[size=default]:h-ctl-md data-[size=sm]:h-ctl-sm data-popup-open:border-ring data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        width === "full" ? "w-full" : "w-fit",
         className
       )}
       data-size={size}

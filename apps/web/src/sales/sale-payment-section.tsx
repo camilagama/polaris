@@ -123,11 +123,11 @@ function AdjustmentEditor({
         </span>
         <Button
           aria-label={`Remover ajuste ${index + 1}`}
-          className="text-muted-foreground hover:text-destructive"
+          className="hover:text-destructive"
           onClick={handleRemove}
           size="icon-sm"
           type="button"
-          variant="ghost"
+          variant="ghost-muted"
         >
           <Trash2Icon aria-hidden="true" />
         </Button>
@@ -192,7 +192,7 @@ function Adjustments({
   onRemove,
 }: AdjustmentsProps) {
   return (
-    <FieldSet className="gap-3">
+    <FieldSet gap="3">
       <legend className="font-medium text-sm">
         Desconto, acréscimo ou frete
       </legend>

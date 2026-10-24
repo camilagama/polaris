@@ -30,7 +30,8 @@ function ResultCard({
 }: ResultCardProps) {
   return (
     <Card
-      className={cn("content-start gap-1.5 px-(--card-spacing)", className)}
+      className={cn("content-start px-(--card-spacing)", className)}
+      gap="1.5"
     >
       <dt className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -56,10 +57,7 @@ function ResultCard({
 export function IncompleteBadge() {
   // two columns at 320 px leave less room than the words: the badge breaks its line inside its own box
   return (
-    <Badge
-      className="h-auto min-h-5 max-w-full whitespace-normal py-0.5 text-left leading-4"
-      variant="warning"
-    >
+    <Badge className="max-w-full py-0.5 text-left" variant="warning" wrap>
       estimativa incompleta
     </Badge>
   );

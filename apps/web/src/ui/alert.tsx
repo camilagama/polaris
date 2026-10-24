@@ -13,6 +13,9 @@ const alertVariants = cva(
     variants: {
       variant: {
         default: "bg-card text-card-foreground",
+        /* an explanation, not a warning: a muted ground with the ink color, and `outline`: the card with a border of ink */
+        muted: "bg-muted/60 text-foreground",
+        outline: "border-foreground/15 bg-card text-foreground",
         destructive:
           "border-destructive/30 bg-destructive/10 text-destructive *:data-[slot=alert-description]:text-destructive",
         warning:
@@ -50,14 +53,46 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/* The color, the type size and the space between paragraphs are variants (the classes are not merged, t320): `tone`
+   (muted, or `foreground` for text that is the point of the notice), `size` (`support`, or `reading` for the legal
+   text, 14/20 and 16/24 with touch) and `paragraphs` (`spaced`, or `tight` when the paragraphs are in a grid). */
+const alertDescriptionVariants = cva(
+  "text-balance md:text-pretty [&_a]:underline [&_a]:underline-offset-3",
+  {
+    defaultVariants: {
+      paragraphs: "spaced",
+      size: "support",
+      tone: "muted",
+    },
+    variants: {
+      paragraphs: {
+        spaced: "[&_p:not(:last-child)]:mb-4",
+        tight: "[&_p:not(:last-child)]:mb-0",
+      },
+      size: {
+        reading: "text-sm/5 touch:text-base/6",
+        support: "text-support",
+      },
+      tone: {
+        foreground: "text-foreground",
+        muted: "text-muted-foreground",
+      },
+    },
+  }
+);
+
 function AlertDescription({
   className,
+  paragraphs,
+  size,
+  tone,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> &
+  VariantProps<typeof alertDescriptionVariants>) {
   return (
     <div
       className={cn(
-        "text-balance text-muted-foreground text-support md:text-pretty [&_a]:underline [&_a]:underline-offset-3 [&_p:not(:last-child)]:mb-4",
+        alertDescriptionVariants({ paragraphs, size, tone }),
         className
       )}
       data-slot="alert-description"

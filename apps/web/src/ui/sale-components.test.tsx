@@ -1,6 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { ButtonGroup } from "@/ui/button-group";
@@ -155,26 +154,5 @@ describe("Card, Badge, ButtonGroup and Separator", () => {
 
   it("gives a separator", () => {
     expect(html(<Separator />)).toContain('role="separator"');
-  });
-});
-
-describe("cn", () => {
-  // one class per argument: the formatter sorts the classes inside a string, which would undo the order tested here
-  it("keeps the type sizes of the theme next to a text color", () => {
-    expect(cn("text-support", "text-muted-foreground")).toBe(
-      "text-support text-muted-foreground"
-    );
-    expect(cn("text-section", "text-destructive")).toBe(
-      "text-section text-destructive"
-    );
-    expect(cn("text-sm", "text-support")).toBe("text-support");
-    expect(cn("text-value-lg", "text-foreground")).toBe(
-      "text-value-lg text-foreground"
-    );
-  });
-
-  it("lets a later height replace a control height of the theme", () => {
-    expect(cn("h-ctl-md", "h-auto")).toBe("h-auto");
-    expect(cn("size-ctl-md", "size-8")).toBe("size-8");
   });
 });

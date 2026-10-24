@@ -69,8 +69,8 @@ function FeeFields({ errors, id, label, onChange, value }: FeeFieldsProps) {
     [onChange, value]
   );
   return (
-    <FieldSet className="min-w-0 content-start gap-3 rounded-lg border p-3">
-      <FieldLegend className="mb-0 px-1" variant="label">
+    <FieldSet className="min-w-0 content-start rounded-lg border p-3" gap="3">
+      <FieldLegend className="px-1" space="none" variant="label">
         {label}
       </FieldLegend>
       <SelectField
@@ -165,8 +165,8 @@ function RuleEditor({
   );
   const credit = rule.method === "credit_card";
   return (
-    <FieldSet className="@container min-w-0 gap-4 not-first:border-t not-first:pt-4">
-      <FieldLegend className="mb-3" variant="label">
+    <FieldSet className="@container min-w-0 not-first:border-t not-first:pt-4">
+      <FieldLegend space="loose" variant="label">
         Regra {index + 1}
       </FieldLegend>
       <div className="grid @md:grid-cols-2 gap-4">
@@ -286,7 +286,7 @@ export function PaymentProfileForm({
   return (
     <Card aria-labelledby={headingId} role="region">
       <form className="grid gap-4" noValidate onSubmit={onSubmit}>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader layout="row">
           <CardTitle aria-level={2} id={headingId} role="heading">
             {editing ? "Editar perfil" : "Novo perfil"}
           </CardTitle>

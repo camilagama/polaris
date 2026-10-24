@@ -146,7 +146,7 @@ export function SaleCancelPanel({
   if (state.step === "closed" && state.submission.phase === "idle") {
     return (
       <section aria-label="Cancelar venda">
-        <Card className="gap-0 py-0">
+        <Card gap="none" pad="none">
           <CardContent className="grid justify-items-start gap-3 py-(--card-spacing)">
             <p className="text-muted-foreground text-support">
               {CANCELLATION_EXPLANATION}
@@ -166,7 +166,7 @@ export function SaleCancelPanel({
   const submitting = state.submission.phase === "submitting";
   return (
     <section aria-labelledby="sale-cancel-title" ref={sectionRef}>
-      <Card className="gap-0 py-0">
+      <Card gap="none" pad="none">
         <CardContent className="grid gap-4 py-(--card-spacing)">
           <div className="grid gap-1">
             <h2 className="text-section" id="sale-cancel-title">

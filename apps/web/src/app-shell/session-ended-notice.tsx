@@ -70,7 +70,10 @@ export function SessionEndedNotice({
     >
       <TriangleAlertIcon aria-hidden="true" />
       <AlertTitle>{SESSION_ENDED_MESSAGE}</AlertTitle>
-      <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
+      <AlertDescription
+        className="grid justify-items-start gap-2"
+        paragraphs="tight"
+      >
         {unsent ? <p>{UNSENT_INPUT_WARNING}</p> : null}
         <Button
           aria-busy={leaving}

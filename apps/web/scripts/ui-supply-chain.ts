@@ -28,7 +28,6 @@ export const UI_ALLOWED_PACKAGES = [
   "d3-path",
   "d3-shape",
   "lucide-react",
-  "tailwind-merge",
   "tailwindcss",
   "tw-animate-css",
 ] as const;

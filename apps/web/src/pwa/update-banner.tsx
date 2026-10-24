@@ -33,7 +33,10 @@ export function UpdateBannerView({ onApply, snapshot }: UpdateBannerViewProps) {
       <AlertTitle aria-level={2} role="heading">
         Há uma nova versão do Polaris
       </AlertTitle>
-      <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
+      <AlertDescription
+        className="grid justify-items-start gap-2"
+        paragraphs="tight"
+      >
         {offer.kind === "ready" ? (
           <p>Atualize quando for conveniente: a página será recarregada.</p>
         ) : null}

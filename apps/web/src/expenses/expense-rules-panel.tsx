@@ -355,7 +355,7 @@ export function ExpenseRulesPanel({
       <RulesIntro />
       <ActionNotice feedback={feedback} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+        <Field className="min-h-ctl-md" orientation="horizontal" width="auto">
           <Checkbox
             checked={showPaused}
             id="expense-rules-paused"

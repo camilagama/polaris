@@ -38,20 +38,26 @@ function DialogOverlay({
   );
 }
 
+/* The width of the dialog from 640 px is a prop, not a class of the caller (the classes are not merged, t320). */
+const dialogWidth = { md: "sm:max-w-md", sm: "sm:max-w-sm" } as const;
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  size = "sm",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
+  size?: "md" | "sm";
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         className={cn(
-          "data-open:fade-in-0 data-closed:fade-out-0 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] duration-[220ms] data-closed:animate-out data-open:animate-in sm:max-w-sm",
+          "data-open:fade-in-0 data-closed:fade-out-0 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] duration-[220ms] data-closed:animate-out data-open:animate-in",
+          dialogWidth[size],
           className
         )}
         data-slot="dialog-content"
@@ -90,16 +96,20 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 function DialogFooter({
   className,
+  gap = "2",
   showCloseButton = false,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
+  /** The space between the buttons: 8 px, or 12 px when the labels are long. */
+  gap?: "2" | "3";
   showCloseButton?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col-reverse rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        gap === "3" ? "gap-3" : "gap-2",
         className
       )}
       data-slot="dialog-footer"
@@ -143,6 +153,7 @@ function DialogDescription({
 
 export {
   Dialog,
+  dialogWidth,
   DialogClose,
   DialogContent,
   DialogDescription,

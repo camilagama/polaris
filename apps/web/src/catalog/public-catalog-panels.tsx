@@ -438,7 +438,7 @@ export function ProductsCard(props: ProductsCardProps) {
 
   return (
     <Card aria-labelledby="catalog-products" role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+      <CardHeader layout="row">
         <CardTitle aria-level={2} id="catalog-products" role="heading">
           Produtos
         </CardTitle>

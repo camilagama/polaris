@@ -69,10 +69,11 @@ function CustomerDisclosure({
       <Button
         aria-controls="sale-customer-region"
         aria-expanded={open}
-        className="h-auto min-h-ctl-md max-w-full whitespace-normal py-1.5 text-left"
+        className="max-w-full py-1.5 text-left"
         onClick={handleToggle}
         type="button"
         variant="outline"
+        wrap
       >
         {open
           ? "Ocultar cliente da venda"

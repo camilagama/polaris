@@ -154,7 +154,8 @@ export function ExpenseCategorySelect({
           aria-describedby={describedBy(id, error, undefined)}
           aria-invalid={error ? true : undefined}
           aria-labelledby={labelId}
-          className="w-full min-w-0"
+          className="min-w-0"
+          width="full"
           id={id}
         >
           <SelectValue placeholder={placeholder} />

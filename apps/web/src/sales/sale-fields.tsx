@@ -165,7 +165,7 @@ export function QuantityStepper({
     }
   }, [more, onChange]);
   return (
-    <Field className="w-auto" data-invalid={Boolean(error)}>
+    <Field data-invalid={Boolean(error)} width="auto">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {/* the field has its own label: the group is only layout (role="none"), no nameless "group" to announce */}
       <ButtonGroup role="none">
@@ -179,13 +179,14 @@ export function QuantityStepper({
         >
           <MinusIcon aria-hidden="true" />
         </Button>
-        <InputGroup className="w-16">
+        <InputGroup width="16">
           <InputGroupInput
             aria-describedby={describedBy(id, error, hint)}
             aria-invalid={error ? true : undefined}
             autoComplete="off"
-            className="px-1 text-center tabular-nums"
+            className="text-center tabular-nums"
             id={id}
+            inset="tight"
             inputMode="numeric"
             maxLength={10}
             onChange={handleChange}
@@ -257,7 +258,8 @@ export function SelectField({
           aria-describedby={describedBy(id, error, hint)}
           aria-invalid={error ? true : undefined}
           aria-labelledby={labelId}
-          className="w-full min-w-0"
+          className="min-w-0"
+          width="full"
           id={id}
         >
           <SelectValue placeholder={placeholder} />

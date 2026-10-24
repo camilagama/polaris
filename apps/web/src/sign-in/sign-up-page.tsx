@@ -259,8 +259,10 @@ function SignUpForm({
             visible={visible}
           />
           <Field
-            className="items-start gap-4 pt-1"
+            align="start"
+            className="pt-1"
             data-invalid={acceptError !== null || undefined}
+            gap="wide"
             orientation="horizontal"
           >
             <Checkbox
@@ -273,10 +275,7 @@ function SignUpForm({
               ref={acceptRef}
             />
             <div className="grid gap-1">
-              <FieldLabel
-                className="block font-normal leading-5"
-                htmlFor={acceptId}
-              >
+              <FieldLabel htmlFor={acceptId} plain>
                 {ACCEPT_PREFIX}{" "}
                 <a
                   className={INLINE_LINK}

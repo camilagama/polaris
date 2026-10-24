@@ -96,7 +96,7 @@ export function MonthPicker({
   }, []);
 
   return (
-    <Field className={cn("w-auto min-w-0", className)}>
+    <Field className={cn("min-w-0", className)} width="auto">
       {supported ? (
         <FieldLabel htmlFor={id} id={labelId}>
           {label}
@@ -122,7 +122,11 @@ export function MonthPicker({
         </Button>
         {supported ? (
           // the group gives the field its 48 px band with touch and the halo of the focus, as every text field
-          <InputGroup className="w-auto min-w-40 flex-1 cursor-pointer justify-center bg-card shadow-xs dark:bg-secondary/60">
+          <InputGroup
+            className="flex-1 cursor-pointer justify-center"
+            surface="raised"
+            width="auto-40"
+          >
             <span
               aria-hidden="true"
               className="px-3 font-medium group-has-[[data-keyboard=true]]/input-group:opacity-0"

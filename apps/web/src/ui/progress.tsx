@@ -8,12 +8,20 @@ import { cn } from "@/lib/utils";
 function Progress({
   className,
   children,
+  gap = "3",
   value,
   ...props
-}: ProgressPrimitive.Root.Props) {
+}: ProgressPrimitive.Root.Props & {
+  /** The space between the label, the value and the bar: 12 px, or 6 px. */
+  gap?: "1.5" | "3";
+}) {
   return (
     <ProgressPrimitive.Root
-      className={cn("flex flex-wrap gap-3", className)}
+      className={cn(
+        "flex flex-wrap",
+        gap === "3" ? "gap-3" : "gap-1.5",
+        className
+      )}
       data-slot="progress"
       value={value}
       {...props}
@@ -62,11 +70,16 @@ function ProgressLabel({ className, ...props }: ProgressPrimitive.Label.Props) {
   );
 }
 
-function ProgressValue({ className, ...props }: ProgressPrimitive.Value.Props) {
+function ProgressValue({
+  className,
+  tone = "muted",
+  ...props
+}: ProgressPrimitive.Value.Props & { tone?: "foreground" | "muted" }) {
   return (
     <ProgressPrimitive.Value
       className={cn(
-        "ml-auto text-muted-foreground text-sm tabular-nums",
+        "ml-auto text-sm tabular-nums",
+        tone === "foreground" ? "text-foreground" : "text-muted-foreground",
         className
       )}
       data-slot="progress-value"

@@ -155,7 +155,7 @@ export function ExpenseForm({
 
   return (
     <Card aria-labelledby={FORM_TITLE_ID} role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <CardHeader layout="wide-row">
         <CardTitle aria-level={2} id={FORM_TITLE_ID} role="heading">
           {editing ? "Editar despesa" : "Nova despesa"}
         </CardTitle>
@@ -236,9 +236,9 @@ export function ExpenseForm({
           <div className="flex justify-end md:col-span-2">
             <Button
               {...connectionControlProps(online)}
-              className="h-auto min-h-ctl-md whitespace-normal"
               disabled={disabled}
               type="submit"
+              wrap
             >
               {submitLabel(saving, editing !== null)}
             </Button>

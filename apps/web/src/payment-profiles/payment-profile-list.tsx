@@ -245,11 +245,11 @@ export function PaymentProfileList({
 }: PaymentProfileListProps) {
   return (
     <Card aria-labelledby={LIST_TITLE_ID} role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <CardHeader layout="wide-row">
         <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
           Perfis cadastrados
         </CardTitle>
-        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+        <Field className="min-h-ctl-md" orientation="horizontal" width="auto">
           <Checkbox
             checked={includeArchived}
             id="payment-archived"

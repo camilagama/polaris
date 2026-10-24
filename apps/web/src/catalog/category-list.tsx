@@ -105,7 +105,7 @@ function CategoryMenu({
       >
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" width="wide">
         <DropdownMenuItem onClick={handleRename}>Renomear</DropdownMenuItem>
         {category.status === "active" ? (
           <DropdownMenuItem
@@ -418,7 +418,7 @@ export function CategoryList({
     return pendingDeleteId === id ? "delete" : null;
   };
   return (
-    <Card className="gap-0 py-0">
+    <Card gap="none" pad="none">
       <ul aria-label="Categorias" className="divide-y divide-border">
         {categories.map((category) => (
           <CategoryRow

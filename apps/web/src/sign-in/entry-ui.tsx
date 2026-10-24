@@ -193,7 +193,7 @@ export function EntryScreen({
                     "text-balance",
                     reading
                       ? "font-semibold text-2xl/8 tracking-tight"
-                      : "text-[1.0625rem] text-section"
+                      : "text-section"
                   )}
                 >
                   {withoutBreakInEmail(title)}
@@ -253,14 +253,13 @@ export function EntryNotice({ children }: { children: ReactNode }) {
   }, []);
   return (
     <Alert
-      className="focus-ring animate-rise bg-muted/60 text-foreground"
+      className="focus-ring animate-rise"
       ref={ref}
       tabIndex={-1}
+      variant="muted"
     >
       <InfoIcon aria-hidden="true" className="text-muted-foreground" />
-      <AlertDescription className="text-foreground">
-        {children}
-      </AlertDescription>
+      <AlertDescription tone="foreground">{children}</AlertDescription>
     </Alert>
   );
 }
@@ -273,14 +272,13 @@ export function EntrySuccess({ children }: { children: ReactNode }) {
   }, []);
   return (
     <Alert
-      className="focus-ring animate-rise border-foreground/15 bg-card text-foreground"
+      className="focus-ring animate-rise"
       ref={ref}
       tabIndex={-1}
+      variant="outline"
     >
       <CircleCheckIcon aria-hidden="true" />
-      <AlertDescription className="text-foreground">
-        {children}
-      </AlertDescription>
+      <AlertDescription tone="foreground">{children}</AlertDescription>
     </Alert>
   );
 }
@@ -394,7 +392,8 @@ export function GoogleButton({
   return (
     <Button
       aria-busy={pending || undefined}
-      className={cn("w-full", pending && "disabled:opacity-70")}
+      busy={pending}
+      className="w-full"
       disabled={disabled || pending}
       onClick={onClick}
       size="lg"
@@ -544,11 +543,11 @@ export function PasswordInput({
         <Button
           aria-controls={id}
           aria-label={visible ? HIDE_PASSWORD_LABEL : SHOW_PASSWORD_LABEL}
-          className="mr-1 text-muted-foreground hover:text-foreground"
+          className="mr-1 hover:text-foreground"
           onClick={onToggle}
           size="xs"
           type="button"
-          variant="ghost"
+          variant="ghost-muted"
         >
           {visible ? HIDE_PASSWORD : SHOW_PASSWORD}
         </Button>

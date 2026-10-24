@@ -203,7 +203,8 @@ function FailureNotice({
           <p className="mb-0!">{submission.failure.message}</p>
           {submission.failure.refreshData ? (
             <Button
-              className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+              className="max-w-full py-1.5 text-left"
+              wrap
               onClick={onRefresh}
               size="sm"
               type="button"
@@ -233,7 +234,8 @@ function FailureNotice({
             </p>
             <div className="flex min-w-0 flex-wrap gap-2">
               <Button
-                className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+                className="max-w-full py-1.5 text-left"
+                wrap
                 onClick={onDiscardConfirm}
                 size="sm"
                 type="button"
@@ -242,7 +244,8 @@ function FailureNotice({
                 Sim, descartar e começar outra
               </Button>
               <Button
-                className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+                className="max-w-full py-1.5 text-left"
+                wrap
                 onClick={onDiscardCancel}
                 size="sm"
                 type="button"
@@ -262,7 +265,8 @@ function FailureNotice({
                   a reconhece quando o aparelho enviar e nada é duplicado.
                 </p>
                 <Button
-                  className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+                  className="max-w-full py-1.5 text-left"
+                  wrap
                   onClick={onKeepOnDevice}
                   size="sm"
                   type="button"
@@ -278,7 +282,8 @@ function FailureNotice({
               abaixo. Repetir é seguro.
             </p>
             <Button
-              className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+              className="max-w-full py-1.5 text-left"
+              wrap
               onClick={onDiscardRequest}
               size="sm"
               type="button"
@@ -353,7 +358,7 @@ export function SummaryPanel({
       aria-labelledby="sale-summary-title"
       className="min-w-0 min-[900px]:sticky min-[900px]:top-4 min-[900px]:self-start"
     >
-      <Card className="gap-0 py-0">
+      <Card gap="none" pad="none">
         <CardContent className="grid gap-3 py-(--card-spacing)">
           <h2 className="text-section" id="sale-summary-title">
             Resumo
@@ -488,10 +493,12 @@ export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
       </div>
       <Button
         aria-busy={isSubmitting(submission) || undefined}
-        className="h-auto min-h-ctl-lg min-w-0 shrink whitespace-normal py-1.5"
+        className="min-w-0 py-1.5"
         disabled={isSubmitting(submission)}
+        shrink
         size="lg"
         type="submit"
+        wrap
       >
         {submitButtonLabel(submission, offline)}
       </Button>

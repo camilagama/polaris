@@ -103,7 +103,7 @@ export function SaleHistoryList({
   rows: readonly HistoryRow[];
 }) {
   return (
-    <Card className="gap-0 py-0">
+    <Card gap="none" pad="none">
       <ul aria-label="Vendas" className="divide-y divide-border">
         {rows.map((row) => (
           <HistoryItem key={row.id} offline={offline} row={row} />

@@ -636,7 +636,7 @@ export function SalePage() {
               className="grid min-w-0 gap-4"
               disabled={locked}
             >
-              <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
+              <CardHeader layout="action">
                 <CardTitle aria-level={2} id="sale-items-title" role="heading">
                   Itens
                 </CardTitle>

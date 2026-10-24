@@ -98,7 +98,7 @@ function ProductMenu({
       >
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" width="wide">
         <DropdownMenuItem disabled={disabled} onClick={handleEdit}>
           Editar
         </DropdownMenuItem>
@@ -242,7 +242,7 @@ interface ProductListProps extends RowActions {
 
 function ListNotice({ children }: { children: ReactNode }) {
   return (
-    <Card className="py-6">
+    <Card pad="6">
       <div className="grid justify-items-center gap-3 px-4 text-center">
         {children}
       </div>
@@ -313,7 +313,7 @@ export function ProductList({
     categories.map((category) => [category.id, category.name])
   );
   return (
-    <Card className="gap-0 py-0">
+    <Card gap="none" pad="none">
       <ul aria-label="Produtos" className="divide-y divide-border">
         {products.map((product) => {
           const syncState = syncStates.get(product.id);

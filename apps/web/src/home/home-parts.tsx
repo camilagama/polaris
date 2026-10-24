@@ -60,7 +60,8 @@ export function BlockSkeleton({
   return (
     <Card
       aria-busy="true"
-      className={cn("min-w-0 gap-3 px-(--card-spacing)", className)}
+      className={cn("min-w-0 px-(--card-spacing)", className)}
+      gap="3"
       role="status"
     >
       <span className="sr-only">{label}</span>

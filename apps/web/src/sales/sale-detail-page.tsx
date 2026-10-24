@@ -55,7 +55,12 @@ const LOADING_ROWS = [0, 1, 2];
 /** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
 function LoadingCard({ message }: { message: string }) {
   return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+    <Card
+      aria-busy="true"
+      className="px-(--card-spacing)"
+      gap="3"
+      role="status"
+    >
       <p className="sr-only">{message}</p>
       {LOADING_ROWS.map((row) => (
         <div aria-hidden="true" className="grid gap-1.5" key={row}>
@@ -162,7 +167,7 @@ function ReturnsHistory({ view }: { view: SaleDetailView }) {
   }
   return (
     <section aria-labelledby="sale-returns-title">
-      <Card className="gap-0 py-0">
+      <Card gap="none" pad="none">
         <CardContent className="grid gap-3 py-(--card-spacing)">
           <h2 className="text-section" id="sale-returns-title">
             Devoluções

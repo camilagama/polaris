@@ -198,7 +198,7 @@ export function ProductVariantsPanel({
 
   return (
     <Card aria-labelledby="product-variants-heading" role="region">
-      <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
+      <CardHeader layout="action">
         <div
           className="grid gap-0.5 outline-none"
           ref={headingRef}

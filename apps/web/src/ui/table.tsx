@@ -1,6 +1,9 @@
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
+/* What a screen changes in a part is a prop, not a class (the classes are not merged, t320): `hover` of a row,
+   `align` of a head and the `vertical` alignment of a head or a cell. */
+
 /* Polaris v5.1: header in 12 px muted, cell of 12 x 10, first and last column aligned to the gutter, hover on
    `muted/60`. The container scrolls sideways when the table is wider than the screen. */
 function Table({ className, ...props }: React.ComponentProps<"table">) {
@@ -51,11 +54,19 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   );
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+function TableRow({
+  className,
+  hover = true,
+  ...props
+}: React.ComponentProps<"tr"> & {
+  /** The row tints under the pointer; the head row does not. */
+  hover?: boolean;
+}) {
   return (
     <tr
       className={cn(
-        "border-b transition-colors hover:bg-muted/60 has-aria-expanded:bg-muted/60 data-[state=selected]:bg-muted",
+        "border-b transition-colors has-aria-expanded:bg-muted/60 data-[state=selected]:bg-muted",
+        hover ? "hover:bg-muted/60" : "hover:bg-transparent",
         className
       )}
       data-slot="table-row"
@@ -64,11 +75,25 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   );
 }
 
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+/* `column` is the head of a column (12 px, muted, one line); `row` is the head of a row (14 px in the text color,
+   it may take more lines and sits at the top of the row). */
+function TableHead({
+  align = "left",
+  className,
+  variant = "column",
+  ...props
+}: React.ComponentProps<"th"> & {
+  align?: "left" | "right";
+  variant?: "column" | "row";
+}) {
   return (
     <th
       className={cn(
-        "h-9 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground text-xs first:pl-4 last:pr-4 [&:has([role=checkbox])]:pr-0",
+        "px-3 first:pl-4 last:pr-4 [&:has([role=checkbox])]:pr-0",
+        align === "right" ? "text-right" : "text-left",
+        variant === "row"
+          ? "h-auto whitespace-normal align-top font-[weight:inherit] text-foreground text-sm"
+          : "h-9 whitespace-nowrap align-middle font-medium text-muted-foreground text-xs",
         className
       )}
       data-slot="table-head"
@@ -77,11 +102,16 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   );
 }
 
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+function TableCell({
+  className,
+  vertical = "middle",
+  ...props
+}: React.ComponentProps<"td"> & { vertical?: "middle" | "top" }) {
   return (
     <td
       className={cn(
-        "whitespace-nowrap px-3 py-2.5 align-middle first:pl-4 last:pr-4 [&:has([role=checkbox])]:pr-0",
+        "whitespace-nowrap px-3 py-2.5 first:pl-4 last:pr-4 [&:has([role=checkbox])]:pr-0",
+        vertical === "top" ? "align-top" : "align-middle",
         className
       )}
       data-slot="table-cell"

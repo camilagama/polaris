@@ -48,7 +48,7 @@ export function ReasonFields({
   );
   const noteId = `${prefix}-note`;
   return (
-    <FieldSet className="gap-3" disabled={disabled}>
+    <FieldSet disabled={disabled} gap="3">
       {/* the group's name for the screen reader; on screen the label of the list says it */}
       <FieldLegend className="sr-only">{legend}</FieldLegend>
       <SelectField
@@ -71,7 +71,7 @@ export function ReasonFields({
               ? "Observação (obrigatória para “Outro”)"
               : "Observação (opcional)"}
           </FieldLabel>
-          <InputGroup className="h-auto items-stretch">
+          <InputGroup shape="area">
             <InputGroupTextarea
               aria-describedby={describedBy(noteId, errors.note, noteCounter)}
               aria-invalid={errors.note ? true : undefined}

@@ -44,7 +44,7 @@ export function ThemeSwitch() {
       >
         <Icon aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
+      <DropdownMenuContent align="end" width="fixed">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Aparência</DropdownMenuLabel>
           <DropdownMenuRadioGroup onValueChange={chooseItem} value={theme}>

@@ -21,7 +21,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
   const total = sale.totals.find((row) => row.tone === "total");
   return (
     <section aria-labelledby="sale-detail-title">
-      <Card className="gap-0 py-0">
+      <Card gap="none" pad="none">
         <CardContent className="grid gap-4 py-(--card-spacing)">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h2 className="text-section" id="sale-detail-title">

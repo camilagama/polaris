@@ -29,7 +29,7 @@ export function CollapsibleSection({
   const titleId = `${id}-title`;
   const Icon = open ? ChevronUpIcon : ChevronDownIcon;
   return (
-    <Card aria-labelledby={titleId} className="gap-0 py-0" role="region">
+    <Card aria-labelledby={titleId} gap="none" pad="none" role="region">
       <Collapsible onOpenChange={setOpen} open={open}>
         {/* 6 px around the button: its 3 px outline (2 px away) stays inside the card, which clips what overflows */}
         <h2 className="p-1.5 text-section" id={titleId}>

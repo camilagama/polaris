@@ -276,7 +276,7 @@ export function CustomerForm({
   return (
     <Card aria-labelledby="customer-form-heading" role="region">
       <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader layout="row">
           <CardTitle aria-level={2} id="customer-form-heading" role="heading">
             {editingCustomer ? "Editar cliente" : "Novo cliente"}
           </CardTitle>
@@ -307,7 +307,7 @@ export function CustomerForm({
             aria-describedby="customer-contact-help"
             className="min-[48rem]:col-span-2"
           >
-            <FieldLegend className="mb-3" variant="label">
+            <FieldLegend space="loose" variant="label">
               Contato{" "}
               <span className="font-normal text-muted-foreground">
                 Informe telefone ou email

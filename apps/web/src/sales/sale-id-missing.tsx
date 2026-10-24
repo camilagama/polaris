@@ -16,7 +16,7 @@ export function SaleIdMissing({
   param: Exclude<SaleIdParam, { kind: "valid" }>;
 }) {
   return (
-    <Card className="items-center gap-2 px-(--card-spacing) text-center">
+    <Card className="items-center px-(--card-spacing) text-center" gap="2">
       <p className="text-muted-foreground">
         {param.kind === "invalid"
           ? INVALID_SALE_ID_MESSAGE

@@ -137,7 +137,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
             <TableHeader>
               <TableRow>
                 <TableHead scope="col">Dia</TableHead>
-                <TableHead className="text-right" scope="col">
+                <TableHead align="right" scope="col">
                   Vendas líquidas
                 </TableHead>
               </TableRow>

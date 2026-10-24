@@ -186,7 +186,12 @@ const LOADING_ROWS = [0, 1, 2];
 /** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
 function LoadingCard({ message }: { message: string }) {
   return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+    <Card
+      aria-busy="true"
+      className="px-(--card-spacing)"
+      gap="3"
+      role="status"
+    >
       <p className="sr-only">{message}</p>
       {LOADING_ROWS.map((row) => (
         <div aria-hidden="true" className="grid gap-1.5" key={row}>
@@ -319,7 +324,7 @@ export function InventoryPage() {
           >
             Sem custo
           </Button>
-          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+          <Field className="min-h-ctl-md" orientation="horizontal" width="auto">
             <Checkbox
               checked={filters.includeArchived}
               id="stock-archived"
@@ -385,7 +390,7 @@ export function InventoryPage() {
         </StateCard>
       ) : null}
       {view.kind === "ready" ? (
-        <Card className="gap-0 py-0">
+        <Card gap="none" pad="none">
           <ul
             aria-label="Saldos por variante"
             className="divide-y divide-border"

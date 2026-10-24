@@ -161,7 +161,7 @@ export function SaleReturnPanel({
   if (state.step === "closed" && state.submission.phase === "idle") {
     return (
       <section aria-label="Devolução">
-        <Card className="gap-0 py-0">
+        <Card gap="none" pad="none">
           <CardContent className="grid justify-items-start gap-3 py-(--card-spacing)">
             <p className="text-muted-foreground text-support">
               {RETURN_EXPLANATION}
@@ -180,7 +180,7 @@ export function SaleReturnPanel({
   const errors = visibleReturnErrors(state);
   return (
     <section aria-labelledby="sale-return-title" ref={sectionRef}>
-      <Card className="gap-0 py-0">
+      <Card gap="none" pad="none">
         <CardContent className="grid gap-4 py-(--card-spacing)">
           <div className="grid gap-1">
             <h2 className="text-section" id="sale-return-title">
@@ -214,7 +214,7 @@ export function SaleReturnPanel({
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
             <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
               <AlertTitle>Confirme a devolução</AlertTitle>
-              <AlertDescription className="grid gap-2 [&_p:not(:last-child)]:mb-0">
+              <AlertDescription className="grid gap-2" paragraphs="tight">
                 <p>Motivo: {review.reasonText}.</p>
                 <ul className="grid list-disc gap-0.5 pl-5">
                   {review.lines.map((line) => (

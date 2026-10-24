@@ -27,7 +27,8 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
   return (
     <ButtonGroup
       aria-label={`Movimentos de ${row.productName}, ${row.variantText}`}
-      className="w-full md:w-fit"
+      className="md:w-fit"
+      width="full"
     >
       {STOCK_ACTIONS.map((action) => (
         // aria-disabled, not disabled: the button stays reachable and reads why it is off (the line above the list)
@@ -41,6 +42,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
           id={triggerId(row.id, action)}
           key={action}
           onClick={disabled ? undefined : onOpen}
+          shrink
           type="button"
           variant="outline"
         >

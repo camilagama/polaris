@@ -303,7 +303,7 @@ export function UiGallery() {
               <Select items={METHODS}>
                 <SelectTrigger
                   aria-labelledby="galeria-metodo-rotulo"
-                  className="w-full"
+                  width="full"
                 >
                   <SelectValue placeholder="Escolha o método" />
                 </SelectTrigger>
@@ -374,7 +374,7 @@ export function UiGallery() {
                     <FieldLabel htmlFor="galeria-quantidade">
                       Quantidade
                     </FieldLabel>
-                    <ButtonGroup aria-label="Quantidade" className="w-auto">
+                    <ButtonGroup aria-label="Quantidade" width="auto">
                       <Button
                         aria-label="Diminuir a quantidade"
                         size="icon"
@@ -383,10 +383,10 @@ export function UiGallery() {
                         <MinusIcon aria-hidden="true" />
                       </Button>
                       <Input
-                        className="w-14"
                         defaultValue="2"
                         id="galeria-quantidade"
                         inputMode="decimal"
+                        width="14"
                       />
                       <Button
                         aria-label="Aumentar a quantidade"
@@ -437,7 +437,7 @@ export function UiGallery() {
                   <FieldLabel htmlFor="galeria-observacao">
                     Observação (opcional)
                   </FieldLabel>
-                  <InputGroup className="h-auto items-stretch">
+                  <InputGroup shape="area">
                     <InputGroupTextarea id="galeria-observacao" rows={3} />
                   </InputGroup>
                 </Field>
@@ -487,7 +487,7 @@ export function UiGallery() {
                     <SelectTrigger
                       aria-describedby="galeria-perfil-ajuda"
                       aria-labelledby="galeria-perfil-rotulo"
-                      className="w-full"
+                      width="full"
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -571,8 +571,8 @@ export function UiGallery() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Meta</TableHead>
-                  <TableHead className="text-right">Realizado</TableHead>
-                  <TableHead className="text-right">Alvo</TableHead>
+                  <TableHead align="right">Realizado</TableHead>
+                  <TableHead align="right">Alvo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

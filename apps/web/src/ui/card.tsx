@@ -1,26 +1,87 @@
+import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 /* Polaris v5.1: 12 px of breathing room with touch, 16 with a mouse (`--card-spacing`); a 6% ring plus a short
-   shadow, and in the dark theme a 1 px glow at the top (`--card-glow`, OKLCH). */
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+   shadow, and in the dark theme a 1 px glow at the top (`--card-glow`, OKLCH).
+   The gap between the parts, the padding above and below and the tone are variants, not classes of the caller (the
+   classes are not merged, t320): `gap` and `pad` replace the default of `--card-spacing`, and `tone="quiet"` is a card
+   with no shadow on a muted background (a goal that is over). */
+const cardVariants = cva(
+  "group/card flex flex-col overflow-hidden rounded-xl text-card-foreground text-sm ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
+  {
+    defaultVariants: {
+      gap: "default",
+      pad: "default",
+      tone: "default",
+    },
+    variants: {
+      gap: {
+        "1.5": "gap-1.5",
+        "2": "gap-2",
+        "3": "gap-3",
+        default: "gap-(--card-spacing)",
+        none: "gap-0",
+      },
+      pad: {
+        "6": "py-6",
+        default: "py-(--card-spacing)",
+        none: "py-0",
+      },
+      tone: {
+        default: "bg-card shadow-xs",
+        quiet: "bg-muted/30 shadow-none",
+      },
+    },
+  }
+);
+
+function Card({
+  className,
+  gap,
+  pad,
+  tone,
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardVariants>) {
   return (
     <div
-      className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
-        className
-      )}
+      className={cn(cardVariants({ gap, pad, tone }), className)}
       data-slot="card"
       {...props}
     />
   );
 }
 
-function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
+/* The layout of the header is a variant: `stack` (title over description), `row` (title and an action side by side,
+   wrapping), `wide-row` (the same with more room between the lines) and `action` (a title column and one action). */
+const cardHeaderVariants = cva(
+  "auto-rows-min px-(--card-spacing) has-data-[slot=card-description]:grid-rows-[auto_auto]",
+  {
+    defaultVariants: {
+      layout: "stack",
+    },
+    variants: {
+      layout: {
+        action: "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-0.5",
+        row: "flex flex-wrap items-center justify-between gap-3",
+        stack: "grid items-start gap-0.5",
+        "wide-row":
+          "flex flex-wrap items-center justify-between gap-x-4 gap-y-2",
+      },
+    },
+  }
+);
+
+function CardHeader({
+  className,
+  layout,
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardHeaderVariants>) {
   return (
     <div
       className={cn(
-        "group/card-header grid auto-rows-min items-start gap-0.5 px-(--card-spacing) has-data-[slot=card-description]:grid-rows-[auto_auto]",
+        "group/card-header",
+        cardHeaderVariants({ layout }),
         className
       )}
       data-slot="card-header"
