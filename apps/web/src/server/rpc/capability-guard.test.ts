@@ -1,25 +1,27 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
  * `withCapability(identity, …)` re-issues an identity under ANOTHER capability, so a repository that checks
  * `inventory:adjust` accepts a request that was opened with `product:create`. That is safe only where the
- * capability was already proved, so the name is an allow list over the whole repository (the `src` folder of every
- * package under `apps/` and `packages/`, tests included, comments ignored). It is accepted only:
+ * capability was already proved, so the name is an allow list over the whole repository (every package under `apps/`
+ * and `packages/`, not only its `src`: worker, scripts and e2e folders, tests included, comments ignored; the
+ * `scripts/` of the repository root is out, see ADR 0035). It is accepted only:
  * - in its definition, `packages/db/src/tenant-transaction.ts`;
  * - in `apps/web/src/server/rpc/` and `use-cases/`, after `requireCapabilityInTransaction(` earlier in the SAME
  *   top-level function, for the same capability, outside comments (the role read in the transaction, before any
  *   write);
  * - in the two handlers of `apps/web/src/server/sync/handlers/` listed below, by the signed lease that `sync.push`
  *   required and the role the database revalidated (ADR 0033): a new handler is a conscious decision.
- * Any other file that names it is refused, and so is importing it under another name. `apps/admin` and
- * `apps/catalog` do not import `@polaris/db/tenant-transaction` at all (ADR 0035, amendment of 24/10/2026).
+ * Any other file that names it is refused, and so is importing it under another name. The import boundary of
+ * `apps/admin` and `apps/catalog` is the `biome.jsonc` (`noRestrictedImports`), not this file (ADR 0035).
  */
 const REPO = new URL("../../../../../", import.meta.url);
 const SCAN_PARENTS = ["apps", "packages"];
 const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
+/** Folders that hold no source of the repository. */
+const SKIPPED_FOLDERS = new Set(["node_modules", "dist", ".wrangler"]);
 const WITH_CAPABILITY_NAME = /\bwithCapability\b/;
-const TENANT_TRANSACTION_MODULE = /@polaris\/db\/tenant-transaction/;
 
 /** Where `withCapability` is defined. */
 const DEFINITION = "packages/db/src/tenant-transaction.ts";
@@ -38,9 +40,6 @@ const LEASE_COVERED_HANDLERS = [
   "apps/web/src/server/sync/handlers/sale-confirm.ts",
   "apps/web/src/server/sync/handlers/stock-commands.ts",
 ];
-
-/** The apps that must not reach the module that holds the helper. */
-const WITHOUT_TENANT_TRANSACTION = ["apps/admin/src/", "apps/catalog/src/"];
 
 /** The call with its capability argument (`withCapability(identity, INVENTORY_ADJUST)` gives `INVENTORY_ADJUST`). */
 const WITH_CAPABILITY_CALLS =
@@ -141,39 +140,29 @@ function namedOutsideCalls(code: string): boolean {
   return (mentions ?? 0) > calls;
 }
 
-/** The files of the apps that must not import the module that holds the helper, in any form. */
-function tenantTransactionImporters(
-  files: ReadonlyMap<string, string>
-): string[] {
-  return [...files]
-    .filter(
-      ([path, source]) =>
-        WITHOUT_TENANT_TRANSACTION.some((folder) => path.startsWith(folder)) &&
-        TENANT_TRANSACTION_MODULE.test(withoutComments(source))
-    )
-    .map(([path]) => path);
-}
-
-/** Every source file (tests included) of the `src` folder of each package under `apps/` and `packages/`, by its path relative to the repository. */
+/** Every source file (tests included) of each package under `apps/` and `packages/`, by its path relative to the repository. */
 function repositorySources(): Map<string, string> {
   const files = new Map<string, string>();
+  const walk = (folder: string): void => {
+    for (const entry of readdirSync(new URL(folder, REPO), {
+      withFileTypes: true,
+    })) {
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FOLDERS.has(entry.name)) {
+          walk(`${folder}${entry.name}/`);
+        }
+      } else if (entry.isFile() && SOURCE_FILE.test(entry.name)) {
+        const path = `${folder}${entry.name}`;
+        files.set(path, readFileSync(new URL(path, REPO), "utf8"));
+      }
+    }
+  };
   for (const parent of SCAN_PARENTS) {
     for (const entry of readdirSync(new URL(`${parent}/`, REPO), {
       withFileTypes: true,
     })) {
-      const root = `${parent}/${entry.name}/src/`;
-      if (!(entry.isDirectory() && existsSync(new URL(root, REPO)))) {
-        continue;
-      }
-      const names = readdirSync(new URL(root, REPO), {
-        encoding: "utf8",
-        recursive: true,
-      });
-      for (const name of names) {
-        const path = `${root}${name.split("\\").join("/")}`;
-        if (SOURCE_FILE.test(name) && statSync(new URL(path, REPO)).isFile()) {
-          files.set(path, readFileSync(new URL(path, REPO), "utf8"));
-        }
+      if (entry.isDirectory() && !SKIPPED_FOLDERS.has(entry.name)) {
+        walk(`${parent}/${entry.name}/`);
       }
     }
   }
@@ -187,15 +176,19 @@ describe("withCapability in the repository", () => {
     // the scan reaches every root it is meant to hold
     for (const root of [
       "apps/web/src/server/rpc/",
+      "apps/web/worker/",
+      "apps/web/scripts/",
+      "apps/web/e2e/",
+      "apps/web/e2e-pwa/",
       "apps/catalog/src/",
       "apps/admin/src/",
       "packages/db/src/",
+      "packages/db/scripts/",
     ]) {
       expect(
         [...files.keys()].filter((path) => path.startsWith(root)).length
       ).toBeGreaterThan(0);
     }
-    expect(files.size).toBeGreaterThan(0);
     // the use case and the handlers it is meant to hold, the definition and the cases of this guard
     const users = [...files]
       .filter(([, source]) =>
@@ -212,10 +205,6 @@ describe("withCapability in the repository", () => {
       ].sort()
     );
     expect(offenders(files)).toEqual([]);
-  });
-
-  it("keeps apps/admin and apps/catalog away from @polaris/db/tenant-transaction", () => {
-    expect(tenantTransactionImporters(files)).toEqual([]);
   });
 
   it("sees an import, a call, a renamed import and an alias anywhere else, and not a comment", () => {
@@ -257,31 +246,18 @@ describe("withCapability in the repository", () => {
             "apps/web/src/other.ts",
             "const next = ns.withCapability(identity, X);",
           ],
+          // outside `src`: the worker, the scripts and the e2e folders of a package
+          ["apps/web/worker/index.ts", "withCapability(identity, X);"],
+          ["packages/db/scripts/seed.ts", "withCapability(identity, X);"],
+          ["apps/web/e2e-pwa/a.e2e.ts", "withCapability(identity, X);"],
         ])
       )
-    ).toEqual(["apps/web/src/other.ts"]);
-    expect(
-      tenantTransactionImporters(
-        new Map([
-          [
-            "apps/admin/src/a.ts",
-            'import { x } from "@polaris/db/tenant-transaction";',
-          ],
-          [
-            "apps/catalog/src/b.ts",
-            'const m = await import("@polaris/db/tenant-transaction");',
-          ],
-          [
-            "apps/catalog/src/c.ts",
-            '// import { x } from "@polaris/db/tenant-transaction";',
-          ],
-          [
-            "apps/web/src/server/d.ts",
-            'import { x } from "@polaris/db/tenant-transaction";',
-          ],
-        ])
-      )
-    ).toEqual(["apps/admin/src/a.ts", "apps/catalog/src/b.ts"]);
+    ).toEqual([
+      "apps/web/src/other.ts",
+      "apps/web/worker/index.ts",
+      "packages/db/scripts/seed.ts",
+      "apps/web/e2e-pwa/a.e2e.ts",
+    ]);
   });
 
   it("tells a guarded use from an unguarded one", () => {

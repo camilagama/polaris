@@ -564,6 +564,8 @@ for (const width of [360, 320]) {
 const COLUMNS_BY_WIDTH = [
   { columns: 1, width: 768 },
   { columns: 2, width: 900 },
+  { columns: 2, width: 1000 },
+  { columns: 3, width: 1008 },
   { columns: 3, width: 1024 },
   { columns: 3, width: 1100 },
   { columns: 3, width: 1280 },

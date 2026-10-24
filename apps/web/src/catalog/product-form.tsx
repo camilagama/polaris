@@ -178,7 +178,7 @@ export function ProductForm({
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent className="grid @min-[32rem]:grid-cols-2 @min-[46rem]:grid-cols-3 gap-4">
+        <CardContent className="grid @min-[32rem]:grid-cols-2 @min-[45rem]:grid-cols-3 gap-4">
           <ProductTextField
             className="col-span-full"
             error={nameError}
