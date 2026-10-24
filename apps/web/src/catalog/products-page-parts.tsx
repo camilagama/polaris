@@ -61,6 +61,8 @@ export function OfflineNotice() {
 interface FeedbackProps {
   error: string | null;
   notice: string | null;
+  /** The error has its own "Tentar novamente" (the product of the address could not be read). */
+  onRetryError?: (() => void) | undefined;
   /** Only the archived notice has it: restores the product just archived. */
   onUndo?: (() => void) | undefined;
   /** The focus goes here when an action ends, so a person far down the list reads the result. */
@@ -75,6 +77,7 @@ interface FeedbackProps {
 export function ActionFeedback({
   error,
   notice,
+  onRetryError,
   onUndo,
   regionRef,
   undoDisabled,
@@ -88,7 +91,25 @@ export function ActionFeedback({
       {error ? (
         <Alert variant="destructive">
           <CircleAlertIcon aria-hidden="true" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription
+            className={
+              onRetryError
+                ? "flex flex-wrap items-center gap-x-3 gap-y-1"
+                : undefined
+            }
+          >
+            {error}
+            {onRetryError ? (
+              <Button
+                onClick={onRetryError}
+                size="sm"
+                type="button"
+                variant="link"
+              >
+                Tentar novamente
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
       {notice ? (

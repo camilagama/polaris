@@ -26,13 +26,33 @@ export interface StockFilters {
   includeArchived: boolean;
   query: string;
   stock: StockFilter;
+  /** Only the variants whose average cost is not known (it combines with `stock`). */
+  unknownCost: boolean;
 }
 
 export const defaultStockFilters: StockFilters = {
   includeArchived: false,
   query: "",
   stock: "all",
+  unknownCost: false,
 };
+
+/**
+ * `/inventory?filtro=…`: the two lists the Início links to. Any other value,
+ * or none, is the screen without a filter, and the value is never shown.
+ */
+export function readStockLinkFilters(
+  search: string
+): Pick<StockFilters, "stock" | "unknownCost"> {
+  switch (new URLSearchParams(search).get("filtro")) {
+    case "sem-saldo":
+      return { stock: "without_stock", unknownCost: false };
+    case "sem-custo":
+      return { stock: "all", unknownCost: true };
+    default:
+      return { stock: "all", unknownCost: false };
+  }
+}
 
 type ListBalancesInput = Parameters<
   PolarisRpcClient["inventory"]["listBalances"]
@@ -50,6 +70,7 @@ export function stockListRequest(
     organizationId,
     productStatus: filters.includeArchived ? "all" : "active",
     stock: filters.stock,
+    ...(filters.unknownCost ? { cost: "unknown" as const } : {}),
     ...(cursor === null ? {} : { cursor }),
     ...(query === "" ? {} : { query }),
   };
@@ -229,10 +250,33 @@ export function stockRows(
   }));
 }
 
-export function stockEmptyMessage(filters: StockFilters): string {
+/** The device does not know which variants have no cost: it says so instead of an empty list. */
+const STOCK_UNKNOWN_COST_OFFLINE =
+  "Sem internet. A lista de variantes sem custo só carrega com conexão.";
+
+/** Whether the list of the variants without a cost is one the device cannot answer. */
+function unknownCostUnanswerable(
+  filters: StockFilters,
+  costUnavailable: boolean
+): boolean {
+  return filters.unknownCost && costUnavailable;
+}
+
+export function stockEmptyMessage(
+  filters: StockFilters,
+  costUnavailable = false
+): string {
   const query = filters.query.trim();
+  if (unknownCostUnanswerable(filters, costUnavailable)) {
+    return STOCK_UNKNOWN_COST_OFFLINE;
+  }
   if (query !== "") {
     return `Nenhuma variante encontrada para “${query}”.`;
+  }
+  if (filters.unknownCost) {
+    return filters.stock === "all"
+      ? "Todas as variantes têm custo."
+      : "Nenhuma variante sem custo com esse saldo.";
   }
   if (filters.stock === "with_stock") {
     return "Nenhuma variante com saldo. Use “Receber” para dar entrada no estoque.";
@@ -264,10 +308,13 @@ export function stockListView(
     };
   }
   if (state.entries.length === 0) {
-    const unfiltered = filters.query.trim() === "" && filters.stock === "all";
+    const unfiltered =
+      filters.query.trim() === "" &&
+      filters.stock === "all" &&
+      !filters.unknownCost;
     return {
       kind: "empty",
-      message: stockEmptyMessage(filters),
+      message: stockEmptyMessage(filters, costUnavailable),
       showCatalogLink: unfiltered,
     };
   }
@@ -290,8 +337,18 @@ export function stockMoreView(state: StockListState): StockMoreView {
   };
 }
 
-/** "12 variantes" / "mais variantes disponíveis" caption above the list. */
-export function stockCountText(state: StockListState): string {
+/**
+ * "12 variantes" / "mais variantes disponíveis" caption above the list. Without a connection and with "Sem custo"
+ * on there is no count: the device does not know how many variants lack a cost, and a zero would be invented.
+ */
+export function stockCountText(
+  state: StockListState,
+  filters: StockFilters = defaultStockFilters,
+  costUnavailable = false
+): string | null {
+  if (unknownCostUnanswerable(filters, costUnavailable)) {
+    return null;
+  }
   const count = state.entries.length;
   const noun = count === 1 ? "variante" : "variantes";
   return state.nextCursor === null
