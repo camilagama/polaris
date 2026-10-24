@@ -22,6 +22,12 @@
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {
+    "cheerio": {
+      "undici": "7.30.1"
+    },
+    "miniflare": {
+      "undici": "7.30.1"
+    },
     "sharp": "0.35.5",
     "zod": "4.6.7"
   },
