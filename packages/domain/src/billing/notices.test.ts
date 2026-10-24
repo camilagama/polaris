@@ -81,8 +81,12 @@ function noticesOfFact(
 }
 
 /** What `sweepDue` would record for what time caused: nothing before the access ran out. */
-function noticesOfTime(record: BillingRecord, now: Date): BillingNoticeMark[] {
-  const due = dueTransition(record, { now, overFreeLimits: false });
+function noticesOfTime(
+  record: BillingRecord,
+  now: Date,
+  overFreeLimits = false
+): BillingNoticeMark[] {
+  const due = dueTransition(record, { now, overFreeLimits });
   if (!due) {
     return [];
   }
@@ -164,6 +168,14 @@ describe("noticesFor: one transition, one notice (EM-1, EM-2)", () => {
     ).toEqual(expected);
     // nobody reported anything: the sweep puts the period in grace, with the same key
     expect(noticesOfTime(pro("active", paidEnd), base)).toEqual(expected);
+    // d0 is recorded even for a renewal cancelled while its charge was on its way: "o d0 sai sempre" (§9); whether it
+    // still goes out is the consumer's (noticeStillTrue, PR G)
+    expect(
+      noticesOfFact(pro("active", paidEnd, { cancelAtPeriodEnd: true }), {
+        occurredAt: base,
+        type: "charge_failed",
+      })
+    ).toEqual(expected);
     // a failure reported before the end of the period counts from that end too (RN:19)
     const early = pro("active", at(2));
     expect(
@@ -187,6 +199,10 @@ describe("noticesFor: one transition, one notice (EM-1, EM-2)", () => {
       noticesOfTime(pro("active", periodEnd, { cancelAtPeriodEnd: true }), base)
     ).toEqual([
       { dedupeKey: periodEnd.toISOString(), dueAt: base, kind: "access_ended" },
+    ]);
+    // a store over the free limits goes to free_over_limit: still E-D
+    expect(noticesOfTime(pro("grace", graceEnd), base, true)).toEqual([
+      { dedupeKey: graceEnd.toISOString(), dueAt: base, kind: "access_ended" },
     ]);
     // the trial that ended without a first charge is E-C1's, not E-D's
     expect(noticesOfTime(pro("trialing", at(-1)), base)).toEqual([]);
@@ -475,6 +491,13 @@ describe("sweepNoticesFor: the hourly marks, on their local day, from 08:00 to 2
       }
     );
 
+    it("records the 3rd day only between 08:00 and 20:00 local", () => {
+      expect(sweep(new Date("2026-10-13T10:59:00.000Z"))).toEqual([]);
+      expect(sweep(new Date("2026-10-13T11:00:00.000Z"))).toHaveLength(1);
+      expect(sweep(new Date("2026-10-13T22:59:00.000Z"))).toHaveLength(1);
+      expect(sweep(new Date("2026-10-13T23:00:00.000Z"))).toEqual([]);
+    });
+
     it("records nothing after the renewal was cancelled or paid", () => {
       expect(
         sweep(atLocalTen(13), { ...grace, cancelAtPeriodEnd: true })
@@ -504,6 +527,9 @@ describe("sweepNoticesFor: the hourly marks, on their local day, from 08:00 to 2
         kind: "annual_renewal_reminder",
       },
     ]);
+    // only between 08:00 and 20:00 local
+    expect(sweep(yearly, new Date("2027-10-17T10:59:00.000Z"))).toEqual([]);
+    expect(sweep(yearly, new Date("2027-10-17T23:00:00.000Z"))).toEqual([]);
     expect(sweep(yearly, new Date("2027-10-16T13:00:00.000Z"))).toEqual([]);
     expect(sweep(yearly, new Date("2027-10-18T13:00:00.000Z"))).toEqual([]);
     expect(sweep({ ...yearly, cycleMonths: 1 })).toEqual([]);

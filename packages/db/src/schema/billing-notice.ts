@@ -72,8 +72,10 @@ export const billingNotices = pgTable(
     uniqueIndex("billing_notices_welcome_user_unique")
       .on(table.userId)
       .where(sql`${table.kind} = 'welcome'`),
-    // the cascade from the user's account
-    index("billing_notices_user_idx").on(table.userId),
+    // the cascade from the user's account (only the welcome has one)
+    index("billing_notices_user_idx")
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
     check(
       "billing_notices_kind_allowed",
       sql.raw(`"billing_notices"."kind" IN (${kindList})`)

@@ -2,7 +2,7 @@
 -- §8 "0101" and §9). Expand only (ADR 0096): a new table, new policies and grants, two new functions and one recreated
 -- with the same signature, owner and grants (`purge_organization_data`, one table more in its list; the gate
 -- `purge-functions` compares it with `PURGE_DELETE_ORDER`). The previous Worker never writes the new table nor the new
--- event type, and calls nothing that changed.
+-- event type; the one function it calls that changed (the purge) keeps its signature and only removes one table more.
 --
 -- * `billing_notices`: one row per notice (the eight of the billing cycle, the yearly renewal and the welcome), one per
 --   store, kind and `dedupe_key`, and one welcome per person (`UNIQUE (user_id) WHERE kind = 'welcome'`). IDs, dates and
@@ -52,7 +52,7 @@ ALTER TABLE "billing_notices" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "billing_notices" ADD CONSTRAINT "billing_notices_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_notices" ADD CONSTRAINT "billing_notices_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "billing_notices_welcome_user_unique" ON "billing_notices" USING btree ("user_id") WHERE "billing_notices"."kind" = 'welcome';--> statement-breakpoint
-CREATE INDEX "billing_notices_user_idx" ON "billing_notices" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "billing_notices_user_idx" ON "billing_notices" USING btree ("user_id") WHERE "billing_notices"."user_id" IS NOT NULL;--> statement-breakpoint
 CREATE POLICY "user_notice_recipient_owner_select_billing" ON "user" AS PERMISSIVE FOR SELECT TO "polaris_notice_recipient_owner" USING (EXISTS (SELECT 1 FROM public.billing_notices AS n WHERE n.id = (CASE WHEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true)::uuid END) AND (n.user_id = "user"."id" OR (n.user_id IS NULL AND EXISTS (SELECT 1 FROM public.memberships AS m WHERE m.organization_id = n.organization_id AND m.user_id = "user"."id" AND m.role = 'owner' AND m.status = 'active')))));--> statement-breakpoint
 CREATE POLICY "billing_notices_billing_runtime_select" ON "billing_notices" AS PERMISSIVE FOR SELECT TO "polaris_billing_runtime" USING (true);--> statement-breakpoint
 CREATE POLICY "billing_notices_billing_runtime_insert" ON "billing_notices" AS PERMISSIVE FOR INSERT TO "polaris_billing_runtime" WITH CHECK ("billing_notices"."sent_at" IS NULL AND "billing_notices"."failed_at" IS NULL AND "billing_notices"."skipped_reason" IS NULL);--> statement-breakpoint

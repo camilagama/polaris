@@ -1,5 +1,5 @@
 {
-  "id": "110e5ccd-5e02-4a6c-88bd-871da90919db",
+  "id": "ee4891e6-59f0-4c95-bea1-fb9e38c2670a",
   "prevId": "d1bb5e9d-5105-4e81-99b6-b19d15337b5d",
   "version": "7",
   "dialect": "postgresql",
@@ -828,6 +828,7 @@
             }
           ],
           "isUnique": false,
+          "where": "\"billing_notices\".\"user_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

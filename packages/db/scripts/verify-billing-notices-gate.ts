@@ -1,7 +1,10 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { BILLING_NOTICE_KINDS } from "@polaris/domain/billing/notices";
+import {
+  BILLING_NOTICE_KINDS,
+  WELCOME_NOTICE_WINDOW_HOURS,
+} from "@polaris/domain/billing/notices";
 import { Client } from "pg";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
@@ -764,8 +767,38 @@ async function run() {
       await visibleUsers(notice1),
       [store1.userId, welcomed].sort()
     );
+    // a welcome owed: its person alone, though the store has another owner
+    const scopedWelcome = await seedNotice(
+      store1,
+      "welcome",
+      store1.userId,
+      store1.userId
+    );
+    assert.deepEqual(await visibleUsers(scopedWelcome), [store1.userId]);
+    // a notice no longer owed (sent, failed or skipped): nobody
+    for (const outcome of [
+      "sent_at = now()",
+      "failed_at = now(), failure_code = 'bounced'",
+      "skipped_reason = 'refunded'",
+    ]) {
+      const settled = await seedNotice(
+        store1,
+        "charge_receipt",
+        `settled-${randomUUID()}`
+      );
+      await owner.pool.query(
+        `UPDATE public.billing_notices SET ${outcome} WHERE id = $1`,
+        [settled]
+      );
+      assert.deepEqual(await visibleUsers(settled), [], outcome);
+      assert.equal(
+        await recipient(store1.organizationId, settled),
+        null,
+        `${outcome}: not owed`
+      );
+    }
     tests.push(
-      "billing_notice_recipient is SECURITY DEFINER and volatile with a fixed search_path, owned by the recipient's owner and executed only by the authentication role (not PUBLIC, not the billing role); a notice of the cycle goes to the oldest active owner of its store, read at the call, and to the next one when that owner leaves; an address not verified answers {verified: false}; another store, a store with no owner, a notice sent and a welcome whose person is no longer an owner answer null; never the name; the owner's policy on \"user\" shows nothing without the scope or with a malformed one, and only the owner of the notice with it"
+      "billing_notice_recipient is SECURITY DEFINER and volatile with a fixed search_path, owned by the recipient's owner and executed only by the authentication role (not PUBLIC, not the billing role); a notice of the cycle goes to the oldest active owner of its store, read at the call, and to the next one when that owner leaves; an address not verified answers {verified: false}; another store, a store with no owner, a notice sent and a welcome whose person is no longer an owner answer null; never the name; the owner's policy on \"user\" shows nothing without the scope, with a malformed one or for a notice sent, failed or skipped, the active owners of the store for a notice of the cycle and the person alone for a welcome"
     );
 
     // ------------------------------------------------------------------ 5. the welcome's candidates and sweep
@@ -779,6 +812,14 @@ async function run() {
       secdef: true,
       volatility: "s",
     });
+    const candidatesDefinition = await owner.pool.query<{ definition: string }>(
+      "SELECT pg_get_functiondef('public.welcome_notice_candidates(integer)'::regprocedure) AS definition"
+    );
+    assert.match(
+      String(candidatesDefinition.rows[0]?.definition),
+      new RegExp(`interval '${WELCOME_NOTICE_WINDOW_HOURS} hours'`),
+      "the window of the welcome is the domain's"
+    );
     for (const limit of [0, 501]) {
       await as(billingUrl, async (client) => {
         await expectSqlState(
@@ -924,6 +965,30 @@ async function run() {
       candidates: 0,
       recorded: 0,
     });
+    // two passes at once over the same new stores: one welcome and one event per person, never two
+    const concurrentA = await newTenant("concurrent-a");
+    const concurrentB = await newTenant("concurrent-b");
+    const passes = await Promise.all([
+      billing.recordWelcomeNotices(),
+      billing.recordWelcomeNotices(),
+    ]);
+    assert.equal(
+      passes.reduce((total, pass) => total + pass.recorded, 0),
+      2,
+      "the two passes record the two welcomes between them"
+    );
+    for (const tenant of [concurrentA, concurrentB]) {
+      const notices = await owner.pool.query(
+        "SELECT 1 FROM public.billing_notices WHERE user_id = $1",
+        [tenant.userId]
+      );
+      assert.equal(notices.rows.length, 1, "one welcome");
+      assert.equal(
+        (await outboxOf(tenant.organizationId)).length,
+        1,
+        "one event"
+      );
+    }
     // the person deleted takes the welcome (the foreign key in cascade)
     await owner.pool.query(
       "DELETE FROM public.memberships WHERE user_id = $1",
@@ -938,7 +1003,7 @@ async function run() {
     );
     assert.equal(left.rows.length, 0, "the welcome went with the account");
     tests.push(
-      "welcome_notice_candidates is SECURITY DEFINER and stable with a fixed search_path, owned by the billing owner and executed only by the billing role, and refuses a limit outside 1 to 500; it answers the stores created in the last 24 hours and still active, with their oldest owner (verified or not), and not a store older than 24 hours, one closing, one whose founder already owns an older store or already has a welcome, and again for a person whose earlier store was purged; the store's sweep records the welcome of each, keyed by the person, with its outbox event in the same transaction, and a second pass records nothing; the person deleted takes the welcome"
+      "welcome_notice_candidates is SECURITY DEFINER and stable with a fixed search_path, owned by the billing owner and executed only by the billing role, and refuses a limit outside 1 to 500; it answers the stores created in the last 24 hours and still active, with their oldest owner (verified or not), and not a store older than 24 hours, one closing, one whose founder already owns an older store or already has a welcome, and again for a person whose earlier store was purged; the store's sweep records the welcome of each, keyed by the person, with its outbox event in the same transaction, and a second pass records nothing, two passes at once record one welcome and one event per person; the window is the domain's 24 hours; the person deleted takes the welcome"
     );
 
     console.log(

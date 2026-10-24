@@ -29,11 +29,11 @@ import {
  *      organization) stays inside the scope or fails with 42501;
  *   8. (0100) the owner of the cap on the audit of the owner's refused billing requests: its function, its three
  *      columns of tenant_audit_event, its one policy, and that it is the only new reader of the tenant audit;
- *   9. (0101) the owners of the two functions of the billing notices: `billing_notice_recipient` of the recipient's
- *      owner (EXECUTE: the authentication role) and `welcome_notice_candidates` of the billing owner (EXECUTE: the billing
- *      role), each with the exact functions, privileges and policies its owner holds after 0101;
  *   7. the real calls: the bump of a user in two organizations and of a user with no membership, the onboarding run again
  *      and with the organization of another tenant, a sync transaction with two organizations and a SAVEPOINT rolled back.
+ *   9. (0101) the owners of the two functions of the billing notices: `billing_notice_recipient` of the recipient's
+ *      owner (EXECUTE: the authentication role) and `welcome_notice_candidates` of the billing owner (EXECUTE: the billing
+ *      role), each with the exact functions, privileges and policies its owner holds after 0101.
  * Everything a probe writes is rolled back; the fixtures of step 7 stay, as in the other gates.
  */
 const expectedDatabase =
@@ -1421,27 +1421,51 @@ async function run() {
         "products.organization_id:SELECT",
       ],
     });
-    // the billing owner sees only the recent active stores, their owners and who has a welcome, whatever is asked
-    await rolledBack({}, "polaris_billing_owner", async () => {
-      assert.equal(
-        await rowCount(
-          "SELECT id FROM public.organizations WHERE status <> 'active' OR created_at <= now() - interval '24 hours'"
-        ),
-        0
+    // the billing owner sees only the recent active stores and who has a welcome, whatever is asked: rows it must not
+    // see are written first in the same rolled-back transaction (a store of two days ago, a store closing, a notice of
+    // the cycle), next to the ones it must (a store of now and its welcome), so the probe is never empty
+    await client.query("BEGIN");
+    try {
+      const probeUser = `definer-owners-welcome-${suffix}`;
+      await client.query(
+        `INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, 'Nome de teste', $2, true)`,
+        [probeUser, `${probeUser}@example.invalid`]
       );
-      assert.equal(
-        await rowCount(
-          "SELECT user_id FROM public.memberships WHERE role <> 'owner'"
-        ),
-        0
+      const stores = {
+        closing: `definer-owners-closing-${suffix}`,
+        fresh: `definer-owners-fresh-${suffix}`,
+        old: `definer-owners-old-${suffix}`,
+      };
+      await client.query(
+        `INSERT INTO public.organizations (id, name, timezone, status, created_at) VALUES
+           ($1, 'Loja de teste', 'America/Sao_Paulo', 'active', now()),
+           ($2, 'Loja de teste', 'America/Sao_Paulo', 'active', now() - interval '2 days'),
+           ($3, 'Loja de teste', 'America/Sao_Paulo', 'closing', now())`,
+        [stores.fresh, stores.old, stores.closing]
       );
-      assert.equal(
-        await rowCount(
-          "SELECT user_id FROM public.billing_notices WHERE kind <> 'welcome'"
-        ),
-        0
+      await client.query(
+        `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id) VALUES
+           ($1, 'welcome', $2, now(), $2), ($1, 'charge_receipt', $3, now(), NULL)`,
+        [stores.fresh, probeUser, `receipt-${suffix}`]
       );
-    });
+      await client.query("SET LOCAL ROLE polaris_billing_owner");
+      const seenStores = (
+        await client.query<{ id: string }>(
+          "SELECT id FROM public.organizations WHERE id = ANY ($1) ORDER BY id",
+          [Object.values(stores)]
+        )
+      ).rows.map((row) => row.id);
+      assert.deepEqual(seenStores, [stores.fresh], "only the store of now");
+      const seenNotices = (
+        await client.query<{ kind: string }>(
+          "SELECT kind FROM public.billing_notices WHERE user_id = $1 OR user_id IS NULL ORDER BY kind",
+          [probeUser]
+        )
+      ).rows.map((row) => row.kind);
+      assert.deepEqual(seenNotices, ["welcome"], "only who has a welcome");
+    } finally {
+      await client.query("ROLLBACK");
+    }
     tests.push(
       "the two functions of the billing notices (0101) are SECURITY DEFINER with a fixed search_path: billing_notice_recipient of polaris_notice_recipient_owner (EXECUTE: the authentication role) and welcome_notice_candidates of polaris_billing_owner (EXECUTE: the billing role); each owner holds exactly its functions, privileges and policies, and the billing owner sees only the active stores of the last 24 hours, the owners and who has a welcome"
     );
