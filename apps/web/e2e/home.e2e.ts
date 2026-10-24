@@ -597,7 +597,9 @@ test.describe("loja com venda", () => {
     const notice = page
       .getByRole("status")
       .filter({ hasText: "Sem internet." });
-    await expect(notice).toContainText("Esta tela precisa de conexão.");
+    await expect(notice).toContainText(
+      "Esta tela precisa de conexão. Ela carrega sozinha quando a conexão voltar."
+    );
     await expect(region(page, "Hoje")).toHaveCount(0);
     await expect(region(page, "Precisa de atenção")).toHaveCount(0);
     await expect(page.getByRole("alert")).toHaveCount(0);
