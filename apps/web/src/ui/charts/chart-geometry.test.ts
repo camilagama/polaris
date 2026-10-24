@@ -3,6 +3,7 @@ import {
   bestIndex,
   type ChartDatum,
   chartLayout,
+  chartScale,
   estimateLabelWidth,
   labelIndexes,
   nearestIndex,
@@ -11,7 +12,7 @@ import {
 } from "./chart-geometry";
 
 const MARGIN = { bottom: 24, left: 40, right: 8, top: 8 };
-const BOX = { height: 180, lines: 3, margin: MARGIN, width: 328 };
+const BOX = { height: 180, maxLines: 4, margin: MARGIN, width: 328 };
 
 const days = (values: number[]): ChartDatum[] =>
   values.map((value, index) => ({
@@ -51,6 +52,68 @@ describe("niceStep", () => {
     for (let max = 0.1; max < 1_000_000; max *= 1.37) {
       expect(niceStep(max, 3) * 3).toBeGreaterThanOrEqual(max - 1e-9);
     }
+  });
+});
+
+describe("chartScale", () => {
+  it.each([
+    // max, lines, step, top
+    [1841, 2, 1000, 2000],
+    [999, 2, 500, 1000],
+    [1000, 2, 500, 1000],
+    [10_500, 3, 5000, 15_000],
+    [740, 3, 250, 750],
+    [500, 2, 250, 500],
+    [2_500_000, 3, 1_000_000, 3_000_000],
+  ])(
+    "a maximum of %d has %d lines of %d and a top of %d",
+    (max, lines, step, top) => {
+      const scale = chartScale(max, 4);
+      expect(scale.lines).toBe(lines);
+      expect(scale.step).toBeCloseTo(step, 6);
+      expect(scale.top).toBeCloseTo(top, 6);
+    }
+  );
+
+  it("is no lines and a top of 1 for a series of zeros, and the maximum at the top without grid", () => {
+    expect(chartScale(0, 4)).toEqual({ lines: 0, step: 0, top: 1 });
+    expect(chartScale(Number.NaN, 4)).toEqual({ lines: 0, step: 0, top: 1 });
+    expect(chartScale(40, 0)).toEqual({ lines: 0, step: 0, top: 40 });
+    expect(chartScale(0, 0)).toEqual({ lines: 0, step: 0, top: 1 });
+  });
+
+  it("a constant series (all 500) has its line at the top of two lines, not in a third that is empty", () => {
+    expect(chartScale(500, 4)).toMatchObject({ lines: 2, top: 500 });
+  });
+
+  it("draws two to four lines, reaches the maximum and fills at least two thirds of the height", () => {
+    const counts = new Set<number>();
+    let below70 = 0;
+    for (let max = 0.1; max < 10_000_000; max *= 1.0007) {
+      const { lines, top } = chartScale(max, 4);
+      counts.add(lines);
+      expect(lines).toBeGreaterThanOrEqual(2);
+      expect(lines).toBeLessThanOrEqual(4);
+      expect(top).toBeGreaterThanOrEqual(max - 1e-9);
+      expect(max / top).toBeGreaterThanOrEqual(2 / 3 - 1e-9);
+      if (max / top < 0.7) {
+        below70 += 1;
+        // only a maximum just above 1 or 2 times a power of ten (1.00 to 1.045 and 2.00 to 2.095)
+        const mantissa = max / 10 ** Math.floor(Math.log10(max));
+        expect(
+          (mantissa >= 1 && mantissa < 1.05) ||
+            (mantissa >= 2 && mantissa < 2.1)
+        ).toBe(true);
+      }
+    }
+    expect([...counts].sort((a, b) => a - b)).toEqual([2, 3, 4]);
+    // the two bands of the doc of `chartScale` exist: the nice steps cannot give 70% there
+    expect(below70).toBeGreaterThan(0);
+  });
+
+  it("never draws more lines than it is given", () => {
+    expect(chartScale(1841, 2).lines).toBe(2);
+    expect(chartScale(740, 2)).toMatchObject({ lines: 2, top: 1000 });
   });
 });
 
@@ -126,22 +189,22 @@ describe("chartLayout: a series of seven days", () => {
     }
   });
 
-  it("scales to three nice lines and draws the zero day on the floor", () => {
-    expect(layout.ticks.map((tick) => tick.value)).toEqual([1000, 2000, 3000]);
-    expect(layout.top).toBe(3000);
+  it("scales to two nice lines that the series fills, and draws the zero day on the floor", () => {
+    expect(layout.ticks.map((tick) => tick.value)).toEqual([1000, 2000]);
+    expect(layout.top).toBe(2000);
     expect(layout.floor).toBe(FLOOR);
     expect(layout.points[5]?.y).toBe(FLOOR);
-    expect(layout.ticks[2]?.y).toBe(MARGIN.top);
+    expect(layout.ticks[1]?.y).toBe(MARGIN.top);
     const highest = layout.points[3]?.y as number;
     expect(highest).toBeLessThan(FLOOR);
     expect(highest).toBeCloseTo(
-      FLOOR - (1840 / 3000) * (FLOOR - MARGIN.top),
+      FLOOR - (1840 / 2000) * (FLOOR - MARGIN.top),
       9
     );
   });
 
   it("draws a grid line for each tick and for the floor", () => {
-    expect(layout.grid.match(MOVE_TO)).toHaveLength(4);
+    expect(layout.grid.match(MOVE_TO)).toHaveLength(3);
   });
 
   it("has the line, the area and the best day", () => {
@@ -185,7 +248,7 @@ describe("chartLayout: the edges", () => {
     expect(layout.line).toBeNull();
     expect(layout.area).toBeNull();
     expect(layout.bestIndex).toBeNull();
-    expect(layout.ticks.map((tick) => tick.value)).toEqual([200, 400, 600]);
+    expect(layout.ticks.map((tick) => tick.value)).toEqual([250, 500]);
     expect(layout.labelIndexes).toEqual([0]);
   });
 
@@ -205,7 +268,8 @@ describe("chartLayout: the edges", () => {
     const ys = new Set(layout.points.map((point) => point.y));
     expect(ys.size).toBe(1);
     expect((ys.values().next().value as number) < FLOOR).toBe(true);
-    expect(layout.ticks.map((tick) => tick.value)).toEqual([200, 400, 600]);
+    expect(layout.ticks.map((tick) => tick.value)).toEqual([250, 500]);
+    expect(layout.top).toBe(500);
     expect(layout.bestIndex).toBeNull();
   });
 
@@ -229,7 +293,7 @@ describe("chartLayout: the edges", () => {
   it("without grid lines the top is the maximum (the sparkline)", () => {
     const layout = chartLayout(days([10, 40, 20]), {
       ...BOX,
-      lines: 0,
+      maxLines: 0,
       margin: { bottom: 4, left: 4, right: 4, top: 4 },
     });
     expect(layout.ticks).toEqual([]);

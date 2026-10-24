@@ -28,6 +28,7 @@ const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
 const STOP_COLORS = /stop-color="([^"]*)"/g;
 const SVG_TEXT = /<text[^>]*>([^<]*)<\/text>/g;
 const READING_LINE = /<p[^>]*aria-live="polite"[^>]*>.*23\/10.*R\$ 520/;
+const TOP_LABEL_X = /<text[^>]*x="(\d+(?:\.\d+)?)"[^>]*>R\$ 2 mil/;
 const abbreviate = (value: number) => `${value / 1000} mil`;
 
 describe("AreaChart", () => {
@@ -63,11 +64,10 @@ describe("AreaChart", () => {
     expect(markup.indexOf("aria-live")).toBeLessThan(markup.indexOf("<svg"));
   });
 
-  it("labels the axes: money in the three lines, four dates on a phone", () => {
+  it("labels the axes: money in the two lines the series fills, four dates on a phone", () => {
     const texts = [...markup.matchAll(SVG_TEXT)].map((match) => match[1]);
-    expect(texts).toEqual(
-      expect.arrayContaining(["R$ 1000", "R$ 2000", "R$ 3000"])
-    );
+    expect(texts).toEqual(expect.arrayContaining(["R$ 1000", "R$ 2000"]));
+    expect(texts).not.toContain("R$ 3000");
     expect(texts).toEqual(
       expect.arrayContaining(["17/10", "19/10", "21/10", "23/10"])
     );
@@ -154,6 +154,54 @@ describe("AreaChart", () => {
     );
     expect(abbreviated).toContain(">1 mil<");
     expect(abbreviated).toContain("R$ 520");
+  });
+});
+
+describe("AreaChart: the unit of the axis", () => {
+  const texts = (axisUnit?: string, data = WEEK) =>
+    [
+      ...html(
+        <AreaChart
+          {...(axisUnit ? { axisUnit } : {})}
+          data={data}
+          formatAxis={abbreviate}
+          formatValue={money}
+          label="x"
+          width={328}
+        />
+      ).matchAll(SVG_TEXT),
+    ].map((match) => match[1] as string);
+
+  it("is written once, on the label of the top line only", () => {
+    expect(texts("R$")).toEqual(expect.arrayContaining(["1 mil", "R$ 2 mil"]));
+    expect(texts("R$").filter((text) => text.startsWith("R$"))).toHaveLength(1);
+  });
+
+  it("is not written without the prop", () => {
+    expect(texts()).toEqual(expect.arrayContaining(["1 mil", "2 mil"]));
+    expect(texts()).not.toContain("R$ 2 mil");
+  });
+
+  it("widens the left margin to the label with the unit, so it fits", () => {
+    const x = html(
+      <AreaChart
+        axisUnit="R$"
+        data={WEEK}
+        formatAxis={abbreviate}
+        formatValue={money}
+        label="x"
+        width={328}
+      />
+    ).match(TOP_LABEL_X)?.[1];
+    // the label ends 6 px before the plot: 0.58 em of 11 px for each of the 8 characters of "R$ 2 mil", plus 14
+    expect(Number(x)).toBe(Math.ceil(8 * 11 * 0.58) + 14 - 6);
+  });
+
+  it("is not drawn on an all-zero series, which has no labeled line", () => {
+    const zeros = WEEK.map((day) => ({ ...day, value: 0 }));
+    expect(texts("R$", zeros).some((text) => text.startsWith("R$"))).toBe(
+      false
+    );
   });
 });
 

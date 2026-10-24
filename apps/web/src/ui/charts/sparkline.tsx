@@ -35,7 +35,7 @@ export function Sparkline({
   const gradient = `spark-fill-${useId().replaceAll(":", "")}`;
   const layout = chartLayout(
     values.map((value) => ({ label: "", value })),
-    { height, lines: 0, margin: MARGIN, width }
+    { height, maxLines: 0, margin: MARGIN, width }
   );
   const end = layout.points.at(-1);
 

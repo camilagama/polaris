@@ -35,12 +35,30 @@ const FLAT = series([500, 500, 500, 500, 500, 500, 500], 23);
 
 const money = (value: number) => formatBrlAmount(value.toFixed(2));
 
-/** "1,5 mil" and the bare figure, with no "R$" (the reading line above the chart has the unit); the gallery's own, the screens write theirs. */
+const GROUP_OF_THREE = /\B(?=(\d{3})+(?!\d))/g;
+const grouped = (value: number) =>
+  String(Math.round(value)).replace(GROUP_OF_THREE, ".");
+
+/** A figure of the axis in pt-BR with at most two decimals: 1,25 and not 1.25, 2 and not 2,00. */
+const decimal = (value: number) =>
+  String(Math.round(value * 100) / 100).replace(".", ",");
+
+/**
+ * A value of the y axis with no unit (the screen passes `axisUnit="R$"`, which goes only on the top line): below
+ * 10 mil the whole number ("500", "1.250", "2.000"), from there "12,5 mil" and from a million "1 mi". The gallery's
+ * own: the screens write theirs.
+ */
 function axisMoney(value: number) {
-  if (value >= 1000) {
-    return `${String(value / 1000).replace(".", ",")} mil`;
+  if (value >= 999_950) {
+    return `${decimal(value / 1_000_000)} mi`;
   }
-  return String(value).replace(".", ",");
+  if (value >= 9999.5) {
+    return `${decimal(value / 1000)} mil`;
+  }
+  if (value >= 1000) {
+    return grouped(value);
+  }
+  return decimal(value);
 }
 
 const SPARK_WEEK = WEEK.map((day) => day.value);
@@ -117,6 +135,7 @@ export function ChartStates() {
               <OnDemandAreaChart
                 data={state.data}
                 failed={<p className="text-support">O gráfico não abriu.</p>}
+                axisUnit="R$"
                 formatAxis={axisMoney}
                 formatValue={money}
                 height={state.height}

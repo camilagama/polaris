@@ -61,11 +61,14 @@ export interface ChartLayout {
 
 export interface ChartLayoutOptions {
   height: number;
-  /** How many grid lines above the floor (the area chart has three); 0 draws none and the top is the maximum. */
-  lines: number;
+  /** The most grid lines above the floor (the area chart has four, drawn from two up: `chartScale`); 0 draws none. */
+  maxLines: number;
   margin: ChartMargin;
   width: number;
 }
+
+/** The fewest grid lines a scale draws above the floor (below that the axis says nothing about the middle). */
+const MIN_LINES = 2;
 
 /** The steps of a "nice" scale: 1, 2, 2.5 or 5 times a power of ten. */
 const NICE_STEPS = [1, 2, 2.5, 5, 10];
@@ -89,6 +92,42 @@ export function niceStep(max: number, lines: number): number {
   const fraction = raw / base;
   const nice = NICE_STEPS.find((step) => fraction <= step + EPSILON) ?? 10;
   return nice * base;
+}
+
+interface ChartScale {
+  /** How many grid lines above the floor: 0 when there is nothing above the floor to reach. */
+  lines: number;
+  /** The value between two grid lines. */
+  step: number;
+  /** The value at the top of the plot: `lines` steps; 1 when there is nothing above the floor. */
+  top: number;
+}
+
+/**
+ * The scale of the y axis: `MIN_LINES` to `maxLines` grid lines, the count that gives the lowest nice top (the
+ * series fills the most height; on a tie, the fewer lines); with `maxLines` 0 there is no grid and the maximum is
+ * the top. A maximum of 1,841 gets 2 lines of 1,000, not 3 lines that end at 3,000 with the upper third empty.
+ * With the steps 1, 2, 2.5 and 5 the series fills at least two thirds of the height, and at least 70% except when
+ * the maximum is just above 1 or 2 times a power of ten (a mantissa from 1.00 to 1.05 and from 2.00 to 2.10, e.g.
+ * 1,030 or 2,050): no other step is "nice" there.
+ */
+export function chartScale(max: number, maxLines: number): ChartScale {
+  if (maxLines <= 0) {
+    return { lines: 0, step: 0, top: max > 0 ? max : 1 };
+  }
+  let best: ChartScale = { lines: 0, step: 0, top: 1 };
+  for (
+    let lines = Math.min(MIN_LINES, maxLines);
+    lines <= maxLines;
+    lines += 1
+  ) {
+    const step = niceStep(max, lines);
+    const top = step * lines;
+    if (step > 0 && (best.lines === 0 || top < best.top - EPSILON)) {
+      best = { lines, step, top };
+    }
+  }
+  return best;
 }
 
 /**
@@ -164,23 +203,14 @@ export function bestIndex(data: readonly ChartDatum[]): number | null {
   return values.indexOf(max);
 }
 
-/** The value at the top of the plot: the last grid line, or the maximum without grid; 1 when everything is zero. */
-function topOf(max: number, step: number, lines: number): number {
-  if (lines > 0) {
-    return step > 0 ? step * lines : 1;
-  }
-  return max > 0 ? max : 1;
-}
-
 /** The layout of a series in a box: where each point is, the paths, the grid and the labels. */
 export function chartLayout(
   data: readonly ChartDatum[],
-  { height, lines, margin, width }: ChartLayoutOptions
+  { height, maxLines, margin, width }: ChartLayoutOptions
 ): ChartLayout {
   const values = data.map((datum) => plotted(datum.value));
   const max = Math.max(0, ...values);
-  const step = niceStep(max, lines);
-  const top = topOf(max, step, lines);
+  const { lines, step, top } = chartScale(max, maxLines);
 
   const floor = height - margin.bottom;
   const innerWidth = Math.max(0, width - margin.left - margin.right);

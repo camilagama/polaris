@@ -19,7 +19,7 @@ import {
 import { useElementWidth } from "./use-element-width";
 
 const AXIS_FONT_SIZE = 11;
-const GRID_LINES = 3;
+const MAX_GRID_LINES = 4;
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
    drawing shows the point in focus) and deaf to the pointer (the box under it moves the focus), so that its box is the
    box of the chart, which is what a touch finds, and the 3 px outline of the keyboard focus goes round the chart. */
@@ -28,6 +28,8 @@ const RANGE_CLASS =
 const BASE_MARGIN: ChartMargin = { bottom: 24, left: 8, right: 8, top: 8 };
 
 export interface AreaChartProps {
+  /** The unit of the y axis ("R$"), written once, before the label of the top line ("R$ 2 mil"); none when absent. */
+  axisUnit?: string;
   className?: string;
   /** The color of the series: a token of the chart palette. The ink (`--chart-5`) when absent. */
   color?: ChartColor;
@@ -48,7 +50,8 @@ export interface AreaChartProps {
 
 /**
  * The area chart of one series (Bklit UI adapted to the tokens of the app): a 2 px line, a fill that fades to
- * nothing, horizontal grid only, three labeled lines above the floor and the dates of the x axis. The day in focus
+ * nothing, horizontal grid only, two to four labeled lines above the floor (the count that fits the series best) and
+ * the dates of the x axis. The day in focus
  * (the last one, until a touch, the mouse or the arrows move it) is read in a line of text above the drawing, never
  * in a floating box that would cover the axis at 360 px.
  *
@@ -59,6 +62,7 @@ export interface AreaChartProps {
  * only (`animate-rise`), which `prefers-reduced-motion` zeroes with the rest of the page.
  */
 export function AreaChart({
+  axisUnit,
   className,
   color = "var(--chart-5)",
   data,
@@ -77,13 +81,19 @@ export function AreaChart({
     null
   );
 
-  const axisText = formatAxis ?? formatValue;
+  const axisValue = formatAxis ?? formatValue;
+  // the unit goes once, on the highest line (the last tick): the margin is measured by the widest label, so it fits
+  const axisText = useCallback(
+    (value: number, isTop: boolean) =>
+      axisUnit && isTop ? `${axisUnit} ${axisValue(value)}` : axisValue(value),
+    [axisUnit, axisValue]
+  );
   // the labels of the y axis decide the left margin, so the layout is made twice: once for the lines, once to fit them
   const { layout, margin } = useMemo(() => {
-    const options = { height, lines: GRID_LINES, width };
+    const options = { height, maxLines: MAX_GRID_LINES, width };
     const labelWidth = estimateLabelWidth(
-      chartLayout(data, { ...options, margin: BASE_MARGIN }).ticks.map((tick) =>
-        axisText(tick.value)
+      chartLayout(data, { ...options, margin: BASE_MARGIN }).ticks.map(
+        (tick, index, ticks) => axisText(tick.value, index === ticks.length - 1)
       ),
       AXIS_FONT_SIZE
     );
@@ -160,7 +170,7 @@ export function AreaChart({
               fill="none"
               strokeWidth={1}
             />
-            {layout.ticks.map((tick) => (
+            {layout.ticks.map((tick, index) => (
               <text
                 className="fill-muted-foreground text-[11px]"
                 dominantBaseline="central"
@@ -169,7 +179,7 @@ export function AreaChart({
                 x={margin.left - 6}
                 y={tick.y}
               >
-                {axisText(tick.value)}
+                {axisText(tick.value, index === layout.ticks.length - 1)}
               </text>
             ))}
             {layout.labelIndexes.map((index) => {
