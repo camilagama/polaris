@@ -10,6 +10,8 @@ import {
   updateGoal,
   createGoal,
 } from "@polaris/db/goal-repository";
+import type { PeriodReadCounts } from "@polaris/db/economics-repository";
+import { logger, opaqueId } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
@@ -41,6 +43,39 @@ interface GoalRpcDependencies {
 }
 
 const CAPABILITY = "goal:manage";
+
+const encoder = new TextEncoder();
+
+/** What the goals' periods read in one `goal.list` (counts only), for its record. */
+interface GoalReadTally {
+  organizationId: string | undefined;
+  periods: number;
+  reads: Record<keyof PeriodReadCounts, number>;
+}
+
+function emptyTally(): GoalReadTally {
+  return {
+    organizationId: undefined,
+    periods: 0,
+    reads: {
+      adjustments: 0,
+      cancellations: 0,
+      items: 0,
+      linkedExpenses: 0,
+      operatingExpenses: 0,
+      payments: 0,
+      returnLines: 0,
+      sales: 0,
+    },
+  };
+}
+
+function addReads(tally: GoalReadTally, reads: PeriodReadCounts): void {
+  tally.periods += 1;
+  for (const key of Object.keys(tally.reads) as (keyof PeriodReadCounts)[]) {
+    tally.reads[key] += reads[key];
+  }
+}
 
 type GoalRow = Awaited<ReturnType<GoalRepository["createGoal"]>>;
 
@@ -120,13 +155,25 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
    */
   const evaluateAndSettle = async (
     context: GoalRpcContext,
-    organizationId: string
+    organizationId: string,
+    tally?: GoalReadTally
   ) => {
     const progress = await run(
       context,
       organizationId,
-      (transaction, identity) =>
-        repository.evaluateActiveGoals(transaction, identity),
+      (transaction, identity) => {
+        if (tally) {
+          // a retried transaction counts again from zero
+          Object.assign(tally, emptyTally(), {
+            organizationId: identity.organizationId,
+          });
+        }
+        return repository.evaluateActiveGoals(
+          transaction,
+          identity,
+          tally ? (reads) => addReads(tally, reads) : undefined
+        );
+      },
       "repeatable read"
     );
     await run(context, organizationId, (transaction, identity) =>
@@ -152,7 +199,13 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
 
   const list = implementContract.goal.list.handler(
     async ({ context, input }) => {
-      const progress = await evaluateAndSettle(context, input.organizationId);
+      const started = Date.now();
+      const tally = emptyTally();
+      const progress = await evaluateAndSettle(
+        context,
+        input.organizationId,
+        tally
+      );
       // the goals as they are now (progress belongs to the version it was measured at)
       const goals = await run(
         context,
@@ -168,7 +221,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
           repository.listPausedGoalIds(transaction, identity)
         )
       );
-      return {
+      const output = {
         goals: goals.map((row) => {
           const entry = byGoal.get(row.id);
           return goalReadModel(
@@ -185,6 +238,18 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
           );
         }),
       };
+      // counts only, never a target, an amount or a name (the input of M16)
+      logger.info("goal_list_read", {
+        durationMs: Date.now() - started,
+        goals: output.goals.length,
+        measuredPeriods: tally.periods,
+        organizationId: opaqueId(tally.organizationId),
+        reads: { ...tally.reads },
+        requestId: context.requestId,
+        responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+        settlementsAsked: progress.filter((entry) => entry.settlement).length,
+      });
+      return output;
     }
   );
 

@@ -1,14 +1,22 @@
 import {
+  type DailySales,
+  dailySales,
+  type ProductSales,
+  topProducts,
+} from "@polaris/domain/economics/period-series";
+import {
   InvalidSaleFactError,
   periodResult,
   type PeriodResult,
   type SaleAdjustmentFact,
   type SaleFact,
   type SaleReturnLineFact,
+  saleEconomics,
 } from "@polaris/domain/economics/sale-economics";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { expenses } from "./schema/expense";
+import { products } from "./schema/product";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
 import { saleReturnItems } from "./schema/sale-return";
@@ -105,6 +113,7 @@ function readItems(transaction: Reader, organization: string, ids: string[]) {
     .select({
       chargedUnitPrice: saleItems.chargedUnitPrice,
       position: saleItems.position,
+      productId: saleItems.productId,
       quantity: saleItems.quantity,
       saleId: saleItems.saleId,
       unitCost: saleItems.unitCost,
@@ -214,6 +223,26 @@ function readLinkedExpenses(
     );
 }
 
+export interface PeriodFacts {
+  operatingExpenses: string[];
+  /** How many rows each read brought, for the per-request record (counts only). */
+  reads: PeriodReadCounts;
+  /** Each sale carries its commercial date and each item its product. */
+  sales: SaleFact[];
+}
+
+/** Rows read for a period, by table: what the database sent, never what they hold. */
+export interface PeriodReadCounts {
+  adjustments: number;
+  cancellations: number;
+  items: number;
+  linkedExpenses: number;
+  operatingExpenses: number;
+  payments: number;
+  returnLines: number;
+  sales: number;
+}
+
 /**
  * The facts the economics engine needs for a period of the organization's
  * calendar: the sales whose commercial date is in it (with their items,
@@ -226,7 +255,7 @@ export async function readPeriodFacts(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   period: EconomicsPeriod
-): Promise<{ operatingExpenses: string[]; sales: SaleFact[] }> {
+): Promise<PeriodFacts> {
   if (!REPORT_CAPABILITIES.includes(identity.capability)) {
     throw new TenantAuthorizationError("capability_denied");
   }
@@ -244,7 +273,7 @@ export async function readPeriodFacts(
   }
 
   const saleRows = await transaction
-    .select({ id: sales.id })
+    .select({ id: sales.id, occurredOn: sales.occurredOn })
     .from(sales)
     .where(
       and(
@@ -273,8 +302,18 @@ export async function readPeriodFacts(
       )
     );
   const operatingExpenses = operatingRows.map((row) => row.amount);
+  const reads: PeriodReadCounts = {
+    adjustments: 0,
+    cancellations: 0,
+    items: 0,
+    linkedExpenses: 0,
+    operatingExpenses: operatingRows.length,
+    payments: 0,
+    returnLines: 0,
+    sales: saleRows.length,
+  };
   if (saleRows.length === 0) {
-    return { operatingExpenses, sales: [] };
+    return { operatingExpenses, reads, sales: [] };
   }
   const ids = saleRows.map((row) => row.id);
 
@@ -301,6 +340,12 @@ export async function readPeriodFacts(
     cancelled.push(...c);
     linked.push(...l);
   }
+  reads.adjustments = adjustments.length;
+  reads.cancellations = cancelled.length;
+  reads.items = items.length;
+  reads.linkedExpenses = linked.length;
+  reads.payments = payments.length;
+  reads.returnLines = returnLines.length;
 
   const itemsBySale = group(items, (row) => row.saleId);
   const adjustmentsBySale = group(adjustments, (row) => row.saleId);
@@ -309,7 +354,7 @@ export async function readPeriodFacts(
   const cancelledSales = new Set(cancelled.map((row) => row.saleId));
   const linkedBySale = group(linked, (row) => row.saleId as string);
 
-  const facts: SaleFact[] = saleRows.map(({ id }) => {
+  const facts: SaleFact[] = saleRows.map(({ id, occurredOn }) => {
     const payment = paymentBySale.get(id);
     return {
       adjustments: (adjustmentsBySale.get(id) ?? []).map(
@@ -329,10 +374,12 @@ export async function readPeriodFacts(
       items: (itemsBySale.get(id) ?? []).map((row) => ({
         chargedUnitPrice: row.chargedUnitPrice,
         position: row.position,
+        productId: row.productId,
         quantity: row.quantity,
         unitCost: row.unitCost,
       })),
       linkedExpenses: (linkedBySale.get(id) ?? []).map((row) => row.amount),
+      occurredOn,
       processingFee: payment?.processingFee ?? null,
       returnLines: (returnsBySale.get(id) ?? []).map(
         (row): SaleReturnLineFact => ({
@@ -343,7 +390,7 @@ export async function readPeriodFacts(
       ),
     };
   });
-  return { operatingExpenses, sales: facts };
+  return { operatingExpenses, reads, sales: facts };
 }
 
 /** The estimated result of a period: facts read from the database, calculated by the pure engine. */
@@ -354,4 +401,99 @@ export async function readPeriodResult(
 ): Promise<PeriodResult> {
   const facts = await readPeriodFacts(transaction, identity, period);
   return periodResult(facts.sales, facts.operatingExpenses);
+}
+
+/** At most this many products are ranked in a summary. */
+export const MAX_TOP_PRODUCTS = 10;
+
+export class InvalidTopProductsError extends Error {
+  readonly code = "invalid_top_products";
+
+  constructor() {
+    super("invalid_top_products");
+    this.name = "InvalidTopProductsError";
+  }
+}
+
+export interface TopProduct extends ProductSales {
+  /** The product was deleted after it sold: shown without a link. */
+  deleted: boolean;
+  /** The product's current name. */
+  name: string;
+}
+
+export interface PeriodSummaryRead {
+  /** One entry per date of the period, in order (ADR 0056, D2). */
+  daily: DailySales[];
+  /** Rows read, by table, plus the product names when ranked. */
+  reads: PeriodReadCounts & { products: number };
+  result: PeriodResult;
+  /** Present only when asked for. */
+  topProducts?: TopProduct[];
+}
+
+/**
+ * The result of a period with its daily series and, when asked, its most sold
+ * products: one read of the facts, the engine run once per sale, and the
+ * names of the ranked products read in the same snapshot, scoped to the
+ * organization (a product deleted since keeps its name and says so).
+ */
+export async function readPeriodSummary(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  period: EconomicsPeriod,
+  options: { topProducts?: number | undefined } = {}
+): Promise<PeriodSummaryRead> {
+  const limit = options.topProducts;
+  if (
+    limit !== undefined &&
+    !(Number.isInteger(limit) && limit >= 1 && limit <= MAX_TOP_PRODUCTS)
+  ) {
+    throw new InvalidTopProductsError();
+  }
+  const facts = await readPeriodFacts(transaction, identity, period);
+  const economics = facts.sales.map(saleEconomics);
+  const result = periodResult(facts.sales, facts.operatingExpenses, economics);
+  const daily = dailySales(facts.sales, period.from, period.to, economics);
+  if (limit === undefined) {
+    return { daily, reads: { ...facts.reads, products: 0 }, result };
+  }
+  const ranked = topProducts(facts.sales, limit);
+  const named =
+    ranked.length === 0
+      ? []
+      : await transaction
+          .select({
+            deletedAt: products.deletedAt,
+            id: products.id,
+            name: products.name,
+          })
+          .from(products)
+          .where(
+            and(
+              eq(products.organizationId, identity.organizationId),
+              inArray(
+                products.id,
+                ranked.map((entry) => entry.productId)
+              )
+            )
+          );
+  const byId = new Map(named.map((row) => [row.id, row]));
+  return {
+    daily,
+    reads: { ...facts.reads, products: named.length },
+    result,
+    topProducts: ranked.map((entry) => {
+      const product = byId.get(entry.productId);
+      if (!product) {
+        // the sale item references the product by a foreign key of the same organization
+        throw new InvalidSaleFactError();
+      }
+      return {
+        ...entry,
+        deleted: product.deletedAt !== null,
+        name: product.name,
+      };
+    }),
+  };
 }

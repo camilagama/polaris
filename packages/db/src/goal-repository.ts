@@ -21,7 +21,7 @@ import {
   settleGoal,
 } from "@polaris/domain/goals/goal";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { readPeriodFacts } from "./economics-repository";
+import { type PeriodReadCounts, readPeriodFacts } from "./economics-repository";
 import { assertRoomFor } from "./entitlement-enforcement";
 import { organizationToday } from "./expense-repository";
 import { goalTargetChanges, goals } from "./schema/goal";
@@ -359,7 +359,8 @@ async function resultSoFar(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   startsOn: string,
-  through: string
+  through: string,
+  onRead: ((reads: PeriodReadCounts) => void) | undefined
 ) {
   if (startsOn > through) {
     return periodResult([], []);
@@ -368,6 +369,7 @@ async function resultSoFar(
     from: startsOn,
     to: through,
   });
+  onRead?.(facts.reads);
   return periodResult(facts.sales, facts.operatingExpenses);
 }
 
@@ -387,7 +389,9 @@ export interface GoalProgress {
  */
 export async function evaluateActiveGoals(
   transaction: TenantRequestTransaction,
-  identity: TenantRequestIdentity
+  identity: TenantRequestIdentity,
+  /** Told the rows each goal's period read (counts only), for the per-request record. */
+  onRead?: (reads: PeriodReadCounts) => void
 ): Promise<GoalProgress[]> {
   requireGoalCapability(identity);
   const today = await organizationToday(transaction, identity);
@@ -407,7 +411,8 @@ export async function evaluateActiveGoals(
       transaction,
       identity,
       goal.startsOn,
-      through
+      through,
+      onRead
     );
     const evaluation = evaluateGoal(
       { endsOn: goal.endsOn, kind, target: goal.target },

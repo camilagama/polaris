@@ -72,7 +72,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
 **Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
 **Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na venda.
-**Modalidade do parcelamento:** classificação registrada no cartão de crédito como `merchant` (parcelamento do lojista) ou `issuer` (parcelamento do emissor); não é evidência de liquidação.
+**Modalidade do parcelamento** (na interface, "Quem parcela"): classificação registrada no cartão de crédito como `merchant` (parcelamento do lojista) ou `issuer` (parcelamento do emissor); não é evidência de liquidação.
 **Perfil de pagamento:** configuração manual da organização que descreve regras de taxa por método e, para cartão, modalidade e quantidade de parcelas. O operador seleciona o perfil na venda; o snapshot registra a regra aplicada.
 **Prazo esperado de recebimento:** estimativa em número de dias da regra de pagamento; não cria data de liquidação nem contas a receber.
 

@@ -21,6 +21,9 @@ import {
   CatalogNotice,
   describedBy,
   FieldTexts,
+  INSTALLMENT_PLAN_LABEL,
+  INSTALLMENT_PLAN_OPTIONS,
+  INSTALLMENT_PLAN_PLACEHOLDER,
   SelectField,
   TextField,
 } from "./sale-fields";
@@ -31,7 +34,6 @@ import {
   type CatalogView,
   type ChoiceOption,
   formFieldKeys,
-  INSTALLMENT_PLANS,
   MAX_SALE_ADJUSTMENTS,
   NO_PROFILE_CHOICE,
   SALE_DATE_HINT,
@@ -46,10 +48,6 @@ const adjustmentTypeOptions: ChoiceOption[] = [
   { id: "fixed", label: "Valor fixo (R$)" },
   { id: "percentage", label: "Percentual (%)" },
 ];
-const planOptions: ChoiceOption[] = INSTALLMENT_PLANS.map(([id, label]) => ({
-  id,
-  label,
-}));
 const noProfileOption: ChoiceOption = {
   id: NO_PROFILE_CHOICE,
   label: "Sem perfil de pagamento",
@@ -396,10 +394,10 @@ export function PaymentSection({
                 disabled={disabled}
                 error={errors[formFieldKeys.installmentPlan]}
                 id="sale-plan"
-                label="Modalidade do parcelamento"
+                label={INSTALLMENT_PLAN_LABEL}
                 onChange={onInstallmentPlanChange}
-                options={planOptions}
-                placeholder="Escolha a modalidade"
+                options={INSTALLMENT_PLAN_OPTIONS}
+                placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
                 value={form.payment.installmentPlan}
               />
             </div>

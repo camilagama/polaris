@@ -1,4 +1,3 @@
-import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { monthBounds } from "../expenses/expense-model";
 import { browserStorage } from "../lib/current-organization-model";
@@ -7,6 +6,7 @@ import {
   clearPeriodSummaryCaches,
   isPeriodSummary,
   readPeriodSummaryCache,
+  type StoredPeriodSummary,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
 import { rpcErrorCode } from "../lib/rpc-error";
@@ -27,7 +27,7 @@ export interface PeriodSummaryState {
    * could not answer.
    */
   source: "cache" | "server";
-  summary: PeriodSummaryReadModel | null;
+  summary: StoredPeriodSummary | null;
 }
 
 const initialState: PeriodSummaryState = {
@@ -39,8 +39,8 @@ const initialState: PeriodSummaryState = {
 
 /** True when the copy was read by the server before the figures already on screen. */
 function isOlderThan(
-  copy: PeriodSummaryReadModel,
-  shown: PeriodSummaryReadModel | null
+  copy: StoredPeriodSummary,
+  shown: StoredPeriodSummary | null
 ): boolean {
   return (
     shown !== null &&

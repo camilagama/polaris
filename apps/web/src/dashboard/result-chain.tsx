@@ -1,4 +1,3 @@
-import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -15,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { type ChainRow, chainRows } from "./dashboard-model";
 
 const CHAIN_TITLE_ID = "dashboard-chain-title";
@@ -28,7 +28,7 @@ function rowClass(row: ChainRow): string | undefined {
 }
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
-export function ResultChain({ summary }: { summary: PeriodSummaryReadModel }) {
+export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
   const rows = chainRows(summary.chain, summary.quality);
   return (
     <Card aria-labelledby={CHAIN_TITLE_ID} className="gap-0 py-0" role="region">
