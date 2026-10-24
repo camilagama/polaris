@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import type {
   BillingProviderPort,
-  RecordedFirstCharge,
+  RefundableCharge,
   RefundOutcome,
 } from "@polaris/billing/provider-port";
 import { ProviderUnavailableError } from "@polaris/billing/provider-port";
@@ -69,7 +69,7 @@ interface FakeProvider {
     "already_cancelled" | "cancelled" | "nothing_to_cancel"
   >;
   /** The first charge each refund was asked for (ADR 0104: only that one is refunded). */
-  firstCharges: (RecordedFirstCharge | undefined)[];
+  firstCharges: RefundableCharge[];
   refund: () => Promise<RefundOutcome>;
 }
 
