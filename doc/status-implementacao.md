@@ -2062,7 +2062,7 @@ Achado do desenho t268 no sandbox do Asaas: o reembolso deixava a assinatura viv
 | --- | --- | --- |
 | Comando `refundCurrentPeriod` | Em revisão | Sob a trava de comandos da loja, cancela a renovação (fato `subscription_cancelled` com ID `command:refund_cancel:…`) e só então reembolsa; pula o cancelamento se o registro já o mostra; recebe `requestId`. Provedor sem reembolso ligado (Woovi antes do S3.2) não cancela nada. |
 | Trava de comandos da loja | Em revisão | `withOrganizationLock` no billing store: `pg_try_advisory_xact_lock`, sem fila (`BillingCommandInProgressError`); prova no gate `billing-trial-claims` (PostgreSQL 18 do CI). |
-| Rede de segurança horária (reembolso e chargeback) | Não iniciado | PR seguinte, com limite por passada e recuo por loja. |
+| Rede de segurança horária (reembolso e chargeback) | Não iniciado | PR B da sequência (ADR 0104, decisão 6), com limite por passada e recuo por loja. |
 | Gate 7 | Não iniciado | Prova do AS-32 pelo roteiro do QA (assinatura apagada, nenhuma cobrança pendente, contagem do razão igual). |
 
 ### Início (F2), PR 1: série diária e mais vendidos no `periodSummary` (t277; emenda D2 do ADR 0056; sem migration)
