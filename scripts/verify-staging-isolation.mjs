@@ -593,16 +593,18 @@ const STAGING_FIXED_HOSTS = Object.values(STAGING_FIXED_ORIGIN).map(
   (origin) => new URL(origin).hostname
 );
 const TRAILING_DOT = /\.$/;
+const PORT = /:[0-9*]*$/;
 const REGEX_SPECIAL = /[.+?^${}()|[\]\\-]/g;
-const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+const URL_SCHEME = /^(?:[a-z][a-z0-9+.-]*|\*):\/\//i;
 const WORKERS_DEV_ACCOUNT = /\.([a-z0-9-]+)\.workers\.dev$/i;
 
-/** The host of a route pattern, without scheme, path or trailing dot. */
+/** The host of a route pattern, without scheme, path, port or trailing dot. */
 function routeHost(pattern) {
   return pattern
     .trim()
     .replace(URL_SCHEME, "")
     .split("/")[0]
+    .replace(PORT, "")
     .replace(TRAILING_DOT, "");
 }
 

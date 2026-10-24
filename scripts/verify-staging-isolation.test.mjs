@@ -356,6 +356,17 @@ describe("the staging isolation check", () => {
       "https://*.araute.app/*",
       " *.araute.app/*",
       "dash.araute.app:8443/*",
+      // with a port the text sweep misses a wildcard: only the host of the route can tell
+      "*.araute.app:8443/*",
+      "*araute.app:8443/*",
+      "*.workers.dev:8443/*",
+      "polaris-web-staging.*.workers.dev:8443/*",
+      "https://*.araute.app:8443/*",
+      "*.AraUte.app.:8443/*",
+      "*:8443/*",
+      "*.araute.app:*/*",
+      "*.araute.app:8443",
+      "*://*.araute.app/*",
     ]) {
       production.routes = [pattern];
       expect(findIsolationProblems(entries), pattern).toEqual([
@@ -396,6 +407,9 @@ describe("the staging isolation check", () => {
       "app.araute.app/*",
       { custom_domain: true, pattern: "loja.araute.app" },
       "*.dash.araute.app/*",
+      "*.example.com:8443/*",
+      "app.araute.app:8443/*",
+      "*://app.araute.app/*",
     ];
     expect(findIsolationProblems(entries)).toEqual([]);
   });
