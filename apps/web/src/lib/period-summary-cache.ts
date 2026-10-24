@@ -23,6 +23,8 @@ export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
   Partial<Pick<PeriodSummaryReadModel, "daily">>;
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+/** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
+const moneyPattern = /^-?\d{1,12}(?:\.\d{1,2})?$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -108,8 +110,13 @@ function isQuality(value: unknown): boolean {
   );
 }
 
+const isDate = (value: unknown) =>
+  isText(value) &&
+  datePattern.test(value) &&
+  !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`));
+
 function isPeriod(value: unknown): boolean {
-  return isDictionary(value) && isText(value.from) && isText(value.to);
+  return isDictionary(value) && isDate(value.from) && isDate(value.to);
 }
 
 function isInstant(value: unknown): boolean {
@@ -149,6 +156,7 @@ function isDaily(value: unknown, period: unknown): boolean {
         isDictionary(day) &&
         day.date === dateAfter(from, index) &&
         isText(day.netSales) &&
+        moneyPattern.test(day.netSales) &&
         isCount(day.salesCount)
     ) &&
     (value.at(-1) as Dictionary).date === period.to
@@ -314,6 +322,25 @@ export function readPeriodSummaryCache(
     return readEntry(storage, keyOf(organizationId, month), month);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Forgets the copies of one organization (the server refused this person its results): the months and the Início's.
+ */
+export function clearOrganizationResultCopies(
+  preference: PreferenceStorage | null,
+  organizationId: string
+): void {
+  try {
+    for (const key of [
+      ...keysWithPrefix(preference, organizationPrefix(organizationId)),
+      ...keysWithPrefix(preference, `${HOME_COPY_KEY_PREFIX}${organizationId}`),
+    ]) {
+      preference?.removeItem(key);
+    }
+  } catch {
+    // Nothing to clean when storage is unavailable.
   }
 }
 

@@ -1,5 +1,5 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import {
@@ -10,7 +10,10 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
-import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
+import {
+  useOfflineRuntime,
+  useRuntimeSnapshot,
+} from "../offline/runtime/runtime-context";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { AttentionBlock } from "./home-attention";
@@ -23,7 +26,12 @@ import {
   TopProductsBlock,
 } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
-import { copyLine, newSaleOfflineText, pickGoal } from "./home-model";
+import {
+  copyLine,
+  type GoalView,
+  newSaleOfflineText,
+  pickGoal,
+} from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
 
@@ -234,7 +242,12 @@ function HomeHeader({
  * Whether the copy may stand in for the server (§ 7.2): the runtime on, a role that reads the results, the user's own
  * lease in force (the runtime is ready only then) and no refusal of the session, here or by the runtime.
  */
-function useCopyAllowed(readsReport: boolean, refused: boolean): boolean {
+function useCopyAllowed(
+  organizationId: string,
+  readsReport: boolean,
+  refused: boolean
+): boolean {
+  const runtime = useOfflineRuntime();
   const snapshot = useRuntimeSnapshot();
   const sessionOver = useSessionOver();
   return (
@@ -243,8 +256,98 @@ function useCopyAllowed(readsReport: boolean, refused: boolean): boolean {
     snapshot?.phase === "ready" &&
     !snapshot.sessionRefused &&
     !refused &&
-    !sessionOver
+    !sessionOver &&
+    // the lease of this user, for this store, in force right now (`context()` checks its end even with a late timer)
+    runtime?.context()?.organizationId === organizationId
   );
+}
+
+/** The clock of the page without a connection: once a minute, so the day of the store and the copy's age move on. */
+function useOfflineClock(online: boolean, serverNow: () => number): number {
+  const [now, setNow] = useState(serverNow);
+  useEffect(() => {
+    if (online) {
+      return;
+    }
+    setNow(serverNow());
+    const timer = window.setInterval(() => setNow(serverNow()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [online, serverNow]);
+  return now;
+}
+
+/**
+ * What the page shows without a connection (the copy, § 7.4), and, once the connection is back, the copy still on the
+ * screen until the first read answers: no skeletons and no jump of the page.
+ */
+function useOfflineView({
+  figuresLoading,
+  online,
+  organizationId,
+  readsReport,
+  refused,
+  serverNow,
+  timezone,
+}: {
+  figuresLoading: boolean;
+  online: boolean;
+  organizationId: string;
+  readsReport: boolean;
+  refused: boolean;
+  serverNow: () => number;
+  timezone: string | null;
+}): { offline: OfflineHome | null; view: OfflineHome | null } {
+  const copyAllowed = useCopyAllowed(organizationId, readsReport, refused);
+  const clock = useOfflineClock(online, serverNow);
+  const offline = useMemo(
+    () =>
+      online
+        ? null
+        : offlineHome(
+            browserStorage(),
+            organizationId,
+            timezone,
+            // the state of the clock may be of before the connection went: never earlier than now
+            Math.max(clock, serverNow()),
+            copyAllowed
+          ),
+    [clock, copyAllowed, online, organizationId, serverNow, timezone]
+  );
+  // the connection is back: the copy stays on the screen until the first read answers (no skeletons, no jump)
+  const keptCopy = useRef<OfflineHome | null>(null);
+  if (offline) {
+    // only figures are worth keeping: "sem internet" never stays once the connection is back
+    keptCopy.current = offline.figures ? offline : null;
+  } else if (!figuresLoading) {
+    keptCopy.current = null;
+  }
+  const view = offline ?? keptCopy.current;
+  return { offline, view };
+}
+
+/** The goal's card: the copy's without a connection (and until the first read after it), the server's otherwise. */
+function pickGoalBlock({
+  goal,
+  offline,
+  readsGoals,
+  retryGoals,
+  state,
+  view,
+}: {
+  goal: GoalView | null;
+  offline: OfflineHome | null;
+  readsGoals: boolean;
+  retryGoals: () => void;
+  state: HomeState;
+  view: OfflineHome | null;
+}): React.ReactNode {
+  if (view && readsGoals && (offline || state.goals.status === "loading")) {
+    return <OfflineGoalBlock goal={view.goal} />;
+  }
+  if (offline || state.sessionRefused) {
+    return null;
+  }
+  return <GoalBlock block={state.goals} onRetry={retryGoals} view={goal} />;
 }
 
 /**
@@ -263,24 +366,19 @@ export function HomePage() {
     timezone
   );
   const snapshot = useRuntimeSnapshot();
-  const copyAllowed = useCopyAllowed(reads.report, state.sessionRefused);
+  const { offline, view } = useOfflineView({
+    figuresLoading: state.figures.status === "loading",
+    online,
+    organizationId,
+    readsReport: reads.report,
+    refused: state.sessionRefused || state.copyRefused,
+    serverNow,
+    timezone,
+  });
   const canSellOffline = useLocalWorkspace(organizationId) !== null;
   const [days, setDays] = useState<ChartDays>("7");
   const chart = { days, onDays: setDays };
   const refused = snapshot?.counts.rejected ?? 0;
-  const offline = useMemo(
-    () =>
-      online
-        ? null
-        : offlineHome(
-            browserStorage(),
-            organizationId,
-            timezone,
-            serverNow(),
-            copyAllowed
-          ),
-    [copyAllowed, online, organizationId, serverNow, timezone]
-  );
   const figures = state.figures.status === "ready" ? state.figures.data : null;
   const goals = state.goals.status === "ready" ? state.goals.data : null;
   const today = figures?.today ?? calendarDayInTimezone(new Date(), timezone);
@@ -292,20 +390,20 @@ export function HomePage() {
     ? { blocks: NO_BLOCKS, updated: null }
     : pageBlocks({
         chart,
-        offline,
+        offline: view,
         readsReport: reads.report,
         retryFigures,
         state,
         timezone,
       });
-  let goalBlock: React.ReactNode = null;
-  if (offline && reads.goals) {
-    goalBlock = <OfflineGoalBlock goal={offline.goal} />;
-  } else if (!(offline || state.sessionRefused)) {
-    goalBlock = (
-      <GoalBlock block={state.goals} onRetry={retryGoals} view={goal} />
-    );
-  }
+  const goalBlock = pickGoalBlock({
+    goal,
+    offline,
+    readsGoals: reads.goals,
+    retryGoals,
+    state,
+    view,
+  });
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
@@ -314,7 +412,7 @@ export function HomePage() {
         updated={updated}
       />
       <div
-        aria-busy={offline === null && state.figures.status === "loading"}
+        aria-busy={view === null && state.figures.status === "loading"}
         className="grid gap-4 lg:grid-cols-2 lg:items-start"
       >
         {blocks.main}

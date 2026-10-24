@@ -6,9 +6,11 @@ import {
   workerAnswers,
 } from "../lib/browser-connection";
 import { browserStorage } from "../lib/current-organization-model";
+import { isNoAnswer } from "../lib/connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
 import {
+  clearOrganizationResultCopies,
   isPeriodSummary,
   type StoredPeriodSummary,
   writePeriodSummaryCache,
@@ -67,6 +69,8 @@ export interface HomeChecklist {
 
 export interface HomeState {
   checklist: Block<HomeChecklist | null>;
+  /** The server refused this person the figures or the goals: the copy of the store is gone and never stands in. */
+  copyRefused: boolean;
   figures: Block<HomeFigures>;
   goals: Block<GoalReadModel[]>;
   /** The server refused the session or waits for the legal acceptance: the shell says so, the blocks say nothing. */
@@ -80,6 +84,7 @@ export interface HomeState {
 
 const LOADING: HomeState = {
   checklist: { status: "loading" },
+  copyRefused: false,
   figures: { status: "loading" },
   goals: { status: "loading" },
   sessionRefused: false,
@@ -97,7 +102,14 @@ function refusesSession(error: unknown): boolean {
 
 /** A read with no answer at all, and the probe does not find the Worker either: no connection (§ 7.1). */
 async function noConnection(error: unknown): Promise<boolean> {
-  return rpcErrorCode(error) === undefined && !(await workerAnswers());
+  return isNoAnswer(error) && !(await workerAnswers());
+}
+
+/** A refusal of the server that is about this person and this store (not the missing acceptance, said apart). */
+function refusesCopy(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" && !isLegalAcceptanceRefusal(error)
+  );
 }
 
 /** Keeps the copy only with the runtime on, for a role that reads the results, and never while the session ends. */
@@ -236,6 +248,8 @@ export function useHome(
   // the server's clock minus the device's, from the last answer: the turn of the day follows the server
   const skew = useRef(0);
   const [midnightAt, setMidnightAt] = useState(0);
+  // once the server refused the figures or the goals here, nothing of this page keeps a copy again
+  const copyRefused = useRef(false);
 
   /** Sets a block, if the answer is of the newest read; a refusal of the session goes to the shell instead. */
   const settle = useCallback(
@@ -253,6 +267,16 @@ export function useHome(
         setState((now) => ({ ...now, sessionRefused: true }));
         return;
       }
+      if (
+        "error" in outcome &&
+        (key === "figures" || key === "goals") &&
+        refusesCopy(outcome.error)
+      ) {
+        // what the server refuses now, the device does not show from its copy (ADR 0056)
+        copyRefused.current = true;
+        clearOrganizationResultCopies(browserStorage(), organizationId);
+        setState((now) => ({ ...now, copyRefused: true }));
+      }
       const block = "block" in outcome ? outcome.block : failed(outcome.error);
       // a refresh that fails leaves the figures read before on the screen: they are still the last confirmed ones
       setState((now) =>
@@ -261,7 +285,7 @@ export function useHome(
           : { ...now, [key]: block }
       );
     },
-    []
+    [organizationId]
   );
 
   const loadFigures = useCallback(
@@ -287,13 +311,16 @@ export function useHome(
         }
         const ready = { ...figures, today };
         if (ticket === sequence.current.numbers) {
-          keepCopy(reads.report, (storage) => {
+          keepCopy(reads.report && !copyRefused.current, (storage) => {
             writePeriodSummaryCache(
               storage,
               organizationId,
               today.slice(0, 7),
               ready.month,
-              { offlineRuntimeEnabled: true, signingOut: false }
+              {
+                offlineRuntimeEnabled: OFFLINE_RUNTIME_ENABLED,
+                signingOut: isSigningOut(),
+              }
             );
             const change: Partial<HomeCopy> = { before: ready.before };
             if (!noSaleCounted(ready.month, ready.before)) {
@@ -332,7 +359,7 @@ export function useHome(
       try {
         const read = await readChecklist(organizationId, reads.inventory);
         if (read === "sold" && ticket === sequence.current.numbers) {
-          keepCopy(reads.report, (storage) =>
+          keepCopy(reads.report && !copyRefused.current, (storage) =>
             writeHomeCopy(storage, organizationId, { hadSale: true })
           );
         }
@@ -368,14 +395,15 @@ export function useHome(
           status: "all",
         });
         if (ticket === sequence.current.goals) {
-          // the goal the card shows, as it shows it now (§ 7.3)
-          const today = calendarDayInTimezone(
-            new Date(Date.now() + skew.current),
-            timezone
-          );
-          keepCopy(reads.report, (storage) =>
+          // the goal the card shows, as it shows it now, and when (§ 7.3)
+          const at = new Date(Date.now() + skew.current);
+          const today = calendarDayInTimezone(at, timezone);
+          keepCopy(reads.report && !copyRefused.current, (storage) =>
             writeHomeCopy(storage, organizationId, {
-              goal: pickGoal(goals, today, timezone),
+              goal: {
+                at: at.toISOString(),
+                view: pickGoal(goals, today, timezone),
+              },
             })
           );
         }

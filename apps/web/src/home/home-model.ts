@@ -497,13 +497,13 @@ export function copyLine(confirmed: string, stale: boolean): string {
 export type OfflineGoal =
   | { ended: boolean; goal: GoalReadModel; kind: "active" }
   | { goal: GoalReadModel; kind: "settled" }
-  | { kind: "none" }
   | { kind: "online-only" };
 
 /**
  * The goal kept on the device, as it can be told now: an active one is "em andamento" only while today, in the
  * store's zone, is inside its period; after its end it says the result comes with the connection, with no percent.
- * A goal paused by the plan stays as it was read. With no copy, goals are only with a connection.
+ * A goal paused by the plan stays as it was read. With no goal kept (or none to show any more), goals are only with
+ * a connection: the device cannot know whether one was set elsewhere since.
  */
 export function offlineGoal(
   view: GoalView | null,
@@ -523,9 +523,9 @@ export function offlineGoal(
   if (view.kind === "settled") {
     // the same 7 days as with a connection, counted from today
     const kept = pickGoal([view.goal], today, timezone);
-    return kept.kind === "settled" ? kept : { kind: "none" };
+    return kept.kind === "settled" ? kept : { kind: "online-only" };
   }
-  return view;
+  return { kind: "online-only" };
 }
 
 /** What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. */

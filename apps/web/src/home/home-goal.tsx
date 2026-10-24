@@ -186,11 +186,6 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
     case "settled":
       content = <SettledGoal goal={goal.goal} online={false} />;
       break;
-    case "none":
-      content = (
-        <p className="text-muted-foreground">Nenhuma meta em andamento.</p>
-      );
-      break;
     default:
       content = <p className="text-muted-foreground">Metas só com conexão.</p>;
   }

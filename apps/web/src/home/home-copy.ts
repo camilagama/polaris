@@ -27,8 +27,8 @@ import {
 export interface HomeCopy {
   /** B as the server returned it; its day after the end is in the month of A. */
   before: StoredPeriodSummary | null;
-  /** The goal the card showed, null when the goals were not read. */
-  goal: GoalView | null;
+  /** The goal the card showed and when (the server's clock as the device estimated it), null when not read. */
+  goal: { at: string; view: GoalView } | null;
   /** The store sold at least once (the checklist does not come back, AC-23). */
   hadSale: boolean;
 }
@@ -101,11 +101,15 @@ function isGoalView(value: unknown): value is GoalView {
   }
 }
 
+function isKeptGoal(value: unknown): boolean {
+  return isDictionary(value) && isInstant(value.at) && isGoalView(value.view);
+}
+
 function isHomeCopy(value: unknown): value is HomeCopy {
   return (
     isDictionary(value) &&
     (value.before === null || isPeriodSummary(value.before)) &&
-    (value.goal === null || isGoalView(value.goal)) &&
+    (value.goal === null || isKeptGoal(value.goal)) &&
     typeof value.hadSale === "boolean"
   );
 }
@@ -225,6 +229,13 @@ export interface OfflineHome {
  * and says what each block takes from it at `now` (the server's clock as the device estimates it). The goal is
  * taken only beside the figures: the line of the last confirmed read vouches for both.
  */
+const NOTHING: OfflineHome = {
+  figures: null,
+  goal: { kind: "online-only" },
+};
+
+const older = (a: string, b: string) => (Date.parse(a) < Date.parse(b) ? a : b);
+
 export function offlineHome(
   storage: PreferenceStorage | null,
   organizationId: string,
@@ -232,26 +243,43 @@ export function offlineHome(
   now: number,
   allowed: boolean
 ): OfflineHome {
-  const copy = allowed ? readHomeCopy(storage, organizationId) : null;
-  const figures =
-    copy && copiedFigures(storage, organizationId, copy, timezone);
-  if (!(copy && figures)) {
-    return { figures: null, goal: offlineGoal(null, "", timezone) };
-  }
-  return {
-    figures: {
-      ...figures,
-      ...copyStanding(
-        figures.confirmedAt,
-        figures.month.generatedAt,
-        now,
-        timezone
-      ),
-    },
-    goal: offlineGoal(
-      copy.goal,
-      calendarDayInTimezone(new Date(now), timezone),
+  try {
+    const copy = allowed ? readHomeCopy(storage, organizationId) : null;
+    const figures =
+      copy && copiedFigures(storage, organizationId, copy, timezone);
+    if (!(copy && figures)) {
+      return NOTHING;
+    }
+    // the goal is read on its own: the line vouches for the oldest of what is on the screen
+    const confirmedAt = copy.goal
+      ? older(figures.confirmedAt, copy.goal.at)
+      : figures.confirmedAt;
+    const standing = copyStanding(
+      confirmedAt,
+      figures.month.generatedAt,
+      now,
       timezone
-    ),
-  };
+    );
+    // the day of the store now: never before the day of the read, so a device clock behind it does not keep a goal
+    // that ended "em andamento"
+    const deviceDay = calendarDayInTimezone(new Date(now), timezone);
+    const readDay = storeToday(figures.month.generatedAt, timezone);
+    const day = deviceDay > readDay ? deviceDay : readDay;
+    const goal = copy.goal
+      ? offlineGoal(copy.goal.view, day, timezone)
+      : offlineGoal(null, day, timezone);
+    return {
+      figures: {
+        ...figures,
+        confirmedAt,
+        stale: standing.stale,
+        // A may be a later read of a month already over (the Resultado reads it too): its series ends before today
+        todayShown: standing.todayShown && figures.today === deviceDay,
+      },
+      goal,
+    };
+  } catch {
+    // a copy that passed the checks and still does not add up is worth nothing: "sem números"
+    return NOTHING;
+  }
 }
