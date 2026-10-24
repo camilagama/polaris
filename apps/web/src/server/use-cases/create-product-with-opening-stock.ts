@@ -160,7 +160,10 @@ function repeatedResult(
 type Stock = NonNullable<ReturnType<typeof normalizeOpeningStockInput>>;
 
 /** What the caller wants, validated before the first write (the stock with the variant it will be recorded on). */
-function wantedCreation(input: CreateProductWithOpeningStockInput): { stock: Stock | null; wanted: WantedCreation } {
+function wantedCreation(input: CreateProductWithOpeningStockInput): {
+  stock: Stock | null;
+  wanted: WantedCreation;
+} {
   const { initialStock: request } = input;
   // a variant the database will name is stood in for by a valid ID, only to validate the rest of the stock
   const stock = request
