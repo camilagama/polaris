@@ -163,7 +163,10 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
       organizationId,
       (transaction, identity) => {
         if (tally) {
-          tally.organizationId = identity.organizationId;
+          // a retried transaction counts again from zero
+          Object.assign(tally, emptyTally(), {
+            organizationId: identity.organizationId,
+          });
         }
         return repository.evaluateActiveGoals(
           transaction,

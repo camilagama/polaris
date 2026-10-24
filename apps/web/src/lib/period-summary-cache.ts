@@ -132,7 +132,8 @@ function isDaily(value: unknown, period: unknown): boolean {
       Array.isArray(value) &&
       isDictionary(period) &&
       isText(period.from) &&
-      datePattern.test(period.from)
+      datePattern.test(period.from) &&
+      !Number.isNaN(Date.parse(`${period.from}T00:00:00.000Z`))
     )
   ) {
     return false;

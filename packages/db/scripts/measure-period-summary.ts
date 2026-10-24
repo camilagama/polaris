@@ -20,6 +20,7 @@ import {
 import { evaluateActiveGoals } from "../src/goal-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
 import {
   runtimeRole,
   type TenantFixture,
@@ -44,6 +45,10 @@ import { seedQaStore } from "./seed-qa-store";
  *
  * The CPU of the Worker is NOT this: Bun on this machine is not workerd on
  * Cloudflare. The staging measure (in the PR) is the one that counts.
+ *
+ * It writes into the database it is given and cleans only its login role: the
+ * stores `qa-medida-*` stay. Run it on the disposable database of the gates
+ * (recreated by the gate runner), never on one you keep.
  *
  *   CI=true POLARIS_GATE_DATABASE_URL=postgresql://…@localhost:5432/polaris_gate \
  *   MEASURE_STORES=20,50,330 bun scripts/measure-period-summary.ts
@@ -366,13 +371,17 @@ async function main() {
     throw new Error("the measure runs on the local PostgreSQL only");
   }
   const admin = createDatabase(adminUrl, { maxConnections: 2 });
+  // the host list says nothing about the database behind it: a marked one is refused before any write
+  await assertDisposableEnvironment(admin.pool as unknown as MarkerClient);
   const loginRole = `polaris_measure_${randomUUID().replaceAll("-", "")}`;
   const password = randomBytes(24).toString("hex");
   let runtime: ReturnType<typeof createDatabase> | undefined;
+  let roleCreated = false;
   try {
     await admin.pool.query(
       `CREATE ROLE "${loginRole}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
+    roleCreated = true;
     await admin.pool.query(`GRANT "${runtimeRole}" TO "${loginRole}"`);
     const runtimeUrl = temporaryRuntimeUrl(adminUrl, loginRole, password);
     runtime = createDatabase(runtimeUrl, { maxConnections: 2 });
@@ -402,8 +411,10 @@ async function main() {
     console.log(JSON.stringify({ explain, stores: results }, null, 2));
   } finally {
     await runtime?.pool.end();
-    await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
-    await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+    if (roleCreated) {
+      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
+      await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+    }
     await admin.pool.end();
   }
 }

@@ -272,15 +272,9 @@ interface ItemReturn {
  */
 function itemReturns(
   sale: SaleFact,
-  discounts: Money,
-  grossSales: Money
+  allocation: ReadonlyMap<number, bigint>
 ): Map<number, ItemReturn> {
   const items = new Map(sale.items.map((item) => [item.position, item]));
-  const allocation = allocateDiscount(
-    sale.items,
-    discounts.minorUnits,
-    grossSales.minorUnits
-  );
   const returnedByItem = new Map<number, number>();
   for (const line of sale.returnLines) {
     returnedByItem.set(
@@ -324,7 +318,10 @@ export function saleEconomics(sale: SaleFact): SaleEconomics {
       .map((adjustment) => money(adjustment.amount))
   );
 
-  const given = itemReturns(sale, discounts, grossSales);
+  const given = itemReturns(
+    sale,
+    allocateDiscount(sale.items, discounts.minorUnits, grossSales.minorUnits)
+  );
   let returns = ZERO;
   let unitsReturned = 0;
   for (const entry of given.values()) {
@@ -419,7 +416,8 @@ export function saleItemEconomics(sale: SaleFact): SaleItemEconomics[] {
   if (sale.cancelled) {
     return [];
   }
-  // each price is read once: this runs for every item of the period when products are ranked
+  // this runs for every item of the period when products are ranked: the line values are read once
+  // here (and again only when a discount is split)
   const values = sale.items.map(lineValue);
   const grossSales = sum(values);
   const discounts = discountsOf(sale);
@@ -428,7 +426,7 @@ export function saleItemEconomics(sale: SaleFact): SaleItemEconomics[] {
     discounts.minorUnits,
     grossSales.minorUnits
   );
-  const given = itemReturns(sale, discounts, grossSales);
+  const given = itemReturns(sale, allocation);
   return sale.items.map((item, index) => {
     const returned = given.get(item.position);
     return {
@@ -494,7 +492,10 @@ const AMOUNT_FIELDS = [
 export function periodResult(
   sales: readonly SaleFact[],
   operatingExpenses: readonly string[],
-  /** `saleEconomics` of each sale, in the same order, when the caller already has it. */
+  /**
+   * `saleEconomics` of each of THESE sales, in the same order, when the caller
+   * already has it (only the length is checked).
+   */
   economics: readonly SaleEconomics[] = sales.map(saleEconomics)
 ): PeriodResult {
   if (economics.length !== sales.length) {

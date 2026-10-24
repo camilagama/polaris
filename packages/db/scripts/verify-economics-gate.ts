@@ -552,10 +552,10 @@ async function run() {
       assert.equal(day.netSales, alone.netSales, `net sales of ${day.date}`);
       assert.equal(day.salesCount, alone.salesCount, `sales of ${day.date}`);
     }
-    assert.equal(
-      summary.daily.find((day) => day.date === s5Date)?.salesCount ?? 0,
-      1 +
-        [s1, s2, s3].filter((entry) => entry.sale.occurredOn === s5Date).length
+    // worked out by hand: S5 (45.00) is the only sale five days ago (the others are hours old)
+    assert.deepEqual(
+      summary.daily.find((day) => day.date === s5Date),
+      { date: s5Date, netSales: "45.00", salesCount: 1 }
     );
     // independent SQL: the count of not cancelled sales per commercial date
     const perDay = await admin.pool.query<{ day: string; sales: number }>(

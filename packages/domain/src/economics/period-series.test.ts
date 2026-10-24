@@ -168,6 +168,18 @@ describe("topProducts", () => {
     ]);
   });
 
+  it("more units rank first even with lower net sales", () => {
+    expect(
+      topProducts(
+        [sale({ items: [item(0, P2, 3, "1.00"), item(1, P3, 2, "50.00")] })],
+        2
+      ).map((entry) => [entry.productId, entry.quantity])
+    ).toEqual([
+      [P2, 3],
+      [P3, 2],
+    ]);
+  });
+
   it("a full tie is broken by the product ID, whatever the order of the sales", () => {
     const a = sale({ items: [item(0, P2, 1)] });
     const b = sale({ items: [item(0, P1, 1)] });

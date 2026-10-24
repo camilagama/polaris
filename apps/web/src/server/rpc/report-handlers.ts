@@ -90,6 +90,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
                   }
                 : {}),
             };
+            // logged before the commit: a failed commit leaves a record of a read with no answer (it only overcounts)
             logger.info("report_period_summary_read", {
               days: summary.daily.length,
               durationMs: Date.now() - started,

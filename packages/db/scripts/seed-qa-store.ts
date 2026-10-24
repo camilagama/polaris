@@ -26,14 +26,22 @@ import {
   declaredEnvironment,
   ENVIRONMENT_MARKER_SQL,
   type EnvironmentReadings,
+  hasMarkerText,
+  readsAsEnvironment,
 } from "./environment-marker";
+import {
+  isCiEnvironment,
+  isLocalGateHost,
+  neonDisposableHostPattern,
+} from "./gate-hosts";
 
 /**
  * Operator script (t277, item 3 of the desenho-t269 round): fills a QA store
  * of staging with the data the Início needs to be measured and checked. It
- * runs ONLY on an organization whose name starts with `qa-`, ONLY on a
- * database marked `polaris.environment=staging` (ADR 0097) or on a local
- * PostgreSQL with `--local`, and writes nothing without `--apply`.
+ * runs ONLY on an organization whose name starts with `qa-`, ONLY on the
+ * staging branch (marker `polaris.environment=staging`, ADR 0097, on a direct
+ * Neon endpoint) or on the local PostgreSQL of the gates (`--local` with
+ * `CI=true`), and writes nothing without `--apply`.
  *
  * What it writes, through the same repository commands the app uses (ledger,
  * snapshots and audit as in production):
@@ -62,13 +70,18 @@ import {
  *     [--sales-per-day 20] [--days 60] [--variants-without-stock 120] \
  *     [--goals] [--apply] [--local]
  *
- * Running it twice adds a second set (the names carry a run tag).
+ * Running it twice adds a second set (the names carry a run tag). A run
+ * interrupted before the end leaves what it confirmed so far, and the older
+ * sales it had not moved back yet stay dated 30 days later: start again on a
+ * new `qa-` store rather than on the same one.
  */
 
 const QA_PREFIX = "qa-";
 const OWNER_WINDOW_DAYS = 30;
 export const MAX_SEED_DAYS = 60;
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+/** Upper bounds that only catch a typo (the measure uses 330 sales a day for a long history). */
+const MAX_SALES_PER_DAY = 400;
+const MAX_VARIANTS_WITHOUT_STOCK = 500;
 
 export interface SeedOptions {
   days: number;
@@ -91,34 +104,69 @@ export interface SeedReport {
   sellableProducts: number;
 }
 
-/** Refuses anything but a `qa-` store of a staging (or, with `local`, a local) database. Never writes. */
+/** The slice of `pg.Pool` the guard uses (a fake in the tests). */
+export interface QueryClient {
+  query: (
+    text: string,
+    values?: unknown[]
+  ) => Promise<{ rowCount: number | null; rows: Record<string, unknown>[] }>;
+}
+
+/**
+ * Refuses anything but a `qa-` store of staging (or, with `local`, of the
+ * local PostgreSQL of the gates). Never writes.
+ *
+ * - Staging: the exact marker `polaris.environment=staging` (ADR 0097), no
+ *   reading that names production or the restore drill, and a direct Neon
+ *   endpoint in São Paulo (a copy of the marker on another host does not pass).
+ * - Local: `CI=true`, a local host and no marker text at all (a sloppy or
+ *   contradictory marker never reads as "no marker").
+ * - Always: an active organization whose name starts with `qa-`, and the user
+ *   is its active owner.
+ */
 export async function assertQaTarget(
-  pool: pg.Pool,
+  client: QueryClient,
   url: URL,
-  options: { local: boolean; organizationId: string; userId: string }
+  options: {
+    ci: boolean;
+    local: boolean;
+    organizationId: string;
+    userId: string;
+  }
 ): Promise<{ environment: string; organizationName: string }> {
   const {
-    rows: [readings],
-  } = await pool.query<EnvironmentReadings>(ENVIRONMENT_MARKER_SQL);
-  const environment = readings ? declaredEnvironment(readings) : null;
+    rows: [row],
+  } = await client.query(ENVIRONMENT_MARKER_SQL);
+  const readings: EnvironmentReadings = {
+    comment: (row?.comment as string | null | undefined) ?? null,
+    current: (row?.current as string | null | undefined) ?? null,
+    stored: (row?.stored as string | null | undefined) ?? null,
+  };
+  const staging =
+    !options.local &&
+    declaredEnvironment(readings) === "staging" &&
+    !readsAsEnvironment(readings, ["production", "restore-drill"]) &&
+    neonDisposableHostPattern.test(url.hostname);
   const local =
-    options.local && environment === null && LOCAL_HOSTS.has(url.hostname);
-  if (environment !== "staging" && !local) {
+    options.local &&
+    isLocalGateHost(url.hostname, options.ci) &&
+    !hasMarkerText(readings);
+  if (!(staging || local)) {
     throw new Error(
-      "seed refused: the database must be marked polaris.environment=staging (or be a local PostgreSQL with --local)"
+      "seed refused: the database must be the staging branch (exact marker polaris.environment=staging, direct Neon endpoint) or, with --local and CI=true, the local PostgreSQL with no marker"
     );
   }
-  const organization = await pool.query<{ name: string; status: string }>(
+  const organization = await client.query(
     "SELECT name, status FROM public.organizations WHERE id = $1",
     [options.organizationId]
   );
-  const [row] = organization.rows;
-  if (!row?.name.startsWith(QA_PREFIX) || row.status !== "active") {
+  const [store] = organization.rows as { name: string; status: string }[];
+  if (!store?.name.startsWith(QA_PREFIX) || store.status !== "active") {
     throw new Error(
       `seed refused: the organization must exist, be active and have a name that starts with "${QA_PREFIX}"`
     );
   }
-  const owner = await pool.query(
+  const owner = await client.query(
     "SELECT 1 FROM public.memberships WHERE organization_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'",
     [options.organizationId, options.userId]
   );
@@ -127,7 +175,10 @@ export async function assertQaTarget(
       "seed refused: the user is not the active owner of the store"
     );
   }
-  return { environment: environment ?? "local", organizationName: row.name };
+  return {
+    environment: staging ? "staging" : "local",
+    organizationName: store.name,
+  };
 }
 
 /** A small deterministic generator (Park-Miller), so two runs with the same options make the same shape. */
@@ -178,14 +229,14 @@ interface SeededProduct extends Sellable {
   version: number;
 }
 
-function assertOptions(options: SeedOptions): void {
+export function assertOptions(options: SeedOptions): void {
   const whole = (value: number, min: number, max = Number.MAX_SAFE_INTEGER) =>
     Number.isInteger(value) && value >= min && value <= max;
   if (
     !(
       whole(options.days, 1, MAX_SEED_DAYS) &&
-      whole(options.salesPerDay, 1) &&
-      whole(options.variantsWithoutStock, 0)
+      whole(options.salesPerDay, 1, MAX_SALES_PER_DAY) &&
+      whole(options.variantsWithoutStock, 0, MAX_VARIANTS_WITHOUT_STOCK)
     )
   ) {
     throw new Error("seed refused: invalid options");
@@ -411,6 +462,11 @@ async function seedSales(
       [options.organizationId, toMoveBack, OWNER_WINDOW_DAYS]
     );
     counts.movedBack = result.rowCount ?? 0;
+    if (counts.movedBack !== toMoveBack.length) {
+      throw new Error(
+        `seed failed: ${counts.movedBack} of ${toMoveBack.length} older sales were moved back`
+      );
+    }
   }
   return counts;
 }
@@ -477,6 +533,10 @@ async function seedGoals(as: As, today: string): Promise<number> {
   return goals.length;
 }
 
+/**
+ * Writes the store. It does NOT check the target: call `assertQaTarget` first
+ * (the command line does; the local measure creates its own `qa-` stores).
+ */
 export async function seedQaStore(
   db: Database,
   pool: pg.Pool,
@@ -531,7 +591,8 @@ export async function seedQaStore(
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
-  return index === -1 ? undefined : process.argv[index + 1];
+  const value = index === -1 ? undefined : process.argv[index + 1];
+  return value?.startsWith("--") ? undefined : value;
 }
 
 async function main() {
@@ -555,10 +616,15 @@ async function main() {
     userId: flag("user") ?? "",
     variantsWithoutStock: Number(flag("variants-without-stock") ?? 120),
   };
+  assertOptions(options);
   const local = process.argv.includes("--local");
   const pool = new pg.Pool({ connectionString: raw, max: 2 });
   try {
-    const target = await assertQaTarget(pool, url, { ...options, local });
+    const target = await assertQaTarget(pool as unknown as QueryClient, url, {
+      ...options,
+      ci: isCiEnvironment(),
+      local,
+    });
     if (!process.argv.includes("--apply")) {
       console.log(JSON.stringify({ dryRun: true, options, target }, null, 2));
       return;

@@ -374,6 +374,19 @@ describe("the daily series and the ranking in a kept summary", () => {
       },
     ],
     [
+      "a series with a day past the end of the period",
+      {
+        daily: [
+          ...(withSeries().daily ?? []),
+          { date: "2026-10-29", netSales: "0.00", salesCount: 0 },
+        ],
+      },
+    ],
+    [
+      "a period that starts on an impossible date",
+      { period: { from: "2026-13-45", to: "2026-10-28" } },
+    ],
+    [
       "a series that stops before the end of the period",
       { daily: withSeries().daily?.slice(0, 27) },
     ],

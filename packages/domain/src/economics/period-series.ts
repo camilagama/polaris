@@ -46,8 +46,9 @@ export function calendarDates(from: string, to: string): string[] {
 /**
  * Net sales and the count of sales of each date of the period. A date without
  * sales is `"0.00"` and 0, never missing. Every sale must carry its commercial
- * date, inside the period. Pass `economics` (`saleEconomics` of each sale, in
- * order) when the caller already computed it.
+ * date, inside the period. Pass `economics` (`saleEconomics` of each of these
+ * sales, in the same order; only the length is checked) when the caller
+ * already computed it.
  */
 export function dailySales(
   sales: readonly SaleFact[],

@@ -223,14 +223,6 @@ function readLinkedExpenses(
     );
 }
 
-/**
- * The facts the economics engine needs for a period of the organization's
- * calendar: the sales whose commercial date is in it (with their items,
- * adjustments, payment fee snapshots, return lines, cancellation and linked
- * expenses) and the active expenses with no sale whose competence is in it.
- * Everything is read in one transaction; run it at REPEATABLE READ for a
- * consistent snapshot.
- */
 export interface PeriodFacts {
   operatingExpenses: string[];
   /** How many rows each read brought, for the per-request record (counts only). */
@@ -251,6 +243,14 @@ export interface PeriodReadCounts {
   sales: number;
 }
 
+/**
+ * The facts the economics engine needs for a period of the organization's
+ * calendar: the sales whose commercial date is in it (with their items,
+ * adjustments, payment fee snapshots, return lines, cancellation and linked
+ * expenses) and the active expenses with no sale whose competence is in it.
+ * Everything is read in one transaction; run it at REPEATABLE READ for a
+ * consistent snapshot.
+ */
 export async function readPeriodFacts(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
