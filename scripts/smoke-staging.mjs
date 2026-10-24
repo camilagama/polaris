@@ -46,9 +46,9 @@ export function smokeChecks({ catalog, web }) {
   ];
 }
 
-const STAGING_HOST = /^polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev$/;
-// the web and the catalog of staging are served at these hosts by Custom Domains (ADR 0097)
-const STAGING_FIXED_HOST = {
+// the web and the catalog of staging are served at these hosts by Custom Domains (ADR 0097); each Worker
+// accepts its own host only, and the workers.dev hosts are off (`workers_dev: false`)
+export const STAGING_FIXED_HOST = {
   catalog: "catalogo.araute.app",
   web: "dash.araute.app",
 };
@@ -56,29 +56,39 @@ const ATTEMPTS = 3;
 const TIMEOUT_MS = 10_000;
 
 /**
- * An https origin of a staging Worker, with no path, query or credentials: the `catalog` key accepts
- * only its fixed host; the `web` key accepts its fixed host or a workers.dev one.
+ * An https origin of a staging Worker, with no path, query or credentials, whose host is the fixed host of
+ * that key. A key with no fixed host is never accepted.
  */
 function isStagingOrigin(key, origin) {
+  const host = Object.hasOwn(STAGING_FIXED_HOST, key)
+    ? STAGING_FIXED_HOST[key]
+    : undefined;
+  if (!host) {
+    return false;
+  }
   try {
     const url = new URL(origin);
     return (
-      url.protocol === "https:" &&
-      url.origin === origin &&
-      (url.host === STAGING_FIXED_HOST[key] ||
-        (key === "web" && STAGING_HOST.test(url.host)))
+      url.protocol === "https:" && url.origin === origin && url.host === host
     );
   } catch {
     return false;
   }
 }
 
-/** One refusal message per key: each Worker accepts its own hosts only. */
-const REFUSAL = {
+/** One refusal message per key: each Worker accepts its own host only. */
+export const REFUSAL = {
   catalog:
     "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path",
-  web: "web: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path",
+  web: "web: the staging web only accepts https://dash.araute.app, without a path",
 };
+
+/** The refusal of a key; a key with no message of its own still fails, naming itself. */
+export function refusalOf(key) {
+  return Object.hasOwn(REFUSAL, key)
+    ? REFUSAL[key]
+    : `${key}: no staging host is accepted for this key (add it to STAGING_FIXED_HOST and REFUSAL)`;
+}
 
 /** The code of a network failure (ENOTFOUND, ETIMEDOUT), never its message. */
 function reasonOf(error) {
@@ -122,7 +132,7 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 export async function runSmoke(origins, fetchImpl = fetch, pause = wait) {
   for (const [key, origin] of Object.entries(origins)) {
     if (!isStagingOrigin(key, origin)) {
-      return [REFUSAL[key]];
+      return [refusalOf(key)];
     }
   }
   const failures = [];
