@@ -73,6 +73,13 @@ function isStagingOrigin(key, origin) {
   }
 }
 
+/** One refusal message per key: each Worker accepts its own hosts only. */
+const REFUSAL = {
+  catalog:
+    "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path",
+  web: "web: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path",
+};
+
 /** The code of a network failure (ENOTFOUND, ETIMEDOUT), never its message. */
 function reasonOf(error) {
   if (!(error instanceof Error)) {
@@ -115,9 +122,7 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 export async function runSmoke(origins, fetchImpl = fetch, pause = wait) {
   for (const [key, origin] of Object.entries(origins)) {
     if (!isStagingOrigin(key, origin)) {
-      return [
-        `${key}: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path`,
-      ];
+      return [REFUSAL[key]];
     }
   }
   const failures = [];

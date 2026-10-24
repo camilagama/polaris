@@ -151,7 +151,7 @@ describe("the staging smoke", () => {
         noPause
       )
     ).toEqual([
-      "catalog: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path",
+      "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path",
     ]);
     expect(refusing).not.toHaveBeenCalled();
   });
@@ -159,7 +159,9 @@ describe("the staging smoke", () => {
   it("refuses an origin that is not an https staging origin without a path, before any request", async () => {
     const fetchImpl = vi.fn();
     const refused = (key) => [
-      `${key}: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path`,
+      key === "catalog"
+        ? "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path"
+        : "web: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path",
     ];
     for (const web of [
       "http://polaris-web-staging.example.workers.dev",
