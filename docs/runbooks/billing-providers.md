@@ -80,6 +80,7 @@ bun run gate7:asaas settle-unclaimed
 ```
 
 - `checkout` autoriza como o RPC (membership e `billing:manage` na transação de tenant, preço de `billing_prices`) e segue a ordem trial → checkout → ligação → link. Sem `--trial`, a 1ª cobrança é hoje.
+- `refund` cancela a renovação antes de reembolsar (ADR 0066, emenda de 23/10): se o registro já mostra a renovação cancelada, vai direto ao reembolso; se o reembolso falhar depois do cancelamento, rode `refund` de novo. Com outro comando da mesma loja em andamento, responde `command_in_progress` sem fazer nada.
 - `state` mostra só o estado, o fim do acesso, a marca de cancelamento e se há provedor e `sub_` ligados; nunca as referências.
 - A saída é JSON de uma linha; um erro mostra só a classe e o código.
 - Apague o arquivo do link depois do teste.

@@ -2,10 +2,12 @@ import {
   type BillingProviderPort,
   type CheckoutHandoff,
   type PreparedSubscription,
+  ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import type {
+  BillingProviderLink,
   BillingStore,
   UnclaimedTrialEvent,
   UnclaimedTrialOutcome,
@@ -602,50 +604,137 @@ export async function reconcileOrganization(
   return report;
 }
 
+export interface RefundCommandDependencies
+  extends Omit<OperatorCommandDependencies, "store"> {
+  store: Pick<
+    BillingStore,
+    | "processEvent"
+    | "readProviderLink"
+    | "readRecord"
+    | "recordEvent"
+    | "withOrganizationLock"
+  >;
+}
+
 /**
- * Refunds in full the charge of the period in force. The fact comes back by
- * webhook or reconciliation (Asaas), or the port answers it and it is written
- * here (Woovi: its refund event names no subscription).
+ * The ID of the cancellation a refund makes first: its own prefix, so it is
+ * told apart from the owner's cancellation (no "renewal cancelled" notice for
+ * it), and, like `cancelRenewalEventId`, one per request and per subscription.
+ */
+export async function refundCancelEventId(
+  requestId: string,
+  providerRef: string
+): Promise<string> {
+  const digest = await sha256Hex(providerRef);
+  return `command:refund_cancel:${requestId}:${digest.slice(0, 32)}`;
+}
+
+/**
+ * Refunds in full the charge of the period in force, after cancelling the
+ * renewal (ADR 0066, emenda de 23/10): a refund leaves the subscription alive
+ * at the provider, and its next charge would give Pro back and charge again.
+ * Under the organization's lock the command decides by the state: a renewal
+ * the record already shows cancelled (by the owner, an earlier request whose
+ * refund failed, or the closure) is not cancelled again, so a repeat with
+ * another request ID writes no second cancellation and goes straight to the
+ * refund. A cancellation that fails refunds nothing; a refund that fails after
+ * it leaves "Pro until the end", and a repeat finishes it. The refund fact
+ * comes back by webhook or reconciliation (Asaas), or the port answers it and
+ * it is written here (Woovi: its refund event names no subscription).
  */
 export async function refundCurrentPeriod(
-  dependencies: OperatorCommandDependencies,
-  organizationId: string
+  dependencies: RefundCommandDependencies,
+  input: { organizationId: string; requestId: string }
 ): Promise<"nothing_to_refund" | "not_linked" | "refund_requested"> {
   const { store } = dependencies;
   const now = dependencies.now?.() ?? new Date();
-  const link = await store.readProviderLink(organizationId);
-  if (!link) {
-    return "not_linked";
+  return await store.withOrganizationLock(input.organizationId, async () => {
+    const link = await store.readProviderLink(input.organizationId);
+    if (!link) {
+      return "not_linked";
+    }
+    const port = dependencies.portFor(link.provider);
+    if (!port.refundsEnabled) {
+      // the renewal is not cancelled for a refund the provider cannot make here
+      throw new ProviderNotConfiguredError();
+    }
+    const record = await store.readRecord(input.organizationId);
+    const renewal = record?.cancelAtPeriodEnd
+      ? "record_shows_cancelled"
+      : await cancelBeforeRefund(dependencies, {
+          link,
+          organizationId: input.organizationId,
+          port,
+          // the record can hold the cancellation only while it gives Pro
+          recordsCancellation: record !== null && grantsPro(record.state),
+          requestId: input.requestId,
+        });
+    const outcome = await port.refundCurrentPeriod(
+      link.providerRef,
+      now,
+      link.providerSubscriptionId
+    );
+    let result: "nothing_to_refund" | "refund_requested";
+    if (typeof outcome === "string") {
+      result = outcome;
+    } else {
+      // the provider's refund sends no webhook tied to the subscription (Woovi): the fact is
+      // written now, through the inbox, under the refund's own ID (a repeat is a duplicate)
+      const { event } = outcome;
+      const stored = await store.recordEvent({
+        fact: event.fact,
+        organizationId: input.organizationId,
+        provider: port.provider,
+        providerEventId: event.providerEventId,
+        providerRef: event.providerRef,
+        providerSubscriptionId: event.providerSubscriptionId ?? null,
+      });
+      await store.processEvent(stored.id, now);
+      result = outcome.kind;
+    }
+    logger.info("billing_refund_command", {
+      organizationId: opaqueId(input.organizationId),
+      provider: port.provider,
+      reason: result,
+      renewal,
+    });
+    return result;
+  });
+}
+
+/** Step 1 of the refund: cancels the renewal at the provider and writes it through the inbox. */
+async function cancelBeforeRefund(
+  dependencies: RefundCommandDependencies,
+  input: {
+    link: BillingProviderLink;
+    organizationId: string;
+    port: BillingProviderPort;
+    recordsCancellation: boolean;
+    requestId: string;
   }
-  const port = dependencies.portFor(link.provider);
-  const outcome = await port.refundCurrentPeriod(
+): Promise<string> {
+  const { link, port } = input;
+  const result = await port.cancelRenewal(
     link.providerRef,
-    now,
     link.providerSubscriptionId
   );
-  let result: "nothing_to_refund" | "refund_requested";
-  if (typeof outcome === "string") {
-    result = outcome;
-  } else {
-    // the provider's refund sends no webhook tied to the subscription (Woovi): the fact is
-    // written now, through the inbox, under the refund's own ID (a repeat is a duplicate)
-    const { event } = outcome;
-    const stored = await store.recordEvent({
-      fact: event.fact,
-      organizationId,
+  if (result !== "nothing_to_cancel" && input.recordsCancellation) {
+    // the moment after the provider answered: a fact that arrived meanwhile must not make it stale
+    const now = dependencies.now?.() ?? new Date();
+    const stored = await dependencies.store.recordEvent({
+      fact: { occurredAt: now, type: "subscription_cancelled" },
+      organizationId: input.organizationId,
       provider: port.provider,
-      providerEventId: event.providerEventId,
-      providerRef: event.providerRef,
-      providerSubscriptionId: event.providerSubscriptionId ?? null,
+      providerEventId: await refundCancelEventId(
+        input.requestId,
+        link.providerRef
+      ),
+      providerRef: link.providerRef,
     });
-    await store.processEvent(stored.id, now);
-    result = outcome.kind;
+    const processed = await dependencies.store.processEvent(stored.id, now);
+    // the log tells a cancellation the record did not take (ignored, failed) from one it did
+    return `${result}:${processed.status}`;
   }
-  logger.info("billing_refund_command", {
-    organizationId: opaqueId(organizationId),
-    provider: port.provider,
-    reason: result,
-  });
   return result;
 }
 
