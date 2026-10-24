@@ -36,10 +36,6 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
 export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
-const TRAILING_DOTS = /\.+$/;
-// the workers.dev hosts of the staging Workers, which production never uses either
-const STAGING_WORKERS_DEV =
-  /^polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev$/;
 const STAGING_FIXED_ORIGIN = {
   BETTER_AUTH_BASE_URL: STAGING_WEB_ORIGIN,
   CATALOG_ORIGIN: STAGING_CATALOG_ORIGIN,
@@ -559,12 +555,54 @@ export function findIsolationProblems(entries) {
   return problems;
 }
 
-/** The lowercase host of a URL without a trailing dot (a name that resolves the same), or undefined when the value is not a URL. */
-function hostOf(value) {
-  try {
-    return new URL(value).hostname.toLowerCase().replace(TRAILING_DOTS, "");
-  } catch {
-    // not a URL: no host
+// A host of staging written anywhere in a text: a whole URL, a bare host, a route pattern, a sender
+// ("Polaris <no-reply@dash.araute.app>") or a list. The host is bounded on both sides, so another name
+// that merely contains it (`foo.dash.araute.app`, `dash.araute.app.example.com`) is not the host of staging; a
+// trailing dot is the same name, and the case does not matter.
+const HOSTS_OF_STAGING = [
+  ...Object.values(STAGING_FIXED_ORIGIN).map((origin) =>
+    new URL(origin).hostname.replaceAll(".", String.raw`\.`)
+  ),
+  String.raw`polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev`,
+];
+const STAGING_HOST_IN_TEXT = new RegExp(
+  String.raw`(?<![a-z0-9.-])(${HOSTS_OF_STAGING.join("|")})(?![a-z0-9-]|\.[a-z0-9])`,
+  "i"
+);
+
+/** The strings of `route` and `routes` (a string, or an object with `pattern`) of an environment, each with how the problem names it. */
+function productionRoutes(production) {
+  const found = [];
+  const routeOf = (route) =>
+    typeof route === "string" ? route : route?.pattern;
+  if (routeOf(production.route) !== undefined) {
+    found.push(["route", routeOf(production.route)]);
+  }
+  if (Array.isArray(production.routes)) {
+    for (const [index, route] of production.routes.entries()) {
+      found.push([`routes[${index}]`, routeOf(route)]);
+    }
+  }
+  return found;
+}
+
+/** No text variable and no route of production may name a host of staging: the host is what matters, not the variable's name. */
+function checkProductionHosts(app, production, problems) {
+  const isStaging = (value) =>
+    typeof value === "string" && STAGING_HOST_IN_TEXT.test(value);
+  for (const [variable, value] of Object.entries(production.vars ?? {})) {
+    if (isStaging(value)) {
+      problems.push(
+        `${app}: env.production vars.${variable} must not use the host of staging`
+      );
+    }
+  }
+  for (const [where, route] of productionRoutes(production)) {
+    if (isStaging(route)) {
+      problems.push(
+        `${app}: env.production ${where} must not use the host of staging`
+      );
+    }
   }
 }
 
@@ -587,21 +625,7 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
-  const stagingHosts = [
-    ...Object.values(STAGING_FIXED_ORIGIN).map(hostOf),
-    ...Object.keys(STAGING_URLS).map((key) => hostOf(staging.vars?.[key])),
-  ];
-  for (const variable of Object.keys(STAGING_URLS)) {
-    const host = hostOf(production.vars?.[variable]);
-    if (
-      host !== undefined &&
-      (stagingHosts.includes(host) || STAGING_WORKERS_DEV.test(host))
-    ) {
-      problems.push(
-        `${app}: env.production vars.${variable} must not use the host of staging`
-      );
-    }
-  }
+  checkProductionHosts(app, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (

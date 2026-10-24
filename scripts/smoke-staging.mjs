@@ -62,6 +62,7 @@ function isStagingOrigin(key, origin) {
     return (
       url.protocol === "https:" &&
       url.origin === origin &&
+      // TODO(pós STAGING_CATALOG_URL): the workers.dev of the catalog is accepted only for the transition; it leaves in a short PR after the variable changes to the new host (drop STAGING_HOST for the `catalog` key only, since the web shares it).
       (STAGING_HOST.test(url.host) || url.host === STAGING_FIXED_HOST[key])
     );
   } catch {

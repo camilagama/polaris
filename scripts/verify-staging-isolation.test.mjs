@@ -278,6 +278,79 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
+  it("refuses the host of staging in any text variable of production, whatever its name", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.POLARIS_SITE_URL = "https://catalogo.araute.app/x";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.POLARIS_SITE_URL must not use the host of staging",
+    ]);
+    production.vars.POLARIS_SITE_URL = "https://app.example.com";
+    production.vars.OTHER_LINK = "dash.araute.app/path";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.OTHER_LINK must not use the host of staging",
+    ]);
+    production.vars.OTHER_LINK =
+      "https://polaris-web-staging.polaris-pr11-gate.workers.dev";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.OTHER_LINK must not use the host of staging",
+    ]);
+  });
+
+  it("finds the host of staging inside a longer text: a sender, a list, a sentence", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    for (const value of [
+      "Polaris <no-reply@dash.araute.app>",
+      "https://app.example.com,https://CATALOGO.araute.app:8443/x",
+      "see https://dash.araute.app./x for info",
+      "dash.araute.app /*",
+    ]) {
+      production.vars.OTHER_LINK = value;
+      expect(findIsolationProblems(entries), value).toEqual([
+        "web: env.production vars.OTHER_LINK must not use the host of staging",
+      ]);
+    }
+    production.vars.OTHER_LINK = "Polaris <no-reply@example.com>";
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses the host of staging in a route of production", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.routes = [
+      { custom_domain: true, pattern: "app.example.com" },
+      { pattern: "dash.araute.app/*", zone_name: "araute.app" },
+      "CATALOGO.araute.app./*",
+    ];
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production routes[1] must not use the host of staging",
+      "web: env.production routes[2] must not use the host of staging",
+    ]);
+    production.routes = undefined;
+    production.route = "dash.araute.app/*";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must not use the host of staging",
+    ]);
+    // a malformed list is not a crash
+    production.route = undefined;
+    production.routes = { pattern: "dash.araute.app/*" };
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("lets production values that are not a staging host pass", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.FLAG = "true";
+    production.vars.COUNT = "42";
+    production.vars.SENDER = "Polaris <no-reply@example.com>";
+    production.vars.NOT_TEXT = 7;
+    production.vars.LOOKALIKE = "https://dash.araute.app.example.com/x";
+    production.vars.SUBDOMAIN = "https://foo.dash.araute.app";
+    production.routes = [{ custom_domain: true, pattern: "app.example.com" }];
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
   it("accepts the empty binding lists a generated wrangler.json writes", () => {
     const entries = repositoryEntries().map((entry) => ({
       ...entry,
