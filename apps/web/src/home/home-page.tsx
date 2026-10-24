@@ -73,13 +73,16 @@ function readBlocks(
   todayShown = true
 ): Blocks {
   const top = figures.month.topProducts ?? [];
+  // a copy kept before the daily series existed: the totals stand, nothing of the series is drawn (ADR 0056, D2)
+  const series =
+    figures.month.daily !== undefined && figures.before.daily !== undefined;
   return {
-    chart: (
+    chart: series ? (
       <ChartBlock days={chart.days} figures={figures} onDays={chart.onDays} />
-    ),
+    ) : null,
     main: (
       <>
-        <TodayBlock figures={figures} shown={todayShown} />
+        <TodayBlock figures={figures} shown={todayShown && series} />
         <MonthBlock figures={figures} />
       </>
     ),

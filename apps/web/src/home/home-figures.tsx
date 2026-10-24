@@ -86,11 +86,11 @@ export function TodayBlock({
 export function MonthBlock({ figures }: { figures: HomeFigures }) {
   const { before, month, today } = figures;
   const { cards, quality } = month;
-  const comparison = monthComparison(
-    before.daily ?? [],
-    month.daily ?? [],
-    today
-  );
+  // a copy kept before the series existed has the totals only: no comparison and no miniature, never zeros
+  const series = before.daily !== undefined && month.daily !== undefined;
+  const comparison = series
+    ? monthComparison(before.daily ?? [], month.daily ?? [], today)
+    : null;
   const negative = cards.operatingResult.trim().startsWith("-");
   return (
     <HomeBlock
@@ -133,11 +133,13 @@ export function MonthBlock({ figures }: { figures: HomeFigures }) {
             Não é lucro líquido nem dinheiro já recebido.
           </p>
           {comparison ? <p className="text-support">{comparison}</p> : null}
-          <Miniature
-            values={monthUntilToday(month.daily ?? [], today).map((day) =>
-              chartValue(day.netSales)
-            )}
-          />
+          {series ? (
+            <Miniature
+              values={monthUntilToday(month.daily ?? [], today).map((day) =>
+                chartValue(day.netSales)
+              )}
+            />
+          ) : null}
         </>
       )}
     </HomeBlock>

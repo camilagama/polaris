@@ -5,6 +5,7 @@ import {
   bestDayText,
   checklistLink,
   checklistNext,
+  copyStanding,
   goalPeriodShort,
   homePeriods,
   homeReads,
@@ -13,6 +14,8 @@ import {
   monthTitle,
   monthUntilToday,
   msUntilNextMidnight,
+  newSaleOfflineText,
+  offlineGoal,
   pickGoal,
   shouldRefreshOnReturn,
   storeToday,
@@ -472,5 +475,138 @@ describe("homeReads (§ 2.4)", () => {
       sales: false,
       unknownCost: false,
     });
+  });
+});
+
+describe("copyStanding (§ 7.2, AC-31)", () => {
+  const READ = "2026-10-15T15:00:00.000Z";
+  const HOUR = 3_600_000;
+  const at = (iso: string) => Date.parse(iso);
+
+  it("a cópia de 23 h não está desatualizada e a de 25 h está", () => {
+    expect(
+      copyStanding(READ, READ, at(READ) + 23 * HOUR, "America/Sao_Paulo").stale
+    ).toBe(false);
+    expect(
+      copyStanding(READ, READ, at(READ) + 25 * HOUR, "America/Sao_Paulo").stale
+    ).toBe(true);
+  });
+
+  it("a idade conta da leitura confirmada mais antiga, não da leitura do mês", () => {
+    const older = "2026-10-14T10:00:00.000Z";
+    expect(
+      copyStanding(older, READ, at(READ) + HOUR, "America/Sao_Paulo")
+    ).toMatchObject({ stale: true });
+  });
+
+  it("um relógio do aparelho 1 h antes da leitura do servidor está errado: desatualizado e sem o Hoje", () => {
+    expect(
+      copyStanding(READ, READ, at(READ) - HOUR, "America/Sao_Paulo")
+    ).toEqual({ stale: true, todayShown: false });
+  });
+
+  it("no mesmo dia da loja o Hoje aparece", () => {
+    // 17:00 in São Paulo, two hours after a read at noon of the same day
+    expect(
+      copyStanding(
+        READ,
+        READ,
+        at("2026-10-15T20:00:00.000Z"),
+        "America/Sao_Paulo"
+      ).todayShown
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      "America/Sao_Paulo",
+      "2026-10-16T02:59:00.000Z",
+      "2026-10-16T03:00:00.000Z",
+    ],
+    [
+      "America/Rio_Branco",
+      "2026-10-16T04:59:00.000Z",
+      "2026-10-16T05:00:00.000Z",
+    ],
+    ["America/Manaus", "2026-10-16T03:59:00.000Z", "2026-10-16T04:00:00.000Z"],
+  ])(
+    "em %s o Hoje some na meia-noite da loja, não na do UTC",
+    (zone, beforeMidnight, afterMidnight) => {
+      const read = "2026-10-15T20:00:00.000Z";
+      expect(
+        copyStanding(read, read, at(beforeMidnight), zone).todayShown
+      ).toBe(true);
+      expect(copyStanding(read, read, at(afterMidnight), zone).todayShown).toBe(
+        false
+      );
+    }
+  );
+});
+
+describe("offlineGoal (§ 7.3)", () => {
+  const zone = "America/Sao_Paulo";
+  const active = (overrides: Partial<GoalReadModel> = {}) =>
+    ({
+      goal: goal({ endsOn: "2026-10-31", ...overrides }),
+      kind: "active",
+      others: 0,
+    }) as const;
+
+  it.each([
+    ["na véspera do fim", "2026-10-30", false],
+    ["no dia do fim", "2026-10-31", false],
+    ["no dia seguinte ao fim", "2026-11-01", true],
+  ])("meta ativa %s: ended = %s", (_label, today, ended) => {
+    expect(offlineGoal(active(), today, zone)).toMatchObject({
+      ended,
+      kind: "active",
+    });
+  });
+
+  it("meta pausada depois do fim fica como foi lida", () => {
+    expect(offlineGoal(active({ paused: true }), "2026-11-05", zone)).toEqual({
+      ended: false,
+      goal: goal({ endsOn: "2026-10-31", paused: true }),
+      kind: "active",
+    });
+  });
+
+  it("sem cópia da meta, ela só vem com conexão", () => {
+    expect(offlineGoal(null, "2026-10-15", zone)).toEqual({
+      kind: "online-only",
+    });
+  });
+
+  it("meta liquidada há 3 dias continua aparecendo, há 10 dias não", () => {
+    const settled = goal({
+      achievedValue: "1200.00",
+      endsOn: "2026-09-30",
+      settledAt: "2026-10-12T15:00:00.000Z",
+      startsOn: "2026-09-01",
+      status: "completed",
+    });
+    expect(
+      offlineGoal({ goal: settled, kind: "settled" }, "2026-10-15", zone)
+    ).toEqual({ goal: settled, kind: "settled" });
+    expect(
+      offlineGoal({ goal: settled, kind: "settled" }, "2026-10-22", zone)
+    ).toEqual({ kind: "none" });
+  });
+
+  it("sem meta, continua sem meta", () => {
+    expect(offlineGoal({ kind: "none" }, "2026-10-15", zone)).toEqual({
+      kind: "none",
+    });
+  });
+});
+
+describe("newSaleOfflineText (AC-30)", () => {
+  it("promete a venda sem internet só quando o aparelho pode vender", () => {
+    expect(newSaleOfflineText(true)).toBe(
+      "Você pode vender sem internet; a venda é enviada quando voltar"
+    );
+    expect(newSaleOfflineText(false)).toBe(
+      "Sem internet: para vender é preciso conexão"
+    );
   });
 });
