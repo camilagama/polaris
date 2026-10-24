@@ -138,7 +138,7 @@ describe("the staging isolation check", () => {
       "web: env.staging: durable_objects is not used by staging",
       "web: env.staging: kv_namespaces is not used by staging",
       "web: env.staging: services is not used by staging",
-      "web: env.staging: staging has no routes (the web Custom Domain is managed outside the config)",
+      "web: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
       "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
     ]);
   });
@@ -175,19 +175,63 @@ describe("the staging isolation check", () => {
     ]);
   });
 
-  it("keeps the catalog of staging on workers.dev only", () => {
+  it("accepts only the staging catalog host, exactly, with workers.dev off", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.CATALOG_ORIGIN).toBe("https://catalogo.araute.app");
+    expect(
+      entryOf(entries, "catalog").config.env.staging.vars.CATALOG_ORIGIN
+    ).toBe("https://catalogo.araute.app");
+    expect(entryOf(entries, "catalog").config.env.staging.workers_dev).toBe(
+      false
+    );
+    expect(findIsolationProblems(entries)).toEqual([]);
     for (const url of [
+      "https://other.araute.app",
       "https://dash.araute.app",
+      "https://catalogo.araute.app.evil.example",
+      "http://catalogo.araute.app",
+      "https://catalogo.araute.app/",
+      "https://catalogo.araute.app/path",
+      "https://user:pw@catalogo.araute.app",
+      "https://catalogo.araute.app:8443",
+      "https://CATALOGO.araute.app",
+      "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev",
       "https://polaris-catalog-staging.example.workers.dev/x",
-      "http://polaris-catalog-staging.example.workers.dev",
     ]) {
       staging.vars.CATALOG_ORIGIN = url;
       expect(findIsolationProblems(entries), url).toEqual([
-        "web: env.staging: vars.CATALOG_ORIGIN must be the workers.dev URL of the staging catalog Worker",
+        "web: env.staging: vars.CATALOG_ORIGIN must be exactly https://catalogo.araute.app",
       ]);
     }
+  });
+
+  it("refuses the same wrong catalog origin in the catalog Worker itself", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "catalog").config.env;
+    staging.vars.CATALOG_ORIGIN =
+      "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev";
+    expect(findIsolationProblems(entries)).toEqual([
+      "catalog: env.staging: vars.CATALOG_ORIGIN must be exactly https://catalogo.araute.app",
+    ]);
+  });
+
+  it("refuses workers.dev on for the staging catalog, which is served only at its host", () => {
+    const entries = repositoryEntries();
+    entryOf(entries, "catalog").config.env.staging.workers_dev = true;
+    expect(findIsolationProblems(entries)).toEqual([
+      "catalog: env.staging: workers_dev must be false (the catalog is served only at https://catalogo.araute.app)",
+    ]);
+  });
+
+  it("refuses a route in the staging catalog: its Custom Domain lives outside the config", () => {
+    const entries = repositoryEntries();
+    entryOf(entries, "catalog").config.env.staging.routes = [
+      { custom_domain: true, pattern: "catalogo.araute.app" },
+    ];
+    expect(findIsolationProblems(entries)).toEqual([
+      "catalog: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
+    ]);
   });
 
   it("refuses a production host equal to the staging one", () => {
@@ -205,14 +249,185 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
     ]);
+    production.vars.CATALOG_ORIGIN = "https://catalogo.araute.app";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+      "web: env.production vars.CATALOG_ORIGIN must not use the host of staging",
+    ]);
     production.vars.CATALOG_ORIGIN =
       "https://polaris-catalog-staging.polaris-pr11-gate.workers.dev";
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
       "web: env.production vars.CATALOG_ORIGIN must not use the host of staging",
     ]);
+    // the fixed host of the other Worker is the host of staging too
+    production.vars.BETTER_AUTH_BASE_URL = "https://catalogo.araute.app";
+    production.vars.CATALOG_ORIGIN = "https://dash.araute.app";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+      "web: env.production vars.CATALOG_ORIGIN must not use the host of staging",
+    ]);
+    production.vars.BETTER_AUTH_BASE_URL = "https://dash.araute.app";
+    production.vars.CATALOG_ORIGIN = "https://CATALOGO.araute.app:444/x";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.BETTER_AUTH_BASE_URL must not use the host of staging",
+      "web: env.production vars.CATALOG_ORIGIN must not use the host of staging",
+    ]);
     production.vars.BETTER_AUTH_BASE_URL = "https://app.example.com";
     production.vars.CATALOG_ORIGIN = "https://catalog.example.com";
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses the host of staging in any text variable of production, whatever its name", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.POLARIS_SITE_URL = "https://catalogo.araute.app/x";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.POLARIS_SITE_URL must not use the host of staging",
+    ]);
+    production.vars.POLARIS_SITE_URL = "https://app.example.com";
+    production.vars.OTHER_LINK = "dash.araute.app/path";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.OTHER_LINK must not use the host of staging",
+    ]);
+    production.vars.OTHER_LINK =
+      "https://polaris-web-staging.polaris-pr11-gate.workers.dev";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.OTHER_LINK must not use the host of staging",
+    ]);
+  });
+
+  it("finds the host of staging inside a longer text: a sender, a list, a sentence", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    for (const value of [
+      "Polaris <no-reply@dash.araute.app>",
+      "https://app.example.com,https://CATALOGO.araute.app:8443/x",
+      "see https://dash.araute.app./x for info",
+      "dash.araute.app /*",
+    ]) {
+      production.vars.OTHER_LINK = value;
+      expect(findIsolationProblems(entries), value).toEqual([
+        "web: env.production vars.OTHER_LINK must not use the host of staging",
+      ]);
+    }
+    production.vars.OTHER_LINK = "Polaris <no-reply@example.com>";
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses the host of staging in a route of production", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.routes = [
+      { custom_domain: true, pattern: "app.example.com" },
+      { pattern: "dash.araute.app/*", zone_name: "araute.app" },
+      "CATALOGO.araute.app./*",
+    ];
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production routes[1] must not use or reach a host of staging",
+      "web: env.production routes[2] must not use or reach a host of staging",
+    ]);
+    production.routes = undefined;
+    production.route = "dash.araute.app/*";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must not use or reach a host of staging",
+    ]);
+    // a malformed list fails closed, and is not a crash
+    production.route = undefined;
+    production.routes = { pattern: "dash.araute.app/*" };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production routes must be a list (routes deve ser lista)",
+    ]);
+  });
+
+  it("refuses a wildcard route of production that reaches a host of staging", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    for (const pattern of [
+      "*.araute.app/*",
+      "*/*",
+      "*araute.app/*",
+      "*.app/*",
+      "*.AraUte.app./*",
+      "*.workers.dev/*",
+      "polaris-web-staging.*.workers.dev/*",
+      "dash.araute.app*",
+      "*.minhaconta.workers.dev/*",
+      "https://*.araute.app/*",
+      " *.araute.app/*",
+    ]) {
+      production.routes = [pattern];
+      expect(findIsolationProblems(entries), pattern).toEqual([
+        "web: env.production routes[0] must not use or reach a host of staging",
+      ]);
+    }
+    production.routes = undefined;
+    production.route = { pattern: "*.araute.app/*", zone_name: "araute.app" };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must not use or reach a host of staging",
+    ]);
+  });
+
+  it("fails closed on a route of production that is not a pattern", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.route = ["dash.araute.app/*"];
+    production.routes = [{ zone_name: "araute.app" }, 7];
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production route must be a pattern string or an object with a pattern string",
+      "web: env.production routes[0] must be a pattern string or an object with a pattern string",
+      "web: env.production routes[1] must be a pattern string or an object with a pattern string",
+    ]);
+    production.route = undefined;
+    for (const routes of [null, "app.example.com/*", 7]) {
+      production.routes = routes;
+      expect(findIsolationProblems(entries)).toEqual([
+        "web: env.production routes must be a list (routes deve ser lista)",
+      ]);
+    }
+  });
+
+  it("lets a route of production that cannot reach staging pass", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.routes = [
+      "*.example.com/*",
+      "app.araute.app/*",
+      { custom_domain: true, pattern: "loja.araute.app" },
+      "*.dash.araute.app/*",
+    ];
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("sweeps objects and lists in the variables of production as JSON text", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.X = { url: "https://dash.araute.app" };
+    production.vars.Y = ["https://catalogo.araute.app"];
+    production.vars.W = { list: ["ok", "a\ndash.araute.app"] };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production vars.X must not use the host of staging",
+      "web: env.production vars.Y must not use the host of staging",
+      "web: env.production vars.W must not use the host of staging",
+    ]);
+    production.vars.W = undefined;
+    production.vars.X = { n: 1, on: true, url: "https://app.example.com" };
+    production.vars.Y = ["https://app.example.com"];
+    production.vars.Z = null;
+    production.vars.B = false;
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("lets production values that are not a staging host pass", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    production.vars.FLAG = "true";
+    production.vars.COUNT = "42";
+    production.vars.SENDER = "Polaris <no-reply@example.com>";
+    production.vars.NOT_TEXT = 7;
+    production.vars.LOOKALIKE = "https://dash.araute.app.example.com/x";
+    production.vars.SUBDOMAIN = "https://foo.dash.araute.app";
+    production.routes = [{ custom_domain: true, pattern: "app.example.com" }];
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
@@ -472,7 +687,7 @@ describe("the staging isolation check", () => {
       { binding: "ADMIN_HYPERDRIVE", id: "abcdefabcdefabcdefabcdefabcdefab" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "admin: env.staging: staging has no routes (the web Custom Domain is managed outside the config)",
+      "admin: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
       "admin: env.staging: the Admin is not exposed in staging (workers_dev must be false)",
       "admin: env.staging: the Admin has no Access application in staging",
       "admin: env.staging: the Admin has no database binding in staging",

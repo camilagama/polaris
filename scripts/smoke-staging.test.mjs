@@ -131,10 +131,24 @@ describe("the staging smoke", () => {
     expect(urls).toContain(`${web}/health`);
   });
 
+  it("accepts the fixed staging catalog host, and still the workers.dev one", async () => {
+    const catalog = "https://catalogo.araute.app";
+    const urls = [];
+    const fetchImpl = (url) => {
+      urls.push(url);
+      return fakeStaging()(url.replace(catalog, origins.catalog));
+    };
+    expect(await runSmoke({ ...origins, catalog }, fetchImpl, noPause)).toEqual(
+      []
+    );
+    expect(urls).toContain(`${catalog}/`);
+    expect(await runSmoke(origins, fakeStaging(), noPause)).toEqual([]);
+  });
+
   it("refuses an origin that is not an https staging origin without a path, before any request", async () => {
     const fetchImpl = vi.fn();
     const refused = (key) => [
-      `${key}: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path`,
+      `${key}: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path`,
     ];
     for (const web of [
       "http://polaris-web-staging.example.workers.dev",
@@ -160,13 +174,33 @@ describe("the staging smoke", () => {
     expect(
       await runSmoke({ ...origins, catalog: undefined }, fetchImpl)
     ).toEqual(refused("catalog"));
-    // the fixed host belongs to the web only
+    // each fixed host belongs to its own Worker only
     expect(
       await runSmoke(
         { ...origins, catalog: "https://dash.araute.app" },
         fetchImpl
       )
     ).toEqual(refused("catalog"));
+    expect(
+      await runSmoke(
+        { ...origins, web: "https://catalogo.araute.app" },
+        fetchImpl
+      )
+    ).toEqual(refused("web"));
+    for (const catalog of [
+      "http://catalogo.araute.app",
+      "https://catalogo.araute.app/path",
+      "https://user:pw@catalogo.araute.app",
+      "https://catalogo.araute.app.evil.example",
+      "https://CATALOGO.araute.app",
+      "https://catalogo.araute.app:8443",
+      "https://other.araute.app",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      expect(await runSmoke({ ...origins, catalog }, fetchImpl)).toEqual(
+        refused("catalog")
+      );
+    }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
