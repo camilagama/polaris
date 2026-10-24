@@ -68,13 +68,35 @@ const MUG = {
   variantId: "0199c2d0-0000-7000-8000-0000000000b2",
 };
 
-async function openStockLab(page: Page, stored: string) {
+interface OpenOptions {
+  /** What the screen shows when it is ready (the count line). */
+  count?: string;
+  /** Appended to the address of the lab: `&filtro=sem-custo`. */
+  search?: string;
+}
+
+/** The bodies of the reads the screen sent, in order (what each filter asked the server for). */
+let listRequests: string[] = [];
+
+async function openStockLab(
+  page: Page,
+  stored: string,
+  { count = "2 variantes", search = "" }: OpenOptions = {}
+) {
+  listRequests = [];
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
   // the lab has no server: the list comes from here, and it answers by the filters the screen sent
   await page.route("**/rpc/inventory/listBalances", (route) => {
     const body = route.request().postData() ?? "";
+    listRequests.push(body);
+    if (body.includes('"cost":"unknown"')) {
+      return route.fulfill(rpc({ entries: [SHIRT], nextCursor: null }));
+    }
+    if (body.includes('"stock":"without_stock"')) {
+      return route.fulfill(rpc({ entries: [], nextCursor: null }));
+    }
     const all = body.includes('"productStatus":"all"');
     const entries = all ? [SHIRT, JEANS, MUG] : [SHIRT, JEANS];
     return route.fulfill(rpc({ entries, nextCursor: null }));
@@ -94,7 +116,7 @@ async function openStockLab(page: Page, stored: string) {
     )
   );
   await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=stock");
+  await page.goto(`/offline-screens-lab?screen=stock${search}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(page.getByTestId("message")).toContainText(
@@ -104,7 +126,7 @@ async function openStockLab(page: Page, stored: string) {
   await expect(
     page.getByRole("heading", { exact: true, name: "Estoque" })
   ).toBeVisible();
-  await expect(page.getByText("2 variantes")).toBeVisible();
+  await expect(page.getByText(count)).toBeVisible();
 }
 
 async function useEveryControl(page: Page) {
@@ -185,6 +207,196 @@ for (const theme of THEMES) {
     );
     await useEveryControl(page);
     expect(csp.violations()).toEqual([]);
+  });
+}
+
+const stockFilter = (page: Page, name: string) =>
+  page
+    .getByRole("group", { name: "Filtrar por saldo" })
+    .getByRole("button", { name });
+const unknownCostFilter = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Sem custo" });
+
+/** What the person can read or a script of the page could read back: the body without its scripts. */
+const bodyMarkup = (page: Page) =>
+  page.evaluate(() => {
+    const copy = document.body.cloneNode(true) as HTMLElement;
+    for (const script of copy.querySelectorAll("script")) {
+      script.remove();
+    }
+    return copy.innerHTML;
+  });
+
+test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao servidor, e o botão aparece marcado", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "1 variante",
+    search: "&filtro=sem-custo",
+  });
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(stockFilter(page, "Todas")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(page.getByText("Camiseta do teste")).toBeVisible();
+  await expect(page.getByText("Calça jeans")).toHaveCount(0);
+  // the server filters: the first read already carries it, and the stock filter is left open
+  expect(listRequests[0]).toContain('"cost":"unknown"');
+  expect(listRequests[0]).toContain('"stock":"all"');
+  // turning it off goes back to the plain list
+  await unknownCostFilter(page).click();
+  await expect(unknownCostFilter(page)).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+  await expect(page.getByText("2 variantes")).toBeVisible();
+  expect(listRequests.at(-1)).not.toContain('"cost"');
+});
+
+test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "1 variante",
+    search: "&filtro=sem-custo",
+  });
+  await stockFilter(page, "Sem saldo").click();
+  await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() => listRequests.at(-1) ?? "")
+    .toContain('"stock":"without_stock"');
+  expect(listRequests.at(-1)).toContain('"cost":"unknown"');
+});
+
+const COUNT_LINE = /^\d+ variantes?/;
+
+test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "1 variante",
+    search: "&filtro=sem-custo",
+  });
+  // the lab's own checkbox takes the network away; the screen then works from the device
+  await page.getByLabel("Rede disponível").uncheck();
+  await expect(page.getByText("Sem conexão.")).toBeVisible();
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByText(
+      "Sem internet. A lista de variantes sem custo só carrega com conexão."
+    )
+  ).toBeVisible();
+  // the device does not know how many variants lack a cost: no zero is written
+  await expect(page.getByText(COUNT_LINE)).toHaveCount(0);
+  await expect(page.getByText("Todas as variantes têm custo.")).toHaveCount(0);
+  // with the filter off the device's own list (and its count) is back
+  await unknownCostFilter(page).click();
+  await expect(page.getByText(COUNT_LINE)).toBeVisible();
+});
+
+test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas têm saldo", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "0 variantes",
+    search: "&filtro=sem-saldo",
+  });
+  await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(unknownCostFilter(page)).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+  expect(listRequests[0]).toContain('"stock":"without_stock"');
+  expect(listRequests[0]).not.toContain('"cost"');
+  await expect(page.getByText("Todas as variantes têm saldo.")).toBeVisible();
+});
+
+for (const value of [
+  "",
+  "SEM-CUSTO",
+  "unknown_cost",
+  "<script>alert(1)</script>",
+  "valor-que-nao-existe-123",
+]) {
+  test(`?filtro=${value || "(vazio)"} abre a tela sem filtro e o valor não aparece na tela`, async ({
+    page,
+  }) => {
+    await openStockLab(page, "claro", {
+      search: `&filtro=${encodeURIComponent(value)}`,
+    });
+    await expect(stockFilter(page, "Todas")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(unknownCostFilter(page)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    expect(listRequests[0]).not.toContain('"cost"');
+    expect(listRequests[0]).toContain('"stock":"all"');
+    if (value !== "") {
+      // not in the text, not in any attribute, not in the title of the tab
+      expect(await bodyMarkup(page)).not.toContain(value);
+      expect(await page.title()).not.toContain(value);
+    }
+  });
+}
+
+for (const width of [360, 320]) {
+  test(`o botão 'Sem custo' tem o tamanho dos outros e cabe em ${width} px, com a lista e com o painel aberto`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width });
+    await openStockLab(page, "claro", {
+      count: "1 variante",
+      search: "&filtro=sem-custo",
+    });
+    const measured = await page.evaluate(() => {
+      const group = document.querySelector('[aria-label="Filtrar por saldo"]');
+      const own = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Sem custo"
+      );
+      const buttons = [...(group?.querySelectorAll("button") ?? []), own].map(
+        (button) => button?.getBoundingClientRect()
+      );
+      return {
+        heights: buttons.map((box) => Math.round(box?.height ?? 0)),
+        past: buttons.filter(
+          (box) => (box?.right ?? Number.POSITIVE_INFINITY) > window.innerWidth
+        ).length,
+        total: buttons.length,
+      };
+    });
+    expect(measured.total).toBe(4);
+    expect(measured.past).toBe(0);
+    expect(new Set(measured.heights).size).toBe(1);
+    // the state that opens from the filtered list: a panel on the row, nothing goes past the window
+    // from a variant without cost the way forward is a count with the unit cost
+    await page.getByRole("button", { name: COUNT_SHIRT }).click();
+    await expect(
+      page.getByLabel("Custo unitário para valoração (R$)")
+    ).toBeVisible();
+    const past = await page.evaluate(() => {
+      const limit = window.innerWidth + 0.5;
+      const heading = [...document.querySelectorAll("h1")].find(
+        (item) => item.textContent === "Estoque"
+      );
+      const boxes = [
+        ...(heading?.closest("header")?.parentElement?.querySelectorAll("*") ??
+          []),
+      ];
+      return boxes.filter((box) => box.getBoundingClientRect().right > limit)
+        .length;
+    });
+    expect(past).toBe(0);
   });
 }
 

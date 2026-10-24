@@ -276,6 +276,28 @@ describe("product RPCs", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("refuses more than 50 values for one option before touching anything", async () => {
+    const withTenantRequestContext = vi.fn();
+    const client = createRpcClient(
+      createRpcRouter({
+        withTenantRequestContext,
+      } as unknown as Parameters<typeof createRpcRouter>[0])
+    );
+    const valuesOf = (count: number) =>
+      Array.from({ length: count }, (_, index) => `Tamanho ${index}`);
+
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "size", values: valuesOf(51) }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { size: "Tamanho 0" } }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
   it("maps a SKU on the default variant to a configuration conflict", async () => {
     const router = createRpcRouter({
       configureProductVariants: () =>

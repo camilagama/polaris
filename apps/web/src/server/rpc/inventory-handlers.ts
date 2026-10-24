@@ -127,6 +127,7 @@ export function createInventoryRpcHandlers(
           capability: "inventory:read",
           operation: (transaction, identity) =>
             listBalancesRepository(transaction, identity, {
+              cost: input.cost,
               cursor: input.cursor ?? null,
               includeArchived: input.productStatus === "all",
               limit: input.limit,

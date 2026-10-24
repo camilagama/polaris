@@ -483,7 +483,9 @@ export type PaymentProfileRuleInput = z.infer<typeof paymentProfileRuleFields>;
 
 const paymentProfileFields = z.object({
   name: z.string().trim().min(1).max(100),
-  rules: z.array(paymentProfileRuleFields).min(1),
+  // one rule per method, plan and installment count (the domain refuses repeats): the card
+  // alone is 2 plans x the installments a terminal offers, so 100 leaves room and bounds the work
+  rules: z.array(paymentProfileRuleFields).min(1).max(100),
 });
 
 const paymentProfile = z.object({
@@ -1856,6 +1858,9 @@ export const polarisContract = {
     listBalances: oc
       .input(
         z.object({
+          // "unknown" keeps the variants whose average cost is not known,
+          // including those with no balance row yet.
+          cost: z.enum(["all", "unknown"]).default("all"),
           cursor: z.string().min(1).max(512).optional(),
           limit: z.number().int().min(1).max(100).default(50),
           organizationId: z.string().trim().min(1),
@@ -2061,7 +2066,8 @@ export const polarisContract = {
             .array(
               z.object({
                 name: productVariantOptionName,
-                values: z.array(z.string().trim().min(1)).min(1),
+                // a product has at most 50 variants, so more values than that for one option cannot be used
+                values: z.array(z.string().trim().min(1)).min(1).max(50),
               })
             )
             .min(1)
