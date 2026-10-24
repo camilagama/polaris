@@ -1390,6 +1390,8 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("Sair apaga a cópia do Início antes de sair (A e B do aparelho)", async ({
     page,
   }) => {
+    // "Sair" in the sidebar (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
+    await page.setViewportSize({ height: 800, width: 1280 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     await page.getByRole("button", { exact: true, name: "Sair" }).click();
