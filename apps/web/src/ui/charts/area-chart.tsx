@@ -133,8 +133,9 @@ export function AreaChart({
   return (
     <div className={cn("grid gap-2", className)}>
       {point ? (
+        // no aria-live: the keyboard control speaks the same day and value (aria-valuetext); a live line would say it twice
         <p
-          aria-live="polite"
+          data-chart-reading=""
           className="flex min-h-[1.125rem] items-baseline gap-2 text-muted-foreground text-support"
         >
           <span>{point.label}</span>{" "}

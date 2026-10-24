@@ -1,7 +1,7 @@
 {
   "name": "Polaris",
   "short_name": "Polaris",
-  "description": "Estoque, vendas e clientes, inclusive sem conexão.",
+  "description": "Vendas, estoque e resultado da sua loja.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/",
@@ -28,6 +28,20 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nova venda",
+      "short_name": "Vender",
+      "url": "/sales",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

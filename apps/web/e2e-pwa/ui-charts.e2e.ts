@@ -86,8 +86,8 @@ test("os gráficos têm nome, resumo e um controle de teclado que lê a data e o
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await expect(week).toBeVisible();
 
-  // the day in focus is the last one, read in a line of text above the drawing
-  const reading = areas.locator("p[aria-live=polite]").first();
+  // the day in focus is the last one, read in a line of text above the drawing (not live: the slider speaks it)
+  const reading = areas.locator("p[data-chart-reading]").first();
   await expect(reading).toHaveText("23/10 R$ 520,00");
 
   // the range input walks through the points and speaks them
@@ -133,7 +133,7 @@ test("o ponteiro move o dia em foco e a leitura o acompanha", async ({
   if (!box) {
     return;
   }
-  const reading = areas.locator("p[aria-live=polite]").first();
+  const reading = areas.locator("p[data-chart-reading]").first();
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
   await expect(reading).toHaveText("17/10 R$ 420,50");
   await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
@@ -323,6 +323,8 @@ test("enquanto o pedaço vem, uma caixa da altura do gráfico guarda o lugar", a
   expect(
     heights.filter((height) => height === 206 || height === 246)
   ).toHaveLength(6);
+  // the box of an area chart has its floor, faint, where the drawing will put it; a miniature has none
+  await expect(page.locator("[data-chart-floor]")).toHaveCount(6);
   release();
   await expect(boxes).toHaveCount(0);
 });

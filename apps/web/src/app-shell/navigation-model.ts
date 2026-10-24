@@ -1,10 +1,12 @@
 export type NavId =
+  | "attention"
   | "categories"
   | "customers"
   | "dashboard"
   | "devices"
   | "expenses"
   | "history"
+  | "home"
   | "inventory"
   | "payment-profiles"
   | "products"
@@ -19,6 +21,7 @@ export type RouteId =
   | "dashboard"
   | "devices"
   | "expenses"
+  | "home"
   | "inventory"
   | "payment-profiles"
   | "products"
@@ -40,6 +43,7 @@ export interface NavItem {
 
 /** The main menu, in the order of the daily workflow, by group of the sidebar (DESIGN.md, shell v5.1). */
 export const NAV_ITEMS: readonly NavItem[] = [
+  { group: null, href: "/", id: "home", label: "Início" },
   { group: null, href: "/sales", id: "sale", label: "Vender" },
   { group: null, href: "/sales/history", id: "history", label: "Histórico" },
   { group: "Catálogo", href: "/inventory", id: "inventory", label: "Estoque" },
@@ -86,12 +90,12 @@ export const OFFLINE_NAV_ITEMS: readonly NavItem[] = [
 ];
 
 /** The destinations of the bottom bar of the phone, in order; every other item is under "Mais". */
-export type BottomBarId = "dashboard" | "history" | "inventory" | "sale";
+export type BottomBarId = "history" | "home" | "inventory" | "sale";
 export const BOTTOM_BAR_IDS: readonly BottomBarId[] = [
+  "home",
   "sale",
   "history",
   "inventory",
-  "dashboard",
 ];
 
 export function inBottomBar(id: NavId): id is BottomBarId {
@@ -100,13 +104,13 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 
 /**
  * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose
- * area it is in (Estoque for Produtos, Categorias and Clientes; Resultado for Despesas), as in the reference of
- * the shell v5.1. "more" for the items of no destination of the bar, which "Mais" marks.
+ * area it is in (Estoque for Produtos, Categorias and Clientes), as in the reference of the shell v5.1. "more"
+ * for the items of no destination of the bar, which "Mais" marks: Resultado and Despesas since the Início took
+ * their place on the bar (desenho t269 v2, § 4), and Pendências, whose count "Mais" carries.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
   categories: "inventory",
   customers: "inventory",
-  expenses: "dashboard",
   products: "inventory",
 };
 
@@ -145,10 +149,11 @@ interface RouteDefinition {
  * not from the menu, so the history stays the current item there.
  */
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
-  "/": { id: "sale", navId: "sale", title: "Nova venda" },
+  "/": { id: "home", navId: "home", title: "Início" },
+  // no item of the menu: the sidebar shows none as current, and the bottom bar marks "Mais"
   "/attention": {
     id: "attention",
-    navId: null,
+    navId: "attention",
     title: "Pendências",
   },
   "/categories": { id: "categories", navId: "categories", title: "Categorias" },
@@ -195,7 +200,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
 /**
  * Screens that read and save on the server and have no copy on the device: offline they cannot work, so the
  * state chip says that instead of "tudo guardado neste aparelho" (U-54). The ones that work from the device
- * (sale, history, stock, products, customers, result) are not here.
+ * (home, sale, history, stock, products, customers, result) are not here.
  */
 const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "account-security",

@@ -69,21 +69,35 @@ interface OnDemandProps {
   failed?: ReactNode;
 }
 
-/** The box that holds the place of a chart while its chunk loads. */
+/**
+ * The box that holds the place of a chart while its chunk loads. The area chart's has its floor, faint, where the
+ * drawing will put it (`floor` px from the bottom): it says something comes there, without a jump and without a grey
+ * skeleton in the place of the whole chart (Petković, PR 283).
+ */
 function Reserved({
   className,
+  floor,
   height,
 }: {
   className?: string | undefined;
+  floor?: number;
   height: number;
 }) {
   return (
     <div
       aria-hidden="true"
-      className={cn("w-full", className)}
+      className={cn("relative w-full", className)}
       data-chart-loading=""
       style={{ height }}
-    />
+    >
+      {floor === undefined ? null : (
+        <div
+          className="absolute inset-x-0 border-border/70 border-t"
+          data-chart-floor=""
+          style={{ bottom: floor }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -99,8 +113,13 @@ export function OnDemandAreaChart({
     return failed ?? null;
   }
   // the reading line above the drawing is one line of text: the box holds that line too
+  // the floor of the drawing is 24 px above its bottom (the dates of the x axis)
   return (
-    <Reserved className={props.className} height={(props.height ?? 180) + 26} />
+    <Reserved
+      className={props.className}
+      floor={24}
+      height={(props.height ?? 180) + 26}
+    />
   );
 }
 

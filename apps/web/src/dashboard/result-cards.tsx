@@ -53,7 +53,7 @@ function ResultCard({
   );
 }
 
-function IncompleteBadge() {
+export function IncompleteBadge() {
   // two columns at 320 px leave less room than the words: the badge breaks its line inside its own box
   return (
     <Badge
