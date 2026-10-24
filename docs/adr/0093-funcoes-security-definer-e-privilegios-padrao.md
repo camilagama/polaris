@@ -10,6 +10,8 @@ status: accepted
 
 > **Emenda de 22/10/2026 (RLS com FORCE em `session`, migration 0097, número provisório):** `public.session` passa a ter RLS ligada e forçada, com uma política por papel que tem grant; o `polaris_device_session_owner` fica preso por `app.owner_scope.device_session_user_id` ao usuário da chamada e a exceção de GUC de runtime acaba. Três invariantes novas de catálogo. Detalhes na seção [Emenda: RLS em session](#emenda-rls-com-force-em-session-migration-0097).
 
+> **Emenda de 24/10/2026 (migration 0100, ADR 0104):** novo dono `polaris_billing_audit_owner` (`NOLOGIN`), dono do gatilho `SECURITY DEFINER` que limita a 10 por hora, por loja e tipo, a auditoria das recusas do dono; lê só `organization_id`, `event_type` e `created_at` dos três tipos de recusa de `tenant_audit_event`.
+
 ## Contexto
 
 Uma função `SECURITY DEFINER` roda com os direitos do dono. Se o `search_path` dela não termina em `pg_temp`, quem consegue rodar SQL num papel de runtime e criar um objeto temporário pode fazer a função resolver o nome dele no lugar do objeto real e agir como o dono (achado A2 da revisão de segurança). A escalada não foi provada em banco; o custo da correção é baixo e a regra passa a valer para toda função nova.

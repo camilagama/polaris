@@ -130,3 +130,28 @@ bun run gate7:asaas settle-unclaimed
 | `billing_payer_customer_created` | o cliente da Woovi do pagador foi criado agora, com a chave do Polaris (auditoria do operador, só ID opaco) | nada, a menos que o alerta `pix-cadastros-por-loja` dispare (ver [alertas](./alertas.md#pix-cadastros-por-loja)) |
 
 O corpo do webhook, o recurso relido, o CPF ou CNPJ, o `emv` e o link de pagamento nunca vão para o log; o CPF também não vai em URL (o cliente é achado pela chave do Polaris, não por `?taxID=`), porque os traços de requisições de saída do Worker podem guardar a URL. A troca de ciclo no Pix Automático exige nova autorização do pagador (cancelar e criar outra assinatura), e a contestação (MED) não gera fato na V1 (ADR 0101, emenda Woovi).
+
+<a id="reembolso-pendente"></a>
+## Reembolso pendente e rede de segurança do reembolso
+
+A rede horária (`runRefundSafetyNet`, na manutenção de cobrança, depois da varredura e das tentativas) cuida de dois casos ([ADR 0104](../adr/0104-autosservico-de-cobranca-do-dono.md), decisão 6). Não há tela nem comando dela: o que aparece é o log e o incidente.
+
+**Renovação de loja com pagamento devolvido.** Age sobre a loja cujo vínculo atual teve o pagamento devolvido por reembolso ou chargeback (nunca `won`) e cuja renovação não foi cancelada. Cancela a renovação no provedor e grava o fato `command:revoked_cancel:<loja>:<digest>:<n>`. No máximo 20 lojas por passada. Se o provedor recusa, a loja é tentada de novo com recuo de 1 h, 2 h, 4 h e assim até 24 h (com 5 min de folga para o atraso do cron). Na 10ª falha a rede para nessa loja.
+
+| Evento no log | Significado | Ação |
+|---|---|---|
+| `billing_refund_renewal_rearmed` | renovação cancelada agora (`renewal` `cancelled`) ou já cancelada no provedor (`already_cancelled`); `reason` diz `refund` ou `chargeback` | nada |
+| `billing_refund_rearm_failed` | uma tentativa de cancelar falhou (aviso); a próxima sai no recuo | conferir a chave e a disponibilidade do provedor se repetir |
+| `billing_refund_rearm_exhausted` | a 10ª tentativa falhou (erro): a rede parou para essa loja | o operador cancela a assinatura à mão no painel do provedor e registra no caso; enquanto isso a renovação pode cobrar de novo |
+| `billing_refund_safety_net_incomplete` | a passada teve pelo menos uma falha de cancelamento (erro); a manutenção sai incompleta e a próxima hora tenta de novo | ver as `billing_refund_rearm_failed` do mesmo horário |
+
+**Reembolso pendente.** Um pedido de reembolso do dono, no vínculo atual, ainda não concluído 24 h depois vira **um** incidente operacional `billing_refund_pending` (causa `refund_not_completed`, pelo caminho do [ADR 0085](../adr/0085-dlq-incidente-operacional-e-retry-no-admin.md)), uma ocorrência por loja e pedido. Cada uma tem uma linha no razão (`refund_pending`), então a passada seguinte não soma. Log: `billing_refund_pending_incident` (erro, só o ID opaco da loja e o provedor). Se a gravação falha, `billing_refund_pending_incident_failed` (erro) e a passada sai incompleta.
+
+**Quem olha:** o operador de plantão, pela lista de incidentes do Admin.
+**O que fazer:**
+1. Conferir no painel do provedor se o reembolso saiu.
+2. Se não saiu, concluir pelo comando de reembolso do operador (ADR 0066, emenda de 23/10/2026): ele cancela a renovação antes de reembolsar, e se o reembolso falhar depois do cancelamento, repete-se o comando.
+3. Se já saiu, não repetir: só registrar.
+4. Registrar a ação no caso de suporte da loja.
+
+**Limite conhecido (questão aberta para a revisão):** se o dono assinar de novo antes de a rede cancelar a assinatura antiga, o vínculo novo zera a memória do reembolso e a rede deixa de olhar a antiga. Ao ver `billing_refund_pending_incident`, `billing_refund_rearm_exhausted` ou um chargeback, conferir no provedor se não ficou uma assinatura antiga viva.

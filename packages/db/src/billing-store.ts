@@ -224,10 +224,6 @@ export interface BillingStore {
     terms?: CheckoutTerms
   ) => Promise<ReplacedProviderReference | null>;
   /**
-   * Whether the closure already gave up, at the provider, the checkout this
-   * link names (the ledger row `recordCheckoutDiscarded` wrote for it).
-   */
-  /**
    * Counts one owner's command that calls the provider (ADR 0104, decision 4): at most one every 30 seconds and 10
    * an hour per organization, the hour counted from its first command. Answers false, counting nothing, when the
    * command is over the limit. The caller holds the organization's command lock.
@@ -236,6 +232,10 @@ export interface BillingStore {
     organizationId: string,
     now?: Date
   ) => Promise<boolean>;
+  /**
+   * Whether the closure already gave up, at the provider, the checkout this
+   * link names (the ledger row `recordCheckoutDiscarded` wrote for it).
+   */
   checkoutDiscarded: (
     organizationId: string,
     link: Pick<BillingProviderLink, "provider" | "providerRef">
@@ -1516,44 +1516,62 @@ async function rearmOne(
     return "failed";
   }
   // every answer means no renewal is alive at the provider: the memory says so, and the net stops
-  const recorded = await inTransaction(pool, async (client) => {
-    const locked = await lockRecord(client, organizationId);
-    if (
-      locked.provider !== renewal.provider ||
-      locked.provider_ref !== renewal.providerRef ||
-      (locked.revoked_reason !== "refund" &&
-        locked.revoked_reason !== "chargeback") ||
-      locked.revoked_cancel_at_period_end
-    ) {
-      return false;
-    }
-    await client.query(
-      `UPDATE public.organization_billing SET revoked_cancel_at_period_end = true, updated_at = $2, version = version + 1
+  let recorded: boolean;
+  try {
+    recorded = await inTransaction(pool, async (client) => {
+      const locked = await lockRecord(client, organizationId);
+      if (
+        locked.provider !== renewal.provider ||
+        locked.provider_ref !== renewal.providerRef ||
+        (locked.revoked_reason !== "refund" &&
+          locked.revoked_reason !== "chargeback") ||
+        locked.revoked_cancel_at_period_end
+      ) {
+        return false;
+      }
+      await client.query(
+        `UPDATE public.organization_billing SET revoked_cancel_at_period_end = true, updated_at = $2, version = version + 1
         WHERE organization_id = $1`,
-      [organizationId, now]
-    );
-    await writeLedger(
-      client,
-      {
-        fact: { occurredAt: now.toISOString(), type: "revoked_cancel" },
-        factType: "command",
-        organizationId,
-        // one row per link and try; the reference goes in as a digest (the ID has a bounded length)
-        providerEventId: `command:revoked_cancel:${organizationId}:${createHash("sha256").update(renewal.providerRef).digest("hex").slice(0, 32)}:${renewal.attempt}`,
-        providerRef: renewal.providerRef,
-        stateAfter: locked.state as BillingState,
-        stateBefore: locked.state as BillingState,
-      },
-      now
-    );
-    return true;
-  });
+        [organizationId, now]
+      );
+      await writeLedger(
+        client,
+        {
+          fact: { occurredAt: now.toISOString(), type: "revoked_cancel" },
+          factType: "command",
+          organizationId,
+          // one row per link and try; the reference goes in as a digest (the ID has a bounded length)
+          providerEventId: `command:revoked_cancel:${organizationId}:${createHash("sha256").update(renewal.providerRef).digest("hex").slice(0, 32)}:${renewal.attempt}`,
+          providerRef: renewal.providerRef,
+          stateAfter: locked.state as BillingState,
+          stateBefore: locked.state as BillingState,
+        },
+        now
+      );
+      return true;
+    });
+  } catch (error: unknown) {
+    // the database failed after the provider answered: this store waits for its back-off, the pass goes on
+    if (renewal.attempt >= REFUND_REARM_MAX_ATTEMPTS) {
+      logger.error("billing_refund_rearm_exhausted", {
+        ...describeError(error),
+        ...ids,
+      });
+      return "exhausted";
+    }
+    logger.warn("billing_refund_rearm_failed", {
+      ...describeError(error),
+      ...ids,
+    });
+    return "failed";
+  }
   logger.info("billing_refund_renewal_rearmed", {
     ...ids,
     recorded,
     renewal: result,
   });
-  return "rearmed";
+  // a link that changed meanwhile is not counted: the memory of the new one was never the net's
+  return recorded ? "rearmed" : "skipped";
 }
 
 /** Writes the ledger row and the incident of one store's pending refund, if the request is still pending. */

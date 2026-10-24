@@ -92,6 +92,7 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 ### cobranca-reconcile — falha de reconcile da cobrança
 
 **O que significa.** A manutenção horária da cobrança (nova tentativa de eventos pendentes e varredura de assinaturas e concessões vencidas) falhou, ou um webhook do provedor não foi processado. Eventos: `billing_maintenance_incomplete` (o job termina em falha), `billing_sweep_failed`, `billing_event_retry_failed`, `billing_grant_sweep_failed` (um item falhou) e `billing_webhook_processing_failed` (o provedor tentará de novo). O job `billing.provider_reconcile` (consulta ao Asaas e à Woovi) está desligado até o Gate 7; quando ligar, a falha dele aparece como `scheduled_job_run` com `outcome = "failure"` e deve entrar neste sinal.
+A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewal_rearmed`, `billing_refund_rearm_failed`, `billing_refund_rearm_exhausted`, `billing_refund_safety_net_incomplete`, `billing_refund_pending_incident` e `billing_refund_pending_incident_failed`. O registro deste sinal ainda não os conta (`packages/observability/src/alerts.ts`): por ora, quem os olha é o operador, pelo significado e pela ação em [reembolso pendente e rede de segurança do reembolso](./billing-providers.md#reembolso-pendente).
 
 **Como confirmar.** Workers Logs: os cinco eventos, por `errorClass`/`errorCode`, `provider` e `sqlState`; veja também o `scheduled_job_run` de `billing.maintenance`. Uma só falha é retentada no tick seguinte; três em três horas é falha persistente (é o limiar).
 
