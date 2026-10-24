@@ -336,7 +336,7 @@ describe("the staging isolation check", () => {
     production.route = undefined;
     production.routes = { pattern: "dash.araute.app/*" };
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.production routes must be a list (routes deve ser lista)",
+      "web: env.production routes must be a list",
     ]);
   });
 
@@ -355,6 +355,18 @@ describe("the staging isolation check", () => {
       "*.minhaconta.workers.dev/*",
       "https://*.araute.app/*",
       " *.araute.app/*",
+      "dash.araute.app:8443/*",
+      // with a port the text sweep misses a wildcard: only the host of the route can tell
+      "*.araute.app:8443/*",
+      "*araute.app:8443/*",
+      "*.workers.dev:8443/*",
+      "polaris-web-staging.*.workers.dev:8443/*",
+      "https://*.araute.app:8443/*",
+      "*.AraUte.app.:8443/*",
+      "*:8443/*",
+      "*.araute.app:*/*",
+      "*.araute.app:8443",
+      "*://*.araute.app/*",
     ]) {
       production.routes = [pattern];
       expect(findIsolationProblems(entries), pattern).toEqual([
@@ -382,7 +394,7 @@ describe("the staging isolation check", () => {
     for (const routes of [null, "app.example.com/*", 7]) {
       production.routes = routes;
       expect(findIsolationProblems(entries)).toEqual([
-        "web: env.production routes must be a list (routes deve ser lista)",
+        "web: env.production routes must be a list",
       ]);
     }
   });
@@ -395,11 +407,14 @@ describe("the staging isolation check", () => {
       "app.araute.app/*",
       { custom_domain: true, pattern: "loja.araute.app" },
       "*.dash.araute.app/*",
+      "*.example.com:8443/*",
+      "app.araute.app:8443/*",
+      "*://app.araute.app/*",
     ];
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
-  it("sweeps objects and lists in the variables of production as JSON text", () => {
+  it("sweeps every string inside objects and lists in the variables of production", () => {
     const entries = repositoryEntries();
     const { production } = entryOf(entries, "web").config.env;
     production.vars.X = { url: "https://dash.araute.app" };
