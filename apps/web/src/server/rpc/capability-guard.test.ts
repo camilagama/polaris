@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
  */
 const SERVER = new URL("../", import.meta.url);
 const ADMIN = new URL("../../../../admin/src/", import.meta.url);
-const SOURCE_FILE = /\.[cm]?tsx?$/;
+const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
 const WITH_CAPABILITY_NAME = /\bwithCapability\b/;
 
 /** The folders whose functions must check the role before re-issuing the identity. */
