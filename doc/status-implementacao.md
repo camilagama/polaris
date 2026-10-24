@@ -2078,3 +2078,13 @@ Desenho t269 v2, aprovado na rodada desenho-t269 (23/10/2026).
 | Gate `economics` | Em revisão | Série com venda retroativa, devolução e cancelamento conferida dia a dia contra o resumo daquele dia e contra contagem SQL independente; ranking com produto excluído; outra loja vê série zerada; limite fora de 1..10 recusado. PostgreSQL 18 local e CI. |
 | Semeadura `qa-` | Em revisão | `packages/db/scripts/seed-qa-store.ts` (operador; só loja `qa-`, só banco marcado `staging` ou PostgreSQL local com `--local`, nada sem `--apply`). Não foi rodado em staging. |
 | Medida | Parcial | Local (PostgreSQL 18, 60 dias): 20 vendas/dia ≈ 367 KB por abertura (A + B), 50/dia ≈ 932 KB; o plano da consulta de vendas lê todas as vendas da loja (20 mil para 1.254 do mês), o que pelo critério do desenho pede o índice 1b. CPU e egress em staging pendentes (roteiro no PR). |
+
+### Autosserviço de cobrança do dono (F1, PR H0 do desenho t268; ADR 0104; só documentação)
+
+Decisões antes do código da Assinatura: leitura do plano, cancelar, desistir e pagar a pendente. O número do ADR (0104) e os das migrations 0100 e 0101 são provisórios.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| [ADR 0104](../docs/adr/0104-autosservico-de-cobranca-do-dono.md) | Em revisão | `billing.readPlan` (só o dono, `.strict()`, nada do provedor); comandos `cancelRenewal`, `requestRefund` e `openOverduePayment` com trava sem fila por loja e limite de 1 a cada 30 s e 10 por hora; avisos e `noticeStillTrue`; flags `BILLING_SELF_SERVICE_ENABLED` (só liga com E, E2 e G na `main`) e `WELCOME_EMAIL_ENABLED`; R-1 (Pix vai ao suporte até a prova S3.2), R-4 (sem QR) e R-5 (sem `syncPlan`). Decisões do usuário de 23/10: cancelar a renovação não se desfaz; cada nova assinatura abre nova janela de 7 dias; aviso da renovação anual 7 dias antes; suporte no staging em `contato.juniordiniz@gmail.com`. |
+| Caixa de suporte em produção | Pendente | Depende da P48 (domínio de e-mail com DMARC em modo de aplicação). |
+| PR B (migration 0100) a H, Gate 7 | Não iniciado | Sequência no ADR 0104, decisão 10. |
