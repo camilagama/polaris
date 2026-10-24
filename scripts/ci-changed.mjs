@@ -4,18 +4,45 @@ import { pathToFileURL } from "node:url";
 
 /**
  * Which expensive CI jobs a change can affect. The browser gate costs about
- * nine minutes a run, so it only runs when something it exercises changed; the
- * dependency audit only when dependencies changed. Everything unknown runs.
+ * 25 minutes a run (22 to 27 on the hosted runner), so it only runs when
+ * something it exercises changed; the dependency audit only when dependencies
+ * changed. Everything unknown runs.
  */
 
 /**
+ * Operation scripts that the browser gate never runs, bundles or reads: the
+ * staging smoke and isolation checks, the migration compatibility check, the
+ * flaky-test report (only the e2e-real job runs it), the real-device runner,
+ * and the staging deploy workflow. Listed one by one, never with a wildcard
+ * over scripts/: a new script is relevant until someone proves otherwise.
+ * ci-changed.test.mjs reads the imports and configs of apps/web (Playwright
+ * configs included), apps/catalog and packages/ and fails if any of them
+ * reaches one of these files. The workerd-* scripts are not here: the Vitest
+ * configs of apps/web and apps/catalog import workerd-harness.mjs.
+ */
+export const OPERATIONS_FILES = [
+  "scripts/smoke-staging.mjs",
+  "scripts/smoke-staging.test.mjs",
+  "scripts/verify-staging-isolation.mjs",
+  "scripts/verify-staging-isolation.test.mjs",
+  "scripts/verify-migration-compat.mjs",
+  "scripts/verify-migration-compat.test.mjs",
+  "scripts/admin-production-guard.test.mjs",
+  "scripts/gate5-real-devices.sh",
+  "scripts/e2e-flaky-report.mjs",
+  "scripts/e2e-flaky-report.test.mjs",
+  ".github/workflows/deploy-staging.yml",
+];
+
+/**
  * Paths that cannot change what the browser gate proves: prose; the database
- * package; the web app's server, Worker and gate scripts; and the Admin app.
- * The gate serves the static client bundle and answers the `/rpc` calls itself
- * (page.route), so none of that code runs in it, and the client never imports
- * it. Nothing under apps/web, apps/catalog or packages/ depends on apps/admin
- * (ci-changed.test.mjs reads the import graph and fails if that changes), so
- * the Admin app is outside both bundles the gate exercises.
+ * package; the web app's server, Worker and gate scripts; the Admin app; and
+ * the operation scripts above. The gate serves the static client bundle and
+ * answers the `/rpc` calls itself (page.route), so none of that code runs in
+ * it, and the client never imports it. Nothing under apps/web, apps/catalog or
+ * packages/ depends on apps/admin (ci-changed.test.mjs reads the import graph
+ * and fails if that changes), so the Admin app is outside both bundles the
+ * gate exercises.
  */
 const MARKDOWN_FILE = /\.md$/;
 
@@ -64,7 +91,11 @@ export function classifyChanges(files) {
   const changed = files.filter(Boolean);
   return {
     browser: changed.some(
-      (file) => !BROWSER_IRRELEVANT.some((pattern) => pattern.test(file))
+      (file) =>
+        !(
+          OPERATIONS_FILES.includes(file) ||
+          BROWSER_IRRELEVANT.some((pattern) => pattern.test(file))
+        )
     ),
     dependencies: changed.some((file) =>
       DEPENDENCY_FILES.some((pattern) => pattern.test(file))
