@@ -90,21 +90,33 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 
-Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs (`BETTER_AUTH_BASE_URL`, `https://dash.araute.app` desde 22/10, e `CATALOG_ORIGIN`, em `workers.dev`). O `env.staging.account_id` do Admin também é preenchido, porque a verificação o exige mesmo com o Admin fora do staging. `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
+Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs (`BETTER_AUTH_BASE_URL`, `https://dash.araute.app` desde 22/10, e `CATALOG_ORIGIN`, `https://catalogo.araute.app` desde 23/10, antes em `workers.dev`). O `env.staging.account_id` do Admin também é preenchido, porque a verificação o exige mesmo com o Admin fora do staging. `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
 
 ## 3a. Domínio do web: `dash.araute.app` (responsável)
 
-O web do staging é servido em `https://dash.araute.app` por um **Custom Domain** da Cloudflare, criado **fora** do `wrangler.jsonc` (ADR 0097, emenda de 22/10). O config não tem `routes` (a verificação de isolamento o proíbe): o token de deploy do CI não precisa de permissão de zona, e `wrangler deploy` sem `routes` e com `workers_dev: false` deixa o Custom Domain como está (é o modelo "rotas só pelo painel" da documentação do Wrangler). `workers_dev` fica `false` porque o `origin-check` aceita uma origem só; o catálogo segue no `workers.dev`.
+O web do staging é servido em `https://dash.araute.app` por um **Custom Domain** da Cloudflare, criado **fora** do `wrangler.jsonc` (ADR 0097, emenda de 22/10). O config não tem `routes` (a verificação de isolamento o proíbe): o token de deploy do CI não precisa de permissão de zona, e `wrangler deploy` sem `routes` e com `workers_dev: false` deixa o Custom Domain como está (é o modelo "rotas só pelo painel" da documentação do Wrangler). `workers_dev` fica `false` porque o `origin-check` aceita uma origem só; o catálogo tem o seu domínio, na seção 3b.
 
 Criar ou recriar (a zona `araute.app` está na mesma conta; usar credencial com permissão de zona, nunca o token do CI):
 
 1. Painel: **Workers & Pages → `polaris-web-staging` → Settings → Domains & Routes → Add → Custom Domain → `dash.araute.app`**. Ou pela API, `PUT /accounts/<conta>/workers/domains` com `{"hostname":"dash.araute.app","service":"polaris-web-staging","environment":"production","zone_id":"<zona>"}`. A Cloudflare cria o registro DNS e o certificado.
 2. Conferir: `curl -fsS https://dash.araute.app/health` responde 200.
-3. **Curinga:** a zona tem um registro `*.araute.app` com proxy, que sozinho responde 525. O registro específico do Custom Domain prevalece sobre ele; não apague o curinga por causa disto, e não espere que outro subdomínio sem Custom Domain responda.
+3. **Curinga:** a zona tem um registro `*.araute.app` com proxy, que sozinho responde 525. O registro específico do Custom Domain prevalece sobre ele; não apague o curinga por causa disto, e não espere que outro subdomínio sem Custom Domain responda. O alvo do curinga deve ser um endereço reservado sem serviço (ex.: `192.0.2.1`), nunca um IP que possa ser reatribuído a terceiros; o Arrascaeta confere o alvo no painel da Cloudflare.
 4. **Google:** em **Clients** do projeto `polaris-staging`, o URI de redirecionamento autorizado é `https://dash.araute.app/api/auth/callback/google` (seção 4). Sem ele o login falha com `redirect_uri_mismatch`.
 5. **GitHub:** a variável `STAGING_WEB_URL` do Environment `staging` passa a `https://dash.araute.app` (o smoke a lê e aceita esse host ou um `polaris-<app>-staging.<conta>.workers.dev`). Com `workers_dev: false`, o `workers.dev` do web deixa de servir no primeiro deploy deste PR, e o smoke que ainda apontar para ele fica vermelho: mude a variável logo antes do merge ou, mudando depois, reexecute o run do deploy.
 6. **Turnstile:** o widget `polaris-staging` só aceita o hostname `dash.araute.app`; outro hostname (um `workers.dev` reativado, por exemplo) falha no Siteverify, porque o hostname esperado vem de `BETTER_AUTH_BASE_URL` ([auth-abuse-protection](./auth-abuse-protection.md)). Registro e troca do segredo na seção 5.
 7. Quem estava logado pelo `workers.dev` entra de novo: o cookie é de outro host.
+
+## 3b. Domínio do catálogo: `catalogo.araute.app` (responsável)
+
+O catálogo público do staging é servido em `https://catalogo.araute.app` (decisão do usuário, 22/10; "loja" fica reservado para uma possível feature futura), pelo mesmo modelo da seção 3a: **Custom Domain** criado **fora** do `wrangler.jsonc`, sem `routes` no config (ADR 0097, emenda de 23/10). `workers_dev` do catálogo é `false`, e `CATALOG_ORIGIN` (links canônicos do catálogo e link da tela do catálogo no web) é exatamente `https://catalogo.araute.app` nos dois Workers; `bun run verify:staging-isolation` reprova qualquer outro valor.
+
+Criar ou recriar (credencial com permissão de zona, nunca o token do CI):
+
+1. Painel: **Workers & Pages → `polaris-catalog-staging` → Settings → Domains & Routes → Add → Custom Domain → `catalogo.araute.app`**. Ou pela API, `PUT /accounts/<conta>/workers/domains` com `{"hostname":"catalogo.araute.app","service":"polaris-catalog-staging","environment":"production","zone_id":"<zona>"}`. A Cloudflare cria o registro DNS e o certificado.
+2. Conferir: `curl -sS -o /dev/null -w '%{http_code}\n' https://catalogo.araute.app/smoke-staging-loja-inexistente` responde 404 (loja inexistente, pelo banco) e `https://catalogo.araute.app/` responde 200 com CSP com nonce.
+3. **Curinga:** o registro `*.araute.app` com proxy responde 525 sozinho; o registro específico do Custom Domain prevalece sobre ele. Não apague o curinga, e um subdomínio sem Custom Domain continua dando 525. O alvo do curinga deve ser um endereço reservado sem serviço (ex.: `192.0.2.1`), nunca um IP que possa ser reatribuído a terceiros; o Arrascaeta confere o alvo no painel da Cloudflare.
+4. **GitHub:** a variável `STAGING_CATALOG_URL` do Environment `staging` passa a `https://catalogo.araute.app` (o smoke aceita esse host para o catálogo, ou um `polaris-catalog-staging.<conta>.workers.dev`). Com `workers_dev: false`, o `workers.dev` do catálogo deixa de servir no primeiro deploy: o smoke que ainda apontar para ele fica vermelho; mude a variável logo depois do merge e reexecute o run do deploy. O Custom Domain (passo 1) tem de existir **antes** do merge.
+5. Os links já copiados do `workers.dev` do catálogo deixam de abrir; só há dados sintéticos no staging.
 
 ## 4. Cliente OAuth do Google (responsável)
 
