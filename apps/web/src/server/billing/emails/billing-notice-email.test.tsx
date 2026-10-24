@@ -12,6 +12,7 @@ import {
   renderBillingNoticeEmail,
 } from "./billing-notice-email";
 import type { BillingEmailStore } from "./content";
+import { subjectStore } from "./format";
 
 const ORIGIN = "https://dash.exemplo.app";
 const SUPPORT = "suporte@exemplo.app";
@@ -382,11 +383,11 @@ describe("singular and plural", () => {
       today,
     });
 
-  it("says Falta 1 dia with one day left and Faltam 4 dias with four", () => {
-    const one = failed("2026-10-30T15:00:00.000Z", "2026-10-29");
+  it("says Falta 1 dia with one day left and Faltam 4 dias with four (an access ends at midnight in São Paulo)", () => {
+    const one = failed("2026-10-30T03:00:00.000Z", "2026-10-29");
     expect(one.subject).toBe("Falta 1 dia de Pro na loja Loja Aurora");
     expect(one.heading).toBe("Falta 1 dia de Pro na loja Loja Aurora");
-    const four = failed("2026-11-02T15:00:00.000Z", "2026-10-29");
+    const four = failed("2026-11-02T03:00:00.000Z", "2026-10-29");
     expect(four.subject).toBe("Faltam 4 dias de Pro na loja Loja Aurora");
   });
 
@@ -463,7 +464,9 @@ describe("the method", () => {
       "R$ 24,90 do plano Pro da loja Loja Aurora, pelo cartão,"
     );
     expect(card).not.toContain(CARD_PHRASE);
-    const pix = bodyOf(kindCase("charge_receipt renewal (pix_automatic)").email);
+    const pix = bodyOf(
+      kindCase("charge_receipt renewal (pix_automatic)").email
+    );
     expect(pix).toContain("pelo Pix Automático,");
     expect(pix).not.toContain("autorizou");
   });
@@ -835,5 +838,14 @@ describe("the colors", () => {
       expect(source, name).not.toMatch(RE_2);
       expect(source, name).not.toMatch(RE_1);
     }
+  });
+});
+
+describe("the store's name in the subject, by grapheme", () => {
+  it("never cuts an emoji made of several code points in half", () => {
+    // 23 letters, then a family emoji (several code points joined) as the 24th character
+    const name = `${"a".repeat(23)}👨‍👩‍👧 e mais`;
+    const subject = subjectStore(name);
+    expect(subject).toBe(`${"a".repeat(23)}👨‍👩‍👧…`);
   });
 });

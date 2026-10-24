@@ -212,7 +212,8 @@ export function sweepNoticesFor(
       mark("renewal_failed", renewalFailedKey(paidEnd, "d3"));
     }
     if (
-      today === addCalendarDays(localDate(record.accessEndsAt, timeZone), -1)
+      today ===
+      addCalendarDays(lastCoveredDay(record.accessEndsAt, timeZone), -1)
     ) {
       mark("renewal_failed", renewalFailedKey(paidEnd, "dlast"));
     }
@@ -225,7 +226,7 @@ export function sweepNoticesFor(
     record.accessEndsAt &&
     today ===
       addCalendarDays(
-        localDate(record.accessEndsAt, timeZone),
+        lastCoveredDay(record.accessEndsAt, timeZone),
         -ANNUAL_RENEWAL_REMINDER_LEAD_DAYS
       )
   ) {
@@ -237,6 +238,15 @@ export function sweepNoticesFor(
 /** The welcome of a person (E1): one per person, whatever the store (the database holds it to that). */
 export function welcomeNotice(userId: string, now: Date): BillingNoticeMark {
   return { dedupeKey: userId, dueAt: now, kind: "welcome" };
+}
+
+/**
+ * The last local day an access that ends at `endsAt` covers: it runs up to that instant, and a period ends at midnight,
+ * so the day of the instant itself is not covered. The day before the end of the grace and the yearly charge (the last
+ * day of the paid period) are counted from it.
+ */
+export function lastCoveredDay(endsAt: Date, timeZone: string): string {
+  return localDate(new Date(endsAt.getTime() - 1), timeZone);
 }
 
 /** The end of the period already paid, from the end of the grace that followed it (RN:19). */
@@ -374,7 +384,7 @@ export function renewalFailedOf(
   return { milestone: milestone as RenewalFailedMilestone, paidEnd };
 }
 
-/** The local day of the end of a failed renewal's grace, the day its milestone falls on. */
+/** The local day a failed renewal's milestone falls on: the failure, the 3rd day, the day before the last day of Pro. */
 export function renewalFailedDayOf(
   milestone: RenewalFailedMilestone,
   paidEnd: Date,
@@ -385,7 +395,7 @@ export function renewalFailedDayOf(
   }
   const graceEnd = new Date(paidEnd.getTime() + GRACE_DAYS * DAY_MS);
   return milestone === "dlast"
-    ? addCalendarDays(localDate(graceEnd, timeZone), -1)
+    ? addCalendarDays(lastCoveredDay(graceEnd, timeZone), -1)
     : localDate(paidEnd, timeZone);
 }
 
@@ -447,77 +457,89 @@ function isRenewalFailedDay0(check: BillingNoticeCheck): boolean {
   );
 }
 
+type KindRule = (check: BillingNoticeCheck) => BillingNoticeSkipReason | null;
+
+const KIND_RULES: Readonly<Record<BillingNoticeKind, KindRule>> = {
+  access_ended: ({ record }) => {
+    if (periodRefunded(record)) {
+      return "refunded";
+    }
+    return FREE_STATES.includes(record.state) ? null : "state_changed";
+  },
+  annual_renewal_reminder: annualRenewalReminderStillTrue,
+  charge_receipt: ({ event, record }) => {
+    if (event?.type !== "charge_succeeded") {
+      return "state_changed";
+    }
+    return periodRefunded(record, event.periodEndsAt) ? "refunded" : null;
+  },
+  first_charge_failed: ({ paidSinceNotice, record }) =>
+    FREE_STATES.includes(record.state) && !paidSinceNotice ? null : "recovered",
+  refund_confirmed: ({ event, record }) =>
+    event?.type === "charge_refunded" &&
+    periodRefunded(record, periodOfEvent(event))
+      ? null
+      : "state_changed",
+  renewal_cancelled: renewalCancelledStillTrue,
+  renewal_failed: renewalFailedStillTrue,
+  trial_charge_eve: trialChargeEveStillTrue,
+  trial_started: ({ record }) => {
+    if (periodRefunded(record)) {
+      return "refunded";
+    }
+    return record.state === "trialing" ? null : "state_changed";
+  },
+  // the welcome is settled before the rules of the billing notices
+  welcome: () => null,
+};
+
 function kindStillTrue(
   check: BillingNoticeCheck
 ): BillingNoticeSkipReason | null {
-  const { notice, now, record, timeZone } = check;
-  switch (notice.kind) {
-    case "trial_started":
-      if (periodRefunded(record)) {
-        return "refunded";
-      }
-      return record.state === "trialing" ? null : "state_changed";
-    case "trial_charge_eve":
-      return trialChargeEveStillTrue(check);
-    case "first_charge_failed":
-      return FREE_STATES.includes(record.state) && !check.paidSinceNotice
-        ? null
-        : "recovered";
-    case "renewal_failed":
-      return renewalFailedStillTrue(check);
-    case "access_ended":
-      if (periodRefunded(record)) {
-        return "refunded";
-      }
-      return FREE_STATES.includes(record.state) ? null : "state_changed";
-    case "charge_receipt":
-      if (check.event?.type !== "charge_succeeded") {
-        return "state_changed";
-      }
-      return periodRefunded(record, check.event.periodEndsAt)
-        ? "refunded"
-        : null;
-    case "renewal_cancelled":
-      if (periodRefunded(record)) {
-        return "refunded";
-      }
-      if (
-        check.refundRequestedAt &&
-        now.getTime() - check.refundRequestedAt.getTime() <
-          BILLING_NOTICE_REFUND_WAIT_MS
-      ) {
-        return "refund_in_progress";
-      }
-      if (record.cancelAtPeriodEnd) {
-        return null;
-      }
-      return grantsPro(record.state) ? "resubscribed" : "state_changed";
-    case "refund_confirmed":
-      return check.event?.type === "charge_refunded" &&
-        periodRefunded(record, periodOfEvent(check.event))
-        ? null
-        : "state_changed";
-    case "annual_renewal_reminder":
-      if (periodRefunded(record)) {
-        return "refunded";
-      }
-      if (record.cancelAtPeriodEnd) {
-        return "cancelled";
-      }
-      return record.state === "active" &&
-        record.cycleMonths === 12 &&
-        record.revoked === null &&
-        record.accessEndsAt?.toISOString() === notice.dedupeKey &&
-        localDate(now, timeZone) ===
-          addCalendarDays(
-            localDate(record.accessEndsAt, timeZone),
-            -ANNUAL_RENEWAL_REMINDER_LEAD_DAYS
-          )
-        ? null
-        : "state_changed";
-    default:
-      return "state_changed";
+  return KIND_RULES[check.notice.kind](check);
+}
+
+function renewalCancelledStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { now, record, refundRequestedAt } = check;
+  if (periodRefunded(record)) {
+    return "refunded";
   }
+  if (
+    refundRequestedAt &&
+    now.getTime() - refundRequestedAt.getTime() < BILLING_NOTICE_REFUND_WAIT_MS
+  ) {
+    return "refund_in_progress";
+  }
+  // a store already back on Free has no "Pro until" to tell
+  if (!grantsPro(record.state)) {
+    return "state_changed";
+  }
+  return record.cancelAtPeriodEnd ? null : "resubscribed";
+}
+
+function annualRenewalReminderStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { notice, now, record, timeZone } = check;
+  if (periodRefunded(record)) {
+    return "refunded";
+  }
+  if (record.cancelAtPeriodEnd) {
+    return "cancelled";
+  }
+  return record.state === "active" &&
+    record.cycleMonths === 12 &&
+    record.revoked === null &&
+    record.accessEndsAt?.toISOString() === notice.dedupeKey &&
+    localDate(now, timeZone) ===
+      addCalendarDays(
+        lastCoveredDay(record.accessEndsAt, timeZone),
+        -ANNUAL_RENEWAL_REMINDER_LEAD_DAYS
+      )
+    ? null
+    : "state_changed";
 }
 
 function trialChargeEveStillTrue(

@@ -38,7 +38,7 @@ export function trialStartedContent(
   const charge = `${amountText(email.amount)} ${cycleText(email.cycleMonths)}`;
   const date = calendarDay(email.firstChargeOn);
   const method = methodText(email.method);
-  const chargeToday = days <= 0;
+  const chargeToday = days === 0;
   return {
     action: openSubscription(store),
     extra: null,

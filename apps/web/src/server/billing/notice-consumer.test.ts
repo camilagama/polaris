@@ -925,3 +925,50 @@ describe("the e-mail of a billing notice", () => {
     });
   });
 });
+
+describe("the fixes of the review", () => {
+  it("marks the notice sent when the provider already took a message under its key (409 invalid_idempotent_request)", async () => {
+    const { dependencies, notices } = setup({
+      result: {
+        code: "invalid_idempotent_request",
+        outcome: "retry",
+        status: 409,
+      },
+    });
+    expect(await handleBillingNotice(dependencies, envelope())).toBe("sent");
+    expect(notices.markSent).toHaveBeenCalledTimes(1);
+    expect(notices.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("still tries again on the 409 of a request with the same key in flight", async () => {
+    const { dependencies, notices } = setup({
+      result: {
+        code: "concurrent_idempotent_requests",
+        outcome: "retry",
+        status: 409,
+      },
+    });
+    await expect(
+      handleBillingNotice(dependencies, envelope())
+    ).rejects.toBeInstanceOf(BillingNoticeRetryError);
+    expect(notices.markSent).not.toHaveBeenCalled();
+  });
+
+  it("writes no E-A for a first charge already past (a method approved after it)", () => {
+    const trial = deliveryOf({
+      dedupeKey: PROVIDER_REF,
+      event: null,
+      firstChargeOn: "2026-10-23",
+      kind: "trial_started",
+      priceAmount: AMOUNT,
+      record: recordOf({ state: "trialing" }),
+    });
+    expect(
+      billingNoticeEmailOf(trial, storeFacts, emailConfig.appOrigin)
+    ).toBeNull();
+    const today = deliveryOf({ ...trial, firstChargeOn: "2026-10-24" });
+    expect(
+      billingNoticeEmailOf(today, storeFacts, emailConfig.appOrigin)
+    ).not.toBeNull();
+  });
+});

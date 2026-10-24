@@ -17,7 +17,11 @@ export const SUBJECT_STORE_MAX = 24;
 
 export function subjectStore(name: string): string {
   const line = name.replaceAll(/\s+/g, " ").trim();
-  const characters = Array.from(line);
+  // by grapheme, so an emoji made of several code points is never cut in half
+  const characters = Array.from(
+    new Intl.Segmenter("pt-BR", { granularity: "grapheme" }).segment(line),
+    (part) => part.segment
+  );
   return characters.length > SUBJECT_STORE_MAX
     ? `${characters.slice(0, SUBJECT_STORE_MAX).join("").trimEnd()}…`
     : line;

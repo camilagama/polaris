@@ -1,6 +1,8 @@
-import type { RenewalFailedMilestone } from "@polaris/domain/billing/notices";
+import {
+  lastCoveredDay,
+  type RenewalFailedMilestone,
+} from "@polaris/domain/billing/notices";
 import type { PlanMethod } from "@polaris/domain/billing/plan-view";
-import { localDate } from "@polaris/domain/organization/closure-deadlines";
 import {
   type BillingEmailStore,
   type BillingNoticeContent,
@@ -12,7 +14,6 @@ import {
   daysBetween,
   daysText,
   lastDayOf,
-  localDay,
   methodText,
   subjectStore,
 } from "./format";
@@ -31,7 +32,7 @@ export type RenewalFailedEmail =
       accessEndsAt: Date;
       milestone: Exclude<RenewalFailedMilestone, "d0">;
       store: BillingEmailStore;
-      /** The local day the notice is for (YYYY-MM-DD): the days that remain are counted from it, never below 1. */
+      /** The local day the notice is for (YYYY-MM-DD): the days of Pro that remain, today included, never below 1. */
       today: string;
     };
 
@@ -64,7 +65,10 @@ export function renewalFailedContent(
   if (email.milestone === "d3") {
     const days = Math.max(
       1,
-      daysBetween(email.today, localDate(email.accessEndsAt, store.timeZone))
+      daysBetween(
+        email.today,
+        lastCoveredDay(email.accessEndsAt, store.timeZone)
+      ) + 1
     );
     const remaining = `${days === 1 ? "Falta" : "Faltam"} ${daysText(days)} de Pro na loja`;
     return {
@@ -78,15 +82,14 @@ export function renewalFailedContent(
       subject: `${remaining} ${subjectStore(store.name)}`,
     };
   }
-  const ends = localDay(email.accessEndsAt, store.timeZone);
   return {
     ...common,
     heading: `Amanhã o Pro da loja ${store.name} termina`,
     paragraphs: [
-      `O pagamento da renovação não foi confirmado e o seu Pro termina amanhã, ${ends}.`,
+      `O pagamento da renovação não foi confirmado e o seu Pro termina amanhã, ${until}.`,
       `Depois, a loja volta ao plano Free: ${FREE_CHANGES}. Seus dados e seu histórico ficam. Abra Assinatura para ver o que fazer.`,
     ],
-    preview: `Seu Pro termina amanhã, ${ends}.`,
+    preview: `Seu Pro termina amanhã, ${until}.`,
     subject: `Amanhã o Pro da loja ${subjectStore(store.name)} termina`,
   };
 }

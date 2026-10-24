@@ -47,6 +47,12 @@ const NOTICE_ID =
 /** The provider refused this message for good (the address, most likely): failed, with no retry. */
 const EMAIL_REJECTED = "email_rejected";
 
+/**
+ * Resend's 409 for a key already used by another body in its 24 hours: a message under this notice's key was taken.
+ * The other 409 (`concurrent_idempotent_requests`, the same key still in flight) is tried again.
+ */
+const RESEND_KEY_TAKEN = "invalid_idempotent_request";
+
 /** Notices the handover sends in one hourly run, at most (one at a time, under the provider's rate limit). */
 const BILLING_NOTICE_HANDOVER_BATCH = 20;
 
@@ -271,7 +277,12 @@ type EmailBuilder = (input: EmailInput) => BillingNoticeEmail | null;
 function trialStartedEmail(input: EmailInput): BillingNoticeEmail | null {
   const { amount, delivery, method, today, where } = input;
   const { cycleMonths, firstChargeOn } = delivery;
-  return method && amount && cycleMonths && firstChargeOn
+  // a first charge already past (the method approved after it) has no day to announce
+  return method &&
+    amount &&
+    cycleMonths &&
+    firstChargeOn &&
+    firstChargeOn >= today
     ? {
         amount,
         cycleMonths,
@@ -589,6 +600,26 @@ async function sendBillingNotice(
     idempotencyKey: noticeId,
     to: input.to,
   });
+  if (
+    result.outcome === "retry" &&
+    result.status === 409 &&
+    result.code === RESEND_KEY_TAKEN
+  ) {
+    // a message was already taken under this notice's key (the store renamed, or the count of variants changed,
+    // between the first try and this one): it went out, so the notice is sent
+    const marked = await dependencies.notices.markSent(
+      noticeId,
+      organizationId
+    );
+    logger.info("billing_notice_sent", {
+      ...fields,
+      kind,
+      marked,
+      outcome: "success",
+      reason: RESEND_KEY_TAKEN,
+    });
+    return "sent";
+  }
   if (result.outcome === "retry") {
     logger.error("billing_notice_failed", {
       ...fields,
