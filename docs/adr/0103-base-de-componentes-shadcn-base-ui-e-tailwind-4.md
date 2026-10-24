@@ -60,7 +60,7 @@ O Tailwind 4 gera CSS no build, sem tempo de execução; o custo está no JS do 
 
 **Baseline do resto.** O precache antes da base depende do tipo de build de produção: o runtime offline (`VITE_OFFLINE_RUNTIME_ENABLED`) põe o SQLite e o runtime no shell, e o e2e da pilha real faz os dois builds. Por isso há um número por tipo, medido na main em 8c2ef58 (o PR 0), num build sem DSN do Sentry (o chunk do SDK fica fora da conta), com gzip nível 9 do zlib do Node, o do build no CI: **1.018.327 B sem o runtime e 1.096.252 B com ele**. O primeiro teto desta seção foi medido só no build sem o runtime, e o build com o runtime do e2e da pilha real dava +87 KB contra ele, sendo só +9 KB contra a própria baseline. **Atualização:** a baseline só sobe por crescimento que não é de interface (uma funcionalidade, uma dependência de outra área, o runtime offline). O PR que causa esse crescimento sobe os dois números no mesmo PR, pela medida do próprio crescimento: o build imprime `precache (offline runtime on|off): fonts …, Base UI primitives …, interface infrastructure …, screen and the rest …; rest line …` e o PR traz a `rest line` (resto mais infraestrutura de interface) antes e depois, nos dois tipos de build e sem DSN, com o motivo; a revisão confere que o crescimento não é de interface. Interface (Tailwind, tokens, CSS, primitivos, telas migradas) nunca sobe a baseline: cabe no +40 KB, na linha dos primitivos ou numa exceção. No PR de base, a baseline é a do merge-base com a main, e todo o crescimento medido (+9,0 KB nos dois tipos de build) é da base.
 
-Estourar a linha 1 ou a 2, ou subir um teto, exige justificativa no PR e aprovação do Arrascaeta. A linha 3 segue a emenda de 23/10/2026 (t272) enquanto as Fases 1 a 3 do plano de execução durarem. Dependência nova entra pela lista permitida (condição 1 abaixo), não pelo orçamento.
+Estourar a linha 1 ou a 2, ou subir um teto, exige justificativa no PR e aprovação do Arrascaeta. A linha 3 segue a emenda de 23/10/2026 (t272) até a etapa de corte, obrigatória antes do Gate de go-live (`doc/plano-inicial.md`). Dependência nova entra pela lista permitida (condição 1 abaixo), não pelo orçamento.
 
 ### 5. Tema e CSP
 
@@ -144,7 +144,7 @@ A decisão 3 (tudo em OKLCH) ganha um corolário: o `apps/web/src/styles/theme.c
 
 ## Emenda: o teto do resto só avisa até a etapa de corte (t272, 23/10/2026)
 
-**Decisão do usuário (23/10/2026).** Enquanto as Fases 1 a 3 do `PLANO-EXECUCAO` estiverem em andamento, o teto de crescimento do precache (linha 3 da seção 4, o resto) deixa de bloquear. Entra o que for necessário, e o tamanho é revisto numa etapa de corte antes do go-live (Fase 5).
+**Decisão do usuário (23/10/2026).** Até a etapa de corte, obrigatória antes do Gate de go-live (`doc/plano-inicial.md`), o teto de crescimento do precache (linha 3 da seção 4, o resto) deixa de bloquear. Entra o que for necessário, e o tamanho é revisto nessa etapa. A origem é o plano de execução de 23/10/2026, fora do repositório.
 
 **Motivo.** O teto mudou seis vezes em quatro dias (histórico abaixo) e cada subida parou uma tarefa à espera de aprovação, sem que o número dissesse algo sobre a experiência do lojista: o crescimento é JS de telas que ainda vão ser enxugadas. Um bloqueio que se renegocia a cada PR custa mais do que informa; o que importa agora é cada PR mostrar quanto acrescenta, e o corte é feito de uma vez, com o produto fechado.
 
@@ -152,9 +152,9 @@ A decisão 3 (tudo em OKLCH) ganha um corolário: o `apps/web/src/styles/theme.c
 
 1. **O teto avisa; a trava dura fica em +80 000 B.** `REST_GROWTH_BUDGET_GZIP_BYTES` (+44 000 B) é só a referência: acima dela o build passa e imprime um aviso com o total, a referência e o excedente. `REST_GROWTH_HARD_CAP_GZIP_BYTES` (+80 000 B sobre a baseline, linha do resto com a infraestrutura de interface) reprova o build, em qualquer modo. O modo é a constante `REST_GROWTH_MODE` (`"warn"`), em `apps/web/pwa/precache-budget.ts`, com um teste por lado de cada limite; não há variável de ambiente, e voltar a `"block"` é uma mudança revisada. As linhas de fontes (55 KB) e de primitivos (95 KB gzip) continuam bloqueando como antes.
 2. **Todo build imprime o crescimento.** Uma linha `PRECACHE-GROWTH total … B gzip, growth +… B over the baseline …` sai em toda execução, para quem revisa achar no log do CI quanto cada PR acrescenta. O PR cita essa linha.
-3. **Gráficos continuam sob demanda**, fora do precache inicial: o descongelamento do teto não autoriza pôr biblioteca de gráfico no shell.
+3. **Gráficos ficam num chunk próprio, carregado sob demanda pela tela e fora do caminho crítico do shell.** Ele vai no precache, com linha própria de 8 KB que reprova o build (t267 D1, t269 PR 4). O descongelamento do teto não autoriza pôr biblioteca de gráfico no shell.
 4. **O zero líquido por tela da seção 4 segue como orientação de revisão** (o Filipe e o Léo cobram o corte de JS de tela que cresce sem motivo), mas deixa de ter número que bloqueie. Subir a trava dura de +80 000 B, subir as linhas de fontes ou de primitivos, ou voltar `REST_GROWTH_MODE` a `"block"` fora da etapa de corte é decisão do usuário, registrada em emenda a este ADR.
-5. **A etapa de corte é obrigatória antes do go-live (Fase 5).** Itens já medidos ou conhecidos: tirar o `tailwind-merge` (cerca de −8 KB gzip, medido na t266), enxugar o JS das telas e voltar a um teto firme (a referência atual é +44 000 B; o alvo de +42 000 B da nota abaixo segue aberto), com `REST_GROWTH_MODE` de volta a `"block"`. Sem essa etapa, não há go-live. O modelo de duas camadas do Filipe (F0.3) pode substituir estas linhas e é o lugar de fixar o teto firme.
+5. **A etapa de corte é obrigatória antes do Gate de go-live (`doc/plano-inicial.md`).** Itens já medidos ou conhecidos: tirar o `tailwind-merge` (cerca de −8 KB gzip, medido na t266), enxugar o JS das telas e voltar a um teto firme (a referência atual é +44 000 B; o alvo de +42 000 B da nota abaixo segue aberto), com `REST_GROWTH_MODE` de volta a `"block"`. Sem essa etapa, não há go-live. O modelo de duas camadas do Filipe (F0.3) pode substituir estas linhas e é o lugar de fixar o teto firme.
 
 O histórico do teto, para a etapa de corte saber de onde veio cada número: 40 → 46 → 47 → 48 → 50 → 44 → 44,5 (tabela na nota abaixo; a trava dura de +80 000 B é nova e não substitui nenhum deles). A referência volta a +44 000 B porque o +44 500 B da t275 (bump do zod, cerca de 194 B gzip) era exceção só para o bloqueio, que não existe mais; a main com o zod novo mede +44 106 B sem o runtime offline e +44 256 B com ele (medido na t272), e passa a avisar com um excedente de 106 e 256 B.
 
@@ -174,7 +174,7 @@ O teto da linha do resto mudou seis vezes entre 20/10 e 23/10. Cada mudança tev
 
 O retorno a +40 000 B previsto no lote 6 não aconteceu: o lote fechou em +44 000 B. Voltar a +42 000 B exige cortar JS das telas, em tarefa separada.
 
-Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas e gráficos pesados sob demanda), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale a emenda de 23/10/2026 abaixo (t272): +44 000 B é só referência que avisa, e a trava dura é +80 000 B.
+Um modelo novo de orçamento, com duas camadas (caminho crítico com teto no precache; telas pesadas sob demanda; gráficos em chunk próprio, no precache, com linha própria de 8 KB), virá do Filipe Luís na F0.3 do plano de execução e substituirá estas linhas quando for aprovado. Até lá, vale a emenda de 23/10/2026 acima (t272): +44 000 B é só referência que avisa, e a trava dura é +80 000 B.
 
 ## Consequências
 
