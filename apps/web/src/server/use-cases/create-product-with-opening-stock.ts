@@ -300,8 +300,8 @@ async function namedVariantId(
 /**
  * The creation, in this order (§3.1 of the design): both capabilities are checked BEFORE any write, so a role
  * that cannot adjust stock leaves no orphan product; then the product with its variant and price; then the
- * stock. `occurredOn` is the date of the opening stock: the RPC passes today in the store's time zone (read on
- * the server), the sync passes the date the device wrote in the command.
+ * stock. The date of the opening stock lives only inside `initialStock.occurredOn` (there is no date without a
+ * stock): the RPC passes today in the store's time zone, the sync the date the device wrote in the command.
  */
 export async function createProductWithOpeningStock(
   transaction: TenantRequestTransaction,

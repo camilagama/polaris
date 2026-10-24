@@ -13,7 +13,8 @@ import { WORKER_MARK } from "./worker-mark";
  *   usability research of staging counted (one per tap, per field filled and per choice), recorded in the report
  *   of the test and held to 11 or less, half of the 22 measured then;
  * - a store with no product is taken from the sale to the form (AC-26);
- * - the open form, with its details open, holds in the width of a phone.
+ * - the open form, with its details open, holds in the width of a phone;
+ * - from 768 px up the labels of the form stay on one line: the columns follow the width of the card.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -555,6 +556,61 @@ for (const width of [360, 320]) {
     await expect(
       page.getByText("Informe um valor em reais, como 59,90.")
     ).toBeVisible();
+    await expectNoSidewaysScroll(page);
+  });
+}
+
+/** Window width, and how many fields of the opening stock share a row (the columns follow the card, not the window). */
+const COLUMNS_BY_WIDTH = [
+  { columns: 1, width: 768 },
+  { columns: 2, width: 900 },
+  { columns: 2, width: 1000 },
+  { columns: 3, width: 1016 },
+  { columns: 3, width: 1024 },
+  { columns: 3, width: 1100 },
+  { columns: 3, width: 1280 },
+] as const;
+const FIELD_IDS = [
+  "product-list-price",
+  "product-quantity",
+  "product-unit-cost",
+];
+/** A label of one line is about 19 px tall; two lines are 39. */
+const ONE_LINE = 28;
+
+for (const { columns, width } of COLUMNS_BY_WIDTH) {
+  test(`a ${width} px os rótulos do cadastro ficam em uma linha, em ${columns} coluna(s) conforme a largura do cartão`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name.includes("mobile"),
+      "the width is set by the test itself"
+    );
+    await page.setViewportSize({ height: 800, width });
+    await openScreen(page);
+    await openForm(page);
+
+    const boxes = await page.evaluate(
+      (ids) =>
+        ids.map((id) => {
+          const label = document
+            .querySelector(`label[for="${id}"]`)
+            ?.getBoundingClientRect();
+          const field = document.getElementById(id)?.getBoundingClientRect();
+          return {
+            id,
+            labelHeight: label?.height ?? 0,
+            top: Math.round(field?.top ?? 0),
+          };
+        }),
+      FIELD_IDS
+    );
+    for (const box of boxes) {
+      expect(box.labelHeight, box.id).toBeGreaterThan(0);
+      expect(box.labelHeight, box.id).toBeLessThan(ONE_LINE);
+    }
+    const rows = new Set(boxes.map((box) => box.top));
+    expect(rows.size).toBe(Math.ceil(FIELD_IDS.length / columns));
     await expectNoSidewaysScroll(page);
   });
 }

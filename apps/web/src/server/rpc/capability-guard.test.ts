@@ -4,29 +4,50 @@ import { describe, expect, it } from "vitest";
 /**
  * `withCapability(identity, …)` re-issues an identity under ANOTHER capability, so a repository that checks
  * `inventory:adjust` accepts a request that was opened with `product:create`. That is safe only where the
- * capability was already proved:
- * - in `server/rpc/` and `server/use-cases/`, by `requireCapabilityInTransaction(` earlier in the SAME top-level
- *   function, for the same capability, outside comments (the role read in the transaction, before any write);
- * - in `server/sync/handlers/`, by the signed lease that `sync.push` required and the role the database
- *   revalidated (ADR 0033): only the handlers listed below, so a new one is a conscious decision.
- * Anywhere else under `server/`, `withCapability(` is refused, and so is importing it under another name.
+ * capability was already proved, so the name is an allow list over the whole repository (every package under `apps/`
+ * and `packages/`, not only its `src`: worker, scripts and e2e folders, tests included, comments ignored; the
+ * `scripts/` of the repository root is out, see ADR 0035). It is accepted only:
+ * - in its definition, `packages/db/src/tenant-transaction.ts`;
+ * - in `apps/web/src/server/rpc/` and `use-cases/`, after `requireCapabilityInTransaction(` earlier in the SAME
+ *   top-level function, for the same capability, outside comments (the role read in the transaction, before any
+ *   write);
+ * - in the two handlers of `apps/web/src/server/sync/handlers/` listed below, by the signed lease that `sync.push`
+ *   required and the role the database revalidated (ADR 0033): a new handler is a conscious decision.
+ * Any other file that names it is refused, and so is importing it under another name. The import boundary of
+ * `apps/admin` and `apps/catalog` is the `biome.jsonc` (`noRestrictedImports`), not this file (ADR 0035).
  */
-const SERVER = new URL("../", import.meta.url);
+const REPO = new URL("../../../../../", import.meta.url);
+const SCAN_PARENTS = ["apps", "packages"];
+const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
+/** Folders that hold no source of the repository. */
+const SKIPPED_FOLDERS = new Set(["node_modules", "dist", ".wrangler"]);
+const WITH_CAPABILITY_NAME = /\bwithCapability\b/;
+
+/** Where `withCapability` is defined. */
+const DEFINITION = "packages/db/src/tenant-transaction.ts";
+
+/** This file holds the cases of the guard as text, so it names the helper without using it. */
+const THIS_GUARD = "apps/web/src/server/rpc/capability-guard.test.ts";
 
 /** The folders whose functions must check the role before re-issuing the identity. */
-const CHECKED_FOLDERS = ["rpc/", "use-cases/"];
+const CHECKED_FOLDERS = [
+  "apps/web/src/server/rpc/",
+  "apps/web/src/server/use-cases/",
+];
 
 /** The sync handlers whose capability the lease covers (ADR 0036, ADR 0037). */
 const LEASE_COVERED_HANDLERS = [
-  "sync/handlers/sale-confirm.ts",
-  "sync/handlers/stock-commands.ts",
+  "apps/web/src/server/sync/handlers/sale-confirm.ts",
+  "apps/web/src/server/sync/handlers/stock-commands.ts",
 ];
 
-const WITH_CAPABILITY_CALL = /\bwithCapability\(/;
 /** The call with its capability argument (`withCapability(identity, INVENTORY_ADJUST)` gives `INVENTORY_ADJUST`). */
 const WITH_CAPABILITY_CALLS =
   /\bwithCapability\(\s*[\w.]+\s*,\s*([^),]+?)\s*\)/g;
 const ANY_WITH_CAPABILITY_CALL = /\bwithCapability\(/g;
+const WITH_CAPABILITY_NAMES = /\bwithCapability\b/g;
+/** `import { a, withCapability } from "…"`: naming it here is not using it. */
+const IMPORT_CLAUSE = /\bimport\s*\{[^}]*\}\s*from\s*(?:"[^"]*"|'[^']*')/g;
 const NOT_NEWLINE = /[^\n]/g;
 const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/g;
 const RENAMED_IMPORT = /\bwithCapability\s+as\b/;
@@ -80,62 +101,163 @@ function unguardedWithCapability(source: string): number[] {
   return unguarded;
 }
 
-/** The files (path relative to `server/`) that break one of the rules above. */
+/** The files (path relative to the repository) that break one of the rules above. */
 function offenders(files: ReadonlyMap<string, string>): string[] {
   const refused: string[] = [];
   for (const [path, source] of files) {
+    if (path === DEFINITION || path === THIS_GUARD) {
+      continue;
+    }
     const code = withoutComments(source);
+    if (!WITH_CAPABILITY_NAME.test(code)) {
+      continue;
+    }
     if (RENAMED_IMPORT.test(code)) {
       refused.push(path);
       continue;
     }
-    if (!WITH_CAPABILITY_CALL.test(code)) {
-      continue;
-    }
-    if (LEASE_COVERED_HANDLERS.includes(path)) {
-      continue;
-    }
     const checked = CHECKED_FOLDERS.some((folder) => path.startsWith(folder));
-    if (!checked || unguardedWithCapability(source).length > 0) {
+    if (!checked) {
+      if (!LEASE_COVERED_HANDLERS.includes(path)) {
+        refused.push(path);
+      }
+      continue;
+    }
+    // where the folder is checked, every mention is the import or a guarded call: an alias or a re-export is not
+    if (namedOutsideCalls(code) || unguardedWithCapability(source).length > 0) {
       refused.push(path);
     }
   }
   return refused;
 }
 
-/** Every non-test `.ts` file under `server/`, by its path relative to it. */
-function serverSources(): Map<string, string> {
-  const names = readdirSync(SERVER, { encoding: "utf8", recursive: true });
-  return new Map(
-    names
-      .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
-      .map((name) => [
-        name.split("\\").join("/"),
-        readFileSync(new URL(name, SERVER), "utf8"),
-      ])
-  );
+/** Whether `withCapability` is named other than in an import clause or as `withCapability(`. */
+function namedOutsideCalls(code: string): boolean {
+  const mentions = code
+    .replace(IMPORT_CLAUSE, "")
+    .match(WITH_CAPABILITY_NAMES)?.length;
+  const calls = code.match(ANY_WITH_CAPABILITY_CALL)?.length ?? 0;
+  return (mentions ?? 0) > calls;
 }
 
-describe("withCapability under server/", () => {
-  it("is used only after requireCapabilityInTransaction in the same function, or in a handler the lease covers", () => {
-    const files = serverSources();
-    expect(
-      [...files.keys()].filter((path) =>
-        CHECKED_FOLDERS.some((folder) => path.startsWith(folder))
-      ).length
-    ).toBeGreaterThan(0);
-    // the scan reaches the use case and the handlers it is meant to hold
+/** Every source file (tests included) of each package under `apps/` and `packages/`, by its path relative to the repository. */
+function repositorySources(): Map<string, string> {
+  const files = new Map<string, string>();
+  const walk = (folder: string): void => {
+    for (const entry of readdirSync(new URL(folder, REPO), {
+      withFileTypes: true,
+    })) {
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FOLDERS.has(entry.name)) {
+          walk(`${folder}${entry.name}/`);
+        }
+      } else if (entry.isFile() && SOURCE_FILE.test(entry.name)) {
+        const path = `${folder}${entry.name}`;
+        files.set(path, readFileSync(new URL(path, REPO), "utf8"));
+      }
+    }
+  };
+  for (const parent of SCAN_PARENTS) {
+    for (const entry of readdirSync(new URL(`${parent}/`, REPO), {
+      withFileTypes: true,
+    })) {
+      if (entry.isDirectory() && !SKIPPED_FOLDERS.has(entry.name)) {
+        walk(`${parent}/${entry.name}/`);
+      }
+    }
+  }
+  return files;
+}
+
+describe("withCapability in the repository", () => {
+  const files = repositorySources();
+
+  it("is named only where the capability was already proved", () => {
+    // the scan reaches every root it is meant to hold
+    for (const root of [
+      "apps/web/src/server/rpc/",
+      "apps/web/worker/",
+      "apps/web/scripts/",
+      "apps/web/e2e/",
+      "apps/web/e2e-pwa/",
+      "apps/catalog/src/",
+      "apps/admin/src/",
+      "packages/db/src/",
+      "packages/db/scripts/",
+    ]) {
+      expect(
+        [...files.keys()].filter((path) => path.startsWith(root)).length
+      ).toBeGreaterThan(0);
+    }
+    // the use case and the handlers it is meant to hold, the definition and the cases of this guard
     const users = [...files]
       .filter(([, source]) =>
-        WITH_CAPABILITY_CALL.test(withoutComments(source))
+        WITH_CAPABILITY_NAME.test(withoutComments(source))
       )
       .map(([path]) => path)
       .sort();
-    expect(users).toEqual([
-      ...LEASE_COVERED_HANDLERS,
-      "use-cases/create-product-with-opening-stock.ts",
-    ]);
+    expect(users).toEqual(
+      [
+        THIS_GUARD,
+        ...LEASE_COVERED_HANDLERS,
+        "apps/web/src/server/use-cases/create-product-with-opening-stock.ts",
+        DEFINITION,
+      ].sort()
+    );
     expect(offenders(files)).toEqual([]);
+  });
+
+  it("sees an import, a call, a renamed import and an alias anywhere else, and not a comment", () => {
+    expect(
+      offenders(
+        new Map([
+          [
+            "apps/admin/src/a.ts",
+            'import { withCapability } from "@polaris/db/tenant-transaction";',
+          ],
+          [
+            "apps/catalog/src/b.ts",
+            "const next = withCapability(identity, X);",
+          ],
+          [
+            "packages/domain/src/c.tsx",
+            'import { withCapability as elevate } from "@polaris/db/tenant-transaction";',
+          ],
+          [
+            "apps/web/src/server/sync/push.ts",
+            "const elevate = ns.withCapability;",
+          ],
+          [
+            "apps/web/src/server/rpc/d.test.ts",
+            "// withCapability(identity, X)\n/* withCapability */",
+          ],
+        ])
+      )
+    ).toEqual([
+      "apps/admin/src/a.ts",
+      "apps/catalog/src/b.ts",
+      "packages/domain/src/c.tsx",
+      "apps/web/src/server/sync/push.ts",
+    ]);
+    expect(
+      offenders(
+        new Map([
+          [
+            "apps/web/src/other.ts",
+            "const next = ns.withCapability(identity, X);",
+          ],
+          // outside `src`: the worker, the scripts and the e2e folders of a package
+          ["apps/web/worker/index.ts", "withCapability(identity, X);"],
+          ["packages/db/scripts/seed.ts", "withCapability(identity, X);"],
+          ["apps/web/e2e-pwa/a.e2e.ts", "withCapability(identity, X);"],
+        ])
+      )
+    ).toEqual([
+      "apps/web/src/other.ts",
+      "apps/web/worker/index.ts",
+      "packages/db/scripts/seed.ts",
+      "apps/web/e2e-pwa/a.e2e.ts",
+    ]);
   });
 
   it("tells a guarded use from an unguarded one", () => {
@@ -196,40 +318,83 @@ export async function create(tx, identity) {
     expect(unguardedWithCapability(otherCapability)).toHaveLength(1);
     expect(unguardedWithCapability(typedElsewhere)).toHaveLength(2);
     expect(unguardedWithCapability(commented)).toHaveLength(1);
+    // where the folder is checked, naming the helper without calling it is no use either
+    const alias = `
+import { withCapability } from "@polaris/db/tenant-transaction";
+export async function create(tx, identity) {
+  requireCapabilityInTransaction(identity, "inventory:adjust");
+  const elevate = withCapability;
+  return stock(tx, elevate(identity, "inventory:adjust"));
+}
+`;
+    const viaCall = `
+export async function create(tx, identity) {
+  requireCapabilityInTransaction(identity, "inventory:adjust");
+  return stock(tx, withCapability.call(null, identity, "inventory:adjust"));
+}
+`;
+    const reexport = `export { withCapability } from "@polaris/db/tenant-transaction";`;
+    const guardedWithImport = `
+import { requireCapabilityInTransaction, withCapability } from "@polaris/db/tenant-transaction";
+${guarded}`;
+    expect(
+      offenders(
+        new Map([
+          ["apps/web/src/server/use-cases/alias.ts", alias],
+          ["apps/web/src/server/rpc/via-call.ts", viaCall],
+          ["apps/web/src/server/rpc/reexport.ts", reexport],
+          ["apps/web/src/server/use-cases/ok.ts", guardedWithImport],
+        ])
+      )
+    ).toEqual([
+      "apps/web/src/server/use-cases/alias.ts",
+      "apps/web/src/server/rpc/via-call.ts",
+      "apps/web/src/server/rpc/reexport.ts",
+    ]);
     // a use only in a comment is no use
     expect(
-      offenders(new Map([["sync/push.ts", "// withCapability(identity, x)\n"]]))
+      offenders(
+        new Map([
+          [
+            "apps/web/src/server/sync/push.ts",
+            "// withCapability(identity, x)\n",
+          ],
+        ])
+      )
     ).toEqual([]);
 
     expect(
       offenders(
         new Map([
-          ["use-cases/guarded.ts", guarded],
-          ["rpc/guarded.ts", guarded],
-          ["sync/handlers/stock-commands.ts", unguarded],
+          ["apps/web/src/server/use-cases/guarded.ts", guarded],
+          ["apps/web/src/server/rpc/guarded.ts", guarded],
+          ["apps/web/src/server/sync/handlers/stock-commands.ts", unguarded],
         ])
       )
     ).toEqual([]);
     expect(
       offenders(
         new Map([
-          ["use-cases/unguarded.ts", unguarded],
-          ["use-cases/guarded-elsewhere.ts", guardedElsewhere],
-          ["rpc/unguarded.ts", unguarded],
+          ["apps/web/src/server/use-cases/unguarded.ts", unguarded],
+          [
+            "apps/web/src/server/use-cases/guarded-elsewhere.ts",
+            guardedElsewhere,
+          ],
+          ["apps/web/src/server/rpc/unguarded.ts", unguarded],
           // a handler outside the closed list, even one that checks the role
-          ["sync/handlers/new-command.ts", guarded],
+          ["apps/web/src/server/sync/handlers/new-command.ts", guarded],
           // outside the folders the rule knows
-          ["sync/push.ts", guarded],
-          ["use-cases/renamed.ts", renamed],
+          ["apps/web/src/server/sync/push.ts", guarded],
+          ["apps/web/src/server/use-cases/renamed.ts", renamed],
         ])
       )
     ).toEqual([
-      "use-cases/unguarded.ts",
-      "use-cases/guarded-elsewhere.ts",
-      "rpc/unguarded.ts",
-      "sync/handlers/new-command.ts",
-      "sync/push.ts",
-      "use-cases/renamed.ts",
+      "apps/web/src/server/use-cases/unguarded.ts",
+      "apps/web/src/server/use-cases/guarded-elsewhere.ts",
+      "apps/web/src/server/rpc/unguarded.ts",
+      "apps/web/src/server/sync/handlers/new-command.ts",
+      "apps/web/src/server/sync/push.ts",
+      "apps/web/src/server/use-cases/renamed.ts",
     ]);
   });
 });
