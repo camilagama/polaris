@@ -451,6 +451,8 @@ test("U-48: erro 400 do servidor ao salvar não apaga o Nome nem o Endereço e a
   // fixing the address clears the mark
   await slug.fill("loja-da-ana-2");
   await expect(page.locator("#public-slug-error")).toHaveCount(0);
+  // and so does the summary under the button: it was about the old text (U-56)
+  await expect(summary).toHaveCount(0);
 });
 
 test("U-48: endereço inválido é recusado no cliente, sem chamar o servidor e sem mexer no formulário", async ({

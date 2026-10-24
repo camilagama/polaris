@@ -38,6 +38,7 @@ const base: Props = {
   onRenameStart: noop,
   onRenameSubmit: noop,
   onRestore: noop,
+  online: true,
   pendingAction: null,
   pendingDeleteId: null,
   renameValue: "",
@@ -60,6 +61,60 @@ function menuTrigger(markup: string, name: string): string {
   }
   return tag[0];
 }
+
+const REASON = 'aria-describedby="connection-required-text"';
+/** The tag of the button with this text, as drawn. */
+function buttonTag(markup: string, text: string): string {
+  const tag = new RegExp(`<button[^>]*>${text}</button>`).exec(markup);
+  if (!tag) {
+    throw new Error(`no button "${text}"`);
+  }
+  return tag[0];
+}
+
+describe("the list of categories without a connection (P-2)", () => {
+  it("keeps 'Salvar' of a rename on and reachable, with the reason, and not disabled", () => {
+    const html = render({
+      online: false,
+      renameValue: "Camisetas",
+      renamingCategoryId: category(1, "Camisetas").id,
+    });
+    const save = buttonTag(html, "Salvar");
+    expect(save).toContain('aria-disabled="true"');
+    expect(save).toContain(REASON);
+    expect(save).not.toContain(OFF);
+  });
+
+  it("does the same for 'Remover categoria' in the confirmation", () => {
+    const html = render({
+      online: false,
+      pendingDeleteId: category(2, "Calçados").id,
+    });
+    const confirm = buttonTag(html, "Remover categoria");
+    expect(confirm).toContain('aria-disabled="true"');
+    expect(confirm).toContain(REASON);
+    expect(confirm).not.toContain(OFF);
+    // "Cancelar" sends nothing: it stays as it was
+    expect(buttonTag(html, "Cancelar")).not.toContain('aria-disabled="true"');
+  });
+
+  it("leaves the buttons as they were with a connection", () => {
+    const html = render({
+      pendingDeleteId: category(2, "Calçados").id,
+    });
+    expect(buttonTag(html, "Remover categoria")).not.toContain(
+      'aria-disabled="true"'
+    );
+    expect(html).not.toContain("connection-required-text");
+  });
+
+  it("does not turn off the menu that opens the actions: it sends nothing", () => {
+    const html = render({ online: false });
+    expect(menuTrigger(html, "Camisetas")).not.toContain(
+      'aria-disabled="true"'
+    );
+  });
+});
 
 describe("the list of categories", () => {
   it("says it is loading, and shows no row", () => {

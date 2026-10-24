@@ -8,6 +8,8 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
@@ -63,6 +65,7 @@ interface RuleCardProps {
 function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
   const paused = rule.status === "archived";
   const handleEdit = useCallback(() => onEdit(rule), [onEdit, rule]);
+  const online = useConnectionOnline();
   const handleToggle = useCallback(() => onToggle(rule), [onToggle, rule]);
   const isBusy = busyKey !== null;
   const thisBusy = busyKey === `rule-toggle:${rule.id}`;
@@ -106,6 +109,7 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
             Editar
           </Button>
           <Button
+            {...connectionControlProps(online)}
             aria-label={`${toggleLabel} despesa recorrente ${rule.description}`}
             disabled={isBusy}
             onClick={handleToggle}

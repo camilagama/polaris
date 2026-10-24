@@ -184,6 +184,7 @@ export function ScreensLab() {
   const screen = useMemo(labScreen, []);
   const onlineOnly =
     screen === "categories" ||
+    screen === "expenses" ||
     screen === "payment-profiles" ||
     screen === "public-catalog" ||
     screen === "sale-customer" ||

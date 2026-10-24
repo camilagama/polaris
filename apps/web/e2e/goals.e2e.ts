@@ -146,6 +146,8 @@ class FakeGoalServer {
   readonly created: Record<string, unknown>[] = [];
   /** When set, `goal.list` answers this ORPC error instead of the goals. */
   listFailure: { code: string; status: number } | null = null;
+  /** When set, `goal.cancel` answers this ORPC error and the goal is left as it was. */
+  cancelFailure: { code: string; status: number } | null = null;
   /** The figures of the month; a test can change them. */
   readonly figures = { ...FIXTURE };
   private lastId = 0;
@@ -321,6 +323,9 @@ class FakeGoalServer {
   }
 
   private cancel(input: Record<string, unknown>) {
+    if (this.cancelFailure) {
+      return this.fail(this.cancelFailure.code, this.cancelFailure.status);
+    }
     const { failure, goal } = this.editable(input);
     if (!goal) {
       return failure;
@@ -459,6 +464,10 @@ test("uma meta que chegou ao alvo vira Concluída e continua concluída", async 
   await page.getByRole("button", { name: "Criar meta" }).click();
 
   await expect(page.getByText("Meta criada.")).toBeVisible();
+  // the sentence under the heading says it before the card does
+  await expect(
+    page.getByText("Também estimativas. Uma meta concluída continua concluída.")
+  ).toBeVisible();
   const done = card(page, "Número de vendas");
   await expect(done).toContainText("Concluída");
   await expect(done).toContainText("atingido com 3 (conferido em 14/10/2026)");
@@ -551,6 +560,37 @@ test("cancela a meta só depois da confirmação", async ({ page }) => {
     "Cancelada em 14/10/2026"
   );
   await expect(goalActions(page)).toHaveCount(0);
+});
+
+test("uma falha ao cancelar fecha o diálogo, diz o que houve sob o título e leva o foco a Metas", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({ kind: "net_sales", name: "Meta de vendas", target: "1000.00" });
+  server.cancelFailure = { code: "BAD_REQUEST", status: 400 };
+  await openGoals(page, server);
+
+  const goal = card(page, "Meta de vendas");
+  const dialog = page.getByRole("dialog");
+  await goal
+    .getByRole("button", { name: "Cancelar meta Meta de vendas" })
+    .click();
+  await dialog.getByRole("button", { name: "Confirmar cancelamento" }).click();
+
+  // the dialog closes with any answer; what happened is said right under the heading
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByText("Não foi possível concluir a operação. Tente novamente.")
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { exact: true, level: 2, name: "Metas" })
+  ).toBeFocused();
+  // nothing was cancelled: the goal is still active, with its buttons
+  expect(server.goals[0]?.status).toBe("active");
+  await expect(card(page, "Meta de vendas")).not.toContainText("Cancelada");
+  await expect(
+    goal.getByRole("button", { name: "Cancelar meta Meta de vendas" })
+  ).toBeVisible();
 });
 
 test("as metas finais não têm editar nem cancelar", async ({ page }) => {

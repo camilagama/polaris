@@ -99,10 +99,16 @@ export function rpcClient(origin: string, headers: Headers): PolarisRpcClient {
 /** The browser contexts a test opened, closed when it ends (fixture `contexts`). */
 const openContexts: import("@playwright/test").BrowserContext[] = [];
 /** The address each /rpc/ request of those contexts carried, against the journey's own. */
-const rpcAddresses: Promise<{
-  clientIp: string;
-  sent: string | undefined;
-} | null>[] = [];
+const rpcAddresses: Promise<RpcAddress>[] = [];
+
+/** What reading one request's headers gave: the addresses, nothing (the target closed), or an error to fail on. */
+type RpcAddress =
+  | { clientIp: string; sent: string | undefined }
+  | { failure: unknown }
+  | null;
+
+/** The one error that is expected when a request finishes while its context closes. */
+const CLOSED_TARGET = /has been closed/;
 
 let helpersPromise:
   | Promise<{ helpers: AuthHelpers; sql: Sql; close: () => Promise<void> }>
@@ -196,14 +202,19 @@ export async function openJourney(
   // checked when the test ends: every /rpc/ of the browser left with the journey's address, not 127.0.0.1 (only the
   // finished ones: `allHeaders` of a request a navigation aborted never settles). A background request (the
   // connection probe, the sync scheduler) can finish while the context closes: its headers can no longer be read,
-  // so it is left out (null) instead of failing the journey with "Target page, context or browser has been closed"
+  // so it is left out (null) instead of failing the journey with "Target page, context or browser has been closed".
+  // Any other error reading the headers is kept and fails the journey below
   context.on("requestfinished", (request) => {
     if (new URL(request.url()).pathname.startsWith("/rpc/")) {
       rpcAddresses.push(
         request
           .allHeaders()
           .then((headers) => ({ clientIp, sent: headers[CLIENT_IP_HEADER] }))
-          .catch(() => null)
+          .catch((failure: unknown) =>
+            failure instanceof Error && CLOSED_TARGET.test(failure.message)
+              ? null
+              : { failure }
+          )
       );
     }
   });
@@ -233,14 +244,29 @@ export const test = base.extend<{ contexts: undefined }, { sql: Sql }>({
         });
       }
       const addresses = await Promise.all(rpcAddresses.splice(0));
-      await Promise.all(
-        openContexts.splice(0).map((context) => context.close())
-      );
+      const contexts = openContexts.splice(0);
+      await Promise.all(contexts.map((context) => context.close()));
       if (testInfo.status === testInfo.expectedStatus) {
+        const failures = addresses.filter(
+          (address) => address !== null && "failure" in address
+        );
         playwrightExpect(
-          addresses.filter(
-            (address) => address !== null && address.sent !== address.clientIp
-          ),
+          failures,
+          "the headers of every /rpc/ of the browser could be read"
+        ).toEqual([]);
+        const read = addresses.filter(
+          (address) => address !== null && "sent" in address
+        );
+        // a journey that read none would pass the address check without checking anything; a test that opened no
+        // browser context (the `pilha` project, over `request` and `rpcClient`) has no address to read
+        if (contexts.length > 0) {
+          playwrightExpect(
+            read.length,
+            "at least one /rpc/ address of the browser was read"
+          ).toBeGreaterThan(0);
+        }
+        playwrightExpect(
+          read.filter((address) => address.sent !== address.clientIp),
           "every /rpc/ of the browser carries the journey's client address"
         ).toEqual([]);
       }

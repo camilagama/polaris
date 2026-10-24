@@ -19,6 +19,7 @@ import {
 } from "@/ui/dropdown-menu";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { focusLater } from "../lib/focus";
 import {
   type CategoryListStatus,
@@ -38,6 +39,10 @@ const BADGE_VARIANT = {
 /** What a row is doing besides showing the category. */
 export type RowMode = "delete" | "rename" | null;
 
+/** What an item of the menu that needs the connection looks like while there is none. */
+const ITEM_OFFLINE =
+  "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+
 interface RowActions {
   onArchive: (category: CategoryReadModel) => void;
   onDelete: (category: CategoryReadModel) => void;
@@ -56,6 +61,7 @@ interface CategoryMenuProps {
   onDeleteStart: RowActions["onDeleteStart"];
   onRenameStart: RowActions["onRenameStart"];
   onRestore: RowActions["onRestore"];
+  online: boolean;
   pending: boolean;
 }
 
@@ -66,6 +72,7 @@ function CategoryMenu({
   onDeleteStart,
   onRenameStart,
   onRestore,
+  online,
   pending,
 }: CategoryMenuProps) {
   const handleRename = useCallback(
@@ -101,9 +108,21 @@ function CategoryMenu({
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuItem onClick={handleRename}>Renomear</DropdownMenuItem>
         {category.status === "active" ? (
-          <DropdownMenuItem onClick={handleArchive}>Arquivar</DropdownMenuItem>
+          <DropdownMenuItem
+            {...connectionControlProps(online)}
+            className={ITEM_OFFLINE}
+            onClick={handleArchive}
+          >
+            Arquivar
+          </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={handleRestore}>Restaurar</DropdownMenuItem>
+          <DropdownMenuItem
+            {...connectionControlProps(online)}
+            className={ITEM_OFFLINE}
+            onClick={handleRestore}
+          >
+            Restaurar
+          </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleDelete}>Remover</DropdownMenuItem>
@@ -118,6 +137,7 @@ interface RenameFormProps {
   onCancel: () => void;
   onChange: (value: string) => void;
   onSubmit: (category: CategoryReadModel) => void;
+  online: boolean;
   value: string;
 }
 
@@ -128,6 +148,7 @@ function RenameForm({
   onCancel,
   onChange,
   onSubmit,
+  online,
   value,
 }: RenameFormProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -143,11 +164,12 @@ function RenameForm({
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (value.trim() !== "") {
+      // offline nothing leaves and nothing typed is touched: the button says why
+      if (online && value.trim() !== "") {
         onSubmit(category);
       }
     },
-    [category, onSubmit, value]
+    [category, online, onSubmit, value]
   );
   return (
     <form
@@ -182,7 +204,11 @@ function RenameForm({
         )}
       </Field>
       <div className="flex gap-3 min-[30rem]:items-start">
-        <Button disabled={isPending || tooLong} type="submit">
+        <Button
+          {...connectionControlProps(online)}
+          disabled={isPending || tooLong}
+          type="submit"
+        >
           Salvar
         </Button>
         <Button
@@ -203,6 +229,7 @@ interface DeleteConfirmProps {
   isPending: boolean;
   onCancel: () => void;
   onConfirm: (category: CategoryReadModel) => void;
+  online: boolean;
 }
 
 /** Removing is the one action with no way back: it asks again, in the row, and says what stays. */
@@ -211,15 +238,17 @@ function DeleteConfirm({
   isPending,
   onCancel,
   onConfirm,
+  online,
 }: DeleteConfirmProps) {
   const groupRef = useRef<HTMLFieldSetElement>(null);
   useEffect(() => {
     focusLater(() => groupRef.current?.focus());
   }, []);
-  const handleConfirm = useCallback(
-    () => onConfirm(category),
-    [category, onConfirm]
-  );
+  const handleConfirm = useCallback(() => {
+    if (online) {
+      onConfirm(category);
+    }
+  }, [category, online, onConfirm]);
   return (
     <fieldset
       className="grid w-full min-w-0 gap-3 outline-none"
@@ -245,6 +274,7 @@ function DeleteConfirm({
           Cancelar
         </Button>
         <Button
+          {...connectionControlProps(online)}
           disabled={isPending}
           onClick={handleConfirm}
           type="button"
@@ -260,6 +290,7 @@ function DeleteConfirm({
 interface CategoryRowProps extends RowActions {
   category: CategoryReadModel;
   mode: RowMode;
+  online: boolean;
   pendingAction: string | null;
   renameValue: string;
 }
@@ -267,6 +298,7 @@ interface CategoryRowProps extends RowActions {
 function CategoryRow({
   category,
   mode,
+  online,
   pendingAction,
   renameValue,
   ...actions
@@ -281,6 +313,7 @@ function CategoryRow({
           onCancel={actions.onRenameCancel}
           onChange={actions.onRenameChange}
           onSubmit={actions.onRenameSubmit}
+          online={online}
           value={renameValue}
         />
       </li>
@@ -294,6 +327,7 @@ function CategoryRow({
           isPending={pending}
           onCancel={actions.onDeleteCancel}
           onConfirm={actions.onDelete}
+          online={online}
         />
       </li>
     );
@@ -331,6 +365,7 @@ function CategoryRow({
           onDeleteStart={actions.onDeleteStart}
           onRenameStart={actions.onRenameStart}
           onRestore={actions.onRestore}
+          online={online}
           pending={pending}
         />
       )}
@@ -341,6 +376,7 @@ function CategoryRow({
 interface CategoryListProps extends RowActions {
   categories: CategoryReadModel[];
   isLoading: boolean;
+  online: boolean;
   pendingAction: string | null;
   pendingDeleteId: string | null;
   renameValue: string;
@@ -351,6 +387,7 @@ interface CategoryListProps extends RowActions {
 export function CategoryList({
   categories,
   isLoading,
+  online,
   pendingAction,
   pendingDeleteId,
   renameValue,
@@ -389,6 +426,7 @@ export function CategoryList({
             category={category}
             key={category.id}
             mode={modeOf(category.id)}
+            online={online}
             pendingAction={pendingAction}
             renameValue={renameValue}
           />

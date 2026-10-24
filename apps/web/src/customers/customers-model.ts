@@ -23,6 +23,16 @@ export const CONTACT_REQUIRED_TEXT =
   "Informe ao menos um telefone ou email para o cliente.";
 export const NAME_REQUIRED_TEXT = "Informe o nome do cliente.";
 
+const MOBILE_OR_LANDLINE = /^(\d\d)(\d{4,5})(\d{4})$/;
+
+/**
+ * The phone as the list shows it: 11 digits as "(11) 90000-0003", 10 as "(11) 3000-0003". Any other size, or
+ * anything with more than digits (typed with its own marks), stays as it was typed.
+ */
+export function formatCustomerPhone(phone: string): string {
+  return phone.replace(MOBILE_OR_LANDLINE, "($1) $2-$3");
+}
+
 export function hasCustomerContact(draft: CustomerDraft): boolean {
   return Boolean(draft.phone.trim() || draft.email.trim());
 }

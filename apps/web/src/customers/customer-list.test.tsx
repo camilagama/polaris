@@ -87,7 +87,7 @@ describe("the list of customers", () => {
       ],
     });
     expect(html).toContain("Ana Lima");
-    expect(html).toContain("11900000001 · ana@exemplo.com");
+    expect(html).toContain("(11) 90000-0001 · ana@exemplo.com");
     expect(html).toContain("Prefere o WhatsApp.");
     expect(html).toContain("Ativo");
     expect(html).toContain("Atualizado em");
