@@ -10,6 +10,7 @@ import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates, settle } from "./ui-entry-states";
 import { expenseStates } from "./ui-expense-states";
 import { historyStates } from "./ui-history-states";
+import { homeStates } from "./ui-home-states";
 import {
   catalogStates,
   categoryStates,
@@ -357,6 +358,19 @@ async function exerciseGoalOverlays(page: Page) {
     { role: "listbox" }
   );
 }
+
+/** The files of the Início (`ui-home-states.ts`). */
+const HOME_SOURCES = ["src/home"];
+
+/** One state of the Início, at `/` in the real shell. */
+const homeScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `início ${name}`,
+  open,
+  sourceDirs: HOME_SOURCES,
+});
 
 /** The files of the sales history on the new interface. */
 const HISTORY_SOURCES = [
@@ -761,6 +775,9 @@ export const SCREENS: UiScreen[] = [
     exerciseGoalOverlays
   ),
   resultScreen("sem dados", resultStates.empty),
+  homeScreen("com vendas", homeStates.sold),
+  homeScreen("loja nova", homeStates.fresh),
+  homeScreen("erro nos números", homeStates.error),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),

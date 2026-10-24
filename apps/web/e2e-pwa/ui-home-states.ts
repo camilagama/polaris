@@ -26,6 +26,23 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+/** A 500 of the server, with the Worker's mark. */
+const FAILURE = {
+  body: JSON.stringify({
+    json: {
+      code: "INTERNAL_SERVER_ERROR",
+      data: {},
+      defined: false,
+      message: "INTERNAL_SERVER_ERROR",
+      status: 500,
+    },
+    meta: [],
+  }),
+  contentType: "application/json",
+  headers: { ...WORKER_MARK },
+  status: 500,
+};
+
 const SOLD: Readonly<Record<string, [string, number]>> = {
   "2026-09-28": ["310.00", 2],
   "2026-10-17": ["420.50", 3],
@@ -35,7 +52,12 @@ const SOLD: Readonly<Record<string, [string, number]>> = {
   "2026-10-23": ["520.00", 2],
 };
 
-function summary(from: string, to: string, ranked: boolean) {
+function summary(
+  from: string,
+  to: string,
+  ranked: boolean,
+  sold: Readonly<Record<string, [string, number]>> = SOLD
+) {
   const daily: { date: string; netSales: string; salesCount: number }[] = [];
   let cents = 0;
   let count = 0;
@@ -45,7 +67,7 @@ function summary(from: string, to: string, ranked: boolean) {
     time += DAY
   ) {
     const date = new Date(time).toISOString().slice(0, 10);
-    const [netSales, salesCount] = SOLD[date] ?? ["0.00", 0];
+    const [netSales, salesCount] = sold[date] ?? ["0.00", 0];
     daily.push({ date, netSales, salesCount });
     cents += Math.round(Number(netSales) * 100);
     count += salesCount;
@@ -150,11 +172,49 @@ function balances(input: Record<string, unknown>) {
   };
 }
 
+/** The answer of one read of the Início in the scenario served. */
+function answer(
+  asked: string,
+  input: Record<string, unknown>,
+  { failing, fresh }: { failing: boolean; fresh: boolean }
+) {
+  if (asked === "report/periodSummary") {
+    return failing
+      ? FAILURE
+      : rpc(
+          summary(
+            String(input.from),
+            String(input.to),
+            Boolean(input.topProducts),
+            fresh ? {} : SOLD
+          )
+        );
+  }
+  if (asked === "goal/list") {
+    return rpc({ goals: fresh ? [] : [GOAL] });
+  }
+  if (asked === "inventory/listBalances") {
+    return rpc(fresh ? { entries: [], nextCursor: null } : balances(input));
+  }
+  return rpc({ hasMore: false, sales: [] });
+}
+
+interface HomeServed {
+  /** `report.periodSummary` answers 500: the alert in the place of the figures. */
+  failing?: boolean;
+  /** A store that never sold and has no product: the checklist. */
+  fresh?: boolean;
+  signedIn?: boolean;
+}
+
 /**
  * Answers the reads of the Início; register it after a catch-all of `/rpc` (the last route registered is the first
  * asked). With `signedIn`, also the session and the store, for a page opened without the shell's own helper.
  */
-export async function serveHome(page: Page, { signedIn = false } = {}) {
+export async function serveHome(
+  page: Page,
+  { failing = false, fresh = false, signedIn = false }: HomeServed = {}
+) {
   if (signedIn) {
     await page.route("**/rpc/**", (route) =>
       route.abort("internetdisconnected")
@@ -177,32 +237,56 @@ export async function serveHome(page: Page, { signedIn = false } = {}) {
     "sale/list",
   ]) {
     // biome-ignore lint/performance/noAwaitInLoops: one route at a time, in order
-    await page.route(`**/rpc/${procedure}`, (route: Route) => {
-      const input =
-        (route.request().postDataJSON() as { json?: Record<string, unknown> })
-          .json ?? {};
-      const asked = new URL(route.request().url()).pathname.replace(
-        RPC_PREFIX,
-        ""
-      );
-      if (asked === "report/periodSummary") {
-        return route.fulfill(
-          rpc(
-            summary(
-              String(input.from),
-              String(input.to),
-              Boolean(input.topProducts)
-            )
-          )
-        );
-      }
-      if (asked === "goal/list") {
-        return route.fulfill(rpc({ goals: [GOAL] }));
-      }
-      if (asked === "inventory/listBalances") {
-        return route.fulfill(rpc(balances(input)));
-      }
-      return route.fulfill(rpc({ hasMore: false, sales: [] }));
-    });
+    await page.route(`**/rpc/${procedure}`, (route: Route) =>
+      route.fulfill(
+        answer(
+          new URL(route.request().url()).pathname.replace(RPC_PREFIX, ""),
+          (route.request().postDataJSON() as { json?: Record<string, unknown> })
+            .json ?? {},
+          { failing, fresh }
+        )
+      )
+    );
   }
 }
+
+/** Opens `/` in the shell and waits for the state drawn; the fonts are loaded and the focus is nowhere. */
+async function openHome(
+  page: Page,
+  served: HomeServed,
+  ready: (page: Page) => Promise<void>
+) {
+  await serveHome(page, { ...served, signedIn: true });
+  await page.goto("/");
+  await page.getByRole("heading", { level: 1, name: "Início" }).waitFor();
+  await ready(page);
+  await page.evaluate(() => document.fonts.ready);
+}
+
+/** The states of the Início the interface guardrails measure (`ui-screens.ts`). */
+export const homeStates = {
+  /** The numbers did not load: the alert with "Tentar novamente", Meta and Atenção still there. */
+  error: (page: Page) =>
+    openHome(page, { failing: true }, (opened) =>
+      opened
+        .getByText("Não foi possível carregar os números da loja.")
+        .waitFor()
+    ),
+  /** A store that never sold and has no product: the checklist, Meta and Atenção. */
+  fresh: (page: Page) =>
+    openHome(page, { fresh: true }, (opened) =>
+      opened.getByRole("link", { name: "Cadastrar produto" }).waitFor()
+    ),
+  /** A store with sales: every block, with the chart drawn (not the box that holds its place). */
+  sold: (page: Page) =>
+    openHome(page, {}, async (opened) => {
+      await opened
+        .getByRole("region", { name: "Vendas por dia" })
+        .getByRole("img")
+        .waitFor();
+      await opened
+        .locator("[data-chart-loading]")
+        .first()
+        .waitFor({ state: "detached" });
+    }),
+};
