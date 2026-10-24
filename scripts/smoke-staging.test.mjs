@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runSmoke } from "./smoke-staging.mjs";
 
 const origins = {
-  catalog: "https://polaris-catalog-staging.example.workers.dev",
+  catalog: "https://catalogo.araute.app",
   web: "https://polaris-web-staging.example.workers.dev",
 };
 
@@ -131,18 +131,29 @@ describe("the staging smoke", () => {
     expect(urls).toContain(`${web}/health`);
   });
 
-  it("accepts the fixed staging catalog host, and still the workers.dev one", async () => {
-    const catalog = "https://catalogo.araute.app";
+  it("accepts the fixed staging catalog host and refuses the workers.dev one, before any request", async () => {
     const urls = [];
     const fetchImpl = (url) => {
       urls.push(url);
-      return fakeStaging()(url.replace(catalog, origins.catalog));
+      return fakeStaging()(url);
     };
-    expect(await runSmoke({ ...origins, catalog }, fetchImpl, noPause)).toEqual(
-      []
-    );
-    expect(urls).toContain(`${catalog}/`);
-    expect(await runSmoke(origins, fakeStaging(), noPause)).toEqual([]);
+    expect(await runSmoke(origins, fetchImpl, noPause)).toEqual([]);
+    expect(urls).toContain(`${origins.catalog}/`);
+
+    const refusing = vi.fn();
+    expect(
+      await runSmoke(
+        {
+          ...origins,
+          catalog: "https://polaris-catalog-staging.example.workers.dev",
+        },
+        refusing,
+        noPause
+      )
+    ).toEqual([
+      "catalog: the origin must be https://polaris-<app>-staging.…, https://dash.araute.app (web) or https://catalogo.araute.app (catalog), without a path",
+    ]);
+    expect(refusing).not.toHaveBeenCalled();
   });
 
   it("refuses an origin that is not an https staging origin without a path, before any request", async () => {
