@@ -373,14 +373,27 @@ describe("views", () => {
   it("says why the list without a cost is empty, online and without connection", () => {
     const filters = { ...defaultStockFilters, unknownCost: true };
     expect(stockEmptyMessage(filters)).toBe("Todas as variantes têm custo.");
-    expect(stockEmptyMessage(filters, true)).toBe(
-      "O custo médio só aparece com conexão."
+    const offlineMessage =
+      "Sem internet. A lista de variantes sem custo só carrega com conexão.";
+    expect(stockEmptyMessage(filters, true)).toBe(offlineMessage);
+    expect(stockEmptyMessage({ ...filters, query: "azul" }, true)).toBe(
+      offlineMessage
     );
     expect(stockListView(ready([]), filters, true)).toMatchObject({
       kind: "empty",
-      message: "O custo médio só aparece com conexão.",
+      message: offlineMessage,
       showCatalogLink: false,
     });
+  });
+
+  it("does not count the variants without a cost when the device cannot know them", () => {
+    const filters = { ...defaultStockFilters, unknownCost: true };
+    expect(stockCountText(ready([]), filters, true)).toBeNull();
+    // online it is the server's count; offline without the filter it is the device's list
+    expect(stockCountText(ready([]), filters)).toBe("0 variantes");
+    expect(stockCountText(ready([entry(1)]), defaultStockFilters, true)).toBe(
+      "1 variante"
+    );
   });
 
   it("says so when the unknown cost and the stock filter leave nothing", () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findLinkedProduct,
   PRODUCT_LINK_NOT_FOUND,
+  productLinkFailure,
   readProductsLink,
 } from "./products-link-model";
 
@@ -92,5 +93,22 @@ describe("findLinkedProduct", () => {
     expect(PRODUCT_LINK_NOT_FOUND).toBe(
       "Produto não encontrado. Escolha um produto na lista."
     );
+  });
+
+  it("says a failed read of the product can be tried again only when no answer came or the server is out", () => {
+    const words = "Não foi possível abrir o produto. Tente novamente.";
+    expect(productLinkFailure(new TypeError("fetch failed"))).toEqual({
+      message: words,
+      retryable: true,
+    });
+    expect(productLinkFailure({ code: "SERVICE_UNAVAILABLE" })).toEqual({
+      message: words,
+      retryable: true,
+    });
+    // a refusal keeps its own explanation, and trying again would only repeat it
+    expect(productLinkFailure({ code: "FORBIDDEN" })).toEqual({
+      message: "Sua conta não tem acesso a esta loja ou a esta ação.",
+      retryable: false,
+    });
   });
 });

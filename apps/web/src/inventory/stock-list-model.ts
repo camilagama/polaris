@@ -250,18 +250,30 @@ export function stockRows(
   }));
 }
 
+/** The device does not know which variants have no cost: it says so instead of an empty list. */
+const STOCK_UNKNOWN_COST_OFFLINE =
+  "Sem internet. A lista de variantes sem custo só carrega com conexão.";
+
+/** Whether the list of the variants without a cost is one the device cannot answer. */
+function unknownCostUnanswerable(
+  filters: StockFilters,
+  costUnavailable: boolean
+): boolean {
+  return filters.unknownCost && costUnavailable;
+}
+
 export function stockEmptyMessage(
   filters: StockFilters,
   costUnavailable = false
 ): string {
   const query = filters.query.trim();
+  if (unknownCostUnanswerable(filters, costUnavailable)) {
+    return STOCK_UNKNOWN_COST_OFFLINE;
+  }
   if (query !== "") {
     return `Nenhuma variante encontrada para “${query}”.`;
   }
   if (filters.unknownCost) {
-    if (costUnavailable) {
-      return "O custo médio só aparece com conexão.";
-    }
     return filters.stock === "all"
       ? "Todas as variantes têm custo."
       : "Nenhuma variante sem custo com esse saldo.";
@@ -325,8 +337,18 @@ export function stockMoreView(state: StockListState): StockMoreView {
   };
 }
 
-/** "12 variantes" / "mais variantes disponíveis" caption above the list. */
-export function stockCountText(state: StockListState): string {
+/**
+ * "12 variantes" / "mais variantes disponíveis" caption above the list. Without a connection and with "Sem custo"
+ * on there is no count: the device does not know how many variants lack a cost, and a zero would be invented.
+ */
+export function stockCountText(
+  state: StockListState,
+  filters: StockFilters = defaultStockFilters,
+  costUnavailable = false
+): string | null {
+  if (unknownCostUnanswerable(filters, costUnavailable)) {
+    return null;
+  }
   const count = state.entries.length;
   const noun = count === 1 ? "variante" : "variantes";
   return state.nextCursor === null

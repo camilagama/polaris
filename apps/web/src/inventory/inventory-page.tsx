@@ -214,6 +214,8 @@ export function InventoryPage() {
   );
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state);
+  const countText =
+    state.status === "ready" ? stockCountText(state, filters, offline) : null;
 
   const handleQuery = useCallback(
     (event: ChangeEvent<HTMLInputElement>) =>
@@ -344,7 +346,7 @@ export function InventoryPage() {
         className="min-h-5 text-muted-foreground text-support"
         role="status"
       >
-        {state.status === "ready" ? stockCountText(state) : " "}
+        {countText ?? " "}
       </p>
 
       {view.kind === "ready" ? (

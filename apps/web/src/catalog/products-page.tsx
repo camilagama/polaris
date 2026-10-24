@@ -31,6 +31,7 @@ import {
   ProductsHeader,
 } from "./products-page-parts";
 import { useProductsData } from "./use-products-data";
+import type { ProductLinkFailure } from "./products-link-model";
 import { useProductsLink } from "./use-products-link";
 
 function countTextFor(shown: number, total: number, query: string): string {
@@ -38,6 +39,30 @@ function countTextFor(shown: number, total: number, query: string): string {
     return `${shown} de ${total}`;
   }
   return `${total} ${total === 1 ? "produto" : "produtos"}`;
+}
+
+/**
+ * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
+ * a server that is out says it once (the list's alert, which also reads the product again).
+ */
+function linkFeedbackError(
+  error: string | null,
+  failure: ProductLinkFailure | null,
+  listIsShown: boolean,
+  retry: () => void
+): {
+  fromLink: boolean;
+  message: string | null;
+  onRetry: (() => void) | undefined;
+} {
+  if (error === null && failure && listIsShown) {
+    return {
+      fromLink: true,
+      message: failure.message,
+      onRetry: failure.retryable ? retry : undefined,
+    };
+  }
+  return { fromLink: false, message: error, onRetry: undefined };
 }
 
 export function ProductsPage() {
@@ -58,6 +83,10 @@ export function ProductsPage() {
   // the product the last action archived: the notice offers to restore it
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the product of the address could not be read: what to say and whether trying again can help
+  const [linkFailure, setLinkFailure] = useState<ProductLinkFailure | null>(
+    null
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
@@ -105,6 +134,7 @@ export function ProductsPage() {
       setMediaProductId(panel.media ?? null);
       setVariantsProductId(panel.variants ?? null);
       setError(null);
+      setLinkFailure(null);
       setNotice(null);
       setUndoProduct(null);
     },
@@ -188,13 +218,14 @@ export function ProductsPage() {
   // `?produto=` and `?novo=1`: the panel the address names opens and takes the focus on its title
   const formHeadingRef = useRef<HTMLDivElement>(null);
   const [formStartsOnHeading, setFormStartsOnHeading] = useState(false);
-  useProductsLink(workspace, organizationId, {
+  const { retry: retryLink } = useProductsLink(workspace, organizationId, {
     onNew: () => {
       openOnly({ form: true });
       setDraft(emptyDraft);
       setFormStartsOnHeading(true);
     },
     onNotice: (message) => {
+      setLinkFailure(null);
       setError(message);
       focusFeedback();
     },
@@ -203,7 +234,17 @@ export function ProductsPage() {
       openOnly({ variants: product.id });
       setDraft(emptyDraft);
     },
+    onReadFailed: setLinkFailure,
   });
+  const handleRetryLink = useCallback(() => {
+    setLinkFailure(null);
+    retryLink();
+  }, [retryLink]);
+  // the list's "Tentar novamente" also reads the product of the address again, so the panel opens on the second try
+  const handleRetryList = useCallback(() => {
+    handleRetryLink();
+    refresh();
+  }, [handleRetryLink, refresh]);
 
   const handleNew = useCallback(() => {
     if (formOpen) {
@@ -382,6 +423,19 @@ export function ProductsPage() {
   const visibleProducts = filterByName(products, query);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
+  const feedbackError = linkFeedbackError(
+    error,
+    linkFailure,
+    listIsShown,
+    handleRetryLink
+  );
+  // the person is taken to the alert of the address when it appears (not before: the list's own may replace it)
+  const linkAlertShown = feedbackError.fromLink;
+  useEffect(() => {
+    if (linkAlertShown) {
+      focusFeedback();
+    }
+  }, [focusFeedback, linkAlertShown]);
 
   return (
     <div className="products-page" ref={rootRef}>
@@ -393,8 +447,9 @@ export function ProductsPage() {
         />
         {isOffline ? <OfflineNotice /> : null}
         <ActionFeedback
-          error={error}
+          error={feedbackError.message}
           notice={notice}
+          onRetryError={feedbackError.onRetry}
           onUndo={undoProduct ? handleUndoArchive : undefined}
           regionRef={feedbackRef}
           undoDisabled={isOffline || pendingAction !== null}
@@ -438,7 +493,7 @@ export function ProductsPage() {
         <ProductStatusNav onSelect={handleStatusClick} status={status} />
 
         {loadError ? (
-          <LoadErrorNotice message={loadError} onRetry={refresh} />
+          <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
         ) : (
           <ProductList
             categories={categories}

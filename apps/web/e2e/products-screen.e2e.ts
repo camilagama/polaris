@@ -403,6 +403,82 @@ test("?produto=<uuid> abre o painel do produto, rola até ele e leva o foco ao t
   await expect(menuOf(page, "Produto 01")).toBeFocused();
 });
 
+test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' abre o painel com o foco no título", async ({
+  page,
+}) => {
+  const catalog = [product(1, "Camiseta do teste")];
+  const server = { up: false as boolean };
+  await openServerScreen(page, {
+    lists: [
+      (route) =>
+        server.up
+          ? answerByStatus({ active: catalog, all: catalog })(route)
+          : route.fulfill(unavailable),
+    ],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText(
+    "O catálogo está temporariamente indisponível."
+  );
+  await expect(page.getByText("Não foi possível abrir o produto.")).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("region")).toHaveCount(0);
+  server.up = true;
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
+  const panel = page.getByRole("region", { name: "Camiseta do teste" });
+  await expect(panel).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
+    })
+  ).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o próprio 'Tentar novamente' e abre o painel", async ({
+  page,
+}) => {
+  const catalog = [product(1, "Camiseta do teste")];
+  let linkUp = false;
+  await openServerScreen(page, {
+    lists: [
+      (route) => {
+        const asksAll = (route.request().postData() ?? "").includes(
+          '"status":"all"'
+        );
+        return asksAll && !linkUp
+          ? route.fulfill(unavailable)
+          : answerByStatus({ active: catalog, all: catalog })(route);
+      },
+    ],
+    others: variantsOf,
+    path: `/products?produto=${id(21)}`,
+  });
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText(
+    "Não foi possível abrir o produto. Tente novamente."
+  );
+  await expect(page.getByText("Camiseta do teste")).toBeVisible();
+  // the person is taken to the alert, which is where the button is
+  await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
+  linkUp = true;
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(
+    page.getByRole("region", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(
+    page.locator(":focus").filter({
+      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
+    })
+  ).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o painel dele", async ({
   page,
 }) => {

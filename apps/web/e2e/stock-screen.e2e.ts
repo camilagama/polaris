@@ -273,6 +273,32 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   expect(listRequests.at(-1)).toContain('"cost":"unknown"');
 });
 
+const COUNT_LINE = /^\d+ variantes?/;
+
+test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "1 variante",
+    search: "&filtro=sem-custo",
+  });
+  // the lab's own checkbox takes the network away; the screen then works from the device
+  await page.getByLabel("Rede disponível").uncheck();
+  await expect(page.getByText("Sem conexão.")).toBeVisible();
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByText(
+      "Sem internet. A lista de variantes sem custo só carrega com conexão."
+    )
+  ).toBeVisible();
+  // the device does not know how many variants lack a cost: no zero is written
+  await expect(page.getByText(COUNT_LINE)).toHaveCount(0);
+  await expect(page.getByText("Todas as variantes têm custo.")).toHaveCount(0);
+  // with the filter off the device's own list (and its count) is back
+  await unknownCostFilter(page).click();
+  await expect(page.getByText(COUNT_LINE)).toBeVisible();
+});
+
 test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas têm saldo", async ({
   page,
 }) => {

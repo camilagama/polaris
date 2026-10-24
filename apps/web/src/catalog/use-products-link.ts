@@ -1,11 +1,12 @@
 import type { ProductReadModel } from "@polaris/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import type { Workspace } from "./product-commands";
-import { productErrorMessage } from "./product-errors";
 import {
   findLinkedProduct,
   PRODUCT_LINK_NOT_FOUND,
+  type ProductLinkFailure,
+  productLinkFailure,
   readProductsLink,
 } from "./products-link-model";
 import { listLocalProducts } from "./local-products";
@@ -15,6 +16,8 @@ interface ProductsLinkHandlers {
   onNew: () => void;
   /** The text to say when the address names a product the person cannot see. */
   onNotice: (message: string) => void;
+  /** The read of the product failed (the screen says it, or leaves it to the list's own alert). */
+  onReadFailed: (failure: ProductLinkFailure) => void;
   /** `?produto=<uuid>`: open the panel of the product found. */
   onProduct: (product: ProductReadModel) => void;
 }
@@ -40,16 +43,19 @@ async function readProducts(
 
 /**
  * Opens what the address of `/products` asks for, once. The address is read when the screen opens and never
- * again. A read that failed is tried again when the connection or the copy on the device changes; a product
- * that is not there (also one of another store) is said once, with the same words.
+ * again. A read that failed is tried again when the connection or the copy on the device changes, and by the
+ * `retry` it returns (the "Tentar novamente" of the screen); a product that is not there (also one of another
+ * store) is said once, with the same words.
  */
 export function useProductsLink(
   workspace: Workspace,
   organizationId: string,
   handlers: ProductsLinkHandlers
-): void {
+): { retry: () => void } {
   const [link] = useState(() => readProductsLink(window.location.search));
   const handled = useRef<boolean>(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
   const latest = useRef(handlers);
   latest.current = handlers;
 
@@ -78,11 +84,13 @@ export function useProductsLink(
       })
       .catch((cause: unknown) => {
         if (current) {
-          latest.current.onNotice(productErrorMessage(cause));
+          latest.current.onReadFailed(productLinkFailure(cause));
         }
       });
     return () => {
       current = false;
     };
-  }, [link, organizationId, workspace]);
+  }, [attempt, link, organizationId, workspace]);
+
+  return { retry };
 }
