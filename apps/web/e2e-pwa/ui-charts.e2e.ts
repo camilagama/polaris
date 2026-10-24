@@ -1,0 +1,388 @@
+/// <reference lib="dom" />
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { watchCspViolations } from "../e2e/csp-fixture";
+import { axeViolations } from "./ui-guardrails";
+
+/**
+ * The charts and the Tabs of src/ui/ in the gallery (ADR 0103, amendment "Gráficos", t285): the charts open from
+ * their own chunk and not before, are an image with a name and a keyboard control, draw in the width of their box,
+ * take their colors from the tokens, fade in and stop when the page asks for no motion; the chunk that fails leaves
+ * the text; the Tabs have the height, the touch area and the focus of the other controls. Each measure is the one
+ * the browser makes, in both themes, and axe finds nothing with the charts on the page.
+ */
+const THEMES = [
+  { colorScheme: "light", name: "claro", stored: "claro" },
+  { colorScheme: "light", name: "escuro", stored: "escuro" },
+] as const;
+
+const CHARTS_CHUNK = "**/assets/charts-*.js";
+const WEEK_LABEL =
+  /^Vendas líquidas por dia, de 17\/10 a 23\/10, dados de exemplo$/;
+const WITHOUT_DATA = /sem dados$/;
+const SHORT_DATE = /^\d\d\/\d\d$/;
+const RANGE_OF_THE_WEEK = "Dia, série de 7 dias";
+
+async function openGallery(page: Page, stored: string | null = null) {
+  if (stored) {
+    await page.addInitScript((theme) => {
+      window.localStorage.setItem("polaris-tema", theme);
+    }, stored);
+  }
+  await page.goto("/ui-galeria");
+  await expect(
+    page.getByRole("heading", { name: "Galeria da interface" })
+  ).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+}
+
+async function openGalleryWithCharts(page: Page, stored: string | null = null) {
+  await openGallery(page, stored);
+  const areas = page.getByRole("region", { name: "Gráficos de área" });
+  await expect(areas.getByRole("img")).toHaveCount(6);
+  await expect(
+    page.getByRole("region", { name: "Miniaturas" }).locator("svg")
+  ).toHaveCount(5);
+  return areas;
+}
+
+/** The box of a control grown by its touch pseudo-element, in pixels (as in ui-components.e2e.ts). */
+const touchArea = (element: Element) => {
+  const box = element.getBoundingClientRect();
+  const sizes = (["::before", "::after"] as const).map((pseudo) => {
+    const style = getComputedStyle(element, pseudo);
+    if (style.content === "none" || style.position !== "absolute") {
+      return { height: 0, width: 0 };
+    }
+    const px = (value: string) => Number.parseFloat(value) || 0;
+    return {
+      height: box.height - px(style.top) - px(style.bottom),
+      width: box.width - px(style.left) - px(style.right),
+    };
+  });
+  return {
+    height: Math.max(box.height, ...sizes.map((size) => size.height)),
+    width: Math.max(box.width, ...sizes.map((size) => size.width)),
+  };
+};
+
+/** A token as the browser resolves it for a stroke or a fill. */
+const resolveToken = (page: Page, token: string) =>
+  page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  }, token);
+
+test("os gráficos têm nome, resumo e um controle de teclado que lê a data e o valor", async ({
+  page,
+}) => {
+  const areas = await openGalleryWithCharts(page);
+
+  // the image is named by its summary
+  const week = areas.getByRole("img", { name: WEEK_LABEL });
+  await expect(week).toBeVisible();
+
+  // the day in focus is the last one, read in a line of text above the drawing
+  const reading = areas.locator("p[aria-live=polite]").first();
+  await expect(reading).toHaveText("23/10 R$ 520,00");
+
+  // the range input walks through the points and speaks them
+  const slider = areas.getByRole("slider", { name: RANGE_OF_THE_WEEK });
+  await expect(slider).toHaveAttribute("aria-valuetext", "23/10: R$ 520,00");
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(slider).toHaveAttribute("aria-valuetext", "22/10: R$ 0,00");
+  await expect(reading).toHaveText("22/10 R$ 0,00");
+  await page.keyboard.press("Home");
+  await expect(slider).toHaveAttribute("aria-valuetext", "17/10: R$ 420,50");
+  await page.keyboard.press("End");
+  await expect(slider).toHaveAttribute("aria-valuetext", "23/10: R$ 520,00");
+
+  // the keyboard focus is drawn around the chart: the 3 px outline of the other controls
+  await page.keyboard.press("ArrowLeft");
+  const outline = await slider.evaluate((input) => {
+    const style = getComputedStyle(input);
+    return { style: style.outlineStyle, width: style.outlineWidth };
+  });
+  expect(outline).toEqual({ style: "solid", width: "3px" });
+
+  // the series without data, with one point and all zero are named and have no keyboard control, or only one stop
+  await expect(areas.getByRole("img", { name: WITHOUT_DATA })).toBeVisible();
+  await expect(areas.getByRole("slider", { name: "Dia, vazio" })).toHaveCount(
+    0
+  );
+  await expect(
+    areas.getByRole("slider", { name: "Dia, um ponto" })
+  ).toHaveAttribute("max", "0");
+});
+
+test("o ponteiro move o dia em foco e a leitura o acompanha", async ({
+  isMobile,
+  page,
+}) => {
+  test.skip(isMobile, "a mouse moves over the drawing; with touch it is a tap");
+  const areas = await openGalleryWithCharts(page);
+  const week = areas.getByRole("img", { name: WEEK_LABEL });
+  await week.scrollIntoViewIfNeeded();
+  const box = await week.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) {
+    return;
+  }
+  const reading = areas.locator("p[aria-live=polite]").first();
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await expect(reading).toHaveText("17/10 R$ 420,50");
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+  await expect(reading).toHaveText("23/10 R$ 520,00");
+});
+
+test("o desenho usa a largura da caixa, sem encolher o texto dos eixos", async ({
+  isMobile,
+  page,
+}) => {
+  const areas = await openGalleryWithCharts(page);
+  const week = areas.getByRole("img", { name: WEEK_LABEL });
+  const measures = await week.evaluate((svg) => {
+    const box = (svg.parentElement as Element).getBoundingClientRect();
+    const sizes = [...svg.querySelectorAll("text")].map((text) =>
+      Number.parseFloat(getComputedStyle(text).fontSize)
+    );
+    return {
+      boxWidth: Math.round(box.width),
+      svgWidth: Math.round(svg.getBoundingClientRect().width),
+      textSizes: [...new Set(sizes)].sort(),
+      viewBox: svg.getAttribute("viewBox"),
+    };
+  });
+  // drawn in its own width: no viewBox of a larger drawing shrunk into the box
+  expect(measures.viewBox).toBeNull();
+  expect(measures.svgWidth).toBe(measures.boxWidth);
+  // the 11 px of the y axis and the 12 px of the dates stay what they are
+  expect(measures.textSizes).toEqual([11, 12]);
+  // a week has four dates on a phone and all seven on a wide chart
+  await expect(
+    week.locator("text").filter({ hasText: SHORT_DATE })
+  ).toHaveCount(isMobile ? 4 : 7);
+});
+
+test("a miniatura sai da leitura: sem papel, sem texto e sem controle", async ({
+  page,
+}) => {
+  await openGalleryWithCharts(page);
+  const sparks = page.getByRole("region", { name: "Miniaturas" });
+  await expect(sparks.getByRole("img")).toHaveCount(0);
+  await expect(sparks.getByRole("slider")).toHaveCount(0);
+  const hidden = await sparks.locator("svg").evaluateAll((svgs) =>
+    svgs.map((svg) => ({
+      hidden: svg.closest("[aria-hidden=true]") !== null,
+      texts: svg.querySelectorAll("text").length,
+    }))
+  );
+  expect(hidden).toHaveLength(5);
+  expect(hidden.every((item) => item.hidden && item.texts === 0)).toBe(true);
+});
+
+for (const theme of THEMES) {
+  test(`tema ${theme.name}: as cores vêm dos tokens, a tinta na série e o esmeralda só no melhor dia`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    const areas = await openGalleryWithCharts(page, theme.stored);
+    const ink = await resolveToken(page, "--chart-5");
+    const emerald = await resolveToken(page, "--chart-1");
+    const week = areas.getByRole("img", { name: WEEK_LABEL });
+    const colors = await week.evaluate((svg) => {
+      const read = (element: Element, property: "fill" | "stroke") =>
+        getComputedStyle(element)[property];
+      const paths = [...svg.querySelectorAll("path")];
+      const line = paths.find(
+        (path) =>
+          path.getAttribute("fill") === "none" &&
+          path.getAttribute("stroke") !== null
+      );
+      const dots = [...svg.querySelectorAll("circle")];
+      return {
+        best: dots.map((dot) => read(dot, "fill")),
+        line: line ? read(line, "stroke") : null,
+      };
+    });
+    expect(colors.line).toBe(ink);
+    expect(colors.best).toContain(emerald);
+    // the ink and the emerald are never the same color, in either theme
+    expect(ink).not.toBe(emerald);
+    // a sparkline is the ink too
+    const spark = page
+      .getByRole("region", { name: "Miniaturas" })
+      .locator("svg")
+      .first();
+    expect(
+      await spark.evaluate(
+        (svg) => getComputedStyle(svg.querySelector("circle") as Element).fill
+      )
+    ).toBe(ink);
+    await context.close();
+  });
+
+  test(`tema ${theme.name}: axe não acha violação com os gráficos e as abas na página`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    const csp = await watchCspViolations(page);
+    await openGalleryWithCharts(page, theme.stored);
+    expect(await axeViolations(page)).toEqual([]);
+    // the charts and their gradients need no inline style element: the CSP watch stays empty
+    expect(csp.violations()).toEqual([]);
+    await context.close();
+  });
+}
+
+test("o gráfico entra só com opacidade e para quando a página pede sem movimento", async ({
+  page,
+}) => {
+  const areas = await openGalleryWithCharts(page);
+  const week = areas.getByRole("img", { name: WEEK_LABEL });
+  const animation = () =>
+    week.evaluate((svg) => {
+      const style = getComputedStyle(svg);
+      return {
+        duration: Number.parseFloat(style.animationDuration),
+        name: style.animationName,
+      };
+    });
+  expect(await animation()).toEqual({ duration: 0.22, name: "rise" });
+  // the fade the page already has moves only the opacity (styles/theme.css; the source rule reads it)
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reduced = await animation();
+  expect(reduced.duration).toBeLessThan(0.001);
+});
+
+test("o pedaço dos gráficos só é pedido por quem tem um gráfico", async ({
+  page,
+}) => {
+  const requested: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/assets/charts-")) {
+      requested.push(request.url());
+    }
+  });
+  // a page of the build with no chart never asks for it
+  await page.goto("/ui-pecas-do-shell");
+  await page.waitForLoadState("networkidle");
+  expect(requested).toEqual([]);
+  // the gallery has charts and asks once
+  await openGalleryWithCharts(page);
+  expect(requested).toHaveLength(1);
+});
+
+test("sem o pedaço, o gráfico some e deixa o texto de quem o usa", async ({
+  page,
+}) => {
+  await page.route(CHARTS_CHUNK, (route) => route.abort());
+  await openGallery(page);
+  const areas = page.getByRole("region", { name: "Gráficos de área" });
+  await expect(areas.getByText("O gráfico não abriu.")).toHaveCount(6);
+  await expect(page.locator("svg[role=img]")).toHaveCount(0);
+  await expect(areas.getByRole("slider")).toHaveCount(0);
+  // the miniatures go without a word, and the rest of the page is still there
+  await expect(
+    page.getByRole("region", { name: "Miniaturas" }).locator("svg")
+  ).toHaveCount(0);
+  await expect(page.locator("[data-chart-loading]")).toHaveCount(0);
+  await expect(page.getByRole("tablist", { name: "Período" })).toBeVisible();
+});
+
+test("enquanto o pedaço vem, uma caixa da altura do gráfico guarda o lugar", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(CHARTS_CHUNK, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await openGallery(page);
+  const boxes = page.locator("[data-chart-loading]");
+  await expect(boxes).toHaveCount(12);
+  const heights = await boxes.evaluateAll((items) =>
+    items.map((item) => Math.round(item.getBoundingClientRect().height))
+  );
+  // the six area charts: the drawing and the line of reading above it; the six miniatures: 32 px
+  expect(heights.filter((height) => height === 32)).toHaveLength(6);
+  expect(
+    heights.filter((height) => height === 206 || height === 246)
+  ).toHaveLength(6);
+  release();
+  await expect(boxes).toHaveCount(0);
+});
+
+test("as abas: papel, teclado, altura da lista, área de toque e foco de 3 px", async ({
+  isMobile,
+  page,
+}) => {
+  await openGallery(page);
+  const section = page.getByRole("region", { name: "Abas" });
+  const list = section.getByRole("tablist", { name: "Período" });
+  const sevenDays = section.getByRole("tab", { name: "7 dias" });
+  const thirtyDays = section.getByRole("tab", { name: "30 dias" });
+  await expect(sevenDays).toHaveAttribute("aria-selected", "true");
+  await expect(section.getByRole("tabpanel")).toHaveText(
+    "Os últimos 7 dias, dados de exemplo."
+  );
+
+  // the height of the list is the control height of the base: 32 px with a mouse, 36 px with touch
+  const height = await list.evaluate(
+    (element) => element.getBoundingClientRect().height
+  );
+  expect(height).toBe(isMobile ? 36 : 32);
+
+  // with touch, each tab has a touch area of at least 48 px
+  if (isMobile) {
+    const areas = await Promise.all(
+      [sevenDays, thirtyDays].map((tab) => tab.evaluate(touchArea))
+    );
+    for (const area of areas) {
+      expect(area.height).toBeGreaterThanOrEqual(48);
+      expect(area.width).toBeGreaterThanOrEqual(48);
+    }
+  }
+
+  // the keyboard: the arrow moves the focus, and Enter chooses; the focus is the 3 px outline
+  await sevenDays.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(thirtyDays).toBeFocused();
+  expect(
+    await thirtyDays.evaluate((tab) => {
+      const style = getComputedStyle(tab);
+      return {
+        offset: style.outlineOffset,
+        style: style.outlineStyle,
+        width: style.outlineWidth,
+      };
+    })
+  ).toEqual({ offset: "2px", style: "solid", width: "3px" });
+  await page.keyboard.press("Enter");
+  await expect(thirtyDays).toHaveAttribute("aria-selected", "true");
+  await expect(section.getByRole("tabpanel")).toHaveText(
+    "Os últimos 30 dias, dados de exemplo."
+  );
+  // the open panel is a stop of the keyboard and draws the same outline
+  await page.keyboard.press("Tab");
+  await expect(section.getByRole("tabpanel")).toBeFocused();
+  expect(
+    await section
+      .getByRole("tabpanel")
+      .evaluate((panel) => getComputedStyle(panel).outlineWidth)
+  ).toBe("3px");
+});

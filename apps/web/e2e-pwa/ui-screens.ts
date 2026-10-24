@@ -614,6 +614,11 @@ export const SCREENS: UiScreen[] = [
       await page
         .getByRole("heading", { name: "Galeria da interface" })
         .waitFor();
+      // the charts come from their own chunk: measure them drawn, not the boxes that hold their place
+      await page
+        .locator("[data-chart-loading]")
+        .first()
+        .waitFor({ state: "detached" });
       await page.evaluate(() => document.fonts.ready);
     },
     sourceDirs: ["src/ui-gallery"],

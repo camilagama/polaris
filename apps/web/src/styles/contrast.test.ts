@@ -130,3 +130,36 @@ describe.each([
     }
   );
 });
+
+/**
+ * The two colors of the charts of src/ui/charts/ (t285): the ink (`--chart-5`, the series) and the middle gray
+ * (`--chart-3`, the dashed second series and the third part of a bar), each over the card they are drawn on. Both pairs
+ * are rows of the tables above; this one says they cannot be taken out of the map, and holds them to the bar of a graphic
+ * element (WCAG 1.4.11, 3:1) with the ink held to the 4.5:1 of text, since the line carries the series for whoever
+ * cannot tell the gradient apart.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste dos gráficos, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`chart-3`", 3],
+    ["`chart-5`", 4.5],
+  ] as const)(
+    "%s / `card` is in the map and reaches %d:1",
+    (foreground, bar) => {
+      const row = rows.find(
+        (item) => item.foreground === foreground && item.background === "`card`"
+      );
+      expect(row, `${foreground} / card is not in "${section}"`).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color("`card`", palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
