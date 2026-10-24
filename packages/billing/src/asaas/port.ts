@@ -247,5 +247,6 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       }
       return "nothing_to_refund";
     },
+    refundsEnabled: true,
   };
 }

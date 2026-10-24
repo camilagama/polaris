@@ -804,6 +804,17 @@ describe("readState", () => {
   });
 });
 
+it.each([
+  [{}, false],
+  [{ refundEnabled: false }, false],
+  [{ refundEnabled: true }, true],
+])(
+  "says whether it can refund (%o: %s), so the refund command cancels nothing it cannot refund",
+  (config, expected) => {
+    expect(portWith(fakeWoovi().fetch, config).refundsEnabled).toBe(expected);
+  }
+);
+
 describe("refundCurrentPeriod", () => {
   const CORRELATION_ID = `refund:${SUBSCRIPTION_ID}:${INSTALLMENT_ID}`;
   const refundingPort = (fetch: FetchLike) =>

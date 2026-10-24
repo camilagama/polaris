@@ -329,5 +329,6 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
         kind: "refund_requested",
       };
     },
+    refundsEnabled: config.refundEnabled === true,
   };
 }

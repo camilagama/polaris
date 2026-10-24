@@ -1,13 +1,13 @@
 /*
  * The lab of the offline persistence (`/offline-poc`, not a screen of the shop): its own rules, in `components`, under the
- * utilities, and out of `legacy`, which goes away with the old screens (ADR 0103, section 3). It reads no token of the old
- * sheets: the colors are its own.
+ * utilities, and out of `legacy`, which goes away with the old screens (ADR 0103, section 3). Every color is a
+ * var(--…) of styles/theme.css, which main.tsx loads before any lab: none is written here (DESIGN.md, "Changing a color").
  */
 @layer components {
   .offline-lab-entry-link {
     align-self: flex-start;
     font-weight: 600;
-    color: #1e5c9a;
+    color: var(--primary);
   }
 
   .offline-lab-shell {
@@ -21,8 +21,8 @@
   .offline-lab-header,
   .offline-lab-panel {
     padding: 1.25rem;
-    background: #fff;
-    border: 1px solid #d7dce2;
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: 0.75rem;
   }
 
@@ -36,7 +36,7 @@
     margin: 0 0 0.5rem;
     font-size: 0.8rem;
     font-weight: 700;
-    color: #536273;
+    color: var(--muted-foreground);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -53,7 +53,7 @@
     padding: 0.35rem 0.65rem;
     font-size: 0.85rem;
     font-weight: 700;
-    background: #eef3f8;
+    background: var(--muted);
     border-radius: 999px;
   }
 
@@ -66,23 +66,25 @@
     padding: 0.55rem 0.8rem;
     font: inherit;
     font-weight: 650;
-    color: #fff;
+    color: var(--primary-foreground);
     text-decoration: none;
     cursor: pointer;
-    background: #1e5c9a;
-    border: 1px solid #174e7d;
+    background: var(--primary);
+    border: 1px solid var(--primary);
     border-radius: 0.45rem;
   }
 
   .offline-lab-panel button:disabled {
+    color: var(--muted-foreground);
     cursor: not-allowed;
-    background: #9aa4ae;
-    border-color: #9aa4ae;
+    background: var(--muted);
+    border-color: var(--border);
   }
 
   .offline-lab-panel .offline-lab-danger {
-    background: #a53232;
-    border-color: #8b2b2b;
+    color: var(--primary-foreground);
+    background: var(--destructive);
+    border-color: var(--destructive);
   }
 
   .offline-lab-grid {
@@ -99,7 +101,7 @@
     justify-content: space-between;
     min-height: 3.2rem;
     padding: 0.65rem;
-    border: 1px solid #e0e5ea;
+    border: 1px solid var(--border);
     border-radius: 0.5rem;
   }
 
@@ -114,11 +116,11 @@
   }
 
   .offline-lab-status-value .is-available {
-    color: #14633b;
+    color: var(--mark-foreground);
   }
 
   .offline-lab-status-value .is-unavailable {
-    color: #8b2b2b;
+    color: var(--destructive);
   }
 
   .offline-lab-form {
@@ -136,7 +138,7 @@
     min-height: 2.5rem;
     padding: 0.5rem 0.65rem;
     font: inherit;
-    border: 1px solid #98a3ae;
+    border: 1px solid var(--input);
     border-radius: 0.4rem;
   }
 
@@ -156,26 +158,26 @@
 
   .offline-lab-muted {
     font-size: 0.9rem;
-    color: #56616b;
+    color: var(--muted-foreground);
   }
 
   .offline-lab-subpanel {
     padding: 1rem 0 0;
     margin-top: 1rem;
-    border-top: 1px solid #e0e5ea;
+    border-top: 1px solid var(--border);
   }
 
   .offline-lab-status,
   .offline-lab-error {
     padding: 0.75rem 1rem;
-    background: #edf6ef;
+    background: var(--accent);
     border-radius: 0.5rem;
   }
 
   .offline-lab-error,
   .offline-lab-panel-error {
-    color: #7b2020;
-    background: #fff0ef;
+    color: var(--destructive);
+    background: color-mix(in oklch, var(--destructive) 10%, var(--card));
   }
 
   @media (min-width: 48rem) {

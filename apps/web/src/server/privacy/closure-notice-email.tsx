@@ -16,6 +16,7 @@ import {
   render,
   Text,
 } from "react-email";
+import { emailColors } from "../email-colors.generated";
 
 /**
  * The e-mail of a closure notice (ADR 0102 amended, design t107 §5), one per milestone: the request, D minus 30 and
@@ -200,8 +201,8 @@ function ClosureNoticeEmail({
       <Preview>{content.preview}</Preview>
       <Body
         style={{
-          backgroundColor: "#ffffff",
-          color: "#111827",
+          backgroundColor: emailColors.background,
+          color: emailColors.foreground,
           fontFamily: "Arial, sans-serif",
           margin: 0,
           padding: "24px 12px",
@@ -227,10 +228,10 @@ function ClosureNoticeEmail({
               <Button
                 href={panelUrl}
                 style={{
-                  backgroundColor: "#111827",
+                  backgroundColor: emailColors.primary,
                   borderRadius: "4px",
                   boxSizing: "border-box",
-                  color: "#ffffff",
+                  color: emailColors.primaryForeground,
                   display: "inline-block",
                   padding: "12px 20px",
                   textDecoration: "none",
@@ -240,7 +241,7 @@ function ClosureNoticeEmail({
               </Button>
               <Text
                 style={{
-                  color: "#374151",
+                  color: emailColors.foreground,
                   fontSize: "14px",
                   lineHeight: "21px",
                 }}
@@ -250,7 +251,11 @@ function ClosureNoticeEmail({
             </>
           )}
           <Text
-            style={{ color: "#4b5563", fontSize: "14px", lineHeight: "21px" }}
+            style={{
+              color: emailColors.mutedForeground,
+              fontSize: "14px",
+              lineHeight: "21px",
+            }}
           >
             Este é um aviso automático sobre o encerramento da loja. O Polaris
             nunca pede a sua senha por e-mail.

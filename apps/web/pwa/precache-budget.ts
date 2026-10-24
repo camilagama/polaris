@@ -11,25 +11,39 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
  *   them to the production build (until then it is zero: no screen uses them);
  * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
- *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, at most 40 KB (45 KB for now, see
- *   below) over the precache before the base, the baseline of the same kind of build. The build prints the interface infrastructure
- *   and the screen (the rest of the growth over the baseline) apart, so a review sees what a screen costs.
- * The production build fails past any line. Going past needs a reason in the pull request and the approval of
- * the Arrascaeta; raising a ceiling without that is not allowed.
+ *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, over the precache before the base,
+ *   the baseline of the same kind of build. While Phases 1 to 3 of the execution plan run, this line only
+ *   warns past 44 KB and the build fails past the hard cap of 80 KB (see `REST_GROWTH_MODE`). The build prints
+ *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
+ *   sees what a screen costs.
+ * The production build fails past the font and primitives lines and past the hard cap of the rest line.
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
+export type RestGrowthMode = "warn" | "block";
+
 /**
- * 45 000 desde a t259 (23/10); cortar JS das telas para voltar a 42 000 é trabalho separado.
+ * Reference ceiling of the rest line: 44 000 no lote 6 (23/10), medido na t256.
  * Batch 6 took the old CSS out (t256): the shell v5.1 is interface infrastructure paid once (it replaced the old
  * shell, about +5.1 KB gzip) and the offline runtime of F7 (connection with proof, about +4.0 KB gzip) came after
  * the 40 KB of ADR 0103, section 4. Taking `@layer legacy` out freed only about 1.3 KB gzip (the CSS went from
- * 17 305 to 16 139 B); the rest of the growth is JS of the screens. The Arrascaeta set 44 KB on 23/10, with the
- * measure of the batch in its pull request. The Arrascaeta raised it to 45 KB on 23/10 for the t259 pull request: the t258
- * had left the main 77 B under 44 KB, and the t259 (states, texts and tests of screens already migrated) costs +449 B
- * (+480 B with the runtime on), with no feature to take out.
+ * 17 305 to 16 139 B); the rest of the growth is JS of the screens. The Arrascaeta set 44 KB on 23/10.
+ * Whether going past it fails the build is `REST_GROWTH_MODE`.
  */
-export const REST_GROWTH_BUDGET_GZIP_BYTES = 45_000;
+export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
+/**
+ * The hard cap of the rest line (t272): the build fails past it in any mode, so the warning of the reference
+ * ceiling cannot grow without end.
+ */
+export const REST_GROWTH_HARD_CAP_GZIP_BYTES = 80_000;
+/**
+ * What going past `REST_GROWTH_BUDGET_GZIP_BYTES` does. "warn" until the cut step before the go-live (Phase 5
+ * of the execution plan), by decision of the user on 23/10/2026 (ADR 0103, amendment of 23/10/2026): the build
+ * prints the total, the reference and the excess, and the hard cap still fails. The cut step takes
+ * `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the screens and goes back to "block"
+ * with a firm ceiling. A constant, not an environment variable: changing it is a reviewed change.
+ */
+export const REST_GROWTH_MODE: RestGrowthMode = "warn";
 
 /**
  * The rest of the precache before the UI base, one number per kind of production build, since the switch of
@@ -185,7 +199,24 @@ export function testOnlyChunkProblems(paths: readonly string[]): string[] {
   });
 }
 
-export function budgetProblems(size: PrecacheSize, baseline: number): string[] {
+function restLine(size: PrecacheSize): number {
+  return size.rest + size.interface;
+}
+
+/** The growth of the rest line over the baseline, in gzip bytes. */
+function restGrowth(size: PrecacheSize, baseline: number): number {
+  return restLine(size) - baseline;
+}
+
+function restDescription(size: PrecacheSize, baseline: number): string {
+  return `rest: ${restLine(size)} B gzip (interface infrastructure ${size.interface} B), +${restGrowth(size, baseline)} B over the baseline of ${baseline} B`;
+}
+
+export function budgetProblems(
+  size: PrecacheSize,
+  baseline: number,
+  mode: RestGrowthMode = REST_GROWTH_MODE
+): string[] {
   const problems: string[] = [];
   if (size.fonts > FONT_BUDGET_BYTES) {
     problems.push(
@@ -197,13 +228,45 @@ export function budgetProblems(size: PrecacheSize, baseline: number): string[] {
       `Base UI primitives: ${size.primitives} B gzip, over the ${PRIMITIVES_BUDGET_GZIP_BYTES} B budget`
     );
   }
-  const growth = size.rest + size.interface - baseline;
-  if (growth > REST_GROWTH_BUDGET_GZIP_BYTES) {
+  const growth = restGrowth(size, baseline);
+  if (growth > REST_GROWTH_HARD_CAP_GZIP_BYTES) {
     problems.push(
-      `rest: ${size.rest + size.interface} B gzip (interface infrastructure ${size.interface} B), +${growth} B over the baseline of ${baseline} B, past the +${REST_GROWTH_BUDGET_GZIP_BYTES} B budget`
+      `${restDescription(size, baseline)}, past the hard cap of +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B`
+    );
+  } else if (mode === "block" && growth > REST_GROWTH_BUDGET_GZIP_BYTES) {
+    problems.push(
+      `${restDescription(size, baseline)}, past the +${REST_GROWTH_BUDGET_GZIP_BYTES} B budget`
     );
   }
   return problems;
+}
+
+/**
+ * What the build says without failing: the rest line past the reference ceiling while the mode is "warn".
+ * Past the hard cap it is a problem, not a warning.
+ */
+export function budgetWarnings(
+  size: PrecacheSize,
+  baseline: number,
+  mode: RestGrowthMode = REST_GROWTH_MODE
+): string[] {
+  const growth = restGrowth(size, baseline);
+  if (
+    mode !== "warn" ||
+    growth <= REST_GROWTH_BUDGET_GZIP_BYTES ||
+    growth > REST_GROWTH_HARD_CAP_GZIP_BYTES
+  ) {
+    return [];
+  }
+  return [
+    `precache over the reference ceiling (warning only until the cut step, ADR 0103, amendment of 23/10/2026): total ${restLine(size)} B gzip, growth +${growth} B, reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, excess +${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B, hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B`,
+  ];
+}
+
+/** The line a review greps for in the CI log: how much the precache has and how much it grew. */
+function growthLine(size: PrecacheSize, baseline: number): string {
+  const growth = restGrowth(size, baseline);
+  return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B)`;
 }
 
 /** Fails the production build of the shell when the precache goes past the budget. */
@@ -262,6 +325,10 @@ export function precacheBudgetPlugin(): Plugin {
       this.info(
         `precache (offline runtime ${offlineRuntime ? "on" : "off"}, baseline ${baseline} B): fonts ${size.fonts} B, Base UI primitives ${size.primitives} B gzip, interface infrastructure ${size.interface} B gzip, screen and the rest ${size.rest} B gzip (${signed(screen)} B over the baseline); rest line ${size.rest + size.interface} B gzip (${signed(growth)} B)`
       );
+      this.info(growthLine(size, baseline));
+      for (const warning of budgetWarnings(size, baseline)) {
+        this.warn(warning);
+      }
       if (problems.length > 0) {
         this.error(
           `Precache check of the shell failed (ADR 0103): ${problems.join("; ")}`

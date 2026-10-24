@@ -366,6 +366,10 @@ describe("cancelRenewal", () => {
   });
 });
 
+it("says it can refund, so the refund command may cancel the renewal first", () => {
+  expect(portWith(fakeAsaas().fetch).refundsEnabled).toBe(true);
+});
+
 describe("refundCurrentPeriod", () => {
   const NOW = new Date("2026-10-25T12:00:00.000Z");
   const withCharges = (...charges: string[]): Route[] => [
@@ -421,6 +425,39 @@ describe("refundCurrentPeriod", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]?.url).toBe("/payments/pay_new001/refund");
     expect(calls.indexOf(posts[0] as Call)).toBe(calls.length - 1);
+  });
+
+  it("refunds the paid charge of a subscription already deleted (the refund command cancels the renewal first)", async () => {
+    const { calls, fetch } = fakeAsaas(
+      (call) =>
+        call.method === "POST"
+          ? { text: '{"status":"REFUND_REQUESTED"}' }
+          : undefined,
+      (call) =>
+        call.url.includes("/subscriptions/sub_abc123/payments")
+          ? {
+              text: list([
+                payment({
+                  due: "2026-10-19",
+                  id: "pay_new001",
+                  status: "CONFIRMED",
+                }),
+              ]),
+            }
+          : undefined,
+      (call) =>
+        call.url.startsWith("/subscriptions?")
+          ? {
+              text: list([subscription({ deleted: true, status: "INACTIVE" })]),
+            }
+          : undefined
+    );
+    await expect(
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW)
+    ).resolves.toBe("refund_requested");
+    expect(
+      calls.filter((call) => call.method === "POST").map((call) => call.url)
+    ).toEqual(["/payments/pay_new001/refund"]);
   });
 
   it("never falls back to an earlier charge when the current one is already being refunded", async () => {

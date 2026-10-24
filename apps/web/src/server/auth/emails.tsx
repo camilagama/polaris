@@ -8,6 +8,7 @@ import {
   Preview,
   Text,
 } from "react-email";
+import { emailColors } from "../email-colors.generated";
 import { LOGIN_LOCK_MINUTES } from "./login-lock";
 
 interface AuthActionEmailProps {
@@ -33,8 +34,8 @@ function AuthActionEmail({
       <Preview>{preview}</Preview>
       <Body
         style={{
-          backgroundColor: "#ffffff",
-          color: "#111827",
+          backgroundColor: emailColors.background,
+          color: emailColors.foreground,
           fontFamily: "Arial, sans-serif",
           margin: 0,
           padding: "24px 12px",
@@ -53,10 +54,10 @@ function AuthActionEmail({
           <Button
             href={actionURL}
             style={{
-              backgroundColor: "#111827",
+              backgroundColor: emailColors.primary,
               borderRadius: "4px",
               boxSizing: "border-box",
-              color: "#ffffff",
+              color: emailColors.primaryForeground,
               display: "inline-block",
               padding: "14px 20px",
               textDecoration: "none",
@@ -67,7 +68,7 @@ function AuthActionEmail({
           {/* the link carries a long token with no break point: without this it widens a 360 px screen */}
           <Text
             style={{
-              color: "#374151",
+              color: emailColors.foreground,
               fontSize: "14px",
               lineHeight: "21px",
               overflowWrap: "anywhere",
@@ -76,7 +77,11 @@ function AuthActionEmail({
             Se o botão não funcionar, abra este link: {actionURL}
           </Text>
           <Text
-            style={{ color: "#4b5563", fontSize: "14px", lineHeight: "21px" }}
+            style={{
+              color: emailColors.mutedForeground,
+              fontSize: "14px",
+              lineHeight: "21px",
+            }}
           >
             {notice}
           </Text>
