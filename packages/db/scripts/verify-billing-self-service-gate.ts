@@ -968,6 +968,16 @@ async function run() {
     let firstSweep: number;
     let secondSweep: number;
     try {
+      // within the hour of the 10th try it may still be running: not a stop yet
+      await billing.recordPendingRefundIncidents(
+        new Date(at(60).getTime() + 30 * 60_000),
+        1000
+      );
+      assert.equal(
+        (await rearmLedger(tenantS.organizationId)).length,
+        0,
+        "a 10th try still within its hour is not a stop"
+      );
       firstSweep = await billing.recordPendingRefundIncidents(at(61), 1000);
       secondSweep = await billing.recordPendingRefundIncidents(at(62), 1000);
     } finally {
@@ -989,7 +999,7 @@ async function run() {
       "a new link clears the memory of the stopped net"
     );
     tests.push(
-      "a stopped net whose incident is missing (the database failed in its pass) gets it from the next sweep of the incidents, once; a new link clears the memory"
+      "a stopped net whose incident is missing (the database failed in its pass) gets it from the next sweep of the incidents, once and not within the hour of the 10th try; a new link clears the memory"
     );
 
     // the owner's refund still pending after 24 hours: one incident per store and request
@@ -1077,7 +1087,6 @@ async function run() {
       "only the billing role records the incident"
     );
     for (const cause of ["refund_unknown", null]) {
-      // biome-ignore lint/performance/noAwaitInLoops: Two causes, one after the other.
       await expectSqlState(
         () =>
           owner.pool.query(

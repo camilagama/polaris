@@ -131,17 +131,17 @@ bun run gate7:asaas settle-unclaimed
 
 O corpo do webhook, o recurso relido, o CPF ou CNPJ, o `emv` e o link de pagamento nunca vão para o log; o CPF também não vai em URL (o cliente é achado pela chave do Polaris, não por `?taxID=`), porque os traços de requisições de saída do Worker podem guardar a URL. A troca de ciclo no Pix Automático exige nova autorização do pagador (cancelar e criar outra assinatura), e a contestação (MED) não gera fato na V1 (ADR 0101, emenda Woovi).
 
-<a id="reembolso-pendente"></a>
 ## Deploy e rollback da migration 0100 (autosserviço de cobrança)
 
 **Duração e trava.** A 0100 troca a expressão da coluna gerada `event_class` (STORED) de `tenant_audit_event` com `ALTER COLUMN … SET EXPRESSION`, que **reescreve a tabela inteira sob ACCESS EXCLUSIVE** (nenhuma leitura nem escrita de auditoria passa enquanto dura, e a auditoria entra nos comandos de venda e de estoque). Logo depois, o `ADD CONSTRAINT tenant_audit_event_type_registered`, sem `NOT VALID`, varre a tabela de novo. O `lock_timeout` de 10 s da migration só limita a espera pela trava, não a duração da reescrita. Antes do deploy:
 
-1. Contar linhas e tamanho em staging e em produção, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT count(*), pg_size_pretty(pg_total_relation_size('tenant_audit_event')) FROM tenant_audit_event`.
+1. Contar linhas e tamanho em staging e em produção, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT reltuples::bigint AS linhas, pg_size_pretty(pg_total_relation_size(oid)) AS tamanho FROM pg_class WHERE oid = 'public.tenant_audit_event'::regclass`. A tabela tem RLS com `FORCE`: um `count(*)` feito por papel sem `BYPASSRLS` e sem contexto de loja devolve 0, e daria a falsa impressão de tabela pequena; a estimativa do catálogo e o tamanho não dependem disso (o `count(*)` exato só com o migrador, que tem `BYPASSRLS` no Neon).
 2. Medir a duração da 0100 numa branch filha do Neon criada de `production` (cópia do tamanho real, sem `--schema-only`), de nome único e apagada ao final, como no [runbook do Gate 4](./gate-4-sales-core.md).
 3. Se passar de ~5 s, aplicar numa janela de pouco uso, combinada com o responsável, e registrar a medida no item 3 do [release checklist](./release-checklist.md#3-migrações-pendentes-com-plano-de-aplicação-e-de-volta-block).
 
-**Rollback do Worker.** Voltar o Worker para antes da 0100 não volta o banco ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)). O `attachProvider` da versão antiga, rodando depois da nova, troca o vínculo mas **não zera os campos novos**: `price_amount`, `price_id`, `first_charge_*`, `refund_requested_at`, `refund_request_id` e `refund_rearm_*` ficam com os valores do vínculo anterior. Ao voltar para a versão nova, conferir as lojas que assinaram no intervalo (`organization_billing.updated_at` entre o rollback e a volta, com `price_id` ou `refund_requested_at` preenchido) e limpar esses campos por um forward-fix revisado; um incidente `refund_not_completed` delas pode ser falso.
+**Rollback do Worker.** Voltar o Worker para antes da 0100 não volta o banco ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)). O `attachProvider` da versão antiga, rodando depois da nova, troca o vínculo mas **não zera os campos novos**: `price_amount`, `price_id`, `first_charge_*`, `refund_requested_at`, `refund_request_id` e `refund_rearm_*` ficam com os valores do vínculo anterior. Ao voltar para a versão nova, conferir as lojas que assinaram no intervalo (`organization_billing.updated_at` entre o rollback e a volta, com `price_id`, `refund_requested_at` ou `refund_rearm_attempts` preenchido) e limpar esses campos por um forward-fix revisado. Até lá, um incidente delas pode ser falso: `refund_not_completed` pelo pedido do vínculo anterior, e `refund_rearm_exhausted` no primeiro reembolso ou chargeback do vínculo novo, porque as 10 tentativas herdadas fazem a rede parar sem tentar.
 
+<a id="reembolso-pendente"></a>
 ## Reembolso pendente e rede de segurança do reembolso
 
 A rede horária (`runRefundSafetyNet`, na manutenção de cobrança, depois da varredura e das tentativas) cuida de dois casos ([ADR 0104](../adr/0104-autosservico-de-cobranca-do-dono.md), decisão 6). Não há tela nem comando dela: o que aparece é o log e o incidente.
@@ -159,7 +159,7 @@ A rede horária (`runRefundSafetyNet`, na manutenção de cobrança, depois da v
 
 **Quem olha:** o operador de plantão, pela lista de incidentes do Admin.
 **O que fazer:**
-Com a causa `refund_rearm_exhausted`, o caso é a renovação ainda viva: cancelá-la à mão no painel do provedor e registrar no caso de suporte. Com `refund_not_completed`:
+Com a causa `refund_rearm_exhausted`, o caso é a renovação talvez ainda viva: conferir no painel do provedor (a 10ª tentativa pode ter cancelado e falhado só ao gravar no banco), cancelá-la à mão se estiver viva e registrar no caso de suporte. Com `refund_not_completed`:
 1. Conferir no painel do provedor se o reembolso saiu.
 2. Se não saiu, concluir pelo comando de reembolso do operador (ADR 0066, emenda de 23/10/2026): ele cancela a renovação antes de reembolsar, e se o reembolso falhar depois do cancelamento, repete-se o comando.
 3. Se já saiu, não repetir: só registrar.

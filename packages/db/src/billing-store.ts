@@ -313,8 +313,8 @@ export interface BillingStore {
    * request becomes one occurrence of the operational incident `billing_refund_pending`, with a ledger row of its own
    * (`command:refund_pending:<store>:<moment of the request>`), so a second pass adds nothing. It also writes the
    * incident of a safety net stopped after its 10th failure (cause `refund_rearm_exhausted`, ledger row
-   * `command:refund_rearm_exhausted:<store>:<digest>`, one per store and link) when that pass could not. Answers how
-   * many were recorded now.
+   * `command:refund_rearm_exhausted:<store>:<digest>`, one per store and link) when that pass could not, an hour
+   * after the 10th try at the earliest. Reads at most `limit` stores of each cause. Answers how many were recorded now.
    */
   recordPendingRefundIncidents: (now?: Date, limit?: number) => Promise<number>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
@@ -2087,6 +2087,8 @@ export function createBillingStore(
              SELECT organization_id, ${REFUND_REARM_EXHAUSTED_KEY} AS ledger_key
                FROM public.organization_billing
               WHERE ${REFUND_REARM_EXHAUSTED_CONDITION}
+                -- the 10th try is counted before the call: one still running (or a pass that overlaps) is not a stop
+                AND refund_rearm_at <= $2::timestamptz - interval '1 hour'
            ) AS stopped
           WHERE NOT EXISTS (
             SELECT 1 FROM public.billing_events AS ledger
@@ -2094,7 +2096,7 @@ export function createBillingStore(
           )
           ORDER BY stopped.organization_id
           LIMIT $1`,
-        [limit]
+        [limit, now]
       );
       let recorded = 0;
       let failed = 0;
@@ -2117,6 +2119,14 @@ export function createBillingStore(
           // biome-ignore lint/performance/noAwaitInLoops: One store at a time keeps the load on the billing role bounded.
           if (await record(pool, organizationId, now)) {
             recorded += 1;
+            if (cause === "refund_rearm_exhausted") {
+              // the pass that stopped the net could not write the incident: the alert sees it now
+              logger.error("billing_refund_rearm_exhausted", {
+                attempt: REFUND_REARM_MAX_ATTEMPTS,
+                organizationId: opaqueId(organizationId),
+                source: "sweep",
+              });
+            }
           }
         } catch (error: unknown) {
           failed += 1;

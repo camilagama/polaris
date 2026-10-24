@@ -242,11 +242,11 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 ### rede-de-reembolso-parada — rede do reembolso parada numa loja
 
-**O que significa.** A rede horária do reembolso (ADR 0104, decisão 6) tentou 10 vezes cancelar a renovação de uma loja cujo pagamento foi devolvido (reembolso ou chargeback) e a 10ª falhou: a rede para nessa loja, e a renovação pode cobrar de novo. O evento é `billing_refund_rearm_exhausted` (erro, com `organizationId` opaco, `provider`, `reason` e `attempt`). Na mesma passada abre-se o incidente operacional `billing_refund_pending` com a causa `refund_rearm_exhausted`, uma ocorrência por loja e vínculo (repetir a passada não soma).
+**O que significa.** A rede horária do reembolso (ADR 0104, decisão 6) tentou 10 vezes cancelar a renovação de uma loja cujo pagamento foi devolvido (reembolso ou chargeback) e a 10ª falhou: a rede para nessa loja, e a renovação pode cobrar de novo. O evento é `billing_refund_rearm_exhausted` (erro, com `organizationId` opaco, `provider`, `reason` e `attempt`; quando o incidente só sai na varredura seguinte, porque o banco falhou na passada, o evento sai de novo com `source = "sweep"`). Na mesma passada abre-se o incidente operacional `billing_refund_pending` com a causa `refund_rearm_exhausted`, uma ocorrência por loja e vínculo (repetir a passada não soma).
 
 **Como confirmar.** Workers Logs: `event = "billing_refund_rearm_exhausted"` e as `billing_refund_rearm_failed` da mesma loja nos dias anteriores (o `errorClass`/`errorCode` diz se é chave, provedor fora ou recusa). Admin: o incidente `billing_refund_pending` / `refund_rearm_exhausted` na lista de incidentes.
 
-**O que fazer.** Siga [reembolso pendente e rede de segurança do reembolso](./billing-providers.md#reembolso-pendente): cancelar a renovação à mão no painel do provedor e registrar no caso de suporte da loja. Não zere `refund_rearm_attempts` à mão para a rede tentar de novo.
+**O que fazer.** Siga [reembolso pendente e rede de segurança do reembolso](./billing-providers.md#reembolso-pendente): conferir no painel do provedor se a renovação está viva (a 10ª tentativa pode ter cancelado e falhado só ao gravar no banco), cancelá-la à mão se estiver e registrar no caso de suporte da loja. Não zere `refund_rearm_attempts` à mão para a rede tentar de novo.
 
 <a id="incidente-de-reembolso-nao-gravado"></a>
 
