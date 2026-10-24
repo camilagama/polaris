@@ -131,6 +131,12 @@ export interface StartCheckoutInput {
 export interface StartCheckoutDependencies {
   now?: () => Date;
   port: BillingProviderPort;
+  /**
+   * The port of the provider the organization's old link is with, when it is not `port`'s (a card subscription
+   * replaced by Pix, or the other way round): its renewal is cancelled before a new checkout. Without it, an old
+   * link of another provider refuses the checkout (`billing_provider_not_configured`).
+   */
+  portFor?: (provider: string) => BillingProviderPort;
   store: Pick<
     BillingStore,
     | "attachProvider"
@@ -211,11 +217,64 @@ async function assertOldCheckoutMadeNoSubscription(
 }
 
 /**
+ * Before the organization's link is replaced, the renewal of the subscription it names is cancelled at the
+ * provider (ADR 0104, emenda de 24/10, condition (a) of PR 296): a subscription refunded or charged back whose
+ * renewal the hourly safety net had not cancelled yet would stay alive once the new link clears its memory
+ * (`revoked_*`), and charge again with no organization behind it. Only a link a subscription came from
+ * (`provider_subscription_id`); a checkout nobody paid is the next check's. The checkout is refused if the provider
+ * cannot cancel it (`provider_unavailable`): the swap is never made with the old renewal alive.
+ */
+async function cancelOldRenewal(
+  dependencies: StartCheckoutDependencies,
+  organizationId: string,
+  ids: { organizationId: ReturnType<typeof opaqueId>; provider: string }
+): Promise<void> {
+  const link = await dependencies.store.readProviderLink(organizationId);
+  if (!link || link.providerSubscriptionId === null) {
+    return;
+  }
+  const port =
+    link.provider === dependencies.port.provider
+      ? dependencies.port
+      : dependencies.portFor?.(link.provider);
+  if (!port) {
+    throw new ProviderNotConfiguredError();
+  }
+  let result: Awaited<ReturnType<BillingProviderPort["cancelRenewal"]>>;
+  try {
+    result = await port.cancelRenewal(
+      link.providerRef,
+      link.providerSubscriptionId
+    );
+  } catch (error: unknown) {
+    if (error instanceof ProviderNotFoundError) {
+      // the provider no longer knows the old subscription: nothing left to renew
+      return;
+    }
+    logger.warn("billing_checkout_old_renewal_cancel_failed", {
+      ...describeError(error),
+      ...ids,
+      oldProvider: link.provider,
+    });
+    // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
+    throw new ProviderUnavailableError({ cause: error });
+  }
+  if (result === "cancelled") {
+    // a renewal that was still alive behind a store off Pro: the operator's log, the safety net did not get to it
+    logger.warn("billing_checkout_old_renewal_cancelled", {
+      ...ids,
+      oldProvider: link.provider,
+    });
+  }
+}
+
+/**
  * The order is the point (AC-6): the trial is reserved first (with a trial),
  * then the subscription or the checkout is created at the provider, then its
  * reference is linked to the organization, and only then is the handoff
  * returned, so a payment can never arrive for something no organization
- * holds. Before any of it, a checkout of the organization that the provider
+ * holds. Before any of it, the renewal of the subscription the old link names
+ * is cancelled (`cancelOldRenewal`), and a checkout of the organization that the provider
  * already turned into a subscription (paid, webhook late) is not replaced:
  * the new one is refused and the old facts are read in. If the link fails,
  * what was created is given up at the provider (best effort). `serialize`
@@ -248,6 +307,7 @@ async function openCheckout<K extends CheckoutHandoff["kind"]>(
     // a trial running, a paid period or grace: nothing to start
     throw new BillingCommandError("already_subscribed");
   }
+  await cancelOldRenewal(dependencies, input.organizationId, ids);
   await assertOldCheckoutMadeNoSubscription(dependencies, input, now, ids);
   if (input.trial) {
     try {

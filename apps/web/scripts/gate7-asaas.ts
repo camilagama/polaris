@@ -50,6 +50,7 @@ import {
   checkedLinkFile,
   cycleOf,
   Gate7RefusedError,
+  refundReport,
 } from "./gate7-asaas-guard";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
@@ -278,14 +279,17 @@ async function main(): Promise<void> {
         )),
       });
     case "refund":
-      return print({
-        refund: await withOperator((dependencies) =>
-          refundCurrentPeriod(dependencies, {
+      return print(
+        await withOperator(async (dependencies) => {
+          const refund = await refundCurrentPeriod(dependencies, {
             organizationId: organization(),
             requestId: randomUUID(),
-          })
-        ),
-      });
+          });
+          // the renewal as the record shows it now: cancelled also when nothing was left to refund
+          const record = await dependencies.store.readRecord(organization());
+          return refundReport(refund, record?.cancelAtPeriodEnd ?? false);
+        })
+      );
     case "cancel":
       return print({
         cancel: await withOperator((dependencies) =>

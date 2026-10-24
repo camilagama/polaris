@@ -17,6 +17,21 @@ const BILLING_COMMAND_TIMEOUT_MS = 8000;
 export interface BillingPortOptions {
   fetch?: FetchLike;
   randomUuid?: () => string;
+  /**
+   * Aborts every request of the port to the provider (ADR 0104: one call of an owner's command waits at most 15 s),
+   * on top of the client's own timeout per request.
+   */
+  signal?: AbortSignal;
+}
+
+/** The fetch of the port: the injected one or the Worker's, with the caller's signal added to each request's own. */
+function fetchOf(options: BillingPortOptions): FetchLike {
+  const base: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
+  const { signal } = options;
+  return signal
+    ? (url, init) =>
+        base(url, { ...init, signal: AbortSignal.any([init.signal, signal]) })
+    : base;
 }
 
 export type BillingPortBindings = Pick<
@@ -46,7 +61,7 @@ function asaasPortOf(
       apiKey,
       appBaseUrl,
       baseUrl,
-      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      fetch: fetchOf(options),
       randomUuid: options.randomUuid ?? (() => crypto.randomUUID()),
       timeoutMs: BILLING_COMMAND_TIMEOUT_MS,
     });
@@ -70,7 +85,7 @@ function wooviPortOf(
     return createWooviPort({
       appId,
       baseUrl,
-      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      fetch: fetchOf(options),
       randomUuid: options.randomUuid ?? (() => crypto.randomUUID()),
       // off until the refund of an installment is proven in the sandbox (S3.2, Gate 7)
       refundEnabled: bindings.WOOVI_REFUND_ENABLED === "true",

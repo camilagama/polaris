@@ -187,6 +187,33 @@ export interface OwnerPlanRecord extends PlanViewRecord {
   trialAvailable: boolean;
 }
 
+/**
+ * What the owner's commands read of the record under the organization's lock (ADR 0104, decision 3): the plan's
+ * record, the link they call the provider with and the request that holds the anchor of the refund. Read again on
+ * every command: what the screen showed is never trusted.
+ */
+export interface OwnerCommandRecord extends PlanViewRecord {
+  cycleMonths: BillingCycleMonths | null;
+  /** The current link, or null when none is attached. */
+  link: BillingProviderLink | null;
+  /** The request ID that wrote `refundRequestedAt` (exact recognition of its own repeat). */
+  refundRequestId: string | null;
+}
+
+/** The anchor of the owner's refund request on the current link: the first request accepted wins (ADR 0104, decision 5). */
+export interface RefundRequestAnchor {
+  refundRequestedAt: Date;
+  refundRequestId: string | null;
+}
+
+/** The optional reason of a cancelled renewal: no store and no person (ADR 0104, decision 3; migration 0100). */
+export interface CancellationFeedbackInput {
+  cycleMonths: BillingCycleMonths | null;
+  /** 1 to 500 characters of free text; never logged. */
+  reason: string;
+  state: "active" | "grace" | "trialing";
+}
+
 /** What one hourly pass of the welcome's sweep did (ADR 0104, decision 6). */
 export interface WelcomeNoticeReport {
   /** Stores of the last 24 hours whose oldest owner had no welcome yet. */
@@ -204,7 +231,31 @@ export interface ReplacedProviderReference {
   providerRef: string;
 }
 
+/**
+ * The command lock this isolate holds (ADR 0104, decision 4: one at most). `since` and `holder` belong to the store:
+ * a hold older than `STALE_COMMAND_LOCK_MS` (a query left hanging, a request cut off before its `finally`) no longer
+ * counts, so one stuck command never refuses the isolate's commands for good.
+ */
+export interface CommandLockCounter {
+  held: number;
+  holder?: object | undefined;
+  since?: number | undefined;
+}
+
+/**
+ * Longer than the 60 s after which PostgreSQL ends the lock's idle transaction: past it the advisory lock is gone
+ * anyway, and the isolate's count is not trusted either.
+ */
+const STALE_COMMAND_LOCK_MS = 75_000;
+
 export interface BillingStoreOptions {
+  /**
+   * The isolate's count of the organization command locks held (ADR 0104, decision 4): a store refuses a second one
+   * while one is held, also for another organization, so a command never takes more than two connections of a pool
+   * of three. Every store of the isolate shares the module's counter; a test gives its own to stand for another
+   * isolate.
+   */
+  commandLocks?: CommandLockCounter;
   /**
    * Gives up, at the provider, the checkout of the organization a trial
    * reservation was moved away from, so that it can no longer be paid (the
@@ -251,6 +302,17 @@ export interface BillingStore {
     terms?: CheckoutTerms
   ) => Promise<ReplacedProviderReference | null>;
   /**
+   * Writes the anchor of the owner's refund request (ADR 0104, decisions 3 and 5): `refund_requested_at = at` and
+   * `refund_request_id`, in one autocommitted statement of its own, before the provider is called and outside the
+   * lock's transaction, only while the record has none and still holds the link `providerRef` names. The first
+   * request wins: a second one changes nothing and reads the anchor that stands. Null when the link changed (or the
+   * record has none). `at` is the database's clock the command read once (`databaseNow`).
+   */
+  anchorRefundRequest: (
+    organizationId: string,
+    input: { at: Date; providerRef: string; requestId: string }
+  ) => Promise<RefundRequestAnchor | null>;
+  /**
    * Counts one owner's command that calls the provider (ADR 0104, decision 4): at most one every 30 seconds and 10
    * an hour per organization, the hour counted from its first command. Answers false, counting nothing, when the
    * command is over the limit. The caller holds the organization's command lock.
@@ -268,6 +330,8 @@ export interface BillingStore {
     link: Pick<BillingProviderLink, "provider" | "providerRef">
   ) => Promise<boolean>;
   close: () => Promise<void>;
+  /** The database's clock (`now()`): the owner's commands read it once and judge every rule with it (ADR 0104, decision 3). */
+  databaseNow: () => Promise<Date>;
   /**
    * Gives an organization a temporary entitlement (plan PR85): more than its plan,
    * for a while, with who, why, from when and until when. It is never a
@@ -281,6 +345,11 @@ export interface BillingStore {
   ) => Promise<{ created: boolean; id: string }>;
   /** The grant with this ID, or null. A command that names its own ID reads this first, so a repeat later is the same grant whatever its relative duration. */
   findEntitlementGrant: (id: string) => Promise<StoredEntitlementGrant | null>;
+  /** Whether the ledger holds this provider's event ID (a command's own fact: `command:cancel_renewal:…`, `command:refund_cancel:…`). */
+  hasLedgerEvent: (
+    provider: string,
+    providerEventId: string
+  ) => Promise<boolean>;
   /** Applies one stored event to its organization; safe to call again for an event already processed. */
   processEvent: (eventId: string, now?: Date) => Promise<ProcessedBillingEvent>;
   /** The provider link of the organization, or null when none is attached. */
@@ -288,6 +357,17 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<BillingProviderLink | null>;
   readRecord: (organizationId: string) => Promise<BillingRecord | null>;
+  /** What the owner's commands read under the lock (`OwnerCommandRecord`); no record reads as Free with no link. */
+  readOwnerCommandRecord: (
+    organizationId: string
+  ) => Promise<OwnerCommandRecord>;
+  /**
+   * Keeps the optional reason of a cancelled renewal (ADR 0104, decision 3) in `billing_cancellation_feedback`, with
+   * no store and no person; the day is São Paulo's, set by the database. The text never reaches a log.
+   */
+  recordCancellationFeedback: (
+    input: CancellationFeedbackInput
+  ) => Promise<void>;
   /**
    * The billing role's part of the owner's read of the plan (ADR 0104, decision 2): the record with the columns of
    * migration 0100 (the tenant never reads them) and whether the trial is still the person's to take, for this
@@ -445,12 +525,13 @@ export interface BillingStore {
   /**
    * Runs `operation` while holding the organization's command lock (ADR 0066,
    * emenda de 23/10): two commands that take it never run at once for the same
-   * organization, and the second decides by the state the first left. Today
-   * only the refund takes it; the cancellation commands and the closure's
-   * consumer do not (their second fact is ignored by the record). The lock is
-   * never waited for: when another command holds it,
-   * this fails at once with `BillingCommandInProgressError`, so a loop of
-   * commands cannot fill the pool. Like the payer's lock, it is a
+   * organization, and the second decides by the state the first left. The
+   * refunds and the owner's three commands take it (ADR 0104, decision 4); the
+   * operator's cancellation and the closure's consumer do not (their second fact
+   * is ignored by the record). The lock is never waited for: when another
+   * command holds it, or this isolate already holds a command lock (of any
+   * organization: one at a time, `commandLocks`), this fails at once with
+   * `BillingCommandInProgressError`, so a loop of commands cannot fill the pool. Like the payer's lock, it is a
    * transaction-scoped advisory lock on its own connection, and the
    * transaction ends if it sits idle for 60 s (an operation longer than that
    * loses the lock and its commit fails; a repeat is safe). Webhooks and the
@@ -471,6 +552,9 @@ export class BillingCommandInProgressError extends Error {
     this.name = "BillingCommandInProgressError";
   }
 }
+
+/** The command locks this isolate holds (ADR 0104, decision 4), shared by every store it creates. */
+const isolateCommandLocks: CommandLockCounter = { held: 0 };
 
 /** The key of the payer's lock: 8 hex digits of a keyed digest of the document. */
 const payerLockKeyPattern = /^[\da-f]{8}$/;
@@ -1802,6 +1886,32 @@ export function createBillingStore(
     })
   );
 
+  /** Takes the organization's command lock on a connection of its own, never waiting, then runs `operation` on the others. */
+  const holdOrganizationLock = async <T>(
+    organizationId: string,
+    operation: () => Promise<T>
+  ): Promise<T> =>
+    await inTransaction(pool, async (client) => {
+      // the connection sits idle while the operation runs on others (see withPayerLock)
+      const ignore = () => undefined;
+      client.on("error", ignore);
+      try {
+        await client.query(
+          "SET LOCAL idle_in_transaction_session_timeout = '60s'"
+        );
+        const result = await client.query<{ taken: boolean }>(
+          "SELECT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended($1, 0)) AS taken",
+          [`polaris.billing.organization:${organizationId.toLowerCase()}`]
+        );
+        if (!result.rows[0]?.taken) {
+          throw new BillingCommandInProgressError();
+        }
+        return await operation();
+      } finally {
+        client.off("error", ignore);
+      }
+    });
+
   const store: BillingStore = {
     async attachProvider(organizationId, provider, providerRef, terms) {
       return await inTransaction(pool, async (client) => {
@@ -1845,6 +1955,47 @@ export function createBillingStore(
           : null;
       });
     },
+    async anchorRefundRequest(organizationId, input) {
+      if (
+        !(uuidPattern.test(organizationId) && uuidPattern.test(input.requestId))
+      ) {
+        throw new TypeError("invalid_refund_request");
+      }
+      // one statement, autocommitted on a connection of its own: the anchor stands even if the provider fails next
+      const written = await pool.query<{
+        refund_request_id: string | null;
+        refund_requested_at: Date;
+      }>(
+        `UPDATE public.organization_billing
+            SET refund_requested_at = $2::timestamptz, refund_request_id = $3::uuid
+          WHERE organization_id = $1 AND provider_ref = $4 AND refund_requested_at IS NULL
+          RETURNING refund_requested_at, refund_request_id`,
+        [organizationId, input.at, input.requestId, input.providerRef]
+      );
+      const [row] = written.rows;
+      if (row) {
+        return {
+          refundRequestId: row.refund_request_id,
+          refundRequestedAt: row.refund_requested_at,
+        };
+      }
+      // another request wrote it first: the anchor that stands is the one that counts
+      const standing = await pool.query<{
+        refund_request_id: string | null;
+        refund_requested_at: Date | null;
+      }>(
+        `SELECT refund_requested_at, refund_request_id FROM public.organization_billing
+          WHERE organization_id = $1 AND provider_ref = $2`,
+        [organizationId, input.providerRef]
+      );
+      const [held] = standing.rows;
+      return held?.refund_requested_at
+        ? {
+            refundRequestId: held.refund_request_id,
+            refundRequestedAt: held.refund_requested_at,
+          }
+        : null;
+    },
     async claimProviderCommand(organizationId, now = new Date()) {
       if (!uuidPattern.test(organizationId)) {
         throw new TypeError("invalid_organization_id");
@@ -1878,6 +2029,34 @@ export function createBillingStore(
     },
     async close() {
       await pool.end();
+    },
+    async databaseNow() {
+      const result = await pool.query<{ now: Date }>(
+        "SELECT pg_catalog.now() AS now"
+      );
+      const found = result.rows[0]?.now;
+      if (!(found instanceof Date)) {
+        throw new Error("billing_clock_unavailable");
+      }
+      return found;
+    },
+    async hasLedgerEvent(provider, providerEventId) {
+      const found = await pool.query(
+        "SELECT 1 FROM public.billing_events WHERE provider = $1 AND provider_event_id = $2",
+        [provider, providerEventId]
+      );
+      return (found.rowCount ?? 0) > 0;
+    },
+    async recordCancellationFeedback(input) {
+      const reason = input.reason.trim();
+      if (reason.length < 1 || reason.length > 500) {
+        throw new RangeError("invalid_cancellation_feedback");
+      }
+      // no RETURNING: the billing role only inserts (no SELECT), and the day is the database's default
+      await pool.query(
+        "INSERT INTO public.billing_cancellation_feedback (reason, state, cycle_months) VALUES ($1, $2, $3)",
+        [reason, input.state, input.cycleMonths]
+      );
     },
     async findEntitlementGrant(id) {
       if (!uuidPattern.test(id)) {
@@ -2122,6 +2301,81 @@ export function createBillingStore(
       );
       const [row] = result.rows;
       return row ? toRecord(row) : null;
+    },
+    async readOwnerCommandRecord(organizationId) {
+      const result = await pool.query<{
+        access_ends_at: Date | null;
+        cancel_at_period_end: boolean;
+        cycle_months: number | null;
+        first_charge_amount: string | null;
+        first_charge_at: Date | null;
+        first_charge_on: string | null;
+        price_amount: string | null;
+        provider: string | null;
+        provider_ref: string | null;
+        provider_subscription_id: string | null;
+        refund_request_id: string | null;
+        refund_requested_at: Date | null;
+        revoked_reason: string | null;
+        revoked_through: Date | null;
+        state: string;
+      }>(
+        // the same reading of the money and the day as `readOwnerPlan`
+        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, provider, provider_ref,
+                provider_subscription_id, revoked_through, revoked_reason,
+                to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on, first_charge_at,
+                round(first_charge_amount, 2)::text AS first_charge_amount,
+                round(price_amount, 2)::text AS price_amount, refund_requested_at, refund_request_id::text AS refund_request_id
+           FROM public.organization_billing WHERE organization_id = $1`,
+        [organizationId]
+      );
+      const [row] = result.rows;
+      if (!row) {
+        return {
+          accessEndsAt: null,
+          cancelAtPeriodEnd: false,
+          cycleMonths: null,
+          firstChargeAmount: null,
+          firstChargeAt: null,
+          firstChargeOn: null,
+          link: null,
+          priceAmount: null,
+          provider: null,
+          refundRequestId: null,
+          refundRequestedAt: null,
+          revoked: null,
+          state: "free",
+        };
+      }
+      const revokedReason =
+        row.revoked_through !== null &&
+        (row.revoked_reason === "refund" ||
+          row.revoked_reason === "chargeback" ||
+          row.revoked_reason === "won")
+          ? row.revoked_reason
+          : null;
+      return {
+        accessEndsAt: row.access_ends_at,
+        cancelAtPeriodEnd: row.cancel_at_period_end,
+        cycleMonths: cycle(row.cycle_months),
+        firstChargeAmount: row.first_charge_amount,
+        firstChargeAt: row.first_charge_at,
+        firstChargeOn: row.first_charge_on,
+        link:
+          row.provider && row.provider_ref
+            ? {
+                provider: row.provider,
+                providerRef: row.provider_ref,
+                providerSubscriptionId: row.provider_subscription_id,
+              }
+            : null,
+        priceAmount: row.price_amount,
+        provider: row.provider,
+        refundRequestId: row.refund_request_id,
+        refundRequestedAt: row.refund_requested_at,
+        revoked: revokedReason ? { reason: revokedReason } : null,
+        state: row.state as BillingState,
+      };
     },
     async readOwnerPlan(organizationId, userId) {
       const record = await pool.query<{
@@ -2459,26 +2713,32 @@ export function createBillingStore(
       if (!uuidPattern.test(organizationId)) {
         throw new TypeError("invalid_organization_id");
       }
-      return await inTransaction(pool, async (client) => {
-        // the connection sits idle while the operation runs on others (see withPayerLock)
-        const ignore = () => undefined;
-        client.on("error", ignore);
-        try {
-          await client.query(
-            "SET LOCAL idle_in_transaction_session_timeout = '60s'"
-          );
-          const result = await client.query<{ taken: boolean }>(
-            "SELECT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended($1, 0)) AS taken",
-            [`polaris.billing.organization:${organizationId.toLowerCase()}`]
-          );
-          if (!result.rows[0]?.taken) {
-            throw new BillingCommandInProgressError();
-          }
-          return await operation();
-        } finally {
-          client.off("error", ignore);
+      const locks = options.commandLocks ?? isolateCommandLocks;
+      const startedAt = Date.now();
+      if (locks.held > 0) {
+        if (startedAt - (locks.since ?? startedAt) <= STALE_COMMAND_LOCK_MS) {
+          // one command lock per isolate: a second command (of any store) never takes the pool's last connections
+          throw new BillingCommandInProgressError();
         }
-      });
+        // a hold that outlived its transaction: the database already let the advisory lock go
+        logger.warn("billing_command_lock_stale", {
+          durationMs: startedAt - (locks.since ?? startedAt),
+        });
+      }
+      const holder = {};
+      locks.held = 1;
+      locks.holder = holder;
+      locks.since = startedAt;
+      try {
+        return await holdOrganizationLock(organizationId, operation);
+      } finally {
+        // only its own hold: a stale one taken over since is the newer command's
+        if (locks.holder === holder) {
+          locks.held = 0;
+          locks.holder = undefined;
+          locks.since = undefined;
+        }
+      }
     },
     async withPayerLock(key, operation) {
       if (!payerLockKeyPattern.test(key)) {

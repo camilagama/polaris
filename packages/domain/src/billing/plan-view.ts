@@ -106,6 +106,17 @@ export function nextChargeOf(
 }
 
 /**
+ * The first instant after the window of the right of withdrawal (T-5): 00:00:00 in São Paulo of the 8th calendar day
+ * after the day of the first charge. The window's last second (`RefundWindow.until`) is one second before it; the
+ * owner's refund command answers with it also after the refund was done, when `refundWindowOf` is already null.
+ */
+export function refundWindowClosesAt(firstChargeAt: Date): Date {
+  return saoPauloDayStart(
+    addCalendarDays(saoPauloDateOf(firstChargeAt), REFUND_WINDOW_DAYS + 1)
+  );
+}
+
+/**
  * The window of the right of withdrawal (AS-7, T-5): it ends at 23:59:59 in São Paulo of the 7th calendar day after
  * the day of the first charge, counted from the provider's moment of that charge (a webhook delivered late never
  * moves it). It is judged at the owner's first request when there is one, not at a retry, and a request still not
@@ -122,12 +133,7 @@ export function refundWindowOf(
   if (record.revoked !== null && record.revoked.reason !== "won") {
     return null;
   }
-  const closesAt = saoPauloDayStart(
-    addCalendarDays(
-      saoPauloDateOf(record.firstChargeAt),
-      REFUND_WINDOW_DAYS + 1
-    )
-  );
+  const closesAt = refundWindowClosesAt(record.firstChargeAt);
   const judgedAt = record.refundRequestedAt ?? now;
   if (judgedAt.getTime() >= closesAt.getTime()) {
     return null;

@@ -141,6 +141,16 @@ export interface BillingProviderPort {
     providerRef: string,
     providerSubscriptionId?: string | null
   ) => Promise<boolean>;
+  /**
+   * The provider's own page where the payer pays the charge that fell due unpaid (ADR 0104, decision 3:
+   * `openOverduePayment`), read again from the provider, or null when the subscription has no such charge or the
+   * provider has no such page (Pix Automático). The address is checked against the provider's exact hosts before it
+   * is returned (`https:`, no credential, no port) and is never logged: it is the payer's.
+   */
+  overduePaymentPage: (
+    providerRef: string,
+    providerSubscriptionId?: string | null
+  ) => Promise<string | null>;
   /** Creates the subscription (or the checkout that creates it) at the provider. */
   prepareSubscription: (
     input: PrepareSubscriptionInput

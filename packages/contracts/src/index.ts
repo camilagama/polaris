@@ -1304,6 +1304,65 @@ export const billingPlanView = z
 
 export type BillingPlanView = z.infer<typeof billingPlanView>;
 
+/**
+ * The ID the client gives each gesture of the owner's billing commands (ADR 0104, decision 3): a UUID (versions 1 to
+ * 8, as the audit and the billing store read it), the same on a repeat of the same gesture and a new one for a new
+ * gesture. It identifies the request in the audit and in the command's own facts; it never authorizes anything.
+ */
+const billingRequestId = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  );
+
+const billingCancelRenewalInput = z
+  .object({
+    organizationId: z.string().trim().min(1),
+    // optional; kept with no store and no person, never logged (the screen asks for no personal data); no control,
+    // format (bidirectional, zero-width) or unassigned characters but line breaks and tabs
+    reason: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^(?:[^\p{C}]|[\n\t])*$/u)
+      .optional(),
+    requestId: billingRequestId,
+  })
+  .strict();
+
+const billingCancelRenewalOutput = z
+  .object({
+    accessEndsAt: z.string().datetime().nullable(),
+    result: z.enum(["cancelled", "already_cancelled"]),
+  })
+  .strict();
+
+const billingRequestRefundInput = z
+  .object({
+    organizationId: z.string().trim().min(1),
+    requestId: billingRequestId,
+  })
+  .strict();
+
+const billingRequestRefundOutput = z
+  .object({
+    amount: billingAmount,
+    // `refund_pending` (AS-42): the renewal is cancelled and the refund is not done; asking again finishes it
+    result: z.enum(["refund_requested", "refund_pending"]),
+    until: z.string().datetime(),
+  })
+  .strict();
+
+const billingOpenOverduePaymentInput = billingRequestRefundInput;
+
+const billingOpenOverduePaymentOutput = z
+  .object({
+    handoff: z
+      .object({ kind: z.literal("redirect"), url: z.string().url() })
+      .strict(),
+  })
+  .strict();
+
 /** No control, format (zero-width, bidirectional) or unassigned characters: the name shows in the payer's bank. */
 const payerNamePattern = /^[^\p{C}]+$/u;
 
@@ -1719,11 +1778,26 @@ export const polarisContract = {
       .output(z.object({ unpublished: z.number().int().nonnegative() })),
   },
   billing: {
+    // The owner's billing commands (ADR 0104, decision 3), only with `billing:manage`, behind
+    // BILLING_SELF_SERVICE_ENABLED, under the store's command lock and its limit. Cancel the renewal: access already
+    // paid for runs to its end, and it cannot be undone.
+    cancelRenewal: oc
+      .input(billingCancelRenewalInput)
+      .output(billingCancelRenewalOutput),
+    // The provider's page of the charge that failed (grace, card): it pays that charge and does not change the card.
+    // The address is the payer's: never logged.
+    openOverduePayment: oc
+      .input(billingOpenOverduePaymentInput)
+      .output(billingOpenOverduePaymentOutput),
     // The plan as its owner reads it (ADR 0104, decision 2): only with `billing:manage`, behind
     // BILLING_SELF_SERVICE_ENABLED. The output is strict and closed: nothing personal and nothing of the provider.
     readPlan: oc
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(billingPlanView),
+    // The refund of the right of withdrawal: the renewal is cancelled first, then the first charge is refunded.
+    requestRefund: oc
+      .input(billingRequestRefundInput)
+      .output(billingRequestRefundOutput),
     // Starts the Pro subscription at the payment provider (ADR 0101): the
     // provider's hosted page, where the payer types the card, or the Pix
     // Automático authorization at Woovi. Only the owner (`billing:manage`); the

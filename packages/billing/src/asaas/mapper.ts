@@ -565,6 +565,24 @@ export function reconcileAsaasSubscription(input: {
 }
 
 /**
+ * The newest charge of the subscription that fell due unpaid (`OVERDUE`), the one the owner pays on the provider's
+ * page in grace (ADR 0104, decision 3), or null. Only a charge the subscription owns (`ownsCharge`).
+ */
+export function overdueCharge(
+  payments: readonly AsaasPayment[],
+  subscription: AsaasSubscription
+): AsaasPayment | null {
+  return (
+    byDueDate(
+      payments.filter(
+        (payment) =>
+          ownsCharge(payment, subscription) && payment.status === "OVERDUE"
+      )
+    ).at(-1) ?? null
+  );
+}
+
+/**
  * The charge of the period in force, if it can still be refunded in full: the
  * latest live charge of the subscription already due (in São Paulo), paid (`CONFIRMED` or `RECEIVED`) and
  * whose period has not ended. A charge already being refunded, refunded or

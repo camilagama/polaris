@@ -7,6 +7,7 @@ import {
   recoveryOf,
   refundOfferOf,
   refundPendingOf,
+  refundWindowClosesAt,
   refundWindowOf,
   resubscribeFromOf,
 } from "./plan-view";
@@ -202,6 +203,47 @@ describe("refundWindowOf (AS-7, T-5)", () => {
     expect(
       refundWindowOf(asked, new Date(requestedAt.getTime() + hours72 + 1000))
     ).toBeNull();
+  });
+});
+
+describe("refundWindowClosesAt (T-5)", () => {
+  it("is 00:00:00 in São Paulo of the 8th day after the day of the first charge", () => {
+    expect(refundWindowClosesAt(sp("2026-10-10T15:00:00"))).toEqual(
+      sp("2026-10-18T00:00:00")
+    );
+  });
+
+  it("is the same for a first charge at 00:00:30 and one at 23:59 of the same São Paulo day", () => {
+    const early = refundWindowClosesAt(sp("2026-10-10T00:00:30"));
+    const late = refundWindowClosesAt(sp("2026-10-10T23:59:00"));
+
+    expect(early).toEqual(late);
+    expect(early).toEqual(sp("2026-10-18T00:00:00"));
+  });
+
+  it("counts the day in São Paulo, not in UTC (02:00Z of the 11th is still the 10th there)", () => {
+    expect(refundWindowClosesAt(new Date("2026-10-11T02:00:00Z"))).toEqual(
+      sp("2026-10-18T00:00:00")
+    );
+  });
+
+  it("crosses a month end", () => {
+    expect(refundWindowClosesAt(sp("2026-10-28T12:00:00"))).toEqual(
+      sp("2026-11-05T00:00:00")
+    );
+  });
+
+  it("is one second after the last second of the window refundWindowOf reports", () => {
+    const record: PlanViewRecord = {
+      ...active,
+      firstChargeAmount: "24.90",
+      firstChargeAt: sp("2026-10-10T15:00:00"),
+    };
+    const window = refundWindowOf(record, sp("2026-10-11T09:00:00"));
+
+    expect(window?.until.getTime()).toBe(
+      refundWindowClosesAt(sp("2026-10-10T15:00:00")).getTime() - 1000
+    );
   });
 });
 

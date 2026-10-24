@@ -1814,13 +1814,30 @@ async function main() {
         Date.now() - refusedAt < 5000,
         "the refusal does not wait for the lock"
       );
-      assert.equal(
-        await billing.withOrganizationLock(randomUUID(), () =>
-          Promise.resolve("other")
-        ),
-        "other",
-        "another organization goes on"
+      // the isolate holds one command lock at a time (ADR 0104, decision 4): another organization waits for none
+      // either, it is refused at once in this isolate and goes on in another (a store with its own count)
+      await assert.rejects(
+        () =>
+          billing.withOrganizationLock(randomUUID(), () =>
+            Promise.resolve("other")
+          ),
+        BillingCommandInProgressError,
+        "another organization in the same isolate is refused at once"
       );
+      const otherIsolate = createBillingStore(billingUrl, {
+        commandLocks: { held: 0 },
+      });
+      try {
+        assert.equal(
+          await otherIsolate.withOrganizationLock(randomUUID(), () =>
+            Promise.resolve("other")
+          ),
+          "other",
+          "another organization goes on in another isolate"
+        );
+      } finally {
+        await otherIsolate.close();
+      }
       // the lock is only the command's: the same organization's other work on the pool goes on
       assert.equal(await billing.readRecord(lockedOrganization), null);
       releaseCommand();
@@ -1846,7 +1863,7 @@ async function main() {
         )
       );
       tests.push(
-        "Refund command (ADR 0066, emenda de 23/10): the organization's command lock refuses a second command of the same organization at once (BillingCommandInProgressError, whatever the case of the ID), leaves another organization and the record reads alone, is released by an operation that throws and refuses an ID that is not a UUID"
+        "Refund command (ADR 0066, emenda de 23/10): the organization's command lock refuses a second command of the same organization at once (BillingCommandInProgressError, whatever the case of the ID), holds one command lock per isolate (another organization is refused in the same isolate and goes on in another), leaves the record reads alone, is released by an operation that throws and refuses an ID that is not a UUID"
       );
     }
 

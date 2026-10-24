@@ -8,12 +8,15 @@ import {
   type ProviderBillingEvent,
   ProviderNotFoundError,
   ProviderRejectedError,
+  ProviderResponseMalformedError,
 } from "../provider-port";
 import { createAsaasClient } from "./client";
+import { asaasPaymentPageUrl } from "./payment-page";
 import { newPolarisReference } from "./ids";
 import {
   type AsaasPayment,
   asaasCycle,
+  overdueCharge,
   pickAsaasCheckout,
   pickAsaasPayment,
   reconcileAsaasSubscription,
@@ -109,6 +112,9 @@ function checkoutBody(
 /** The outbound port to Asaas (cartão recorrente pelo checkout hospedado). */
 export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
   const client = createAsaasClient(config);
+  // the sandbox's payment page only with the sandbox's API (the client already ties the key to the host)
+  const sandbox =
+    URL.parse(config.baseUrl)?.hostname === "api-sandbox.asaas.com";
 
   /**
    * The subscription a checkout created. `providerRef` is the checkout's ID, and
@@ -212,6 +218,33 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
         // the provider copies the checkout's ID into the subscription, not the reference
         providerRef: checkout.id,
       };
+    },
+    async overduePaymentPage(providerRef, providerSubscriptionId) {
+      for (const subscription of await subscriptionsOf(
+        providerRef,
+        providerSubscriptionId
+      )) {
+        if (subscription.deleted) {
+          continue;
+        }
+        // biome-ignore lint/performance/noAwaitInLoops: One subscription per reference, in practice.
+        const raw = await client.listSubscriptionPayments(subscription.id);
+        const payments = raw.map(pickAsaasPayment);
+        const charge = overdueCharge(payments, subscription);
+        if (charge) {
+          const page = asaasPaymentPageUrl(
+            (raw[payments.indexOf(charge)] as { invoiceUrl?: unknown })
+              .invoiceUrl,
+            { sandbox }
+          );
+          if (page === null) {
+            // an address of another host is never passed on (and never logged)
+            throw new ProviderResponseMalformedError();
+          }
+          return page;
+        }
+      }
+      return null;
     },
     provider: "asaas",
     async readState(providerRef, now, providerSubscriptionId) {
