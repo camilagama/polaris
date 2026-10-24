@@ -163,6 +163,13 @@ export interface BillingProviderPort {
     now: Date,
     providerSubscriptionId?: string | null
   ) => Promise<RefundOutcome>;
+  /**
+   * Whether `refundCurrentPeriod` may call the provider here. The refund
+   * command cancels the renewal first (ADR 0066, emenda de 23/10), so it asks
+   * this before touching anything: a provider that cannot refund leaves the
+   * renewal as it was.
+   */
+  readonly refundsEnabled: boolean;
 }
 
 export type RefundOutcome =

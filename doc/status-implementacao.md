@@ -2052,6 +2052,17 @@ Regra de produto de 22/10/2026 ([public-catalog.md](../docs/business-rules/publi
 | Gate `public-catalog` | Em revisão | 0,00 e 49,90 dá `priceFrom = 49.90` e a página mostra a variante a 0,00 com `price = null`; só 0,00 dá `null` na lista e na página (produto de uma e de duas variantes); o dado fica 0,00; para cada produto da lista, `priceFrom` é igual ao menor `price` não nulo da página (os três estados e o original). Rodado no PostgreSQL 18 local: verde com a migration e vermelho (`0.00 !== 49.90`) com a migration sem o `NULLIF`; `catalog-worker`, `definer-hardening` e `definer-owners` também verdes. |
 | Site (`apps/catalog`) | Sem mudança | Já mostra o texto de preço ausente para `null`; o SEO já filtra `null`. O teste do formatador e o e2e a 360 px do AC-12 (corte do catálogo v5.1) ficam para a tarefa do site; este PR é só o banco. |
 
+### Reembolso cancela a renovação antes (AS-32, código; emenda do ADR 0066 de 23/10/2026; sem migration)
+
+Achado do desenho t268 no sandbox do Asaas: o reembolso deixava a assinatura viva e a cobrança seguinte devolveria o Pro. PR A da sequência do F1 (Assinatura).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Comando `refundCurrentPeriod` | Em revisão | Sob a trava de comandos da loja, cancela a renovação (fato `subscription_cancelled` com ID `command:refund_cancel:…`) e só então reembolsa; pula o cancelamento se o registro já o mostra; recebe `requestId`. Provedor sem reembolso ligado (Woovi antes do S3.2) não cancela nada. |
+| Trava de comandos da loja | Em revisão | `withOrganizationLock` no billing store: `pg_try_advisory_xact_lock`, sem fila (`BillingCommandInProgressError`); prova no gate `billing-trial-claims` (PostgreSQL 18 do CI). |
+| Rede de segurança horária (reembolso e chargeback) | Não iniciado | PR seguinte, com limite por passada e recuo por loja. |
+| Gate 7 | Não iniciado | Prova do AS-32 pelo roteiro do QA (assinatura apagada, nenhuma cobrança pendente, contagem do razão igual). |
+
 ### Início (F2), PR 1: série diária e mais vendidos no `periodSummary` (t277; emenda D2 do ADR 0056; sem migration)
 
 Desenho t269 v2, aprovado na rodada desenho-t269 (23/10/2026).

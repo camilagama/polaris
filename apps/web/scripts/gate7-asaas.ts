@@ -35,6 +35,7 @@ import {
   cancelRenewal,
   checkoutPriceOf,
   type OperatorCommandDependencies,
+  type RefundCommandDependencies,
   reconcileOrganization,
   refundCurrentPeriod,
   settleUnclaimedTrials,
@@ -119,7 +120,9 @@ function bindings() {
 }
 
 async function withOperator<T>(
-  run: (dependencies: OperatorCommandDependencies) => Promise<T>
+  run: (
+    dependencies: OperatorCommandDependencies & RefundCommandDependencies
+  ) => Promise<T>
 ): Promise<T> {
   const store = createBillingStore(
     await checkedDatabaseUrl("BILLING_DATABASE_URL")
@@ -280,7 +283,10 @@ async function main(): Promise<void> {
     case "refund":
       return print({
         refund: await withOperator((dependencies) =>
-          refundCurrentPeriod(dependencies, organization())
+          refundCurrentPeriod(dependencies, {
+            organizationId: organization(),
+            requestId: randomUUID(),
+          })
         ),
       });
     case "cancel":
