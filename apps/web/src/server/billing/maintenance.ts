@@ -2,11 +2,14 @@ import {
   ProviderNotConfiguredError,
   ProviderNotFoundError,
 } from "@polaris/billing/provider-port";
-import type {
-  BillingRetryReport,
-  BillingStore,
-  BillingSweepReport,
+import {
+  type BillingRetryReport,
+  type BillingStore,
+  type BillingSweepReport,
+  REFUND_REARM_BATCH,
+  type RefundRearmReport,
 } from "@polaris/db/billing-store";
+import { HANDLED_BILLING_PROVIDERS } from "@polaris/domain/billing/renewal-cancellation";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
 import {
@@ -188,6 +191,68 @@ export async function runWooviReconciliation(
   if (report.failed > 0) {
     logger.error("billing_woovi_reconcile_incomplete", { ...report });
     throw new Error("billing_woovi_reconcile_incomplete");
+  }
+  return report;
+}
+
+export interface RefundSafetyNetReport {
+  /** Stores whose refund is still not completed 24 hours after the owner's request, made an incident now. */
+  pendingRefundIncidents: number;
+  /** Providers whose settings are missing here: their stores are not tried (and no try is spent). */
+  providersNotConfigured: string[];
+  rearm: RefundRearmReport;
+}
+
+/**
+ * The hourly safety net of refunds and chargebacks (ADR 0104, decision 6). A refund made at the provider's panel, or
+ * a chargeback, leaves the subscription alive and its next charge would give Pro back and charge again: the renewal
+ * of those stores is cancelled here, at most `REFUND_REARM_BATCH` a pass, with the back-off and the stop of the store
+ * (`rearmRefundedRenewals`). Then the owner's refunds still pending 24 hours after the request become an operational
+ * incident, one per store and request. Only the providers whose settings exist here are tried; a failure makes the
+ * run incomplete, and the next pass goes on.
+ */
+export async function runRefundSafetyNet(
+  bindings: BillingPortBindings,
+  store: Pick<
+    BillingStore,
+    "rearmRefundedRenewals" | "recordPendingRefundIncidents"
+  >,
+  now: Date = new Date()
+): Promise<RefundSafetyNetReport> {
+  const providers: string[] = [];
+  const providersNotConfigured: string[] = [];
+  for (const provider of HANDLED_BILLING_PROVIDERS) {
+    try {
+      billingProviderPortOf(bindings, provider);
+      providers.push(provider);
+    } catch (error: unknown) {
+      if (!(error instanceof ProviderNotConfiguredError)) {
+        throw error;
+      }
+      providersNotConfigured.push(provider);
+    }
+  }
+  const rearm =
+    providers.length === 0
+      ? { exhausted: 0, failed: 0, rearmed: 0, scanned: 0 }
+      : await store.rearmRefundedRenewals({
+          cancel: (renewal) =>
+            billingProviderPortOf(bindings, renewal.provider).cancelRenewal(
+              renewal.providerRef,
+              renewal.providerSubscriptionId
+            ),
+          limit: REFUND_REARM_BATCH,
+          now,
+          providers,
+        });
+  const pendingRefundIncidents = await store.recordPendingRefundIncidents(now);
+  const report = { pendingRefundIncidents, providersNotConfigured, rearm };
+  if (rearm.failed > 0) {
+    logger.error("billing_refund_safety_net_incomplete", {
+      pendingRefundIncidents,
+      rearm: { ...rearm },
+    });
+    throw new Error("billing_refund_safety_net_incomplete");
   }
   return report;
 }

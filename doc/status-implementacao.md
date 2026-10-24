@@ -2088,7 +2088,8 @@ Decisões antes do código da Assinatura: leitura do plano, cancelar, desistir e
 | --- | --- | --- |
 | [ADR 0104](../docs/adr/0104-autosservico-de-cobranca-do-dono.md) | Em revisão | `billing.readPlan` (só o dono, `.strict()`, nada do provedor); comandos `cancelRenewal`, `requestRefund` e `openOverduePayment` com trava sem fila por loja e limite de 1 a cada 30 s e 10 por hora; avisos e `noticeStillTrue`; flags `BILLING_SELF_SERVICE_ENABLED` (só liga com E, E2 e G na `main`) e `WELCOME_EMAIL_ENABLED`; R-1 (Pix vai ao suporte até a prova S3.2), R-4 (sem QR) e R-5 (sem `syncPlan`). Decisões do usuário de 23/10: cancelar a renovação não se desfaz; cada nova assinatura abre nova janela de 7 dias; aviso da renovação anual 7 dias antes; suporte no staging em `contato.juniordiniz@gmail.com`. |
 | Caixa de suporte em produção | Pendente | Depende da P48 (domínio de e-mail com DMARC em modo de aplicação). |
-| PR B (migration 0100) a H, Gate 7 | Não iniciado | Sequência no ADR 0104, decisão 10. |
+| PR B: migration 0100 (t312) | Em revisão | Colunas do §7 em `organization_billing` (só o papel de cobrança grava), `billing_cancellation_feedback` (sem loja nem pessoa, 12 meses, fora do purge), tipos de auditoria do dono, `attachProvider` e `processEvent` gravando preço e 1ª cobrança, contador do limite por loja e rede de segurança horária do reembolso (20 lojas por passada, recuo de 1 h a 24 h, parada em 10). O número da migration é provisório. |
+| PR C a H, Gate 7 | Não iniciado | Sequência no ADR 0104, decisão 10. |
 
 ### Início (F2), PR 2: filtro "sem custo" e endereços diretos (t286; sem migration)
 

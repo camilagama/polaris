@@ -235,6 +235,20 @@ describe("alert signals", () => {
     }
   });
 
+  it("wake someone at the first stop of the refund safety net and at the first incident not written", () => {
+    for (const event of [
+      "billing_refund_rearm_exhausted",
+      "billing_refund_pending_incident_failed",
+    ]) {
+      const signals = alertSignals.filter((candidate) =>
+        (candidate.source.events as readonly string[]).includes(event)
+      );
+      expect(signals, event).toHaveLength(1);
+      expect(signals[0]?.threshold).toEqual({ atLeast: 1, kind: "count" });
+      expect(signals[0]?.notify).toBe("wake");
+    }
+  });
+
   it("have a positive window and a threshold that can fire", () => {
     for (const signal of alertSignals) {
       expect(signal.windowMinutes).toBeGreaterThan(0);

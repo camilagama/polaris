@@ -140,6 +140,37 @@ export interface UnclaimedTrialEvent {
  */
 export type UnclaimedTrialOutcome = "cancelled" | "left_paid" | "not_pending";
 
+/**
+ * What the checkout asked the provider for, recorded with the link (ADR 0104, §7 of design t268): the price of one
+ * cycle (`billing_prices`, as money.md writes it) with its catalog ID, and the day of the first charge (São Paulo).
+ */
+export interface CheckoutTerms {
+  /** `AAAA-MM-DD`, the `firstChargeOn` sent to the provider. */
+  firstChargeOn: string;
+  /** `"24.90"`: never passes through `number`. */
+  priceAmount: string;
+  priceId: string;
+}
+
+/**
+ * A subscription whose payment was taken back (a refund or a chargeback) while its renewal is still alive at the
+ * provider, handed to the hourly safety net (ADR 0104, decision 6). `attempt` counts this try (1 to 10).
+ */
+export interface RefundedRenewal extends BillingProviderLink {
+  attempt: number;
+  organizationId: string;
+  reason: "chargeback" | "refund";
+}
+
+/** What one pass of the safety net did (ADR 0104, decision 6). */
+export interface RefundRearmReport {
+  /** Stores whose 10th try failed: the net stops for them (`billing_refund_rearm_exhausted`). */
+  exhausted: number;
+  failed: number;
+  rearmed: number;
+  scanned: number;
+}
+
 /** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
 export interface ReplacedProviderReference {
   provider: string;
@@ -184,8 +215,23 @@ export interface BillingStore {
   attachProvider: (
     organizationId: string,
     provider: string,
-    providerRef: string
+    providerRef: string,
+    /**
+     * The price and the day of the first charge sent to the provider, recorded with a new link (ADR 0104). A new
+     * link also clears what belonged to the previous one: its first charge, the owner's refund request and the
+     * back-off of the safety net, so each new subscription opens a new window of the right of withdrawal.
+     */
+    terms?: CheckoutTerms
   ) => Promise<ReplacedProviderReference | null>;
+  /**
+   * Counts one owner's command that calls the provider (ADR 0104, decision 4): at most one every 30 seconds and 10
+   * an hour per organization, the hour counted from its first command. Answers false, counting nothing, when the
+   * command is over the limit. The caller holds the organization's command lock.
+   */
+  claimProviderCommand: (
+    organizationId: string,
+    now?: Date
+  ) => Promise<boolean>;
   /**
    * Whether the closure already gave up, at the provider, the checkout this
    * link names (the ledger row `recordCheckoutDiscarded` wrote for it).
@@ -244,6 +290,33 @@ export interface BillingStore {
     },
     now?: Date
   ) => Promise<void>;
+  /**
+   * The hourly safety net of a refund or a chargeback (ADR 0104, decision 6): a store whose current link had a
+   * payment taken back (`refund` or `chargeback`, never `won`) while its renewal was not cancelled gets the renewal
+   * cancelled through `cancel`, at most `limit` stores a pass. Each try is counted before the call, and a store that
+   * failed waits 1 h, 2 h, 4 h and so on up to 24 h before the next one; the 10th failure stops the net for that
+   * link (`billing_refund_rearm_exhausted`) and opens one operational incident `billing_refund_pending` with the cause
+   * `refund_rearm_exhausted` for the store and link. A cancellation is recorded on the memory of the payment taken back
+   * (`revoked_cancel_at_period_end`) with the ledger row `command:revoked_cancel:<store>:<digest>:<n>`. A new link
+   * clears the memory, so a new subscription is never touched. Only stores linked to one of `providers`.
+   */
+  rearmRefundedRenewals: (input: {
+    cancel: (
+      renewal: RefundedRenewal
+    ) => Promise<"already_cancelled" | "cancelled" | "nothing_to_cancel">;
+    limit?: number;
+    now?: Date;
+    providers: readonly string[];
+  }) => Promise<RefundRearmReport>;
+  /**
+   * The owner's refunds still not completed 24 hours after the request (ADR 0104, decision 6): each store and
+   * request becomes one occurrence of the operational incident `billing_refund_pending`, with a ledger row of its own
+   * (`command:refund_pending:<store>:<moment of the request>`), so a second pass adds nothing. It also writes the
+   * incident of a safety net stopped after its 10th failure (cause `refund_rearm_exhausted`, ledger row
+   * `command:refund_rearm_exhausted:<store>:<digest>`, one per store and link) when that pass could not, an hour
+   * after the 10th try at the earliest. Reads at most `limit` stores of each cause. Answers how many were recorded now.
+   */
+  recordPendingRefundIncidents: (now?: Date, limit?: number) => Promise<number>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
     input: RecordBillingEventInput
@@ -612,6 +685,54 @@ async function finishEvent(
   );
 }
 
+/** The states a first charge takes to `active`: a trial (being set up or running) or Free (Pix Automático without a trial). */
+const FIRST_CHARGE_FROM: ReadonlySet<BillingState> = new Set([
+  "free",
+  "free_over_limit",
+  "trial_setup",
+  "trialing",
+]);
+
+/**
+ * The first charge of the link (ADR 0104, §7 of design t268), when an applied `charge_succeeded` takes the record
+ * from a trial or Free to `active`: the moment the provider says it happened (`occurredAt`), never the moment it was
+ * processed, so a late webhook does not push the window of the right of withdrawal; the amount the fact carries (the
+ * price sent to the provider without one); and the ledger row of the fact. Only the first one of the link: a renewal,
+ * or a charge after one taken back on the same link, keeps what is there.
+ */
+async function recordFirstCharge(
+  client: PoolClient,
+  input: {
+    after: BillingState;
+    before: BillingState;
+    eventId: string;
+    fact: BillingFact;
+    organizationId: string;
+  }
+): Promise<void> {
+  const { fact } = input;
+  if (
+    fact.type !== "charge_succeeded" ||
+    !FIRST_CHARGE_FROM.has(input.before) ||
+    input.after !== "active"
+  ) {
+    return;
+  }
+  await client.query(
+    `UPDATE public.organization_billing SET
+       first_charge_at = $2::timestamptz,
+       first_charge_amount = COALESCE($3::numeric, price_amount),
+       first_charge_event_id = $4::uuid
+     WHERE organization_id = $1 AND first_charge_at IS NULL`,
+    [
+      input.organizationId,
+      fact.occurredAt,
+      fact.amount?.value ?? null,
+      input.eventId,
+    ]
+  );
+}
+
 const ignoredCode: Record<IgnoredFactReason, string> = {
   not_applicable: "not_applicable",
   stale: "stale",
@@ -872,6 +993,13 @@ async function processInTransaction(
     now,
     trialClaimUserId
   );
+  await recordFirstCharge(client, {
+    after: result.record.state,
+    before: before.state,
+    eventId,
+    fact,
+    organizationId,
+  });
   await finishEvent(
     client,
     eventId,
@@ -1288,6 +1416,276 @@ async function reserveTrial(
     : null;
 }
 
+/** The owner's limit on the commands that call the provider (ADR 0104, decision 4). */
+const PROVIDER_COMMAND_SPACING_SECONDS = 30;
+const PROVIDER_COMMANDS_PER_HOUR = 10;
+
+/** The safety net reads this many stores a pass and stops trying a link after this many failures (ADR 0104). */
+export const REFUND_REARM_BATCH = 20;
+export const REFUND_REARM_MAX_ATTEMPTS = 10;
+
+/**
+ * A link the safety net acts on: the payment of the current link was taken back by a refund or a chargeback (never
+ * `won`, which gave nothing back), the renewal was not cancelled at the moment of that fact (the memory keeps it) nor
+ * since, and fewer than 10 tries were spent. `attachProvider` clears the memory, so this always describes the current
+ * link. Constants only: no input reaches this text.
+ */
+const REFUND_REARM_CONDITION = `revoked_reason IN ('refund', 'chargeback')
+  AND revoked_through IS NOT NULL
+  AND provider IS NOT NULL AND provider_ref IS NOT NULL
+  AND NOT revoked_cancel_at_period_end
+  AND NOT cancel_at_period_end
+  AND COALESCE(refund_rearm_attempts, 0) < ${REFUND_REARM_MAX_ATTEMPTS}`;
+
+/**
+ * A link whose safety net stopped: the same payment taken back, the renewal still not cancelled, and the 10 tries
+ * spent. Constants only.
+ */
+const REFUND_REARM_EXHAUSTED_CONDITION = `revoked_reason IN ('refund', 'chargeback')
+  AND revoked_through IS NOT NULL
+  AND provider IS NOT NULL AND provider_ref IS NOT NULL
+  AND NOT revoked_cancel_at_period_end
+  AND NOT cancel_at_period_end
+  AND refund_rearm_attempts >= ${REFUND_REARM_MAX_ATTEMPTS}`;
+
+/** The ledger key of a stopped net: one per store and link (the reference goes in as a digest, as the tries'). */
+const REFUND_REARM_EXHAUSTED_KEY = `'command:refund_rearm_exhausted:' || organization_id || ':' || left(encode(sha256(convert_to(provider_ref, 'UTF8')), 'hex'), 32)`;
+
+/**
+ * The back-off from the last try: 1 h, 2 h, 4 h, 8 h, 16 h, then 24 h, read against `$1` (the pass's clock). Five
+ * minutes of slack, so a pass of the hourly cron is not skipped for the seconds the previous one took.
+ */
+const REFUND_REARM_DUE = `(refund_rearm_at IS NULL
+  OR refund_rearm_at + make_interval(hours => LEAST(power(2, refund_rearm_attempts - 1)::integer, 24)) - interval '5 minutes' <= $1::timestamptz)`;
+
+/** An owner's refund request of the current link still not completed 24 hours later, read against `$1`. */
+const REFUND_PENDING_CONDITION = `refund_requested_at IS NOT NULL
+  AND refund_requested_at <= $1::timestamptz - interval '24 hours'
+  AND provider IS NOT NULL AND provider_ref IS NOT NULL
+  AND revoked_reason IS DISTINCT FROM 'refund'`;
+
+/** The ledger key of a pending refund: one per store and request (the moment of the request, to the microsecond). */
+const REFUND_PENDING_KEY = `'command:refund_pending:' || organization_id || ':' || to_char(refund_requested_at AT TIME ZONE 'UTC', 'YYYYMMDD"T"HH24MISSUS')`;
+
+/**
+ * One store of the safety net: the try is counted first (a Worker that stops mid-way never retries at once), then
+ * the provider is called outside any transaction, then the cancellation is recorded if the link is still the same.
+ */
+async function rearmOne(
+  pool: Pool,
+  organizationId: string,
+  input: {
+    cancel: (
+      renewal: RefundedRenewal
+    ) => Promise<"already_cancelled" | "cancelled" | "nothing_to_cancel">;
+  },
+  now: Date
+): Promise<"exhausted" | "failed" | "rearmed" | "skipped"> {
+  const claimed = await pool.query<{
+    provider: string;
+    provider_ref: string;
+    provider_subscription_id: string | null;
+    refund_rearm_attempts: number;
+    revoked_reason: "chargeback" | "refund";
+  }>(
+    `UPDATE public.organization_billing SET
+       refund_rearm_attempts = COALESCE(refund_rearm_attempts, 0) + 1,
+       refund_rearm_at = $1::timestamptz
+     WHERE organization_id = $2 AND ${REFUND_REARM_CONDITION} AND ${REFUND_REARM_DUE}
+     RETURNING provider, provider_ref, provider_subscription_id, refund_rearm_attempts, revoked_reason`,
+    [now, organizationId]
+  );
+  const [row] = claimed.rows;
+  if (!row) {
+    // something changed since it was listed (a new link, a cancellation)
+    return "skipped";
+  }
+  const renewal: RefundedRenewal = {
+    attempt: row.refund_rearm_attempts,
+    organizationId,
+    provider: row.provider,
+    providerRef: row.provider_ref,
+    providerSubscriptionId: row.provider_subscription_id,
+    reason: row.revoked_reason,
+  };
+  const ids = {
+    attempt: renewal.attempt,
+    organizationId: opaqueId(organizationId),
+    provider: renewal.provider,
+    reason: renewal.reason,
+  };
+  let result: "already_cancelled" | "cancelled" | "nothing_to_cancel";
+  try {
+    result = await input.cancel(renewal);
+  } catch (error: unknown) {
+    if (renewal.attempt >= REFUND_REARM_MAX_ATTEMPTS) {
+      // the net stops here: an incident for a person, the renewal may still charge
+      logger.error("billing_refund_rearm_exhausted", {
+        ...describeError(error),
+        ...ids,
+      });
+      await recordRearmExhaustedIncidentOf(pool, organizationId, now);
+      return "exhausted";
+    }
+    logger.warn("billing_refund_rearm_failed", {
+      ...describeError(error),
+      ...ids,
+    });
+    return "failed";
+  }
+  // every answer means no renewal is alive at the provider: the memory says so, and the net stops
+  let recorded: boolean;
+  try {
+    recorded = await inTransaction(pool, async (client) => {
+      const locked = await lockRecord(client, organizationId);
+      if (
+        locked.provider !== renewal.provider ||
+        locked.provider_ref !== renewal.providerRef ||
+        (locked.revoked_reason !== "refund" &&
+          locked.revoked_reason !== "chargeback") ||
+        locked.revoked_cancel_at_period_end
+      ) {
+        return false;
+      }
+      await client.query(
+        `UPDATE public.organization_billing SET revoked_cancel_at_period_end = true, updated_at = $2, version = version + 1
+        WHERE organization_id = $1`,
+        [organizationId, now]
+      );
+      await writeLedger(
+        client,
+        {
+          fact: { occurredAt: now.toISOString(), type: "revoked_cancel" },
+          factType: "command",
+          organizationId,
+          // one row per link and try; the reference goes in as a digest (the ID has a bounded length)
+          providerEventId: `command:revoked_cancel:${organizationId}:${createHash("sha256").update(renewal.providerRef).digest("hex").slice(0, 32)}:${renewal.attempt}`,
+          providerRef: renewal.providerRef,
+          stateAfter: locked.state as BillingState,
+          stateBefore: locked.state as BillingState,
+        },
+        now
+      );
+      return true;
+    });
+  } catch (error: unknown) {
+    // the database failed after the provider answered: this store waits for its back-off, the pass goes on
+    if (renewal.attempt >= REFUND_REARM_MAX_ATTEMPTS) {
+      logger.error("billing_refund_rearm_exhausted", {
+        ...describeError(error),
+        ...ids,
+      });
+      await recordRearmExhaustedIncidentOf(pool, organizationId, now);
+      return "exhausted";
+    }
+    logger.warn("billing_refund_rearm_failed", {
+      ...describeError(error),
+      ...ids,
+    });
+    return "failed";
+  }
+  logger.info("billing_refund_renewal_rearmed", {
+    ...ids,
+    recorded,
+    renewal: result,
+  });
+  // a link that changed meanwhile is not counted: the memory of the new one was never the net's
+  return recorded ? "rearmed" : "skipped";
+}
+
+/** Writes the ledger row and the incident of one store's pending refund, if the request is still pending. */
+async function recordPendingRefundIncident(
+  pool: Pool,
+  organizationId: string,
+  now: Date
+): Promise<boolean> {
+  return await inTransaction(pool, async (client) => {
+    const row = await lockRecord(client, organizationId);
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO public.billing_events
+         (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at, provider_ref)
+       SELECT 'polaris', ${REFUND_PENDING_KEY}, organization_id,
+              jsonb_build_object('type', 'refund_pending', 'occurredAt', to_char($1::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+              'command', $1::timestamptz, 'applied', state, state, 1, $1::timestamptz, provider_ref
+         FROM public.organization_billing
+        WHERE organization_id = $2 AND ${REFUND_PENDING_CONDITION}
+       ON CONFLICT (provider, provider_event_id) DO NOTHING
+       RETURNING id`,
+      [now, organizationId]
+    );
+    const [event] = inserted.rows;
+    if (!event) {
+      return false;
+    }
+    await client.query(
+      "SELECT public.record_billing_refund_pending_incident($1::uuid, 'refund_not_completed')",
+      [event.id]
+    );
+    // for the operator: the store's opaque ID only (no amount, no reference of the provider)
+    logger.error("billing_refund_pending_incident", {
+      organizationId: opaqueId(organizationId),
+      provider: row.provider ?? undefined,
+    });
+    return true;
+  });
+}
+
+/**
+ * Writes the ledger row and the incident of one store whose safety net stopped, if it is still stopped on the same
+ * link: one occurrence per store and link, so a later pass adds nothing.
+ */
+async function recordRearmExhaustedIncident(
+  pool: Pool,
+  organizationId: string,
+  now: Date
+): Promise<boolean> {
+  return await inTransaction(pool, async (client) => {
+    // the log of the 10th failure (`billing_refund_rearm_exhausted`) already names the store
+    await lockRecord(client, organizationId);
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO public.billing_events
+         (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at, provider_ref)
+       SELECT 'polaris', ${REFUND_REARM_EXHAUSTED_KEY}, organization_id,
+              jsonb_build_object('type', 'refund_rearm_exhausted', 'occurredAt', to_char($1::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+              'command', $1::timestamptz, 'applied', state, state, 1, $1::timestamptz, provider_ref
+         FROM public.organization_billing
+        WHERE organization_id = $2 AND ${REFUND_REARM_EXHAUSTED_CONDITION}
+       ON CONFLICT (provider, provider_event_id) DO NOTHING
+       RETURNING id`,
+      [now, organizationId]
+    );
+    const [event] = inserted.rows;
+    if (!event) {
+      return false;
+    }
+    await client.query(
+      "SELECT public.record_billing_refund_pending_incident($1::uuid, 'refund_rearm_exhausted')",
+      [event.id]
+    );
+    return true;
+  });
+}
+
+/**
+ * The incident of the 10th failure, written in the same pass. A failure here does not stop the pass: it is logged
+ * (`billing_refund_pending_incident_failed`) and `recordPendingRefundIncidents` writes it on a later pass.
+ */
+async function recordRearmExhaustedIncidentOf(
+  pool: Pool,
+  organizationId: string,
+  now: Date
+): Promise<void> {
+  try {
+    await recordRearmExhaustedIncident(pool, organizationId, now);
+  } catch (error: unknown) {
+    logger.error("billing_refund_pending_incident_failed", {
+      ...describeError(error),
+      cause: "refund_rearm_exhausted",
+      organizationId: opaqueId(organizationId),
+    });
+  }
+}
+
 export function createBillingStore(
   connectionString: string,
   options: BillingStoreOptions = {}
@@ -1302,7 +1700,7 @@ export function createBillingStore(
   );
 
   const store: BillingStore = {
-    async attachProvider(organizationId, provider, providerRef) {
+    async attachProvider(organizationId, provider, providerRef, terms) {
       return await inTransaction(pool, async (client) => {
         const row = await lockRecord(client, organizationId);
         const sameSubscription =
@@ -1317,11 +1715,23 @@ export function createBillingStore(
           throw new Error("billing_provider_already_attached");
         }
         await client.query(
-          // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it
+          // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it,
+          // and neither do its first charge, the owner's refund request nor the safety net's back-off (ADR 0104: each
+          // new subscription opens a new window of the right of withdrawal)
           `UPDATE public.organization_billing SET provider = $2, provider_ref = $3, provider_subscription_id = NULL,
              revoked_through = NULL, revoked_reason = NULL, revoked_cycle_months = NULL, revoked_cancel_at_period_end = false,
+             price_amount = $4::numeric, price_id = $5, first_charge_on = $6::date,
+             first_charge_at = NULL, first_charge_amount = NULL, first_charge_event_id = NULL,
+             refund_requested_at = NULL, refund_request_id = NULL, refund_rearm_attempts = NULL, refund_rearm_at = NULL,
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
-          [organizationId, provider, providerRef]
+          [
+            organizationId,
+            provider,
+            providerRef,
+            terms?.priceAmount ?? null,
+            terms?.priceId ?? null,
+            terms?.firstChargeOn ?? null,
+          ]
         );
         // the checkout it replaces may still be open at the provider: the caller gives
         // it up. One that a subscription already came from was finished: nothing to give up
@@ -1330,6 +1740,37 @@ export function createBillingStore(
           row.provider_subscription_id === null
           ? { provider: row.provider, providerRef: row.provider_ref }
           : null;
+      });
+    },
+    async claimProviderCommand(organizationId, now = new Date()) {
+      if (!uuidPattern.test(organizationId)) {
+        throw new TypeError("invalid_organization_id");
+      }
+      return await inTransaction(pool, async (client) => {
+        await lockRecord(client, organizationId);
+        // one statement decides and counts: over the limit, nothing changes
+        const counted = await client.query(
+          `UPDATE public.organization_billing SET
+             provider_command_at = $2::timestamptz,
+             provider_commands_hour_start = CASE
+               WHEN provider_commands_hour_start IS NULL OR provider_commands_hour_start <= $2::timestamptz - interval '1 hour'
+               THEN $2::timestamptz ELSE provider_commands_hour_start END,
+             provider_commands_hour = CASE
+               WHEN provider_commands_hour_start IS NULL OR provider_commands_hour_start <= $2::timestamptz - interval '1 hour'
+               THEN 1 ELSE provider_commands_hour + 1 END
+           WHERE organization_id = $1
+             AND (provider_command_at IS NULL OR provider_command_at <= $2::timestamptz - make_interval(secs => $3))
+             AND (provider_commands_hour_start IS NULL
+               OR provider_commands_hour_start <= $2::timestamptz - interval '1 hour'
+               OR provider_commands_hour < $4)`,
+          [
+            organizationId,
+            now,
+            PROVIDER_COMMAND_SPACING_SECONDS,
+            PROVIDER_COMMANDS_PER_HOUR,
+          ]
+        );
+        return (counted.rowCount ?? 0) === 1;
       });
     },
     async close() {
@@ -1591,6 +2032,116 @@ export function createBillingStore(
         inserted: Number(report?.inserted ?? 0),
         rearmed: Number(report?.rearmed ?? 0),
       };
+    },
+    async rearmRefundedRenewals(input) {
+      const now = input.now ?? new Date();
+      const limit = input.limit ?? REFUND_REARM_BATCH;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new RangeError("invalid_limit");
+      }
+      const due = await pool.query<{ organization_id: string }>(
+        `SELECT organization_id FROM public.organization_billing
+          WHERE ${REFUND_REARM_CONDITION} AND ${REFUND_REARM_DUE} AND provider = ANY($3::text[])
+          ORDER BY refund_rearm_at NULLS FIRST, organization_id
+          LIMIT $2`,
+        [now, limit, [...input.providers]]
+      );
+      const report: RefundRearmReport = {
+        exhausted: 0,
+        failed: 0,
+        rearmed: 0,
+        scanned: due.rows.length,
+      };
+      for (const { organization_id: organizationId } of due.rows) {
+        // biome-ignore lint/performance/noAwaitInLoops: One store at a time, so the provider is never flooded.
+        const outcome = await rearmOne(pool, organizationId, input, now);
+        if (outcome !== "skipped") {
+          report[outcome] += 1;
+          if (outcome === "exhausted") {
+            report.failed += 1;
+          }
+        }
+      }
+      return report;
+    },
+    async recordPendingRefundIncidents(now = new Date(), limit = 50) {
+      const due = await pool.query<{ organization_id: string }>(
+        `SELECT pending.organization_id
+           FROM (
+             SELECT organization_id, ${REFUND_PENDING_KEY} AS ledger_key
+               FROM public.organization_billing
+              WHERE ${REFUND_PENDING_CONDITION}
+           ) AS pending
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.billing_events AS ledger
+             WHERE ledger.provider = 'polaris' AND ledger.provider_event_id = pending.ledger_key
+          )
+          ORDER BY pending.organization_id
+          LIMIT $2`,
+        [now, limit]
+      );
+      // a stopped net whose incident was not written in its pass (the database failed then)
+      const stopped = await pool.query<{ organization_id: string }>(
+        `SELECT stopped.organization_id
+           FROM (
+             SELECT organization_id, ${REFUND_REARM_EXHAUSTED_KEY} AS ledger_key
+               FROM public.organization_billing
+              WHERE ${REFUND_REARM_EXHAUSTED_CONDITION}
+                -- the 10th try is counted before the call: one still running (or a pass that overlaps) is not a stop
+                AND refund_rearm_at <= $2::timestamptz - interval '1 hour'
+           ) AS stopped
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.billing_events AS ledger
+             WHERE ledger.provider = 'polaris' AND ledger.provider_event_id = stopped.ledger_key
+          )
+          ORDER BY stopped.organization_id
+          LIMIT $1`,
+        [limit, now]
+      );
+      let recorded = 0;
+      let failed = 0;
+      const work = [
+        ...due.rows.map((entry) => ({
+          cause: "refund_not_completed" as const,
+          organizationId: entry.organization_id,
+        })),
+        ...stopped.rows.map((entry) => ({
+          cause: "refund_rearm_exhausted" as const,
+          organizationId: entry.organization_id,
+        })),
+      ];
+      for (const { cause, organizationId } of work) {
+        try {
+          const record =
+            cause === "refund_not_completed"
+              ? recordPendingRefundIncident
+              : recordRearmExhaustedIncident;
+          // biome-ignore lint/performance/noAwaitInLoops: One store at a time keeps the load on the billing role bounded.
+          if (await record(pool, organizationId, now)) {
+            recorded += 1;
+            if (cause === "refund_rearm_exhausted") {
+              // the pass that stopped the net could not write the incident: the alert sees it now
+              logger.error("billing_refund_rearm_exhausted", {
+                attempt: REFUND_REARM_MAX_ATTEMPTS,
+                organizationId: opaqueId(organizationId),
+                source: "sweep",
+              });
+            }
+          }
+        } catch (error: unknown) {
+          failed += 1;
+          logger.error("billing_refund_pending_incident_failed", {
+            ...describeError(error),
+            cause,
+            organizationId: opaqueId(organizationId),
+          });
+        }
+      }
+      if (failed > 0) {
+        // the others were recorded; the run shows itself incomplete and the next pass tries again
+        throw new Error("billing_refund_pending_incident_failed");
+      }
+      return recorded;
     },
     async recordEvent(input) {
       const fact = serializeBillingFact(input.fact);

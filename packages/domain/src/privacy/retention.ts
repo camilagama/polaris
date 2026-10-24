@@ -35,6 +35,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "expenses_and_goals",
   "billing_events",
   "billing_trial_claims",
+  "billing_cancellation_feedback",
   "sync_commands",
   "sync_change_log",
   "data_exports",
@@ -116,6 +117,7 @@ export const RESOLVED_RETENTION_BLOCKERS: readonly RetentionBlocker[] =
 export type RetentionPurgeJobId =
   | "auth.login_lock_expiry"
   | "auth.unverified_user_purge"
+  | "privacy.cancellation_feedback_expiry"
   | "privacy.closure_purge_schedule"
   | "media.removed_cleanup"
   | "media.staging_reconcile"
@@ -158,6 +160,7 @@ interface ApprovedDuration extends RetentionPolicyBase {
  * optional margin of days that only lengthens the period (never shortens the legal minimum).
  */
 interface ApprovedCalendarMonths extends RetentionPolicyBase {
+  job?: RetentionPurgeJobId;
   period: { graceDays?: number; kind: "calendar_months"; months: number };
   status: "aprovada";
 }
@@ -372,6 +375,20 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     rule: "O teste grátis vale uma vez por pessoa. A reserva é feita quando a pessoa opta pelo trial e é consumida quando o meio de renovação fica pronto; abandonar o checkout não a consome. A linha guarda só identificadores e datas, sem dado do pagador, e fica fora da exportação do tenant e da leitura do tenant. Quem apaga a conta e cria outra ganha outro trial (risco aceito no ADR 0101).",
     sources: ["ADR 0101", "docs/business-rules/billing-and-entitlements.md"],
     status: "proposta",
+  },
+  {
+    approvedOn: "2026-10-23",
+    basis: "decisao",
+    class: "billing_cancellation_feedback",
+    data: [
+      "billing_cancellation_feedback (motivo opcional do cancelamento da renovação, texto livre de até 500 caracteres, com o dia, o estado e o ciclo; sem loja e sem pessoa)",
+    ],
+    job: "privacy.cancellation_feedback_expiry",
+    period: { kind: "calendar_months", months: 12 },
+    review: USER_APPROVED_REVIEW,
+    rule: "O motivo que o dono escreve ao cancelar a renovação fica 12 meses contados do dia em que foi gravado (`recorded_on`, só o dia, no horário de São Paulo, para não casar com o fato do razão) e sai na manutenção de privacidade, pela função `expire_billing_cancellation_feedback`. Não tem loja nem pessoa: fica fora do purge da organização, da exportação e do atendimento ao titular, porque é texto livre sem vínculo. Nunca vai para o razão de cobrança, log, Sentry nem auditoria (prazo aprovado pelo usuário no desenho t268 de 23/10/2026, ADR 0104).",
+    sources: ["ADR 0104", "docs/business-rules/privacy.md"],
+    status: "aprovada",
   },
   {
     approvedOn: "2026-10-18",
@@ -702,6 +719,10 @@ export const RETENTION_PURGE_JOBS: readonly {
   { class: "data_exports", id: "privacy.data_export_expiry" },
   { class: "queue_processing", id: "outbox.processing_expiry" },
   { class: "closed_organization", id: "privacy.closure_purge_schedule" },
+  {
+    class: "billing_cancellation_feedback",
+    id: "privacy.cancellation_feedback_expiry",
+  },
 ]);
 
 /**

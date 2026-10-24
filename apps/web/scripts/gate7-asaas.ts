@@ -152,10 +152,7 @@ async function authorizeCheckout(cycleMonths: 1 | 6 | 12) {
         requestedOrganizationId: required("organization", values.organization),
       },
       async (transaction, identity) => ({
-        amount: checkoutPriceOf(
-          await listBillingPrices(transaction),
-          cycleMonths
-        ),
+        ...checkoutPriceOf(await listBillingPrices(transaction), cycleMonths),
         organizationId: identity.organizationId,
         userId: identity.userId,
       })

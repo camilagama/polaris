@@ -16,6 +16,7 @@ import {
 } from "../src/server/media-reconciler";
 import {
   runBillingMaintenance,
+  runRefundSafetyNet,
   runUnclaimedTrialSettlement,
   runWooviReconciliation,
 } from "../src/server/billing/maintenance";
@@ -140,7 +141,9 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
 
 /**
  * Applies the events that were received but not processed, then what time itself
- * causes, asks again for the renewal cancellations still owed, reads Woovi's
+ * causes, asks again for the renewal cancellations still owed, cancels the renewal
+ * a refund or a chargeback left alive (and flags the owner's refunds still
+ * pending, ADR 0104), reads Woovi's
  * subscriptions again (the reconciliation), then settles the trials no
  * reservation paid for (ADR 0101).
  */
@@ -171,6 +174,18 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     // after the sweep, which ends what time ended: a closed organization whose renewal is still alive asks again
     const rearmed = await rearmRenewalCancellations(store);
     logger.info("billing_renewal_cancel_rearm_complete", { ...rearmed });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    // after the sweep and the retry pass, which apply the refunds and chargebacks: a renewal they left alive is
+    // cancelled, and a refund the owner asked for 24 hours ago and still not completed is an incident (ADR 0104)
+    const net = await runRefundSafetyNet(env, store);
+    logger.info("billing_refund_safety_net_complete", {
+      pendingRefundIncidents: net.pendingRefundIncidents,
+      providersNotConfigured: net.providersNotConfigured,
+      rearm: { ...net.rearm },
+    });
   } catch (error: unknown) {
     failures.push(error);
   }

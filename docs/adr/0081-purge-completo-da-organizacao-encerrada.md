@@ -6,6 +6,8 @@ status: accepted
 
 > O número deste ADR (0081) estava livre na `main` e nos PRs abertos quando o PR #126 foi refeito sobre a `main` (18/10/2026); pode mudar se outro entrar antes. A migration é a 0075 (`0075_organization_purge.sql`), depois da 0074 da `main`.
 
+> **Emenda de 24/10/2026 (migration 0100, ADR 0104):** são `security` os tipos `billing.checkout_started`, `billing.command_in_progress`, `billing.command_rate_limited`, `billing.command_refused`, `billing.owner_renewal_cancel_requested` e `billing.refund_requested`; `billing.overdue_payment_opened` é `operational`. A 0100 troca a expressão da coluna gerada `event_class` no lugar (`SET EXPRESSION`, sem recriar a coluna) e amplia o `CHECK` `tenant_audit_event_type_registered` com esses tipos.
+
 ## Contexto
 
 O encerramento (ADR 0074) revoga o acesso na hora e deixa os dados intactos durante a janela de recuperação de 30 dias. Depois, a organização fica `closed`. O purge só pode vir 90 dias depois do pedido de encerramento (decisão de 19/10/2026, que trocou os 30 dias iniciais por 90). O plano (PR107) pede o purge: banco, masters e derivados de imagem no R2, cache do catálogo, referências locais e recursos relacionados, de forma idempotente. Três ADRs deixaram requisitos para cá:

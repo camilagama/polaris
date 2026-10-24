@@ -1,11 +1,15 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
+import { ProductIdConflictError } from "@polaris/domain/catalog/product";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "./app";
 import type { RateLimitBinding, WorkerBindings } from "./environment";
 import { TenantRequestContextError } from "./request-context-error";
 import { createRpcRouter } from "./rpc/router";
 
+/** The limit of the plan (50) is not in the answer. */
+const LIMIT_NUMBER = /\b50\b/;
 const baseURL = "https://polaris.example.invalid";
 const secret = "a".repeat(32);
 
@@ -200,6 +204,100 @@ describe("RPC request guards", () => {
     for (const secretValue of ["abc123", "bob@example.com", "stack"]) {
       expect(serialized).not.toContain(secretValue);
     }
+  });
+});
+
+describe("RPC refusal by the plan's limit (corte 61b, AC-1 and AC-7)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const requestId = "0199c2d0-0000-7000-8000-0000000000e1";
+
+  /** `product.create` over HTTP, refused by `refusal` (the plan's limit by default): the tenant runner hands the operation its own identity. */
+  async function createRefusedBy(
+    refusal: Error = new EntitlementLimitReachedError("variants.active.max", 50)
+  ) {
+    const createProduct = vi.fn(() => Promise.reject(refusal));
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        createProduct: createProduct as never,
+        withTenantRequestContext: ((input: {
+          operation: (transaction: unknown, identity: unknown) => unknown;
+        }) =>
+          Promise.resolve(
+            input.operation(
+              {},
+              { organizationId: "org-do-servidor", role: "owner" }
+            )
+          )) as never,
+      }),
+    });
+    const response = await app.request(
+      `${baseURL}/rpc/product/create`,
+      {
+        body: JSON.stringify({
+          json: { name: "Camisa Azul", organizationId: "org-pedida" },
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: baseURL,
+          "x-request-id": requestId,
+        },
+        method: "POST",
+      },
+      createBindings()
+    );
+    return { createProduct, response };
+  }
+
+  it("answers CONFLICT with the reason `entitlement_limit_reached`, without number or key", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { createProduct, response } = await createRefusedBy();
+    const body = await response.text();
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(body)).toMatchObject({
+      json: { code: "CONFLICT", data: { reason: "entitlement_limit_reached" } },
+    });
+    expect(body).not.toContain("variants.active.max");
+    expect(body).not.toMatch(LIMIT_NUMBER);
+    expect(createProduct).toHaveBeenCalledOnce();
+  });
+
+  it("logs one warn line with the rule, the request and the organization of the transaction, and nothing else", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await createRefusedBy();
+
+    const lines = warn.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.event === "entitlement_limit_reached");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      event: "entitlement_limit_reached",
+      limitKey: "variants.active.max",
+      organizationId: "org-do-servidor",
+      requestId,
+    });
+    const serialized = JSON.stringify(lines[0]);
+    for (const leaked of ["Camisa", "org-pedida", "stack"]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it("answers another conflict of the registration with its own reason and does not count it as a limit refusal", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { response } = await createRefusedBy(new ProductIdConflictError());
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      json: { code: "CONFLICT", data: { reason: "product_id_conflict" } },
+    });
+    expect(
+      warn.mock.calls.filter(
+        ([entry]) => entry.event === "entitlement_limit_reached"
+      )
+    ).toEqual([]);
   });
 });
 
