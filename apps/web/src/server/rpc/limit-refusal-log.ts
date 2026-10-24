@@ -29,8 +29,8 @@ export function rememberLimitRefusals(run: TenantRunner): TenantRunner {
 }
 
 /**
- * One countable line per plan-limit refusal of an RPC call (cadastro, variantes, metas): the rule's name, the
- * request and the organization, and nothing of the product, the person or the body. The error carries the
+ * One countable line per plan-limit refusal of an RPC call (any procedure whose transaction throws `EntitlementLimitReachedError`: the registration and the variants; the images leave through the media route, which is not covered): the rule's name, the
+ * request and the organization (left out when the error did not pass through the tenant runner), and nothing of the product, the person or the body. The error carries the
  * refusal as its `cause` (see `clientRpcError`).
  */
 export function logLimitRefusal(error: unknown, requestId: string | undefined) {
