@@ -2,9 +2,47 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import XIcon from "lucide-react/dist/esm/icons/x";
-import type * as React from "react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import {
+  FORM_BODY_CLASS,
+  FORM_CLOSE_CLASS,
+  FORM_ELEMENT_CLASS,
+  FORM_FOOTER_CLASS,
+  FORM_HEADER_CLASS,
+  FORM_POPUP_CLASS,
+} from "@/ui/dialog-layout";
+
+/**
+ * The two layouts of the content: the small centred dialog (a question, a confirmation) and the form, which is the
+ * whole screen below 760 px and a wider centred dialog from there (DESIGN.md, "Diálogo de formulário").
+ */
+type DialogLayout = "dialog" | "form";
+const DialogLayoutContext = React.createContext<DialogLayout>("dialog");
+
+/**
+ * Keeps the form dialog on the part of the screen the person can see. With the keyboard open the layout viewport
+ * does not shrink (iOS, and Chrome for Android since 108), so a box sized by `dvh` would put its footer under the
+ * keyboard; the box follows the visual viewport instead, through two custom properties (`dialog-layout.ts`).
+ */
+function followVisualViewport(popup: HTMLElement | null): (() => void) | void {
+  const viewport = window.visualViewport;
+  if (!(popup && viewport)) {
+    return;
+  }
+  const sync = () => {
+    popup.style.setProperty("--dialog-height", `${viewport.height}px`);
+    popup.style.setProperty("--dialog-top", `${viewport.offsetTop}px`);
+  };
+  sync();
+  viewport.addEventListener("resize", sync);
+  viewport.addEventListener("scroll", sync);
+  return () => {
+    viewport.removeEventListener("resize", sync);
+    viewport.removeEventListener("scroll", sync);
+  };
+}
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -41,29 +79,44 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  layout = "dialog",
   showCloseButton = true,
   ...props
 }: DialogPrimitive.Popup.Props & {
+  /** `"form"`: the whole screen below 760 px, header and footer fixed, only the body scrolling. */
+  layout?: DialogLayout;
   showCloseButton?: boolean;
 }) {
+  const isForm = layout === "form";
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         className={cn(
-          "data-open:fade-in-0 data-closed:fade-out-0 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] duration-[220ms] data-closed:animate-out data-open:animate-in sm:max-w-sm",
+          "data-open:fade-in-0 data-closed:fade-out-0 duration-[220ms] data-closed:animate-out data-open:animate-in",
+          isForm
+            ? FORM_POPUP_CLASS
+            : "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] sm:max-w-sm",
           className
         )}
+        aria-modal="true"
+        data-layout={layout}
         data-slot="dialog-content"
+        ref={isForm ? followVisualViewport : undefined}
         {...props}
       >
-        {children}
+        <DialogLayoutContext.Provider value={layout}>
+          {children}
+        </DialogLayoutContext.Provider>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
             render={
               <Button
-                className="absolute top-2 right-2"
+                className={cn(
+                  "absolute top-2 right-2",
+                  isForm && FORM_CLOSE_CLASS
+                )}
                 size="icon-sm"
                 variant="ghost"
               />
@@ -79,10 +132,38 @@ function DialogContent({
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+  const isForm = React.useContext(DialogLayoutContext) === "form";
   return (
     <div
-      className={cn("flex flex-col gap-2", className)}
+      className={cn(
+        "flex flex-col gap-2",
+        isForm && FORM_HEADER_CLASS,
+        className
+      )}
       data-slot="dialog-header"
+      {...props}
+    />
+  );
+}
+
+/** The `<form>` of a form dialog: the body that scrolls and the footer that stays, in one submit scope. */
+function DialogForm({ className, ...props }: React.ComponentProps<"form">) {
+  return (
+    <form
+      className={cn(FORM_ELEMENT_CLASS, className)}
+      data-slot="dialog-form"
+      noValidate
+      {...props}
+    />
+  );
+}
+
+/** The middle of a form dialog: the only part that scrolls. */
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("grid content-start gap-4", FORM_BODY_CLASS, className)}
+      data-slot="dialog-body"
       {...props}
     />
   );
@@ -96,10 +177,14 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean;
 }) {
+  const isForm = React.useContext(DialogLayoutContext) === "form";
   return (
     <div
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "flex",
+        isForm
+          ? FORM_FOOTER_CLASS
+          : "-mx-4 -mb-4 flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
         className
       )}
       data-slot="dialog-footer"
@@ -143,10 +228,12 @@ function DialogDescription({
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,

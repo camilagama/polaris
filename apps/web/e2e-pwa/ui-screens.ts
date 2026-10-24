@@ -120,6 +120,11 @@ async function exerciseGallery(page: Page) {
     { name: "Abrir diálogo", role: "button" },
     { role: "dialog" }
   );
+  await openAndClose(
+    page,
+    { name: "Abrir formulário", role: "button" },
+    { name: "Novo cadastro", role: "dialog" }
+  );
   await page.getByRole("button", { name: "Abrir popover" }).click();
   await page.getByText("Informe o custo do item para ver a margem.").waitFor();
   await page.keyboard.press("Escape");
