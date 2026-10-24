@@ -30,7 +30,7 @@ import {
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
-import { withCapability } from "./identity";
+import { withCapability } from "@polaris/db/tenant-transaction";
 
 /**
  * `sale.confirm` (plan PR57): a sale made without a connection, confirmed by the

@@ -195,8 +195,7 @@ function createStore(options: { failStock?: boolean; limit?: number } = {}) {
 
   function run<T>(
     identity: typeof owner,
-    input: CreateProductWithOpeningStockInput,
-    occurredOn = today
+    input: CreateProductWithOpeningStockInput
   ): Promise<T> {
     const attempt = queue.then(async () => {
       const staged = copy(committed);
@@ -204,7 +203,6 @@ function createStore(options: { failStock?: boolean; limit?: number } = {}) {
         {} as never,
         identity,
         input,
-        occurredOn,
         dependenciesFor(staged)
       );
       committed = staged;
@@ -230,11 +228,11 @@ const named = {
 } satisfies CreateProductWithOpeningStockInput;
 const withStock = {
   ...named,
-  initialStock: { commandId, quantity: 5, unitCost: "12.5" },
+  initialStock: { commandId, quantity: 5, unitCost: "12.5", occurredOn: today },
 } satisfies CreateProductWithOpeningStockInput;
 const withoutCost = {
   ...named,
-  initialStock: { commandId, quantity: 5, unitCost: null },
+  initialStock: { commandId, quantity: 5, unitCost: null, occurredOn: today },
 } satisfies CreateProductWithOpeningStockInput;
 
 describe("createProductWithOpeningStock", () => {
@@ -277,7 +275,12 @@ describe("createProductWithOpeningStock", () => {
       const store = createStore();
       await store.run(owner, {
         ...named,
-        initialStock: { commandId, quantity: 2, unitCost: "0" },
+        initialStock: {
+          commandId,
+          quantity: 2,
+          unitCost: "0",
+          occurredOn: today,
+        },
       });
       expect(store.data.movements).toEqual([
         {
@@ -308,11 +311,16 @@ describe("createProductWithOpeningStock", () => {
     it("validates the stock before the first write", async () => {
       const store = createStore();
       const bad = [
-        { commandId, quantity: 0, unitCost: "1" },
-        { commandId, quantity: 1.5, unitCost: "1" },
-        { commandId, quantity: 2_147_483_648, unitCost: null },
-        { commandId, quantity: 1, unitCost: "abc" },
-        { commandId: "nope", quantity: 1, unitCost: null },
+        { commandId, quantity: 0, unitCost: "1", occurredOn: today },
+        { commandId, quantity: 1.5, unitCost: "1", occurredOn: today },
+        {
+          commandId,
+          quantity: 2_147_483_648,
+          unitCost: null,
+          occurredOn: today,
+        },
+        { commandId, quantity: 1, unitCost: "abc", occurredOn: today },
+        { commandId: "nope", quantity: 1, unitCost: null, occurredOn: today },
       ];
       for (const initialStock of bad) {
         // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
@@ -321,7 +329,10 @@ describe("createProductWithOpeningStock", () => {
         ).rejects.toBeInstanceOf(Error);
       }
       await expect(
-        store.run(owner, withStock, "2026-13-40")
+        store.run(owner, {
+          ...withStock,
+          initialStock: { ...withStock.initialStock, occurredOn: "2026-13-40" },
+        })
       ).rejects.toBeInstanceOf(InvalidReceiveStockInputError);
       await expect(
         store.run(owner, { ...withStock, name: "   " })
@@ -334,7 +345,12 @@ describe("createProductWithOpeningStock", () => {
       await expect(
         store.run(owner, {
           ...named,
-          initialStock: { commandId, quantity: 1, unitCost: "1,5" },
+          initialStock: {
+            commandId,
+            quantity: 1,
+            unitCost: "1,5",
+            occurredOn: today,
+          },
         })
       ).rejects.toBeInstanceOf(InvalidUnitCostError);
     });

@@ -31,7 +31,7 @@ import {
   normalizeWriteOffStockInput,
 } from "@polaris/domain/inventory/write-off-stock";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
-import { withCapability } from "./identity";
+import { withCapability } from "@polaris/db/tenant-transaction";
 
 /**
  * The three offline stock commands (plan PR56): `stock.receive`,

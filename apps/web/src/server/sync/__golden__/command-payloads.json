@@ -127,5 +127,23 @@
       "recordedAt": "2026-10-14T12:30:00.000Z"
     },
     "type": "sale.confirm"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "categoryId": null,
+      "description": null,
+      "initialStock": {
+        "occurredOn": "2026-10-14",
+        "quantity": 4,
+        "unitCost": null
+      },
+      "listPrice": null,
+      "name": "Bolsa de palha",
+      "sku": null,
+      "productId": "0199c2d0-0000-7000-8000-00000000012f",
+      "variantId": "0199c2d0-0000-7000-8000-000000000130"
+    },
+    "type": "product.create"
   }
 ]

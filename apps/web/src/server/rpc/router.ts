@@ -1762,24 +1762,25 @@ export function createRpcRouter(
           bindings: context.bindings,
           capability: "product:create",
           operation: async (transaction, identity) => {
-            // the opening stock is dated today in the store's time zone, read here on the server
-            const occurredOn = input.initialStock
-              ? await tenantToday(transaction, identity)
-              : "";
             const created = await createTenantProductWithOpeningStock(
               transaction,
               identity,
               {
                 categoryId: input.categoryId ?? null,
                 description: input.description ?? null,
-                initialStock: input.initialStock ?? null,
+                initialStock: input.initialStock
+                  ? {
+                      ...input.initialStock,
+                      // the opening stock is dated today in the store's time zone, read here on the server
+                      occurredOn: await tenantToday(transaction, identity),
+                    }
+                  : null,
                 listPrice: input.listPrice ?? null,
                 name: input.name,
                 productId: input.productId,
                 requestId: requestAuditId(context.requestId),
                 variantId: input.variantId,
               },
-              occurredOn,
               {
                 createProduct: createTenantProduct,
                 inventoryCount: overrides.inventoryCount ?? inventoryCount,

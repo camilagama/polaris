@@ -544,13 +544,17 @@ describe("product RPCs", () => {
         expect.anything(),
         identity,
         expect.objectContaining({
-          initialStock: { commandId, quantity: 5, unitCost: "12.50" },
+          initialStock: {
+            commandId,
+            occurredOn: "2026-10-24",
+            quantity: 5,
+            unitCost: "12.50",
+          },
           listPrice: "49.90",
           name: "Bolsa",
           productId,
           variantId,
         }),
-        "2026-10-24",
         expect.anything()
       );
     });
@@ -580,7 +584,6 @@ describe("product RPCs", () => {
         expect.anything(),
         identity,
         expect.objectContaining({ initialStock: null, listPrice: null }),
-        "",
         expect.anything()
       );
     });

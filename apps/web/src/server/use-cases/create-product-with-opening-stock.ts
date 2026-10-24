@@ -8,6 +8,7 @@ import {
   requireCapabilityInTransaction,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
+  withCapability,
 } from "@polaris/db/tenant-transaction";
 import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
 import {
@@ -19,7 +20,6 @@ import {
 } from "@polaris/domain/catalog/product";
 import { normalizeUnitCost } from "@polaris/domain/inventory/inventory-cost";
 import { normalizeOpeningStockInput } from "@polaris/domain/inventory/opening-stock";
-import { withCapability } from "../sync/handlers/identity";
 
 /**
  * A product with its default variant and, when the person says how many they have, the opening stock: ONE use case
@@ -39,6 +39,11 @@ const VALIDATION_VARIANT_ID = "00000000-0000-7000-8000-000000000000";
 interface OpeningStockRequest {
   /** The ledger command the movement is recorded under; the retry of one form sends the same. */
   commandId: string;
+  /**
+   * The date of the opening stock: the RPC passes today in the store's time zone (read on the server), the sync
+   * passes the date the device wrote in the command.
+   */
+  occurredOn: string;
   quantity: number;
   /** BRL cost of each unit as decimal text; `null` when the person does not know it. */
   unitCost: string | null;
@@ -155,16 +160,13 @@ function repeatedResult(
 type Stock = NonNullable<ReturnType<typeof normalizeOpeningStockInput>>;
 
 /** What the caller wants, validated before the first write (the stock with the variant it will be recorded on). */
-function wantedCreation(
-  input: CreateProductWithOpeningStockInput,
-  occurredOn: string
-): { stock: Stock | null; wanted: WantedCreation } {
+function wantedCreation(input: CreateProductWithOpeningStockInput): { stock: Stock | null; wanted: WantedCreation } {
   const { initialStock: request } = input;
   // a variant the database will name is stood in for by a valid ID, only to validate the rest of the stock
   const stock = request
     ? normalizeOpeningStockInput({
         commandId: request.commandId,
-        occurredOn,
+        occurredOn: request.occurredOn,
         quantity: request.quantity,
         unitCost: request.unitCost,
         variantId: input.variantId ?? VALIDATION_VARIANT_ID,
@@ -243,14 +245,11 @@ async function createOrRepeat(
 /** The stock of a product just created: a receipt with a cost, or a count from zero when the cost is unknown. */
 async function recordOpeningStock(
   transaction: TenantRequestTransaction,
-  identity: TenantRequestIdentity,
+  stockIdentity: TenantRequestIdentity,
   stock: Stock,
   names: { requestId: string | null; variantId: string },
   dependencies: CreateProductWithOpeningStockDependencies
 ): Promise<void> {
-  // The stock repositories keep their own capability check, which `requireCapabilityInTransaction` has already
-  // answered for this role: only a role that holds `inventory:adjust` reaches here.
-  const stockIdentity = withCapability(identity, INVENTORY_ADJUST);
   const { requestId, variantId } = names;
   if (stock.unitCost === null) {
     // a receipt always carries a cost; without one the stock opens as a count from zero, with the cost unknown
@@ -305,14 +304,13 @@ export async function createProductWithOpeningStock(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   input: CreateProductWithOpeningStockInput,
-  occurredOn: string,
   dependencies: CreateProductWithOpeningStockDependencies = defaultDependencies
 ): Promise<CreateProductWithOpeningStockResult> {
   requireCapabilityInTransaction(identity, PRODUCT_CREATE);
   if (input.initialStock) {
     requireCapabilityInTransaction(identity, INVENTORY_ADJUST);
   }
-  const { stock, wanted } = wantedCreation(input, occurredOn);
+  const { stock, wanted } = wantedCreation(input);
 
   const created = await createOrRepeat(
     transaction,
@@ -336,9 +334,10 @@ export async function createProductWithOpeningStock(
   const variantId =
     input.variantId ??
     (await namedVariantId(transaction, identity, product.id, dependencies));
+  // the stock repositories keep their own capability check, which the role answered above
   await recordOpeningStock(
     transaction,
-    identity,
+    withCapability(identity, INVENTORY_ADJUST),
     stock,
     { requestId: input.requestId ?? null, variantId },
     dependencies

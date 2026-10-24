@@ -229,6 +229,7 @@ export function createProductCreateHandler(
             ? {
                 // the command of the sync is the ledger command of the stock
                 commandId: context.commandId,
+                occurredOn: input.initialStock.occurredOn,
                 quantity: input.initialStock.quantity,
                 unitCost: input.initialStock.unitCost,
               }
@@ -240,7 +241,6 @@ export function createProductCreateHandler(
           sku: input.sku,
           variantId: input.variantId,
         },
-        input.initialStock?.occurredOn ?? "",
         useCaseDependencies
       );
       return {

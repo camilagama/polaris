@@ -54,6 +54,17 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
+/** The input of the RPC: the stock without a date, which the server reads as the store's today. */
+type RpcProductInput = Omit<
+  CreateProductWithOpeningStockInput,
+  "initialStock"
+> & {
+  initialStock?: Omit<
+    NonNullable<CreateProductWithOpeningStockInput["initialStock"]>,
+    "occurredOn"
+  > | null;
+};
+
 interface Tenant {
   organizationId: string;
   userId: string;
@@ -162,20 +173,19 @@ async function run() {
 
     const today = calendarDate(0);
     /** What the RPC does: `product:create`, the date read on the server. */
-    const rpc = (
-      tenant: Tenant,
-      input: CreateProductWithOpeningStockInput,
-      occurredOn?: string
-    ) =>
+    const rpc = (tenant: Tenant, input: RpcProductInput, occurredOn?: string) =>
       asTenant(tenant, "product:create", async (transaction, identity) =>
-        createProductWithOpeningStock(
-          transaction,
-          identity,
-          input,
-          input.initialStock
-            ? (occurredOn ?? (await organizationToday(transaction, identity)))
-            : ""
-        )
+        createProductWithOpeningStock(transaction, identity, {
+          ...input,
+          initialStock: input.initialStock
+            ? {
+                ...input.initialStock,
+                occurredOn:
+                  occurredOn ??
+                  (await organizationToday(transaction, identity)),
+              }
+            : null,
+        })
       );
 
     const ids = () => ({
@@ -458,7 +468,7 @@ async function run() {
       "the same creation again (same command, another command with the same stock, none, and the count with an unknown cost) is a repeat: it writes nothing and answers the stored product"
     );
 
-    const conflicts: CreateProductWithOpeningStockInput[] = [
+    const conflicts: RpcProductInput[] = [
       {
         initialStock: {
           commandId: withCost.commandId,
@@ -541,7 +551,7 @@ async function run() {
     // 4. Two calls at once
     // ======================================================================
     const racing = ids();
-    const racingInput: CreateProductWithOpeningStockInput = {
+    const racingInput: RpcProductInput = {
       initialStock: {
         commandId: racing.commandId,
         quantity: 7,
