@@ -3,6 +3,7 @@ import {
   offlineSalePayloadSchema,
 } from "@polaris/contracts";
 import { confirmSale } from "@polaris/db/sale-repository";
+import { withCapability } from "@polaris/db/tenant-transaction";
 import {
   InsufficientStockError,
   InventoryQuantityLimitError,
@@ -30,7 +31,6 @@ import {
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
-import { withCapability } from "@polaris/db/tenant-transaction";
 
 /**
  * `sale.confirm` (plan PR57): a sale made without a connection, confirmed by the

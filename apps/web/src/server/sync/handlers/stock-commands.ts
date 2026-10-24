@@ -3,6 +3,7 @@ import {
   receiveStock,
   writeOffStock,
 } from "@polaris/db/inventory-repository";
+import { withCapability } from "@polaris/db/tenant-transaction";
 import { ProductDeletedError } from "@polaris/domain/catalog/product";
 import {
   InsufficientStockError,
@@ -31,7 +32,6 @@ import {
   normalizeWriteOffStockInput,
 } from "@polaris/domain/inventory/write-off-stock";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
-import { withCapability } from "@polaris/db/tenant-transaction";
 
 /**
  * The three offline stock commands (plan PR56): `stock.receive`,
