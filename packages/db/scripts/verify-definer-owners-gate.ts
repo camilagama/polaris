@@ -27,6 +27,8 @@ import {
  *      organization it sees and writes only that one, whatever the statement asks;
  *   6. a defect planted in a copy of a body (a WHERE dropped, the membership of another organization, a counter of another
  *      organization) stays inside the scope or fails with 42501;
+ *   8. (0100) the owner of the cap on the audit of the owner's refused billing requests: its function, its three
+ *      columns of tenant_audit_event, its one policy, and that it is the only new reader of the tenant audit;
  *   7. the real calls: the bump of a user in two organizations and of a user with no membership, the onboarding run again
  *      and with the organization of another tenant, a sync transaction with two organizations and a SAVEPOINT rolled back.
  * Everything a probe writes is rolled back; the fixtures of step 7 stay, as in the other gates.
@@ -40,6 +42,8 @@ const SYNC_OWNER = "polaris_sync_owner";
 const EPOCH_OWNER = "polaris_authorization_epoch_owner";
 const ONBOARDING_OWNER = "polaris_onboarding_owner";
 const OWNERS = [EPOCH_OWNER, ONBOARDING_OWNER, SYNC_OWNER] as const;
+// the owner of the cap on the audit of the owner's refused billing requests (0100): checked on its own, step 8
+const AUDIT_CAP_OWNER = "polaris_billing_audit_owner";
 const SYNC_SCOPE = "app.owner_scope.sync_organization_id";
 const EPOCH_SCOPE = "app.owner_scope.authorization_epoch_user_id";
 const ONBOARDING_USER_SCOPE = "app.owner_scope.onboarding_user_id";
@@ -1158,6 +1162,114 @@ async function run() {
     assert.equal(gaps, "0", "the numbers of each organization have no gap");
     tests.push(
       "a transaction that writes in two organizations numbers the changes of each at the commit and moves each cursor by its own count; a SAVEPOINT rolled back takes its change with it (B's cursor stays) and the rest is numbered; no change is left without a number and each organization's numbers have no gap"
+    );
+
+    // ------------------------------- 8. the owner of the audit cap (0100, ADR 0104, decision 3): a new reader
+    const capFunction = await client.query<{
+      config: string[] | null;
+      executors: string[];
+      owner: string;
+      secdef: boolean;
+    }>(
+      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS secdef, p.proconfig AS config,
+              ARRAY(SELECT pg_get_userbyid(x.grantee)::text FROM aclexplode(p.proacl) x
+                     WHERE x.privilege_type = 'EXECUTE' ORDER BY 1) AS executors
+         FROM pg_proc p WHERE p.oid = 'public.cap_billing_command_audit()'::regprocedure`
+    );
+    assert.deepEqual(
+      { ...capFunction.rows[0] },
+      {
+        config: ["search_path=pg_catalog, public, pg_temp"],
+        executors: [AUDIT_CAP_OWNER, migrator].sort(),
+        owner: AUDIT_CAP_OWNER,
+        secdef: true,
+      }
+    );
+    const capGranted = await client.query<{ privilege: string }>(
+      `SELECT c.relname || '.' || a.attname || ':' || x.privilege_type AS privilege
+         FROM pg_class c
+         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+        CROSS JOIN LATERAL aclexplode(a.attacl) x
+        WHERE x.grantee = $1::regrole
+       UNION ALL
+       SELECT c.relname || ':' || x.privilege_type
+         FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) x
+        WHERE x.grantee = $1::regrole
+        ORDER BY 1`,
+      [AUDIT_CAP_OWNER]
+    );
+    assert.deepEqual(
+      capGranted.rows.map((row) => row.privilege),
+      [
+        "tenant_audit_event.created_at:SELECT",
+        "tenant_audit_event.event_type:SELECT",
+        "tenant_audit_event.organization_id:SELECT",
+      ],
+      "the cap's owner reads three columns of the audit and nothing else"
+    );
+    const capPolicies = await client.query<{
+      policy: string;
+      qual: string | null;
+      roles: string[];
+    }>(
+      `SELECT tablename || '.' || policyname AS policy, roles::text[] AS roles, qual
+         FROM pg_policies WHERE $1 = ANY(roles) ORDER BY 1`,
+      [AUDIT_CAP_OWNER]
+    );
+    assert.deepEqual(
+      capPolicies.rows.map((row) => [row.policy, row.roles]),
+      [
+        [
+          "tenant_audit_event.tenant_audit_event_billing_audit_owner_select",
+          [AUDIT_CAP_OWNER],
+        ],
+      ]
+    );
+    for (const capped of [
+      "billing.command_rate_limited",
+      "billing.command_in_progress",
+      "billing.command_refused",
+    ]) {
+      assert.ok(capPolicies.rows[0]?.qual?.includes(capped), capped);
+    }
+    assert.equal(
+      capPolicies.rows[0]?.qual?.includes("current_setting"),
+      false,
+      "it reads no setting"
+    );
+    const auditReaders = await client.query<{ grantee: string }>(
+      `SELECT DISTINCT pg_get_userbyid(x.grantee) AS grantee
+         FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) x
+        WHERE a.attrelid = 'public.tenant_audit_event'::regclass AND x.privilege_type = 'SELECT'
+          AND x.grantee <> (SELECT relowner FROM pg_class WHERE oid = 'public.tenant_audit_event'::regclass)
+       UNION
+       SELECT pg_get_userbyid(x.grantee)
+         FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) x
+        WHERE c.oid = 'public.tenant_audit_event'::regclass AND x.privilege_type = 'SELECT'
+          AND x.grantee <> c.relowner
+        ORDER BY 1`
+    );
+    assert.deepEqual(
+      auditReaders.rows.map((row) => row.grantee),
+      [AUDIT_CAP_OWNER, "polaris_retention_owner"],
+      "the cap's owner is the only new reader of the tenant audit"
+    );
+    // an accepted request is invisible to it, whatever the statement asks
+    const accepted = await scalar<string | undefined>(
+      "SELECT id::text AS value FROM public.tenant_audit_event WHERE event_type NOT IN ('billing.command_rate_limited', 'billing.command_in_progress', 'billing.command_refused') LIMIT 1"
+    );
+    if (accepted !== undefined) {
+      await rolledBack({}, AUDIT_CAP_OWNER, async () => {
+        assert.equal(
+          await rowCount(
+            "SELECT organization_id FROM public.tenant_audit_event WHERE event_type NOT IN ('billing.command_rate_limited', 'billing.command_in_progress', 'billing.command_refused')"
+          ),
+          0
+        );
+      });
+    }
+    tests.push(
+      `the cap of the owner's refused billing requests (0100) is SECURITY DEFINER of ${AUDIT_CAP_OWNER} with a fixed search_path (EXECUTE: it and the migrator, for the CREATE TRIGGER); that owner reads exactly organization_id, event_type and created_at of tenant_audit_event under one policy of its own that names the three refusal types and reads no setting, sees no other type, and is the only reader of the tenant audit besides the retention owner`
     );
   } finally {
     await client.end();

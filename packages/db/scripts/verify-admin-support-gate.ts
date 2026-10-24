@@ -70,6 +70,7 @@ const ADMIN_FUNCTIONS = [
   "admin_reactivate_organization",
   "admin_read_auth_access_log",
   "admin_read_operational_incident",
+  "admin_read_refund_window",
   "admin_reissue_closure_notice",
   "admin_release_organization_legal_hold",
   "admin_retry_dead_letter",

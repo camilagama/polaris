@@ -27,8 +27,8 @@ import {
  * of privileged roles for the owners. `pg_database_owner` does not count: it is implicit (the database owner by another
  * name), so no edge into it can exist.
  */
-/** The `polaris_*_owner` roles the migrations create today (17 since 0095): fewer means a role was renamed or is missing. */
-export const MIN_OWNER_ROLES = 17;
+/** The `polaris_*_owner` roles the migrations create today (18 since 0100: polaris_billing_audit_owner): fewer means a role was renamed or is missing. */
+export const MIN_OWNER_ROLES = 18;
 /** What the migrations and the runbook leave reachable besides the logins: the 9 `*_runtime` groups (`polaris_pr11_runtime` is created by hand) and `polaris_closed_export_reader`. */
 export const MIN_REACHABLE_ROLES = 10;
 /** The one reachable role besides the groups that the migrations name: a rename would leave the count unchanged, so it is asked for by name. */

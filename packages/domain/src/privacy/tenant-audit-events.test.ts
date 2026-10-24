@@ -22,10 +22,17 @@ describe("the tenant audit event registry", () => {
     }
   });
 
-  it("marks as security what the decision of 19/10/2026 and its review corrections list, and nothing else", () => {
+  it("marks as security what the decision of 19/10/2026, its review corrections and ADR 0104 list, and nothing else", () => {
     const security = tenantAuditEventTypesOf("security");
     const families = ["data_export.", "offline_grant."];
     const named = [
+      // the owner's billing requests (ADR 0104, decision 3, R-3): the capped refusals too
+      "billing.checkout_started",
+      "billing.command_in_progress",
+      "billing.command_rate_limited",
+      "billing.command_refused",
+      "billing.owner_renewal_cancel_requested",
+      "billing.refund_requested",
       "customer.anonymized",
       "organization.created",
       "organization.closure_requested",
@@ -57,6 +64,14 @@ describe("the tenant audit event registry", () => {
       }
     }
     expect(tenantAuditEventClassOf("sale.confirmed")).toBe("operational");
+    // opening the provider's page of the overdue charge changes nothing (ADR 0104)
+    expect(tenantAuditEventClassOf("billing.overdue_payment_opened")).toBe(
+      "operational"
+    );
+    // the closure's outbox event is not an audit type: the owner's request has its own name
+    expect(isTenantAuditEventType("billing.renewal_cancel_requested")).toBe(
+      false
+    );
   });
 
   it("will make a membership event security when one is registered", () => {

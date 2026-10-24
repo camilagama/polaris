@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   runDataExports: vi.fn(),
   runOrganizationPurges: vi.fn(),
   runPrivacyMaintenance: vi.fn(),
+  runRefundSafetyNet: vi.fn(),
   runUnclaimedTrialSettlement: vi.fn(),
   runWooviReconciliation: vi.fn(),
   unverifiedUserClose: vi.fn(),
@@ -88,8 +89,16 @@ vi.mock("../src/server/media-reconciler", () => ({
   reconcileRemovedMedia: mocks.reconcileRemovedMedia,
   reconcileStagedMedia: mocks.reconcileStagedMedia,
 }));
+/** A pass of the refund safety net with nothing to do. */
+const quietRefundNet = {
+  pendingRefundIncidents: 0,
+  providersNotConfigured: [],
+  rearm: { exhausted: 0, failed: 0, rearmed: 0, scanned: 0 },
+};
+
 vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
+  runRefundSafetyNet: mocks.runRefundSafetyNet,
   runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
   runWooviReconciliation: mocks.runWooviReconciliation,
 }));
@@ -143,6 +152,7 @@ describe("the scheduled maintenance", () => {
     mocks.reconcileRemovedMedia.mockResolvedValue({});
     mocks.runBillingMaintenance.mockResolvedValue({});
     mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
+    mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     mocks.runWooviReconciliation.mockResolvedValue(null);
     mocks.rearmRenewalCancellations.mockResolvedValue({
       inserted: 0,
@@ -291,9 +301,23 @@ describe("the scheduled maintenance", () => {
       order.push("unclaimed");
       return Promise.resolve(null);
     });
+    mocks.runRefundSafetyNet.mockImplementation(() => {
+      order.push("refund net");
+      return Promise.resolve({
+        pendingRefundIncidents: 0,
+        providersNotConfigured: [],
+        rearm: { exhausted: 0, failed: 0, rearmed: 0, scanned: 0 },
+      });
+    });
 
     await expect(runScheduled(configured)).resolves.toBeUndefined();
-    expect(order).toEqual(["maintenance", "rearm", "woovi", "unclaimed"]);
+    expect(order).toEqual([
+      "maintenance",
+      "rearm",
+      "refund net",
+      "woovi",
+      "unclaimed",
+    ]);
     expect(mocks.rearmRenewalCancellations).toHaveBeenCalledWith(
       expect.objectContaining({ close: mocks.billingClose })
     );
@@ -321,6 +345,23 @@ describe("the scheduled maintenance", () => {
       expect.anything(),
       expect.objectContaining({ close: mocks.billingClose })
     );
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the refund safety net on the billing connection, and a failure makes the run incomplete without stopping the rest (ADR 0104)", async () => {
+    mocks.runRefundSafetyNet.mockRejectedValue(
+      new Error("billing_refund_safety_net_incomplete")
+    );
+
+    await expect(runScheduled(configured)).rejects.toThrow(
+      "billing_refund_safety_net_incomplete"
+    );
+    expect(mocks.runRefundSafetyNet).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ close: mocks.billingClose })
+    );
+    expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
     expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
@@ -780,6 +821,7 @@ describe("the outbox cron", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     client = {
@@ -981,6 +1023,7 @@ describe("the queue consumer", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -1507,6 +1550,7 @@ describe("the scheduler tick", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);

@@ -694,6 +694,13 @@
       "when": 1792743223276,
       "tag": "0099_preco_zero_nao_informado_no_catalogo",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1792832741054,
+      "tag": "0100_autosservico_de_cobranca",
+      "breakpoints": true
     }
   ]
 }

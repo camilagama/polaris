@@ -124,7 +124,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
           bindings: context.bindings,
           capability: CAPABILITY,
           operation: async (transaction, identity) => ({
-            amount: checkoutPriceOf(
+            ...checkoutPriceOf(
               await listPrices(transaction),
               input.cycleMonths
             ),

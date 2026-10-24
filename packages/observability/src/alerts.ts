@@ -307,6 +307,29 @@ export const alertSignals = [
       "Falha no envio do e-mail de aviso do encerramento (provedor fora ou endereço recusado)",
     windowMinutes: 1440,
   },
+  {
+    id: "rede-de-reembolso-parada",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_refund_rearm_exhausted"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Rede do reembolso parada numa loja (10ª falha ao cancelar a renovação)",
+    windowMinutes: 60,
+  },
+  {
+    id: "incidente-de-reembolso-nao-gravado",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_refund_pending_incident_failed"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Incidente do reembolso não gravado",
+    windowMinutes: 60,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

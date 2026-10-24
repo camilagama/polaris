@@ -34,6 +34,8 @@
 | [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
+| [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -92,6 +94,7 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 ### cobranca-reconcile — falha de reconcile da cobrança
 
 **O que significa.** A manutenção horária da cobrança (nova tentativa de eventos pendentes e varredura de assinaturas e concessões vencidas) falhou, ou um webhook do provedor não foi processado. Eventos: `billing_maintenance_incomplete` (o job termina em falha), `billing_sweep_failed`, `billing_event_retry_failed`, `billing_grant_sweep_failed` (um item falhou) e `billing_webhook_processing_failed` (o provedor tentará de novo). O job `billing.provider_reconcile` (consulta ao Asaas e à Woovi) está desligado até o Gate 7; quando ligar, a falha dele aparece como `scheduled_job_run` com `outcome = "failure"` e deve entrar neste sinal.
+A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewal_rearmed`, `billing_refund_rearm_failed`, `billing_refund_rearm_exhausted`, `billing_refund_safety_net_incomplete`, `billing_refund_pending_incident` e `billing_refund_pending_incident_failed`. Este sinal não os conta: a parada da rede e a falha ao gravar o incidente têm sinal próprio ([rede-de-reembolso-parada](#rede-de-reembolso-parada) e [incidente-de-reembolso-nao-gravado](#incidente-de-reembolso-nao-gravado)); os outros o operador olha pelo significado e pela ação em [reembolso pendente e rede de segurança do reembolso](./billing-providers.md#reembolso-pendente).
 
 **Como confirmar.** Workers Logs: os cinco eventos, por `errorClass`/`errorCode`, `provider` e `sqlState`; veja também o `scheduled_job_run` de `billing.maintenance`. Uma só falha é retentada no tick seguinte; três em três horas é falha persistente (é o limiar).
 
@@ -235,3 +238,22 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 
 **O que fazer.** `outcome = "failure"`: o problema é do provedor ou da configuração. Confira o estado do Resend, o segredo `RESEND_API_KEY` e o remetente `AUTH_EMAIL_FROM` do Worker (sem imprimir valores). Não é preciso reenviar à mão: a fila tenta de novo, e o repasse horário envia o devido. Se a mensagem cair na DLQ, o incidente aparece em [dlq](#dlq). `outcome = "rejected"`: o provedor recusou o endereço, e não há reenvio automático. O dono corrige o endereço da conta, e o suporte, com um caso de privacidade aberto, reemite o aviso ([runbook dos avisos](./avisos-de-encerramento.md#ato-de-suporte)). Se o endereço não puder ser entregue, o responsável dispensa o aviso com o motivo `email_undeliverable`, sob o caso de exclusão do dono aceito. Nunca grave `sent_at` nem `failed_at` à mão.
 
+<a id="rede-de-reembolso-parada"></a>
+
+### rede-de-reembolso-parada — rede do reembolso parada numa loja
+
+**O que significa.** A rede horária do reembolso (ADR 0104, decisão 6) tentou 10 vezes cancelar a renovação de uma loja cujo pagamento foi devolvido (reembolso ou chargeback) e a 10ª falhou: a rede para nessa loja, e a renovação pode cobrar de novo. O evento é `billing_refund_rearm_exhausted` (erro, com `organizationId` opaco, `provider`, `reason` e `attempt`; quando o incidente só sai na varredura seguinte, porque o banco falhou na passada, o evento sai de novo com `source = "sweep"`). Na mesma passada abre-se o incidente operacional `billing_refund_pending` com a causa `refund_rearm_exhausted`, uma ocorrência por loja e vínculo (repetir a passada não soma).
+
+**Como confirmar.** Workers Logs: `event = "billing_refund_rearm_exhausted"` e as `billing_refund_rearm_failed` da mesma loja nos dias anteriores (o `errorClass`/`errorCode` diz se é chave, provedor fora ou recusa). Admin: o incidente `billing_refund_pending` / `refund_rearm_exhausted` na lista de incidentes.
+
+**O que fazer.** Siga [reembolso pendente e rede de segurança do reembolso](./billing-providers.md#reembolso-pendente): conferir no painel do provedor se a renovação está viva (a 10ª tentativa pode ter cancelado e falhado só ao gravar no banco), cancelá-la à mão se estiver e registrar no caso de suporte da loja. Não zere `refund_rearm_attempts` à mão para a rede tentar de novo.
+
+<a id="incidente-de-reembolso-nao-gravado"></a>
+
+### incidente-de-reembolso-nao-gravado — incidente do reembolso não gravado
+
+**O que significa.** O banco falhou ao gravar o incidente de um reembolso pendente há 24 h (`refund_not_completed`) ou de uma rede parada (`refund_rearm_exhausted`, campo `cause`). O evento é `billing_refund_pending_incident_failed` (erro, com `organizationId` opaco e o erro). Sem o incidente, o operador não vê o caso pela lista do Admin; a passada seguinte tenta de novo.
+
+**Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
+
+**O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)).

@@ -7,6 +7,7 @@ import {
   check,
   index,
   pgPolicy,
+  uniqueIndex,
   pgTable,
   text,
   timestamp,
@@ -67,6 +68,13 @@ export const tenantAuditEvents = pgTable(
       table.createdAt
     ),
     index("tenant_audit_event_request_idx").on(table.requestId),
+    // the owner's billing requests (ADR 0104, decision 3): one row per request ID and type, written with
+    // `INSERT … ON CONFLICT DO NOTHING`; `billing.checkout_started` is not one of the owner's three commands
+    uniqueIndex("tenant_audit_event_billing_request_unique")
+      .on(table.organizationId, table.eventType, table.entityId)
+      .where(
+        sql`${table.eventType} IN ('billing.owner_renewal_cancel_requested', 'billing.refund_requested', 'billing.overdue_payment_opened', 'billing.command_rate_limited', 'billing.command_in_progress', 'billing.command_refused')`
+      ),
     pgPolicy("tenant_audit_event_current_actor_insert", {
       for: "insert",
       to: runtimeRole,

@@ -176,6 +176,14 @@ async function run() {
     assert.deepEqual(ownerRole.rows, [{ login: false }]);
     // exactly what the owner of the functions can read: these columns and nothing else
     const expectedColumns: Record<string, string[]> = {
+      // the reasons of a cancelled renewal, with no store and no person (0100, ADR 0104)
+      billing_cancellation_feedback: [
+        "cycle_months",
+        "id",
+        "reason",
+        "recorded_on",
+        "state",
+      ],
       billing_events: ["attempts", "organization_id", "received_at", "status"],
       devices: ["id", "last_seen_at"],
       entitlement_grants: [
@@ -204,11 +212,15 @@ async function run() {
         "access_ends_at",
         "cancel_at_period_end",
         "cycle_months",
+        // the three of the operator's read of the refund window (0100, ADR 0104, decision 8)
+        "first_charge_amount",
+        "first_charge_at",
         "last_fact_at",
         "organization_id",
         "over_limit_since",
         "pending_cycle_months",
         "provider",
+        "refund_requested_at",
         "revoked_reason",
         "revoked_through",
         "state",
@@ -456,6 +468,7 @@ async function run() {
         "admin_reactivate_organization",
         "admin_read_auth_access_log",
         "admin_read_operational_incident",
+        "admin_read_refund_window",
         "admin_reissue_closure_notice",
         "admin_release_organization_legal_hold",
         "admin_retry_dead_letter",

@@ -114,6 +114,7 @@ const input = {
   amount: "249.00",
   cycleMonths: 12 as const,
   organizationId,
+  priceId: "pro-12",
   trial: true,
   userId,
 };
@@ -134,14 +135,25 @@ describe("firstChargeDateOf", () => {
 
 describe("checkoutPriceOf", () => {
   const prices = [
-    { amount: "24.90", intervalMonths: 1, planId: "pro" },
-    { amount: "99.00", intervalMonths: 6, planId: "business" },
-    { amount: "249.00", intervalMonths: 12, planId: "pro" },
+    { amount: "24.90", id: "pro-1", intervalMonths: 1, planId: "pro" },
+    {
+      amount: "99.00",
+      id: "business-6",
+      intervalMonths: 6,
+      planId: "business",
+    },
+    { amount: "249.00", id: "pro-12", intervalMonths: 12, planId: "pro" },
   ];
 
-  it("returns the exact text of the Pro price of the cycle", () => {
-    expect(checkoutPriceOf(prices, 12)).toBe("249.00");
-    expect(checkoutPriceOf(prices, 1)).toBe("24.90");
+  it("returns the exact text of the Pro price of the cycle, with its catalog ID", () => {
+    expect(checkoutPriceOf(prices, 12)).toEqual({
+      amount: "249.00",
+      priceId: "pro-12",
+    });
+    expect(checkoutPriceOf(prices, 1)).toEqual({
+      amount: "24.90",
+      priceId: "pro-1",
+    });
   });
 
   it("refuses a cycle with no active price, or one only another plan has (AC-42)", () => {
@@ -219,10 +231,12 @@ describe("startCardCheckout", () => {
 
     expect(order).toEqual(["startTrial", "prepare", "attach"]);
     expect(store.startTrial).toHaveBeenCalledWith(organizationId, userId, now);
+    // the price and the day of the first charge sent to the provider stay with the link (ADR 0104)
     expect(store.attachProvider).toHaveBeenCalledWith(
       organizationId,
       "asaas",
-      CHECKOUT_ID
+      CHECKOUT_ID,
+      { firstChargeOn: "2026-10-21", priceAmount: "249.00", priceId: "pro-12" }
     );
     expect(result).toEqual({
       handoff: { kind: "redirect", url: CHECKOUT_URL },
@@ -860,7 +874,8 @@ describe("startPixCheckout", () => {
     expect(store.attachProvider).toHaveBeenCalledWith(
       organizationId,
       "woovi",
-      SUBSCRIPTION_REF
+      SUBSCRIPTION_REF,
+      { firstChargeOn: "2026-10-21", priceAmount: "249.00", priceId: "pro-12" }
     );
     expect(result).toEqual({
       handoff: { emv: EMV, kind: "pix_authorization", url: AUTH_URL },
@@ -883,7 +898,8 @@ describe("startPixCheckout", () => {
     expect(store.attachProvider).toHaveBeenCalledWith(
       organizationId,
       "woovi",
-      SUBSCRIPTION_REF
+      SUBSCRIPTION_REF,
+      { firstChargeOn: "2026-10-14", priceAmount: "249.00", priceId: "pro-12" }
     );
   });
 

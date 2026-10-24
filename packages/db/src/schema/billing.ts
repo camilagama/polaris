@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -10,6 +11,7 @@ import {
   pgPolicy,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -142,6 +144,17 @@ export const organizationBilling = pgTable(
       .notNull(),
     /** The cycle being paid, in months (1, 6 or 12), while Pro. */
     cycleMonths: integer("cycle_months"),
+    /**
+     * The first charge of the current link (ADR 0104, migration 0100): when the provider says it happened
+     * (`fact.occurredAt`, never the moment it was processed), its amount and the ledger row of its fact. Written by
+     * `processEvent` when a `charge_succeeded` takes the record from a trial or Free to `active`, the first time on
+     * the link; cleared by `attachProvider` with a new link. The window of the right of withdrawal counts from it.
+     */
+    firstChargeAmount: numeric("first_charge_amount"),
+    firstChargeAt: timestamp("first_charge_at", { withTimezone: true }),
+    firstChargeEventId: uuid("first_charge_event_id"),
+    /** The day of the first charge the checkout asked the provider for (São Paulo), written by `attachProvider`. */
+    firstChargeOn: date("first_charge_on", { mode: "string" }),
     /** The moment of the newest provider fact applied; an older fact is stale. */
     lastFactAt: timestamp("last_fact_at", { withTimezone: true }),
     organizationId: text("organization_id")
@@ -156,8 +169,20 @@ export const organizationBilling = pgTable(
     overLimitSince: timestamp("over_limit_since", { withTimezone: true }),
     /** A cycle change that takes effect at the next renewal. */
     pendingCycleMonths: integer("pending_cycle_months"),
+    /** The price the checkout sent to the provider for this link (`billing_prices`), written by `attachProvider`. */
+    priceAmount: numeric("price_amount"),
+    priceId: text("price_id"),
     /** Which payment provider holds the subscription, and its reference there (no personal data). */
     provider: text("provider"),
+    /**
+     * The owner's limit on the commands that call the provider (ADR 0104, decision 4): the last one, and the start
+     * of the hour being counted with how many it took. Written under the organization's command lock.
+     */
+    providerCommandAt: timestamp("provider_command_at", { withTimezone: true }),
+    providerCommandsHour: smallint("provider_commands_hour"),
+    providerCommandsHourStart: timestamp("provider_commands_hour_start", {
+      withTimezone: true,
+    }),
     providerRef: text("provider_ref"),
     /**
      * The provider's own ID of the subscription (Asaas `sub_`), stored from the
@@ -176,6 +201,18 @@ export const organizationBilling = pgTable(
      * `won` may be held on a paid period (it changes nothing there), carries no
      * cycle and no cancellation, and stays until another memory replaces it.
      */
+    /**
+     * The hourly safety net (ADR 0104, decision 6): how many times it tried to cancel the renewal a refund or a
+     * chargeback left alive on this link, and when it last tried (the back-off counts from it).
+     */
+    refundRearmAt: timestamp("refund_rearm_at", { withTimezone: true }),
+    refundRearmAttempts: smallint("refund_rearm_attempts"),
+    /**
+     * The owner's first accepted refund request of the current link (ADR 0104, decision 3): the window is judged
+     * at that moment, and the ID of the request that wrote it recognizes its own repeat. Cleared by a new link.
+     */
+    refundRequestedAt: timestamp("refund_requested_at", { withTimezone: true }),
+    refundRequestId: uuid("refund_request_id"),
     revokedCancelAtPeriodEnd: boolean("revoked_cancel_at_period_end")
       .default(false)
       .notNull(),
@@ -252,6 +289,33 @@ export const organizationBilling = pgTable(
     check(
       "organization_billing_provider_subscription_coherent",
       sql`${table.providerSubscriptionId} IS NULL OR (${table.providerRef} IS NOT NULL AND char_length(${table.providerSubscriptionId}) BETWEEN 1 AND 128)`
+    ),
+    // the price sent to the provider, as `billing_prices` holds it (money.md), with its catalog ID
+    check(
+      "organization_billing_price_coherent",
+      sql`(${table.priceAmount} IS NULL) = (${table.priceId} IS NULL)
+        AND (${table.priceAmount} IS NULL OR (${table.priceAmount} > 0 AND scale(${table.priceAmount}) = 2 AND ${table.priceAmount} < 1000000))
+        AND (${table.priceId} IS NULL OR char_length(${table.priceId}) BETWEEN 1 AND 64)`
+    ),
+    // the amount and the event of the first charge exist only with its moment
+    check(
+      "organization_billing_first_charge_coherent",
+      sql`(${table.firstChargeAt} IS NOT NULL OR (${table.firstChargeAmount} IS NULL AND ${table.firstChargeEventId} IS NULL))
+        AND (${table.firstChargeAmount} IS NULL OR (${table.firstChargeAmount} > 0 AND scale(${table.firstChargeAmount}) = 2))`
+    ),
+    check(
+      "organization_billing_refund_request_coherent",
+      sql`${table.refundRequestId} IS NULL OR ${table.refundRequestedAt} IS NOT NULL`
+    ),
+    check(
+      "organization_billing_provider_commands_coherent",
+      sql`(${table.providerCommandsHourStart} IS NULL) = (${table.providerCommandsHour} IS NULL)
+        AND (${table.providerCommandsHour} IS NULL OR ${table.providerCommandsHour} BETWEEN 1 AND 10)`
+    ),
+    check(
+      "organization_billing_refund_rearm_coherent",
+      sql`(${table.refundRearmAttempts} IS NULL) = (${table.refundRearmAt} IS NULL)
+        AND (${table.refundRearmAttempts} IS NULL OR ${table.refundRearmAttempts} BETWEEN 1 AND 10)`
     ),
     // one subscription at a provider belongs to one organization
     uniqueIndex("organization_billing_provider_ref_unique")
@@ -536,6 +600,67 @@ export const operationalVariantSelections = pgTable(
       for: "delete",
       to: runtimeRole,
       using: activeTenantScope(table.organizationId),
+    }),
+  ]
+).enableRLS();
+
+const privacyOwnerRole = "polaris_privacy_owner";
+const adminOwnerRole = "polaris_admin_owner";
+
+/**
+ * The optional reason the owner gives when cancelling the renewal (ADR 0104, decision 3, item 10 of design t268):
+ * free text with no organization and no person, only the day (São Paulo; never the moment, so it does not match the
+ * ledger's fact), the state and the cycle. Only the billing role writes it, only the Admin owner reads it, and the
+ * privacy maintenance deletes it 12 months after `recorded_on` (`billing_cancellation_feedback` in `retention.ts`).
+ * Outside the purge (no organization), the export and the data subject's requests. Never in the ledger, a log or the
+ * audit.
+ */
+export const billingCancellationFeedback = pgTable(
+  "billing_cancellation_feedback",
+  {
+    cycleMonths: integer("cycle_months"),
+    id: uuid("id").default(sql`uuidv7()`).primaryKey(),
+    reason: text("reason").notNull(),
+    recordedOn: date("recorded_on", { mode: "string" })
+      .default(sql`((now() AT TIME ZONE 'America/Sao_Paulo'))::date`)
+      .notNull(),
+    state: text("state").notNull(),
+  },
+  (table) => [
+    check(
+      "billing_cancellation_feedback_reason_length",
+      sql`char_length(${table.reason}) BETWEEN 1 AND 500`
+    ),
+    check(
+      "billing_cancellation_feedback_state_allowed",
+      sql`${table.state} IN ('trialing', 'active', 'grace')`
+    ),
+    check(
+      "billing_cancellation_feedback_cycle_allowed",
+      sql`${table.cycleMonths} IS NULL OR ${table.cycleMonths} IN (1, 6, 12)`
+    ),
+    // what the expiry reads
+    index("billing_cancellation_feedback_recorded_idx").on(table.recordedOn),
+    pgPolicy("billing_cancellation_feedback_billing_runtime_insert", {
+      for: "insert",
+      to: billingRuntimeRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("billing_cancellation_feedback_admin_owner_select", {
+      for: "select",
+      to: adminOwnerRole,
+      using: sql`true`,
+    }),
+    // the privacy owner reads and deletes only what is past its 12 months
+    pgPolicy("billing_cancellation_feedback_privacy_owner_select", {
+      for: "select",
+      to: privacyOwnerRole,
+      using: sql`${table.recordedOn} < ((now() AT TIME ZONE 'America/Sao_Paulo')::date - interval '12 months')`,
+    }),
+    pgPolicy("billing_cancellation_feedback_privacy_owner_delete", {
+      for: "delete",
+      to: privacyOwnerRole,
+      using: sql`${table.recordedOn} < ((now() AT TIME ZONE 'America/Sao_Paulo')::date - interval '12 months')`,
     }),
   ]
 ).enableRLS();
