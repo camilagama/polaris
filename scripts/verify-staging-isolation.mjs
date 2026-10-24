@@ -597,7 +597,7 @@ const REGEX_SPECIAL = /[.+?^${}()|[\]\\-]/g;
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 const WORKERS_DEV_ACCOUNT = /\.([a-z0-9-]+)\.workers\.dev$/i;
 
-/** The host of a route pattern, in lower case, without scheme, path or trailing dot. */
+/** The host of a route pattern, without scheme, path or trailing dot. */
 function routeHost(pattern) {
   return pattern
     .trim()
@@ -641,9 +641,7 @@ function checkProductionHosts(app, production, problems) {
     }
   }
   if (production.routes !== undefined && !Array.isArray(production.routes)) {
-    problems.push(
-      `${app}: env.production routes must be a list (routes deve ser lista)`
-    );
+    problems.push(`${app}: env.production routes must be a list`);
   }
   for (const [where, route] of productionRoutes(production)) {
     if (typeof route !== "string") {

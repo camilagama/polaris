@@ -336,7 +336,7 @@ describe("the staging isolation check", () => {
     production.route = undefined;
     production.routes = { pattern: "dash.araute.app/*" };
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.production routes must be a list (routes deve ser lista)",
+      "web: env.production routes must be a list",
     ]);
   });
 
@@ -355,6 +355,7 @@ describe("the staging isolation check", () => {
       "*.minhaconta.workers.dev/*",
       "https://*.araute.app/*",
       " *.araute.app/*",
+      "dash.araute.app:8443/*",
     ]) {
       production.routes = [pattern];
       expect(findIsolationProblems(entries), pattern).toEqual([
@@ -382,7 +383,7 @@ describe("the staging isolation check", () => {
     for (const routes of [null, "app.example.com/*", 7]) {
       production.routes = routes;
       expect(findIsolationProblems(entries)).toEqual([
-        "web: env.production routes must be a list (routes deve ser lista)",
+        "web: env.production routes must be a list",
       ]);
     }
   });
@@ -399,7 +400,7 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
-  it("sweeps objects and lists in the variables of production as JSON text", () => {
+  it("sweeps every string inside objects and lists in the variables of production", () => {
     const entries = repositoryEntries();
     const { production } = entryOf(entries, "web").config.env;
     production.vars.X = { url: "https://dash.araute.app" };
