@@ -18,6 +18,15 @@ O plano (PR71) pede que o painel de resultado persista o último retrato confirm
 - **O contrato só cresce:** o resumo ganhou `generatedAt`, informado pelo relógio do servidor (o do aparelho não decide nada sobre o "atualizado até"). O servidor sobe antes do app (ADR 0042).
 - **Atrás da chave de build** `VITE_OFFLINE_RUNTIME_ENABLED` (desligada por padrão): sem ela nada é guardado nem lido e a tela é a de antes.
 
+## Emenda (23/10/2026): série diária e mais vendidos no resumo (D2)
+
+Registro datado; a decisão acima continua valendo. Pedida pelo desenho do Início (t269, D2 do t267) e aprovada na rodada desenho-t269.
+
+- **O resumo do período passa a trazer a série diária** (`daily`): um item por data comercial do período, em ordem, com as vendas líquidas e o número de vendas daquela data, calculado pelo mesmo motor (ADR 0053) sobre os mesmos fatos e na mesma transação. Data sem venda vale zero, nunca falta. A série soma o período: Σ das vendas líquidas é igual às vendas líquidas do resumo e Σ das vendas é igual ao número de vendas. A devolução reduz a data da venda devolvida e a venda cancelada vale zero na data dela, como no resumo.
+- **Os mais vendidos entram só quando pedidos** (`topProducts`, de 1 a 10 na entrada): por unidades líquidas de devolução, depois por vendas líquidas e por fim pelo ID do produto; quem foi devolvido inteiro fica de fora. Vêm com o nome atual do produto e dizem se ele foi excluído. Um ranking num RPC próprio leria os fatos do período de novo; por isso ele vive no resumo, e quem não pede não paga.
+- **A cópia guardada é o resumo como o servidor o devolveu**, agora com a série e, se pedido, o ranking. A leitura da cópia valida `daily` e `topProducts` **quando existem**: uma cópia gravada antes da série continua válida (a tela só não desenha a série daquele mês) e uma série malformada (fora de ordem, com dia faltando ou sobrando) descarta a cópia inteira.
+- O contrato só cresce: o servidor sempre manda `daily`; o app novo aceita a cópia antiga sem ela.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.

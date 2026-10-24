@@ -2063,3 +2063,17 @@ Achado do desenho t268 no sandbox do Asaas: o reembolso deixava a assinatura viv
 | Trava de comandos da loja | Em revisão | `withOrganizationLock` no billing store: `pg_try_advisory_xact_lock`, sem fila (`BillingCommandInProgressError`); prova no gate `billing-trial-claims` (PostgreSQL 18 do CI). |
 | Rede de segurança horária (reembolso e chargeback) | Não iniciado | PR seguinte, com limite por passada e recuo por loja. |
 | Gate 7 | Não iniciado | Prova do AS-32 pelo roteiro do QA (assinatura apagada, nenhuma cobrança pendente, contagem do razão igual). |
+
+### Início (F2), PR 1: série diária e mais vendidos no `periodSummary` (t277; emenda D2 do ADR 0056; sem migration)
+
+Desenho t269 v2, aprovado na rodada desenho-t269 (23/10/2026).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Domínio | Em revisão | `economics/period-series.ts`: `dailySales` (uma entrada por data comercial, zero onde não há venda), `productSales` e `topProducts` (unidades líquidas de devolução, depois vendas líquidas, depois ID); `saleItemEconomics` dá a parte de cada item com as regras do motor. Propriedades: Σ da série = vendas líquidas e vendas do período; cada dia = o período daquele dia sozinho; o ranking completo soma as unidades e as vendas líquidas; nada depende da ordem das vendas. |
+| Repositório e RPC | Em revisão | `readPeriodSummary` (fatos lidos uma vez, motor uma vez por venda, nomes dos produtos do ranking na mesma transação e na loja); `report.periodSummary` devolve `daily` sempre e `topProducts` só com `topProducts: 1..10` na entrada. |
+| Registro por pedido | Em revisão | `report_period_summary_read` e `goal_list_read`: linhas lidas por tabela, dias, tamanho da resposta, tempo e o ID opaco da loja, sem valores nem nomes (insumo do M16). O CPU é o da invocação nos Workers Logs, pelo `requestId`. |
+| Cópia local | Em revisão | `isPeriodSummary` valida `daily` e `topProducts` quando existem; a cópia antiga sem série continua válida. |
+| Gate `economics` | Em revisão | Série com venda retroativa, devolução e cancelamento conferida dia a dia contra o resumo daquele dia e contra contagem SQL independente; ranking com produto excluído; outra loja vê série zerada; limite fora de 1..10 recusado. PostgreSQL 18 local e CI. |
+| Semeadura `qa-` | Em revisão | `packages/db/scripts/seed-qa-store.ts` (operador; só loja `qa-`, só banco marcado `staging` ou PostgreSQL local com `--local`, nada sem `--apply`). Não foi rodado em staging. |
+| Medida | Parcial | Local (PostgreSQL 18, 60 dias): 20 vendas/dia ≈ 367 KB por abertura (A + B), 50/dia ≈ 932 KB; o plano da consulta de vendas lê todas as vendas da loja (20 mil para 1.254 do mês), o que pelo critério do desenho pede o índice 1b. CPU e egress em staging pendentes (roteiro no PR). |

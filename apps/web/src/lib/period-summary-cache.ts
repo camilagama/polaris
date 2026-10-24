@@ -11,6 +11,18 @@ import type { PreferenceStorage } from "./current-organization-model";
  */
 const KEY_PREFIX = "polaris.offline.periodSummary.";
 
+/**
+ * A summary as kept on the device: a copy written before the daily series
+ * existed has no `daily` (the screen then draws no series for that month), and
+ * the most sold products are there only when the read asked for them.
+ */
+export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
+  Partial<Pick<PeriodSummaryReadModel, "daily">>;
+
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** How many months are kept per organization; the oldest read goes first. */
 const MAX_MONTHS_PER_ORGANIZATION = 6;
 
@@ -101,10 +113,66 @@ function isInstant(value: unknown): boolean {
   return isText(value) && !Number.isNaN(Date.parse(value));
 }
 
+const DAY_MS = 86_400_000;
+
+/** The date `days` after `date` (both `YYYY-MM-DD`). */
+function dateAfter(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Absent (an older copy), or one entry per date of the period, in order. */
+function isDaily(value: unknown, period: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (
+    !(
+      Array.isArray(value) &&
+      isDictionary(period) &&
+      isText(period.from) &&
+      datePattern.test(period.from) &&
+      !Number.isNaN(Date.parse(`${period.from}T00:00:00.000Z`))
+    )
+  ) {
+    return false;
+  }
+  const { from } = period;
+  return (
+    value.length > 0 &&
+    value.every(
+      (day, index) =>
+        isDictionary(day) &&
+        day.date === dateAfter(from, index) &&
+        isText(day.netSales) &&
+        isCount(day.salesCount)
+    ) &&
+    (value.at(-1) as Dictionary).date === period.to
+  );
+}
+
+/** Absent (not asked for), or the ranked products as the server sent them. */
+function isTopProducts(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (entry) =>
+          isDictionary(entry) &&
+          typeof entry.deleted === "boolean" &&
+          isText(entry.name) &&
+          isText(entry.netSales) &&
+          isText(entry.productId) &&
+          uuidPattern.test(entry.productId) &&
+          isCount(entry.quantity) &&
+          (entry.quantity as number) > 0
+      ))
+  );
+}
+
 /** True when the value has every field the dashboard reads, with the right kind of value. */
-export function isPeriodSummary(
-  value: unknown
-): value is PeriodSummaryReadModel {
+export function isPeriodSummary(value: unknown): value is StoredPeriodSummary {
   return (
     isDictionary(value) &&
     isInstant(value.generatedAt) &&
@@ -112,6 +180,8 @@ export function isPeriodSummary(
     isDictionary(value.chain) &&
     hasAll(value.chain, CHAIN_TEXTS, isText) &&
     isPeriod(value.period) &&
+    isDaily(value.daily, value.period) &&
+    isTopProducts(value.topProducts) &&
     isQuality(value.quality)
   );
 }
@@ -153,7 +223,7 @@ function readEntry(
   storage: PreferenceStorage,
   key: string,
   month: string
-): PeriodSummaryReadModel | null {
+): StoredPeriodSummary | null {
   const parsed: unknown = JSON.parse(storage.getItem(key) ?? "null");
   if (
     !isDictionary(parsed) ||
@@ -208,7 +278,7 @@ export function writePeriodSummaryCache(
   storage: PreferenceStorage | null,
   organizationId: string,
   month: string,
-  summary: PeriodSummaryReadModel,
+  summary: StoredPeriodSummary,
   guard: PeriodSummaryWriteGuard
 ): void {
   if (!guard.offlineRuntimeEnabled || guard.signingOut) {
@@ -233,7 +303,7 @@ export function readPeriodSummaryCache(
   storage: PreferenceStorage | null,
   organizationId: string,
   month: string
-): PeriodSummaryReadModel | null {
+): StoredPeriodSummary | null {
   if (!(storage && monthPattern.test(month))) {
     return null;
   }
