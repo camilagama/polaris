@@ -299,6 +299,61 @@ describe("payment profile RPCs", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("refuses a profile with more than 100 rules before touching anything, and takes exactly 100", async () => {
+    const withTenantRequestContext = vi.fn(createTenantRequestStub());
+    const createPaymentProfile = vi.fn(async () => profileRow);
+    const client = createRpcClient(
+      createRpcRouter({
+        createPaymentProfile,
+        withTenantRequestContext:
+          withTenantRequestContext as unknown as TenantRequestRunner,
+      })
+    );
+    // every rule is distinct (own installment count), so only the size of the list can refuse them
+    const rulesOf = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        anticipationFee: {
+          fixedAmount: null,
+          mode: "unknown" as const,
+          percentage: null,
+        },
+        expectedSettlementDays: null,
+        installmentPlan: "merchant" as const,
+        installments: index + 1,
+        method: "credit_card" as const,
+        processingFee: {
+          fixedAmount: null,
+          mode: "none" as const,
+          percentage: null,
+        },
+      }));
+
+    await expect(
+      client.paymentProfile.create({
+        name: "Perfil",
+        organizationId,
+        rules: rulesOf(101),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      client.paymentProfile.update({
+        expectedVersion: 1,
+        id: profileId,
+        name: "Perfil",
+        organizationId,
+        rules: rulesOf(101),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).not.toHaveBeenCalled();
+
+    await client.paymentProfile.create({
+      name: "Perfil",
+      organizationId,
+      rules: rulesOf(100),
+    });
+    expect(createPaymentProfile).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects profile reads without a Better Auth session", async () => {
     const client = createRpcClient(
       createRpcRouter({
