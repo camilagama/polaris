@@ -244,11 +244,17 @@ function insideOwner(element: Element) {
 /**
  * In page: the box goes past the sides of its parent's. A label centered on a point (the dates of the chart's x axis,
  * Bklit UI) sits in an anchor box with no width: the text is centered on it by construction and is held by the chart's
- * own box, which the check above reads, so a parent of no width is not a box to leave.
+ * own box, which the check above reads, so a parent of no width inside the chart is not a box to leave.
  */
-function spillsSideways(box: DOMRect, outer: DOMRect, tolerance: number) {
+function spillsSideways(
+  box: DOMRect,
+  outer: DOMRect,
+  tolerance: number,
+  parent: Element
+) {
+  const anchor = parent.closest("[data-chart-area]") !== null;
   return (
-    outer.width > 1 &&
+    (!anchor || outer.width > 1) &&
     (box.right > outer.right + tolerance || box.left < outer.left - tolerance)
   );
 }
@@ -280,7 +286,7 @@ function elementsOutside(tolerance: number) {
       );
     } else if (parent && parent !== document.body && inFlow) {
       const outer = parent.getBoundingClientRect();
-      if (spillsSideways(box, outer, tolerance)) {
+      if (spillsSideways(box, outer, tolerance, parent)) {
         found.push(
           `${labelOf(element)} sai de ${labelOf(parent)}: ${Math.round(box.right - outer.right)} px à direita, ${Math.round(outer.left - box.left)} px à esquerda`
         );

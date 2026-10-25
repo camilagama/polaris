@@ -31,9 +31,11 @@ export function Sparkline({
   width,
 }: SparklineProps) {
   const reduced = useReducedMotion() === true;
+  // the data follow the content of the values, not the identity of the array a screen builds on each render
+  const signature = values.join();
   const data = useMemo(
     () => values.map((value) => ({ value: drawn(value) })),
-    [values]
+    [signature]
   );
   if (values.length === 0) {
     return null;

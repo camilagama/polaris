@@ -344,7 +344,7 @@ test("o desenho usa a largura da caixa, sem encolher o texto dos eixos", async (
   expect(measures.svgWidth).toBe(measures.boxWidth);
   // the labels of both axes are 12 px
   expect(measures.sizes).toEqual([12]);
-  // a week has four dates on a phone and five to seven on a wide chart, none touching the next
+  // a week has three or four dates on a phone and five to seven on a wide chart, none touching the next
   const dates = await week.evaluate((image) =>
     [...image.querySelectorAll("span")]
       .filter(
@@ -560,7 +560,7 @@ test("sem o pedaço, o gráfico some e deixa o texto de quem o usa", async ({
   await openGallery(page);
   const areas = page.getByRole("region", { name: "Gráficos de área" });
   await expect(areas.getByText("O gráfico não abriu.")).toHaveCount(8);
-  await expect(page.locator("svg[role=img]")).toHaveCount(0);
+  await expect(areas.locator("[data-chart-area]")).toHaveCount(0);
   await expect(areas.getByRole("slider")).toHaveCount(0);
   // the miniatures go without a word, and the rest of the page is still there
   await expect(

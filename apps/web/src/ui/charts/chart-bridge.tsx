@@ -11,8 +11,9 @@ import { XAxis } from "../bklit/charts/x-axis";
 const DATE_SLOT = 55;
 
 /**
- * The dates of the x axis, as many as the plot has room for: four on a phone (the first, the last and two between),
- * at most six on a wide chart, never two touching ("11/1014/10"). The block takes the count as it is told.
+ * The dates of the x axis, as many as the plot has room for: three or four on a phone (three in the card of the
+ * Início at 360 px), at most six on a wide chart, never two touching ("11/1014/10"). The block takes the count as it
+ * is told.
  */
 export function DateAxis({ labels }: { labels: string[] }) {
   const { innerWidth } = useChartStable();

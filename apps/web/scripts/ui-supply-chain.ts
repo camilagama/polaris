@@ -17,7 +17,7 @@ import { dirname, resolve, sep } from "node:path";
  * the curve, line and area generators the blocks import; `d3-path` is its only dependency and is no longer declared
  * (the hand-written geometry that imported it is gone). No install script. Only the charts chunk imports it (the guard
  * of `pwa/precache-budget.ts`).
- * `motion`, `d3-array` and the seven `@visx/*` came with the charts as Bklit UI distributes them (t336): the blocks
+ * `motion`, `d3-array` and the six `@visx/*` came with the charts as Bklit UI distributes them (t336): the blocks
  * are copied unchanged into `src/ui/charts/`, and these are the packages those files import. None has an install
  * script (`trustedDependencies` stays empty); `motion` is the animation library (`framer-motion` and `motion-dom`
  * under it), the `@visx/*` are the scales, shapes and event helpers (`@visx/vendor` under them carries the d3 modules).
