@@ -284,7 +284,7 @@ export function InventoryPage() {
       <search aria-label="Filtrar estoque" className="grid gap-3">
         <SearchField
           className="md:max-w-md"
-          label="Buscar"
+          label="Buscar no estoque"
           onValueChange={handleQuery}
           placeholder="Produto, variante ou SKU"
           value={filters.query}

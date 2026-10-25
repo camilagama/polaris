@@ -13,7 +13,7 @@ const html = (value: string) =>
     <SearchField
       label="Buscar produto"
       onValueChange={ignore}
-      placeholder="Buscar por nome"
+      placeholder="Nome do produto"
       value={value}
     />
   );

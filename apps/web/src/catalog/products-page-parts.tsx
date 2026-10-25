@@ -172,7 +172,7 @@ export function ProductSearch({ onChange, value }: SearchProps) {
       className="md:max-w-sm"
       label="Buscar produto"
       onValueChange={onChange}
-      placeholder="Buscar por nome"
+      placeholder="Nome do produto"
       value={value}
     />
   );

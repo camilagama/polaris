@@ -17,10 +17,12 @@ import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
   type ComponentType,
   lazy,
+  type MouseEvent,
   type ReactNode,
   Suspense,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { Button } from "@/ui/button";
@@ -137,6 +139,13 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
     setDialog(node?.closest("dialog") ?? null);
   }, []);
 
+  // A native label would press the trigger and open the menu; "Loja" only takes the focus there, like the label of a field.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const focusTrigger = useCallback((event: MouseEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    trigger.current?.focus();
+  }, []);
+
   if (organizations.length < 2) {
     return (
       <p className="m-0 truncate font-medium text-sm">
@@ -147,7 +156,12 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   }
   return (
     <div className="grid gap-1.5" ref={findDialog}>
-      <Label className="font-normal text-xs" id="app-organization-label">
+      <Label
+        className="font-normal text-xs"
+        htmlFor="app-organization"
+        id="app-organization-label"
+        onClick={focusTrigger}
+      >
         Loja
       </Label>
       <Select
@@ -159,6 +173,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
           aria-labelledby="app-organization-label"
           className="w-full min-w-0 data-[size=default]:touch:h-12"
           id="app-organization"
+          ref={trigger}
         >
           <SelectValue />
         </SelectTrigger>

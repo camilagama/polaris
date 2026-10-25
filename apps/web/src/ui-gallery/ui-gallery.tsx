@@ -162,7 +162,7 @@ function GallerySearch() {
     <SearchField
       label="Buscar produto"
       onValueChange={setText}
-      placeholder="Buscar por nome"
+      placeholder="Nome do produto"
       value={text}
     />
   );

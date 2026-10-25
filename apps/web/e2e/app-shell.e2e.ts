@@ -227,6 +227,10 @@ test.describe("desktop (1280 px)", () => {
     await page.goto("/products");
     const store = page.getByRole("combobox", { exact: true, name: "Loja" });
     await expect(store).toContainText("Loja do teste");
+    // clicking the visible label "Loja" takes the focus to the trigger, which keeps its name
+    await page.locator("#app-organization-label").click();
+    await expect(store).toBeFocused();
+    await expect(page.getByRole("option")).toHaveCount(0);
     await store.click();
     // the menu is the themed one (a listbox of options), not the one of the system
     await expect(page.getByRole("option")).toHaveText([
