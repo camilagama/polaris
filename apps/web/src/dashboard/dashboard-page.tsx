@@ -204,9 +204,9 @@ interface Selection {
  */
 export function DashboardPage() {
   const { organization, organizationId } = useCurrentOrganization();
-  const today = useMemo(
-    () => calendarDayInTimezone(new Date(), organization.timezone),
-    [organization.timezone]
+  // the first read has only the device's clock to name "hoje"; the server's answer corrects it (below)
+  const [today, setToday] = useState(() =>
+    calendarDayInTimezone(new Date(), organization.timezone)
   );
   const [selection, setSelection] = useState<Selection>({
     custom: null,
@@ -224,6 +224,20 @@ export function DashboardPage() {
     period,
     copyMonth
   );
+  // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
+  // disagrees, the periods are computed again once, from the server's day, and read again
+  const serverToday =
+    state.source === "server" && state.summary
+      ? calendarDayInTimezone(
+          new Date(state.summary.generatedAt),
+          organization.timezone
+        )
+      : null;
+  useEffect(() => {
+    if (serverToday !== null && serverToday !== today) {
+      setToday(serverToday);
+    }
+  }, [serverToday, today]);
   const snapshot = useRuntimeSnapshot();
   const goals = useGoals(organizationId);
   const [initialTab] = useState(() => readResultTab(window.location.search));

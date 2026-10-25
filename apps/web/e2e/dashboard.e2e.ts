@@ -935,8 +935,8 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await region.getByRole("button", { name: "Ver os números" }).click();
     const first = region.getByRole("table").locator("tbody tr").first();
     await expect(first).toContainText("01/09/2026");
+    await expect(first.getByRole("cell").nth(1)).toHaveText("sem custo");
     await expect(first.getByRole("cell").nth(2)).toHaveText("sem custo");
-    await expect(first.getByRole("cell").nth(3)).toHaveText("sem custo");
   });
 
   test("com o pedaço do gráfico bloqueado, ficam os totais, o melhor dia e a tabela, e o texto do Início", async ({
@@ -1132,5 +1132,130 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
     await openDashboard(page, server, "&aba=resultado&meta=nova");
     await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#goal-create-kind")).toBeVisible();
+  });
+});
+
+test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
+  test("a 360 px, o período é um seletor e a tabela dos dias vira um cartão por dia, sem rolar de lado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+
+    // a Select, no lugar dos botões lado a lado
+    const select = page.getByRole("combobox", { name: "Período" });
+    await expect(select).toBeVisible();
+    await expect(preset(page, "Mês passado")).toHaveCount(0);
+    await select.click();
+    await page.getByRole("option", { name: "Mês passado" }).click();
+    await expect(chartRegion(page)).toContainText("1 a 30 de setembro");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    await select.click();
+    await page.getByRole("option", { name: "Este mês" }).click();
+    await expect(chartRegion(page)).toContainText("1 a 31 de outubro");
+
+    // a card for each day: the name of each column beside its value, and "Depois de hoje" in view
+    await chartRegion(page)
+      .getByRole("button", { name: "Ver os números" })
+      .click();
+    const first = chartRegion(page).locator("tbody tr").first();
+    await expect(first).toContainText("01/10/2026");
+    await Promise.all(
+      [
+        "Vendas líquidas",
+        "Custos",
+        "Resultado do dia",
+        "Despesas do período",
+      ].map((label) =>
+        expect(first.locator(`[data-label="${label}"]`)).toBeVisible()
+      )
+    );
+    await expect(chartRegion(page).locator("tfoot")).toBeVisible();
+    await expect(chartRegion(page).locator("tfoot")).toContainText(
+      "Depois de hoje: despesas R$ 30,00"
+    );
+    // nothing scrolls sideways, in the page or in the card of the numbers
+    const overflow = await page.evaluate(() => {
+      const box = document.querySelector("[data-slot=table-container]");
+      return {
+        box: box ? box.scrollWidth - box.clientWidth : 0,
+        page:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+    expect(overflow.page).toBeLessThanOrEqual(0);
+    expect(overflow.box).toBeLessThanOrEqual(0);
+  });
+
+  test("a 320 px, o valor do cartão não quebra em duas linhas", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 320 });
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    const value = card(page, CARD.netSales).locator("dd").first();
+    await expect(value).toHaveText("R$ 130,00");
+    const box = await value.boundingBox();
+    // one line of the 26 px type
+    expect(box?.height ?? 999).toBeLessThan(40);
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test("o erro do intervalo fica sob o campo Até e é lido com ele", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await preset(page, "Período").click();
+    await page.getByLabel("De", { exact: true }).fill("2026-10-10");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
+    await page.getByRole("button", { name: "Ver período" }).click();
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("A data inicial vem depois da final.");
+    const until = page.getByLabel("Até", { exact: true });
+    const describedBy = await until.getAttribute("aria-describedby");
+    expect(describedBy).toBe(await alert.getAttribute("id"));
+    // under the field, not under the button
+    const alertBox = await alert.boundingBox();
+    const untilBox = await until.boundingBox();
+    const buttonBox = await page
+      .getByRole("button", { name: "Ver período" })
+      .boundingBox();
+    expect(alertBox?.y ?? 0).toBeGreaterThan(untilBox?.y ?? 0);
+    expect(alertBox?.x ?? 999).toBeLessThan(
+      (buttonBox?.x ?? 0) + (buttonBox?.width ?? 0)
+    );
+    await expect(until).toHaveAttribute("aria-invalid", "true");
+  });
+
+  test("o dia da loja vem do relógio do servidor: com o aparelho em outro dia, os períodos são calculados de novo, uma vez", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    // the device is on November 2nd, the server says October 14th (NOW)
+    await page.clock.setFixedTime(new Date("2026-11-02T12:00:00.000Z"));
+    await installServer(page, server);
+    await signIn(page, `user-${crypto.randomUUID()}`);
+
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect(chartRegion(page)).toContainText("1 a 31 de outubro");
+    // the first read named November (the device's day), the second corrected it, and none came after
+    expect(server.periods).toEqual([
+      { from: "2026-11-01", to: "2026-11-30" },
+      { from: "2026-10-01", to: "2026-10-31" },
+    ]);
+    await page.waitForTimeout(500);
+    expect(server.periods).toHaveLength(2);
   });
 });

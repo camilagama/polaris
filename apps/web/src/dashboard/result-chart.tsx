@@ -16,7 +16,9 @@ import {
   CollapsibleTrigger,
 } from "@/ui/collapsible";
 import {
+  Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableFooter,
   TableHead,
@@ -75,6 +77,17 @@ function isNegative(value: string | null | undefined): boolean {
   return typeof value === "string" && value.trim().startsWith("-");
 }
 
+/* The table measures its own box (`@container`), like the one of the return of a sale: narrower than 48rem (a phone, or
+   a tablet with the sidebar open) each day is a card, with the date as its title and the name of each column
+   (`data-label`) beside its value; the head row is only for the screen reader. Nothing scrolls sideways, and "Depois de
+   hoje" stays in view under the cards. */
+const CARD_ROW =
+  "@max-3xl:grid @max-3xl:gap-1 @max-3xl:border-b @max-3xl:py-3 @max-3xl:hover:bg-transparent";
+const CARD_CELL =
+  "text-right tabular-nums @max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:text-left @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
+const CARD_TITLE =
+  "h-auto whitespace-normal py-2.5 text-left align-middle font-medium text-foreground text-sm @max-3xl:px-0 @max-3xl:py-0";
+
 interface NumbersTableProps {
   hasCosts: boolean;
   series: ResultSeries;
@@ -83,28 +96,15 @@ interface NumbersTableProps {
 /** "Ver os números": the day by day (or month by month) table, which is the proof that the drawing hides nothing. */
 function NumbersTable({ hasCosts, series }: NumbersTableProps) {
   const columns = hasCosts ? 5 : 2;
+  const unit = series.grouped ? "mês" : "dia";
   return (
-    // five columns do not fit a phone: the box scrolls sideways, and it is itself a stop of the keyboard, so that a
-    // person with no pointer can scroll it (axe, "scrollable-region-focusable"); the `Table` of the interface would
-    // be a second box that scrolls, with no stop
-    <section
-      aria-label={
-        series.grouped
-          ? "Vendas e custos de cada mês do período"
-          : "Vendas e custos de cada dia do período"
-      }
-      className="focus-ring relative w-full overflow-x-auto rounded-md"
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: a box that scrolls must be a stop of the keyboard
-      tabIndex={0}
-    >
-      <table className="w-full caption-bottom text-sm">
-        <caption className="sr-only">
-          {series.grouped
-            ? "Vendas e custos de cada mês do período"
-            : "Vendas e custos de cada dia do período"}
-        </caption>
-        <TableHeader>
-          <TableRow>
+    <div className="@container">
+      <Table className="@max-3xl:block @max-3xl:[&_tbody]:block @max-3xl:[&_tfoot]:block">
+        <TableCaption className="sr-only">
+          {`Vendas e custos de cada ${unit} do período`}
+        </TableCaption>
+        <TableHeader className="@max-3xl:sr-only">
+          <TableRow className="hover:bg-transparent">
             <TableHead scope="col">{series.grouped ? "Mês" : "Dia"}</TableHead>
             <TableHead className="text-right" scope="col">
               Vendas líquidas
@@ -126,25 +126,31 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
         </TableHeader>
         <TableBody>
           {series.rows.map((row: ResultRow) => (
-            <TableRow key={row.key}>
-              <TableCell>{row.tableLabel}</TableCell>
-              <TableCell className="text-right tabular-nums">
+            <TableRow className={CARD_ROW} key={row.key}>
+              <TableHead className={CARD_TITLE} scope="row">
+                {row.tableLabel}
+              </TableHead>
+              <TableCell className={CARD_CELL} data-label="Vendas líquidas">
                 {formatBrlAmount(row.netSales)}
               </TableCell>
               {hasCosts ? (
                 <>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className={CARD_CELL} data-label="Custos">
                     {costText(row.costs)}
                   </TableCell>
                   <TableCell
                     className={cn(
-                      "text-right tabular-nums",
+                      CARD_CELL,
                       isNegative(row.operatingResult) && "text-destructive"
                     )}
+                    data-label="Resultado do dia"
                   >
                     {costText(row.operatingResult)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell
+                    className={CARD_CELL}
+                    data-label="Despesas do período"
+                  >
                     {row.expenses ? formatBrlAmount(row.expenses) : EMPTY_CELL}
                   </TableCell>
                 </>
@@ -153,16 +159,19 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
           ))}
         </TableBody>
         {series.afterToday ? (
-          <TableFooter>
-            <TableRow>
-              <TableCell className="text-right tabular-nums" colSpan={columns}>
+          <TableFooter className="@max-3xl:block">
+            <TableRow className="@max-3xl:block">
+              <TableCell
+                className="@max-3xl:block @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
+                colSpan={columns}
+              >
                 {`Depois de hoje: despesas ${formatBrlAmount(series.afterToday)}`}
               </TableCell>
             </TableRow>
           </TableFooter>
         ) : null}
-      </table>
-    </section>
+      </Table>
+    </div>
   );
 }
 
