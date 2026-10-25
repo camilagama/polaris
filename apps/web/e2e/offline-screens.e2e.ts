@@ -252,8 +252,16 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await trigger.click();
-    await closeMenu(page);
-    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
+    // so "no menu" alone can pass just before it appears
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      await expect(trigger).toHaveAttribute("aria-expanded", "false", {
+        timeout: 1000,
+      });
+      await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+    await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
     await network.check();
   });
 }
