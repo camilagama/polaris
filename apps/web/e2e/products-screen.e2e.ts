@@ -675,7 +675,13 @@ test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número aco
   await expect(page.getByText("1 de 3")).toBeVisible();
   await search.fill("tenis");
   await expect(page.getByText("Nenhum produto com “tenis”.")).toBeVisible();
-  await search.fill("");
+  // "Limpar busca" shows only with text, empties the field and gives the focus back to it
+  await page.getByRole("button", { name: "Limpar busca" }).click();
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await expect(page.getByRole("button", { name: "Limpar busca" })).toHaveCount(
+    0
+  );
   await expect(page.getByText("3 produtos")).toBeVisible();
 });
 

@@ -5,7 +5,7 @@ import type { Plugin } from "vite";
 import { listFiles, precacheList } from "./service-worker-plugin";
 
 /**
- * The bundle budget of the interface base (ADR 0103, decision 4 and section 4), in four lines, over what the
+ * The bundle budget of the interface base (ADR 0103, decision 4 and section 4), in five lines, over what the
  * service worker precaches (the shell a user downloads):
  * - fonts: the woff2 bytes (already compressed; gzip does not shrink them), at most 55 KB;
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
@@ -17,21 +17,30 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
  * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
- *   other three, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
+ *   others, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
  *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. It is in the
- *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
- *   move for it. A guard fails the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only
- *   they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
- * What going past a line does is one mode for the four of them, `BUDGET_MODE`: "warn" until the cut step, the build
+ *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's
+ *   first script; it counts here and in no other line, so the baseline of the rest does not move for it. A guard fails
+ *   the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
+ * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
+ *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
+ *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
+ *   connection would have only "Hoje"), loaded on demand by the first picker that opens and never with the shell's
+ *   first script; it counts here and in no other line. The worker does not change: it precaches every file of the
+ *   build, and no screen asks for a picker yet, so a production build has no such chunk until one does. A guard fails
+ *   the build when a module of the calendar is in any other chunk (`calendarPlacementProblems`).
+ * What going past a line does is one mode for the five of them, `BUDGET_MODE`: "warn" until the cut step, the build
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
- * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guard of the
- * charts (`chartsPlacementProblems`) and the guard of the chunks that exist for the browser checks only
- * (`testOnlyChunkProblems`).
+ * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guards of the
+ * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`, t363) and
+ * the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
 export const CHARTS_BUDGET_GZIP_BYTES = 8000;
+/** The calendar chunk measured 22 645 B gzip at its first build (t369); a line like the charts', with some room. */
+export const CALENDAR_BUDGET_GZIP_BYTES = 26_000;
 export type BudgetMode = "warn" | "block";
 
 /**
@@ -50,8 +59,8 @@ export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
  */
 export const REST_GROWTH_MARK_GZIP_BYTES = 80_000;
 /**
- * What going past any of the four size lines does (the rest at +44 000 B and its +80 000 B mark, the fonts, the
- * primitives and the charts). "warn" until the cut step before the go-live (Phase 5 of the execution plan), by
+ * What going past any of the size lines does (the rest at +44 000 B and its +80 000 B mark, the fonts, the
+ * primitives, the charts and the calendar). "warn" until the cut step before the go-live (Phase 5 of the execution plan), by
  * decision of the user on 23/10/2026 and 24/10/2026 (ADR 0103, amendments): the build prints the total, the line and
  * the excess and passes. The cut step takes `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the
  * screens and goes back to "block" with firm ceilings. A constant, not an environment variable: changing it is a
@@ -81,6 +90,14 @@ const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
  */
 const CHARTS_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|motion|framer-motion|motion-dom|motion-utils|classnames)[\\/])/;
+/** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
+const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
+/**
+ * What belongs to the calendar chunk and to nothing else: `src/ui/calendar.tsx` (not `calendar-on-demand.tsx`, the
+ * loader the pickers import) and the libraries only it brings (react-day-picker, date-fns and @date-fns/tz).
+ */
+const CALENDAR_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]calendar\.tsx$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react-day-picker|date-fns|@date-fns[\\/]tz)[\\/])/;
 /**
  * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
  * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which
@@ -115,6 +132,8 @@ const INTERFACE_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/](?:ui[\\/]|lib[\\/]utils\.ts$)|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:tailwind-merge|class-variance-authority|clsx|lucide-react)[\\/])/;
 
 export interface PrecacheSize {
+  /** The calendar chunk (`CALENDAR_CHUNK`): a line of its own, apart from the rest. */
+  calendar: number;
   /** The charts chunk (`CHARTS_CHUNK`): a line of its own, apart from the rest. */
   charts: number;
   fonts: number;
@@ -188,6 +207,7 @@ export function measurePrecache(
   readFile: (path: string) => Uint8Array,
   shares: Partial<PrecacheShares> = {}
 ): PrecacheSize {
+  let calendar = 0;
   let charts = 0;
   let fonts = 0;
   let primitives = 0;
@@ -204,13 +224,24 @@ export function measurePrecache(
       charts += gzip;
       continue;
     }
+    if (CALENDAR_CHUNK.test(path)) {
+      calendar += gzip;
+      continue;
+    }
     const ofPrimitives = Math.round(gzip * (shares.primitives?.get(path) ?? 0));
     const ofInterface = Math.round(gzip * (shares.interface?.get(path) ?? 0));
     primitives += ofPrimitives;
     infrastructure += ofInterface;
     rest += gzip - ofPrimitives - ofInterface;
   }
-  return { charts, fonts, interface: infrastructure, primitives, rest };
+  return {
+    calendar,
+    charts,
+    fonts,
+    interface: infrastructure,
+    primitives,
+    rest,
+  };
 }
 
 /**
@@ -233,6 +264,26 @@ export function chartsPlacementProblems(
     );
 }
 
+/**
+ * The same guard for the calendar of the date pickers (t363): react-day-picker and date-fns load on demand, when a
+ * picker opens, never with the shell's first script. Its size has a line of its own (`CALENDAR_BUDGET_GZIP_BYTES`; the
+ * chunk is precached so a picker opens offline); here only its place is checked.
+ */
+export function calendarPlacementProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  return chunks
+    .filter((chunk) => !CALENDAR_CHUNK.test(chunk.fileName))
+    .flatMap((chunk) =>
+      Object.keys(chunk.modules)
+        .filter((id) => CALENDAR_MODULE.test(id))
+        .map(
+          (id) =>
+            `calendar module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the calendar chunk`
+        )
+    );
+}
+
 /** The line the build prints for the charts chunk: how much of the budget it uses, or that this build has none. */
 export function chartsLine(size: PrecacheSize): string {
   if (size.charts === 0) {
@@ -240,6 +291,15 @@ export function chartsLine(size: PrecacheSize): string {
   }
   const left = CHARTS_BUDGET_GZIP_BYTES - size.charts;
   return `CHARTS chunk ${size.charts} B gzip of ${CHARTS_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
+}
+
+/** The line the build prints for the calendar chunk: how much of its budget it uses, or that this build has none. */
+export function calendarLine(size: PrecacheSize): string {
+  if (size.calendar === 0) {
+    return `CALENDAR no calendar chunk in this build (no screen asks for a picker yet), 0 B of ${CALENDAR_BUDGET_GZIP_BYTES} B gzip`;
+  }
+  const left = CALENDAR_BUDGET_GZIP_BYTES - size.calendar;
+  return `CALENDAR chunk ${size.calendar} B gzip of ${CALENDAR_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
 }
 
 export function restBaseline(offlineRuntime: boolean): number {
@@ -279,7 +339,7 @@ interface LineExcess {
   unit: number;
 }
 
-/** The fonts, primitives and charts lines past their numbers (the rest line has its own text and its mark). */
+/** The fonts, primitives, charts and calendar lines past their numbers (the rest line has its own text and its mark). */
 function lineExcesses(size: PrecacheSize): LineExcess[] {
   const lines = [
     { name: "fonts", total: size.fonts, unit: FONT_BUDGET_BYTES },
@@ -292,6 +352,11 @@ function lineExcesses(size: PrecacheSize): LineExcess[] {
       name: "charts chunk",
       total: size.charts,
       unit: CHARTS_BUDGET_GZIP_BYTES,
+    },
+    {
+      name: "calendar chunk",
+      total: size.calendar,
+      unit: CALENDAR_BUDGET_GZIP_BYTES,
     },
   ];
   return lines
@@ -335,7 +400,7 @@ export function budgetProblems(
 }
 
 /**
- * What the build says without failing: each of the four lines past its number while the mode is "warn", with the
+ * What the build says without failing: each of the size lines past its number while the mode is "warn", with the
  * total, the number and the excess, and the rest line past the 80 KB mark as well when it goes that far.
  */
 export function budgetWarnings(
@@ -360,26 +425,29 @@ export function budgetWarnings(
   return warnings;
 }
 
-/** The charts line alone, for the build of the browser checks: a problem in "block", nothing in "warn". */
-export function chartsBudgetProblems(
+/** The lines of the chunks that load on demand (charts and calendar), for the build of the browser checks. */
+const CHUNK_LINES = ["charts chunk", "calendar chunk"];
+
+/** The chunk lines alone, for the build of the browser checks: a problem in "block", nothing in "warn". */
+export function chunkBudgetProblems(
   size: PrecacheSize,
   mode: BudgetMode = BUDGET_MODE
 ): string[] {
   return mode === "block"
     ? lineExcesses(size)
-        .filter((line) => line.name === "charts chunk")
+        .filter((line) => CHUNK_LINES.includes(line.name))
         .map((line) => lineProblem(line, true))
     : [];
 }
 
-/** The charts line alone, as a warning in "warn". */
-export function chartsBudgetWarnings(
+/** The chunk lines alone, as a warning in "warn". */
+export function chunkBudgetWarnings(
   size: PrecacheSize,
   mode: BudgetMode = BUDGET_MODE
 ): string[] {
   return mode === "warn"
     ? lineExcesses(size)
-        .filter((line) => line.name === "charts chunk")
+        .filter((line) => CHUNK_LINES.includes(line.name))
         .map(lineWarning)
     : [];
 }
@@ -391,14 +459,14 @@ function growthLine(size: PrecacheSize, baseline: number): string {
 }
 
 /**
- * Fails the production build of the shell for structure (the placement of the charts, the chunks of the browser
+ * Fails the production build of the shell for structure (the placement of the charts and of the calendar, the chunks of the browser
  * checks) and, with `BUDGET_MODE` in "block", when the precache goes past the budget; in "warn" the size lines only
- * warn. With `only: "charts"` it checks the charts line and the placement guard and nothing else: the build of
- * the browser checks (`vite.pwa.config.ts`), which has the gallery and so the charts chunk that the production build
- * has no screen to ask for yet. `mode` is for the tests of the "block" side; the builds use `BUDGET_MODE`.
+ * warn. With `only: "chunks"` it checks the charts and calendar lines and the placement guards and nothing else:
+ * the build of the browser checks (`vite.pwa.config.ts`), which has the gallery and so the chunks that the production
+ * build has no screen to ask for yet. `mode` is for the tests of the "block" side; the builds use `BUDGET_MODE`.
  */
 export function precacheBudgetPlugin(
-  options: { mode?: BudgetMode; only?: "charts" } = {}
+  options: { mode?: BudgetMode; only?: "chunks" } = {}
 ): Plugin {
   const mode = options.mode ?? BUDGET_MODE;
   let offlineRuntime = false;
@@ -426,7 +494,10 @@ export function precacheBudgetPlugin(
         interface: interfaceShares(chunks),
         primitives: primitiveShares(chunks),
       };
-      placement = chartsPlacementProblems(chunks);
+      placement = [
+        ...chartsPlacementProblems(chunks),
+        ...calendarPlacementProblems(chunks),
+      ];
     },
     name: "polaris:precache-budget",
     writeBundle(output) {
@@ -446,18 +517,19 @@ export function precacheBudgetPlugin(
         (path) => readFileSync(join(directory, path)),
         shares
       );
-      if (options.only === "charts") {
+      if (options.only === "chunks") {
         this.info(chartsLine(size));
-        for (const warning of chartsBudgetWarnings(size, mode)) {
+        this.info(calendarLine(size));
+        for (const warning of chunkBudgetWarnings(size, mode)) {
           this.warn(warning);
         }
-        const chartsProblems = [
+        const chunkProblems = [
           ...placement,
-          ...chartsBudgetProblems(size, mode),
+          ...chunkBudgetProblems(size, mode),
         ];
-        if (chartsProblems.length > 0) {
+        if (chunkProblems.length > 0) {
           this.error(
-            `Charts check of the browser-check build failed (ADR 0103): ${chartsProblems.join("; ")}`
+            `Chunks check of the browser-check build failed (ADR 0103): ${chunkProblems.join("; ")}`
           );
         }
         return;
@@ -475,6 +547,7 @@ export function precacheBudgetPlugin(
       );
       this.info(growthLine(size, baseline));
       this.info(chartsLine(size));
+      this.info(calendarLine(size));
       for (const warning of budgetWarnings(size, baseline, mode)) {
         this.warn(warning);
       }

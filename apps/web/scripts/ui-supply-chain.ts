@@ -22,6 +22,10 @@ import { dirname, resolve, sep } from "node:path";
  * script (`trustedDependencies` stays empty); `motion` is the animation library (`framer-motion` and `motion-dom`
  * under it), the `@visx/*` are the scales, shapes and event helpers (`@visx/vendor` under them carries the d3 modules).
  * The closure is in `ui-dependency-closure.txt`; only the charts chunk imports them (the same guard).
+ * `react-day-picker` and `date-fns` came with the date pickers (t363): the month grid of `src/ui/calendar.tsx` (the
+ * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
+ * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
+ * of `pwa/precache-budget.ts`).
  */
 export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
@@ -38,8 +42,10 @@ export const UI_ALLOWED_PACKAGES = [
   "clsx",
   "d3-array",
   "d3-shape",
+  "date-fns",
   "lucide-react",
   "motion",
+  "react-day-picker",
   "tailwind-merge",
   "tailwindcss",
   "tw-animate-css",

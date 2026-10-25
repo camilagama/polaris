@@ -1,3 +1,4 @@
+import { useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -16,7 +17,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
+import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { Checkbox } from "@/ui/checkbox";
+import { DatePicker } from "@/ui/date-picker";
+import { DateRangePicker } from "@/ui/date-range-picker";
+import {
+  type DateRange,
+  type IsoDate,
+  parseIsoDate,
+  toIsoDate,
+} from "@/ui/date-values";
 import {
   Collapsible,
   CollapsiblePanel,
@@ -71,6 +81,7 @@ import {
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { SearchField } from "@/ui/search-field";
 import { ScrollArea } from "@/ui/scroll-area";
 import {
   Select,
@@ -153,6 +164,19 @@ const LONG_LIST = Array.from(
   (_, index) => `Movimento de estoque ${index + 1}`
 );
 
+/** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
+function GallerySearch() {
+  const [text, setText] = useState("Camiseta");
+  return (
+    <SearchField
+      label="Buscar produto"
+      onValueChange={setText}
+      placeholder="Nome do produto"
+      value={text}
+    />
+  );
+}
+
 function showToast() {
   toastManager.add({
     description: "O comprovante está no histórico.",
@@ -176,6 +200,144 @@ function Section({
       <h2 className="text-section">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * The date pickers (t363), as a screen uses them: the month grid alone, one date (empty, chosen, limited to today, with
+ * its error) and a period. "Hoje" is fixed at 24/10/2026, so the browser checks and the captures see the same month on
+ * any day. The calendar comes through the on-demand loader, as in the app.
+ */
+const TODAY = "2026-10-24";
+const TODAY_DATE = parseIsoDate(TODAY) as Date;
+
+function InlineCalendar() {
+  const [day, setDay] = useState<Date | undefined>(parseIsoDate("2026-10-20"));
+  return (
+    <div className="grid w-fit gap-2">
+      <div className="w-fit rounded-lg p-2 ring-1 ring-foreground/[0.06]">
+        <OnDemandCalendar
+          aria-label="Calendário de exemplo"
+          // inside the section and its frame (6.5 rem of padding at 360 px) the week still fits the window
+          className="touch:[--cell-size:min(2.75rem,calc((100vw_-_6.5rem)/7))]"
+          defaultMonth={TODAY_DATE}
+          disabled={{ after: TODAY_DATE }}
+          disabledReason="Só até hoje"
+          mode="single"
+          onSelect={setDay}
+          selected={day}
+          today={TODAY_DATE}
+        />
+      </div>
+      <p
+        className="text-muted-foreground text-support"
+        data-testid="calendario-escolhido"
+      >
+        {day ? `Escolhido: ${toIsoDate(day)}` : "Nenhum dia escolhido"}
+      </p>
+    </div>
+  );
+}
+
+function DatePickerStates() {
+  const [empty, setEmpty] = useState<IsoDate | null>(null);
+  const [chosen, setChosen] = useState<IsoDate | null>("2026-10-24");
+  const [limited, setLimited] = useState<IsoDate | null>(null);
+  const [required, setRequired] = useState<IsoDate | null>(null);
+  const [period, setPeriod] = useState<DateRange | null>({
+    from: "2026-10-01",
+    to: TODAY,
+  });
+  const [emptyPeriod, setEmptyPeriod] = useState<DateRange | null>(null);
+  return (
+    <>
+      <Section title="Calendário">
+        <InlineCalendar />
+      </Section>
+
+      <Section title="Data">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="galeria-data-vazia">
+              Data da despesa
+            </FieldLabel>
+            <DatePicker
+              id="galeria-data-vazia"
+              label="Data da despesa"
+              onValueChange={setEmpty}
+              today={TODAY}
+              value={empty}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="galeria-data-escolhida">
+              Data de competência
+            </FieldLabel>
+            <DatePicker
+              id="galeria-data-escolhida"
+              label="Data de competência"
+              onValueChange={setChosen}
+              today={TODAY}
+              value={chosen}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="galeria-data-limite">
+              Data do pagamento
+            </FieldLabel>
+            <DatePicker
+              disabledReason="Só até hoje"
+              id="galeria-data-limite"
+              label="Data do pagamento"
+              max={TODAY}
+              min="2026-10-05"
+              onValueChange={setLimited}
+              today={TODAY}
+              value={limited}
+            />
+            <FieldDescription>De 05/10 até hoje.</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="galeria-data-erro">Vencimento</FieldLabel>
+            <DatePicker
+              error={required === null}
+              id="galeria-data-erro"
+              label="Vencimento"
+              onValueChange={setRequired}
+              today={TODAY}
+              value={required}
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="Período">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="galeria-periodo">Período</FieldLabel>
+            <DateRangePicker
+              id="galeria-periodo"
+              label="Período"
+              onValueChange={setPeriod}
+              today={TODAY}
+              value={period}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="galeria-periodo-vazio">
+              Período das vendas
+            </FieldLabel>
+            <DateRangePicker
+              id="galeria-periodo-vazio"
+              label="Período das vendas"
+              onValueChange={setEmptyPeriod}
+              today={TODAY}
+              value={emptyPeriod}
+            />
+          </Field>
+        </div>
+      </Section>
+    </>
   );
 }
 
@@ -433,6 +595,7 @@ export function UiGallery() {
                     Informe um preço maior que zero.
                   </FieldError>
                 </Field>
+                <GallerySearch />
                 <Field>
                   <FieldLabel htmlFor="galeria-observacao">
                     Observação (opcional)
@@ -662,6 +825,8 @@ export function UiGallery() {
           </Section>
 
           <ChartStates />
+
+          <DatePickerStates />
 
           <Section title="Caracteres das fontes">
             <div className="grid gap-2" data-testid="font-sample">
