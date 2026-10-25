@@ -2237,3 +2237,15 @@ Contrato: `ux-padronizacao-2026-10-24`, seção 2.5 e linha D. Só mudam os text
 | Produtos e Estoque | Em revisão | A busca à mão virou o `SearchField`, com o nome acessível de cada tela ("Buscar produto" em Produtos, com o texto de apoio "Nome do produto"; "Buscar no estoque" em Estoque, com "Produto, variante ou SKU"). Em Mais, clicar no rótulo "Loja" do seletor da loja leva o foco ao gatilho (sem abrir o menu). O campo de Produtos passa a ser `type="search"` (papel `searchbox`). Ficam de fora a busca da Nova venda (`sale-variant-picker.tsx`: tem `aria-controls`, Enter que escolhe o primeiro e rótulo visível) e a "Busca" do Histórico (campo rotulado entre outros filtros): não são o mesmo padrão. |
 | Seletor da loja no shell | Em revisão | O `<select>` nativo virou o `Select` do `ui/select.tsx`, com o rótulo "Loja" ligado ao botão, a mesma altura (`h-ctl-md`, 48 px com toque) e a mesma troca de loja (`select` do contexto da organização). A folha "Mais" do celular é um `<dialog>` modal (camada de cima): o menu vai para dentro dela (`container` do `SelectContent`), senão abriria atrás. `SelectItem` ganhou `wrap` para o nome longo de loja quebrar linha no menu. |
 | Provas | Em revisão | `ui/search-field.test.tsx` (marcação); e2e: Limpar só com texto e o foco de volta ao campo (Produtos e Estoque), troca de loja pelo `Select` e o que ela guarda, o clique no rótulo "Loja" que foca o gatilho sem abrir o menu, o menu acima da folha "Mais" a 360 px com Escape fechando só o menu. Verificações de tela (axe, toque, foco) da galeria, de Produtos e do Estoque. |
+
+
+### Seletor de mês refeito (t374, UI-B da padronização de 24/10; sem migration)
+
+Contrato: `ux-padronizacao-2026-10-24`, seção 2.4 e linha B. Nenhum contrato nem regra de negócio muda.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| `expenses/month-picker.tsx` | Em revisão | O `ButtonGroup` "‹ Outubro de 2026 ›" fica; o botão do meio abre o `Popover` do `ui/` com o ano (setas "Ano anterior" e "Próximo ano") sobre a grade de 3 × 4 meses, e escolher um mês fecha e devolve o foco. Teclado: setas, Home, End, PageUp e PageDown, com um só mês na ordem de Tab. Some o `<input type="month">` e o fallback por navegador. Sem o Calendar do DayPicker (ele não tem modo de mês; a grade é botões simples), logo sem o chunk do calendário. Meses futuros: como antes, qualquer mês de 0000-01 a 9999-12. |
+| Resultado ("Outro mês") | Sem mudança | O Resultado não usa mês avulso: o `period-picker.tsx` escolhe presets e um intervalo De/Até (o intervalo vira o `DateRangePicker` na tarefa E/F). Nada a trocar aqui. |
+| Celular | Pendente (t331) | O `Dialog` de tela inteira ainda não existe na `main`: o celular usa o mesmo `Popover`, a 18 rem. |
+| Provas | Em revisão | `expense-screen-parts.test.tsx` (marcação: um botão com o mês, sem `type="month"`, setas desligadas no limite); `e2e/expenses.e2e.ts`: setas, escolha na grade, ano e mês futuro, janeiro depois de dezembro, teclado inteiro e Escape. |
