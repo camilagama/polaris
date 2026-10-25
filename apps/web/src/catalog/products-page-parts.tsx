@@ -3,7 +3,7 @@ import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import SearchIcon from "lucide-react/dist/esm/icons/search";
-import type { ChangeEvent, Ref } from "react";
+import type { ChangeEvent, ReactNode, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -58,6 +58,8 @@ export function OfflineNotice() {
 
 interface FeedbackProps {
   error: string | null;
+  /** What follows the error, on its own line (the way to the Pro after the plan's limit). */
+  errorExtra?: ReactNode;
   notice: string | null;
   /** The error has its own "Tentar novamente" (the product of the address could not be read). */
   onRetryError?: (() => void) | undefined;
@@ -74,6 +76,7 @@ interface FeedbackProps {
 /** What the last action did: nothing is drawn (not even a gap) without a message. */
 export function ActionFeedback({
   error,
+  errorExtra,
   notice,
   onRetryError,
   onUndo,
@@ -97,6 +100,7 @@ export function ActionFeedback({
             }
           >
             {error}
+            {errorExtra}
             {onRetryError ? (
               <Button
                 onClick={onRetryError}
