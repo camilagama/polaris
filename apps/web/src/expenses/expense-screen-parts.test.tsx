@@ -6,37 +6,43 @@ import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
 /**
- * The parts of the expenses screen drawn without a browser: the month picker says the month in words and keeps the
- * browser's month field under it; the list says loading, empty and a failed read apart. The select popups, the
- * typing in the month field and the closed sections are proved in the browser (e2e/expenses.e2e.ts).
+ * The parts of the expenses screen drawn without a browser: the month picker says the month in words in one button
+ * that opens the grid; the list says loading, empty and a failed read apart. The grid, its keys, the select popups and
+ * the closed sections are proved in the browser (e2e/expenses.e2e.ts).
  */
 const noop = () => undefined;
-const MONTH_FIELD = /<input[^>]*id="m"[^>]*type="month"[^>]*value="2026-10"/;
-const MONTH_WORDS = /<span aria-hidden="true"[^>]*>Outubro de 2026<\/span>/;
+const MONTH_BUTTON =
+  /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*>Outubro de 2026<\/button>/;
 const AMOUNT = /R\$\s1\.500,50/;
 
 describe("MonthPicker", () => {
-  it("says the month in words, over the browser's month field named by the label", () => {
+  it("says the month in words in a button that opens the grid, between the two arrows, with no native month field", () => {
     const html = renderToStaticMarkup(
       <MonthPicker
+        currentMonth="2026-10"
         id="m"
         label="Mês de competência"
         month="2026-10"
         onChange={noop}
       />
     );
-    expect(html).toContain("Outubro de 2026");
-    expect(html).toContain('for="m"');
-    expect(html).toMatch(MONTH_FIELD);
+    expect(html).toMatch(MONTH_BUTTON);
     expect(html).toContain('aria-label="Mês anterior"');
     expect(html).toContain('aria-label="Próximo mês"');
-    // the words are what the eye reads; the field's own value is what the screen reader says
-    expect(html).toMatch(MONTH_WORDS);
+    expect(html).not.toContain('type="month"');
+    // the group is named by the label of the field
+    expect(html).toContain('aria-labelledby="m-label"');
   });
 
   it("turns off the arrow past the first month there is", () => {
     const html = renderToStaticMarkup(
-      <MonthPicker id="m" label="Mês" month="0000-01" onChange={noop} />
+      <MonthPicker
+        currentMonth="2026-10"
+        id="m"
+        label="Mês"
+        month="0000-01"
+        onChange={noop}
+      />
     );
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     const previous = buttons.find((tag) => tag.includes("Mês anterior"));

@@ -210,6 +210,7 @@ export function ExpensesPage() {
           <CardContent className="grid gap-4">
             <ExpenseFiltersBar
               categories={categories.state.categories}
+              currentMonth={monthOfDay(today)}
               filters={filters}
               onChange={setFilters}
             />
