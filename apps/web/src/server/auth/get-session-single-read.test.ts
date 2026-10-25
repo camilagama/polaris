@@ -184,6 +184,8 @@ describe("the 30-day limit is applied to the one read of GET /api/auth/get-sessi
     const expired = await getSession(secret, login.headers, "198.51.100.9");
 
     expect(await expired.json()).toBeNull();
+    // the refresh and the clearing both reach the cookie; the clearing comes last and is the one that stays
+    expect(clearedSessionCookie(expired)).toBe(true);
     expect(accessEntries).toEqual([]);
   });
 
