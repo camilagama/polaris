@@ -103,7 +103,26 @@ const PARTIAL_MONTH: FixtureMonth = {
   ],
 };
 
+/** July: every cost known and no commercial surcharge, so the two lines differ by exactly the result of the day. */
+const NO_SURCHARGE_MONTH: FixtureMonth = {
+  expenses: [{ amount: 1800, linked: false }],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 2000,
+      discount: 0,
+      gross: 6000,
+      itemLines: 1,
+      items: 2,
+      processingFee: 120,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
 const FIXTURE: Readonly<Record<string, FixtureMonth>> = {
+  "2026-07": NO_SURCHARGE_MONTH,
   "2026-09": PARTIAL_MONTH,
   "2026-10": COMPLETE_MONTH,
 };
@@ -146,6 +165,65 @@ function missingInputs(counts: {
     missing.push("no_expenses");
   }
   return missing;
+}
+
+const DAY_MS = 86_400_000;
+
+/** Every date from `from` to `to`, as the server sends them. */
+function datesBetween(from: string, to: string): string[] {
+  const start = Date.parse(`${from}T00:00:00.000Z`);
+  const count =
+    Math.round((Date.parse(`${to}T00:00:00.000Z`) - start) / DAY_MS) + 1;
+  return Array.from({ length: count }, (_, index) =>
+    new Date(start + index * DAY_MS).toISOString().slice(0, 10)
+  );
+}
+
+/**
+ * The days of the period as the server sends them (AC-8): the sales and what they cost (goods, fees, linked
+ * expenses) on the first day, the expenses without a sale on the last, every other day zero. A day with an unknown
+ * cost or fee is `null` in the cost and in the result of the day.
+ */
+function dailyOf(data: FixtureMonth, from: string, to: string) {
+  const { sales } = data;
+  const net = sum(
+    sales.map((sale) => sale.gross - sale.discount - sale.returns)
+  );
+  const surcharges = sum(sales.map((sale) => sale.surcharge));
+  const unknown = sales.some(
+    (sale) =>
+      sale.cogs === null ||
+      sale.processingFee === null ||
+      sale.anticipationFee === null
+  );
+  const linked = sum(
+    data.expenses.filter((expense) => expense.linked).map((e) => e.amount)
+  );
+  const operating = sum(
+    data.expenses.filter((expense) => !expense.linked).map((e) => e.amount)
+  );
+  const salesCosts =
+    known(sales.map((sale) => sale.cogs)) +
+    known(sales.map((sale) => sale.processingFee)) +
+    known(sales.map((sale) => sale.anticipationFee)) +
+    linked;
+  const dates = datesBetween(from, to);
+  return dates.map((date, index) => {
+    const first = index === 0;
+    const last = index === dates.length - 1;
+    const costs = (first ? salesCosts : 0) + (last ? operating : 0);
+    const result = (first ? net + surcharges : 0) - costs;
+    const hidden = first && unknown;
+    return {
+      costs: hidden ? null : money(costs),
+      date,
+      netSales: first ? money(net) : "0.00",
+      // the part of the cost that is an expense without a sale: the server sends it on every day
+      operatingExpenses: money(last ? operating : 0),
+      operatingResult: hidden ? null : money(result),
+      salesCount: first ? sales.length : 0,
+    };
+  });
 }
 
 /** The read model of a month, derived from its fixture. */
@@ -218,6 +296,7 @@ function summaryOf(month: string, from: string, to: string) {
       processingFees: money(processing),
       returns: money(returns),
     },
+    daily: dailyOf(data, from, to),
     // the server clock at the read: what the screen says it is updated until
     generatedAt: NOW,
     period: { from, to },
@@ -313,9 +392,9 @@ async function installServer(page: Page, server: FakeReportServer) {
   });
 }
 
-async function signIn(page: Page, user: string) {
+async function signIn(page: Page, user: string, extra = "") {
   await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=dashboard");
+  await page.goto(`/offline-screens-lab?screen=dashboard${extra}`);
   await page.getByLabel("Usuário").fill(user);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(
@@ -324,12 +403,12 @@ async function signIn(page: Page, user: string) {
 }
 
 /** Opens the screen as a new user and returns the user, to open it again later. */
-async function openDashboard(page: Page, server: FakeReportServer) {
+async function openDashboard(page: Page, server: FakeReportServer, extra = "") {
   // the screen reads today's date from the browser: October 2026
   await page.clock.setFixedTime(new Date(NOW));
   await installServer(page, server);
   const user = `user-${crypto.randomUUID()}`;
-  await signIn(page, user);
+  await signIn(page, user, extra);
   return user;
 }
 
@@ -353,6 +432,38 @@ const goalsRegion = (page: Page) =>
   page.getByRole("region", { exact: true, name: "Metas" });
 const chainRow = (page: Page, label: string) =>
   chain(page).locator("tbody tr").filter({ hasText: label });
+const preset = (page: Page, name: string) =>
+  page.getByRole("button", { exact: true, name });
+const chartRegion = (page: Page) =>
+  page.getByRole("region", { name: "Vendas × custos por dia" });
+/** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
+const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
+const periodSelect = (page: Page) =>
+  page.getByRole("combobox", { name: "Período" });
+/** What is on screen to choose the period: the Select on a phone, "Este mês" of the strip otherwise. */
+const periodChoice = (page: Page) =>
+  compact(page) ? periodSelect(page) : preset(page, "Este mês");
+async function choosePreset(page: Page, name: string) {
+  if (compact(page)) {
+    await periodSelect(page).click();
+    await page.getByRole("option", { exact: true, name }).click();
+    return;
+  }
+  await preset(page, name).click();
+}
+async function expectPreset(page: Page, name: string) {
+  if (compact(page)) {
+    await expect(periodSelect(page)).toContainText(name);
+    return;
+  }
+  await expect(preset(page, name)).toHaveAttribute("aria-pressed", "true");
+}
+const rangeFields = async (page: Page, from: string, to: string) => {
+  await choosePreset(page, "Período");
+  await page.getByLabel("De", { exact: true }).fill(from);
+  await page.getByLabel("Até", { exact: true }).fill(to);
+  await page.getByRole("button", { name: "Ver período" }).click();
+};
 
 test("mostra os seis cartões e o passo a passo do mês atual", async ({
   page,
@@ -373,9 +484,9 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
   await expect(card(page, CARD.items)).toContainText("Itens vendidos");
   await expect(card(page, CARD.items)).toContainText("3");
 
-  // the month asked for is October, the first to the last day
+  // the period asked for is this month, the first to the last day, and it is the one pressed
   expect(server.periods[0]).toEqual({ from: "2026-10-01", to: "2026-10-31" });
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-10");
+  await expectPreset(page, "Este mês");
 
   // complete data: a quiet line, no incomplete-estimate tag
   await expect(quality(page)).toContainText(
@@ -436,7 +547,7 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   await openDashboard(page, server);
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
 
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await choosePreset(page, "Mês passado");
 
   const banner = quality(page);
   await expect(banner).toContainText("Estimativa incompleta");
@@ -465,23 +576,23 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   );
 });
 
-test("navegar para o mês anterior carrega o período dele de novo", async ({
+test("trocar entre este mês e o mês passado carrega o período dele de novo", async ({
   page,
 }) => {
   const server = new FakeReportServer();
   await openDashboard(page, server);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 
-  await page.getByRole("button", { name: "Mês anterior" }).click();
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-09");
+  await choosePreset(page, "Mês passado");
+  await expectPreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   expect(server.periods.at(-1)).toEqual({
     from: "2026-09-01",
     to: "2026-09-30",
   });
 
-  await page.getByRole("button", { name: "Próximo mês" }).click();
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-10");
+  await choosePreset(page, "Este mês");
+  await expectPreset(page, "Este mês");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   expect(server.periods.map((period) => period.from)).toEqual([
     "2026-10-01",
@@ -496,10 +607,10 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await page.locator("#dashboard-month").fill("2026-03");
+  await rangeFields(page, "2026-03-01", "2026-03-31");
 
   await expect(
-    page.getByText("Sem vendas nem despesas em março de 2026")
+    page.getByText("Sem vendas nem despesas em 1 a 31 de março")
   ).toBeVisible();
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(chain(page)).toHaveCount(0);
@@ -513,7 +624,7 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
   await openDashboard(page, server);
 
   // October is still pending when September is asked for and answered
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await choosePreset(page, "Mês passado");
   await expect(quality(page)).toContainText("Estimativa incompleta");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
 
@@ -524,7 +635,7 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
   // give the late answer time to reach the screen, where it must be ignored
   await page.waitForTimeout(300);
 
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-09");
+  await expectPreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
 });
@@ -576,7 +687,7 @@ test("com o servidor, a tela diz até quando está atualizada e guarda o mês pa
   await expect(copyNotice(page)).toHaveCount(0);
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await choosePreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   expect(await cachedMonths(page)).toEqual(["2026-09", "2026-10"]);
 });
@@ -620,28 +731,53 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
 }) => {
   const server = new FakeReportServer();
   await openDashboard(page, server);
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await choosePreset(page, "Mês passado");
   await expect(quality(page)).toContainText("Estimativa incompleta");
 
   server.networkDown = true;
-  // a month never read with a connection has no copy: the usual error
-  await page.getByRole("button", { name: "Mês anterior" }).click();
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-08");
+  // a range never read has no copy at all: it opens only with a connection (AC-16)
+  await rangeFields(page, "2026-08-01", "2026-08-31");
   await expect(page.getByRole("alert")).toContainText(
-    "Não foi possível carregar o resultado. Tente novamente."
+    "Este período só abre com internet."
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
-  // a month that was read shows its own copy, never the one of another month
-  await page.getByRole("button", { name: "Próximo mês" }).click();
-  await expect(page.locator("#dashboard-month")).toHaveValue("2026-09");
+  // a month that was read shows its own copy, never the one of another period
+  await choosePreset(page, "Mês passado");
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
   await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
   await expect(card(page, CARD.result)).toContainText("R$ 92,00");
   await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("sem conexão, um mês que nunca foi lido diz que não há números guardados, e os outros períodos só abrem com internet", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+  server.networkDown = true;
+  await choosePreset(page, "Mês passado");
+  await expect(page.getByRole("alert")).toContainText(
+    "Sem internet e sem números guardados neste aparelho."
+  );
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+
+  // the last 30 days is a window that moves: no copy, and the screen says why
+  await choosePreset(page, "Últimos 30 dias");
+  await expect(page.getByRole("alert")).toContainText(
+    "Este período só abre com internet."
+  );
+  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+
+  // this month was read: its copy is still there
+  await choosePreset(page, "Este mês");
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
 test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mostra o servidor", async ({
@@ -655,11 +791,14 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await signIn(page, user);
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-  // the goals are never copied: their panel shows its own load error
+  // the goals are never copied: their tab shows its own load error
+  await page.getByRole("tab", { name: "Metas" }).click();
   await expect(goalsRegion(page)).toContainText(
     "Não foi possível carregar as metas."
   );
 
+  // back on the Resultado tab, the connection returns: the figures of the server replace the copy
+  await page.getByRole("tab", { exact: true, name: "Resultado" }).click();
   server.networkDown = false;
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
   await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
@@ -698,4 +837,434 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+});
+
+/** The text of the line that reads the day in focus of the chart (the last one until the pointer moves it). */
+const reading = (page: Page) =>
+  chartRegion(page).locator("[data-chart-reading]");
+const METAS_TAB = /^Metas/;
+const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
+const metasTab = (page: Page) => page.getByRole("tab", { name: METAS_TAB });
+const resultTab = (page: Page) =>
+  page.getByRole("tab", { exact: true, name: "Resultado" });
+const search = (page: Page) => new URL(page.url()).searchParams;
+
+test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
+  test("escreve os totais, o melhor dia e a frase de apoio, e a tabela fecha com o que vem depois de hoje", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    const region = chartRegion(page);
+    await expect(region).toBeVisible();
+
+    // the numbers hold without the drawing (AC-5)
+    await expect(region).toContainText("Vendas líquidas");
+    await expect(region).toContainText("R$ 130,00");
+    await expect(region.locator("dt", { hasText: "Custos" })).toBeVisible();
+    await expect(region).toContainText("R$ 96,50");
+    await expect(region).toContainText("Melhor dia: 01/10, R$ 130,00");
+    await expect(region).toContainText("1 a 31 de outubro");
+    // there is a surcharge in October: the sentence does not promise that the lines differ by the result (AC-11)
+    await expect(region).toContainText(
+      "O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+    );
+    await expect(region).not.toContainText(
+      "A diferença entre as duas linhas é o resultado estimado do dia."
+    );
+    await expect(region).not.toContainText("estimativa incompleta");
+
+    // the drawing is an image named by its summary, with a legend that names both lines
+    await expect(region.getByRole("img", { name: CHART_IMAGE })).toBeVisible();
+    await expect(region.locator("[data-chart-legend]")).toContainText(
+      "Custos (CMV, taxas e despesas)"
+    );
+
+    // "Ver os números": a row for each day up to today, and the line for what comes after
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    const table = region.locator("table");
+    expect(await table.locator("thead th").allTextContents()).toEqual([
+      "Dia",
+      "Vendas líquidas",
+      "Custos",
+      "Resultado do dia",
+      "Despesas do período",
+    ]);
+    await expect(table.locator("tbody tr")).toHaveCount(14);
+    const first = table.locator("tbody tr").first();
+    await expect(first).toContainText("01/10/2026");
+    await expect(first).toContainText("R$ 130,00");
+    await expect(first).toContainText("R$ 66,50");
+    await expect(first).toContainText("R$ 68,50");
+    await expect(table.locator("tfoot")).toContainText(
+      "Depois de hoje: despesas R$ 30,00"
+    );
+  });
+
+  test("sem acréscimos, a frase diz que a diferença é o resultado do dia, e o dia da despesa a nomeia na leitura", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await rangeFields(page, "2026-07-01", "2026-07-31");
+
+    const region = chartRegion(page);
+    await expect(region).toContainText("1 a 31 de julho");
+    await expect(region).toContainText(
+      "A diferença entre as duas linhas é o resultado estimado do dia. Despesas do período entram no dia da competência."
+    );
+    // the day in focus is the last: it has no sale, and the rent of the month fell on it (AC-11)
+    await expect(reading(page)).toHaveText(
+      "31/07 · Vendas R$ 0,00 · Custos R$ 18,00 · inclui R$ 18,00 de despesas do período"
+    );
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    await expect(region.locator("table").locator("tbody tr")).toHaveCount(31);
+    await expect(region.locator("table").locator("tfoot")).toHaveCount(0);
+  });
+
+  test("com um custo desconhecido, a linha de custos e o resultado do dia não são desenhados, e a tabela diz 'sem custo'", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await choosePreset(page, "Mês passado");
+
+    const region = chartRegion(page);
+    await expect(region).toContainText("estimativa incompleta");
+    await expect(region).toContainText(
+      "Não é lucro líquido nem dinheiro já recebido."
+    );
+    await expect(region).toContainText(
+      "A linha de custos não aparece enquanto houver custo desconhecido."
+    );
+    // only the sales: no legend, no sentence about the difference, no total of costs
+    await expect(region.locator("[data-chart-legend]")).toHaveCount(0);
+    await expect(region).not.toContainText("A diferença entre as duas linhas");
+    await expect(region).not.toContainText("O resultado de cada dia");
+    await expect(region.locator("dt", { hasText: "Custos" })).toHaveCount(0);
+    await expect(region.getByRole("img")).toBeVisible();
+
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    const first = region.locator("table").locator("tbody tr").first();
+    await expect(first).toContainText("01/09/2026");
+    await expect(first.locator("td").nth(1)).toHaveText("sem custo");
+    await expect(first.locator("td").nth(2)).toHaveText("sem custo");
+  });
+
+  test("com o pedaço do gráfico bloqueado, ficam os totais, o melhor dia e a tabela, e o texto do Início", async ({
+    page,
+  }) => {
+    await page.route("**/assets/charts-*.js", (route) => route.abort());
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+
+    const region = chartRegion(page);
+    await expect(region).toContainText("O gráfico não abriu.");
+    await expect(
+      region.getByRole("button", { name: "Tentar novamente" })
+    ).toBeVisible();
+    await expect(region.getByRole("img")).toHaveCount(0);
+    await expect(region).toContainText("R$ 130,00");
+    await expect(region).toContainText("Melhor dia: 01/10, R$ 130,00");
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    await expect(region.locator("table").locator("tbody tr")).toHaveCount(14);
+  });
+});
+
+test.describe("os períodos (AC-1 a AC-3)", () => {
+  test("os períodos prontos pedem as datas certas ao servidor, a partir de hoje na loja", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    // "Este ano" waits for the CPU measure (AC-23)
+    await expect(preset(page, "Este ano")).toHaveCount(0);
+
+    await choosePreset(page, "Últimos 30 dias");
+    await expect(chartRegion(page)).toContainText(
+      "15 de setembro a 14 de outubro"
+    );
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-09-15",
+      to: "2026-10-14",
+    });
+
+    await choosePreset(page, "Mês passado");
+    await expect(chartRegion(page)).toContainText("1 a 30 de setembro");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+
+    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await expectPreset(page, "Período");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-10-05",
+      to: "2026-10-12",
+    });
+  });
+
+  test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    const asked = server.periods.length;
+
+    await choosePreset(page, "Período");
+    await page.getByLabel("De", { exact: true }).fill("2026-10-10");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
+    await page.getByRole("button", { name: "Ver período" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "A data inicial vem depois da final."
+    );
+
+    await page.getByLabel("De", { exact: true }).fill("2026-01-01");
+    await page.getByLabel("Até", { exact: true }).fill("2026-03-05");
+    await page.getByRole("button", { name: "Ver período" }).click();
+    await expect(page.getByRole("alert")).toContainText("Escolha até 62 dias.");
+
+    await page.getByLabel("De", { exact: true }).fill("");
+    await page.getByRole("button", { name: "Ver período" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Escolha a data inicial e a final."
+    );
+    expect(server.periods).toHaveLength(asked);
+    // and the period on screen is still the one it was
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  });
+
+  test("enquanto lê outro período, mantém os números de antes marcados como tal, e um erro nunca deixa os de antes com o nome do novo", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+    const release = server.hold("2026-09");
+    await choosePreset(page, "Mês passado");
+    await expect(page.locator("#dashboard-updated")).toHaveText("Atualizando…");
+    // still the figures of October, said so, and never under the name of September
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect(
+      page.getByText("Mostrando 1 a 31 de outubro até o novo período carregar.")
+    ).toBeVisible();
+    release();
+    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
+    await expect(page.getByText("Mostrando 1 a 31 de outubro")).toHaveCount(0);
+
+    // a failure leaves no figures of the period before (the last 30 days keep no copy to stand in)
+    await choosePreset(page, "Este mês");
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
+    await choosePreset(page, "Últimos 30 dias");
+    await expect(page.getByRole("alert")).toContainText(
+      "Não foi possível carregar o resultado. Tente novamente."
+    );
+    await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+    await expect(chartRegion(page)).toHaveCount(0);
+  });
+});
+
+test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
+  test("abre no Resultado, e trocar de aba escreve aba=metas no endereço sem acrescentar um passo ao histórico", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(resultTab(page)).toHaveAttribute("aria-selected", "true");
+    expect(search(page).get("aba")).toBeNull();
+    const steps = await page.evaluate(() => window.history.length);
+
+    await metasTab(page).click();
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    expect(search(page).get("aba")).toBe("metas");
+    // the period and the chart belong to the Resultado tab only (AC-15)
+    await expect(periodChoice(page)).toHaveCount(0);
+    await expect(chartRegion(page)).toHaveCount(0);
+    await expect(goalsRegion(page)).toBeVisible();
+
+    await resultTab(page).click();
+    expect(search(page).get("aba")).toBeNull();
+    await expect(periodChoice(page)).toBeVisible();
+    // the "voltar" of the browser leaves the screen: the tabs added no step
+    expect(await page.evaluate(() => window.history.length)).toBe(steps);
+  });
+
+  test("a leitura do resumo não se repete ao trocar de aba, e o endereço guarda a aba", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    const reads = server.periods.length;
+
+    await metasTab(page).click();
+    await resultTab(page).click();
+    await metasTab(page).click();
+    expect(server.periods).toHaveLength(reads);
+    expect(page.url()).toContain("aba=metas");
+  });
+
+  test("?aba=metas abre a aba Metas", async ({ page }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&aba=metas");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(goalsRegion(page)).toBeVisible();
+    expect(search(page).get("aba")).toBe("metas");
+  });
+
+  test("?meta=nova abre a aba Metas com o formulário, e o endereço guarda a aba e solta o link", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&meta=nova");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#goal-create-kind")).toBeVisible();
+    await expect.poll(() => search(page).get("aba")).toBe("metas");
+    expect(search(page).get("meta")).toBeNull();
+  });
+
+  test("?meta=lista abre a aba Metas, sem o formulário", async ({ page }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&meta=lista");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(goalsRegion(page)).toBeVisible();
+    await expect(page.locator("#goal-create-kind")).toHaveCount(0);
+    await expect.poll(() => search(page).get("aba")).toBe("metas");
+  });
+
+  test("os links do Início ganham do parâmetro aba quando vêm juntos", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&aba=resultado&meta=nova");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#goal-create-kind")).toBeVisible();
+  });
+});
+
+test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
+  test("a 360 px, o período é um seletor e a tabela dos dias vira um cartão por dia, sem rolar de lado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+
+    // a Select, no lugar dos botões lado a lado
+    const select = page.getByRole("combobox", { name: "Período" });
+    await expect(select).toBeVisible();
+    await expect(preset(page, "Mês passado")).toHaveCount(0);
+    await select.click();
+    await page.getByRole("option", { name: "Mês passado" }).click();
+    await expect(chartRegion(page)).toContainText("1 a 30 de setembro");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    await select.click();
+    await page.getByRole("option", { name: "Este mês" }).click();
+    await expect(chartRegion(page)).toContainText("1 a 31 de outubro");
+
+    // a card for each day: the name of each column beside its value, and "Depois de hoje" in view
+    await chartRegion(page)
+      .getByRole("button", { name: "Ver os números" })
+      .click();
+    const first = chartRegion(page).locator("tbody tr").first();
+    await expect(first).toContainText("01/10/2026");
+    await Promise.all(
+      [
+        "Vendas líquidas",
+        "Custos",
+        "Resultado do dia",
+        "Despesas do período",
+      ].map((label) =>
+        expect(first.locator(`[data-label="${label}"]`)).toBeVisible()
+      )
+    );
+    await expect(chartRegion(page).locator("tfoot")).toBeVisible();
+    await expect(chartRegion(page).locator("tfoot")).toContainText(
+      "Depois de hoje: despesas R$ 30,00"
+    );
+    // nothing scrolls sideways, in the page or in the card of the numbers
+    const overflow = await page.evaluate(() => {
+      const box = document.querySelector("[data-slot=table-container]");
+      return {
+        box: box ? box.scrollWidth - box.clientWidth : 0,
+        page:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+    expect(overflow.page).toBeLessThanOrEqual(0);
+    expect(overflow.box).toBeLessThanOrEqual(0);
+  });
+
+  test("a 320 px, o valor do cartão não quebra em duas linhas", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 320 });
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    const value = card(page, CARD.netSales).locator("dd").first();
+    await expect(value).toHaveText("R$ 130,00");
+    const box = await value.boundingBox();
+    // one line of the 26 px type
+    expect(box?.height ?? 999).toBeLessThan(40);
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test("o erro do intervalo fica sob o campo Até e é lido com ele", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await choosePreset(page, "Período");
+    await page.getByLabel("De", { exact: true }).fill("2026-10-10");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
+    await page.getByRole("button", { name: "Ver período" }).click();
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("A data inicial vem depois da final.");
+    const until = page.getByLabel("Até", { exact: true });
+    const describedBy = await until.getAttribute("aria-describedby");
+    expect(describedBy).toBe(await alert.getAttribute("id"));
+    // under the field, not under the button
+    const alertBox = await alert.boundingBox();
+    const untilBox = await until.boundingBox();
+    const buttonBox = await page
+      .getByRole("button", { name: "Ver período" })
+      .boundingBox();
+    expect(alertBox?.y ?? 0).toBeGreaterThan(untilBox?.y ?? 0);
+    expect(alertBox?.x ?? 999).toBeLessThan(
+      (buttonBox?.x ?? 0) + (buttonBox?.width ?? 0)
+    );
+    await expect(until).toHaveAttribute("aria-invalid", "true");
+  });
+
+  test("o dia da loja vem do relógio do servidor: com o aparelho em outro dia, os períodos são calculados de novo, uma vez", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    // the device is on November 2nd, the server says October 14th (NOW)
+    await page.clock.setFixedTime(new Date("2026-11-02T12:00:00.000Z"));
+    await installServer(page, server);
+    await signIn(page, `user-${crypto.randomUUID()}`);
+
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect(chartRegion(page)).toContainText("1 a 31 de outubro");
+    // the first read named November (the device's day), the second corrected it, and none came after
+    expect(server.periods).toEqual([
+      { from: "2026-11-01", to: "2026-11-30" },
+      { from: "2026-10-01", to: "2026-10-31" },
+    ]);
+    await page.waitForTimeout(500);
+    expect(server.periods).toHaveLength(2);
+  });
 });

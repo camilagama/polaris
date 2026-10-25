@@ -626,7 +626,9 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e some q
   page,
 }) => {
   await openServerScreen(page, {
+    // the read tries once more by itself: only the second 503 reaches the screen
     lists: [
+      (route) => route.fulfill(unavailable),
       (route) => route.fulfill(unavailable),
       answer([product(1, "Camiseta do teste")]),
     ],

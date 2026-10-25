@@ -1,6 +1,7 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { expenseErrorMessage } from "./expense-errors";
 import { monthBounds } from "./expense-model";
 
@@ -52,15 +53,17 @@ export function useExpenseList(
   const fetchPage = useCallback(
     (cursor: string | null) => {
       const bounds = monthBounds(month);
-      return orpcClient.expense.list({
-        categoryId: categoryId === "" ? null : categoryId,
-        cursor,
-        from: bounds?.from,
-        limit: PAGE_SIZE,
-        organizationId,
-        status,
-        to: bounds?.to,
-      });
+      return readWithRetry(() =>
+        orpcClient.expense.list({
+          categoryId: categoryId === "" ? null : categoryId,
+          cursor,
+          from: bounds?.from,
+          limit: PAGE_SIZE,
+          organizationId,
+          status,
+          to: bounds?.to,
+        })
+      );
     },
     [categoryId, month, organizationId, status]
   );

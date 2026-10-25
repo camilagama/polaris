@@ -15,6 +15,7 @@ import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   CHANGE_OUTCOME_UNKNOWN,
   isConnectionFailure,
@@ -143,6 +144,7 @@ export function PaymentProfilesPage() {
   const rootRef = useRef<HTMLDivElement>(null);
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
   const readOnce = useRef<boolean>(false);
+  const profilesRequest = useRef(0);
   useReportUnsentWork(
     !pending &&
       profileDraftKey(draft) !==
@@ -163,19 +165,28 @@ export function PaymentProfilesPage() {
 
   // only a read: a save whose answer was cut is never sent again from here
   const loadProfiles = useCallback(async () => {
+    profilesRequest.current += 1;
+    const request = profilesRequest.current;
+    const isLatest = () => request === profilesRequest.current;
     if (!readOnce.current) {
       setLoading(true);
     }
     setLoadError(null);
     try {
-      const result = await orpcClient.paymentProfile.list({
-        organizationId,
-        status: "all",
-      });
+      const result = await readWithRetry(
+        () => orpcClient.paymentProfile.list({ organizationId, status: "all" }),
+        { isCurrent: isLatest }
+      );
+      if (!isLatest()) {
+        return;
+      }
       setProfiles(result.profiles);
       setNotLoaded(false);
       readOnce.current = true;
     } catch (cause) {
+      if (!isLatest()) {
+        return;
+      }
       if (isConnectionFailure(cause) && !(await workerAnswers())) {
         setNotLoaded(true);
       } else {
@@ -184,7 +195,9 @@ export function PaymentProfilesPage() {
         );
       }
     } finally {
-      setLoading(false);
+      if (isLatest()) {
+        setLoading(false);
+      }
     }
   }, [organizationId]);
   useEffect(() => {

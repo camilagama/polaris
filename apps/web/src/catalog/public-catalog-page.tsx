@@ -14,6 +14,7 @@ import { useConnectionNoticeForm } from "../app-shell/connection-required-notice
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { LoadErrorNotice } from "./products-page-parts";
@@ -94,8 +95,12 @@ export function PublicCatalogPage() {
       setLoading(true);
       try {
         const [setup, products] = await Promise.all([
-          orpcClient.publicCatalog.setup({ organizationId }),
-          orpcClient.product.list({ organizationId, status: "active" }),
+          readWithRetry(() =>
+            orpcClient.publicCatalog.setup({ organizationId })
+          ),
+          readWithRetry(() =>
+            orpcClient.product.list({ organizationId, status: "active" })
+          ),
         ]);
         setLoaded({ products: products.products, setup });
         setStale(false);

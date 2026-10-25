@@ -58,6 +58,21 @@ async function customerMenuItem(page: Page, customer: string, item: string) {
   return page.getByRole("menuitem", { exact: true, name: item });
 }
 
+/**
+ * Closes the open menu with Escape and waits for it to be gone, back to the page (no popup, no backdrop).
+ * The Escape is asked again until the menu leaves: a menu that has just opened (or been opened again by a click
+ * during the exit of the last one, which the hole of its backdrop lets through) listens for the key only after
+ * its first effects, and the items of the popup that is still leaving are visible meanwhile, so an Escape sent
+ * right after the assertion can be lost and leave the menu open over the page.
+ */
+async function closeMenu(page: Page) {
+  await expect(async () => {
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+  await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
+}
+
 /** Opens the menu of the row, says whether the item is on, and closes it. */
 async function expectCustomerItem(
   page: Page,
@@ -69,7 +84,7 @@ async function expectCustomerItem(
   await (state === "enabled"
     ? expect(entry).toBeEnabled()
     : expect(entry).toBeDisabled());
-  await page.keyboard.press("Escape");
+  await closeMenu(page);
 }
 
 test("com rede, cadastra pelo aparelho, o servidor confirma e o selo de envio some", async ({
@@ -209,6 +224,48 @@ test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar n
   ).toBeVisible();
 });
 
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`depois do Escape o menu "Mais ações" não deixa popup nem fundo inerte, e o clique seguinte funciona (movimento: ${reducedMotion})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    await openLab(page, `user-${crypto.randomUUID()}`);
+    await start(page);
+    await registerConfirmed(page, "Iris Prado", "11900000008");
+
+    const trigger = page.getByRole("button", {
+      name: "Mais ações para Iris Prado",
+    });
+    const network = page.getByLabel("Rede disponível");
+    for (const toggle of ["uncheck", "check", "uncheck"] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one round at a time
+      await trigger.click();
+      await expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await closeMenu(page);
+      // the click right after the exit is not blocked by what is left of the menu
+      await network[toggle]();
+    }
+
+    // the click on the trigger right after the Escape (the hole of the backdrop lets it through while the menu
+    // leaves) opens it again, or closes what the key did not: either way it ends clean
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await trigger.click();
+    // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
+    // so "no menu" alone can pass just before it appears
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      await expect(trigger).toHaveAttribute("aria-expanded", "false", {
+        timeout: 1000,
+      });
+      await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+    await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
+    await network.check();
+  });
+}
+
 test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, sem sobrescrever nada", async ({
   page,
 }) => {
@@ -309,7 +366,7 @@ test.describe("produtos", () => {
     await expect(
       page.getByRole("menuitem", { exact: true, name: "Variantes" })
     ).toBeDisabled();
-    await page.keyboard.press("Escape");
+    await closeMenu(page);
     await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
     await expect(page.getByTestId("server-records")).toHaveText("0");
 
@@ -627,8 +684,12 @@ const SHIRT_ENTRY = {
   version: 1,
 };
 
-/** The server answers the reads of the sale form, but the sale itself never gets an answer. */
-async function serveSaleReadsOnly(page: Page) {
+/** The server answers the reads of the sale form, but the sale itself never gets an answer (or the one `confirm` gives). */
+async function serveSaleReadsOnly(
+  page: Page,
+  confirm: (route: Route) => Promise<void> = (route) =>
+    route.abort("connectionreset")
+) {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill({
       body: JSON.stringify({ json: { profiles: [] }, meta: [] }),
@@ -646,9 +707,7 @@ async function serveSaleReadsOnly(page: Page) {
       headers: { ...WORKER_MARK },
     })
   );
-  await page.route("**/rpc/sale/confirm", (route) =>
-    route.abort("connectionreset")
-  );
+  await page.route("**/rpc/sale/confirm", confirm);
 }
 
 test.describe("venda sem resposta do servidor", () => {
@@ -708,6 +767,66 @@ test.describe("venda sem resposta do servidor", () => {
     await expect(page.getByTestId("server-records")).toHaveText("1", {
       timeout: 20_000,
     });
+  });
+
+  test("o Worker em 5xx do runtime (cf-ray, sem motivo): a venda fica travada com os itens e o mesmo ID, repetir reenvia o mesmo pedido, guardar vai uma vez à fila e nada se descarta sozinho", async ({
+    page,
+  }) => {
+    const commandIds: string[] = [];
+    await serveSaleReadsOnly(page, (route) => {
+      const { json } = route.request().postDataJSON() as {
+        json: { commandId: string };
+      };
+      commandIds.push(json.commandId);
+      // what Cloudflare answers for a Worker it killed: a 502 page with `cf-ray`, no Worker mark, no reason
+      return route.fulfill({
+        body: "<html>Error 1102 Worker exceeded resource limits</html>",
+        contentType: "text/html",
+        headers: { "cf-ray": "e2e-GRU" },
+        status: 502,
+      });
+    });
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+
+    await fillShirtSale(page, 2);
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+
+    const retry = page.getByRole("button", {
+      name: "Tentar novamente (seguro)",
+    });
+    const keep = page.getByRole("button", {
+      name: "Guardar esta venda neste aparelho",
+    });
+    await expect(retry).toBeVisible();
+    await expect(keep).toBeVisible();
+    await expect(page.getByLabel("Quantidade")).toBeDisabled();
+    await expect(page.getByLabel("Quantidade")).toHaveValue("2");
+    expect(commandIds).toHaveLength(1);
+
+    // the safe retry sends the same request once and, with the Worker still down, the sale stays locked
+    await retry.click();
+    await expect.poll(() => commandIds.length).toBe(2);
+    expect(commandIds[1]).toBe(commandIds[0]);
+    await expect(retry).toBeVisible();
+    await expect(keep).toBeVisible();
+    await expect(page.getByLabel("Quantidade")).toHaveValue("2");
+    // nothing was queued or discarded by itself
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+    await expect(page.getByText("Vendas guardadas neste aparelho")).toHaveCount(
+      0
+    );
+
+    await keep.click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+    // the runtime is online: the queued command reaches the server once, and `confirm` is not called again
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+    expect(commandIds).toHaveLength(2);
   });
 });
 
@@ -1439,14 +1558,39 @@ test.describe("conexão com prova", () => {
     expect(server.creates).toBe(1); // read again, never sent again
   });
 
-  test("Perfis: a leitura cortada uma vez, com /health respondendo, mostra o erro com Tentar novamente", async ({
+  test("Perfis: a leitura cortada uma vez repete sozinha e abre sem o erro", async ({
     page,
   }) => {
     const server = await serveProfiles(page);
-    let cut = true;
+    let cuts = 0;
     await page.route("**/rpc/paymentProfile/list", async (route) => {
-      if (cut) {
-        cut = false;
+      if (cuts < 1) {
+        cuts += 1;
+        await route.abort("connectionreset");
+        return;
+      }
+      await route.fallback();
+    });
+    await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+    await start(page, "Perfis de pagamento");
+    await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente" })
+    ).toHaveCount(0);
+    expect(cuts).toBe(1);
+    expect(server.lists).toBeGreaterThanOrEqual(1);
+  });
+
+  test("Perfis: a leitura cortada duas vezes, com /health respondendo, mostra o erro com Tentar novamente", async ({
+    page,
+  }) => {
+    const server = await serveProfiles(page);
+    let cuts = 0;
+    await page.route("**/rpc/paymentProfile/list", async (route) => {
+      if (cuts < 2) {
+        cuts += 1;
         await route.abort("connectionreset");
         return;
       }

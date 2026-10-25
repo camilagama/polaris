@@ -17,11 +17,47 @@ const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
 const RPC_PREFIX = /^\/rpc\//;
+const GOALS_TAB = /^Metas/;
+const SALES_CHART = /Vendas líquidas por dia/;
+const TWO_LINES_CHART = /Vendas líquidas e custos por dia/;
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
   headers: { ...WORKER_MARK },
 });
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The days of the period as the server sends them (AC-8): the sales and what they cost on the first day, the expenses
+ * without a sale on the last, every other day zero. With `unknown` the first day has an unknown cost: `null` in the cost
+ * and in the result of the day, which is what takes the cost line out of the chart.
+ */
+function dailyOf(from: string, to: string, unknown: boolean) {
+  const start = Date.parse(`${from}T00:00:00.000Z`);
+  const count =
+    Math.round((Date.parse(`${to}T00:00:00.000Z`) - start) / DAY_MS) + 1;
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(start + index * DAY_MS).toISOString().slice(0, 10);
+    if (index === 0) {
+      return {
+        costs: unknown ? null : "116.25",
+        date,
+        netSales: "245.00",
+        operatingResult: unknown ? null : "128.75",
+        salesCount: 3,
+      };
+    }
+    const last = index === count - 1;
+    return {
+      costs: last ? "135.10" : "0.00",
+      date,
+      netSales: "0.00",
+      operatingResult: last ? "-135.10" : "0.00",
+      salesCount: 0,
+    };
+  });
+}
 
 /** A month with an unknown cost and a processing fee left out: the warning, the badges and the notes on the chain. */
 const PARTIAL_SUMMARY = (from: string, to: string) => ({
@@ -48,6 +84,7 @@ const PARTIAL_SUMMARY = (from: string, to: string) => ({
     processingFees: "8.70",
     returns: "5.00",
   },
+  daily: dailyOf(from, to, true),
   generatedAt: NOW,
   period: { from, to },
   quality: {
@@ -59,6 +96,23 @@ const PARTIAL_SUMMARY = (from: string, to: string) => ({
     missing: ["unknown_cost", "unknown_processing_fee"],
     operatingExpenses: 2,
     processingFeesUnknown: 1,
+    salesCount: 3,
+  },
+});
+
+/** The same figures with every cost known: the chart draws the sales and the dashed cost line, and the table has its columns. */
+const COMPLETE_SUMMARY = (from: string, to: string) => ({
+  ...PARTIAL_SUMMARY(from, to),
+  daily: dailyOf(from, to, false),
+  quality: {
+    anticipationFeesUnknown: 0,
+    itemLines: 4,
+    itemLinesWithUnknownCost: 0,
+    level: "complete",
+    linkedExpenses: 1,
+    missing: [],
+    operatingExpenses: 2,
+    processingFeesUnknown: 0,
     salesCount: 3,
   },
 });
@@ -171,6 +225,8 @@ export const resultAnswers = {
 };
 
 interface Served {
+  /** Every cost known: the chart has two lines. */
+  complete?: boolean;
   empty?: boolean;
   /** The network is down: nothing is answered. */
   offline?: boolean;
@@ -191,9 +247,13 @@ async function serveResult(page: Page, served: Served) {
     if (procedure === "report/periodSummary") {
       const from = String(input.from);
       const to = String(input.to);
-      return route.fulfill(
-        rpc(served.empty ? EMPTY_SUMMARY(from, to) : PARTIAL_SUMMARY(from, to))
-      );
+      let summary = PARTIAL_SUMMARY(from, to);
+      if (served.empty) {
+        summary = EMPTY_SUMMARY(from, to) as unknown as typeof summary;
+      } else if (served.complete) {
+        summary = COMPLETE_SUMMARY(from, to) as unknown as typeof summary;
+      }
+      return route.fulfill(rpc(summary));
     }
     if (procedure === "goal/list") {
       return route.fulfill(rpc({ goals: served.empty ? [] : GOALS }));
@@ -204,8 +264,8 @@ async function serveResult(page: Page, served: Served) {
   await serveLabWorker(page);
 }
 
-async function signIn(page: Page, user: string) {
-  await page.goto("/offline-screens-lab?screen=dashboard");
+async function signIn(page: Page, user: string, extra = "") {
+  await page.goto(`/offline-screens-lab?screen=dashboard${extra}`);
   await page.getByLabel("Usuário").fill(user);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await page
@@ -218,11 +278,11 @@ async function signIn(page: Page, user: string) {
 }
 
 /** Starts the lab's runtime and waits for the screen with the month read. */
-async function openResultLab(page: Page, served: Served = {}) {
+async function openResultLab(page: Page, served: Served = {}, extra = "") {
   // the month the screen opens on is the organization's today: keep it October 2026
   await page.clock.setFixedTime(new Date(NOW));
   await serveResult(page, served);
-  await signIn(page, `guardrails-${crypto.randomUUID()}`);
+  await signIn(page, `guardrails-${crypto.randomUUID()}`, extra);
 }
 
 /** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
@@ -239,27 +299,42 @@ async function showScreenAlone(page: Page) {
 }
 
 export const resultStates = {
-  /** No sales, no expenses, no goals: the month's empty state and the empty goals. */
+  /** Every cost known: the two lines and their legend, the reading of the day and the table of the days open. */
+  async chart(page: Page) {
+    await openResultLab(page, { complete: true });
+    await page.getByRole("img", { name: TWO_LINES_CHART }).waitFor();
+    await page.getByRole("button", { name: "Ver os números" }).click();
+    await page.getByText("Depois de hoje: despesas R$ 135,10").waitFor();
+    await showScreenAlone(page);
+  },
+  /** No sales, no expenses: the period's empty state. */
   async empty(page: Page) {
     await openResultLab(page, { empty: true });
     await page
-      .getByText("Sem vendas nem despesas em outubro de 2026")
+      .getByText("Sem vendas nem despesas em 1 a 31 de outubro")
       .waitFor();
-    await page.getByText("Nenhuma meta ainda").waitFor();
     await showScreenAlone(page);
   },
 
-  /** The month read with an incomplete estimate, and the goals: in progress, not started, completed and missed. */
+  /** The goals tab: in progress with a bar, not started, completed and missed; the dialogs open and close from here. */
+  async goals(page: Page) {
+    await openResultLab(page, {}, "&aba=metas");
+    await page.getByText("Outubro forte").waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The period read with an incomplete estimate: the warning, the badges, the sales alone in the chart and the chain. */
   async list(page: Page) {
     await openResultLab(page);
     await page.getByText("Estimativa incompleta").first().waitFor();
-    await page.getByText("Outubro forte").waitFor();
+    await page.getByRole("img", { name: SALES_CHART }).waitFor();
     await showScreenAlone(page);
   },
 
   /** A new goal sent empty: the target says what is missing. */
   async newGoalErrors(page: Page) {
     await openResultLab(page);
+    await page.getByRole("tab", { name: GOALS_TAB }).click();
     await page.getByText("Outubro forte").waitFor();
     await page.getByRole("button", { name: "Nova meta" }).click();
     await page.getByRole("button", { name: "Criar meta" }).click();

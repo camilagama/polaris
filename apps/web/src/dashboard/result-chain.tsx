@@ -16,6 +16,7 @@ import {
 } from "@/ui/table";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { type ChainRow, chainRows } from "./dashboard-model";
+import { PartsBar } from "./parts-bar";
 
 const CHAIN_TITLE_ID = "dashboard-chain-title";
 
@@ -78,7 +79,8 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
           ))}
         </TableBody>
       </Table>
-      <CardContent className="border-t py-(--card-spacing)">
+      <CardContent className="grid gap-4 border-t py-(--card-spacing)">
+        <PartsBar chain={summary.chain} quality={summary.quality} />
         <p className="text-muted-foreground text-support">
           Despesas do período são as que não estão ligadas a uma venda, contadas
           pelo mês de competência. O resultado é uma estimativa operacional, não
