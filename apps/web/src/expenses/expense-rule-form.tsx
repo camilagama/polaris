@@ -252,6 +252,7 @@ export function ExpenseRuleForm({
       )}
 
       <DateField
+        clearLabel="Limpar data de término"
         disabled={disabled}
         error={errors.endsOn}
         hint="Em branco, repete sem data de término."

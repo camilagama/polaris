@@ -133,6 +133,8 @@ interface DateFieldProps {
   label: string;
   max?: IsoDate | undefined;
   min?: IsoDate | undefined;
+  /** The name of the "Limpar" button of an optional field ("Limpar data de término"). */
+  clearLabel?: string | undefined;
   /** "Opcional" beside the label, with a "Limpar" beside the button once a day is chosen. */
   optional?: boolean | undefined;
   /** The text form of the draft (`AAAA-MM-DD`, "" for none). */
@@ -145,6 +147,7 @@ interface DateFieldProps {
 /** One date on the DatePicker of src/ui: label, button, help and error, in the shape of the other fields. */
 export function DateField({
   className,
+  clearLabel,
   disabled,
   disabledReason,
   error,
@@ -162,7 +165,11 @@ export function DateField({
     (next: IsoDate | null) => onChange(next ?? ""),
     [onChange]
   );
-  const handleClear = useCallback(() => onChange(""), [onChange]);
+  const handleClear = useCallback(() => {
+    onChange("");
+    // the button is gone with the date: the focus goes back to the field it cleared
+    document.getElementById(id)?.focus();
+  }, [id, onChange]);
   return (
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={id}>
@@ -174,6 +181,7 @@ export function DateField({
       <div className="flex flex-wrap items-center gap-2">
         <DatePicker
           className="min-w-0 flex-1 sm:flex-none"
+          describedBy={hint ? `${id}-hint` : undefined}
           disabled={disabled}
           disabledReason={disabledReason}
           error={error}
@@ -187,7 +195,7 @@ export function DateField({
         />
         {optional && value !== "" ? (
           <Button
-            aria-label={`Limpar ${label.toLowerCase()}`}
+            aria-label={clearLabel ?? `Limpar ${label.toLowerCase()}`}
             disabled={disabled}
             onClick={handleClear}
             size="sm"
@@ -198,7 +206,9 @@ export function DateField({
           </Button>
         ) : null}
       </div>
-      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+      {hint ? (
+        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
+      ) : null}
     </Field>
   );
 }
@@ -234,6 +244,7 @@ export function DateRangeField({
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <DateRangePicker
+        describedBy={hint ? `${id}-hint` : undefined}
         disabled={disabled}
         error={error}
         id={id}
@@ -242,7 +253,9 @@ export function DateRangeField({
         today={today}
         value={from !== "" && to !== "" ? { from, to } : null}
       />
-      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+      {hint ? (
+        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
+      ) : null}
     </Field>
   );
 }

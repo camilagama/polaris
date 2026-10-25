@@ -719,12 +719,18 @@ for (const viewport of FORM_VIEWPORTS) {
       "Termina em, 10/12/2026"
     );
 
-    await panel.getByRole("button", { name: "Limpar termina em" }).click();
+    await panel.getByRole("button", { name: "Limpar data de término" }).click();
     await expect(datePickerButton(page, "Termina em")).toHaveAccessibleName(
       "Termina em, Escolher data"
     );
+    // the button that was cleared is gone: the focus goes to the field, not to the page
+    await expect(datePickerButton(page, "Termina em")).toBeFocused();
+    // the help of the field is read with it
     await expect(
-      panel.getByRole("button", { name: "Limpar termina em" })
+      datePickerButton(page, "Termina em")
+    ).toHaveAccessibleDescription("Em branco, repete sem data de término.");
+    await expect(
+      panel.getByRole("button", { name: "Limpar data de término" })
     ).toHaveCount(0);
   });
 }

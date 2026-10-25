@@ -30,6 +30,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 export interface DateRangePickerProps {
   className?: string | undefined;
+  /** The id of a help text the screen shows under the button, read after the error. */
+  describedBy?: string | undefined;
   disabled?: boolean | undefined;
   /** The error under the button (the screen's text). */
   error?: string | undefined;
@@ -80,6 +82,7 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
  */
 export function DateRangePicker({
   className,
+  describedBy,
   disabled,
   error,
   id,
@@ -153,7 +156,11 @@ export function DateRangePicker({
         <PopoverTrigger
           render={
             <Button
-              aria-describedby={error ? errorId : undefined}
+              aria-describedby={
+                [error ? errorId : null, describedBy]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               aria-invalid={error ? true : undefined}
               aria-label={`${label}, ${text}`}
               className="w-full justify-start font-normal sm:w-fit"

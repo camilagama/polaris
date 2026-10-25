@@ -430,9 +430,12 @@ for (const width of [360, 320]) {
   });
 }
 
-/** A day of the device's calendar, `AAAA-MM-DD`, `offset` days from today (the screen's own day when the lab has no server). */
+/** The instant the movement tests fix as "now" (noon of the 15th, UTC: the same day in every zone of the device). */
+const FIXED_NOW = new Date("2026-10-15T12:00:00.000Z");
+
+/** A day of the device's calendar, `AAAA-MM-DD`, `offset` days from the fixed "now". */
 function deviceDay(offset: number): string {
-  const day = new Date();
+  const day = new Date(FIXED_NOW);
   day.setDate(day.getDate() + offset);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
@@ -445,6 +448,7 @@ for (const viewport of FORM_VIEWPORTS) {
     page,
   }) => {
     await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(FIXED_NOW);
     await openStockLab(page, "claro");
     const sent: string[] = [];
     await page.route("**/rpc/inventory/receiveStock", (route) => {
