@@ -6,10 +6,12 @@ import { type Plugin, transformWithEsbuild } from "vite";
 /**
  * Builds `sw.js` after the client build (plan PR60): the worker source
  * (`src/pwa/sw.ts`), compiled to a classic script, preceded by the manifest of
- * THIS build: its id, the time it was made and the files the shell needs. The
- * file names carry content hashes, and the id also hashes `index.html` and the
- * unhashed public files, so any change to what a user would download changes the
- * worker, which is what makes the browser install the update.
+ * THIS build: its id and the files the shell needs. The file names carry content
+ * hashes, and the id also hashes `index.html` and the unhashed public files, so any
+ * change to what a user would download changes the worker, which is what makes the
+ * browser install the update. Nothing else goes in: not the time of the build, or
+ * a deploy of the same content would be a new worker and a notice of a new version
+ * with nothing new in it.
  */
 export interface PrecacheInput {
   /** Files of the build output, relative to it, with forward slashes. */
@@ -56,6 +58,17 @@ export function buildId(
   return hash.digest("hex").slice(0, 12);
 }
 
+/** What the worker is built with: the same files give the same manifest, whenever and wherever it is made. */
+export function buildManifest(
+  files: readonly string[],
+  readFile: (file: string) => Uint8Array
+) {
+  return {
+    id: buildId(files, readFile),
+    precache: precacheList({ files }),
+  };
+}
+
 export function serviceWorkerPlugin(options: { source: string }): Plugin {
   return {
     apply: "build",
@@ -70,11 +83,9 @@ export function serviceWorkerPlugin(options: { source: string }): Plugin {
         return;
       }
       const files = listFiles(directory).filter((file) => file !== "sw.js");
-      const manifest = {
-        builtAt: Date.now(),
-        id: buildId(files, (file) => readFileSync(join(directory, file))),
-        precache: precacheList({ files }),
-      };
+      const manifest = buildManifest(files, (file) =>
+        readFileSync(join(directory, file))
+      );
       const compiled = await transformWithEsbuild(
         readFileSync(options.source, "utf8"),
         options.source,

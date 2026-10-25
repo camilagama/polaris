@@ -48,29 +48,51 @@ export function watchForUpdate(
   return () => registration.removeEventListener("updatefound", track);
 }
 
+/** How long a page waits for the new worker to take over before it reloads on its own. */
+export const TAKE_OVER_TIMEOUT_MS = 5000;
+
 /**
  * Tells the waiting worker to take over and reloads the page once it has. The
  * reload happens at most once, however many `controllerchange` events arrive.
+ *
+ * With several tabs open the new worker may stay waiting (no `controllerchange`, and the
+ * button grey forever): so if nothing happens within `TAKE_OVER_TIMEOUT_MS` the page
+ * reloads anyway, which loads the new build from the network, and `onTimeout` lets the
+ * caller enable the button again (a reload that does not happen must not leave it dead).
+ * It also reloads at once when there is no waiting worker any more: another tab has
+ * already taken it over, and this page only has to load what that tab activated.
  */
 export function takeOver(
   registration: Pick<RegistrationLike, "waiting">,
   container: ContainerLike,
-  reload: () => void
+  reload: () => void,
+  onTimeout: () => void = () => undefined
 ): boolean {
   const { waiting } = registration;
   if (!waiting) {
     return false;
   }
   let reloaded = false;
-  const onChange = () => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const reloadOnce = () => {
     if (reloaded) {
-      return;
+      return false;
     }
     reloaded = true;
+    clearTimeout(timer);
     container.removeEventListener("controllerchange", onChange);
     reload();
+    return true;
   };
+  function onChange() {
+    reloadOnce();
+  }
   container.addEventListener("controllerchange", onChange);
+  timer = setTimeout(() => {
+    if (reloadOnce()) {
+      onTimeout();
+    }
+  }, TAKE_OVER_TIMEOUT_MS);
   waiting.postMessage({ type: "SKIP_WAITING" });
   return true;
 }

@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UpdateBannerView } from "./update-banner";
 import {
   type ContainerLike,
   type RegistrationLike,
   takeOver,
+  TAKE_OVER_TIMEOUT_MS,
   type WorkerLike,
   watchForUpdate,
 } from "./update-controller";
@@ -226,6 +227,44 @@ describe("taking over", () => {
     );
     expect(reload).not.toHaveBeenCalled();
   });
+
+  describe("when the new worker never takes over (several tabs)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reloads the page itself after the wait, once, and lets the caller enable the button again", () => {
+      vi.useFakeTimers();
+      const registration = new FakeRegistration();
+      registration.deliver();
+      const container = new FakeContainer();
+      const reload = vi.fn();
+      const onTimeout = vi.fn();
+      takeOver(registration, container, reload, onTimeout);
+      vi.advanceTimersByTime(TAKE_OVER_TIMEOUT_MS - 1);
+      expect(reload).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+      // a late controllerchange does not reload a second time
+      container.changeController();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not time out once the controller changed: the reload is the one of the change", () => {
+      vi.useFakeTimers();
+      const registration = new FakeRegistration();
+      registration.deliver();
+      const container = new FakeContainer();
+      const reload = vi.fn();
+      const onTimeout = vi.fn();
+      takeOver(registration, container, reload, onTimeout);
+      container.changeController();
+      vi.advanceTimersByTime(TAKE_OVER_TIMEOUT_MS * 2);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(onTimeout).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("the update store", () => {
@@ -260,6 +299,48 @@ describe("the update store", () => {
     expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
     container.changeController();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["empty", work()],
+    ["not empty", work({ pending: 1 })],
+  ])(
+    "with two tabs: the one that did not ask never reloads when the other applies, with the queue %s",
+    async (_name, queued) => {
+      const { container, reload, registration, store } = setup([queued]);
+      registration.deliver();
+      await store.refreshWork();
+      container.changeController();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(reload).not.toHaveBeenCalled();
+      expect(store.getSnapshot().applying).toBe(false);
+    }
+  );
+
+  it("a click while another tab already took the worker over reloads and leaves the button usable", async () => {
+    const { reload, registration, store } = setup([work()]);
+    registration.deliver();
+    await store.refreshWork();
+    registration.waiting = null; // the other tab activated it between the banner and the click
+    expect(await store.requestUpdate()).toEqual({ status: "applying" });
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot().applying).toBe(false);
+  });
+
+  it("when nothing happens after the click the page reloads itself and the button is enabled again", async () => {
+    vi.useFakeTimers();
+    try {
+      const { reload, registration, store } = setup([work()]);
+      registration.deliver();
+      await store.refreshWork();
+      await store.requestUpdate();
+      expect(store.getSnapshot().applying).toBe(true);
+      vi.advanceTimersByTime(TAKE_OVER_TIMEOUT_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(store.getSnapshot().applying).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("with the network down it neither updates nor loses anything, and says why", async () => {
