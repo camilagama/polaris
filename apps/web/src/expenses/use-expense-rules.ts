@@ -28,8 +28,9 @@ export function useExpenseRules(organizationId: string) {
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await readWithRetry(() =>
-        orpcClient.expense.listRules({ organizationId, status: "all" })
+      const result = await readWithRetry(
+        () => orpcClient.expense.listRules({ organizationId, status: "all" }),
+        { isCurrent: () => requestSequence === sequence.current }
       );
       if (requestSequence === sequence.current) {
         setState({ error: null, isLoading: false, rules: result.rules });

@@ -609,7 +609,8 @@ test("Catálogo público: a leitura que falha diz o motivo, não mostra o formul
     "product/list": reply({ products: [] }),
     "publicCatalog/setup": (route) => {
       reads += 1;
-      return reads === 1
+      // the read tries once more by itself: only the second 503 reaches the screen
+      return reads <= 2
         ? route.fulfill(unavailable)
         : route.fulfill(rpc(SETUP));
     },

@@ -88,8 +88,9 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
       current.status === "ready" ? current : { status: "loading" }
     );
     try {
-      const value = await readWithRetry(() =>
-        orpcClient.sale.get({ organizationId, saleId })
+      const value = await readWithRetry(
+        () => orpcClient.sale.get({ organizationId, saleId }),
+        { isCurrent: () => isLatestRequest(sequence.current, token) }
       );
       if (isLatestRequest(sequence.current, token)) {
         setLoad({ status: "ready", value });

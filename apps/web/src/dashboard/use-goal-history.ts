@@ -36,8 +36,9 @@ export function useGoalHistory(
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await readWithRetry(() =>
-        orpcClient.goal.targetChanges({ id: goalId, organizationId })
+      const result = await readWithRetry(
+        () => orpcClient.goal.targetChanges({ id: goalId, organizationId }),
+        { isCurrent: () => requestSequence === sequence.current }
       );
       if (requestSequence === sequence.current) {
         setState({ changes: result.changes, error: null, isLoading: false });

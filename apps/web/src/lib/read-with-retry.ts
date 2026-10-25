@@ -1,3 +1,4 @@
+import { browserConnection } from "./browser-connection";
 import { isNoAnswer, jittered } from "./connection";
 import { rpcErrorCode, rpcErrorReason } from "./rpc-error";
 
@@ -6,29 +7,31 @@ const RETRY_AFTER_MS = 1500;
 
 /**
  * A READ that failed in a way a second try may fix: no answer (`isNoAnswer`, which includes a response
- * without the Worker's mark), `SERVICE_UNAVAILABLE` (with or without `data.reason: "server_busy"`), a 500
- * with no reason of its own, or the runtime's page that oRPC could not even decode (the CPU limit, "code
- * had hung"). A 4xx is the server's answer: trying again says the same.
+ * without the Worker's mark), `SERVICE_UNAVAILABLE` (with or without `data.reason: "server_busy"`), or a 5xx
+ * with no reason of its own: the 500 of an error nobody named, and the page the runtime or Cloudflare
+ * answers for a Worker it killed (the CPU limit, "code had hung"), which oRPC reads as an error of the
+ * status it carries (502, 504, 52x...). A 4xx is the server's answer: trying again says the same.
  */
 export function isTransientReadFailure(error: unknown): boolean {
   if (isNoAnswer(error)) {
     return true;
   }
-  const code = rpcErrorCode(error);
-  if (code === "SERVICE_UNAVAILABLE") {
+  if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
     return true;
   }
-  if (code === "INTERNAL_SERVER_ERROR") {
-    return rpcErrorReason(error) === undefined;
-  }
+  const { status } = (error ?? {}) as { status?: unknown };
   return (
-    code === undefined &&
-    error instanceof Error &&
-    error.message.startsWith("Cannot parse response body")
+    typeof status === "number" &&
+    status >= 500 &&
+    rpcErrorReason(error) === undefined
   );
 }
 
 export interface ReadWithRetryOptions {
+  /** False once the screen no longer wants the answer (it left, or a newer read took its place): no second try. */
+  isCurrent?: () => boolean;
+  /** False while the tab is known offline: the return to the network reads again, a wait now only delays the screen. */
+  isOnline?: () => boolean;
   random?: () => number;
   /** The wait before the second try; the clock in tests. */
   wait?: (ms: number) => Promise<void>;
@@ -48,15 +51,23 @@ function wait(ms: number): Promise<void> {
  */
 export async function readWithRetry<T>(
   read: () => Promise<T>,
-  { random = Math.random, wait: pause = wait }: ReadWithRetryOptions = {}
+  {
+    isCurrent = () => true,
+    isOnline = () => browserConnection.isOnline(),
+    random = Math.random,
+    wait: pause = wait,
+  }: ReadWithRetryOptions = {}
 ): Promise<T> {
   try {
     return await read();
   } catch (error) {
-    if (!isTransientReadFailure(error)) {
+    if (!(isTransientReadFailure(error) && isOnline() && isCurrent())) {
       throw error;
     }
     await pause(jittered(RETRY_AFTER_MS, random));
+    if (!isCurrent()) {
+      throw error;
+    }
     return await read();
   }
 }

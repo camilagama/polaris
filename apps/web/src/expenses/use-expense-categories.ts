@@ -28,8 +28,10 @@ export function useExpenseCategories(organizationId: string) {
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await readWithRetry(() =>
-        orpcClient.expense.listCategories({ organizationId, status: "all" })
+      const result = await readWithRetry(
+        () =>
+          orpcClient.expense.listCategories({ organizationId, status: "all" }),
+        { isCurrent: () => requestSequence === sequence.current }
       );
       if (requestSequence === sequence.current) {
         setState({

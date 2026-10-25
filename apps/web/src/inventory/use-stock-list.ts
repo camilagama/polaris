@@ -104,10 +104,12 @@ export function useStockList(
         latest.current += 1;
       };
     }
-    readWithRetry(() =>
-      orpcClient.inventory.listBalances(
-        stockListRequest(organizationId, effective, null)
-      )
+    readWithRetry(
+      () =>
+        orpcClient.inventory.listBalances(
+          stockListRequest(organizationId, effective, null)
+        ),
+      { isCurrent: () => request === latest.current }
     )
       .then((page) => {
         if (request === latest.current) {
@@ -139,10 +141,12 @@ export function useStockList(
     latest.current += 1;
     const request = latest.current;
     setState(stockMoreStarted);
-    readWithRetry(() =>
-      orpcClient.inventory.listBalances(
-        stockListRequest(organizationId, effective, cursor)
-      )
+    readWithRetry(
+      () =>
+        orpcClient.inventory.listBalances(
+          stockListRequest(organizationId, effective, cursor)
+        ),
+      { isCurrent: () => request === latest.current }
     )
       .then((page) => {
         if (request === latest.current) {

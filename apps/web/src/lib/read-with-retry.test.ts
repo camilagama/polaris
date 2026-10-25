@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ORPCError } from "@orpc/client";
+import { createORPCClient, ORPCError } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import { describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
 import { isTransientReadFailure, readWithRetry } from "./read-with-retry";
@@ -12,6 +13,7 @@ function setup() {
   const waits: number[] = [];
   return {
     options: {
+      isOnline: () => true,
       random: () => 0.5,
       wait: (ms: number) => {
         waits.push(ms);
@@ -57,6 +59,7 @@ describe("readWithRetry", () => {
         .mockResolvedValueOnce("ok");
       // biome-ignore lint/performance/noAwaitInLoops: one range end at a time
       await readWithRetry(read, {
+        isOnline: () => true,
         random: () => random,
         wait: (ms) => {
           waits.push(ms);
@@ -94,6 +97,48 @@ describe("readWithRetry", () => {
     );
     expect(read).toHaveBeenCalledTimes(2);
   });
+
+  it("does not wait nor try again when the screen no longer wants the answer", async () => {
+    const t = setup();
+    const failure = unavailable();
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+
+    await expect(
+      readWithRetry(read, { ...t.options, isCurrent: () => false })
+    ).rejects.toBe(failure);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(t.waits).toEqual([]);
+  });
+
+  it("drops the second try when the screen moved on during the wait", async () => {
+    let current = true;
+    const failure = unavailable();
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+
+    await expect(
+      readWithRetry(read, {
+        isCurrent: () => current,
+        isOnline: () => true,
+        random: () => 0.5,
+        wait: () => {
+          current = false;
+          return Promise.resolve();
+        },
+      })
+    ).rejects.toBe(failure);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not wait while the tab is known offline: the return to the network reads again", async () => {
+    const t = setup();
+    const failure = new NoWorkerAnswerError("unproven");
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+
+    await expect(
+      readWithRetry(read, { ...t.options, isOnline: () => false })
+    ).rejects.toBe(failure);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("isTransientReadFailure", () => {
@@ -129,14 +174,7 @@ describe("isTransientReadFailure", () => {
     ).toBe(false);
   });
 
-  it("is true for the runtime's page that oRPC could not decode (the CPU limit)", () => {
-    expect(
-      isTransientReadFailure(
-        new Error(
-          "Cannot parse response body, please check the response body and content-type."
-        )
-      )
-    ).toBe(true);
+  it("is false for an error that is neither oRPC's nor a failed network call", () => {
     expect(isTransientReadFailure(new Error("boom"))).toBe(false);
   });
 
@@ -146,8 +184,64 @@ describe("isTransientReadFailure", () => {
   });
 });
 
-const READ_PROCEDURE = /^(get|list|periodSummary|targetChanges)/;
-const CALL = /readWithRetry\(\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/g;
+describe("what the real client throws for the runtime's own page", () => {
+  const client = (response: () => Response) =>
+    createORPCClient<{ goal: { list: () => Promise<unknown> } }>(
+      new RPCLink({
+        fetch: () => Promise.resolve(response()),
+        url: "http://localhost/rpc",
+      })
+    );
+  const runtimePage = (status: number) => () =>
+    new Response("<html>Error 1102 Worker exceeded resource limits</html>", {
+      headers: { "cf-ray": "abc-GRU", "content-type": "text/html" },
+      status,
+    });
+  const thrownBy = (response: () => Response) =>
+    client(response)
+      .goal.list()
+      .catch((caught: unknown) => caught);
+
+  it.each([500, 502, 503, 504, 520, 522, 524])(
+    "a %s page with no mark is a failure to try again",
+    async (status) => {
+      expect(isTransientReadFailure(await thrownBy(runtimePage(status)))).toBe(
+        true
+      );
+    }
+  );
+
+  it.each([400, 404, 429])(
+    "a %s page is the answer: it is not tried again",
+    async (status) => {
+      expect(isTransientReadFailure(await thrownBy(runtimePage(status)))).toBe(
+        false
+      );
+    }
+  );
+
+  it("a 500 the server named with a reason is not tried again", async () => {
+    const named = () =>
+      new Response(
+        JSON.stringify({
+          json: {
+            code: "INTERNAL_SERVER_ERROR",
+            data: { reason: "something_named" },
+            defined: false,
+            message: "x",
+            status: 500,
+          },
+          meta: [],
+        }),
+        { headers: { "content-type": "application/json" }, status: 500 }
+      );
+    expect(isTransientReadFailure(await thrownBy(named))).toBe(false);
+  });
+});
+
+const READ_PROCEDURE = /^(get|list|periodSummary|setup|targetChanges)/;
+const CALL =
+  /readWithRetry\(\s*\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/g;
 const SOURCE_FILE = /\.tsx?$/;
 
 /** The procedures `readWithRetry` wraps are reads: a write that got no answer may have been saved, and never runs twice. */

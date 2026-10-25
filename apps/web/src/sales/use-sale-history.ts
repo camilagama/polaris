@@ -98,8 +98,10 @@ export function useSaleHistory(
         latest.current += 1;
       };
     }
-    readWithRetry(() =>
-      orpcClient.sale.list(historyListRequest(organizationId, effective, 0))
+    readWithRetry(
+      () =>
+        orpcClient.sale.list(historyListRequest(organizationId, effective, 0)),
+      { isCurrent: () => request === latest.current }
     )
       .then((page) => {
         if (request === latest.current) {
@@ -130,10 +132,12 @@ export function useSaleHistory(
     latest.current += 1;
     const request = latest.current;
     setState(loadMoreStarted);
-    readWithRetry(() =>
-      orpcClient.sale.list(
-        historyListRequest(organizationId, effective, nextOffset(state))
-      )
+    readWithRetry(
+      () =>
+        orpcClient.sale.list(
+          historyListRequest(organizationId, effective, nextOffset(state))
+        ),
+      { isCurrent: () => request === latest.current }
     )
       .then((page) => {
         if (request === latest.current) {

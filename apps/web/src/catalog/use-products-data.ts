@@ -41,9 +41,12 @@ export function useProductsData(
     // a new try shows the loading again instead of the old message
     setLoadError(null);
     Promise.all([
-      readWithRetry(() => orpcClient.product.list({ organizationId, status })),
-      readWithRetry(() =>
-        orpcClient.category.list({ organizationId, status: "all" })
+      readWithRetry(() => orpcClient.product.list({ organizationId, status }), {
+        isCurrent: () => current,
+      }),
+      readWithRetry(
+        () => orpcClient.category.list({ organizationId, status: "all" }),
+        { isCurrent: () => current }
       ),
     ])
       .then(([productResult, categoryResult]) => {

@@ -124,11 +124,13 @@ export function CustomersPage() {
       setLoadError(null);
       setCustomers([]);
       try {
-        const result = await readWithRetry(() =>
-          orpcClient.customer.list({
-            organizationId: targetOrganizationId,
-            status: targetStatus,
-          })
+        const result = await readWithRetry(
+          () =>
+            orpcClient.customer.list({
+              organizationId: targetOrganizationId,
+              status: targetStatus,
+            }),
+          { isCurrent: () => requestSequence === customerLoadSequence.current }
         );
         if (requestSequence !== customerLoadSequence.current) {
           return;
