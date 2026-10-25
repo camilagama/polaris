@@ -116,6 +116,11 @@ export function refundWindowClosesAt(firstChargeAt: Date): Date {
   );
 }
 
+/** The last instant the app completes a refund asked at `requestedAt`: 72 hours exactly still count (ADR 0104, decision 3). */
+export function refundRequestValidUntil(requestedAt: Date): Date {
+  return new Date(requestedAt.getTime() + REFUND_REQUEST_VALID_HOURS * HOUR_MS);
+}
+
 /**
  * The window of the right of withdrawal (AS-7, T-5): it ends at 23:59:59 in São Paulo of the 7th calendar day after
  * the day of the first charge, counted from the provider's moment of that charge (a webhook delivered late never
@@ -140,8 +145,7 @@ export function refundWindowOf(
   }
   if (
     record.refundRequestedAt !== null &&
-    now.getTime() - record.refundRequestedAt.getTime() >
-      REFUND_REQUEST_VALID_HOURS * HOUR_MS
+    now.getTime() > refundRequestValidUntil(record.refundRequestedAt).getTime()
   ) {
     return null;
   }

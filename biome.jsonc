@@ -245,6 +245,7 @@
                       "!@polaris/db/admin-support-repository",
                       "!@polaris/db/admin-incident-repository",
                       "!@polaris/db/admin-access-log-repository",
+                      "!@polaris/db/admin-refund-window-repository",
                       "!@polaris/db/billing-store",
                       "@polaris/billing",
                       "@polaris/billing/**",

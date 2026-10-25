@@ -134,6 +134,7 @@ function setup(
       })
     ),
     accessLog: { read: vi.fn() },
+    refundWindow: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),
