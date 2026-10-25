@@ -4,6 +4,7 @@ import {
   canCancelRenewal,
   cancelDialogText,
   cancelHint,
+  cancelledGraceText,
   cancelledText,
   commandRefusal,
   FREE_CHANGES,
@@ -71,6 +72,7 @@ describe("cancel the renewal (AC-21 to AC-28)", () => {
 
   it("the dialog says the last day paid for and that the store goes to the Free", () => {
     expect(cancelDialogText(plan())).toEqual({
+      confirm: "Cancelar a renovação",
       description:
         "Seu Pro continua até 23/11/2026, o fim do que você já pagou. Depois dessa data a loja volta ao plano Free.",
       title: "Cancelar a renovação do Pro?",
@@ -83,6 +85,8 @@ describe("cancel the renewal (AC-21 to AC-28)", () => {
       "O teste vai até o fim e nada é cobrado. Você não terá outro teste grátis. Depois a loja volta ao plano Free."
     );
     expect(text.description).not.toMatch(A_DATE);
+    // nothing renews in a trial: the button repeats the title, not "a renovação"
+    expect(text.confirm).toBe("Cancelar o Pro");
     expect(cancelHint(plan({ state: "trialing" }))).toBe(
       "O teste vai até o fim e nada é cobrado. Você não terá outro teste grátis."
     );
@@ -192,6 +196,32 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
 });
 
 describe("pay the charge that failed (AC-43)", () => {
+  it("a renewal already cancelled in grace says the charge will not be paid, the Pro until and the day to subscribe again", () => {
+    const grace = plan({
+      accessEndsAt: "2026-10-31T03:00:00.000Z",
+      recovery: "provider_page",
+      renewalCancelled: true,
+      resubscribeFrom: "2026-10-31T03:00:00.000Z",
+      state: "grace",
+    });
+    expect(cancelledGraceText(grace)).toBe(
+      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até 30/10/2026; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de 30/10/2026."
+    );
+    // no day from the server: the day to subscribe again is the end of the grace
+    expect(cancelledGraceText({ ...grace, resubscribeFrom: null })).toBe(
+      cancelledGraceText(grace)
+    );
+    expect(
+      cancelledGraceText({
+        ...grace,
+        accessEndsAt: null,
+        resubscribeFrom: null,
+      })
+    ).toBe(
+      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até o fim do prazo; depois a loja volta ao Free e seus dados ficam."
+    );
+  });
+
   it("says it pays the charge that failed and does not change the card", () => {
     expect(
       overdueText(

@@ -72,13 +72,22 @@ export interface DialogText {
   title: string;
 }
 
+/** The dialog of cancelling, with the label of the button that confirms. */
+export interface CancelDialogText extends DialogText {
+  confirm: string;
+}
+
+const CANCEL_RENEWAL = "Cancelar a renovação";
+
 /**
  * The dialog of "Cancelar a renovação" (AC-22, AC-25, AC-28): until when the Pro goes (the trial says no date: its
  * screen speaks only of the first charge, item 13), and that afterwards the store is on the Free.
  */
-export function cancelDialogText(plan: BillingPlanView): DialogText {
+export function cancelDialogText(plan: BillingPlanView): CancelDialogText {
   if (plan.state === "trialing") {
     return {
+      // the title asks to cancel the Pro, and nothing renews in a trial: the button says the same, not "a renovação"
+      confirm: "Cancelar o Pro",
       description:
         "O teste vai até o fim e nada é cobrado. Você não terá outro teste grátis. Depois a loja volta ao plano Free.",
       title: "Cancelar o Pro em teste?",
@@ -92,10 +101,12 @@ export function cancelDialogText(plan: BillingPlanView): DialogText {
         until === null
           ? "Não há nova tentativa de cobrança. A loja volta ao plano Free quando o prazo terminar."
           : `Não há nova tentativa de cobrança. Seu Pro continua até ${until}. Depois dessa data a loja volta ao plano Free.`,
+      confirm: CANCEL_RENEWAL,
       title: "Cancelar a renovação do Pro?",
     };
   }
   return {
+    confirm: CANCEL_RENEWAL,
     description:
       until === null
         ? "Seu Pro continua até o fim do que você já pagou. Depois a loja volta ao plano Free."
@@ -206,6 +217,25 @@ export function overdueText(plan: BillingPlanView): string {
   return until === null
     ? "Isto paga a cobrança que falhou. A próxima renovação ainda tenta o cartão cadastrado. Para usar outro cartão, cancele a renovação e assine de novo quando este período terminar."
     : `Isto paga a cobrança que falhou. A próxima renovação ainda tenta o cartão cadastrado. Para usar outro cartão, cancele a renovação e assine de novo depois de ${until}.`;
+}
+
+/**
+ * The grace of a renewal already cancelled (AS-43 asks for the server's page, but a renewal cancelled is not told to
+ * pay it): in the place of the button, that the charge will not be paid, until when the Pro goes and from when the
+ * store may subscribe again. The days are the plan's (the end of the grace, the last day paid for).
+ */
+export function cancelledGraceText(plan: BillingPlanView): string {
+  const until =
+    plan.accessEndsAt === null ? null : accessDateText(plan.accessEndsAt);
+  const again =
+    plan.resubscribeFrom === null
+      ? until
+      : accessDateText(plan.resubscribeFrom);
+  const head = "Renovação cancelada. A cobrança pendente não será paga.";
+  if (until === null) {
+    return `${head} Seu Pro continua até o fim do prazo; depois a loja volta ao Free e seus dados ficam.`;
+  }
+  return `${head} Seu Pro continua até ${until}; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de ${again}.`;
 }
 
 /** The exact hosts of Asaas's page of a charge (ADR 0104, decision 3): never by suffix. */

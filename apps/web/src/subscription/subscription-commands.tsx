@@ -26,6 +26,7 @@ import { orpcClient } from "../lib/orpc";
 import {
   canCancelRenewal,
   cancelDialogText,
+  cancelledGraceText,
   cancelHint,
   cancelledText,
   commandRefusal,
@@ -105,7 +106,12 @@ function useOwnerCommand<T>(
       requestId.current = null;
       return answer;
     } catch (error) {
-      setRefusal(commandRefusal(command, error));
+      const next = commandRefusal(command, error);
+      if (next.reread) {
+        // the plan is read again: what comes after is a new gesture
+        requestId.current = null;
+      }
+      setRefusal(next);
       return null;
     } finally {
       inFlight.current = false;
@@ -132,14 +138,28 @@ function WhatChanges({ plan }: { plan: BillingPlanView }) {
 }
 
 function RefusalAlert({
+  focusOnShow = false,
   onReread,
   refusal,
 }: {
+  /** In a dialog, the notice may be under the fold at 360 px: the focus takes it into view. */
+  focusOnShow?: boolean;
   onReread: () => void;
   refusal: Refusal;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusOnShow) {
+      ref.current?.focus();
+    }
+  }, [focusOnShow, refusal]);
   return (
-    <Alert variant="destructive">
+    <Alert
+      className="focus-ring"
+      ref={ref}
+      tabIndex={focusOnShow ? -1 : undefined}
+      variant="destructive"
+    >
       <CircleAlertIcon aria-hidden="true" />
       <AlertDescription className="grid justify-items-start gap-2">
         {refusal.text}
@@ -254,7 +274,9 @@ function CancelRenewalDialog({
             {REASON_HINT}
           </FieldDescription>
         </Field>
-        {refusal ? <RefusalAlert onReread={reread} refusal={refusal} /> : null}
+        {refusal ? (
+          <RefusalAlert focusOnShow onReread={reread} refusal={refusal} />
+        ) : null}
         <DialogFooter className="gap-3">
           <Button
             aria-disabled={pending || undefined}
@@ -271,7 +293,7 @@ function CancelRenewalDialog({
             onClick={pending ? undefined : confirm}
             type="button"
           >
-            {pending ? "Cancelando…" : "Cancelar a renovação"}
+            {pending ? "Cancelando…" : text.confirm}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -326,7 +348,9 @@ function RefundDialog({
           <DialogDescription>{text.description}</DialogDescription>
         </DialogHeader>
         <WhatChanges plan={plan} />
-        {refusal ? <RefusalAlert onReread={reread} refusal={refusal} /> : null}
+        {refusal ? (
+          <RefusalAlert focusOnShow onReread={reread} refusal={refusal} />
+        ) : null}
         <DialogFooter className="gap-3">
           <Button
             aria-disabled={pending || undefined}
@@ -468,6 +492,10 @@ export function PlanActions({
     plan.state === "grace" &&
     plan.recovery === "provider_page" &&
     !plan.renewalCancelled;
+  const graceCancelled =
+    plan.state === "grace" &&
+    plan.recovery === "provider_page" &&
+    plan.renewalCancelled;
   const cancel = canCancelRenewal(plan);
   const refundByApp = refund !== null && refund.via === "app";
   const showRefundButton = refundByApp && !plan.refundPending;
@@ -500,6 +528,7 @@ export function PlanActions({
     !(
       outcomeText ||
       overdue ||
+      graceCancelled ||
       cancel ||
       showRefundButton ||
       support ||
@@ -521,6 +550,11 @@ export function PlanActions({
           organizationId={organizationId}
           plan={plan}
         />
+      ) : null}
+      {graceCancelled ? (
+        <p className="m-0 rounded-lg border px-3 py-2.5 text-muted-foreground">
+          {cancelledGraceText(plan)}
+        </p>
       ) : null}
       {cancel ? (
         <ActionRow hint={cancelHint(plan)}>

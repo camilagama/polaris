@@ -27,6 +27,7 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CANCEL_BUTTON = { exact: true, name: "Cancelar a renovação" };
 const REFUND_BUTTON = { exact: true, name: "Desistir e receber o reembolso" };
+const CANCEL_PRO_BUTTON = { exact: true, name: "Cancelar o Pro" };
 const KEEP_BUTTON = { exact: true, name: "Continuar no Pro" };
 const PAY_BUTTON = { name: "Pagar a cobrança pendente" };
 const ANY_REFUND_BUTTON = /reembolso/i;
@@ -306,6 +307,9 @@ test("cancelar no teste: vai até o fim, nada é cobrado e não há outro teste 
   await expect(dialog).toContainText(
     "O teste vai até o fim e nada é cobrado. Você não terá outro teste grátis. Depois a loja volta ao plano Free."
   );
+  // the title asks to cancel the Pro: the button says the same
+  await expect(dialog.getByRole("button", CANCEL_PRO_BUTTON)).toBeVisible();
+  await expect(dialog.getByRole("button", CANCEL_BUTTON)).toHaveCount(0);
 });
 
 test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda o mesmo pedido; clique duplo, um pedido só", async ({
@@ -341,6 +345,8 @@ test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda
   await expect(dialog.getByRole("alert")).toHaveText(
     "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo."
   );
+  // the notice takes the focus, so it comes into view inside the dialog at 360 px
+  await expect(dialog.getByRole("alert")).toBeFocused();
   await expect(planTitle(page)).toHaveText("Plano Pro");
   // the same gesture again: the button waits off, and a double click sends one request
   await dialog.getByRole("button", CANCEL_BUTTON).dblclick();
@@ -490,6 +496,8 @@ test("o diálogo do reembolso aberto quando a janela fecha fica, e diz a recusa 
   await expect(dialog.getByRole("alert")).toContainText(
     "Não há valor a reembolsar: o prazo de 7 dias terminou ou o reembolso já foi feito. Atualize para ver o plano."
   );
+  // the refund dialog's notice takes the focus too
+  await expect(dialog.getByRole("alert")).toBeFocused();
 });
 
 test("reembolso não concluído: o texto do AS-42, 'Tentar o reembolso de novo' com outro pedido, e nunca 'Nada foi cancelado'", async ({
@@ -512,7 +520,7 @@ test("reembolso não concluído: o texto do AS-42, 'Tentar o reembolso de novo' 
   });
   await page.getByRole("button", REFUND_BUTTON).click();
   await page.getByRole("dialog").getByRole("button", REFUND_BUTTON).click();
-  await expect(page.getByText("reembolso pendente")).toBeVisible();
+  await expect(page.getByText("Reembolso pendente")).toBeVisible();
   await expect(
     page.getByText("Cancelamos a renovação, mas o reembolso não foi concluído.")
   ).toBeVisible();
@@ -695,6 +703,51 @@ test("pagar a cobrança pendente: um endereço fora dos hosts exatos do Asaas n�
   await expect(page.locator("main")).not.toContainText("nova tentativa");
   // in grace the renewal may be cancelled too (AS-28)
   await expect(page.getByRole("button", CANCEL_BUTTON)).toBeVisible();
+});
+
+test("carência com a renovação já cancelada: sem o botão de pagar, o cartão diz que a cobrança não será paga e até quando vai o Pro (AS-43)", async ({
+  page,
+}) => {
+  await openScreen(page, {
+    plans: [
+      {
+        ...GRACE,
+        renewalCancelled: true,
+        resubscribeFrom: "2026-10-31T03:00:00.000Z",
+      },
+    ],
+  });
+  await expect(page.getByRole("button", PAY_BUTTON)).toHaveCount(0);
+  await expect(page.getByRole("button", CANCEL_BUTTON)).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até 30/10/2026; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de 30/10/2026."
+    )
+  ).toBeVisible();
+});
+
+test("pagar a cobrança pendente: depois da recusa que manda reler, o próximo pedido é um gesto novo (outro requestId)", async ({
+  page,
+}) => {
+  const calls = await openScreen(page, {
+    commands: {
+      openOverduePayment: [
+        (route) =>
+          route.fulfill(refusal("CONFLICT", 409, "no_overdue_payment")),
+        { handoff: { kind: "redirect", url: OVERDUE_PAGE } },
+      ],
+    },
+    plans: [GRACE],
+  });
+  await page.getByRole("button", PAY_BUTTON).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Não há cobrança pendente para pagar aqui."
+  );
+  await page.getByRole("button", PAY_BUTTON).click();
+  await expect.poll(() => calls.bodies.openOverduePayment.length).toBe(2);
+  expect(nth(calls.bodies.openOverduePayment, 1).requestId).not.toBe(
+    nth(calls.bodies.openOverduePayment, 0).requestId
+  );
 });
 
 test("pagar a cobrança pendente: a recusa e o provedor fora têm texto próprio", async ({

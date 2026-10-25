@@ -204,8 +204,9 @@ export function PlanLoadError({
 export function SubscriptionFooter({ plan }: { plan: BillingPlanView }) {
   const rule = refundRuleLine(plan);
   return (
-    <footer className="text-muted-foreground text-support">
-      <p className="m-0">{rule ? `${rule} ${SUPPLIER_LINE}` : SUPPLIER_LINE}</p>
+    <footer className="grid gap-1 text-muted-foreground text-support">
+      {rule ? <p className="m-0">{rule}</p> : null}
+      <p className="m-0">{SUPPLIER_LINE}</p>
     </footer>
   );
 }

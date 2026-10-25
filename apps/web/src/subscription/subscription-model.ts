@@ -88,7 +88,7 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   if (plan.renewalCancelled && proUntil !== null) {
     return plan.refundPending
       ? {
-          badge: { text: "reembolso pendente", tone: "warning" },
+          badge: { text: "Reembolso pendente", tone: "warning" },
           support:
             "A renovação foi cancelada. O reembolso ainda não foi concluído.",
           title: `Pro até ${proUntil}`,
