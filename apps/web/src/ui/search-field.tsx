@@ -5,7 +5,6 @@ import XIcon from "lucide-react/dist/esm/icons/x";
 import {
   type ChangeEvent,
   type ComponentProps,
-  type Ref,
   useCallback,
   useRef,
 } from "react";
@@ -29,7 +28,6 @@ interface SearchFieldProps
     | "enterKeyHint"
   > {
   className?: string;
-  inputRef?: Ref<HTMLInputElement>;
   /** The accessible name of the field: required, there is no visible label. */
   label: string;
   onValueChange: (value: string) => void;
@@ -38,31 +36,19 @@ interface SearchFieldProps
 
 function SearchField({
   className,
-  inputRef,
   label,
   onValueChange,
   value,
   ...props
 }: SearchFieldProps) {
-  const ownRef = useRef<HTMLInputElement | null>(null);
-  const setRefs = useCallback(
-    (node: HTMLInputElement | null) => {
-      ownRef.current = node;
-      if (typeof inputRef === "function") {
-        inputRef(node);
-      } else if (inputRef) {
-        inputRef.current = node;
-      }
-    },
-    [inputRef]
-  );
+  const ref = useRef<HTMLInputElement>(null);
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onValueChange(event.target.value),
     [onValueChange]
   );
   const handleClear = useCallback(() => {
     onValueChange("");
-    ownRef.current?.focus();
+    ref.current?.focus();
   }, [onValueChange]);
 
   return (
@@ -77,7 +63,7 @@ function SearchField({
         className="[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
         enterKeyHint="search"
         onChange={handleChange}
-        ref={setRefs}
+        ref={ref}
         type="search"
         value={value}
       />

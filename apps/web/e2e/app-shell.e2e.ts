@@ -376,6 +376,11 @@ test.describe("celular (360 px)", () => {
     const box = await option.boundingBox();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+    // Escape closes the menu only: the sheet (the dialog around it) stays open
+    await page.keyboard.press("Escape");
+    await expect(option).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Mais" })).toBeVisible();
+    await store.click();
     await option.click();
     await expect(store).toContainText("Loja do centro da cidade");
   });
