@@ -386,15 +386,19 @@ test.describe("controle: cada verificação pega a falha", () => {
     ]);
   });
 
-  test("5. sem reduce, popover, menu, seletor e dica animam (100 ms do shadcn); a verificação com reduce não passa por não haver animação", async ({
+  test("5. sem reduce, o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({
     page,
   }) => {
     await openScreen(gallery, page);
     await gallery.exercise?.(page);
-    const durations = new Set(
-      runningMotion(await readMotion(page)).map((record) => record.duration)
-    );
-    expect(durations.has(100)).toBe(true);
+    const running = runningMotion(await readMotion(page));
+    expect(running.some((record) => record.duration === 100)).toBe(true);
+    expect(
+      running.some(
+        (record) =>
+          record.name === "collapsible-down" && record.duration === 200
+      )
+    ).toBe(true);
   });
 
   test("5. com reduce, uma animação que escapa da regra é pega e a comum não", async ({

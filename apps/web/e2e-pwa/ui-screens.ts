@@ -92,7 +92,7 @@ export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
   touch: [light("320", true), light("360", true), light("1280", true)],
 };
 
-/** The context of the motion checks (5): once per state with `exercise`, and once more with `reduce`. */
+/** The context of the motion check (5): once per state, with `reduce`. */
 export const MOTION_CONTEXT: UiContext = light("360", true);
 
 /** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
@@ -144,6 +144,15 @@ async function exerciseGallery(page: Page) {
   await page.mouse.move(0, 0);
   await page
     .getByText("Saldo confirmado pelo servidor")
+    .waitFor({ state: "detached" });
+  // the height of the collapsible panel (200 ms): open and close it, waiting for the panel to settle
+  const recurring = page.getByRole("button", { name: "Despesas recorrentes" });
+  await recurring.click();
+  await page.getByText("Aluguel e internet, todo dia 5.").waitFor();
+  await page.waitForTimeout(300);
+  await recurring.click();
+  await page
+    .getByText("Aluguel e internet, todo dia 5.")
     .waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Mostrar aviso" }).click();
   await page.getByText("Venda registrada").waitFor();
