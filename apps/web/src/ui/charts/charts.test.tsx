@@ -27,14 +27,26 @@ const IMG = /<div[^>]*role="img"[^>]*>/;
 const ARIA_LABEL = /aria-label="([^"]*)"/;
 const RANGE = /<input[^>]*type="range"[^>]*>/;
 const READING = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
-const TAGS = /<[^>]+>/g;
 const LEGEND = /<ul[^>]*data-chart-legend[\s\S]*?<\/ul>/;
 const note = (index: number) =>
   index === 6 ? "inclui R$ 100,00 de despesas" : null;
 const plain = (value: number) => `R$ ${String(value).replace(".", ",")}`;
 const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
-const text = (markup: string) =>
-  markup.replace(TAGS, "").replaceAll("&#x27;", "'");
+/** The text of a piece of markup, read tag by tag (not by a regular expression that strips them: it can leave a `<script`). */
+function text(markup: string) {
+  let out = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") {
+      inTag = true;
+    } else if (char === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      out += char;
+    }
+  }
+  return out.replaceAll("&#x27;", "'");
+}
 
 describe("AreaChart", () => {
   const markup = html(
