@@ -61,7 +61,7 @@ import { DeferredHandlerError } from "../src/server/queue/consumer";
  *   6. the delivery window counts from the first attempt (t356): a notice never tried goes out at any age, one first
  *      tried more than 23 hours ago is skipped `delivery_window_passed`, the attempt stays written when the send
  *      throws, and the real `listOwed` puts a notice that threw behind the ones never tried, so the next one goes in
- *      the same batch.
+ *      the same batch, and among the ones already tried the one tried longest ago (`last_attempted_at`) goes first.
  * The fixtures stay, as in the other gates; the logins are dropped at the end.
  */
 const expectedDatabase =
@@ -99,6 +99,7 @@ interface NoticeRow {
   failed_at: Date | null;
   first_attempted_at: Date | null;
   id: string;
+  last_attempted_at: Date | null;
   kind: string;
   recorded_at: Date;
   sent_at: Date | null;
@@ -276,7 +277,7 @@ async function run() {
     const notices = async (tenant: TenantFixture) =>
       (
         await owner.pool.query<NoticeRow>(
-          `SELECT id::text AS id, kind, dedupe_key, due_at, recorded_at, sent_at, failed_at, skipped_reason, first_attempted_at
+          `SELECT id::text AS id, kind, dedupe_key, due_at, recorded_at, sent_at, failed_at, skipped_reason, first_attempted_at, last_attempted_at
              FROM public.billing_notices WHERE organization_id = $1 ORDER BY recorded_at, id`,
           [tenant.organizationId]
         )
@@ -850,6 +851,73 @@ async function run() {
       [later.notice.id],
       "a batch of one reaches the one never tried"
     );
+    // (e): two notices already tried rotate by the last attempt, not by the first
+    const triedA = await receiptTenant("tried-a", 50);
+    const triedB = await receiptTenant("tried-b", 45);
+    const rotation = new Set(
+      [triedA, triedB].map((x) => x.tenant.organizationId)
+    );
+    const rotationList = async (at: Date, limit: number) =>
+      (await realNotices.listOwed(at, 100_000))
+        .filter((owed) => rotation.has(owed.organizationId))
+        .slice(0, limit);
+    // A is tried first, then B, then A again: A has the older first attempt and the newer last one
+    for (const tried of [triedA, triedB, triedA]) {
+      assert.equal(
+        await realNotices.markAttempted(
+          tried.notice.id,
+          tried.tenant.organizationId
+        ),
+        true
+      );
+    }
+    const aTried = await noticeNow(triedA.tenant);
+    const bTried = await noticeNow(triedB.tenant);
+    assert.ok(aTried.first_attempted_at && bTried.first_attempted_at);
+    assert.ok(aTried.last_attempted_at && bTried.last_attempted_at);
+    assert.ok(
+      aTried.first_attempted_at < bTried.first_attempted_at,
+      "A was first tried before B"
+    );
+    assert.ok(
+      aTried.last_attempted_at > bTried.last_attempted_at,
+      "and tried again after it"
+    );
+    assert.ok(
+      aTried.first_attempted_at < aTried.last_attempted_at,
+      "the second attempt moved only the last one"
+    );
+    assert.deepEqual(
+      ids(await rotationList(await dbNow(), 5)),
+      [triedB.notice.id, triedA.notice.id],
+      "tried both: the one tried longest ago first, though A's first attempt is older"
+    );
+    const throwingA: ClosureNoticeSender = (message: Sent) =>
+      message.idempotencyKey === triedA.notice.id
+        ? Promise.reject(new Error("the provider call broke"))
+        : send(message);
+    const beforeRotation = sent.length;
+    assert.equal(
+      (
+        await handOverOwedBillingNotices(
+          {
+            ...dependencies(await dbNow()),
+            notices: { ...realNotices, listOwed: rotationList },
+            send: throwingA,
+          },
+          1
+        )
+      ).sent,
+      1,
+      "a batch of one reaches B: A, the one that failed last, is behind it"
+    );
+    assert.equal(sent.length, beforeRotation + 1);
+    assert.ok((await noticeNow(triedB.tenant)).sent_at);
+    assert.equal((await noticeNow(triedA.tenant)).sent_at, null);
+    tests.push(
+      "two notices already tried rotate by the last attempt: the one first tried earlier but tried again later goes behind the other (the order by the first attempt would put it ahead), the second attempt moves only last_attempted_at, and a batch of one sends the other"
+    );
+
     tests.push(
       "the delivery window counts from the first attempt: a notice never tried and due 30 hours ago is sent and its first attempt is written (before it is marked sent); one first tried 23 hours and a minute ago is skipped delivery_window_passed without a send and with the attempt untouched; one first tried 22 hours ago is sent; a notice whose send throws keeps its attempt written and stays owed, the next one never tried is sent in the same batch, and the real listOwed then puts a never-tried notice, even a later-due one, ahead of the one that threw"
     );

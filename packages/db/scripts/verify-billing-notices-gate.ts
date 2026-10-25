@@ -253,6 +253,7 @@ async function run() {
         `${BILLING_RUNTIME} UPDATE (failed_at)`,
         `${BILLING_RUNTIME} UPDATE (failure_code)`,
         `${BILLING_RUNTIME} UPDATE (first_attempted_at)`,
+        `${BILLING_RUNTIME} UPDATE (last_attempted_at)`,
         `${BILLING_RUNTIME} UPDATE (sent_at)`,
         `${BILLING_RUNTIME} UPDATE (skipped_reason)`,
         `${RECIPIENT_OWNER} SELECT (failed_at)`,

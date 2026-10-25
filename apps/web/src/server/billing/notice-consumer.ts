@@ -87,7 +87,7 @@ export interface BillingNoticeReader {
     now: Date,
     limit: number
   ) => Promise<{ noticeId: string; organizationId: string }[]>;
-  /** Writes the first attempt (once, in a statement of its own) before the send, so it stays if the send throws. */
+  /** Writes the attempt (last always, first once; one statement of its own) before the send, so it stays if the send throws. */
   markAttempted: (noticeId: string, organizationId: string) => Promise<boolean>;
   markFailed: (
     noticeId: string,
@@ -687,7 +687,8 @@ async function sendBillingNotice(
 ): Promise<BillingNoticeOutcome> {
   const { config, fields, kind, noticeId, organizationId } = input;
   // before the render and the send: written on its own, so it stays when either throws (a notice whose render always
-  // throws is closed by the 23-hour window instead of holding the front of the list); the provider's key starts later
+  // throws goes to the back of the list, by its last attempt, and is closed by the 23-hour window, counted from the
+  // first); the provider's key starts later
   await dependencies.notices.markAttempted(noticeId, organizationId);
   const message = await renderBillingNoticeEmail(
     input.email,

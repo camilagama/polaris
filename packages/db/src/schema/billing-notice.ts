@@ -50,11 +50,16 @@ export const billingNotices = pgTable(
     /**
      * When the consumer first went to send it (the database's clock, written before the send, so it stays even when the
      * send throws). Null: never tried. The provider's idempotency key lasts 24 hours from here, so only a notice already
-     * tried can go out twice; the delivery window counts from this instant.
+     * tried can go out twice; the delivery window counts from this instant, and only from it.
      */
     firstAttemptedAt: timestamp("first_attempted_at", { withTimezone: true }),
     id: uuid("id").default(sql`uuidv7()`).primaryKey(),
     kind: text("kind").notNull(),
+    /**
+     * The latest attempt, written with the first (same statement, database's clock). Null: never tried. The hourly list
+     * orders by it, never tried first, so a notice that has just failed goes to the back of the line.
+     */
+    lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
     /** Restrictive on purpose: the purge keeps the store's row and deletes the notices in a step of its own. */
     organizationId: text("organization_id")
       .notNull()

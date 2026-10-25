@@ -513,17 +513,18 @@ export interface BillingStore {
   ) => Promise<StoredBillingNotice | null>;
   /**
    * The notices owed that the queue left behind (due at least 10 minutes ago: the queue had them first), at most
-   * `limit`: the ones never tried first, then the least recently started, each group oldest due first, so a notice that
-   * throws every time goes behind the others instead of holding the batch. The hourly handover sends them.
+   * `limit`: the ones never tried first, then the one tried longest ago (`last_attempted_at`), each group oldest due
+   * first, so a notice that throws every time goes to the back after each try instead of holding the batch. The hourly
+   * handover sends them.
    */
   listOwedNotices: (
     now: Date,
     limit: number
   ) => Promise<{ noticeId: string; organizationId: string }[]>;
   /**
-   * Writes when the consumer first went to send a notice still owed, once (the database's clock), in a statement of its
-   * own: it stays written when the send that follows throws. False when it was already written or the notice was
-   * settled meanwhile.
+   * Writes an attempt to send a notice still owed (the database's clock): `last_attempted_at` every time,
+   * `first_attempted_at` the first time, in a statement of its own, so both stay written when the send that follows
+   * throws. False when the notice was settled meanwhile.
    */
   markNoticeAttempted: (
     noticeId: string,
@@ -1000,15 +1001,34 @@ async function renewalFailedSentAtOf(
 }
 
 /**
- * The outcome of a notice still owed, or its first attempt, written once; false when it was settled meanwhile (or is not
- * of that store).
+ * An attempt to send a notice still owed: `last_attempted_at` always, `first_attempted_at` only the first time, both from
+ * `clock_timestamp()` (the instant of the statement, not of the transaction) in one autocommit statement. False when the
+ * notice was settled meanwhile (or is not of that store).
  */
+async function markOwedNoticeAttempt(
+  pool: Pool,
+  noticeId: string,
+  organizationId: string
+): Promise<boolean> {
+  if (!NOTICE_ID_PATTERN.test(noticeId)) {
+    return false;
+  }
+  const result = await pool.query(
+    `UPDATE public.billing_notices
+        SET first_attempted_at = COALESCE(first_attempted_at, pg_catalog.clock_timestamp()),
+            last_attempted_at = pg_catalog.clock_timestamp()
+      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}`,
+    [noticeId, organizationId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** The outcome of a notice still owed, written once; false when it was settled meanwhile (or is not of that store). */
 async function markOwedNotice(
   pool: Pool,
   noticeId: string,
   organizationId: string,
   outcome:
-    | { attempted: true }
     | { failureCode: string }
     | { sent: true }
     | { skippedReason: string }
@@ -1018,13 +1038,8 @@ async function markOwedNotice(
   }
   // the columns are fixed text of this module; the code and the reason go as parameters
   let assignment = "sent_at = pg_catalog.now()";
-  let only = "";
   const values: string[] = [noticeId, organizationId];
-  if ("attempted" in outcome) {
-    // the first attempt only; clock_timestamp() is the instant of the statement, not of the transaction
-    assignment = "first_attempted_at = pg_catalog.clock_timestamp()";
-    only = " AND first_attempted_at IS NULL";
-  } else if ("failureCode" in outcome) {
+  if ("failureCode" in outcome) {
     assignment = "failed_at = pg_catalog.now(), failure_code = $3";
     values.push(outcome.failureCode);
   } else if ("skippedReason" in outcome) {
@@ -1033,7 +1048,7 @@ async function markOwedNotice(
   }
   const result = await pool.query(
     `UPDATE public.billing_notices SET ${assignment}
-      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}${only}`,
+      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}`,
     values
   );
   return (result.rowCount ?? 0) > 0;
@@ -3167,7 +3182,7 @@ export function createBillingStore(
       }>(
         `SELECT id::text AS notice_id, organization_id FROM public.billing_notices
           WHERE ${OWED} AND due_at <= $1
-          ORDER BY first_attempted_at NULLS FIRST, due_at, id
+          ORDER BY last_attempted_at NULLS FIRST, due_at, id
           LIMIT $2`,
         [new Date(now.getTime() - NOTICE_HANDOVER_AFTER_MS), limit]
       );
@@ -3177,7 +3192,7 @@ export function createBillingStore(
       }));
     },
     markNoticeAttempted: (noticeId, organizationId) =>
-      markOwedNotice(pool, noticeId, organizationId, { attempted: true }),
+      markOwedNoticeAttempt(pool, noticeId, organizationId),
     markNoticeFailed: (noticeId, organizationId, code) =>
       markOwedNotice(pool, noticeId, organizationId, { failureCode: code }),
     markNoticeSent: (noticeId, organizationId) =>
