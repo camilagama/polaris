@@ -10,6 +10,7 @@ import {
   type MoneyInputError,
   monthBounds,
   monthOfDay,
+  moveMonthCursor,
   moneyInputMessage,
   moneyInputText,
   parseMoneyInput,
@@ -178,6 +179,28 @@ describe("months", () => {
     expect(shiftMonth("x", 1)).toBeNull();
     expect(shiftMonth("9999-12", 1)).toBeNull();
     expect(shiftMonth("0000-01", -1)).toBeNull();
+  });
+
+  it("moves the cursor of the month grid by key, across years, and stays at the edge of the calendar", () => {
+    expect(moveMonthCursor("2026-10", "ArrowRight")).toBe("2026-11");
+    expect(moveMonthCursor("2026-12", "ArrowRight")).toBe("2027-01");
+    expect(moveMonthCursor("2026-01", "ArrowLeft")).toBe("2025-12");
+    expect(moveMonthCursor("2026-11", "ArrowDown")).toBe("2027-02");
+    expect(moveMonthCursor("2026-02", "ArrowUp")).toBe("2025-11");
+    expect(moveMonthCursor("2026-10", "PageUp")).toBe("2025-10");
+    expect(moveMonthCursor("2026-10", "PageDown")).toBe("2027-10");
+    expect(moveMonthCursor("2026-10", "Home")).toBe("2026-01");
+    expect(moveMonthCursor("2026-10", "End")).toBe("2026-12");
+    expect(moveMonthCursor("0005-03", "Home")).toBe("0005-01");
+    // the edges: the key is the grid's, so it is taken, and the cursor stays
+    expect(moveMonthCursor("0000-01", "ArrowLeft")).toBe("0000-01");
+    expect(moveMonthCursor("0000-03", "PageUp")).toBe("0000-03");
+    expect(moveMonthCursor("9999-12", "ArrowRight")).toBe("9999-12");
+    expect(moveMonthCursor("9999-11", "ArrowDown")).toBe("9999-11");
+    expect(moveMonthCursor("9999-02", "PageDown")).toBe("9999-02");
+    // not a key of the grid, and not a month
+    expect(moveMonthCursor("2026-10", "Enter")).toBeNull();
+    expect(moveMonthCursor("x", "ArrowRight")).toBeNull();
   });
 
   it("writes the month in Portuguese", () => {

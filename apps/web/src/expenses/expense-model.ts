@@ -360,6 +360,35 @@ export function shiftMonth(month: string, delta: number): string | null {
   return `${String(year).padStart(4, "0")}-${twoDigits((index % 12) + 1)}`;
 }
 
+/**
+ * Where a key of the month grid takes the cursor from `month`: the arrows move a month or a row, PageUp and PageDown a
+ * year, Home and End go to the first and the last month of the year. At the edge of the calendar (0000-01 and 9999-12)
+ * the cursor stays; null for a key that is not one of the grid's, or a non-month.
+ */
+export function moveMonthCursor(month: string, key: string): string | null {
+  const parsed = parseMonth(month);
+  if (!parsed) {
+    return null;
+  }
+  const prefix = String(parsed.year).padStart(4, "0");
+  const steps: Record<string, number> = {
+    ArrowDown: 3,
+    ArrowLeft: -1,
+    ArrowRight: 1,
+    ArrowUp: -3,
+    PageDown: 12,
+    PageUp: -12,
+  };
+  const step = steps[key];
+  if (step !== undefined) {
+    return shiftMonth(month, step) ?? month;
+  }
+  if (key === "Home") {
+    return `${prefix}-01`;
+  }
+  return key === "End" ? `${prefix}-12` : null;
+}
+
 /** "outubro de 2026" for "2026-10". */
 export function formatMonthLabel(month: string): string {
   const parsed = parseMonth(month);

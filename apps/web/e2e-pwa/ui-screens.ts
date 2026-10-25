@@ -321,7 +321,7 @@ async function exerciseSalePayment(page: Page) {
   );
 }
 
-/** The files of the expenses screen on the new interface (the month picker is also Resultado's). */
+/** The files of the expenses screen on the new interface (the month picker is Despesas' only). */
 const EXPENSE_SOURCES = [
   "src/expenses/collapsible-section.tsx",
   "src/expenses/expense-categories-panel.tsx",
@@ -346,11 +346,17 @@ const expenseScreen = (
   sourceDirs: EXPENSE_SOURCES,
 });
 
+/** The category filter and the grid of months (the popover of the month picker), each opened and closed. */
 async function exerciseExpenseCategoryFilter(page: Page) {
   await openAndClose(
     page,
     { name: "Categoria", role: "combobox" },
     { role: "listbox" }
+  );
+  await openAndClose(
+    page,
+    { name: "Mês de competência, Outubro de 2026", role: "button" },
+    { name: "Mês de competência", role: "dialog" }
   );
 }
 

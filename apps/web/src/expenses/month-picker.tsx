@@ -12,7 +12,7 @@ import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { Field, FieldLabel } from "@/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { formatMonthLabel, shiftMonth } from "./expense-model";
+import { formatMonthLabel, moveMonthCursor, shiftMonth } from "./expense-model";
 
 /* The month picker of the v5.1 (Despesas, and Resultado after it): "‹ Outubro de 2026 ›" glued in one ButtonGroup.
    The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months; a touch or a click
@@ -43,31 +43,6 @@ function monthOf(year: number, month: number): string {
 
 function parts(month: string): { month: number; year: number } {
   return { month: Number(month.slice(5, 7)), year: Number(month.slice(0, 4)) };
-}
-
-/** Where a key takes the cursor of the grid, or null when the key is not one of the grid's. */
-function moveCursor(month: string, key: string): string | null {
-  const { year } = parts(month);
-  switch (key) {
-    case "ArrowLeft":
-      return shiftMonth(month, -1);
-    case "ArrowRight":
-      return shiftMonth(month, 1);
-    case "ArrowUp":
-      return shiftMonth(month, -3);
-    case "ArrowDown":
-      return shiftMonth(month, 3);
-    case "PageUp":
-      return shiftMonth(month, -12);
-    case "PageDown":
-      return shiftMonth(month, 12);
-    case "Home":
-      return monthOf(year, 1);
-    case "End":
-      return monthOf(year, 12);
-    default:
-      return null;
-  }
 }
 
 interface MonthCellProps {
@@ -126,7 +101,7 @@ function MonthGrid({ month, onChoose }: MonthGridProps) {
 
   const handleKey = useCallback(
     (event: KeyboardEvent<HTMLFieldSetElement>) => {
-      const target = moveCursor(cursor, event.key);
+      const target = moveMonthCursor(cursor, event.key);
       if (target === null) {
         return;
       }
@@ -150,7 +125,7 @@ function MonthGrid({ month, onChoose }: MonthGridProps) {
       <div className="flex items-center justify-between gap-2">
         <Button
           aria-label="Ano anterior"
-          disabled={year <= FIRST_YEAR}
+          aria-disabled={year <= FIRST_YEAR ? true : undefined}
           onClick={handlePreviousYear}
           size="icon-sm"
           type="button"
@@ -167,7 +142,7 @@ function MonthGrid({ month, onChoose }: MonthGridProps) {
         </span>
         <Button
           aria-label="Próximo ano"
-          disabled={year >= LAST_YEAR}
+          aria-disabled={year >= LAST_YEAR ? true : undefined}
           onClick={handleNextYear}
           size="icon-sm"
           type="button"
