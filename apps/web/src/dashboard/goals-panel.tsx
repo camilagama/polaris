@@ -15,6 +15,7 @@ import {
   groupGoals,
   readGoalsLink,
 } from "./goal-model";
+import type { GoalDraft } from "./goal-model";
 import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
 import { type GoalsState, useGoals } from "./use-goals";
 
@@ -160,7 +161,18 @@ export function GoalsPanel({
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
 
-  const closeForm = useCallback(() => setCreating(false), []);
+  // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only
+  const draftStore = useRef<GoalDraft | null>(null);
+  const handleDraftChange = useCallback((draft: GoalDraft) => {
+    draftStore.current = draft;
+  }, []);
+  /** "Cancelar", a saved goal: the form closes and what was typed is thrown away. */
+  const closeForm = useCallback(() => {
+    draftStore.current = null;
+    setCreating(false);
+  }, []);
+  /** Esc and "Fechar": the form closes and the draft stays. */
+  const dismissForm = useCallback(() => setCreating(false), []);
   const handleNew = useCallback(() => {
     clearFeedback();
     setCreating(true);
@@ -255,8 +267,11 @@ export function GoalsPanel({
         disabled={busy !== null}
         feedback={feedback?.kind === "error" ? feedback : null}
         finalFocus={finalFocus}
+        keptDraft={draftStore.current ?? undefined}
         month={month}
         onCancel={closeForm}
+        onDismiss={dismissForm}
+        onDraftChange={handleDraftChange}
         onSave={handleSave}
         open={creating}
         saving={busy === "create"}

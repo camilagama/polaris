@@ -17,7 +17,11 @@ import { CollapsibleSection } from "./collapsible-section";
 import { ActionNotice, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel } from "./expense-model";
 import { ExpenseRuleForm } from "./expense-rule-form";
-import { type RuleCreateInput, ruleFrequencyLabel } from "./expense-rule-model";
+import {
+  type RuleCreateInput,
+  type RuleDraft,
+  ruleFrequencyLabel,
+} from "./expense-rule-model";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import { type ExpenseRulesState, useExpenseRules } from "./use-expense-rules";
 
@@ -310,7 +314,19 @@ export function ExpenseRulesPanel({
   // where the focus goes back to when the form closes: what opened it
   const originRef = useRef<() => HTMLElement | null>(() => null);
 
-  const closeForm = useCallback(() => setFormOpen(false), []);
+  // what was typed when the form was closed by Esc or "Fechar", for the next opening of the same form; in memory only
+  const draftStore = useRef<{ draft: RuleDraft; key: string } | null>(null);
+  const draftKey = useRef("");
+  const handleDraftChange = useCallback((draft: RuleDraft) => {
+    draftStore.current = { draft, key: draftKey.current };
+  }, []);
+  /** "Cancelar", a saved rule: the form closes and what was typed is thrown away. */
+  const closeForm = useCallback(() => {
+    draftStore.current = null;
+    setFormOpen(false);
+  }, []);
+  /** Esc and "Fechar": the form closes and the draft stays. */
+  const dismissForm = useCallback(() => setFormOpen(false), []);
   /** The form is gone: the next one starts from nothing. */
   const handleFormClosed = useCallback(() => {
     setTarget(null);
@@ -361,10 +377,10 @@ export function ExpenseRulesPanel({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next && busy === null) {
-        closeForm();
+        dismissForm();
       }
     },
-    [busy, closeForm]
+    [busy, dismissForm]
   );
   const handleOpenChangeComplete = useCallback(
     (next: boolean) => {
@@ -384,6 +400,11 @@ export function ExpenseRulesPanel({
       ? `new:${formCount}`
       : `${target.id}:${target.version}`;
   }, [formCount, target]);
+  // the kept draft is the one of the same rule (or of a new one): another rule starts from its own data
+  const keptKey = target === "new" ? "new" : (target?.id ?? "");
+  draftKey.current = keptKey;
+  const keptDraft =
+    draftStore.current?.key === keptKey ? draftStore.current.draft : undefined;
 
   return (
     <CollapsibleSection id="expense-rules" title="Despesas recorrentes">
@@ -425,7 +446,9 @@ export function ExpenseRulesPanel({
             editing={editing}
             feedback={feedback?.kind === "error" ? feedback : null}
             key={formKey}
+            keptDraft={keptDraft}
             onCancel={closeForm}
+            onDraftChange={handleDraftChange}
             onSave={handleSave}
             saving={isSaving}
             today={today}

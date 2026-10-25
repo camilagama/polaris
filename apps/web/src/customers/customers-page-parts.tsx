@@ -1,6 +1,6 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import type { Ref } from "react";
+import type { MouseEvent, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 
@@ -10,7 +10,7 @@ interface CustomersHeaderProps {
   /** The button that opens the form of a new customer; only on the list of the active ones. */
   newButton: {
     disabled: boolean;
-    onClick: () => void;
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void;
     ref: Ref<HTMLButtonElement>;
   } | null;
 }

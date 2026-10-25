@@ -11,6 +11,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -60,6 +61,10 @@ interface ExpenseRuleFormProps {
   editing: ExpenseRuleReadModel | null;
   /** What the last command said while the form is open: the dialog covers the top of the screen. */
   feedback: Feedback | null;
+  /** What was typed and kept when the form was closed by Esc or "Fechar", for the same rule or a new one. */
+  keptDraft?: RuleDraft | undefined;
+  /** Every change of the draft, so the panel can keep it when the form closes. */
+  onDraftChange: (draft: RuleDraft) => void;
   onCancel: () => void;
   /** Resolves true when the rule was saved. */
   onSave: (input: RuleCreateInput) => Promise<boolean>;
@@ -138,14 +143,17 @@ export function ExpenseRuleForm({
   disabled,
   editing,
   feedback,
+  keptDraft,
   onCancel,
+  onDraftChange,
   onSave,
   saving,
   today,
 }: ExpenseRuleFormProps) {
-  const [draft, setDraft] = useState<RuleDraft>(() =>
-    draftFrom(editing, today)
+  const [draft, setDraft] = useState<RuleDraft>(
+    () => keptDraft ?? draftFrom(editing, today)
   );
+  useEffect(() => onDraftChange(draft), [draft, onDraftChange]);
   const [errors, setErrors] = useState<RuleDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<RuleDraft>(() => draftFrom(editing, today));

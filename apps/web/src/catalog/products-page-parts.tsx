@@ -61,6 +61,8 @@ interface FeedbackProps {
   /** What follows the error, on its own line (the way to the Pro after the plan's limit). */
   errorExtra?: ReactNode;
   notice: string | null;
+  /** A button that goes with the notice ("Cadastrar outro" after a customer was made). */
+  noticeAction?: { label: string; onClick: () => void } | undefined;
   /** The error has its own "Tentar novamente" (the product of the address could not be read). */
   onRetryError?: (() => void) | undefined;
   /** Only the archived notice has it: restores the product just archived. */
@@ -73,11 +75,67 @@ interface FeedbackProps {
   undoReasonId?: string | undefined;
 }
 
+interface NoticeAlertProps {
+  notice: string;
+  noticeAction?: FeedbackProps["noticeAction"];
+  onUndo?: FeedbackProps["onUndo"];
+  undoDisabled?: FeedbackProps["undoDisabled"];
+  undoReasonId?: FeedbackProps["undoReasonId"];
+}
+
+/** The success notice, with the button that may go with it ("Cadastrar outro", "Desfazer"). */
+function NoticeAlert({
+  notice,
+  noticeAction,
+  onUndo,
+  undoDisabled,
+  undoReasonId,
+}: NoticeAlertProps) {
+  return (
+    <Alert>
+      <CircleCheckIcon aria-hidden="true" />
+      <AlertDescription
+        className={
+          onUndo || noticeAction
+            ? "flex flex-wrap items-center gap-x-3 gap-y-1"
+            : undefined
+        }
+      >
+        {notice}
+        {noticeAction ? (
+          <Button
+            onClick={noticeAction.onClick}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            {noticeAction.label}
+          </Button>
+        ) : null}
+        {onUndo ? (
+          // aria-disabled, not disabled: the button stays reachable and reads why it is off (the offline notice)
+          <Button
+            aria-describedby={undoDisabled ? undoReasonId : undefined}
+            aria-disabled={undoDisabled || undefined}
+            onClick={undoDisabled ? undefined : onUndo}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            Desfazer
+          </Button>
+        ) : null}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 /** What the last action did: nothing is drawn (not even a gap) without a message. */
 export function ActionFeedback({
   error,
   errorExtra,
   notice,
+  noticeAction,
   onRetryError,
   onUndo,
   regionRef,
@@ -115,29 +173,13 @@ export function ActionFeedback({
         </Alert>
       ) : null}
       {notice ? (
-        <Alert>
-          <CircleCheckIcon aria-hidden="true" />
-          <AlertDescription
-            className={
-              onUndo ? "flex flex-wrap items-center gap-x-3 gap-y-1" : undefined
-            }
-          >
-            {notice}
-            {onUndo ? (
-              // aria-disabled, not disabled: the button stays reachable and reads why it is off (the offline notice)
-              <Button
-                aria-describedby={undoDisabled ? undoReasonId : undefined}
-                aria-disabled={undoDisabled || undefined}
-                onClick={undoDisabled ? undefined : onUndo}
-                size="sm"
-                type="button"
-                variant="link"
-              >
-                Desfazer
-              </Button>
-            ) : null}
-          </AlertDescription>
-        </Alert>
+        <NoticeAlert
+          notice={notice}
+          noticeAction={noticeAction}
+          onUndo={onUndo}
+          undoDisabled={undoDisabled}
+          undoReasonId={undoReasonId}
+        />
       ) : null}
     </div>
   );

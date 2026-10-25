@@ -222,6 +222,8 @@ interface CustomerFormProps {
   /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
   onClosed: () => void;
   onCreateAnyway: () => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUseExisting: (customer: CustomerReadModel) => void;
   open: boolean;
@@ -239,8 +241,9 @@ function submitLabelFor(
 
 /**
  * The form of a new customer, or of the edit of one, in a dialog (the whole screen on a phone): the name, a phone or
- * an e-mail, and notes. Esc and "Fechar" are "Cancelar" (nothing closes while a save is on its way), and a tap on
- * the veil does nothing, so what was typed is not lost by a slip.
+ * an e-mail, and notes. Esc and "Fechar" close it and keep what was typed (in memory only: the next opening of the
+ * same form brings it back); only "Cancelar" and a saved customer throw it away. Nothing closes while a save is on
+ * its way, and a tap on the veil does nothing.
  */
 export function CustomerForm({
   contactError,
@@ -256,6 +259,7 @@ export function CustomerForm({
   onChange,
   onClosed,
   onCreateAnyway,
+  onDismiss,
   onSubmit,
   onUseExisting,
   open,
@@ -276,10 +280,10 @@ export function CustomerForm({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!(next || isPending)) {
-        onCancel();
+        onDismiss();
       }
     },
-    [isPending, onCancel]
+    [isPending, onDismiss]
   );
   const handleOpenChangeComplete = useCallback(
     (next: boolean) => {

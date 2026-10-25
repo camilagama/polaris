@@ -669,6 +669,15 @@ for (const width of FORM_WIDTHS) {
       );
     }
 
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("1.200");
+
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();

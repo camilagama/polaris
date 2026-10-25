@@ -42,8 +42,11 @@ const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
 
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
-export const SAVE_OUTCOME_UNKNOWN =
-  "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo.";
+export const SAVE_NOT_CONFIRMED_TEXT =
+  "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve.";
+/** What the form and the page say once it was closed to check: the draft is kept, and so is the doubt. */
+const MAYBE_SAVED_TEXT = "Este perfil pode já ter sido salvo.";
+const CHECK_AND_CLOSE_LABEL = "Fechar e conferir";
 
 const GENERIC_ERROR_TEXT =
   "Não foi possível concluir a operação. Revise os dados e tente novamente.";
@@ -87,6 +90,10 @@ interface FeedbackProps {
   regionRef: Ref<HTMLDivElement>;
   /** The answer of a change the connection cut: not an error, not a success. */
   uncertain: string | null;
+  /** The button of the doubt ("Fechar e conferir"), inside the amber notice. */
+  uncertainAction?: { label: string; onClick: () => void } | undefined;
+  /** A profile with the name typed is already on the list: says so, before it is made again. */
+  warning?: string | null | undefined;
 }
 
 /** What the last action did, at the top of the screen; nothing is drawn (not even a gap) without a message. */
@@ -95,8 +102,10 @@ function ActionFeedback({
   notice,
   regionRef,
   uncertain,
+  uncertainAction,
+  warning,
 }: FeedbackProps) {
-  if (!(error || notice || uncertain)) {
+  if (!(error || notice || uncertain || warning)) {
     return null;
   }
   return (
@@ -110,7 +119,31 @@ function ActionFeedback({
       {uncertain ? (
         <Alert variant="warning">
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertDescription>{uncertain}</AlertDescription>
+          <AlertDescription
+            className={
+              uncertainAction
+                ? "flex flex-wrap items-center gap-x-3 gap-y-1"
+                : undefined
+            }
+          >
+            {uncertain}
+            {uncertainAction ? (
+              <Button
+                onClick={uncertainAction.onClick}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {uncertainAction.label}
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {warning ? (
+        <Alert variant="warning">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertDescription>{warning}</AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
@@ -140,6 +173,11 @@ export function PaymentProfilesPage() {
   const [notLoaded, setNotLoaded] = useState(false);
   // a change the connection cut: amber, the form stays, and it stays said after the list is read again
   const [uncertain, setUncertain] = useState<string | null>(null);
+  // a create the connection cut may have been saved: the draft stays, and before it is sent again the list is checked
+  const [maybeSaved, setMaybeSaved] = useState(false);
+  const [duplicateAsk, setDuplicateAsk] = useState(false);
+  // the draft kept when the form was closed by Esc or "Fechar": "new", or the id of the profile being edited
+  const keptRef = useRef<string | null>(null);
   // the form is a dialog: it opens for a new profile or for an edit, and the draft is only cleared once it has closed
   const [formOpen, setFormOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -232,6 +270,7 @@ export function PaymentProfilesPage() {
   const handleNameChange = useCallback(
     (name: string) => {
       clearStaleMessages();
+      setDuplicateAsk(false);
       setDraft((current) => ({ ...current, name }));
     },
     [clearStaleMessages]
@@ -255,23 +294,48 @@ export function PaymentProfilesPage() {
 
   const handleNew = useCallback(() => {
     originRef.current = () => newButtonRef.current;
-    setEditing(null);
-    setDraft(blankDraft());
+    if (keptRef.current !== "new") {
+      setEditing(null);
+      setDraft(blankDraft());
+      setMaybeSaved(false);
+    }
+    keptRef.current = null;
+    setDuplicateAsk(false);
     setFieldErrors({});
     setError(null);
     setNotice(null);
     setFormOpen(true);
   }, []);
+  /** "Cancelar": the form closes and what was typed is thrown away, and with it the doubt about a save. */
   const handleCancelEdit = useCallback(() => {
+    keptRef.current = null;
+    if (maybeSaved) {
+      setMaybeSaved(false);
+      setUncertain(null);
+    }
+    setDuplicateAsk(false);
     setFormOpen(false);
     setFieldErrors({});
     setError(null);
-  }, []);
-  /** The form is empty again only once it has finished closing, so it does not turn into a new one while it fades. */
-  const handleFormClosed = useCallback(() => {
-    setEditing(null);
-    setDraft(blankDraft());
+  }, [maybeSaved]);
+  /** Esc, "Fechar" and "Fechar e conferir": the form closes and the draft stays, in memory, with the doubt. */
+  const handleDismiss = useCallback(() => {
+    keptRef.current = editing?.id ?? "new";
+    if (maybeSaved) {
+      setUncertain(MAYBE_SAVED_TEXT);
+    }
+    setDuplicateAsk(false);
+    setFormOpen(false);
     setFieldErrors({});
+    setError(null);
+  }, [editing, maybeSaved]);
+  /** The form is empty again only once it has finished closing (and only when nothing was kept). */
+  const handleFormClosed = useCallback(() => {
+    if (keptRef.current === null) {
+      setEditing(null);
+      setDraft(blankDraft());
+      setFieldErrors({});
+    }
   }, []);
   /**
    * What the save said takes the focus when the form closes; a cancel (the notice was cleared when it opened) goes
@@ -305,6 +369,20 @@ export function PaymentProfilesPage() {
         focusFeedback();
         return;
       }
+      // sent again after a cut answer: the profile may be on the list already (the name is not unique in the base)
+      const wanted = draft.name.trim().toLowerCase();
+      if (
+        maybeSaved &&
+        !editing &&
+        !duplicateAsk &&
+        profiles.some((profile) => profile.name.trim().toLowerCase() === wanted)
+      ) {
+        setDuplicateAsk(true);
+        setError(null);
+        setNotice(null);
+        focusFeedback();
+        return;
+      }
       setPending(true);
       setError(null);
       setNotice(null);
@@ -330,12 +408,16 @@ export function PaymentProfilesPage() {
           });
           setNotice(`Perfil “${name}” criado.`);
         }
+        keptRef.current = null;
+        setMaybeSaved(false);
+        setDuplicateAsk(false);
         setFormOpen(false);
         saved = true;
         await loadProfiles();
       } catch (cause) {
         if (isConnectionFailure(cause)) {
-          setUncertain(SAVE_OUTCOME_UNKNOWN);
+          setUncertain(SAVE_NOT_CONFIRMED_TEXT);
+          setMaybeSaved(true);
           readAgainIfAnswers();
         } else {
           setError(errorText(cause));
@@ -351,11 +433,14 @@ export function PaymentProfilesPage() {
     },
     [
       draft,
+      duplicateAsk,
       editing,
       focusFeedback,
       loadProfiles,
+      maybeSaved,
       online,
       organizationId,
+      profiles,
       readAgainIfAnswers,
     ]
   );
@@ -365,8 +450,13 @@ export function PaymentProfilesPage() {
       rootRef.current?.querySelector<HTMLElement>(
         `[data-profile-id="${profile.id}"] [data-profile-edit]`
       ) ?? null;
-    setEditing(profile);
-    setDraft(profileDraft(profile));
+    if (keptRef.current !== profile.id) {
+      setEditing(profile);
+      setDraft(profileDraft(profile));
+      setMaybeSaved(false);
+    }
+    keptRef.current = null;
+    setDuplicateAsk(false);
     setFieldErrors({});
     setError(null);
     setNotice(null);
@@ -460,6 +550,16 @@ export function PaymentProfilesPage() {
                 notice={null}
                 regionRef={feedbackRef}
                 uncertain={uncertain}
+                uncertainAction={
+                  uncertain === SAVE_NOT_CONFIRMED_TEXT
+                    ? { label: CHECK_AND_CLOSE_LABEL, onClick: handleDismiss }
+                    : undefined
+                }
+                warning={
+                  duplicateAsk
+                    ? `Já existe um perfil chamado “${draft.name.trim()}” na lista.`
+                    : null
+                }
               />
             ) : null
           }
@@ -467,6 +567,8 @@ export function PaymentProfilesPage() {
           onAddRule={handleAddRule}
           onCancel={handleCancelEdit}
           onClosed={handleFormClosed}
+          confirmDuplicate={duplicateAsk}
+          onDismiss={handleDismiss}
           online={online}
           onNameChange={handleNameChange}
           onRemoveRule={handleRemoveRule}

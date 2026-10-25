@@ -267,8 +267,12 @@ interface PaymentProfileFormProps {
   finalFocus: () => HTMLElement | boolean;
   onAddRule: () => void;
   onCancel: () => void;
+  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
+  confirmDuplicate: boolean;
   /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
   onClosed: () => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   /** Offline the submit button says why (the notice's sentence) and nothing leaves. */
   online: boolean;
   onNameChange: (name: string) => void;
@@ -279,19 +283,28 @@ interface PaymentProfileFormProps {
   pending: boolean;
 }
 
-function submitLabel(pending: boolean, editing: boolean): string {
+function submitLabel(
+  pending: boolean,
+  editing: boolean,
+  confirmDuplicate: boolean
+): string {
   if (pending) {
     return "Salvando…";
+  }
+  if (confirmDuplicate) {
+    return "Criar mesmo assim";
   }
   return editing ? "Salvar alterações" : "Criar perfil";
 }
 
 /**
  * The form of a new profile, or of the edit of one, in a dialog (the whole screen on a phone): the name and the
- * rules. Esc and "Fechar" are "Cancelar" (nothing closes while a save is on its way), and a tap on the veil does
- * nothing, so what was typed is not lost by a slip.
+ * rules. Esc and "Fechar" close it and keep what was typed (in memory only: the next opening of the same form brings
+ * it back); only "Cancelar" and a saved profile throw it away. Nothing closes while a save is on its way, and a tap
+ * on the veil does nothing.
  */
 export function PaymentProfileForm({
+  confirmDuplicate,
   draft,
   editingName,
   errors,
@@ -300,6 +313,7 @@ export function PaymentProfileForm({
   onAddRule,
   onCancel,
   onClosed,
+  onDismiss,
   onNameChange,
   onRemoveRule,
   onSubmit,
@@ -312,10 +326,10 @@ export function PaymentProfileForm({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!(next || pending)) {
-        onCancel();
+        onDismiss();
       }
     },
-    [onCancel, pending]
+    [onDismiss, pending]
   );
   const handleOpenChangeComplete = useCallback(
     (next: boolean) => {
@@ -392,7 +406,7 @@ export function PaymentProfileForm({
               disabled={pending}
               type="submit"
             >
-              {submitLabel(pending, editing)}
+              {submitLabel(pending, editing, confirmDuplicate)}
             </Button>
           </DialogFooter>
         </DialogForm>

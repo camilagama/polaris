@@ -55,7 +55,6 @@ for (const width of [360, 1280]) {
       for (let step = 0; step < 14; step += 1) {
         // biome-ignore lint/performance/noAwaitInLoops: one key after the other, the focus is read after each
         await page.keyboard.press(key);
-        // biome-ignore lint/performance/noAwaitInLoops: the same
         await expect.poll(() => focusIsInDialog(page)).toBe(true);
       }
     }

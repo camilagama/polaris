@@ -473,6 +473,12 @@ for (const width of FORM_WIDTHS) {
     await openForm.click();
     const dialog = page.getByRole("dialog", { name: "Nova meta" });
     await expect(dialog).toBeVisible();
+    // a frase de apoio diz de onde vem o período, sem apontar para o que o véu esconde
+    await expect(
+      dialog.getByText(
+        "Começa em outubro de 2026 e mede os mesmos números do Resultado."
+      )
+    ).toBeVisible();
     await expect(
       dialog.getByRole("combobox", { name: "Indicador" })
     ).toBeFocused();
@@ -486,6 +492,13 @@ for (const width of FORM_WIDTHS) {
         dialog.getByRole("button", { name: "Criar meta" })
       );
     }
+
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(dialog.locator("#goal-create-target")).toHaveValue("1.000,00");
 
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

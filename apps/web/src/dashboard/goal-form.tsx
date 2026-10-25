@@ -1,7 +1,13 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { MAX_GOAL_NAME_LENGTH } from "@polaris/domain/goals/goal";
-import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -22,6 +28,7 @@ import {
   SelectValue,
 } from "@/ui/select";
 import { ActionNotice, ExpenseTextField } from "../expenses/expense-fields";
+import { formatMonthLabel } from "../expenses/expense-model";
 import type { Feedback } from "../expenses/use-command-runner";
 import { focusLater } from "../lib/focus";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
@@ -164,9 +171,15 @@ interface GoalCreateFormProps {
   feedback: Feedback | null;
   /** Where the focus goes when the form closes: what opened it. */
   finalFocus: () => HTMLElement | boolean;
+  /** What was typed and kept when the form was closed by Esc or "Fechar". */
+  keptDraft?: GoalDraft | undefined;
   /** The month on screen (YYYY-MM): the period starts as that whole month. */
   month: string;
   onCancel: () => void;
+  /** Every change of the draft, so the panel can keep it when the form closes. */
+  onDraftChange: (draft: GoalDraft) => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   /** Resolves true when the goal was created. */
   onSave: (input: GoalCreateInput) => Promise<boolean>;
   open: boolean;
@@ -181,7 +194,10 @@ function createId(field: GoalDraftField): string {
   return `goal-create-${field}`;
 }
 
-type GoalCreateContentProps = Omit<GoalCreateFormProps, "finalFocus" | "open">;
+type GoalCreateContentProps = Omit<
+  GoalCreateFormProps,
+  "finalFocus" | "onDismiss" | "open"
+>;
 
 /**
  * Creates a goal, in a dialog (the whole screen on a phone). Esc and "Fechar" are "Cancelar" (nothing closes while a
@@ -191,6 +207,7 @@ type GoalCreateContentProps = Omit<GoalCreateFormProps, "finalFocus" | "open">;
 export function GoalCreateForm({
   finalFocus,
   onCancel,
+  onDismiss,
   open,
   ...content
 }: GoalCreateFormProps) {
@@ -198,10 +215,10 @@ export function GoalCreateForm({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!(next || saving)) {
-        onCancel();
+        onDismiss();
       }
     },
-    [onCancel, saving]
+    [onDismiss, saving]
   );
   return (
     <Dialog disablePointerDismissal onOpenChange={handleOpenChange} open={open}>
@@ -215,12 +232,17 @@ export function GoalCreateForm({
 function GoalCreateContent({
   disabled,
   feedback,
+  keptDraft,
   month,
   onCancel,
+  onDraftChange,
   onSave,
   saving,
 }: GoalCreateContentProps) {
-  const [draft, setDraft] = useState<GoalDraft>(() => newGoalDraft(month));
+  const [draft, setDraft] = useState<GoalDraft>(
+    () => keptDraft ?? newGoalDraft(month)
+  );
+  useEffect(() => onDraftChange(draft), [draft, onDraftChange]);
   const [errors, setErrors] = useState<GoalDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<GoalDraft>(() => newGoalDraft(month));
@@ -261,7 +283,8 @@ function GoalCreateContent({
       <DialogHeader>
         <DialogTitle>Nova meta</DialogTitle>
         <DialogDescription>
-          Começa com o mês da tela. Mesmos números dos cartões acima.
+          Começa em {formatMonthLabel(month)} e mede os mesmos números do
+          Resultado.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="md:grid-cols-2">

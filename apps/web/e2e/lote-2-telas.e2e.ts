@@ -457,13 +457,13 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   const done = page
     .getByRole("status")
-    .filter({ hasText: "Cliente cadastrado." });
+    .filter({ hasText: "Cliente “Bia Souza” cadastrado." });
   await expect(done).toBeVisible();
   // the form closed, and the focus is on the notice the person has to read
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(done.locator("xpath=..")).toBeFocused();
-  // the next one starts empty
-  await page.getByRole("button", { name: "Novo cliente" }).click();
+  // "Cadastrar outro" opens the next one, empty
+  await done.getByRole("button", { name: "Cadastrar outro" }).click();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
 });
@@ -504,7 +504,16 @@ for (const width of FORM_WIDTHS) {
       );
     }
 
-    // cancelar: nada é enviado, o formulário fecha e o foco volta ao botão que o abriu
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue(
+      "Bia Souza"
+    );
+
+    // cancelar: nada é enviado, o formulário fecha, o foco volta ao botão que o abriu e o rascunho é descartado
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();
@@ -516,13 +525,38 @@ for (const width of FORM_WIDTHS) {
     await dialog.getByLabel("Nome", { exact: true }).fill("Bia Souza");
     await dialog.getByLabel("Telefone").fill("11900000002");
     await dialog.getByRole("button", { name: "Cadastrar cliente" }).click();
+    // o aviso diz o nome e oferece cadastrar outro
+    const done = page
+      .getByRole("status")
+      .filter({ hasText: "Cliente “Bia Souza” cadastrado." });
+    await expect(done).toBeVisible();
     await expect(
-      page.getByRole("status").filter({ hasText: "Cliente cadastrado." })
+      done.getByRole("button", { name: "Cadastrar outro" })
     ).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(creates).toBe(1);
   });
 }
+
+test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formulário, um só", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({ customers: [] }),
+  });
+  await expect(
+    page.getByText(
+      "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
+    )
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
+    1
+  );
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Novo cliente" })
+  ).toBeVisible();
+});
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
   page,

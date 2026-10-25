@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   expectFormDialogLayout,
@@ -237,7 +237,17 @@ for (const width of FORM_WIDTHS) {
       await expectKeyboardKeepsMainButton(page, dialog, send);
     }
 
-    // cancelar: nothing is sent, the form closes and the focus goes back to the button that opened it
+    // Esc keeps the choice (in memory only): the form closes, the focus goes back and the same form brings it back
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(
+      dialog.getByRole("combobox", { exact: true, name: "Cliente" })
+    ).toHaveText("Bruno Lima");
+    await expect(send).not.toHaveAttribute("aria-disabled", "true");
+
+    // "Cancelar": nothing is sent, the form closes, the focus goes back to the button that opened it and the choice is thrown away
     await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(openForm).toBeFocused();
@@ -257,6 +267,37 @@ for (const width of FORM_WIDTHS) {
 }
 
 test.describe("the customer of the sale", () => {
+  test("changing the customer takes 4 taps: open, open the list, pick, send", async ({
+    page,
+  }) => {
+    const answers = saleDetailAnswers({ withReturn: true });
+    const link = answers["sale/getCustomerLink"] as object;
+    const [, other] = (
+      answers["customer/list"] as { customers: { id: string }[] }
+    ).customers;
+    const asked = await openCustomer(page, link, {
+      "sale/reassignCustomer": {
+        changed: true,
+        link: { ...link, current: { customerId: other?.id, version: 3 } },
+      },
+    });
+    // the number of taps is counted here, one per click: it was 3 when the list and the button were on the page
+    let taps = 0;
+    const tap = async (target: Locator) => {
+      taps += 1;
+      await target.click();
+    };
+    await tap(
+      page.getByRole("button", { exact: true, name: "Trocar cliente" })
+    );
+    const dialog = page.getByRole("dialog", { name: "Trocar cliente" });
+    await tap(dialog.getByRole("combobox", { exact: true, name: "Cliente" }));
+    await tap(page.getByRole("option", { exact: true, name: "Bruno Lima" }));
+    await tap(dialog.getByRole("button", { name: "Trocar cliente" }));
+    await expect.poll(() => count(asked, "sale/reassignCustomer")).toBe(1);
+    expect(taps).toBe(4);
+  });
+
   test("removing asks first: Cancelar sends nothing, Sim sends once", async ({
     page,
   }) => {

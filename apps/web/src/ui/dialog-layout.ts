@@ -19,7 +19,7 @@ export const FORM_BODY_CLASS =
   "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:px-4";
 
 export const FORM_FOOTER_CLASS =
-  "m-0 shrink-0 flex-col-reverse gap-3 rounded-none border-t bg-popover pt-3 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] md:flex-row md:justify-end md:rounded-b-xl md:bg-muted/50 md:px-4 md:py-3";
+  "m-0 shrink-0 flex-col-reverse gap-3 rounded-none border-t bg-popover pt-2 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] md:flex-row md:justify-end md:rounded-b-xl md:bg-muted/50 md:px-4 md:py-3";
 
 export const FORM_CLOSE_CLASS =
   "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] md:top-2 md:right-2";

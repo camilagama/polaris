@@ -97,6 +97,8 @@ interface ChooseDialogProps {
   hintId: string;
   onCancel: () => void;
   onClosed: () => void;
+  /** Esc and "Fechar": the dialog closes and the customer picked is kept for the next opening. */
+  onDismiss: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   open: boolean;
   picker: ReactNode;
@@ -115,6 +117,7 @@ function ChooseDialog({
   hintId,
   onCancel,
   onClosed,
+  onDismiss,
   onSubmit,
   open,
   picker,
@@ -123,10 +126,10 @@ function ChooseDialog({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!(next || submitting)) {
-        onCancel();
+        onDismiss();
       }
     },
-    [onCancel, submitting]
+    [onDismiss, submitting]
   );
   const handleOpenChangeComplete = useCallback(
     (next: boolean) => {
@@ -278,7 +281,7 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
       label="Cliente"
       onChange={onChange}
       options={view.options}
-      placeholder="Escolha um cliente ativo"
+      placeholder="Escolha"
       value={selectedId}
     />
   );
@@ -334,8 +337,19 @@ function CustomerActions({
     }
     setChoosing(true);
   }, [chooseAction]);
-  const handleCancel = useCallback(() => setChoosing(false), []);
-  const handleClosed = useCallback(() => onSelect(""), [onSelect]);
+  // only "Cancelar" throws the customer picked away (once the dialog has closed); Esc and "Fechar" keep it
+  const discard = useRef<boolean>(false);
+  const handleCancel = useCallback(() => {
+    discard.current = true;
+    setChoosing(false);
+  }, []);
+  const handleDismiss = useCallback(() => setChoosing(false), []);
+  const handleClosed = useCallback(() => {
+    if (discard.current) {
+      discard.current = false;
+      onSelect("");
+    }
+  }, [onSelect]);
   const handleRemove = useCallback(
     (action: LinkAction) => {
       onAction(action).catch(() => undefined);
@@ -382,6 +396,7 @@ function CustomerActions({
           hintId={hintId}
           onCancel={handleCancel}
           onClosed={handleClosed}
+          onDismiss={handleDismiss}
           onSubmit={handleSubmit}
           open={choosing}
           picker={
