@@ -1,3 +1,4 @@
+import { MoneyText } from "@/ui/hidden-values";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -44,7 +45,7 @@ function ResultCard({
           negative && "text-destructive"
         )}
       >
-        {value}
+        <MoneyText text={value} />
       </dd>
       {hint ? (
         <dd className="text-muted-foreground text-support">{hint}</dd>

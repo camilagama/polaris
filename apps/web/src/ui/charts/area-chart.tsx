@@ -14,7 +14,12 @@ import { Area, AreaChart as BklitAreaChart } from "../bklit/charts/area-chart";
 import { Grid } from "../bklit/charts/grid";
 import { ChartTooltip } from "../bklit/charts/tooltip";
 import { YAxis } from "../bklit/charts/y-axis";
-import { ChartBridge, type ChartHandle, DateAxis } from "./chart-bridge";
+import {
+  ChartBridge,
+  type ChartHandle,
+  DateAxis,
+  type DayMarkers,
+} from "./chart-bridge";
 import {
   bestIndex,
   type ChartColor,
@@ -62,6 +67,8 @@ export interface AreaChartProps {
   data: readonly ChartDatum[];
   /** The text of a value on the y axis ("1 mil"); `formatValue` when absent. */
   formatAxis?: (value: number) => string;
+  /** What the keyboard control says of a value; `formatValue` when absent ("valor escondido" with the values hidden). */
+  formatSpoken?: (value: number) => string;
   /** The text of a value in the reading of the day in focus, in the tooltip and in the spoken value of the keyboard control. */
   formatValue: (value: number) => string;
   /** The height of the plot in pixels: 180 for seven days, 220 for thirty or two series. The margins come on top of it. */
@@ -70,6 +77,15 @@ export interface AreaChartProps {
   label: string;
   /** The name of the main series in the legend, with `secondary`. */
   legend?: string;
+  /**
+   * The rings of the days (v7 § 4): every day, a full ring on a day that sold and a hollow one on a day with none
+   * (`all`, a week); only the best day and today (`key`, 30 days); only the best day (`best`, the default).
+   */
+  markers?: DayMarkers;
+  /** The value of the best day and of today written above their rings. */
+  valueLabels?: boolean;
+  /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
+  still?: boolean;
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
   loading?: boolean;
   /** The text that shimmers in the middle of the chart while `loading` ("Carregando"). */
@@ -89,8 +105,8 @@ export interface AreaChartProps {
  * path and the spring of the tooltip off (the chart appears finished and the cursor jumps); without it, the blocks'
  * own defaults.
  */
-function useMotion() {
-  const reduced = useReducedMotion() === true;
+function useMotion(still: boolean) {
+  const reduced = useReducedMotion() === true || still;
   return reduced
     ? ({
         animate: false,
@@ -135,6 +151,9 @@ function EmptyChart({
 interface PlotProps {
   axisText: (value: number, isTop: boolean) => string;
   best: number | null;
+  markers: DayMarkers;
+  still: boolean;
+  valueLabels: boolean;
   color: ChartColor | undefined;
   formatValue: (value: number) => string;
   handle: MutableRefObject<ChartHandle | null>;
@@ -152,6 +171,9 @@ interface PlotProps {
 function Plot({
   axisText,
   best,
+  markers,
+  still,
+  valueLabels,
   color,
   formatValue,
   handle,
@@ -164,7 +186,7 @@ function Plot({
   readingNote,
   secondary,
 }: PlotProps) {
-  const motion = useMotion();
+  const motion = useMotion(still);
   const labels = useMemo(() => points.map((item) => item.label), [points]);
   const style = useMemo(() => ({ height }), [height]);
   const secondaryColor = secondary?.color ?? GRAY;
@@ -218,7 +240,13 @@ function Plot({
         damping={motion.damping}
         dateLabels={labels}
       />
-      <ChartBridge bestIndex={best} handle={handle} />
+      <ChartBridge
+        bestIndex={best}
+        color={color ?? INK}
+        handle={handle}
+        label={valueLabels ? formatValue : null}
+        markers={markers}
+      />
     </BklitAreaChart>
   );
 }
@@ -242,16 +270,20 @@ export function AreaChart({
   color,
   data,
   formatAxis,
+  formatSpoken,
   formatValue,
   height = 180,
   label,
   legend,
   loading = false,
   loadingLabel,
+  markers = "best",
   name = "Vendas",
   rangeLabel = "Dia",
   readingNote,
   secondary,
+  still = false,
+  valueLabels = false,
 }: AreaChartProps) {
   const handle: MutableRefObject<ChartHandle | null> = useRef(null);
   const secondaryData = secondary?.data;
@@ -348,6 +380,9 @@ export function AreaChart({
             axisText={axisText}
             best={bestIndex(data)}
             color={color}
+            markers={markers}
+            still={still}
+            valueLabels={valueLabels}
             formatValue={formatValue}
             handle={handle}
             height={boxHeight}
@@ -363,7 +398,10 @@ export function AreaChart({
         {loading ? null : (
           <input
             aria-label={rangeLabel}
-            aria-valuetext={spokenValue(reading)}
+            aria-valuetext={spokenValue({
+              ...reading,
+              formatValue: formatSpoken ?? formatValue,
+            })}
             className={RANGE_CLASS}
             max={last}
             min={0}

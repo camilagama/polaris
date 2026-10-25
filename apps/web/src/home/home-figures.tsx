@@ -2,170 +2,69 @@ import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import { OnDemandSparkline } from "@/ui/charts/on-demand";
-import { isIncompleteEstimate } from "../dashboard/dashboard-model";
-import { IncompleteBadge } from "../dashboard/result-cards";
+import { Money } from "@polaris/domain/money/money";
+import { MoneyText } from "@/ui/hidden-values";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import {
-  chartValue,
-  checklistLink,
-  checklistNext,
-  lastDays,
-  monthComparison,
-  monthTitle,
-  monthUntilToday,
-  salesCountText,
-  todayFigures,
-} from "./home-model";
+import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
-import type { HomeChecklist, HomeFigures } from "./use-home";
+import type { HomeChecklist } from "./use-home";
 
 /**
- * Hoje, Mês, Mais vendidos and the checklist of a store with no sale (AC-5 to AC-9, AC-16, AC-22). Every value is
- * written; a miniature is only a reinforcement beside it, `aria-hidden` and with no axis (AC-8).
+ * Mais vendidos and the checklist of a store with no sale (AC-16, AC-22). The KPI cards are in home-kpi-cards.tsx.
  */
-
-const VALUE = "font-semibold text-value-lg tabular-nums tracking-[-0.035em]";
-const LABEL =
-  "font-medium text-muted-foreground text-xs uppercase tracking-wide";
-const MAKE_A_SALE = cn(buttonVariants({ variant: "outline" }), "w-fit");
-
-function Miniature({ values }: { values: readonly number[] }) {
-  // the miniature is aria-hidden by itself; the box keeps its height while the charts chunk loads
-  return (
-    <div aria-hidden="true" className="h-8">
-      <OnDemandSparkline values={values} />
-    </div>
-  );
-}
-
-/** Hoje; `shown` false when the figures are a copy of another day of the store (§ 7.2): never yesterday's as today's. */
-export function TodayBlock({
-  figures,
-  shown = true,
-}: {
-  figures: HomeFigures;
-  shown?: boolean;
-}) {
-  if (!shown) {
-    return (
-      <HomeBlock id="home-today" title="Hoje">
-        <p className="text-muted-foreground">
-          Sem números de hoje neste aparelho
-        </p>
-      </HomeBlock>
-    );
-  }
-  const today = todayFigures(figures.month.daily ?? [], figures.today);
-  const week = lastDays(
-    figures.before.daily ?? [],
-    figures.month.daily ?? [],
-    figures.today,
-    7
-  );
-  const sold = today.salesCount > 0;
-  return (
-    <HomeBlock id="home-today" title="Hoje">
-      {sold ? (
-        <>
-          <p className="grid gap-0.5">
-            <span className={VALUE}>{formatBrlAmount(today.netSales)}</span>
-            <span className="text-muted-foreground text-support">
-              {`Vendas líquidas · ${salesCountText(today.salesCount)}`}
-            </span>
-          </p>
-          <Miniature values={week.map((day) => chartValue(day.netSales))} />
-        </>
-      ) : (
-        <p className="text-muted-foreground">Nenhuma venda hoje ainda</p>
-      )}
-    </HomeBlock>
-  );
-}
-
-export function MonthBlock({ figures }: { figures: HomeFigures }) {
-  const { before, month, today } = figures;
-  const { cards, quality } = month;
-  // a copy kept before the series existed has the totals only: no comparison and no miniature, never zeros
-  const series = before.daily !== undefined && month.daily !== undefined;
-  const comparison = series
-    ? monthComparison(before.daily ?? [], month.daily ?? [], today)
-    : null;
-  const negative = cards.operatingResult.trim().startsWith("-");
-  return (
-    <HomeBlock
-      action={
-        <a
-          className="touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-          href="/dashboard"
-        >
-          Ver o resultado
-        </a>
-      }
-      id="home-month"
-      title={monthTitle(today)}
-    >
-      {cards.salesCount === 0 ? (
-        <div className="grid gap-3">
-          <p className="text-muted-foreground">Nenhuma venda este mês ainda</p>
-          <a className={MAKE_A_SALE} href="/sales">
-            Fazer uma venda
-          </a>
-        </div>
-      ) : (
-        <>
-          <dl className="grid grid-cols-2 gap-3">
-            <div className="grid content-start gap-1">
-              <dt className={LABEL}>Vendas líquidas</dt>
-              <dd className={VALUE}>{formatBrlAmount(cards.netSales)}</dd>
-            </div>
-            <div className="grid content-start gap-1">
-              <dt className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className={LABEL}>Resultado estimado</span>
-                {isIncompleteEstimate(quality) ? <IncompleteBadge /> : null}
-              </dt>
-              <dd className={cn(VALUE, negative && "text-destructive")}>
-                {formatBrlAmount(cards.operatingResult)}
-              </dd>
-            </div>
-          </dl>
-          <p className="text-muted-foreground text-support">
-            Não é lucro líquido nem dinheiro já recebido.
-          </p>
-          {comparison ? <p className="text-support">{comparison}</p> : null}
-          {series ? (
-            <Miniature
-              values={monthUntilToday(month.daily ?? [], today).map((day) =>
-                chartValue(day.netSales)
-              )}
-            />
-          ) : null}
-        </>
-      )}
-    </HomeBlock>
-  );
-}
 
 type TopProducts = NonNullable<PeriodSummaryReadModel["topProducts"]>;
 
-/** The three most sold products of the month, by units net of returns; none sold, no block (AC-16). */
+/** The width of a product's bar: its net sales over the first one's, in whole percents (CSS only, v7 § 3 item 11). */
+function barWidth(netSales: string, top: bigint): number {
+  const cents = Money.from(netSales).minorUnits;
+  if (top <= 0n || cents <= 0n) {
+    return 0;
+  }
+  return Number((cents * 100n) / top);
+}
+
+/**
+ * The three most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has its
+ * position in a circle, the whole name, the net sales and the units, and a green bar proportional to the net sales
+ * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it.
+ */
 export function TopProductsBlock({ products }: { products: TopProducts }) {
+  const top = products.reduce((max, product) => {
+    const cents = Money.from(product.netSales).minorUnits;
+    return cents > max ? cents : max;
+  }, 0n);
   return (
     <HomeBlock id="home-top" title="Mais vendidos do mês">
       <ol className="grid min-w-0">
         {products.map((product, index) => {
           const content = (
             <>
-              <span className="w-4 shrink-0 text-muted-foreground tabular-nums">
-                {index + 1}
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="grid size-[1.375rem] shrink-0 place-items-center rounded-full bg-muted font-semibold text-xs tabular-nums">
+                  {index + 1}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{product.name}</span>
+                <span className="shrink-0 font-semibold tabular-nums">
+                  <MoneyText text={formatBrlAmount(product.netSales)} />
+                </span>
+                <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
+                  {`${formatQuantity(product.quantity)} un.`}
+                </span>
               </span>
-              <span className="min-w-0 flex-1 truncate">{product.name}</span>
-              <span className="shrink-0 text-muted-foreground tabular-nums">
-                {`${formatQuantity(product.quantity)} un.`}
+              <span
+                aria-hidden="true"
+                className="ml-[2.125rem] block h-1.5 overflow-hidden rounded-full bg-muted"
+              >
+                <span
+                  className="block h-full rounded-full bg-chart-sales"
+                  data-top-bar=""
+                  style={{ width: `${barWidth(product.netSales, top)}%` }}
+                />
               </span>
             </>
           );
-          const row = "flex min-h-12 items-center gap-3 py-1";
+          const row = "grid min-h-12 content-center gap-1.5 py-2";
           return (
             <li
               className="min-w-0 border-t first:border-t-0"

@@ -9,8 +9,15 @@
  * the app are sums of days, never negative or unknown. The text keeps the value the caller gave.
  */
 
-/** A token of the chart palette (`--chart-1` to `--chart-5` of theme.css): the only way to color a chart. */
-export type ChartColor = `var(--chart-${1 | 2 | 3 | 4 | 5})`;
+/**
+ * A token of the chart palette of theme.css: the scale `--chart-1` to `--chart-5`, the color of an entity (sales,
+ * result, ticket, v7), the grey of a comparison, or the red of a loss (only a negative result). The only way to color
+ * a chart.
+ */
+export type ChartColor =
+  | `var(--chart-${1 | 2 | 3 | 4 | 5})`
+  | `var(--chart-${"sales" | "result" | "ticket" | "context"})`
+  | "var(--destructive)";
 
 export interface ChartDatum {
   /** The text of the point on the axis and in the reading, already formatted (e.g. "18/10"). */

@@ -1,3 +1,4 @@
+import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -63,7 +64,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
                 {row.label}
                 {row.note ? (
                   <span className="mt-0.5 block font-normal text-warning text-xs italic">
-                    {row.note}
+                    <MoneyText text={row.note} />
                   </span>
                 ) : null}
               </TableHead>
@@ -73,7 +74,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
                   row.negative && row.kind !== "line" && "text-destructive"
                 )}
               >
-                {row.value}
+                <MoneyText text={row.value} />
               </TableCell>
             </TableRow>
           ))}
