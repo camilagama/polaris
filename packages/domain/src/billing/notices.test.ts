@@ -168,8 +168,8 @@ describe("noticesFor: one transition, one notice (EM-1, EM-2)", () => {
     ).toEqual(expected);
     // nobody reported anything: the sweep puts the period in grace, with the same key
     expect(noticesOfTime(pro("active", paidEnd), base)).toEqual(expected);
-    // d0 is recorded even for a renewal cancelled while its charge was on its way: "o d0 sai sempre" (§9); whether it
-    // still goes out is the consumer's (noticeStillTrue, PR G)
+    // d0 is recorded even for a renewal cancelled while its charge was on its way (it has no day rule, §9); whether it
+    // still goes out is the consumer's (noticeStillTrue and the 23 h delivery window, PR G)
     expect(
       noticesOfFact(pro("active", paidEnd, { cancelAtPeriodEnd: true }), {
         occurredAt: base,

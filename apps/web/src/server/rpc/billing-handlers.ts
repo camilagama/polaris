@@ -24,6 +24,7 @@ import {
   recoveryOf,
   refundOfferOf,
   refundPendingOf,
+  refundWindowEndedOnOf,
   resubscribeFromOf,
 } from "@polaris/domain/billing/plan-view";
 import { logger, opaqueId } from "@polaris/observability/logger";
@@ -375,6 +376,7 @@ export function createBillingRpcHandlers(dependencies: BillingRpcDependencies) {
         via: refund.via,
       },
       refundPending: refundPendingOf(record),
+      refundWindowEndedOn: refundWindowEndedOnOf(record, now),
       renewalCancelled: record.cancelAtPeriodEnd,
       resubscribeFrom: resubscribeFrom?.toISOString() ?? null,
       state: record.state,

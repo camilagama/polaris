@@ -87,6 +87,12 @@ const gates: Gate[] = [
     "billing-owner-commands",
     "../../../apps/web/scripts/verify-billing-owner-commands-gate.ts",
   ],
+  // the consumer of billing.notice (ADR 0104, PR G), with the real store, the real recipient and the Worker's wiring:
+  // the notice in the fact's transaction, the sweep once, the order of the arguments, the purge, cases 3 and 4 of item 5
+  [
+    "billing-notice-consumer",
+    "../../../apps/web/scripts/verify-billing-notice-consumer-gate.ts",
+  ],
   ["operational-selection", "verify-operational-selection-gate.ts"],
   ["entitlement-grants", "verify-entitlement-grants-gate.ts"],
   ["public-catalog", "verify-public-catalog-gate.ts"],
@@ -306,6 +312,7 @@ const suites: Record<string, string[]> = {
     "billing-read-plan",
     "billing-owner-commands",
     "billing-notices",
+    "billing-notice-consumer",
     "operational-selection",
     "entitlement-grants",
     "public-catalog",

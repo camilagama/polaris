@@ -68,6 +68,7 @@ const plan = (overrides: Plan = {}): Plan => ({
   recovery: null,
   refund: null,
   refundPending: false,
+  refundWindowEndedOn: null,
   renewalCancelled: false,
   resubscribeFrom: null,
   state: "free",
@@ -431,6 +432,80 @@ test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; dep
   ).toBeVisible();
   await expect(page.getByRole("button", { name: REFUND_WORD })).toHaveCount(0);
 });
+
+const FOOTER_SUPPLIER =
+  "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.";
+const FOOTER_RULE =
+  "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.";
+const IN_WINDOW = {
+  amount: "24.90",
+  until: "2026-10-31T02:59:59.000Z",
+  via: "app",
+};
+const WINDOW_ENDED = { ...ACTIVE, refundWindowEndedOn: "2026-10-17" };
+
+for (const [label, value, text] of [
+  ["Pro na janela", { ...ACTIVE, refund: IN_WINDOW }, FOOTER_RULE],
+  [
+    "Pix na janela, pelo suporte",
+    {
+      ...ACTIVE,
+      method: "pix_automatic",
+      refund: { ...IN_WINDOW, via: "suporte" },
+    },
+    FOOTER_RULE,
+  ],
+  [
+    "Pro fora da janela",
+    WINDOW_ENDED,
+    "O reembolso integral vale nos primeiros 7 dias depois da primeira cobrança. Esse prazo terminou em 17/10/2026.",
+  ],
+  [
+    "renovação cancelada com a janela vencida",
+    {
+      ...WINDOW_ENDED,
+      nextCharge: null,
+      renewalCancelled: true,
+      resubscribeFrom: "2026-11-24T03:00:00.000Z",
+    },
+    "O reembolso integral vale nos primeiros 7 dias depois da primeira cobrança. Esse prazo terminou em 17/10/2026.",
+  ],
+  [
+    "reembolso não concluído",
+    {
+      ...ACTIVE,
+      nextCharge: null,
+      refund: IN_WINDOW,
+      refundPending: true,
+      renewalCancelled: true,
+    },
+    null,
+  ],
+  ["carência", { ...GRACE, refundWindowEndedOn: "2026-10-17" }, null],
+  ["Pro sem a data do servidor", ACTIVE, null],
+] as const) {
+  test(`rodapé, ${label}: a frase dos 7 dias só onde é verdadeira, o fornecedor e os Termos sempre (AS-14 Emenda 2, AS-30)`, async ({
+    page,
+  }) => {
+    await openScreen(page, { plans: [value] });
+    const footer = page.locator("main footer");
+    await expect(footer).toHaveText(
+      text === null ? FOOTER_SUPPLIER : `${text} ${FOOTER_SUPPLIER}`
+    );
+    if (text !== FOOTER_RULE) {
+      await expect(page.locator("main")).not.toContainText(
+        "Você pode desistir"
+      );
+    }
+    // the Terms and the Privacy Policy stay the shell's in every state
+    await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
+      1
+    );
+    await expect(
+      page.getByRole("link", { name: "Política de Privacidade" })
+    ).toHaveCount(1);
+  });
+}
 
 test("cartão: um clique duplo abre um checkout só, o botão espera desligado e leva à página do provedor (AS-15, AS-18)", async ({
   page,
@@ -818,7 +893,7 @@ test("sem conexão a tela diz 'Sem internet' e não mostra o plano de antes; com
   const before = calls.reads;
   await page.context().setOffline(false);
   await expect(planTitle(page)).toHaveText("Plano Pro");
-  expect(calls.reads).toBeGreaterThan(before);
+  await expect.poll(() => calls.reads).toBeGreaterThan(before);
 
   // in grace, the notice at the top goes with the plan: nothing of before on the Assinatura
   await page.unrouteAll({ behavior: "ignoreErrors" });
