@@ -15,7 +15,6 @@ import TagIcon from "lucide-react/dist/esm/icons/tag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
-  type ChangeEvent,
   type ComponentType,
   lazy,
   type ReactNode,
@@ -24,7 +23,15 @@ import {
   useEffect,
 } from "react";
 import { Button } from "@/ui/button";
+import { Label } from "@/ui/label";
 import { Logo } from "@/ui/logo";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -111,9 +118,17 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
 function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   const { organization, organizations, select } = current;
   const handleChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => select(event.target.value),
+    (id: string | null) => {
+      if (id !== null) {
+        select(id);
+      }
+    },
     [select]
   );
+  const items = organizations.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }));
 
   if (organizations.length < 2) {
     return (
@@ -125,21 +140,30 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   }
   return (
     <div className="grid gap-1.5">
-      <label className="text-xs" htmlFor="app-organization">
+      <Label className="font-normal text-xs" id="app-organization-label">
         Loja
-      </label>
-      <select
-        className="focus-ring h-ctl-md touch:h-12 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm"
-        id="app-organization"
-        onChange={handleChange}
+      </Label>
+      <Select
+        items={items}
+        onValueChange={handleChange}
         value={organization.id}
       >
-        {organizations.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          aria-labelledby="app-organization-label"
+          className="w-full min-w-0 data-[size=default]:touch:h-12"
+          id="app-organization"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        {/* wider than the trigger when a name asks for it: the item text does not shrink */}
+        <SelectContent className="w-auto min-w-(--anchor-width) max-w-[calc(100vw-1rem)]">
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

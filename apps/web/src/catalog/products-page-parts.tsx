@@ -2,11 +2,10 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import SearchIcon from "lucide-react/dist/esm/icons/search";
-import type { ChangeEvent, ReactNode, Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { SearchField } from "@/ui/search-field";
 import type { ProductListStatus } from "./product-list";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
@@ -163,23 +162,18 @@ export function LoadErrorNotice({ message, onRetry }: LoadErrorProps) {
 }
 
 interface SearchProps {
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onChange: (value: string) => void;
   value: string;
 }
 
 export function ProductSearch({ onChange, value }: SearchProps) {
   return (
-    <InputGroup className="md:max-w-sm">
-      <InputGroupAddon>
-        <SearchIcon aria-hidden="true" />
-      </InputGroupAddon>
-      <InputGroupInput
-        aria-label="Buscar produto"
-        autoComplete="off"
-        onChange={onChange}
-        placeholder="Buscar por nome"
-        value={value}
-      />
-    </InputGroup>
+    <SearchField
+      className="md:max-w-sm"
+      label="Buscar produto"
+      onValueChange={onChange}
+      placeholder="Buscar por nome"
+      value={value}
+    />
   );
 }

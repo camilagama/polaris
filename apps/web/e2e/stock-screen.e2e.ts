@@ -148,6 +148,10 @@ async function useEveryControl(page: Page) {
     page.getByRole("listitem").getByText("Sem saldo", { exact: true })
   ).toBeVisible();
   await page.getByLabel("Buscar").fill("camiseta");
+  await page.getByRole("button", { name: "Limpar busca" }).click();
+  await expect(page.getByLabel("Buscar")).toHaveValue("");
+  await expect(page.getByLabel("Buscar")).toBeFocused();
+  await page.getByLabel("Buscar").fill("camiseta");
   await page.getByRole("button", { name: "Atualizar" }).click();
 
   // a receipt: the stepper, the review, the confirmation, the record

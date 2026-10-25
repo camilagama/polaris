@@ -1,6 +1,5 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import {
-  type ChangeEvent,
   type FormEvent,
   useCallback,
   useEffect,
@@ -433,11 +432,6 @@ export function ProductsPage() {
     [openOnly]
   );
 
-  const handleQueryChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value),
-    []
-  );
-
   const editingProduct =
     products.find((product) => product.id === editingProductId) ?? null;
   // typed and not sent: the form against an empty one, or against the product being edited
@@ -538,7 +532,7 @@ export function ProductsPage() {
           />
         ) : null}
 
-        <ProductSearch onChange={handleQueryChange} value={query} />
+        <ProductSearch onChange={setQuery} value={query} />
         <StatusNav
           label="Estado dos produtos"
           onSelect={handleStatus}

@@ -20,6 +20,12 @@ const ORGANIZATIONS = [
     timezone: "America/Sao_Paulo",
   },
 ];
+const SECOND_ORGANIZATION = {
+  id: "0199c2d0-0000-7000-8000-00000000a002",
+  name: "Loja da filial",
+  role: "owner",
+  timezone: "America/Sao_Paulo",
+};
 const USER_ID = "user-do-teste";
 const EMAIL = "contato@exemplo.com.br";
 const LEASE_KEY = {
@@ -46,13 +52,13 @@ const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
 
 /** The server of a test: a signed-in person with one store, and nothing queued. */
-async function serve(page: Page) {
+async function serve(page: Page, organizations = ORGANIZATIONS) {
   const state = { signOutCalls: 0 };
   // the Início reads in vain here (every other /rpc is cut): the probe finds the Worker, so it is not "offline"
   await serveHealth(page);
   await page.route("**/rpc/**", (route) => route.abort("internetdisconnected"));
   await page.route("**/rpc/organization/listMine", (route) =>
-    route.fulfill(json({ organizations: ORGANIZATIONS }))
+    route.fulfill(json({ organizations }))
   );
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -212,6 +218,30 @@ test.describe("desktop (1280 px)", () => {
     await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
       "Histórico"
     );
+  });
+
+  test("com duas lojas, o seletor da lateral é o Select do tema, tem o rótulo Loja e troca a loja", async ({
+    page,
+  }) => {
+    await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION]);
+    await page.goto("/products");
+    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
+    await expect(store).toContainText("Loja do teste");
+    await store.click();
+    // the menu is the themed one (a listbox of options), not the one of the system
+    await expect(page.getByRole("option")).toHaveText([
+      "Loja do teste",
+      "Loja da filial",
+    ]);
+    await page
+      .getByRole("option", { exact: true, name: "Loja da filial" })
+      .click();
+    await expect(store).toContainText("Loja da filial");
+    // the choice is the one kept for the next visit
+    await page.reload();
+    await expect(
+      page.getByRole("combobox", { exact: true, name: "Loja" })
+    ).toContainText("Loja da filial");
   });
 
   test("o tema escolhido na lateral troca a classe do <html> e a cor da barra do navegador", async ({
