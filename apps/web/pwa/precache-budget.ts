@@ -13,7 +13,7 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * - the rest (Tailwind, tokens, CSS, the screens' code, HTML, icons, manifest) plus the interface
  *   infrastructure (`src/ui/**`, `cn` and what only it brings), gzipped, over the precache before the base,
  *   the baseline of the same kind of build. While Phases 1 to 3 of the execution plan run, this line only
- *   warns past 44 KB and the build fails past the hard cap of 80 KB (see `REST_GROWTH_MODE`). The build prints
+ *   warns, past 44 KB and past the second mark of 80 KB alike (see `REST_GROWTH_MODE`). The build prints
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
  * - the charts chunk (`charts-*.js`, t285), gzipped, at most 8 KB, a line of its own: the drawing code of the charts
@@ -21,7 +21,9 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
  *   move for it. A guard fails the build when a module of `src/ui/charts/`, `d3-shape` or `d3-path` is in any other
  *   chunk (`chartsPlacementProblems`).
- * The production build fails past the font, primitives and charts lines and past the hard cap of the rest line.
+ * The production build fails past the font, primitives and charts lines. The rest line never fails it while the mode
+ * is "warn": no technical limit stands behind the 80 KB (the Cache API has no per-shell size cap; the browser's
+ * storage quota is orders of magnitude above it), so it is a mark that warns, like the 44 KB.
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
@@ -38,14 +40,15 @@ export type RestGrowthMode = "warn" | "block";
  */
 export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
 /**
- * The hard cap of the rest line (t272): the build fails past it in any mode, so the warning of the reference
- * ceiling cannot grow without end.
+ * The second mark of the rest line (t272, t353): past it the build still passes, and the warning says so. It was a
+ * hard cap that failed the build; the user's rule (24/10/2026) is that no byte ceiling fails the build until the
+ * cut step, so it only keeps the measure in the log for that step.
  */
 export const REST_GROWTH_HARD_CAP_GZIP_BYTES = 80_000;
 /**
  * What going past `REST_GROWTH_BUDGET_GZIP_BYTES` does. "warn" until the cut step before the go-live (Phase 5
  * of the execution plan), by decision of the user on 23/10/2026 (ADR 0103, amendment of 23/10/2026): the build
- * prints the total, the reference and the excess, and the hard cap still fails. The cut step takes
+ * prints the total, the reference and the excess, past the 80 KB mark too. The cut step takes
  * `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the screens and goes back to "block"
  * with a firm ceiling. A constant, not an environment variable: changing it is a reviewed change.
  */
@@ -290,11 +293,7 @@ export function budgetProblems(
   }
   problems.push(...chartsBudgetProblems(size));
   const growth = restGrowth(size, baseline);
-  if (growth > REST_GROWTH_HARD_CAP_GZIP_BYTES) {
-    problems.push(
-      `${restDescription(size, baseline)}, past the hard cap of +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B`
-    );
-  } else if (mode === "block" && growth > REST_GROWTH_BUDGET_GZIP_BYTES) {
+  if (mode === "block" && growth > REST_GROWTH_BUDGET_GZIP_BYTES) {
     problems.push(
       `${restDescription(size, baseline)}, past the +${REST_GROWTH_BUDGET_GZIP_BYTES} B budget`
     );
@@ -303,8 +302,8 @@ export function budgetProblems(
 }
 
 /**
- * What the build says without failing: the rest line past the reference ceiling while the mode is "warn".
- * Past the hard cap it is a problem, not a warning.
+ * What the build says without failing: the rest line past the reference ceiling while the mode is "warn", with
+ * the excess, and past the 80 KB mark as well when it goes that far.
  */
 export function budgetWarnings(
   size: PrecacheSize,
@@ -312,22 +311,22 @@ export function budgetWarnings(
   mode: RestGrowthMode = REST_GROWTH_MODE
 ): string[] {
   const growth = restGrowth(size, baseline);
-  if (
-    mode !== "warn" ||
-    growth <= REST_GROWTH_BUDGET_GZIP_BYTES ||
-    growth > REST_GROWTH_HARD_CAP_GZIP_BYTES
-  ) {
+  if (mode !== "warn" || growth <= REST_GROWTH_BUDGET_GZIP_BYTES) {
     return [];
   }
+  const pastMark =
+    growth > REST_GROWTH_HARD_CAP_GZIP_BYTES
+      ? `, past the +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B mark by ${growth - REST_GROWTH_HARD_CAP_GZIP_BYTES} B`
+      : "";
   return [
-    `precache over the reference ceiling (warning only until the cut step, ADR 0103, amendment of 23/10/2026): total ${restLine(size)} B gzip, growth +${growth} B, reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, excess +${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B, hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B`,
+    `precache over the reference ceiling (warning only until the cut step, ADR 0103, amendments of 23/10/2026 and 24/10/2026): total ${restLine(size)} B gzip, growth +${growth} B, reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, excess +${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B${pastMark}`,
   ];
 }
 
 /** The line a review greps for in the CI log: how much the precache has and how much it grew. */
 function growthLine(size: PrecacheSize, baseline: number): string {
   const growth = restGrowth(size, baseline);
-  return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; hard cap +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B)`;
+  return `PRECACHE-GROWTH total ${restLine(size)} B gzip, growth ${growth >= 0 ? "+" : ""}${growth} B over the baseline of ${baseline} B (reference +${REST_GROWTH_BUDGET_GZIP_BYTES} B, ${growth > REST_GROWTH_BUDGET_GZIP_BYTES ? `over by ${growth - REST_GROWTH_BUDGET_GZIP_BYTES} B` : `${REST_GROWTH_BUDGET_GZIP_BYTES - growth} B left`}; mark +${REST_GROWTH_HARD_CAP_GZIP_BYTES} B)`;
 }
 
 /**

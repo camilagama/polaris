@@ -202,7 +202,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 24. Teto firme do precache de volta (BLOCK)
 
-- Critério: `REST_GROWTH_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, o crescimento do resto só avisa (`"warn"`, trava dura de +80 000 B); sem essa etapa, não há go-live.
+- Critério: `REST_GROWTH_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, o crescimento do resto só avisa (`"warn"`: nenhum teto do resto reprova, nem a marca de +80 000 B, emenda de 24/10/2026); sem essa etapa, não há go-live.
 - Evidência: o valor de `REST_GROWTH_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
 - Severidade BLOCK: decidida pelo Arrascaeta (t278).
 

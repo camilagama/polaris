@@ -117,7 +117,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     ).toEqual([expect.stringContaining("primitives")]);
   });
 
-  it("passes with a warning above +44 000 B and below the hard cap, and fails past the hard cap (t272)", () => {
+  it("passes with a warning above +44 000 B, even past the +80 000 B mark, and never fails for the rest line (t272, t353)", () => {
     expect(REST_GROWTH_MODE).toBe("warn");
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     const withGrowth = (growth: number) => ({
@@ -145,15 +145,23 @@ describe("precache budget (ADR 0103, section 4)", () => {
     // in the middle of the way (+60 000 B): still passes, with the warning
     expect(budgetProblems(withGrowth(60_000), baseline)).toEqual([]);
     expect(budgetWarnings(withGrowth(60_000), baseline)).toHaveLength(1);
-    // at the hard cap: passes; one byte past it: fails, and it is a problem, not a warning
-    expect(
-      budgetProblems(withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES), baseline)
-    ).toEqual([]);
+    // at the 80 000 B mark: a warning without the mark's text; one byte past it, and far past it (+83 007 B, the
+    // PR 306 on the main at +77 520 B): still no problem, and the warning carries the excess
+    const atMark = withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES);
+    expect(budgetProblems(atMark, baseline)).toEqual([]);
+    expect(budgetWarnings(atMark, baseline)[0]).not.toContain("mark by");
     const past = withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES + 1);
-    expect(budgetProblems(past, baseline)).toEqual([
-      expect.stringContaining("hard cap of +80000 B"),
+    expect(budgetProblems(past, baseline)).toEqual([]);
+    expect(budgetWarnings(past, baseline)).toEqual([
+      expect.stringContaining("+80000 B mark by 1 B"),
     ]);
-    expect(budgetWarnings(past, baseline)).toEqual([]);
+    const pr306 = withGrowth(83_007);
+    expect(budgetProblems(pr306, baseline)).toEqual([]);
+    const [pr306Warning] = budgetWarnings(pr306, baseline);
+    expect(budgetWarnings(pr306, baseline)).toHaveLength(1);
+    expect(pr306Warning).toContain("growth +83007 B");
+    expect(pr306Warning).toContain("excess +39007 B");
+    expect(pr306Warning).toContain("+80000 B mark by 3007 B");
     // the fonts and the primitives keep blocking in this mode
     expect(
       budgetProblems(
@@ -191,9 +199,11 @@ describe("precache budget (ADR 0103, section 4)", () => {
       primitives: 0,
       rest: 1_105_454,
     };
-    expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([
-      expect.stringContaining("hard cap"),
+    expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([]);
+    expect(budgetWarnings(runtimeOn, restBaseline(false))).toEqual([
+      expect.stringContaining("growth +87127 B"),
     ]);
+    expect(budgetWarnings(runtimeOn, restBaseline(true))).toEqual([]);
     expect(budgetProblems(runtimeOn, restBaseline(true))).toEqual([]);
   });
 
@@ -287,15 +297,14 @@ describe("precache budget (ADR 0103, section 4)", () => {
       baseline
     );
     expect(past).toEqual([expect.stringContaining("excess +1 B")]);
-    const hard = budgetProblems(
-      {
-        ...atLimit,
-        interface: atLimit.interface + REST_GROWTH_HARD_CAP_GZIP_BYTES,
-      },
-      baseline
-    );
-    expect(hard).toEqual([expect.stringContaining("hard cap")]);
-    expect(hard[0]).toContain("interface infrastructure 95000 B");
+    const far = {
+      ...atLimit,
+      interface: atLimit.interface + REST_GROWTH_HARD_CAP_GZIP_BYTES,
+    };
+    expect(budgetProblems(far, baseline)).toEqual([]);
+    expect(budgetWarnings(far, baseline)).toEqual([
+      expect.stringContaining("mark by 44000 B"),
+    ]);
   });
 
   it("prints the primitives, the interface infrastructure and the screen apart, over a real output directory", () => {
@@ -363,7 +372,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     }
   });
 
-  it("warns, without failing, between the reference and the hard cap, and fails past the hard cap (the build, over a real output directory)", () => {
+  it("warns, without failing, past the reference and past the +80 000 B mark (the build, over a real output directory)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     // random bytes do not compress: the gzip size is the size, plus a few hundred bytes
     const build = (growth: number) => {
@@ -402,8 +411,8 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(inBetween.warn).toEqual([expect.stringContaining("excess +")]);
     expect(inBetween.info.join("\n")).toMatch(GROWTH_LINE);
     const past = build(90_000);
-    expect(past.warn).toEqual([]);
-    expect(past.error).toEqual([expect.stringContaining("hard cap")]);
+    expect(past.error).toEqual([]);
+    expect(past.warn).toEqual([expect.stringContaining("mark by")]);
     expect(past.info.join("\n")).toMatch(GROWTH_LINE);
   });
 
@@ -452,7 +461,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     ).toHaveLength(2);
   });
 
-  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip of reference (warning) and +80 KB hard cap for the rest", () => {
+  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip of reference and the +80 KB mark for the rest (both only warn)", () => {
     expect(FONT_BUDGET_BYTES).toBe(55_000);
     expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
     expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(44_000);
@@ -624,7 +633,7 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     const onlyCharts = run({ only: "charts" }, big);
     expect(onlyCharts.error).toEqual([expect.stringContaining("charts chunk")]);
     expect(onlyCharts.info.join("\n")).toContain("over by");
-    // the build of the browser checks looks at nothing else: a rest far past the hard cap is not its business
+    // the build of the browser checks looks at nothing else: a rest far past the marks is not its business
     expect(
       run({ only: "charts" }, { "app-abc.js": randomBytes(1_200_000) }).error
     ).toEqual([]);

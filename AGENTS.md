@@ -52,7 +52,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Instalar pelo lockfile com **bun install --frozen-lockfile**.
 - Antes do push, rodar **bun run check**, **bun run build** e os testes do pacote tocado, sobre a `origin/main` já mesclada na branch, sem conflito. Branch velha com conflito em `doc/status-implementacao.md` faz o CI nem rodar.
 - Cada requisito e critério de aceite tem código e prova. O PR traz a tabela critério → onde está → prova e lista o que não foi feito.
-- Orçamento do precache (ADR 0103, emenda de 23/10/2026): fontes e primitivos bloqueiam; o crescimento do resto só avisa acima de +44 000 B e reprova acima da trava dura de +80 000 B, até a etapa de corte antes do go-live. Cite no PR a linha `PRECACHE-GROWTH` do build.
+- Orçamento do precache (ADR 0103, emenda de 23/10/2026): fontes e primitivos bloqueiam; o crescimento do resto só avisa, acima de +44 000 B e acima de +80 000 B (emenda de 24/10/2026: a trava dura deixou de reprovar), até a etapa de corte antes do go-live. Cite no PR a linha `PRECACHE-GROWTH` do build.
 - Entregar só com o CI do head verde, inclusive CodeQL e e2e-real. Se ficar vermelho, ler o log e corrigir na causa.
 - O PR diz só o que foi rodado e visto. Não afirmar que um check não executado passou; dizer o que só roda no CI (PostgreSQL 18, navegador).
 
