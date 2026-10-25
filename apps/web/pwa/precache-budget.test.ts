@@ -10,10 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BUDGET_MODE,
   budgetProblems,
   budgetWarnings,
   CHARTS_BUDGET_GZIP_BYTES,
   chartsBudgetProblems,
+  chartsBudgetWarnings,
   chartsLine,
   chartsPlacementProblems,
   FONT_BUDGET_BYTES,
@@ -24,8 +26,7 @@ import {
   primitiveShares,
   REST_BASELINE_GZIP_BYTES,
   REST_GROWTH_BUDGET_GZIP_BYTES,
-  REST_GROWTH_HARD_CAP_GZIP_BYTES,
-  REST_GROWTH_MODE,
+  REST_GROWTH_MARK_GZIP_BYTES,
   restBaseline,
   testOnlyChunkProblems,
 } from "./precache-budget";
@@ -96,86 +97,132 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(split.primitives / (whole.rest / 2)).toBeCloseTo(0.7, 2);
   });
 
-  it("passes at the limits and fails one byte past each of them", () => {
-    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
-    const atLimit = {
-      charts: 0,
-      fonts: FONT_BUDGET_BYTES,
-      interface: 0,
-      primitives: PRIMITIVES_BUDGET_GZIP_BYTES,
-      rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES,
-    };
-    expect(budgetProblems(atLimit, baseline)).toEqual([]);
-    expect(
-      budgetProblems({ ...atLimit, fonts: atLimit.fonts + 1 }, baseline)
-    ).toEqual([expect.stringContaining("fonts")]);
-    expect(
-      budgetProblems(
-        { ...atLimit, primitives: atLimit.primitives + 1 },
-        baseline
-      )
-    ).toEqual([expect.stringContaining("primitives")]);
+  it("is in warn mode until the cut step, a constant for the four size lines", () => {
+    expect(BUDGET_MODE).toBe("warn");
   });
 
-  it("passes with a warning above +44 000 B and below the hard cap, and fails past the hard cap (t272)", () => {
-    expect(REST_GROWTH_MODE).toBe("warn");
-    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
-    const withGrowth = (growth: number) => ({
-      charts: 0,
-      fonts: 0,
-      interface: 0,
-      primitives: 0,
-      rest: baseline + growth,
+  // one case on each side of each of the four lines, in both modes
+  const floor = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
+  const empty = { charts: 0, fonts: 0, interface: 0, primitives: 0, rest: 0 };
+  const lines = [
+    {
+      name: "fonts",
+      problem: "fonts",
+      over: { ...empty, rest: floor, fonts: FONT_BUDGET_BYTES + 1 },
+      at: { ...empty, rest: floor, fonts: FONT_BUDGET_BYTES },
+      excess: "excess +1 B",
+      total: `total ${FONT_BUDGET_BYTES + 1} B,`,
+    },
+    {
+      name: "primitives",
+      problem: "primitives",
+      over: {
+        ...empty,
+        rest: floor,
+        primitives: PRIMITIVES_BUDGET_GZIP_BYTES + 1,
+      },
+      at: {
+        ...empty,
+        rest: floor,
+        primitives: PRIMITIVES_BUDGET_GZIP_BYTES,
+      },
+      excess: "excess +1 B",
+      total: `total ${PRIMITIVES_BUDGET_GZIP_BYTES + 1} B gzip`,
+    },
+    {
+      name: "charts",
+      problem: "charts chunk",
+      over: { ...empty, rest: floor, charts: CHARTS_BUDGET_GZIP_BYTES + 1 },
+      at: { ...empty, rest: floor, charts: CHARTS_BUDGET_GZIP_BYTES },
+      excess: "excess +1 B",
+      total: `total ${CHARTS_BUDGET_GZIP_BYTES + 1} B gzip`,
+    },
+    {
+      name: "rest, past the reference",
+      problem: "past the +44000 B budget",
+      over: {
+        ...empty,
+        rest: floor + REST_GROWTH_BUDGET_GZIP_BYTES + 1,
+      },
+      at: { ...empty, rest: floor + REST_GROWTH_BUDGET_GZIP_BYTES },
+      excess: "excess +1 B",
+      total: `total ${floor + REST_GROWTH_BUDGET_GZIP_BYTES + 1} B gzip`,
+    },
+  ];
+
+  for (const line of lines) {
+    it(`${line.name}: in "warn" passes at the number and one byte past it, with a warning that carries the total and the excess`, () => {
+      expect(budgetProblems(line.at, floor, "warn")).toEqual([]);
+      expect(budgetProblems(line.over, floor, "warn")).toEqual([]);
+      const atWarnings = budgetWarnings(line.at, floor, "warn");
+      expect(atWarnings).toEqual([]);
+      const [warning, ...others] = budgetWarnings(line.over, floor, "warn");
+      expect(others).toEqual([]);
+      expect(warning).toContain(line.total);
+      expect(warning).toContain(line.excess);
     });
-    // at the reference: no problem, no warning
-    expect(
-      budgetProblems(withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES), baseline)
-    ).toEqual([]);
-    expect(
-      budgetWarnings(withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES), baseline)
-    ).toEqual([]);
-    // one byte over the reference: passes, with a warning that says the total, the reference and the excess
-    const over = withGrowth(REST_GROWTH_BUDGET_GZIP_BYTES + 1);
-    expect(budgetProblems(over, baseline)).toEqual([]);
-    const [warning] = budgetWarnings(over, baseline);
-    expect(budgetWarnings(over, baseline)).toHaveLength(1);
-    expect(warning).toContain(`total ${baseline + 44_001} B gzip`);
-    expect(warning).toContain("reference +44000 B");
-    expect(warning).toContain("excess +1 B");
-    // in the middle of the way (+60 000 B): still passes, with the warning
-    expect(budgetProblems(withGrowth(60_000), baseline)).toEqual([]);
-    expect(budgetWarnings(withGrowth(60_000), baseline)).toHaveLength(1);
-    // at the hard cap: passes; one byte past it: fails, and it is a problem, not a warning
-    expect(
-      budgetProblems(withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES), baseline)
-    ).toEqual([]);
-    const past = withGrowth(REST_GROWTH_HARD_CAP_GZIP_BYTES + 1);
-    expect(budgetProblems(past, baseline)).toEqual([
-      expect.stringContaining("hard cap of +80000 B"),
-    ]);
-    expect(budgetWarnings(past, baseline)).toEqual([]);
-    // the fonts and the primitives keep blocking in this mode
-    expect(
-      budgetProblems(
-        { ...withGrowth(60_000), fonts: FONT_BUDGET_BYTES + 1 },
-        baseline
-      )
-    ).toEqual([expect.stringContaining("fonts")]);
-  });
 
-  it("blocks past the reference when the mode goes back to block (the cut step)", () => {
-    const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
-    const over = {
-      charts: 0,
-      fonts: 0,
-      interface: 0,
-      primitives: 0,
-      rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES + 1,
-    };
-    expect(budgetProblems(over, baseline, "block")).toEqual([
+    it(`${line.name}: in "block" passes at the number and fails one byte past it, with no warning`, () => {
+      expect(budgetProblems(line.at, floor, "block")).toEqual([]);
+      expect(budgetProblems(line.over, floor, "block")).toEqual([
+        expect.stringContaining(line.problem),
+      ]);
+      expect(budgetWarnings(line.at, floor, "block")).toEqual([]);
+      expect(budgetWarnings(line.over, floor, "block")).toEqual([]);
+    });
+  }
+
+  it("warns for each line past its number, all at once, and the warning for the rest keeps the mark's text (t272, t353)", () => {
+    const withGrowth = (growth: number) => ({
+      ...empty,
+      rest: floor + growth,
+    });
+    // in the middle of the way (+60 000 B): a warning without the mark
+    const [middle] = budgetWarnings(withGrowth(60_000), floor, "warn");
+    expect(middle).toContain("excess +16000 B");
+    expect(middle).not.toContain("mark by");
+    // at the +80 000 B mark: the text of the mark is not there; one byte past it, it is
+    expect(
+      budgetWarnings(withGrowth(REST_GROWTH_MARK_GZIP_BYTES), floor, "warn")[0]
+    ).not.toContain("mark by");
+    expect(
+      budgetWarnings(withGrowth(REST_GROWTH_MARK_GZIP_BYTES + 1), floor, "warn")
+    ).toEqual([expect.stringContaining("+80000 B mark by 1 B")]);
+    // far past (+83 007 B, the PR 306 on the main at +77 520 B): passes in "warn", fails in "block" (the reviewer's number)
+    const pr306 = withGrowth(83_007);
+    expect(budgetProblems(pr306, floor, "warn")).toEqual([]);
+    const [pr306Warning] = budgetWarnings(pr306, floor, "warn");
+    expect(pr306Warning).toContain("growth +83007 B");
+    expect(pr306Warning).toContain("excess +39007 B");
+    expect(pr306Warning).toContain("+80000 B mark by 3007 B");
+    expect(budgetProblems(pr306, floor, "block")).toEqual([
       expect.stringContaining("past the +44000 B budget"),
     ]);
-    expect(budgetWarnings(over, baseline, "block")).toEqual([]);
+    // all four lines at once
+    const all = {
+      charts: CHARTS_BUDGET_GZIP_BYTES + 10,
+      fonts: FONT_BUDGET_BYTES + 20,
+      interface: 0,
+      primitives: PRIMITIVES_BUDGET_GZIP_BYTES + 30,
+      rest: floor + REST_GROWTH_BUDGET_GZIP_BYTES + 40,
+    };
+    expect(budgetProblems(all, floor, "warn")).toEqual([]);
+    expect(budgetWarnings(all, floor, "warn")).toHaveLength(4);
+    expect(budgetProblems(all, floor, "block")).toHaveLength(4);
+  });
+
+  it('the charts line alone: a warning in "warn", a problem in "block"', () => {
+    const size = { ...empty, charts: CHARTS_BUDGET_GZIP_BYTES + 1 };
+    expect(chartsBudgetProblems(size, "warn")).toEqual([]);
+    expect(chartsBudgetWarnings(size, "warn")).toEqual([
+      expect.stringContaining("excess +1 B"),
+    ]);
+    expect(chartsBudgetProblems(size, "block")).toEqual([
+      expect.stringContaining("charts chunk"),
+    ]);
+    expect(chartsBudgetWarnings(size, "block")).toEqual([]);
+    const fonts = { ...empty, fonts: FONT_BUDGET_BYTES + 1 };
+    expect(chartsBudgetWarnings(fonts, "warn")).toEqual([]);
   });
 
   it("measures each kind of build against its own baseline (the offline runtime is in the shell or not)", () => {
@@ -191,9 +238,11 @@ describe("precache budget (ADR 0103, section 4)", () => {
       primitives: 0,
       rest: 1_105_454,
     };
-    expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([
-      expect.stringContaining("hard cap"),
+    expect(budgetProblems(runtimeOn, restBaseline(false))).toEqual([]);
+    expect(budgetWarnings(runtimeOn, restBaseline(false))).toEqual([
+      expect.stringContaining("growth +87127 B"),
     ]);
+    expect(budgetWarnings(runtimeOn, restBaseline(true))).toEqual([]);
     expect(budgetProblems(runtimeOn, restBaseline(true))).toEqual([]);
   });
 
@@ -287,15 +336,14 @@ describe("precache budget (ADR 0103, section 4)", () => {
       baseline
     );
     expect(past).toEqual([expect.stringContaining("excess +1 B")]);
-    const hard = budgetProblems(
-      {
-        ...atLimit,
-        interface: atLimit.interface + REST_GROWTH_HARD_CAP_GZIP_BYTES,
-      },
-      baseline
-    );
-    expect(hard).toEqual([expect.stringContaining("hard cap")]);
-    expect(hard[0]).toContain("interface infrastructure 95000 B");
+    const far = {
+      ...atLimit,
+      interface: atLimit.interface + REST_GROWTH_MARK_GZIP_BYTES,
+    };
+    expect(budgetProblems(far, baseline)).toEqual([]);
+    expect(budgetWarnings(far, baseline)).toEqual([
+      expect.stringContaining("mark by 44000 B"),
+    ]);
   });
 
   it("prints the primitives, the interface infrastructure and the screen apart, over a real output directory", () => {
@@ -363,10 +411,10 @@ describe("precache budget (ADR 0103, section 4)", () => {
     }
   });
 
-  it("warns, without failing, between the reference and the hard cap, and fails past the hard cap (the build, over a real output directory)", () => {
+  it("warns, without failing, past the reference and past the +80 000 B mark (the build, over a real output directory)", () => {
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     // random bytes do not compress: the gzip size is the size, plus a few hundred bytes
-    const build = (growth: number) => {
+    const build = (growth: number, mode?: "block") => {
       const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
       mkdirSync(join(directory, "assets"));
       writeFileSync(join(directory, "index.html"), "<!doctype html>");
@@ -379,7 +427,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
         info: [] as string[],
         warn: [] as string[],
       };
-      const plugin = precacheBudgetPlugin();
+      const plugin = precacheBudgetPlugin(mode ? { mode } : {});
       (plugin.configResolved as (config: unknown) => void)({ env: {} });
       try {
         (
@@ -402,12 +450,56 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(inBetween.warn).toEqual([expect.stringContaining("excess +")]);
     expect(inBetween.info.join("\n")).toMatch(GROWTH_LINE);
     const past = build(90_000);
-    expect(past.warn).toEqual([]);
-    expect(past.error).toEqual([expect.stringContaining("hard cap")]);
+    expect(past.error).toEqual([]);
+    expect(past.warn).toEqual([expect.stringContaining("mark by")]);
     expect(past.info.join("\n")).toMatch(GROWTH_LINE);
+    // the same build in "block" (the cut step) fails and does not warn
+    const blocked = build(90_000, "block");
+    expect(blocked.error).toEqual([
+      expect.stringContaining("past the +44000 B"),
+    ]);
+    expect(blocked.warn).toEqual([]);
   });
 
-  it("fails the production build when the gallery or the lab of the screens is in it (control: a build without them passes)", () => {
+  it('a font file past 55 000 B warns in "warn" and fails in "block" (the build, over a real output directory)', () => {
+    const run = (fontBytes: number, mode: "warn" | "block") => {
+      const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      writeFileSync(
+        join(directory, "assets/geist-latin.woff2"),
+        bytes(fontBytes)
+      );
+      const said = { error: [] as string[], warn: [] as string[] };
+      const plugin = precacheBudgetPlugin({ mode });
+      (plugin.configResolved as (config: unknown) => void)({ env: {} });
+      try {
+        (
+          plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+        ).call(
+          {
+            error: (message: string) => said.error.push(message),
+            info: () => undefined,
+            warn: (message: string) => said.warn.push(message),
+          },
+          { dir: directory }
+        );
+      } finally {
+        rmSync(directory, { force: true, recursive: true });
+      }
+      return said;
+    };
+    expect(run(FONT_BUDGET_BYTES, "block")).toEqual({ error: [], warn: [] });
+    expect(run(FONT_BUDGET_BYTES + 1, "warn")).toEqual({
+      error: [],
+      warn: [expect.stringContaining("fonts over its line")],
+    });
+    const blocked = run(FONT_BUDGET_BYTES + 1, "block");
+    expect(blocked.warn).toEqual([]);
+    expect(blocked.error).toEqual([expect.stringContaining("fonts: 55001 B")]);
+  });
+
+  it('fails the production build, in "warn" too, when the gallery or the lab of the screens is in it (control: a build without them passes)', () => {
     const build = (assets: string[]) => {
       const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
       mkdirSync(join(directory, "assets"));
@@ -416,7 +508,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
         writeFileSync(join(directory, "assets", asset), bytes(100, 1));
       }
       const errors: string[] = [];
-      const plugin = precacheBudgetPlugin();
+      const plugin = precacheBudgetPlugin({ mode: "warn" });
       (plugin.configResolved as (config: unknown) => void)({ env: {} });
       try {
         (
@@ -452,11 +544,11 @@ describe("precache budget (ADR 0103, section 4)", () => {
     ).toHaveLength(2);
   });
 
-  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip of reference (warning) and +80 KB hard cap for the rest", () => {
+  it("keeps the ceilings of the ADR: 55 KB of fonts, 95 KB gzip of primitives, +44 KB gzip of reference and the +80 KB mark for the rest (all four only warn)", () => {
     expect(FONT_BUDGET_BYTES).toBe(55_000);
     expect(PRIMITIVES_BUDGET_GZIP_BYTES).toBe(95_000);
     expect(REST_GROWTH_BUDGET_GZIP_BYTES).toBe(44_000);
-    expect(REST_GROWTH_HARD_CAP_GZIP_BYTES).toBe(80_000);
+    expect(REST_GROWTH_MARK_GZIP_BYTES).toBe(80_000);
   });
 });
 
@@ -497,18 +589,19 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     expect(other.charts).toBe(0);
   });
 
-  it("passes at 8 000 B gzip and fails one byte past it, in any build that has the chunk", () => {
+  it('passes at 8 000 B gzip; one byte past it warns in "warn" and fails in "block", in any build that has the chunk', () => {
     expect(CHARTS_BUDGET_GZIP_BYTES).toBe(8000);
-    expect(chartsBudgetProblems(asSize(8000))).toEqual([]);
-    expect(chartsBudgetProblems(asSize(8001))).toEqual([
+    expect(chartsBudgetProblems(asSize(8000), "block")).toEqual([]);
+    expect(chartsBudgetProblems(asSize(8001), "block")).toEqual([
       expect.stringContaining("charts chunk: 8001 B gzip, over the 8000 B"),
     ]);
+    expect(chartsBudgetProblems(asSize(8001), "warn")).toEqual([]);
     const baseline = REST_BASELINE_GZIP_BYTES.offlineRuntimeOff;
     expect(
-      budgetProblems({ ...asSize(8001), rest: baseline }, baseline)
+      budgetProblems({ ...asSize(8001), rest: baseline }, baseline, "block")
     ).toEqual([expect.stringContaining("charts chunk")]);
     expect(
-      budgetProblems({ ...asSize(8000), rest: baseline }, baseline)
+      budgetProblems({ ...asSize(8000), rest: baseline }, baseline, "block")
     ).toEqual([]);
   });
 
@@ -563,9 +656,9 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
   });
 
-  it("the plugin fails the build over 8 KB or with d3 outside the chunk, and prints the line (over a real output directory)", () => {
+  it('the plugin warns over 8 KB in "warn" and fails in "block"; with d3 outside the chunk it fails in both modes; it prints the line (over a real output directory)', () => {
     const run = (
-      options: { only?: "charts" },
+      options: { mode?: "warn" | "block"; only?: "charts" },
       files: Record<string, Uint8Array>,
       bundle: { fileName: string; modules: Record<string, unknown> }[] = []
     ) => {
@@ -575,14 +668,18 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
       for (const [name, content] of Object.entries(files)) {
         writeFileSync(join(directory, "assets", name), content);
       }
-      const said = { error: [] as string[], info: [] as string[] };
+      const said = {
+        error: [] as string[],
+        info: [] as string[],
+        warn: [] as string[],
+      };
       const plugin = precacheBudgetPlugin(options);
       (plugin.configResolved as (config: unknown) => void)({ env: {} });
       const context = {
         environment: { name: "client" },
         error: (message: string) => said.error.push(message),
         info: (message: string) => said.info.push(message),
-        warn: () => undefined,
+        warn: (message: string) => said.warn.push(message),
       };
       try {
         (
@@ -616,17 +713,31 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     const small = run({}, { "charts-Dk3jf9.js": randomBytes(3000) });
     expect(small.error).toEqual([]);
     expect(small.info.join("\n")).toMatch(CHARTS_LINE);
-    // 9 KB: over the line, in the production build and in the build of the browser checks
+    // 9 KB: over the line. In "warn" (the build's mode until the cut step) it passes and warns, in the production
+    // build and in the build of the browser checks
     const big = { "charts-Dk3jf9.js": randomBytes(9000) };
-    expect(run({}, big).error).toEqual([
+    const warned = run({}, big);
+    expect(warned.error).toEqual([]);
+    expect(warned.warn).toEqual([expect.stringContaining("charts chunk")]);
+    const onlyWarned = run({ only: "charts" }, big);
+    expect(onlyWarned.error).toEqual([]);
+    expect(onlyWarned.warn).toEqual([expect.stringContaining("excess +")]);
+    expect(onlyWarned.info.join("\n")).toContain("over by");
+    // in "block" it fails in both builds
+    expect(run({ mode: "block" }, big).error).toEqual([
       expect.stringContaining("charts chunk"),
     ]);
-    const onlyCharts = run({ only: "charts" }, big);
-    expect(onlyCharts.error).toEqual([expect.stringContaining("charts chunk")]);
-    expect(onlyCharts.info.join("\n")).toContain("over by");
-    // the build of the browser checks looks at nothing else: a rest far past the hard cap is not its business
+    expect(run({ mode: "block", only: "charts" }, big).error).toEqual([
+      expect.stringContaining("charts chunk"),
+    ]);
+    // the build of the browser checks looks at nothing else: a rest far past the marks is not its business
     expect(
-      run({ only: "charts" }, { "app-abc.js": randomBytes(1_200_000) }).error
+      run(
+        { mode: "block", only: "charts" },
+        {
+          "app-abc.js": randomBytes(1_200_000),
+        }
+      ).error
     ).toEqual([]);
     // d3 in the first script: fails in both builds
     const misplaced = [
@@ -642,6 +753,14 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
     expect(
       run({ only: "charts" }, { "index-abc.js": random(500) }, misplaced).error
+    ).toEqual([expect.stringContaining("outside the charts chunk")]);
+    // structure, not size: the guard fails in "warn" too, with the size lines past their numbers
+    expect(
+      run(
+        { mode: "warn" },
+        { "charts-Dk3jf9.js": randomBytes(9000) },
+        misplaced
+      ).error
     ).toEqual([expect.stringContaining("outside the charts chunk")]);
   });
 });
