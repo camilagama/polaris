@@ -16,11 +16,12 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   warns, past 44 KB and past the second mark of 80 KB alike (see `BUDGET_MODE`). The build prints
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
- * - the charts chunk (`charts-*.js`, t285), gzipped, at most 8 KB, a line of its own: the drawing code of the charts
- *   and d3-shape. It is in the precache so a chart opens offline, loaded on demand by the screen that asks for it and
- *   never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
- *   move for it. A guard fails the build when a module of `src/ui/charts/`, `d3-shape` or `d3-path` is in any other
- *   chunk (`chartsPlacementProblems`).
+ * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
+ *   others, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
+ *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. It is in the
+ *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's
+ *   first script; it counts here and in no other line, so the baseline of the rest does not move for it. A guard fails
+ *   the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
  * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
  *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
  *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
@@ -85,10 +86,10 @@ const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
- * loader that every screen imports) and the libraries only they bring.
+ * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]charts[\\/](?!on-demand\.tsx$)[^\\/]+\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:d3-shape|d3-path)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|motion|framer-motion|motion-dom|motion-utils|classnames)[\\/])/;
 /** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
 const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
 /**
