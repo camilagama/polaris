@@ -838,9 +838,13 @@ test("a 360 px o período da meta abre no mês do período, e com pouco espaço 
     popup.getByRole("group", { name: "Atalhos do período" })
   ).toBeInViewport(whole);
   // the popover fits the screen; what does not fit is the month, which scrolls inside it
-  const box = await popup.boundingBox();
-  expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
-  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(740);
+  // the popover is placed first and flipped and clamped a frame later: poll until it has settled
+  await expect
+    .poll(async () => {
+      const box = await popup.boundingBox();
+      return box && box.y >= 0 && box.y + box.height <= 740;
+    })
+    .toBe(true);
 });
 
 test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado ao lado, atalhos e rodapé à vista", async ({
