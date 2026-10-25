@@ -26,6 +26,10 @@ import {
 import { loginLockKey } from "./auth/login-lock-key";
 import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
 import {
+  type AuthRequestState,
+  newAuthRequestState,
+} from "./auth/request-database";
+import {
   type AccessLogEvent,
   type AccessLogWriter,
   createDatabaseAccessLogWriter,
@@ -182,6 +186,12 @@ interface CreateBetterAuthOptions {
   plugins?: BetterAuthOptions["plugins"];
   /** A function lets one instance serve many requests, each with its own identifier. */
   requestId?: string | (() => string | undefined);
+  /**
+   * What the hooks remember between the steps of a request (the actor of a logout, the IPs already recorded). An
+   * instance that serves many requests must read it from the request scope (`currentAuthRequestState`); without it,
+   * the instance keeps one of its own, which only fits an instance of a single request (tests and gates).
+   */
+  requestState?: () => AuthRequestState;
   runInBackground?: BackgroundTaskHandler;
   secret: string;
   /** Records the end of the validity of each verification link sent; the default writes through `database`, none without one. */
@@ -712,8 +722,8 @@ function accessLogEventFor(
     return failed ? { event: "login_failed", userId: null } : undefined;
   }
   if (auditEvent?.eventType === "google_callback_failed") {
-    // only the session this request carries, if any: `capturedLogoutActorId` is set on a sign-out, lives as long
-    // as the auth instance and belongs to no callback, and the audit event's actor may have fallen back to it
+    // only the session this request carries, if any: `capturedLogoutActorId` is set on a sign-out and belongs to no
+    // callback, and the audit event's actor may have fallen back to it
     return {
       event: "login_failed",
       userId:
@@ -845,6 +855,17 @@ function emailVerificationOptions(
   };
 }
 
+/** The state of the running request; an instance of a single request keeps one, made once with the instance. */
+function requestStateResolver(
+  requestState: (() => AuthRequestState) | undefined
+): () => AuthRequestState {
+  if (requestState) {
+    return requestState;
+  }
+  const state = newAuthRequestState();
+  return () => state;
+}
+
 export function createBetterAuth({
   accessLogWriter,
   auditEventWriter,
@@ -858,11 +879,13 @@ export function createBetterAuth({
   loginLockClearer,
   plugins,
   requestId,
+  requestState,
   runInBackground,
   secret,
   verificationLinkRecorder,
 }: CreateBetterAuthOptions) {
   const currentRequestId = requestIdResolver(requestId);
+  const currentState = requestStateResolver(requestState);
   const writeAuditEvent =
     auditEventWriter ??
     (database ? databaseAuditEventWriter(database) : undefined);
@@ -881,25 +904,14 @@ export function createBetterAuth({
         : () => Promise.resolve(false))
   );
   // The last IP recorded for a session in the request that is running: it only keeps one request from recording the
-  // same change twice, and the session row keeps it between requests. The instance of the RPC context serves many
-  // requests, so what a request recorded is forgotten as soon as another one starts (the database drops a repeat of
-  // the same IP within minutes, ADR 0092; a lost entry costs a query, a kept one would cost a record of access).
-  const recordedSessionIps = new Map<string, string>();
-  let recordingRequestId: string | undefined;
+  // same change twice, and the session row keeps it between requests. It belongs to the request, so another request
+  // starts with none (the database drops a repeat of the same IP within minutes, ADR 0092; a lost entry costs a
+  // query, a kept one would cost a record of access).
   const recordedSessionIp = (sessionId: string): string | undefined =>
-    recordingRequestId === currentRequestId()
-      ? recordedSessionIps.get(sessionId)
-      : undefined;
+    currentState().recordedSessionIps.get(sessionId);
   const rememberRecordedSessionIp = (sessionId: string, ip: string) => {
-    const requestIdNow = currentRequestId();
-    if (recordingRequestId !== requestIdNow) {
-      recordedSessionIps.clear();
-      recordingRequestId = requestIdNow;
-    }
-    recordedSessionIps.set(sessionId, ip);
+    currentState().recordedSessionIps.set(sessionId, ip);
   };
-  // the update requests that extend a session (the daily refresh), told apart from the other updates of a session
-  const refreshing = new WeakSet<object>();
 
   // A password reset revokes every offline lease of the user (plan section 56):
   // the database function bumps the epoch of the memberships and revokes the
@@ -943,7 +955,6 @@ export function createBetterAuth({
     throw new Error("A Better Auth database adapter is required.");
   }
 
-  let capturedLogoutActorId: string | null = null;
   const captureLogoutSession = createAuthMiddleware(async (context) => {
     validateAuthRedirectTargets(context);
     validateSignUpLegalAcceptance(context);
@@ -958,7 +969,7 @@ export function createBetterAuth({
       context
     )) as unknown as AuthHookContext["session"];
     const { session, user } = currentSession ?? {};
-    capturedLogoutActorId = user?.id ?? session?.userId ?? null;
+    currentState().logoutActorId = user?.id ?? session?.userId ?? null;
   });
   const auditHook = createAuthMiddleware(async (context) => {
     const authContext = context.context as unknown as AuthHookContext;
@@ -979,6 +990,7 @@ export function createBetterAuth({
         // A successful OAuth callback can be a link flow with an existing session.
       }
     }
+    const { logoutActorId: capturedLogoutActorId } = currentState();
     const event = buildAuthSecurityAuditEvent({
       body: context.body,
       capturedLogoutActorId,
@@ -1107,12 +1119,18 @@ export function createBetterAuth({
           // IP of this request. The row takes the IP only when `/get-session` has seen the record made
           before: (data, hookContext) => {
             if (accessLogEnabled && data.expiresAt && hookContext) {
-              refreshing.add(hookContext);
+              currentState().refreshing.add(hookContext);
             }
             return Promise.resolve();
           },
           after: async (session, hookContext) => {
-            if (!(session && hookContext && refreshing.delete(hookContext))) {
+            if (
+              !(
+                session &&
+                hookContext &&
+                currentState().refreshing.delete(hookContext)
+              )
+            ) {
               return;
             }
             const ip = requestIp(

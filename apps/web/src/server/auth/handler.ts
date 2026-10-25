@@ -42,6 +42,14 @@ import {
   unlockTokenUserId,
 } from "./login-lock";
 import { loginLockKey } from "./login-lock-key";
+import {
+  currentAuthRequestState,
+  currentRequestId,
+  requestScopedDatabase,
+  requestScopedEmailDelivery,
+  runInRequestBackground,
+  runWithRequestScope,
+} from "./request-database";
 import type { BackgroundTaskHandler } from "./security-options";
 import {
   isSessionFresh,
@@ -610,8 +618,6 @@ function passwordPolicyResponse(error: PasswordPolicyError): Response {
 
 interface AuthRuntime {
   auth: BetterAuthInstance;
-  /** Ends the pool now, or after the background tasks when there are some. */
-  close: () => Promise<void>;
   delivery?: PasswordAuthEmailDelivery;
   effects: PasswordChangeEffects;
   pool: LoginLockQueryable;
@@ -620,25 +626,98 @@ interface AuthRuntime {
   store: LoginLockStore;
 }
 
-type AuthRuntimeResult = { response: Response } | { runtime: AuthRuntime };
+/** What the instance is built from: the environment only, never the request. */
+interface SharedAuthConfiguration {
+  baseURL: string;
+  emailPasswordEnabled: boolean;
+  googleClientId: string | undefined;
+  googleClientSecret: string | undefined;
+  secret: string;
+}
+
+interface SharedAuthEntry {
+  auth: BetterAuthInstance;
+  configuration: SharedAuthConfiguration;
+}
+
+function sameConfiguration(
+  a: SharedAuthConfiguration,
+  b: SharedAuthConfiguration
+): boolean {
+  return (
+    a.baseURL === b.baseURL &&
+    a.emailPasswordEnabled === b.emailPasswordEnabled &&
+    a.googleClientId === b.googleClientId &&
+    a.googleClientSecret === b.googleClientSecret &&
+    a.secret === b.secret
+  );
+}
 
 /**
- * Opens the authentication runtime of one request: the pool of the authentication role, Better Auth
- * and the stores of the password flows. A task in the background (an e-mail, the unlock of a lock)
- * still needs the pool after the response, so the pool ends once they all settle.
+ * Built once per isolate (ADR 0017, emenda de 25/10/2026): assembling Better Auth costs more CPU than a request has.
+ * It holds configuration only. The `db`, the request identifier, the `waitUntil`, the e-mails and what the hooks
+ * remember are read at each call from the request scope (`runWithRequestScope`), so nothing of a request or of a
+ * user stays here. It is built again when the environment changes, or after a failure.
  */
-function openAuthRuntime(
+let sharedAuth: SharedAuthEntry | undefined;
+
+function sharedAuthFor(
+  configuration: SharedAuthConfiguration
+): SharedAuthEntry {
+  if (
+    sharedAuth &&
+    sameConfiguration(sharedAuth.configuration, configuration)
+  ) {
+    return sharedAuth;
+  }
+  const { baseURL, googleClientId, googleClientSecret, secret } = configuration;
+  sharedAuth = {
+    auth: createBetterAuth({
+      baseURL,
+      database: requestScopedDatabase(),
+      ...(configuration.emailPasswordEnabled
+        ? { emailDelivery: requestScopedEmailDelivery() }
+        : {}),
+      ...(googleClientId && googleClientSecret
+        ? {
+            googleProvider: {
+              accessType: "online",
+              clientId: googleClientId,
+              clientSecret: googleClientSecret,
+              disableIdTokenSignIn: true,
+              redirectURI: new URL(
+                "/api/auth/callback/google",
+                baseURL
+              ).toString(),
+            },
+          }
+        : {}),
+      requestId: currentRequestId,
+      requestState: currentAuthRequestState,
+      runInBackground: runInRequestBackground,
+      secret,
+    }),
+    configuration,
+  };
+  return sharedAuth;
+}
+
+/**
+ * Runs one request of the authentication routes: the pool of the authentication role and the stores of the password
+ * flows are its own, and the shared Better Auth reads them from the request scope. A task in the background (an
+ * e-mail, the unlock of a lock) still needs the pool after the response, so the pool ends once they all settle.
+ */
+async function withAuthRuntime(
   bindings: WorkerBindings,
   requestId: string | undefined,
-  runInBackground: BackgroundTaskHandler | undefined
-): AuthRuntimeResult {
+  runInBackground: BackgroundTaskHandler | undefined,
+  use: (runtime: AuthRuntime) => Promise<Response>
+): Promise<Response> {
   const secret = bindings.BETTER_AUTH_SECRET;
   const baseURL = bindings.BETTER_AUTH_BASE_URL;
   if (!secret || secret.length < 32 || !baseURL) {
-    return { response: jsonError(503, "auth_unavailable") };
+    return jsonError(503, "auth_unavailable");
   }
-  const googleClientId = bindings.GOOGLE_CLIENT_ID?.trim();
-  const googleClientSecret = bindings.GOOGLE_CLIENT_SECRET?.trim();
   const resendApiKey = bindings.RESEND_API_KEY?.trim();
   const emailFrom = bindings.AUTH_EMAIL_FROM?.trim();
 
@@ -648,10 +727,20 @@ function openAuthRuntime(
   } catch (error) {
     if (error instanceof AuthDatabaseNotConfiguredError) {
       logger.error("auth_database_not_configured", { requestId });
-      return { response: jsonError(503, "auth_unavailable") };
+      return jsonError(503, "auth_unavailable");
     }
     throw error;
   }
+
+  const emailPasswordEnabled = isEmailPasswordAuthEnabled(bindings);
+  const entry = sharedAuthFor({
+    baseURL,
+    emailPasswordEnabled,
+    googleClientId: bindings.GOOGLE_CLIENT_ID?.trim(),
+    googleClientSecret: bindings.GOOGLE_CLIENT_SECRET?.trim(),
+    secret,
+  });
+  const { auth } = entry;
 
   const safeRequestId = safeRequestIdOf(requestId);
   const { db, pool } = createDatabase(authConnectionString, {
@@ -670,7 +759,7 @@ function openAuthRuntime(
     pending.push(settled);
     runInBackground?.(settled);
   };
-  const delivery = isEmailPasswordAuthEnabled(bindings)
+  const delivery = emailPasswordEnabled
     ? createResendAuthEmailDelivery({
         apiKey: resendApiKey as string,
         appBaseURL: baseURL,
@@ -681,79 +770,72 @@ function openAuthRuntime(
       })
     : undefined;
 
-  let auth: BetterAuthInstance;
-  try {
-    auth = createBetterAuth({
-      baseURL,
-      database: db,
-      ...(delivery ? { emailDelivery: delivery } : {}),
-      ...(googleClientId && googleClientSecret
-        ? {
-            googleProvider: {
-              accessType: "online",
-              clientId: googleClientId,
-              clientSecret: googleClientSecret,
-              disableIdTokenSignIn: true,
-              redirectURI: new URL(
-                "/api/auth/callback/google",
-                baseURL
-              ).toString(),
-            },
-          }
-        : {}),
-      requestId: safeRequestId,
-      runInBackground: background,
-      secret,
-    });
-  } catch (error) {
-    pool.end().catch(() => undefined);
-    throw error;
-  }
-
   const store = createDatabaseLoginLockStore(
     pool as unknown as LoginLockQueryable
   );
-  const opened: { runtime: AuthRuntime } = {
-    runtime: {
-      auth,
-      async close() {
-        if (pending.length === 0) {
-          await pool.end();
-          return;
-        }
-        const ended = Promise.allSettled(pending)
-          .then(() => pool.end())
-          .catch(() => undefined);
-        if (runInBackground) {
-          runInBackground(ended);
-        } else {
-          await ended;
-        }
+  const writeAuditEvent = databaseAuditEventWriter(db);
+  const runtime: AuthRuntime = {
+    auth,
+    ...(delivery ? { delivery } : {}),
+    effects: {
+      bumpAuthorizationEpoch: (userId) =>
+        bumpUserAuthorizationEpoch(db, userId),
+      loginLock: {
+        secret,
+        sendUnlock: (email, key) =>
+          sendLoginUnlock(unlockSenderOf(runtime), email, key),
+        store,
       },
-      ...(delivery ? { delivery } : {}),
-      effects: {
-        bumpAuthorizationEpoch: (userId) =>
-          bumpUserAuthorizationEpoch(db, userId),
-        loginLock: {
-          secret,
-          sendUnlock: (email, key) =>
-            sendLoginUnlock(unlockSenderOf(opened.runtime), email, key),
-          store,
-        },
-        requestId: safeRequestId,
-        runInBackground: background,
-        ...(delivery
-          ? { sendPasswordNotice: delivery.sendPasswordNotice }
-          : {}),
-        writeAuditEvent: databaseAuditEventWriter(db),
-      },
-      pool: pool as unknown as LoginLockQueryable,
       requestId: safeRequestId,
       runInBackground: background,
-      store,
+      ...(delivery ? { sendPasswordNotice: delivery.sendPasswordNotice } : {}),
+      writeAuditEvent,
     },
+    pool: pool as unknown as LoginLockQueryable,
+    requestId: safeRequestId,
+    runInBackground: background,
+    store,
   };
-  return opened;
+
+  try {
+    return await runWithRequestScope(
+      {
+        database: db,
+        ...(delivery ? { emailDelivery: delivery } : {}),
+        requestId: safeRequestId,
+        runInBackground: background,
+      },
+      () => use(runtime)
+    );
+  } catch (error) {
+    // a failed start of the instance would otherwise be kept for the whole life of the isolate
+    if (sharedAuth === entry) {
+      sharedAuth = undefined;
+    }
+    throw error;
+  } finally {
+    await closeAfterBackground(pool, pending, runInBackground);
+  }
+}
+
+/** Ends the pool now, or after the background tasks when there are some. */
+async function closeAfterBackground(
+  pool: { end: () => Promise<void> },
+  pending: Promise<unknown>[],
+  runInBackground: BackgroundTaskHandler | undefined
+): Promise<void> {
+  if (pending.length === 0) {
+    await pool.end();
+    return;
+  }
+  const ended = Promise.allSettled(pending)
+    .then(() => pool.end())
+    .catch(() => undefined);
+  if (runInBackground) {
+    runInBackground(ended);
+  } else {
+    await ended;
+  }
 }
 
 /**
@@ -852,68 +934,70 @@ export async function handleBetterAuthRequest(
     return request;
   }
 
-  const opened = openAuthRuntime(bindings, requestId, runInBackground);
-  if ("response" in opened) {
-    return opened.response;
-  }
-  const { runtime } = opened;
-  const { auth } = runtime;
+  return withAuthRuntime(
+    bindings,
+    requestId,
+    runInBackground,
+    async (runtime) => {
+      const { auth } = runtime;
+      await enforceAbsoluteSessionLifetime(auth, request);
+      if (isExactPost(request, SET_PASSWORD_PATH)) {
+        return await handleSetPasswordRequest(auth, request, runtime.effects);
+      }
+      if (isExactPost(request, CHANGE_PASSWORD_PATH)) {
+        return await handleChangePasswordRequest(
+          auth,
+          request,
+          runtime.effects
+        );
+      }
+      if (isEmailSignInRequest(request)) {
+        const writeAccessLog = guardAccessLogWriter(
+          createDatabaseAccessLogWriter(runtime.pool)
+        );
+        return await handleEmailSignInWithLock(request, {
+          onSettleError: (error) =>
+            logServerError({
+              error,
+              method: "POST",
+              requestId: runtime.requestId,
+              route: "/api/auth/sign-in/email",
+            }),
+          recordRefusal: () =>
+            writeAccessLog({
+              event: "login_failed",
+              ip: requestIp(request.headers),
+              requestId: runtime.requestId,
+              userId: null,
+            }),
+          runInBackground: runtime.runInBackground,
+          secret,
+          sendUnlock: (email, key) =>
+            sendLoginUnlock(unlockSenderOf(runtime), email, key),
+          signIn: (signInRequest) => auth.handler(signInRequest),
+          store: runtime.store,
+        });
+      }
 
-  try {
-    await enforceAbsoluteSessionLifetime(auth, request);
-    if (isExactPost(request, SET_PASSWORD_PATH)) {
-      return await handleSetPasswordRequest(auth, request, runtime.effects);
+      return await auth.handler(request);
     }
-    if (isExactPost(request, CHANGE_PASSWORD_PATH)) {
-      return await handleChangePasswordRequest(auth, request, runtime.effects);
-    }
-    if (isEmailSignInRequest(request)) {
-      const writeAccessLog = guardAccessLogWriter(
-        createDatabaseAccessLogWriter(runtime.pool)
-      );
-      return await handleEmailSignInWithLock(request, {
-        onSettleError: (error) =>
-          logServerError({
-            error,
-            method: "POST",
-            requestId: runtime.requestId,
-            route: "/api/auth/sign-in/email",
-          }),
-        recordRefusal: () =>
-          writeAccessLog({
-            event: "login_failed",
-            ip: requestIp(request.headers),
-            requestId: runtime.requestId,
-            userId: null,
-          }),
-        runInBackground: runtime.runInBackground,
-        secret,
-        sendUnlock: (email, key) =>
-          sendLoginUnlock(unlockSenderOf(runtime), email, key),
-        signIn: (signInRequest) => auth.handler(signInRequest),
-        store: runtime.store,
-      });
-    }
-
-    return await auth.handler(request);
-  } finally {
-    await runtime.close();
-  }
+  );
 }
 
 /**
  * The routes of the links of the e-mails sit outside `/api/auth/*` (ADR 0100): the page of the app
  * reads the token from the fragment and posts it here. Both answer 503 while the password is off.
  */
-function passwordLinkRuntime(
+function withPasswordLinkRuntime(
   bindings: WorkerBindings,
   requestId: string | undefined,
-  runInBackground: BackgroundTaskHandler | undefined
-): AuthRuntimeResult {
+  runInBackground: BackgroundTaskHandler | undefined,
+  use: (runtime: AuthRuntime) => Promise<Response>
+): Promise<Response> {
   if (!isEmailPasswordAuthEnabled(bindings)) {
-    return { response: jsonError(503, "auth_email_unavailable") };
+    return Promise.resolve(jsonError(503, "auth_email_unavailable"));
   }
-  return openAuthRuntime(bindings, requestId, runInBackground);
+  return withAuthRuntime(bindings, requestId, runInBackground, use);
 }
 
 const LINK_TOKEN_MAX_LENGTH = 4096;
@@ -932,26 +1016,23 @@ async function linkToken(request: Request): Promise<string | undefined> {
  * was issued for, within its hour; the same token again answers `unlocked` too. Any other token is the
  * same 400, so the answer says nothing about an e-mail or an account.
  */
-export async function handleLoginUnlockRequest(
+export function handleLoginUnlockRequest(
   request: Request,
   bindings: WorkerBindings,
   requestId?: string,
   runInBackground?: BackgroundTaskHandler
 ): Promise<Response> {
-  const opened = passwordLinkRuntime(bindings, requestId, runInBackground);
-  if ("response" in opened) {
-    return opened.response;
-  }
-  const { runtime } = opened;
-  try {
-    return await unlockWithToken(request, {
-      requestId: runtime.requestId,
-      store: runtime.store,
-      writeAuditEvent: runtime.effects.writeAuditEvent,
-    });
-  } finally {
-    await runtime.close();
-  }
+  return withPasswordLinkRuntime(
+    bindings,
+    requestId,
+    runInBackground,
+    (runtime) =>
+      unlockWithToken(request, {
+        requestId: runtime.requestId,
+        store: runtime.store,
+        writeAuditEvent: runtime.effects.writeAuditEvent,
+      })
+  );
 }
 
 /** The unlock itself, given the lock and the audit: 200 `unlocked` or the one 400. */
@@ -1000,22 +1081,18 @@ export async function unlockWithToken(
  * answers `verified` again (a reload never shows a false "link expired"); an expired one says so,
  * so the page offers a new e-mail.
  */
-export async function handleEmailVerificationRequest(
+export function handleEmailVerificationRequest(
   request: Request,
   bindings: WorkerBindings,
   requestId?: string,
   runInBackground?: BackgroundTaskHandler
 ): Promise<Response> {
-  const opened = passwordLinkRuntime(bindings, requestId, runInBackground);
-  if ("response" in opened) {
-    return opened.response;
-  }
-  const { runtime } = opened;
-  try {
-    return await verifyEmailWithToken(runtime.auth, request);
-  } finally {
-    await runtime.close();
-  }
+  return withPasswordLinkRuntime(
+    bindings,
+    requestId,
+    runInBackground,
+    (runtime) => verifyEmailWithToken(runtime.auth, request)
+  );
 }
 
 /** The verification itself, given Better Auth: 200 `verified` or a 400 that says expired or invalid. */
