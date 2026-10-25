@@ -242,7 +242,8 @@ const noteOf = (index: number) =>
   index === 6 ? "inclui R$ 1800 de despesas do período" : null;
 const AXIS_AMOUNT = /^R\$ (\d+)$/;
 const READING_PARAGRAPH = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
-const ANY_TAG = /<[^>]*>/g;
+/** The text between two tags: the words of the reading, read node by node instead of stripping the markup. */
+const TEXT_NODE = />([^<]+)</g;
 
 describe("AreaChart: a second series (the costs of the Resultado)", () => {
   const COSTS = [
@@ -291,7 +292,9 @@ describe("AreaChart: a second series (the costs of the Resultado)", () => {
 
   it("reads both values of the day in focus and the note, in a line of text above the drawing", () => {
     const reading = markup.match(READING_PARAGRAPH)?.[1] ?? "";
-    const text = reading.replace(ANY_TAG, "");
+    const text = [...reading.matchAll(TEXT_NODE)]
+      .map((node) => node[1])
+      .join("");
     expect(text).toBe(
       "23/10 · Vendas R$ 520 · Custos R$ 200 · inclui R$ 1800 de despesas do período"
     );

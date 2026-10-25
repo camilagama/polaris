@@ -172,15 +172,17 @@ test("cancelamento: o estoque das duas linhas volta inteiro e a venda sai do Res
   await expect.poll(read).toMatchObject({ bottle: 10, cancelled: 1, mug: 10 });
   expect((await read())?.items).toBe(before?.items);
 
-  // the month of the organization, written by the test from T0 in its zone
+  // the month of the organization, written by the test from T0 in its zone: the screen says the dates of the
+  // period it read ("1 a 31 de outubro"), the whole month this one is
   const month = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     timeZone: ZONE,
-    year: "numeric",
   }).format(runT0());
   await page.goto("/dashboard");
   await expect(
-    page.getByText(`Sem vendas nem despesas em ${month}`, { exact: false })
+    page.getByText(
+      new RegExp(`Sem vendas nem despesas em 1 a \\d+ de ${month}`)
+    )
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Como chegamos a este resultado" })
