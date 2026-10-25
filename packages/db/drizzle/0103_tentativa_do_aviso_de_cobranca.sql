@@ -8,10 +8,10 @@
 -- * `billing_notices.last_attempted_at`: the latest such attempt, written by the same statement. The hourly list orders
 --   by it (never tried first, then the one tried longest ago), so a notice that has just failed goes to the back instead
 --   of holding the batch. Null: never tried.
--- No backfill (a notice owed now is simply "never tried": it goes out if it is still true) and no index (the owed notices
--- are few; the hourly list sorts them in memory).
 -- * The billing role (`polaris_billing_runtime`) already reads the whole table; it gets `UPDATE (first_attempted_at)` and
 --   `UPDATE (last_attempted_at)` and nothing else. The update policy already limits it to a notice still owed.
+-- No backfill (a notice owed now is simply "never tried": it goes out if it is still true) and no index (the hourly list
+-- sorts the owed notices in memory; to be reconsidered if the table grows).
 -- The ALTER TABLE takes an ACCESS EXCLUSIVE lock: one not had in 10 s fails the migration instead of queueing requests.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 ALTER TABLE "billing_notices" ADD COLUMN "first_attempted_at" timestamp with time zone;--> statement-breakpoint

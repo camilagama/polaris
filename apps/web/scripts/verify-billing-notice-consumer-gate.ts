@@ -851,24 +851,42 @@ async function run() {
       [later.notice.id],
       "a batch of one reaches the one never tried"
     );
-    // (e): two notices already tried rotate by the last attempt, not by the first
+    // (e): two notices already tried rotate by the last attempt, not by the first, through the consumer
     const triedA = await receiptTenant("tried-a", 50);
     const triedB = await receiptTenant("tried-b", 45);
-    const rotation = new Set(
-      [triedA, triedB].map((x) => x.tenant.organizationId)
-    );
+    let rotation = [triedA];
     const rotationList = async (at: Date, limit: number) =>
       (await realNotices.listOwed(at, 100_000))
-        .filter((owed) => rotation.has(owed.organizationId))
+        .filter((owed) =>
+          rotation.some(
+            (one) => one.tenant.organizationId === owed.organizationId
+          )
+        )
         .slice(0, limit);
-    // A is tried first, then B, then A again: A has the older first attempt and the newer last one
-    for (const tried of [triedA, triedB, triedA]) {
-      assert.equal(
-        await realNotices.markAttempted(
-          tried.notice.id,
-          tried.tenant.organizationId
-        ),
-        true
+    const handOverRotation = async (
+      batch: number,
+      sender: ClosureNoticeSender
+    ) =>
+      handOverOwedBillingNotices(
+        {
+          ...dependencies(await dbNow()),
+          notices: { ...realNotices, listOwed: rotationList },
+          send: sender,
+        },
+        batch
+      );
+    const throwAlways: ClosureNoticeSender = () =>
+      Promise.reject(new Error("the provider call broke"));
+    // B is tried first, then A, then B again: B has the older first attempt and the newer last one
+    for (const [group, batch] of [
+      [[triedB], 1],
+      [[triedA], 1],
+      [[triedB], 1],
+    ] as const) {
+      rotation = [...group];
+      await assert.rejects(
+        handOverRotation(batch, throwAlways),
+        handoverIncomplete
       );
     }
     const aTried = await noticeNow(triedA.tenant);
@@ -876,46 +894,38 @@ async function run() {
     assert.ok(aTried.first_attempted_at && bTried.first_attempted_at);
     assert.ok(aTried.last_attempted_at && bTried.last_attempted_at);
     assert.ok(
-      aTried.first_attempted_at < bTried.first_attempted_at,
-      "A was first tried before B"
+      bTried.first_attempted_at < aTried.first_attempted_at,
+      "B was first tried before A"
     );
     assert.ok(
-      aTried.last_attempted_at > bTried.last_attempted_at,
+      bTried.last_attempted_at > aTried.last_attempted_at,
       "and tried again after it"
     );
     assert.ok(
-      aTried.first_attempted_at < aTried.last_attempted_at,
+      bTried.first_attempted_at < bTried.last_attempted_at,
       "the second attempt moved only the last one"
     );
+    rotation = [triedA, triedB];
     assert.deepEqual(
       ids(await rotationList(await dbNow(), 5)),
-      [triedB.notice.id, triedA.notice.id],
-      "tried both: the one tried longest ago first, though A's first attempt is older"
+      [triedA.notice.id, triedB.notice.id],
+      "both tried: the one tried longest ago first, though B's first attempt is older"
     );
-    const throwingA: ClosureNoticeSender = (message: Sent) =>
-      message.idempotencyKey === triedA.notice.id
-        ? Promise.reject(new Error("the provider call broke"))
+    const throwingB: ClosureNoticeSender = (message: Sent) =>
+      message.idempotencyKey === triedB.notice.id
+        ? throwAlways(message)
         : send(message);
     const beforeRotation = sent.length;
     assert.equal(
-      (
-        await handOverOwedBillingNotices(
-          {
-            ...dependencies(await dbNow()),
-            notices: { ...realNotices, listOwed: rotationList },
-            send: throwingA,
-          },
-          1
-        )
-      ).sent,
+      (await handOverRotation(1, throwingB)).sent,
       1,
-      "a batch of one reaches B: A, the one that failed last, is behind it"
+      "a batch of one reaches A: B, the one that failed last, is behind it"
     );
     assert.equal(sent.length, beforeRotation + 1);
-    assert.ok((await noticeNow(triedB.tenant)).sent_at);
-    assert.equal((await noticeNow(triedA.tenant)).sent_at, null);
+    assert.ok((await noticeNow(triedA.tenant)).sent_at);
+    assert.equal((await noticeNow(triedB.tenant)).sent_at, null);
     tests.push(
-      "two notices already tried rotate by the last attempt: the one first tried earlier but tried again later goes behind the other (the order by the first attempt would put it ahead), the second attempt moves only last_attempted_at, and a batch of one sends the other"
+      "two notices already tried rotate by the last attempt, written by the consumer: the one first tried earlier but tried again later goes behind the other (the order by the first attempt would put it ahead), the second attempt moves only last_attempted_at, and a batch of one sends the other"
     );
 
     tests.push(

@@ -689,6 +689,7 @@ async function sendBillingNotice(
   // before the render and the send: written on its own, so it stays when either throws (a notice whose render always
   // throws goes to the back of the list, by its last attempt, and is closed by the 23-hour window, counted from the
   // first); the provider's key starts later
+  // false: settled meanwhile; the provider's key still covers the send, so it goes on
   await dependencies.notices.markAttempted(noticeId, organizationId);
   const message = await renderBillingNoticeEmail(
     input.email,
