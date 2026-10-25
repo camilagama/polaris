@@ -24,5 +24,9 @@ export const FORM_FOOTER_CLASS =
 export const FORM_CLOSE_CLASS =
   "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] md:top-2 md:right-2";
 
+/** A message that stays above the footer, in view while the body scrolls (what keeps a button off, an error of the form). */
+export const FORM_NOTICE_CLASS =
+  "shrink-0 pb-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:px-4";
+
 /** The `<form>` that holds the body and the footer, so Enter submits and the footer button is the submit button. */
 export const FORM_ELEMENT_CLASS = "flex min-h-0 flex-1 flex-col";

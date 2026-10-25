@@ -12,7 +12,11 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { FieldLegend, FieldSet } from "@/ui/field";
-import { connectionControlProps } from "../app-shell/connection-required-notice";
+import {
+  ConnectionRequiredDialogNotice,
+  connectionControlProps,
+  connectionDialogReasonId,
+} from "../app-shell/connection-required-notice";
 import {
   INSTALLMENT_PLAN_LABEL,
   INSTALLMENT_PLAN_OPTIONS,
@@ -372,6 +376,7 @@ export function PaymentProfileForm({
               ))}
             </div>
           </DialogBody>
+          <ConnectionRequiredDialogNotice online={online} />
           <DialogFooter>
             <Button
               disabled={pending}
@@ -382,7 +387,7 @@ export function PaymentProfileForm({
               {editing ? "Cancelar edição" : "Cancelar"}
             </Button>
             <Button
-              {...connectionControlProps(online)}
+              {...connectionControlProps(online, connectionDialogReasonId)}
               aria-busy={pending || undefined}
               disabled={pending}
               type="submit"

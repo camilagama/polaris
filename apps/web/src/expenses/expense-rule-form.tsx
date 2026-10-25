@@ -23,7 +23,11 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Field, FieldDescription, FieldTitle } from "@/ui/field";
-import { connectionControlProps } from "../app-shell/connection-required-notice";
+import {
+  ConnectionRequiredDialogNotice,
+  connectionControlProps,
+  connectionDialogReasonId,
+} from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
@@ -301,6 +305,7 @@ export function ExpenseRuleForm({
           value={draft.description}
         />
       </DialogBody>
+      <ConnectionRequiredDialogNotice online={online} />
       <DialogFooter>
         <Button
           disabled={disabled}
@@ -311,7 +316,7 @@ export function ExpenseRuleForm({
           Cancelar
         </Button>
         <Button
-          {...connectionControlProps(online)}
+          {...connectionControlProps(online, connectionDialogReasonId)}
           className="h-auto min-h-ctl-md whitespace-normal"
           disabled={disabled}
           type="submit"

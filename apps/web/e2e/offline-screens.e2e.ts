@@ -1177,10 +1177,17 @@ for (const mode of ["offline", "mentindo"] as const) {
       await page.getByLabel("Nome do perfil").fill("Maquininha");
       const create = page.getByRole("button", { name: "Criar perfil" });
       await expect(create).toHaveAttribute("aria-disabled", "true");
+      // the strip of the shell is under the veil of the form: the reason is said in the dialog, over the buttons
       await expect(create).toHaveAttribute(
         "aria-describedby",
-        "connection-required-text"
+        "connection-required-dialog-text"
       );
+      await expect(create).toHaveAccessibleDescription(
+        "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta."
+      );
+      await expect(
+        page.getByRole("dialog").getByText("Sem internet.")
+      ).toBeVisible();
       // it also looks off (the Button base class), not just reads off
       await expect(create).toHaveCSS("opacity", "0.5");
       // focusable (the pattern of a control off with a reason): only the keyboard reaches it, since

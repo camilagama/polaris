@@ -31,6 +31,7 @@ import {
   FieldSet,
 } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import {
   ProductTextAreaField,
   ProductTextField,
@@ -401,7 +402,7 @@ export function CustomerForm({
             />
           </DialogBody>
           {contactError ? (
-            <div className="shrink-0 px-4 pb-3">
+            <div className={FORM_NOTICE_CLASS}>
               <FieldError id="customer-contact-error">
                 {contactError}
               </FieldError>
