@@ -121,7 +121,8 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
       ) : (
         <p className="text-muted-foreground">Sem vendas no período.</p>
       )}
-      <Collapsible>
+      {/* the table of the other period opens closed, as it did with a panel for each period */}
+      <Collapsible key={days}>
         <CollapsibleTrigger
           className="group/numbers w-fit"
           render={<Button size="sm" variant="ghost" />}
@@ -187,11 +188,10 @@ export function ChartBlock({
           <TabsTrigger value="7">7 dias</TabsTrigger>
           <TabsTrigger value="30">30 dias</TabsTrigger>
         </TabsList>
-        <TabsContent value="7">
-          <Period days={7} figures={figures} />
-        </TabsContent>
-        <TabsContent value="30">
-          <Period days={30} figures={figures} />
+        {/* one panel for both periods, so the chart is the same instance when the tab changes: no new reveal of a chart
+            that mounted again (the data change at once and the y axis tweens, 500 ms) */}
+        <TabsContent value={days}>
+          <Period days={days === "30" ? 30 : 7} figures={figures} />
         </TabsContent>
       </Tabs>
     </HomeBlock>
