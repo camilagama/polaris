@@ -17,7 +17,7 @@ export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
 /** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
-type StoredDay = Omit<
+export type StoredDay = Omit<
   SummaryDay,
   "costs" | "operatingExpenses" | "operatingResult"
 > &

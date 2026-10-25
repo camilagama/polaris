@@ -60,10 +60,15 @@ export interface ChartLayout {
 }
 
 export interface ChartLayoutOptions {
+  /**
+   * A value the scale must also reach: the highest value of another series drawn in the same box. Two series laid out
+   * with each other's maximum as the ceiling get the same scale (the same grid, the same top).
+   */
+  ceiling?: number;
   height: number;
+  margin: ChartMargin;
   /** The most grid lines above the floor (the area chart has four, drawn from two up: `chartScale`); 0 draws none. */
   maxLines: number;
-  margin: ChartMargin;
   width: number;
 }
 
@@ -203,13 +208,18 @@ export function bestIndex(data: readonly ChartDatum[]): number | null {
   return values.indexOf(max);
 }
 
+/** The highest value a series draws (values below zero and unknown ones count as zero), 0 for an empty series. */
+export function seriesMax(data: readonly ChartDatum[]): number {
+  return Math.max(0, ...data.map((datum) => plotted(datum.value)));
+}
+
 /** The layout of a series in a box: where each point is, the paths, the grid and the labels. */
 export function chartLayout(
   data: readonly ChartDatum[],
-  { height, maxLines, margin, width }: ChartLayoutOptions
+  { ceiling = 0, height, maxLines, margin, width }: ChartLayoutOptions
 ): ChartLayout {
   const values = data.map((datum) => plotted(datum.value));
-  const max = Math.max(0, ...values);
+  const max = Math.max(plotted(ceiling), ...values);
   const { lines, step, top } = chartScale(max, maxLines);
 
   const floor = height - margin.bottom;

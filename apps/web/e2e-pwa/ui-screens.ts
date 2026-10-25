@@ -362,9 +362,12 @@ const RESULT_SOURCES = [
   "src/dashboard/goal-history.tsx",
   "src/dashboard/goals-panel.tsx",
   "src/dashboard/offline-copy-notice.tsx",
+  "src/dashboard/parts-bar.tsx",
+  "src/dashboard/period-picker.tsx",
   "src/dashboard/quality-banner.tsx",
   "src/dashboard/result-cards.tsx",
   "src/dashboard/result-chain.tsx",
+  "src/dashboard/result-chart.tsx",
 ];
 
 /** One state of Resultado and Metas (`ui-result-states.ts`). */
@@ -837,11 +840,9 @@ export const SCREENS: UiScreen[] = [
   expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
-  resultScreen(
-    "mês incompleto e metas",
-    resultStates.list,
-    exerciseGoalOverlays
-  ),
+  resultScreen("mês incompleto e gráfico de vendas", resultStates.list),
+  resultScreen("gráfico de vendas e custos e a tabela", resultStates.chart),
+  resultScreen("metas", resultStates.goals, exerciseGoalOverlays),
   resultScreen("sem dados", resultStates.empty),
   homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
   homeScreen("loja nova", homeStates.fresh),

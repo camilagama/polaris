@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The goals panel of the result screen in a real browser, over a small
@@ -380,8 +380,8 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   });
@@ -400,9 +400,10 @@ async function openDashboard(page: Page, server: FakeGoalServer) {
   ).toBeVisible({ timeout: 20_000 });
 }
 
-/** Opens the screen: "Metas" is always open, a region of its own. */
+/** Opens the screen on its Metas tab, a region of its own (the Resultado tab is the one it opens on). */
 async function openGoals(page: Page, server: FakeGoalServer) {
   await openDashboard(page, server);
+  await page.getByRole("tab", { name: "Metas" }).click();
   await expect(
     page.getByRole("region", { exact: true, name: "Metas" })
   ).toBeVisible();
@@ -428,9 +429,13 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await openGoals(page, server);
 
   await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
+  // no goal in progress: the tab has no count (AC-13)
+  await expect(
+    page.getByRole("tab", { exact: true, name: "Metas" })
+  ).toBeVisible();
   await page.getByRole("button", { name: "Nova meta" }).click();
 
-  // the period starts as the month on screen
+  // the period starts as the current month: the tab does not follow the period of the Resultado (AC-15)
   await expect(page.locator("#goal-create-startsOn")).toHaveValue("2026-10-01");
   await expect(page.locator("#goal-create-endsOn")).toHaveValue("2026-10-31");
   await page.locator("#goal-create-name").fill("Meta de outubro");
@@ -459,6 +464,10 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await expect(bar).toHaveAttribute("aria-valuetext", fortyFivePercent);
   // the form closed
   await expect(page.locator("#goal-create-target")).toHaveCount(0);
+  // and the tab counts the goal in progress, for a screen reader too
+  await expect(
+    page.getByRole("tab", { exact: true, name: "Metas 1 em andamento" })
+  ).toBeVisible();
 });
 
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
