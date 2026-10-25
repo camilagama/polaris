@@ -30,7 +30,6 @@ export function chargeReceiptContent(
   const first = email.refundUntil !== null;
   return {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription",
     heading: "Recebemos o pagamento do Polaris Pro",
     paragraphs: [
@@ -46,5 +45,11 @@ export function chargeReceiptContent(
     ],
     preview: `Seu Pro está pago até ${paidThrough}.`,
     subject: "Recebemos o pagamento do Polaris Pro",
+    // the three lines of the receipt before the text (Petković, 24/10, T329-3)
+    summary: [
+      { label: "Valor", value: amount },
+      { label: "Data", value: paidOn },
+      { label: "Loja", value: store.name },
+    ],
   };
 }

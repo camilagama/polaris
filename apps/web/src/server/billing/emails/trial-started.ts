@@ -39,14 +39,17 @@ export function trialStartedContent(
   const date = calendarDay(email.firstChargeOn);
   const method = methodText(email.method);
   const chargeToday = days === 0;
+  // with the first charge today there is no trial to speak of: the Pro began (Petković, 24/10, T329-1)
+  const title = chargeToday
+    ? "Seu Polaris Pro começou"
+    : "Seu teste do Polaris Pro começou";
   return {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription",
-    heading: "Seu teste do Polaris Pro começou",
+    heading: title,
     paragraphs: chargeToday
       ? [
-          `Seu teste grátis do plano Pro começou na loja ${store.name}. A primeira cobrança, de ${charge}, é hoje, ${date}, ${method}. Se não quiser continuar, cancele a renovação em Assinatura antes da cobrança: nada é cobrado. Se continuar, você ainda pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.`,
+          `O plano Pro começou na loja ${store.name}. A primeira cobrança, de ${charge}, é hoje, ${date}, ${method}. Se não quiser continuar, cancele a renovação em Assinatura antes da cobrança: nada é cobrado. Se continuar, você ainda pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.`,
         ]
       : [
           `Seu teste grátis do plano Pro começou na loja ${store.name}. Você usa tudo o que o Pro tem por ${daysText(days)}. A primeira cobrança, de ${charge}, é em ${date}, ${method}. Se não quiser continuar, cancele a renovação em Assinatura antes dessa data: nada é cobrado. Se continuar, você ainda pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.`,
@@ -54,6 +57,7 @@ export function trialStartedContent(
     preview: chargeToday
       ? `A primeira cobrança da loja ${store.name} é hoje.`
       : `Você tem ${daysText(days)} de Pro na loja ${store.name}.`,
-    subject: "Seu teste do Polaris Pro começou",
+    subject: title,
+    summary: null,
   };
 }

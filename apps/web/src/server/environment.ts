@@ -89,6 +89,12 @@ export interface WorkerBindings {
    * until the responsible turns it on.
    */
   BILLING_SELF_SERVICE_ENABLED?: string;
+  /**
+   * The support box of the billing e-mails and the welcome (ADR 0104, decision 7): the footer names it and it is the
+   * reply-to. Required: without it (or without `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` and
+   * `AUTH_HYPERDRIVE`) those e-mails stay off and their notices are skipped `email_not_configured`. Not a secret.
+   */
+  BILLING_SUPPORT_EMAIL?: string;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
   /**

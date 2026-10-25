@@ -46,8 +46,8 @@ export function renewalFailedContent(
   const until = lastDayOf(email.accessEndsAt, store.timeZone);
   const common = {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription" as const,
+    summary: null,
   };
   if (email.milestone === "d0") {
     const subject = "O pagamento do Polaris Pro não foi confirmado";
@@ -75,7 +75,7 @@ export function renewalFailedContent(
       ...common,
       heading: `${remaining} ${store.name}`,
       paragraphs: [
-        `O pagamento da renovação do Pro ainda não foi confirmado. Seu Pro vai até ${until}.`,
+        `O pagamento ainda não foi confirmado. Seu Pro continua até ${until}.`,
         AFTER,
       ],
       preview: `Seu Pro vai até ${until}.`,

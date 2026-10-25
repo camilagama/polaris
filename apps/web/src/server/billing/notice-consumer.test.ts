@@ -16,6 +16,7 @@ import {
   type BillingNoticeRecipient,
   BillingNoticeRetryError,
   type BillingNoticeStoreFacts,
+  billingNoticeDependenciesOf,
   billingNoticeEmailConfig,
   billingNoticeEmailOf,
   handleBillingNotice,
@@ -970,5 +971,140 @@ describe("the fixes of the review", () => {
     expect(
       billingNoticeEmailOf(today, storeFacts, emailConfig.appOrigin)
     ).not.toBeNull();
+  });
+});
+
+describe("the consumer's dependencies in the Worker", () => {
+  const configured = {
+    AUTH_EMAIL_FROM: "Polaris <avisos@example.invalid>",
+    AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
+    BETTER_AUTH_BASE_URL: "https://app.example.invalid",
+    BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
+    RESEND_API_KEY: "re_not_a_key",
+  };
+
+  function billingStore() {
+    return {
+      claimNotice: vi.fn(() => Promise.resolve(null)),
+      listOwedNotices: vi.fn(() =>
+        Promise.resolve([{ noticeId: NOTICE, organizationId: ORG }])
+      ),
+      markNoticeFailed: vi.fn(() => Promise.resolve(true)),
+      markNoticeSent: vi.fn(() => Promise.resolve(true)),
+      markNoticeSkipped: vi.fn(() => Promise.resolve(false)),
+      readNoticeStore: vi.fn(() => Promise.resolve(null)),
+    };
+  }
+
+  function recipientClient() {
+    return {
+      close: vi.fn(() => Promise.resolve()),
+      recipient: vi.fn(() =>
+        Promise.resolve({ email: ADDRESS, verified: true as const })
+      ),
+    };
+  }
+
+  it("opens no authentication connection with both e-mails off, and turns neither on", async () => {
+    const open = vi.fn(recipientClient);
+    const wired = billingNoticeDependenciesOf(
+      { ...configured, BILLING_SELF_SERVICE_ENABLED: "false" },
+      billingStore(),
+      open
+    );
+    expect(open).not.toHaveBeenCalled();
+    expect(wired.dependencies.billingEmail).toBeNull();
+    expect(wired.dependencies.welcomeEmail).toBeNull();
+    expect(
+      await wired.dependencies.recipients.recipient(NOTICE, ORG)
+    ).toBeNull();
+    await wired.close();
+  });
+
+  it("turns the billing e-mails on with their switch and the welcome with its own, and closes the connection", async () => {
+    const client = recipientClient();
+    const open = vi.fn(() => client);
+    const billing = billingNoticeDependenciesOf(
+      { ...configured, BILLING_SELF_SERVICE_ENABLED: "true" },
+      billingStore(),
+      open
+    );
+    expect(open).toHaveBeenCalledWith("postgresql://auth.invalid/db");
+    expect(billing.dependencies.billingEmail).toEqual({
+      apiKey: "re_not_a_key",
+      appOrigin: "https://app.example.invalid",
+      from: "Polaris <avisos@example.invalid>",
+      supportEmail: "suporte@example.invalid",
+    });
+    expect(billing.dependencies.welcomeEmail).toBeNull();
+    expect(await billing.dependencies.recipients.recipient(NOTICE, ORG)).toEqual(
+      { email: ADDRESS, verified: true }
+    );
+    await billing.close();
+    expect(client.close).toHaveBeenCalledTimes(1);
+
+    const welcome = billingNoticeDependenciesOf(
+      { ...configured, WELCOME_EMAIL_ENABLED: "true" },
+      billingStore(),
+      () => recipientClient()
+    );
+    expect(welcome.dependencies.billingEmail).toBeNull();
+    expect(welcome.dependencies.welcomeEmail?.supportEmail).toBe(
+      "suporte@example.invalid"
+    );
+  });
+
+  it("keeps the e-mails off without the support box or the authentication role (BILLING_SUPPORT_EMAIL is required)", () => {
+    const open = vi.fn(recipientClient);
+    for (const bindings of [
+      { ...configured, BILLING_SUPPORT_EMAIL: " " },
+      (({ AUTH_HYPERDRIVE: _auth, ...rest }) => rest)(configured),
+    ]) {
+      const wired = billingNoticeDependenciesOf(
+        {
+          ...bindings,
+          BILLING_SELF_SERVICE_ENABLED: "true",
+          WELCOME_EMAIL_ENABLED: "true",
+        },
+        billingStore(),
+        open
+      );
+      expect(wired.dependencies.billingEmail).toBeNull();
+      expect(wired.dependencies.welcomeEmail).toBeNull();
+    }
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("reads and marks the notice through the billing store, with the arguments in the store's order", async () => {
+    const store = billingStore();
+    const { dependencies } = billingNoticeDependenciesOf(
+      configured,
+      store,
+      recipientClient
+    );
+    await dependencies.notices.claim(NOTICE, ORG);
+    expect(store.claimNotice).toHaveBeenCalledWith(NOTICE, ORG);
+    expect(await dependencies.notices.listOwed(NOW, 20)).toEqual([
+      { noticeId: NOTICE, organizationId: ORG },
+    ]);
+    expect(store.listOwedNotices).toHaveBeenCalledWith(NOW, 20);
+    expect(await dependencies.notices.markSent(NOTICE, ORG)).toBe(true);
+    expect(store.markNoticeSent).toHaveBeenCalledWith(NOTICE, ORG);
+    await dependencies.notices.markFailed(NOTICE, ORG, "email_rejected");
+    expect(store.markNoticeFailed).toHaveBeenCalledWith(
+      NOTICE,
+      ORG,
+      "email_rejected"
+    );
+    expect(
+      await dependencies.notices.markSkipped(NOTICE, ORG, "no_recipient")
+    ).toBe(false);
+    expect(store.markNoticeSkipped).toHaveBeenCalledWith(
+      NOTICE,
+      ORG,
+      "no_recipient"
+    );
+    await dependencies.stores.storeOf(NOTICE, ORG);
+    expect(store.readNoticeStore).toHaveBeenCalledWith(NOTICE, ORG);
   });
 });

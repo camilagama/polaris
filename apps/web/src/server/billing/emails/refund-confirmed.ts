@@ -23,7 +23,6 @@ export function refundConfirmedContent(
   const subject = `Devolução do Polaris Pro: ${amount}`;
   return {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription",
     heading: subject,
     paragraphs: [
@@ -33,5 +32,6 @@ export function refundConfirmedContent(
     ],
     preview: `O Pro da loja ${store.name} terminou.`,
     subject,
+    summary: null,
   };
 }

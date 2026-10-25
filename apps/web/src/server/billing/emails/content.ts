@@ -12,8 +12,6 @@ export interface BillingEmailLink {
 export interface BillingNoticeContent {
   /** The button; the e-mail also writes its address in full, in case the button fails. */
   action: BillingEmailLink;
-  /** A block of its own with a second button (E-D, only with the store over the Free limit). */
-  extra: { action: BillingEmailLink; paragraphs: string[] } | null;
   /** The footer of a notice about the subscription, or the welcome's (E1 is not about a subscription). */
   footer: "subscription" | "welcome";
   /** The subject with the store's whole name, the heading of the body. */
@@ -22,6 +20,8 @@ export interface BillingNoticeContent {
   preview: string;
   /** At most 60 characters: the store's name in it is cut at 24 (AC-17). */
   subject: string;
+  /** Lines of their own before the text, one fact each (the receipt's amount, day and store); null for none. */
+  summary: { label: string; value: string }[] | null;
 }
 
 /** What every e-mail of the cycle reads of the store and the app. */
@@ -33,7 +33,7 @@ export interface BillingEmailStore {
 }
 
 /** The subscription screen (Assinatura), where every billing e-mail leads. */
-export function subscriptionUrl(appOrigin: string): string {
+function subscriptionUrl(appOrigin: string): string {
   return `${new URL(appOrigin).origin}/subscription`;
 }
 
@@ -42,15 +42,7 @@ export function productsUrl(appOrigin: string): string {
   return `${new URL(appOrigin).origin}/products`;
 }
 
-/**
- * Where the owner chooses the variants that go on (AC-15). The screen of the choice does not exist yet: until it does,
- * the button leads to Assinatura.
- */
-export function variantChoiceUrl(appOrigin: string): string {
-  return subscriptionUrl(appOrigin);
-}
-
-export const OPEN_SUBSCRIPTION = "Abrir a assinatura";
+const OPEN_SUBSCRIPTION = "Abrir a assinatura";
 
 export function openSubscription(store: BillingEmailStore): BillingEmailLink {
   return { label: OPEN_SUBSCRIPTION, url: subscriptionUrl(store.appOrigin) };

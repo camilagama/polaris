@@ -17,6 +17,7 @@ import { subjectStore } from "./format";
 const ORIGIN = "https://dash.exemplo.app";
 const SUPPORT = "suporte@exemplo.app";
 const SUBSCRIPTION_URL = `${ORIGIN}/subscription`;
+const RE_DAY = /^\d{1,2}º? de [a-zç]+ de \d{4}$/;
 const RE_1 = /oklch\(/i;
 const RE_2 = /rgba?\(/i;
 const RE_3 = /#[0-9a-fA-F]{3,8}\b/;
@@ -357,7 +358,7 @@ describe("the dates", () => {
       }),
       chargeOn: "2027-12-01",
     });
-    expect(first).toContain("Em 1º de dezembro de 2027,");
+    expect(first).toContain("Em 7 dias, 1º de dezembro de 2027,");
     const receipt = bodyOf({
       ...(kindCase("charge_receipt renewal (card)")
         .email as BillingNoticeEmail & {
@@ -434,6 +435,21 @@ describe("singular and plural", () => {
     expect(text).not.toContain("Você usa tudo o que o Pro tem por");
     expect(text).not.toContain("Você tem");
     expect(text).not.toMatch(RE_23);
+  });
+
+  it("says the Pro began, with no trial, when the first charge is today (T329-1)", () => {
+    const today = started("2026-10-22");
+    expect(today.subject).toBe("Seu Polaris Pro começou");
+    expect(today.heading).toBe("Seu Polaris Pro começou");
+    expect(today.paragraphs[0]).toMatch(
+      /^O plano Pro começou na loja Loja Aurora\. /
+    );
+    expect(today.paragraphs.join(" ")).not.toContain("teste");
+    const later = started("2026-10-29");
+    expect(later.subject).toBe("Seu teste do Polaris Pro começou");
+    expect(later.paragraphs[0]).toMatch(
+      /^Seu teste grátis do plano Pro começou na loja Loja Aurora\. /
+    );
   });
 });
 
@@ -519,28 +535,83 @@ describe("the links", () => {
     }
   });
 
-  it("has the extra block of access_ended only with the store over the limit", async () => {
+  it("tells the variants over the limit only with the store over it, with one button to Assinatura", async () => {
     const [plain, over] = await renderAll([
       kindCase("access_ended"),
       kindCase("access_ended over limit"),
     ]);
     for (const part of [plain?.out.html, plain?.out.text]) {
-      expect(part).not.toContain("Escolher as variantes");
       expect(part).not.toContain("variantes");
     }
-    expect(billingNoticeContent((plain as Case).email).extra).toBeNull();
     const html = htmlText(over?.out.html ?? "");
     const text = flat(over?.out.text ?? "");
     for (const part of [html, text]) {
-      expect(part).toContain("Escolher as variantes");
+      // the screen of the choice does not exist yet: no button to it (Petković, 24/10)
+      expect(part).not.toContain("Escolher as variantes");
       expect(part).toContain(
         "A loja tem 73 variantes e o plano Free permite 50."
       );
       expect(part).toContain("até 5 de novembro de 2026");
+      expect(part).toContain("Abra Assinatura para ver o prazo.");
     }
-    expect(hrefs(over?.out.html ?? "")).toHaveLength(2);
+    expect(hrefs(over?.out.html ?? "")).toEqual([SUBSCRIPTION_URL]);
     expect(flat(over?.out.text ?? "")).toContain(
       `Se o botão não funcionar, abra este endereço: ${SUBSCRIPTION_URL}`
+    );
+  });
+});
+
+describe("the texts of the review of 24/10 (Petković, 20:31)", () => {
+  it("opens the receipt with three lines: the amount, the day and the store (T329-3)", async () => {
+    const content = billingNoticeContent(
+      kindCase("charge_receipt first (card)").email
+    );
+    expect(content.summary).toEqual([
+      { label: "Valor", value: "R$ 24,90" },
+      { label: "Data", value: expect.stringMatching(RE_DAY) },
+      { label: "Loja", value: "Loja Aurora" },
+    ]);
+    const [item] = await renderAll([kindCase("charge_receipt first (card)")]);
+    const text = flat(item?.out.text ?? "");
+    const html = htmlText(item?.out.html ?? "");
+    for (const part of [text, html]) {
+      const block = part.indexOf("Valor: R$ 24,90");
+      expect(block, part).toBeGreaterThan(-1);
+      expect(part.indexOf("Loja: Loja Aurora")).toBeGreaterThan(block);
+      expect(part.indexOf("Recebemos R$ 24,90")).toBeGreaterThan(block);
+    }
+    for (const kind of cases()) {
+      if (!kind.label.startsWith("charge_receipt")) {
+        expect(billingNoticeContent(kind.email).summary, kind.label).toBeNull();
+      }
+    }
+  });
+
+  it("says the payment is still not confirmed on the 3rd day of the grace", () => {
+    expect(bodyOf(kindCase("renewal_failed d3").email)).toMatch(
+      /O pagamento ainda não foi confirmado\. Seu Pro continua até \d/
+    );
+  });
+
+  it("says the next subscription is charged the same day after a first charge that failed (T329-4)", () => {
+    expect(bodyOf(kindCase("first_charge_failed").email)).toContain(
+      "então a próxima assinatura é cobrada no mesmo dia."
+    );
+  });
+
+  it("announces the yearly renewal 7 days ahead, in the body and in the preview", () => {
+    const content = billingNoticeContent(
+      kindCase("annual_renewal_reminder (card)").email
+    );
+    expect(content.paragraphs[0]).toMatch(/^Em 7 dias, \d/);
+    expect(content.preview).toBe(
+      "A renovação anual da loja Loja Aurora é em 7 dias."
+    );
+  });
+
+  it("keeps the right of withdrawal in the eve of the first charge", () => {
+    expect(bodyOf(kindCase("trial_charge_eve (card)").email)).toContain(
+      "Depois da cobrança você ainda pode desistir em até 7 dias e receber o valor de volta."
     );
   });
 });
@@ -768,7 +839,10 @@ describe("what the text must never say", () => {
     expect(trial).toContain("O teste grátis vale uma vez por pessoa");
     const pro = bodyOf(kindCase("renewal_cancelled pro").email);
     expect(pro).toContain("o fim do que você já pagou");
-    expect(pro).toContain("Para assinar de novo, espere essa data.");
+    expect(pro).toContain(
+      "Se mudar de ideia, dá para assinar de novo a partir de 30 de outubro de 2026."
+    );
+    expect(pro).not.toContain("espere essa data");
   });
 });
 

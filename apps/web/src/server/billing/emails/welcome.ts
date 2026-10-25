@@ -18,7 +18,6 @@ export function welcomeContent(email: WelcomeEmail): BillingNoticeContent {
       label: "Cadastrar o 1º produto",
       url: productsUrl(store.appOrigin),
     },
-    extra: null,
     footer: "welcome",
     heading: `Sua loja ${store.name} está aberta no Polaris`,
     paragraphs: [
@@ -27,5 +26,6 @@ export function welcomeContent(email: WelcomeEmail): BillingNoticeContent {
     ],
     preview: "Cadastre o primeiro produto para começar a vender.",
     subject: `Sua loja ${subjectStore(store.name)} está aberta no Polaris`,
+    summary: null,
   };
 }

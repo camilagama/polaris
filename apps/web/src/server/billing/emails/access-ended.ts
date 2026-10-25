@@ -3,7 +3,6 @@ import {
   type BillingNoticeContent,
   FREE_CHANGED,
   openSubscription,
-  variantChoiceUrl,
 } from "./content";
 import { lastDayOf, localDay, subjectStore } from "./format";
 
@@ -21,31 +20,31 @@ export interface AccessEndedEmail {
   store: BillingEmailStore;
 }
 
+/**
+ * Over the Free limit, the count, the limit and the window's end go in the text, and the one button leads to
+ * Assinatura: the screen of the choice of the variants does not exist yet, and the e-mail offers no button to it
+ * (Petković, 24/10, condition of the E-D; AC-15 stays open until that screen exists).
+ */
 export function accessEndedContent(
   email: AccessEndedEmail
 ): BillingNoticeContent {
   const { overLimit, store } = email;
   return {
     action: openSubscription(store),
-    extra: overLimit
-      ? {
-          action: {
-            label: "Escolher as variantes",
-            url: variantChoiceUrl(store.appOrigin),
-          },
-          paragraphs: [
-            `A loja tem ${overLimit.variants} variantes e o plano Free permite ${overLimit.limit}. Nos próximos 7 dias, até ${lastDayOf(overLimit.chooseUntil, store.timeZone)}, você escolhe quais continuam recebendo vendas e entradas de estoque. Depois desse prazo, só dá para aumentar a escolha até o limite.`,
-          ],
-        }
-      : null,
     footer: "subscription",
     heading: `A loja ${store.name} voltou ao plano Free`,
     paragraphs: [
       `O acesso Pro da loja ${store.name} terminou em ${localDay(email.endedAt, store.timeZone)}. A loja está no plano Free. Seus dados e seu histórico continuam aqui.`,
       `O que muda: ${FREE_CHANGED}. Imagens acima do limite do Free ficam guardadas; só não entram novas.`,
+      ...(overLimit
+        ? [
+            `A loja tem ${overLimit.variants} variantes e o plano Free permite ${overLimit.limit}. Nos próximos 7 dias, até ${lastDayOf(overLimit.chooseUntil, store.timeZone)}, você escolhe quais continuam recebendo vendas e entradas de estoque. Depois desse prazo, só dá para aumentar a escolha até o limite. Abra Assinatura para ver o prazo.`,
+          ]
+        : []),
       "Para voltar ao Pro, abra Assinatura.",
     ],
     preview: "Seus dados e seu histórico continuam aqui.",
     subject: `A loja ${subjectStore(store.name)} voltou ao plano Free`,
+    summary: null,
   };
 }

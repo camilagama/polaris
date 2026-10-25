@@ -13,7 +13,7 @@ import { formatCalendarDate } from "../../privacy/closure-notice-email";
 const DAY_MS = 86_400_000;
 
 /** The store's name in a subject: one line, at most 24 characters and "…" (AC-17); the whole name goes in the body. */
-export const SUBJECT_STORE_MAX = 24;
+const SUBJECT_STORE_MAX = 24;
 
 export function subjectStore(name: string): string {
   const line = name.replaceAll(/\s+/g, " ").trim();

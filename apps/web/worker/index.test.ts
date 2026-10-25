@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   billingClose: vi.fn(),
+  billingRecipientsClose: vi.fn(),
+  createBillingNoticeRecipientClient: vi.fn(),
   createAuthLoginLockMaintenanceClient: vi.fn(),
   createAuthUnverifiedUserMaintenanceClient: vi.fn(),
   createBillingStore: vi.fn(),
@@ -12,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
+  handleBillingNotice: vi.fn(),
   handleClosureNotice: vi.fn(),
+  handOverOwedBillingNotices: vi.fn(),
   handOverOwedClosureNotices: vi.fn(),
   handleRenewalCancelRequested: vi.fn(),
   loginLockClose: vi.fn(),
@@ -72,6 +76,16 @@ vi.mock("../src/server/privacy/closure-notice", async (importOriginal) => ({
   handleClosureNotice: mocks.handleClosureNotice,
   handOverOwedClosureNotices: mocks.handOverOwedClosureNotices,
 }));
+vi.mock("@polaris/db/billing-notice-recipient", () => ({
+  createBillingNoticeRecipientClient: mocks.createBillingNoticeRecipientClient,
+}));
+vi.mock("../src/server/billing/notice-consumer", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/server/billing/notice-consumer")
+  >()),
+  handleBillingNotice: mocks.handleBillingNotice,
+  handOverOwedBillingNotices: mocks.handOverOwedBillingNotices,
+}));
 vi.mock("@polaris/db/closure-notice-recipient", () => ({
   createClosureNoticeRecipientClient: mocks.createClosureNoticeRecipientClient,
 }));
@@ -97,6 +111,15 @@ const quietRefundNet = {
   rearm: { exhausted: 0, failed: 0, rearmed: 0, scanned: 0 },
 };
 
+/** A handover of the billing notices with nothing owed. */
+const quietHandover = {
+  failed: 0,
+  handedOver: 0,
+  retry: 0,
+  sent: 0,
+  skipped: 0,
+};
+
 vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runRefundSafetyNet: mocks.runRefundSafetyNet,
@@ -117,6 +140,16 @@ const configured = {
   MEDIA_CLEANUP_HYPERDRIVE: {
     connectionString: "postgresql://cleanup.invalid/db",
   },
+};
+
+/** The billing e-mails on, with what they need (no real key, no real box). */
+const billingEmailOn = {
+  AUTH_EMAIL_FROM: "Polaris <avisos@example.invalid>",
+  AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
+  BETTER_AUTH_BASE_URL: "https://app.example.invalid",
+  BILLING_SELF_SERVICE_ENABLED: "true",
+  BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
+  RESEND_API_KEY: "re_not_a_key",
 };
 
 /** The scheduler's state as the database gives it: every job due, every lease free. */
@@ -157,6 +190,11 @@ describe("the scheduled maintenance", () => {
     mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     mocks.runWooviReconciliation.mockResolvedValue(null);
     mocks.runWelcomeNoticeSweep.mockResolvedValue(null);
+    mocks.handOverOwedBillingNotices.mockResolvedValue(quietHandover);
+    mocks.createBillingNoticeRecipientClient.mockReturnValue({
+      close: mocks.billingRecipientsClose,
+    });
+    mocks.billingRecipientsClose.mockResolvedValue(undefined);
     mocks.rearmRenewalCancellations.mockResolvedValue({
       inserted: 0,
       rearmed: 0,
@@ -291,6 +329,10 @@ describe("the scheduled maintenance", () => {
       order.push("rearm");
       return Promise.resolve({ inserted: 1, rearmed: 0 });
     });
+    mocks.handOverOwedBillingNotices.mockImplementation(() => {
+      order.push("handover");
+      return Promise.resolve(quietHandover);
+    });
     mocks.runWooviReconciliation.mockImplementation(() => {
       order.push("woovi");
       return Promise.resolve({
@@ -318,6 +360,7 @@ describe("the scheduled maintenance", () => {
       "maintenance",
       "rearm",
       "refund net",
+      "handover",
       "woovi",
       "unclaimed",
     ]);
@@ -382,6 +425,41 @@ describe("the scheduled maintenance", () => {
     expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
     expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the billing notices over on the billing connection, the e-mail only with its switch, and a failure makes the run incomplete without stopping the rest (ADR 0104)", async () => {
+    mocks.handOverOwedBillingNotices.mockRejectedValue(
+      new Error("handover_failed")
+    );
+    await expect(runScheduled(configured)).rejects.toThrow("handover_failed");
+    const [off] = mocks.handOverOwedBillingNotices.mock.calls[0] ?? [];
+    expect(off.billingEmail).toBeNull();
+    expect(off.welcomeEmail).toBeNull();
+    expect(mocks.createBillingNoticeRecipientClient).not.toHaveBeenCalled();
+    expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
+    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+
+    mocks.handOverOwedBillingNotices.mockResolvedValue(quietHandover);
+    // the authentication role also runs its own jobs in this tick
+    mocks.createAuthLoginLockMaintenanceClient.mockReturnValue({
+      close: mocks.loginLockClose.mockResolvedValue(undefined),
+      expire: mocks.loginLockExpire.mockResolvedValue(0),
+    });
+    mocks.createAuthUnverifiedUserMaintenanceClient.mockReturnValue({
+      close: mocks.unverifiedUserClose.mockResolvedValue(undefined),
+      purge: mocks.unverifiedUserPurge.mockResolvedValue(0),
+    });
+    await expect(
+      runScheduled({ ...configured, ...billingEmailOn })
+    ).resolves.toBeUndefined();
+    const [on] = mocks.handOverOwedBillingNotices.mock.calls[1] ?? [];
+    expect(on.billingEmail?.supportEmail).toBe("suporte@example.invalid");
+    expect(on.welcomeEmail).toBeNull();
+    expect(mocks.createBillingNoticeRecipientClient).toHaveBeenCalledWith(
+      "postgresql://auth.invalid/db"
+    );
+    expect(mocks.billingRecipientsClose).toHaveBeenCalledTimes(1);
   });
 
   it("reports a failed settling of the unclaimed trials", async () => {
@@ -1228,6 +1306,109 @@ describe("the queue consumer", () => {
       await runQueue(configured, sent);
 
       expect(mocks.handleClosureNotice).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("the billing notice", () => {
+    const billingNotice = (noticeId: string, eventId: string) => ({
+      attempt: 1,
+      correlationId: "req-4",
+      event: { noticeId },
+      eventId,
+      idempotencyKey: `billing.notice:${noticeId}`,
+      organizationId: "org_1",
+      type: "billing.notice",
+      version: 1,
+    });
+
+    beforeEach(() => {
+      mocks.createBillingStore.mockReturnValue({ close: mocks.billingClose });
+      mocks.billingClose.mockResolvedValue(undefined);
+      mocks.createBillingNoticeRecipientClient.mockReturnValue({
+        close: mocks.billingRecipientsClose,
+      });
+      mocks.billingRecipientsClose.mockResolvedValue(undefined);
+    });
+
+    it("runs on the default queue with the billing role, the e-mail off by default, acks and closes", async () => {
+      mocks.handleBillingNotice.mockResolvedValue("skipped");
+      const sent = message(
+        billingNotice(
+          "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a40",
+          "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a41"
+        )
+      );
+      await runQueue(configured, sent);
+
+      expect(mocks.createBillingStore).toHaveBeenCalledWith(
+        "postgresql://billing.invalid/db"
+      );
+      expect(mocks.handleBillingNotice).toHaveBeenCalledTimes(1);
+      const [dependencies, envelope] =
+        mocks.handleBillingNotice.mock.calls[0] ?? [];
+      expect(dependencies.billingEmail).toBeNull();
+      expect(dependencies.welcomeEmail).toBeNull();
+      expect(envelope).toMatchObject({
+        eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a41",
+        organizationId: "org_1",
+      });
+      expect(mocks.createBillingNoticeRecipientClient).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+      expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("gives the consumer the billing e-mail with its switch and the authentication role, and closes both", async () => {
+      mocks.handleBillingNotice.mockResolvedValue("sent");
+      await runQueue(
+        { ...configured, ...billingEmailOn },
+        message(
+          billingNotice(
+            "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a42",
+            "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a43"
+          )
+        )
+      );
+      const [dependencies] = mocks.handleBillingNotice.mock.calls[0] ?? [];
+      expect(dependencies.billingEmail?.appOrigin).toBe(
+        "https://app.example.invalid"
+      );
+      expect(mocks.createBillingNoticeRecipientClient).toHaveBeenCalledWith(
+        "postgresql://auth.invalid/db"
+      );
+      expect(mocks.billingRecipientsClose).toHaveBeenCalledTimes(1);
+      expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries when the provider fails, and closes the connections", async () => {
+      mocks.handleBillingNotice.mockRejectedValue(
+        new Error("billing_notice_email_retry")
+      );
+      const sent = message(
+        billingNotice(
+          "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a44",
+          "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a45"
+        )
+      );
+      await runQueue({ ...configured, ...billingEmailOn }, sent);
+
+      expect(sent.retry).toHaveBeenCalledTimes(1);
+      expect(sent.ack).not.toHaveBeenCalled();
+      expect(mocks.billingRecipientsClose).toHaveBeenCalledTimes(1);
+      expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("acks without running where the billing role is not provisioned", async () => {
+      const sent = message(
+        billingNotice(
+          "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a46",
+          "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a47"
+        )
+      );
+      await runQueue({ MEDIA_BUCKET: {} }, sent);
+
+      expect(mocks.handleBillingNotice).not.toHaveBeenCalled();
+      expect(mocks.createBillingStore).not.toHaveBeenCalled();
       expect(sent.ack).toHaveBeenCalledTimes(1);
     });
   });

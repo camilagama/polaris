@@ -9,6 +9,7 @@ import {
 } from "@polaris/db/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
+import { createBillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
 import { app } from "../src/server/app";
 import {
   reconcileRemovedMedia,
@@ -21,6 +22,12 @@ import {
   runUnclaimedTrialSettlement,
   runWooviReconciliation,
 } from "../src/server/billing/maintenance";
+import {
+  billingNoticeDependenciesOf,
+  type BillingNoticeStore,
+  handleBillingNotice,
+  handOverOwedBillingNotices,
+} from "../src/server/billing/notice-consumer";
 import { billingProviderPortOf } from "../src/server/billing/provider-ports";
 import {
   handleRenewalCancelRequested,
@@ -144,9 +151,9 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * Applies the events that were received but not processed, then what time itself
  * causes, asks again for the renewal cancellations still owed, cancels the renewal
  * a refund or a chargeback left alive (and flags the owner's refunds still
- * pending, ADR 0104), records the welcome of the new stores (with its switch on), reads Woovi's
- * subscriptions again (the reconciliation), then settles the trials no
- * reservation paid for (ADR 0101).
+ * pending, ADR 0104), records the welcome of the new stores (with its switch on), hands over the billing
+ * notices the queue left owed (ADR 0104), reads Woovi's subscriptions again (the reconciliation), then
+ * settles the trials no reservation paid for (ADR 0101).
  */
 async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
@@ -200,6 +207,14 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     failures.push(error);
   }
   try {
+    // after the sweep and the welcome, which record notices: the ones due that the queue left owed (a receipt or a
+    // cancellation that waited, a delivery the queue gave up on) go out here, one at a time
+    const handover = await runBillingNoticeHandover(env, store);
+    logger.info("billing_notice_handover_complete", { ...handover });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
     // the reconciliation with Woovi (ADR 0101, PR 6): what a webhook answered without a fact is read here
     const reconciled = await runWooviReconciliation(env, store);
     if (reconciled) {
@@ -220,6 +235,23 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     await quietly(() => store.close());
   }
   return finished(failures);
+}
+
+/** The hourly handover of the billing notices on the billing connection the caller owns (ADR 0104, decision 7). */
+async function runBillingNoticeHandover(
+  env: WorkerBindings,
+  store: BillingNoticeStore
+) {
+  const wired = billingNoticeDependenciesOf(
+    env,
+    store,
+    createBillingNoticeRecipientClient
+  );
+  try {
+    return await handOverOwedBillingNotices(wired.dependencies);
+  } finally {
+    await quietly(wired.close);
+  }
 }
 
 /** The data export job (ADR 0078) on a connection the caller owns; the hourly run and the queue consumer share it. */
@@ -585,6 +617,33 @@ async function handleRenewalCancelEvent(
 }
 
 /**
+ * The handler of `billing.notice` (ADR 0104, decision 7): a notice of the billing cycle, or the welcome, was recorded.
+ * Without the billing role there is no notice to read, and a retry would not change it. A failure of the provider or
+ * the network throws: the queue tries again, then the dead-letter queue (an incident), and the hourly handover after it.
+ */
+async function handleBillingNoticeEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("billing_not_configured");
+  }
+  const store = createBillingStore(connectionString);
+  const wired = billingNoticeDependenciesOf(
+    env,
+    store,
+    createBillingNoticeRecipientClient
+  );
+  try {
+    await handleBillingNotice(wired.dependencies, envelope);
+  } finally {
+    await quietly(wired.close);
+    await quietly(() => store.close());
+  }
+}
+
+/**
  * The handler of `organization.closure_notice` (ADR 0102, amended): a milestone of a closure arrived. Without the
  * privacy role there is nothing to read, and a retry would not change it.
  */
@@ -683,6 +742,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
+    "billing.notice": (envelope: QueueEnvelope) =>
+      handleBillingNoticeEvent(env, envelope),
     "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>
       handleRenewalCancelEvent(env, envelope),
     "data_export.requested": (envelope: QueueEnvelope) =>

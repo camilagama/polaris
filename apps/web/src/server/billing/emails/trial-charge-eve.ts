@@ -26,7 +26,6 @@ export function trialChargeEveContent(
   const subject = `Amanhã o Polaris Pro será cobrado: ${amount}`;
   return {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription",
     heading: subject,
     paragraphs: [
@@ -36,5 +35,6 @@ export function trialChargeEveContent(
     ],
     preview: `A primeira cobrança da loja ${store.name} é amanhã.`,
     subject,
+    summary: null,
   };
 }

@@ -15,6 +15,8 @@ import {
   planMethodOf,
   refundWindowClosesAt,
 } from "@polaris/domain/billing/plan-view";
+import type { BillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
+import type { BillingStore } from "@polaris/db/billing-store";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { localDate } from "@polaris/domain/organization/closure-deadlines";
@@ -125,7 +127,7 @@ export interface BillingNoticeStoreFacts {
   variants: number;
 }
 
-export interface BillingNoticeStores {
+interface BillingNoticeStores {
   /** Null when there is no such store any more (purged): the notice has no one to go to. */
   storeOf: (
     noticeId: string,
@@ -137,7 +139,7 @@ export type BillingNoticeRecipient =
   | { email: string; verified: true }
   | { verified: false };
 
-export interface BillingNoticeRecipients {
+interface BillingNoticeRecipients {
   /** Null when the notice is not owed any more or has nobody to go to (the store purged, the person gone). */
   recipient: (
     noticeId: string,
@@ -146,7 +148,7 @@ export interface BillingNoticeRecipients {
 }
 
 /** Why the consumer itself did not send: nobody to send to, or an address nobody proved. */
-export type BillingNoticeDeliverySkip = "email_not_verified" | "no_recipient";
+type BillingNoticeDeliverySkip = "email_not_verified" | "no_recipient";
 
 /** The provider's configuration (secrets): never logged. */
 export interface BillingNoticeEmailConfig {
@@ -229,6 +231,80 @@ function originOf(value: string | undefined): string | null {
     // not a URL: the e-mail stays off
   }
   return null;
+}
+
+/** What the consumer and the handover use of the billing store (the billing role). */
+export type BillingNoticeStore = Pick<
+  BillingStore,
+  | "claimNotice"
+  | "listOwedNotices"
+  | "markNoticeFailed"
+  | "markNoticeSent"
+  | "markNoticeSkipped"
+  | "readNoticeStore"
+>;
+
+interface BillingNoticeBindings {
+  AUTH_EMAIL_FROM?: string;
+  AUTH_HYPERDRIVE?: { connectionString?: string };
+  BETTER_AUTH_BASE_URL?: string;
+  BILLING_SELF_SERVICE_ENABLED?: string;
+  BILLING_SUPPORT_EMAIL?: string;
+  RESEND_API_KEY?: string;
+  WELCOME_EMAIL_ENABLED?: string;
+}
+
+/**
+ * The consumer's dependencies in the Worker: the notice and its store through the billing store (the billing role),
+ * and the address through `billing_notice_recipient` (the authentication role), opened only when an e-mail is on. The
+ * billing e-mails follow `BILLING_SELF_SERVICE_ENABLED`, the welcome `WELCOME_EMAIL_ENABLED`; either one needs the
+ * provider's key, the sender, the support box, the app's origin and the authentication role, or it stays off and its
+ * notices are skipped `email_not_configured`.
+ */
+export function billingNoticeDependenciesOf(
+  bindings: BillingNoticeBindings,
+  store: BillingNoticeStore,
+  openRecipients: (connectionString: string) => BillingNoticeRecipientClient
+): { close: () => Promise<void>; dependencies: BillingNoticeDependencies } {
+  const authConnection = bindings.AUTH_HYPERDRIVE?.connectionString;
+  const billingEmail = billingNoticeEmailConfig(
+    bindings,
+    bindings.BILLING_SELF_SERVICE_ENABLED
+  );
+  const welcomeEmail = billingNoticeEmailConfig(
+    bindings,
+    bindings.WELCOME_EMAIL_ENABLED
+  );
+  const recipients =
+    authConnection && (billingEmail || welcomeEmail)
+      ? openRecipients(authConnection)
+      : null;
+  return {
+    close: async () => {
+      await recipients?.close();
+    },
+    dependencies: {
+      billingEmail: recipients ? billingEmail : null,
+      notices: {
+        claim: (noticeId, organizationId) =>
+          store.claimNotice(noticeId, organizationId),
+        listOwed: (now, limit) => store.listOwedNotices(now, limit),
+        markFailed: (noticeId, organizationId, code) =>
+          store.markNoticeFailed(noticeId, organizationId, code),
+        markSent: (noticeId, organizationId) =>
+          store.markNoticeSent(noticeId, organizationId),
+        markSkipped: (noticeId, organizationId, reason) =>
+          store.markNoticeSkipped(noticeId, organizationId, reason),
+      },
+      // never called with both e-mails off: the notice is skipped before the address is read
+      recipients: recipients ?? { recipient: () => Promise.resolve(null) },
+      stores: {
+        storeOf: (noticeId, organizationId) =>
+          store.readNoticeStore(noticeId, organizationId),
+      },
+      welcomeEmail: recipients ? welcomeEmail : null,
+    },
+  };
 }
 
 /** The provider's link the notice was recorded under, when it can be told: the key of E-A, E-B, E-C1, or its ledger row. */

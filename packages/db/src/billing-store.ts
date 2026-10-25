@@ -21,7 +21,12 @@ import {
   normalizeGrant,
 } from "@polaris/domain/billing/grants";
 import {
+  type BillingNoticeKind,
   type BillingNoticeMark,
+  isBillingNoticeKind,
+  noticesFor,
+  renewalFailedOf,
+  sweepNoticesFor,
   welcomeNotice,
 } from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
@@ -92,8 +97,53 @@ interface ProcessedBillingEvent {
 
 export interface BillingSweepReport {
   failed: number;
+  /** The notices of the hourly sweep recorded (E-B, the reminders of E-C2, the yearly renewal; ADR 0104). */
+  noticesRecorded: number;
   scanned: number;
   transitioned: number;
+}
+
+/**
+ * A notice still owed as the billing role reads it again to send it (ADR 0104, decision 7): the notice, the record of
+ * its store now and what its rule needs. The money as text with its two decimals (money.md), the day as text.
+ */
+export interface StoredBillingNotice {
+  /** The cycle of the current link: the record's while Pro, else the one the method was set up with. */
+  cycleMonths: BillingCycleMonths | null;
+  dedupeKey: string;
+  dueAt: Date;
+  /** The ledger row the notice names (E4, E7, E-R), read again; null for the others or when it is not there. */
+  event: { fact: BillingFact; id: string; providerRef: string | null } | null;
+  firstChargeAmount: string | null;
+  firstChargeAt: Date | null;
+  firstChargeEventId: string | null;
+  firstChargeOn: string | null;
+  kind: BillingNoticeKind;
+  noticeId: string;
+  organizationId: string;
+  overLimitSince: Date | null;
+  /** A charge was applied to the store after the notice was recorded. */
+  paidSinceNotice: boolean;
+  priceAmount: string | null;
+  provider: string | null;
+  providerRef: string | null;
+  record: BillingRecord;
+  recordedAt: Date;
+  refundRequestedAt: Date | null;
+  /** When the other E-C2 of the same paid period went out (or, for a d0 still owed, when it was recorded). */
+  renewalFailedSentAt: Date[];
+  /** When the E-A of the current link went out. */
+  trialStartedSentAt: Date | null;
+}
+
+/** What `billing_notice_store` answers of the store of a notice still owed, with the time zone named as the ports name it. */
+export interface BillingNoticeStoreFacts {
+  closed: boolean;
+  name: string;
+  ownerActive: boolean;
+  timeZone: string;
+  variantLimit: number;
+  variants: number;
 }
 
 /** What one hourly pass of the retry by state did to the renewal cancellations owed by closures (ADR 0074, L4). */
@@ -450,6 +500,44 @@ export interface BillingStore {
     now?: Date,
     limit?: number
   ) => Promise<WelcomeNoticeReport>;
+  /**
+   * The consumer of `billing.notice` (ADR 0104, decision 7): a notice still owed (neither sent, failed nor skipped) of
+   * that store, read again with the record now; null otherwise.
+   */
+  claimNotice: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<StoredBillingNotice | null>;
+  /**
+   * The notices owed and due that the queue left behind (recorded at least 10 minutes ago), oldest due first, at most
+   * `limit`: the hourly handover sends them.
+   */
+  listOwedNotices: (
+    now: Date,
+    limit: number
+  ) => Promise<{ noticeId: string; organizationId: string }[]>;
+  /** Marks a notice still owed as sent, once; false when it was settled meanwhile. */
+  markNoticeSent: (noticeId: string, organizationId: string) => Promise<boolean>;
+  /** Marks a notice still owed as refused by the provider for good, with a short code. */
+  markNoticeFailed: (
+    noticeId: string,
+    organizationId: string,
+    code: string
+  ) => Promise<boolean>;
+  /** Marks a notice still owed as not sent, with its reason (a short code). */
+  markNoticeSkipped: (
+    noticeId: string,
+    organizationId: string,
+    reason: string
+  ) => Promise<boolean>;
+  /**
+   * The store of a notice still owed, through `billing_notice_store` (owned by `polaris_billing_owner`, executed only
+   * by the billing role): null for a notice not owed, of another store, or of a store purged.
+   */
+  readNoticeStore: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<BillingNoticeStoreFacts | null>;
   /** Stores an event once; a redelivery returns the same ID with `duplicate: true`. */
   recordEvent: (
     input: RecordBillingEventInput
@@ -682,6 +770,368 @@ async function recordNotices(
     recorded += 1;
   }
   return recorded;
+}
+
+const NOTICE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The kinds whose key is the ID of the ledger row they speak of. */
+const NOTICES_OF_AN_EVENT: readonly BillingNoticeKind[] = [
+  "charge_receipt",
+  "renewal_cancelled",
+  "refund_confirmed",
+];
+/** A notice the queue has had this long to send is the hourly handover's. */
+const NOTICE_HANDOVER_AFTER_MS = 10 * 60_000;
+const OWED =
+  "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
+
+interface NoticeRow extends BillingRow {
+  dedupe_key: string;
+  due_at: Date;
+  first_charge_amount: string | null;
+  first_charge_at: Date | null;
+  first_charge_event_id: string | null;
+  first_charge_on: string | null;
+  has_record: boolean;
+  kind: string;
+  notice_id: string;
+  notice_organization_id: string;
+  paid_since_notice: boolean;
+  price_amount: string | null;
+  recorded_at: Date;
+  refund_requested_at: Date | null;
+  trial_started_sent_at: Date | null;
+}
+
+/** A store with no billing record yet (a welcome): Free, as `lockRecord` would create it. */
+const NO_RECORD: BillingRecord = {
+  accessEndsAt: null,
+  cancelAtPeriodEnd: false,
+  cycleMonths: null,
+  lastFactAt: null,
+  pendingCycleMonths: null,
+  revoked: null,
+  state: "free",
+  trialConsumed: false,
+};
+
+/**
+ * Reads a notice still owed again, with the record of its store now and what its rule needs (ADR 0104, decision 7).
+ * Only the billing role: the notice, the record and the ledger; the store itself is `billing_notice_store`'s.
+ */
+async function claimOwedNotice(
+  pool: Pool,
+  noticeId: string,
+  organizationId: string
+): Promise<StoredBillingNotice | null> {
+  if (!NOTICE_ID_PATTERN.test(noticeId)) {
+    return null;
+  }
+  const found = await pool.query<NoticeRow>(
+    `SELECT notice.id::text AS notice_id, notice.organization_id AS notice_organization_id, notice.kind,
+            notice.dedupe_key, notice.due_at, notice.recorded_at, billing.organization_id IS NOT NULL AS has_record,
+            ${BILLING_COLUMNS.split(", ")
+              .map((column) => `billing.${column}`)
+              .join(", ")},
+            to_char(billing.first_charge_on, 'YYYY-MM-DD') AS first_charge_on, billing.first_charge_at,
+            round(billing.first_charge_amount, 2)::text AS first_charge_amount,
+            billing.first_charge_event_id::text AS first_charge_event_id,
+            round(billing.price_amount, 2)::text AS price_amount, billing.refund_requested_at,
+            EXISTS (
+              SELECT 1 FROM public.billing_events AS charge
+               WHERE charge.organization_id = notice.organization_id AND charge.fact_type = 'charge_succeeded'
+                 AND charge.status = 'applied' AND charge.processed_at > notice.recorded_at
+            ) AS paid_since_notice,
+            (SELECT started.sent_at FROM public.billing_notices AS started
+              WHERE started.organization_id = notice.organization_id AND started.kind = 'trial_started'
+                AND started.dedupe_key = billing.provider_ref) AS trial_started_sent_at
+       FROM public.billing_notices AS notice
+       LEFT JOIN public.organization_billing AS billing ON billing.organization_id = notice.organization_id
+      WHERE notice.id = $1::uuid AND notice.organization_id = $2
+        AND notice.sent_at IS NULL AND notice.failed_at IS NULL AND notice.skipped_reason IS NULL`,
+    [noticeId, organizationId]
+  );
+  const [row] = found.rows;
+  if (!(row && isBillingNoticeKind(row.kind))) {
+    return null;
+  }
+  const kind = row.kind;
+  const record = row.has_record ? toRecord(row) : NO_RECORD;
+  return {
+    cycleMonths:
+      record.cycleMonths ??
+      (await linkCycleOf(pool, organizationId, row.provider_ref)),
+    dedupeKey: row.dedupe_key,
+    dueAt: row.due_at,
+    event: NOTICES_OF_AN_EVENT.includes(kind)
+      ? await noticeEventOf(pool, organizationId, row.dedupe_key)
+      : null,
+    firstChargeAmount: row.first_charge_amount,
+    firstChargeAt: row.first_charge_at,
+    firstChargeEventId: row.first_charge_event_id,
+    firstChargeOn: row.first_charge_on,
+    kind,
+    noticeId: row.notice_id,
+    organizationId: row.notice_organization_id,
+    overLimitSince: row.over_limit_since,
+    paidSinceNotice: row.paid_since_notice,
+    priceAmount: row.price_amount,
+    provider: row.provider,
+    providerRef: row.provider_ref,
+    record,
+    recordedAt: row.recorded_at,
+    refundRequestedAt: row.refund_requested_at,
+    renewalFailedSentAt:
+      kind === "renewal_failed"
+        ? await renewalFailedSentAtOf(pool, organizationId, row)
+        : [],
+    trialStartedSentAt: row.trial_started_sent_at,
+  };
+}
+
+/**
+ * The cycle the method of the current link was set up with: its `trial_method_ready` (E-C1 is sent after the record
+ * dropped the cycle with the trial that ended unpaid).
+ */
+async function linkCycleOf(
+  pool: Pool,
+  organizationId: string,
+  providerRef: string | null
+): Promise<BillingCycleMonths | null> {
+  if (!providerRef) {
+    return null;
+  }
+  const result = await pool.query<{ cycle_months: string | null }>(
+    `SELECT fact ->> 'cycleMonths' AS cycle_months FROM public.billing_events
+      WHERE organization_id = $1 AND provider_ref = $2 AND fact_type = 'trial_method_ready'
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1`,
+    [organizationId, providerRef]
+  );
+  const value = result.rows[0]?.cycle_months;
+  return value === undefined || value === null ? null : cycle(Number(value));
+}
+
+/** The ledger row a receipt, a cancellation or a refund names, of that store; null when it is not there. */
+async function noticeEventOf(
+  pool: Pool,
+  organizationId: string,
+  eventId: string
+): Promise<StoredBillingNotice["event"]> {
+  if (!NOTICE_ID_PATTERN.test(eventId)) {
+    return null;
+  }
+  const result = await pool.query<{
+    fact: unknown;
+    id: string;
+    provider_ref: string | null;
+  }>(
+    "SELECT id::text AS id, fact, provider_ref FROM public.billing_events WHERE id = $1::uuid AND organization_id = $2",
+    [eventId, organizationId]
+  );
+  const [row] = result.rows;
+  const fact = row ? parseBillingFact(row.fact) : null;
+  return row && fact
+    ? { fact, id: row.id, providerRef: row.provider_ref }
+    : null;
+}
+
+/**
+ * When the other E-C2 of the same paid period went out, or, for a d0 still owed, when it was recorded: the d0 always
+ * goes, so a reminder of its day waits for it (`same_day`).
+ */
+async function renewalFailedSentAtOf(
+  pool: Pool,
+  organizationId: string,
+  notice: Pick<NoticeRow, "dedupe_key" | "notice_id">
+): Promise<Date[]> {
+  const key = renewalFailedOf(notice.dedupe_key);
+  if (!key) {
+    return [];
+  }
+  const prefix = `${key.paidEnd.toISOString()}:`;
+  const others = await pool.query<{
+    dedupe_key: string;
+    failed_at: Date | null;
+    recorded_at: Date;
+    sent_at: Date | null;
+    skipped_reason: string | null;
+  }>(
+    `SELECT dedupe_key, sent_at, failed_at, skipped_reason, recorded_at FROM public.billing_notices
+      WHERE organization_id = $1 AND kind = 'renewal_failed' AND id <> $2::uuid
+        AND left(dedupe_key, char_length($3)) = $3`,
+    [organizationId, notice.notice_id, prefix]
+  );
+  const at: Date[] = [];
+  for (const other of others.rows) {
+    if (other.sent_at) {
+      at.push(other.sent_at);
+    } else if (
+      renewalFailedOf(other.dedupe_key)?.milestone === "d0" &&
+      other.failed_at === null &&
+      other.skipped_reason === null
+    ) {
+      at.push(other.recorded_at);
+    }
+  }
+  return at;
+}
+
+/** The outcome of a notice still owed, written once; false when it was settled meanwhile (or is not of that store). */
+async function markOwedNotice(
+  pool: Pool,
+  noticeId: string,
+  organizationId: string,
+  outcome:
+    | { failureCode: string }
+    | { sent: true }
+    | { skippedReason: string }
+): Promise<boolean> {
+  if (!NOTICE_ID_PATTERN.test(noticeId)) {
+    return false;
+  }
+  const [assignment, value] =
+    "sent" in outcome
+      ? ["sent_at = pg_catalog.now()", null]
+      : "failureCode" in outcome
+        ? [
+            "failed_at = pg_catalog.now(), failure_code = $3",
+            outcome.failureCode,
+          ]
+        : ["skipped_reason = $3", outcome.skippedReason];
+  const result = await pool.query(
+    `UPDATE public.billing_notices SET ${assignment}
+      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}`,
+    value === null ? [noticeId, organizationId] : [noticeId, organizationId, value]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+interface NoticeStoreRow {
+  closed?: unknown;
+  name?: unknown;
+  ownerActive?: unknown;
+  timezone?: unknown;
+  variantLimit?: unknown;
+  variants?: unknown;
+}
+
+/** The store of a notice still owed, read by `billing_notice_store`; its `timezone` is the ports' `timeZone`. */
+async function readOwedNoticeStore(
+  pool: Pool,
+  noticeId: string,
+  organizationId: string
+): Promise<BillingNoticeStoreFacts | null> {
+  if (!NOTICE_ID_PATTERN.test(noticeId)) {
+    return null;
+  }
+  // named arguments: the function takes the store first, the port the notice first, and a swap answers null
+  const result = await pool.query<{ facts: NoticeStoreRow | null }>(
+    "SELECT public.billing_notice_store(p_organization => $2::text, p_notice => $1::uuid) AS facts",
+    [noticeId, organizationId]
+  );
+  const facts = result.rows[0]?.facts;
+  if (
+    !facts ||
+    typeof facts.name !== "string" ||
+    typeof facts.timezone !== "string" ||
+    facts.timezone.length === 0 ||
+    typeof facts.closed !== "boolean" ||
+    typeof facts.ownerActive !== "boolean" ||
+    typeof facts.variants !== "number" ||
+    typeof facts.variantLimit !== "number"
+  ) {
+    return null;
+  }
+  return {
+    closed: facts.closed,
+    name: facts.name,
+    ownerActive: facts.ownerActive,
+    timeZone: facts.timezone,
+    variantLimit: facts.variantLimit,
+    variants: facts.variants,
+  };
+}
+
+/**
+ * The notices of the hourly sweep (ADR 0104, decision 7): for each store `billing_notice_sweep_zones` names (in a
+ * trial, in grace, or active on the yearly cycle, with its time zone), what `sweepNoticesFor` finds due in its local
+ * hour, each store's notices and their events in one transaction. A store with no time zone is passed over, never
+ * read as São Paulo's; a store that fails does not stop the others.
+ */
+async function sweepNotices(
+  pool: Pool,
+  now: Date
+): Promise<{ failed: number; recorded: number }> {
+  const zones = await pool.query<{
+    organization_id: string;
+    timezone: string | null;
+  }>(
+    "SELECT organization_id, timezone FROM public.billing_notice_sweep_zones()"
+  );
+  const zoned = zones.rows.filter(
+    (zone): zone is { organization_id: string; timezone: string } =>
+      typeof zone.timezone === "string" && zone.timezone.length > 0
+  );
+  if (zoned.length < zones.rows.length) {
+    logger.warn("billing_notice_sweep_without_time_zone", {
+      stores: zones.rows.length - zoned.length,
+    });
+  }
+  if (zoned.length === 0) {
+    return { failed: 0, recorded: 0 };
+  }
+  const records = await pool.query<
+    BillingRow & { first_charge_on: string | null }
+  >(
+    `SELECT ${BILLING_COLUMNS}, to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on
+       FROM public.organization_billing WHERE organization_id = ANY($1::text[])`,
+    [zoned.map((zone) => zone.organization_id)]
+  );
+  const byStore = new Map(records.rows.map((row) => [row.organization_id, row]));
+  let failed = 0;
+  let recorded = 0;
+  for (const zone of zoned) {
+    const row = byStore.get(zone.organization_id);
+    if (!row) {
+      continue;
+    }
+    try {
+      const marks = sweepNoticesFor({
+        firstChargeOn: row.first_charge_on,
+        now,
+        providerRef: row.provider_ref,
+        record: toRecord(row),
+        timeZone: zone.timezone,
+      });
+      if (marks.length === 0) {
+        continue;
+      }
+      // biome-ignore lint/performance/noAwaitInLoops: one store at a time keeps the load on the billing role bounded
+      recorded += await inTransaction(pool, (client) =>
+        recordNotices(client, zone.organization_id, marks)
+      );
+    } catch (error: unknown) {
+      failed += 1;
+      logger.error("billing_notice_sweep_failed", {
+        ...describeError(error),
+        organizationId: opaqueId(zone.organization_id),
+      });
+    }
+  }
+  return { failed, recorded };
+}
+
+/** When the owner asked for the refund of the current link (E7 then waits a day); read in the caller's transaction. */
+async function refundRequestedAtOf(
+  client: PoolClient,
+  organizationId: string
+): Promise<Date | null> {
+  const result = await client.query<{ refund_requested_at: Date | null }>(
+    "SELECT refund_requested_at FROM public.organization_billing WHERE organization_id = $1",
+    [organizationId]
+  );
+  return result.rows[0]?.refund_requested_at ?? null;
 }
 
 async function inTransaction<T>(
@@ -1190,6 +1640,25 @@ async function processInTransaction(
     fact,
     organizationId,
   });
+  // the notices this applied fact causes and their outbox events, in this transaction (ADR 0104, decision 7): an
+  // ignored or duplicated fact never gets here, and the same notice twice records one
+  await recordNotices(
+    client,
+    organizationId,
+    noticesFor({
+      after: result.record,
+      before,
+      eventId,
+      fact,
+      now,
+      providerRef: row.provider_ref,
+      refundRequestedAt:
+        fact.type === "subscription_cancelled"
+          ? await refundRequestedAtOf(client, organizationId)
+          : null,
+      transition: result.transition,
+    })
+  );
   await finishEvent(
     client,
     eventId,
@@ -1258,6 +1727,21 @@ async function sweepOne(
       return false;
     }
     await saveRecord(client, organizationId, before, due.record, now);
+    // what time ended tells the owner: the grace that began (E-C2 on its day) or the access that ended (E-D)
+    await recordNotices(
+      client,
+      organizationId,
+      noticesFor({
+        after: due.record,
+        before,
+        eventId: null,
+        fact: null,
+        now,
+        providerRef: row.provider_ref,
+        refundRequestedAt: null,
+        transition: due.transition,
+      })
+    );
     await writeLedger(
       client,
       {
@@ -1357,6 +1841,7 @@ async function sweepAbandonedTrialSetups(
   );
   const report: BillingSweepReport = {
     failed: 0,
+    noticesRecorded: 0,
     scanned: stale.rows.length,
     transitioned: 0,
   };
@@ -1494,6 +1979,7 @@ async function sweepExpiredGrants(
   );
   const report: BillingSweepReport = {
     failed: 0,
+    noticesRecorded: 0,
     scanned: candidates.rows.length,
     transitioned: 0,
   };
@@ -2613,6 +3099,34 @@ export function createBillingStore(
         return { candidates: candidates.rows.length, recorded };
       });
     },
+    claimNotice: (noticeId, organizationId) =>
+      claimOwedNotice(pool, noticeId, organizationId),
+    async listOwedNotices(now, limit) {
+      const result = await pool.query<{
+        notice_id: string;
+        organization_id: string;
+      }>(
+        `SELECT id::text AS notice_id, organization_id FROM public.billing_notices
+          WHERE ${OWED} AND due_at <= $1 AND recorded_at <= $2
+          ORDER BY due_at, id
+          LIMIT $3`,
+        [now, new Date(now.getTime() - NOTICE_HANDOVER_AFTER_MS), limit]
+      );
+      return result.rows.map((row) => ({
+        noticeId: row.notice_id,
+        organizationId: row.organization_id,
+      }));
+    },
+    markNoticeFailed: (noticeId, organizationId, code) =>
+      markOwedNotice(pool, noticeId, organizationId, { failureCode: code }),
+    markNoticeSent: (noticeId, organizationId) =>
+      markOwedNotice(pool, noticeId, organizationId, { sent: true }),
+    markNoticeSkipped: (noticeId, organizationId, reason) =>
+      markOwedNotice(pool, noticeId, organizationId, {
+        skippedReason: reason,
+      }),
+    readNoticeStore: (noticeId, organizationId) =>
+      readOwedNoticeStore(pool, noticeId, organizationId),
     async recordEvent(input) {
       const fact = serializeBillingFact(input.fact);
       const inserted = await pool.query<{ id: string }>(
@@ -2910,6 +3424,7 @@ export function createBillingStore(
       );
       const report: BillingSweepReport = {
         failed: 0,
+        noticesRecorded: 0,
         scanned: due.rows.length,
         transitioned: 0,
       };
@@ -2946,6 +3461,15 @@ export function createBillingStore(
       } catch (error: unknown) {
         report.failed += 1;
         logger.error("billing_trial_setup_sweep_failed", describeError(error));
+      }
+      // and, after what time ended, the notices of the local hour of each store (E-B, E-C2, the yearly renewal)
+      try {
+        const notices = await sweepNotices(pool, now);
+        report.failed += notices.failed;
+        report.noticesRecorded = notices.recorded;
+      } catch (error: unknown) {
+        report.failed += 1;
+        logger.error("billing_notice_sweep_failed", describeError(error));
       }
       return report;
     },

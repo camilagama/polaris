@@ -4,7 +4,7 @@ import {
   FREE_CHANGES,
   openSubscription,
 } from "./content";
-import { lastDayOf } from "./format";
+import { lastDayOf, localDay } from "./format";
 
 /**
  * E7: the renewal was cancelled, by the owner or by the provider (the Pix authorization revoked at the bank). The text
@@ -28,7 +28,6 @@ export function renewalCancelledContent(
   const until = lastDayOf(email.accessEndsAt, store.timeZone);
   return {
     action: openSubscription(store),
-    extra: null,
     footer: "subscription",
     heading: "A renovação do Polaris Pro foi cancelada",
     paragraphs:
@@ -41,12 +40,13 @@ export function renewalCancelledContent(
         : [
             `A renovação do plano Pro da loja ${store.name} foi cancelada. Seu Pro continua até ${until}, o fim do que você já pagou.`,
             `Depois dessa data a loja volta ao plano Free; seus dados e seu histórico ficam. O que muda no Free: ${FREE_CHANGES}.`,
-            `Para assinar de novo, espere essa data. ${NOT_YOU}`,
+            `Se mudar de ideia, dá para assinar de novo a partir de ${localDay(email.accessEndsAt, store.timeZone)}. ${NOT_YOU}`,
           ],
     preview:
       email.phase === "trial"
         ? `Seu teste continua até ${until}.`
         : `Seu Pro continua até ${until}.`,
     subject: "A renovação do Polaris Pro foi cancelada",
+    summary: null,
   };
 }
