@@ -783,7 +783,11 @@ configureLogging({ service: "polaris-web" });
 
 // every invocation counts in the isolate's `seq` (the request log tells a cold request by it); the app counts its own
 export default {
-  fetch: (request: Request, env: WorkerBindings, context?: ExecutionContext) => {
+  fetch: (
+    request: Request,
+    env: WorkerBindings,
+    context?: ExecutionContext
+  ) => {
     if (env.ASSETS && isBuiltAssetRequest(request)) {
       countIsolateInvocation();
       return serveBuiltAsset(request, env.ASSETS);
