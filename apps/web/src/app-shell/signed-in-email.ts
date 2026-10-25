@@ -6,7 +6,24 @@ import { useEffect, useState } from "react";
  * never kept on the device.
  */
 export function useSignedInEmail(): string | null {
-  const [email, setEmail] = useState<string | null>(null);
+  return useSignedInUser().email;
+}
+
+const text = (value: unknown) =>
+  typeof value === "string" && value !== "" ? value : null;
+
+/**
+ * The e-mail and the name of the person signed in, read once from the session (the Assinatura fills the payer of
+ * Pix Automático with them); nothing when the session cannot be read.
+ */
+export function useSignedInUser(): {
+  email: string | null;
+  name: string | null;
+} {
+  const [user, setUser] = useState<{
+    email: string | null;
+    name: string | null;
+  }>({ email: null, name: null });
   useEffect(() => {
     const controller = new AbortController();
     // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
@@ -17,10 +34,14 @@ export function useSignedInEmail(): string | null {
       signal: controller.signal,
     })
       .then((response) => (response.ok ? response.json() : null))
-      .then((session: { user?: { email?: unknown } } | null) => {
-        const value = session?.user?.email;
-        setEmail(typeof value === "string" && value !== "" ? value : null);
-      })
+      .then(
+        (session: { user?: { email?: unknown; name?: unknown } } | null) => {
+          setUser({
+            email: text(session?.user?.email),
+            name: text(session?.user?.name),
+          });
+        }
+      )
       .catch(() => undefined)
       .finally(() => clearTimeout(timer));
     return () => {
@@ -28,5 +49,5 @@ export function useSignedInEmail(): string | null {
       controller.abort();
     };
   }, []);
-  return email;
+  return user;
 }
