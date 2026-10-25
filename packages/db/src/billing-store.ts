@@ -1028,10 +1028,7 @@ async function markOwedNotice(
   pool: Pool,
   noticeId: string,
   organizationId: string,
-  outcome:
-    | { failureCode: string }
-    | { sent: true }
-    | { skippedReason: string }
+  outcome: { failureCode: string } | { sent: true } | { skippedReason: string }
 ): Promise<boolean> {
   if (!NOTICE_ID_PATTERN.test(noticeId)) {
     return false;
