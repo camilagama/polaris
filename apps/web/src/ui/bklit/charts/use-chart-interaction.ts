@@ -54,6 +54,7 @@ interface ChartInteractionResult {
     onTouchStart?: ((event: React.TouchEvent<SVGGElement>) => void) | undefined;
     onTouchMove?: ((event: React.TouchEvent<SVGGElement>) => void) | undefined;
     onTouchEnd?: (() => void) | undefined;
+    onTouchCancel?: (() => void) | undefined;
   };
   interactionStyle: React.CSSProperties;
 }

@@ -675,7 +675,7 @@ test.describe("loja com venda", () => {
     expect(periodCalls(server).length).toBeGreaterThan(before);
   });
 
-  test("o gráfico deixa a página rolar na vertical (pan-y) e a troca 7 → 30 dias mantém o mesmo gráfico (morph, não nova revelação)", async ({
+  test("o gráfico deixa a página rolar na vertical: nenhum touch-action 'none' da caixa do gráfico até a página (pan-y)", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -685,33 +685,56 @@ test.describe("loja com venda", () => {
     const area = chart.locator("[data-chart-area]");
     await expect(area.locator("svg")).toBeVisible();
 
-    // touch-action: the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on
-    // the chart still scrolls the page (a "none" anywhere in the chain takes the vertical gesture away)
-    const touchActions = await area.evaluate((node) =>
-      [node, ...node.querySelectorAll("*")]
-        .map((element) => getComputedStyle(element).touchAction)
-        .filter((value) => value !== "auto")
-    );
-    expect(touchActions.length).toBeGreaterThan(1);
-    expect(new Set(touchActions)).toEqual(new Set(["pan-y"]));
+    // the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on the chart still
+    // scrolls the page: a "none" anywhere between the drawing and the document takes the vertical gesture away
+    const { inside, above } = await area.evaluate((node) => {
+      const value = (element: Element) => getComputedStyle(element).touchAction;
+      const chain: string[] = [];
+      for (
+        let element: Element | null = node;
+        element;
+        element = element.parentElement
+      ) {
+        chain.push(value(element));
+      }
+      return {
+        above: chain,
+        inside: [...node.querySelectorAll("*")]
+          .map(value)
+          .filter((touchAction) => touchAction !== "auto"),
+      };
+    });
+    expect(inside.length).toBeGreaterThan(1);
+    expect(new Set(inside)).toEqual(new Set(["pan-y"]));
+    expect(above).not.toContain("none");
+  });
 
-    // the same element after the change of period: it was not mounted again, so the path morphs
-    await chart
-      .locator("[data-chart]")
-      .evaluate((node) => node.setAttribute("data-first-mount", ""));
+  test("a troca 7 → 30 dias mantém o mesmo gráfico (sem nova revelação) e a tabela do outro período abre fechada", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    const chart = region(page, "Vendas por dia");
+    const drawing = chart.locator("[data-chart-area] svg").first();
+    await expect(drawing).toBeVisible();
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
       "6"
     );
+
+    // the drawing (not only the box around it) is the same element after the change of period: it was not mounted again
+    await drawing.evaluate((node) => node.setAttribute("data-first-mount", ""));
+    await chart.getByRole("button", { name: "Ver os números" }).click();
+    await expect(chart.getByRole("row")).toHaveCount(8);
+
     await chart.getByRole("tab", { name: "30 dias" }).click();
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
       "29"
     );
-    await expect(chart.locator("[data-chart]")).toHaveCount(1);
-    await expect(chart.locator("[data-chart][data-first-mount]")).toHaveCount(
-      1
-    );
+    await expect(drawing).toHaveAttribute("data-first-mount", "");
+    await expect(chart.getByRole("row")).toHaveCount(0);
   });
 });
 
