@@ -374,12 +374,30 @@ const HOME_SOURCES = ["src/home"];
 /** One state of the Início, at `/` in the real shell. */
 const homeScreen = (
   name: string,
-  open: (page: Page) => Promise<void>
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
 ): UiScreen => ({
   name: `início ${name}`,
+  ...(exercise ? { exercise } : {}),
   open,
   sourceDirs: HOME_SOURCES,
 });
+
+/** The "Mais" panel of the phone and the numbers under the chart: open each and close it, waiting for the exit. */
+async function exerciseHomePanels(page: Page) {
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  const sheet = page.getByRole("dialog", { name: "Mais" });
+  await more.click();
+  await sheet.waitFor();
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Escape");
+  await sheet.waitFor({ state: "hidden" });
+  const numbers = page.getByRole("button", { name: "Ver os números" });
+  await numbers.click();
+  await page.waitForTimeout(300);
+  await numbers.click();
+  await page.waitForTimeout(300);
+}
 
 /** The files of the sales history on the new interface. */
 const HISTORY_SOURCES = [
@@ -784,7 +802,7 @@ export const SCREENS: UiScreen[] = [
     exerciseGoalOverlays
   ),
   resultScreen("sem dados", resultStates.empty),
-  homeScreen("com vendas", homeStates.sold),
+  homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
   homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),

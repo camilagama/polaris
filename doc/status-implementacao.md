@@ -2154,8 +2154,9 @@ Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-d
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Popover, Select, Menu, Tooltip | Em revisão | Classes de animação do registry `base-nova` como vêm: `zoom-in-95`/`zoom-out-95`, `slide-in-from-*` pelo lado, `duration-100`. |
-| Painel lateral do celular (`sidebar.tsx`) | Em revisão | Entrada como o `Sheet` do registry (200 ms, `ease-in-out`, desvanecer e deslize de 2,5 rem pelo lado). A saída continua seca: o `<dialog>` nativo fecha de uma vez. |
+| Painel lateral do celular (`sidebar.tsx`) | Em revisão | Entrada como o `Sheet` do registry (200 ms, `ease-in-out`, desvanecer e deslize de 2,5 rem pelo lado). A saída é animada como a entrada (`data-closing`, `animate-out`, véu junto) e o `<dialog>` fecha no `animationend`, com guarda de 300 ms; Esc, véu, "Fechar" e o estado vindo de fora passam pelo mesmo caminho; com `reduce` fecha de uma vez. |
 | `Collapsible` | Em revisão | Altura animada (200 ms, `ease-out`), como o painel do Accordion do registry; o registry não traz animação para o Collapsible, então as chaves (`collapsible-down`/`-up`) estão em `theme.css`. O `className` do painel vai a uma caixa interna. |
+| `Collapsible` na primeira pintura | Em revisão | Montado aberto (`defaultOpen` ou `open` já verdadeiro) não anima; só anima a mudança de estado. |
 | `Dialog` e Toast | Fora | Ficam como estão; o Dialog é da t331 e entra numa tarefa própria depois dela. Gráficos (t336) e barra de filtros também ficam de fora. |
 | `prefers-reduced-motion` | Sem mudança | A regra global de `theme.css` leva animação e transição a 0,01 ms; o e2e `com prefers-reduced-motion: reduce nada anima` roda em cada tela e abre popover, menu, seletor, dica, diálogo e aviso. |
 | Testes | Em revisão | Saíram a regra de fonte contra `zoom-*`, `slide-*`, `translate`/`scale`/`rotate` e `animate-*` que não desvanece, e a medida de pose das sobreposições. Entrou um teste que exige as classes do shadcn nos quatro primitivos e um e2e que prova que, sem `reduce`, o popover e os outros animam em 100 ms. |
