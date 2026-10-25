@@ -23,6 +23,10 @@ import {
 } from "./access-log-routes";
 import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
 import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
+import {
+  type RefundWindowDependencies,
+  refundWindowRoutes,
+} from "./refund-window-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
 
 /**
@@ -69,6 +73,8 @@ export interface AdminDependencies {
   incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
   privacy: PrivacyDependencies;
+  /** The window of the right of withdrawal of one store, read under an open case and audited (ADR 0104, decisions 8 and 10). */
+  refundWindow: RefundWindowDependencies;
   /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
   support: SupportDependencies;
   /** Diagnostics for the operator's logs: a stable code, never the token or the e-mail. */
@@ -291,6 +297,14 @@ export function createAdminApp(dependencies: AdminDependencies) {
   api.route(
     "/",
     supportRoutes(dependencies.support, requireCapability, dependencies.report)
+  );
+  api.route(
+    "/",
+    refundWindowRoutes(
+      dependencies.refundWindow,
+      requireCapability,
+      dependencies.report
+    )
   );
   api.route(
     "/",
