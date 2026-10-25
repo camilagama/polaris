@@ -20,7 +20,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - **Nunca aprovar parcialmente um item BLOCK.** Ou ele tem evidência e passa, ou não passa.
 - **Nunca editar o resultado esperado para ficar verde.** Se o resultado esperado de um teste ou gate precisa mudar, a mudança é um commit próprio, revisado, e o SHA candidato muda.
 - **Sem critério de aceite, o veredito é dados insuficientes.**
-- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 10, 14, 15, 16, 18, 19 e 24, que já foram decididos.
+- Severidade: **BLOCK** impede a promoção se falhar, faltar ou não puder ser lido. **WARN** não impede, desde que o registro cite o item e o responsável. A severidade de cada item abaixo é **proposta, pendente de decisão**, exceto a dos itens 10, 14, 15, 16, 18, 19, 24 e 25, que já foram decididos.
 
 ## Itens
 
@@ -207,6 +207,12 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: `BUDGET_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, as linhas de tamanho (resto em +44 000 B e a marca de +80 000 B, fontes, primitivos, gráficos e calendário) só avisam (`"warn"`, emendas de 24/10/2026 e de 25/10/2026); só os guardas de lugar dos gráficos e do calendário e o de chunks só de teste reprovam em qualquer modo, e voltar o modo a `"block"` fora da etapa de corte é decisão do usuário; sem essa etapa, não há go-live.
 - Evidência: o valor de `BUDGET_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
 - Severidade BLOCK: decidida pelo Arrascaeta (t278).
+
+### 25. Leitor de tela nos seletores de data (BLOCK)
+
+- Critério: passada manual de VoiceOver (iPhone) e TalkBack (Android) no BrowserStack em Despesa (DatePicker) e Histórico (DateRangePicker); dono Diego Alves (QA); campo mudo ou data não anunciada = correção antes do go-live. Os campos nativos `type="date"` traziam o leitor de tela do sistema; os seletores do `ui/` (t373) passam essa responsabilidade ao app. A suíte de aparelhos reais (fluxo 4 do [Gate 5](./gate-5-offline.md#suíte-em-aparelhos-reais-browserstack)) prova abrir, escolher e a falha do chunk, mas não o leitor de tela.
+- Evidência: data, SHA, aparelhos e versões do sistema; para cada tela, o que o leitor anunciou no botão (rótulo e data), na grade do mês e no dia escolhido; achados e a correção de cada um, ou "nenhum".
+- Severidade BLOCK: decidida pelo Filipe Luís (arquitetura, revisão de 25/10/2026 da t373).
 
 ## Veredito
 
