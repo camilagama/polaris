@@ -6,8 +6,12 @@ import { cn } from "@/lib/utils";
 function ScrollArea({
   className,
   children,
+  horizontal = false,
   ...props
-}: ScrollAreaPrimitive.Root.Props) {
+}: ScrollAreaPrimitive.Root.Props & {
+  /** Also draws the horizontal bar, for a row that scrolls sideways (the filter bar on a phone). */
+  horizontal?: boolean;
+}) {
   return (
     <ScrollAreaPrimitive.Root
       className={cn("relative", className)}
@@ -21,6 +25,7 @@ function ScrollArea({
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {horizontal ? <ScrollBar orientation="horizontal" /> : null}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   );

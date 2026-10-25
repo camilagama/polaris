@@ -3,7 +3,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { legalBuildGuardPlugin } from "./legal/legal-build-guard-plugin";
-import { precacheBudgetPlugin } from "./pwa/precache-budget";
+import { MOTION_MODULE, precacheBudgetPlugin } from "./pwa/precache-budget";
 import { appShellHeadersPlugin, sentryBuildSettings } from "./pwa/sentry-build";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
@@ -58,7 +58,33 @@ export default defineConfig(({ mode }) => {
     define: sentry.define,
     // Source maps of the browser build are hidden: generated for the upload to Sentry (release checklist),
     // never referenced by the bundles and kept out of the static assets by `public/.assetsignore`.
-    environments: { client: { build: { sourcemap: "hidden" } } },
+    environments: {
+      client: {
+        build: {
+          // `motion` is used by the charts and by the filter bar, each loaded on demand: one chunk of its own, so it is
+          // neither in the shell's first script nor copied into two chunks (the guards of `pwa/precache-budget.ts`). The
+          // group is the browser's alone: the Worker's build keeps `preserveEntrySignatures: "strict"`, which rolldown
+          // refuses together with a group that leaves out its dependencies. Without the dependencies: React is one of
+          // motion's, and with it the chunk would carry React and the shell's first script would import the chunk
+          // (`motionLoadProblems`).
+          rolldownOptions: {
+            output: {
+              codeSplitting: {
+                groups: [
+                  {
+                    includeDependenciesRecursively: false,
+                    name: "motion",
+                    priority: 30,
+                    test: MOTION_MODULE,
+                  },
+                ],
+              },
+            },
+          },
+          sourcemap: "hidden",
+        },
+      },
+    },
     plugins: [
       legalBuildGuardPlugin(),
       uiPlugins(),
