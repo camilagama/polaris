@@ -497,7 +497,10 @@ async function run() {
       "a command that already exists is answered by the replay logic even when its sale is now older than the window, while a new command at that instant is refused"
     );
 
-    // -------- 6c. the 0038 backfill expression equals what the server stores
+    // -------- 6c. the commercial-date rule in SQL equals what the server stores.
+    // On today's timestamptz column the rule is (occurred_at AT TIME ZONE
+    // timezone)::date, equivalent to the 0038 backfill expression back when the
+    // column was timestamp. This gate does not run the 0038 UPDATE itself.
     const backfill = await admin.pool.query<{ checked: string; wrong: string }>(
       `SELECT count(*)::text AS checked,
               count(*) FILTER (WHERE (sale.occurred_at AT TIME ZONE organization.timezone)::date <> sale.occurred_on)::text AS wrong
@@ -513,10 +516,10 @@ async function run() {
     assert.equal(
       backfill.rows[0]?.wrong,
       "0",
-      "the backfill expression gives the same commercial date as the application for São Paulo and Tokyo sales"
+      "the SQL commercial-date rule gives the same date as the application for São Paulo and Tokyo sales"
     );
     tests.push(
-      "the organization-calendar date of an instant (the expression the 0038 backfill used) equals the date the application stores, in two time zones, and the migration role can read organizations to apply it"
+      "the SQL commercial-date rule on the timestamptz column ((occurred_at AT TIME ZONE timezone)::date, equivalent to the 0038 backfill expression on the old timestamp column; the 0038 UPDATE is not run here) equals the date the application stores, in two time zones, and the migration role can read organizations to apply it"
     );
     // ------------------------------------------------- 7. database guards
     await assert.rejects(
