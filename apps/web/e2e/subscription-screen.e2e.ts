@@ -481,6 +481,25 @@ test("o fato que não chega em 2 minutos: a releitura para e a tela oferece 'Atu
   await expect.poll(() => calls.reads).toBe(reads + 1);
 });
 
+test("a volta 'concluida' numa loja que segue Free: depois dos 2 minutos a oferta volta (aba antiga ou favorito)", async ({
+  page,
+}) => {
+  await page.clock.install({ time: NOW });
+  const calls = await openScreen(page, {
+    path: "/subscription?retorno=concluida",
+  });
+  await expect(page.getByText("Confirmando o pagamento…")).toBeVisible();
+  await expect(page.getByRole("radiogroup")).toHaveCount(0);
+  await page.clock.runFor(125_000);
+  await expect(
+    page.getByRole("button", { name: "Começar os 7 dias grátis" })
+  ).toBeVisible();
+  await expect(page.getByText("Confirmando o pagamento…")).toHaveCount(0);
+  const { reads } = calls;
+  await page.clock.runFor(30_000);
+  expect(calls.reads).toBe(reads);
+});
+
 test("volta do cartão cancelada ou expirada: nada foi cobrado e o teste continua disponível (AS-15, RN:6)", async ({
   page,
 }) => {

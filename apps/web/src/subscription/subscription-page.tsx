@@ -176,13 +176,23 @@ function screenParts(input: {
   pix: PixHandoff | null;
   plan: BillingPlanView | null;
   returned: CheckoutReturn | null;
+  waitedOut: boolean;
   waiting: boolean;
 }) {
-  const { choosingAgain, pix, plan, returned, waiting } = input;
+  const { choosingAgain, pix, plan, returned, waitedOut, waiting } = input;
   const choosing =
     choosingAgain || returned === "cancelada" || returned === "expirada";
+  // a Free store whose fact did not come in 2 min gets the offer back: an old tab or a bookmark with
+  // `?retorno=concluida` must not hide it for good (a checkout already paid is refused with its own text)
+  const stillFree =
+    plan !== null &&
+    (plan.state === "free" || plan.state === "free_over_limit");
   const confirming =
-    plan !== null && returned === "concluida" && waiting && pix === null;
+    plan !== null &&
+    returned === "concluida" &&
+    waiting &&
+    pix === null &&
+    !(waitedOut && stillFree);
   const showOffer =
     plan !== null &&
     !confirming &&
@@ -380,6 +390,7 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
     pix,
     plan,
     returned,
+    waitedOut,
     waiting,
   });
   // the payer's fields are a form while they show: offline, the notice says what was typed stays
