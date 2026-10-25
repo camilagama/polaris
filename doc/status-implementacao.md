@@ -2224,3 +2224,14 @@ Corte resultado-v2 (AC-8 a AC-10 e AC-21, com a emenda de 24/10) e desenho de 24
 | Gate `economics` | Em revisão | Seção 7: dia com frete (custo 72,85, resultado 117,15), despesa com competência depois de hoje no dia dela, dias `null`, cada dia contra `from = to`, soma dos dias contra a cadeia, `operatingExpenses` de cada dia contra uma soma SQL independente por data de competência, outra loja zerada. Só roda no PostgreSQL 18 do CI (esta tarefa é da área app). |
 | Medida de CPU | Pendente | Local, só o motor (Node 24, sem banco): ver o PR. A medida oficial é o AC-23, no staging, antes de ligar "Este ano". |
 
+
+### Buscas das listas num só componente e seletor da loja no Select (t364, UI-D da padronização de 24/10; sem migration)
+
+Contrato: `ux-padronizacao-2026-10-24`, seção 2.5 e linha D. Só mudam os textos da busca (nome acessível e texto de apoio de Produtos e Estoque, abaixo); nenhum contrato nem regra de negócio muda.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| `ui/search-field.tsx` | Em revisão | Composto sobre o `InputGroup`: lupa à esquerda, botão "Limpar busca" (`aria-label`) só com texto, que esvazia o campo e devolve o foco a ele; `type="search"` sem a marca nativa de limpar, `enterKeyHint="search"`, nome acessível obrigatório (`label`). O botão tem a área de 48 px do toque (`touch-hit`). Exemplo na galeria. |
+| Produtos e Estoque | Em revisão | A busca à mão virou o `SearchField`, com o nome acessível de cada tela ("Buscar produto" em Produtos, com o texto de apoio "Nome do produto"; "Buscar no estoque" em Estoque, com "Produto, variante ou SKU"). Em Mais, clicar no rótulo "Loja" do seletor da loja leva o foco ao gatilho (sem abrir o menu). O campo de Produtos passa a ser `type="search"` (papel `searchbox`). Ficam de fora a busca da Nova venda (`sale-variant-picker.tsx`: tem `aria-controls`, Enter que escolhe o primeiro e rótulo visível) e a "Busca" do Histórico (campo rotulado entre outros filtros): não são o mesmo padrão. |
+| Seletor da loja no shell | Em revisão | O `<select>` nativo virou o `Select` do `ui/select.tsx`, com o rótulo "Loja" ligado ao botão, a mesma altura (`h-ctl-md`, 48 px com toque) e a mesma troca de loja (`select` do contexto da organização). A folha "Mais" do celular é um `<dialog>` modal (camada de cima): o menu vai para dentro dela (`container` do `SelectContent`), senão abriria atrás. `SelectItem` ganhou `wrap` para o nome longo de loja quebrar linha no menu. |
+| Provas | Em revisão | `ui/search-field.test.tsx` (marcação); e2e: Limpar só com texto e o foco de volta ao campo (Produtos e Estoque), troca de loja pelo `Select` e o que ela guarda, o clique no rótulo "Loja" que foca o gatilho sem abrir o menu, o menu acima da folha "Mais" a 360 px com Escape fechando só o menu. Verificações de tela (axe, toque, foco) da galeria, de Produtos e do Estoque. |

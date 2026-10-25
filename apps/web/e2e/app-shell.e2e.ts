@@ -20,6 +20,12 @@ const ORGANIZATIONS = [
     timezone: "America/Sao_Paulo",
   },
 ];
+const SECOND_ORGANIZATION = {
+  id: "0199c2d0-0000-7000-8000-00000000a002",
+  name: "Loja da filial",
+  role: "owner",
+  timezone: "America/Sao_Paulo",
+};
 const USER_ID = "user-do-teste";
 const EMAIL = "contato@exemplo.com.br";
 const LEASE_KEY = {
@@ -46,13 +52,13 @@ const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
 
 /** The server of a test: a signed-in person with one store, and nothing queued. */
-async function serve(page: Page) {
+async function serve(page: Page, organizations = ORGANIZATIONS) {
   const state = { signOutCalls: 0 };
   // the Início reads in vain here (every other /rpc is cut): the probe finds the Worker, so it is not "offline"
   await serveHealth(page);
   await page.route("**/rpc/**", (route) => route.abort("internetdisconnected"));
   await page.route("**/rpc/organization/listMine", (route) =>
-    route.fulfill(json({ organizations: ORGANIZATIONS }))
+    route.fulfill(json({ organizations }))
   );
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -214,6 +220,34 @@ test.describe("desktop (1280 px)", () => {
     );
   });
 
+  test("com duas lojas, o seletor da lateral é o Select do tema, tem o rótulo Loja e troca a loja", async ({
+    page,
+  }) => {
+    await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION]);
+    await page.goto("/products");
+    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
+    await expect(store).toContainText("Loja do teste");
+    // clicking the visible label "Loja" takes the focus to the trigger, which keeps its name
+    await page.locator("#app-organization-label").click();
+    await expect(store).toBeFocused();
+    await expect(page.getByRole("option")).toHaveCount(0);
+    await store.click();
+    // the menu is the themed one (a listbox of options), not the one of the system
+    await expect(page.getByRole("option")).toHaveText([
+      "Loja do teste",
+      "Loja da filial",
+    ]);
+    await page
+      .getByRole("option", { exact: true, name: "Loja da filial" })
+      .click();
+    await expect(store).toContainText("Loja da filial");
+    // the choice is the one kept for the next visit
+    await page.reload();
+    await expect(
+      page.getByRole("combobox", { exact: true, name: "Loja" })
+    ).toContainText("Loja da filial");
+  });
+
   test("o tema escolhido na lateral troca a classe do <html> e a cor da barra do navegador", async ({
     page,
   }) => {
@@ -325,6 +359,34 @@ test.describe("celular (360 px)", () => {
       await expect(bar.locator("[aria-current]")).toHaveCount(0);
       await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
     }
+  });
+
+  test("em Mais, o menu da loja abre acima da folha (que é um diálogo modal), cabe na tela e troca a loja", async ({
+    page,
+  }) => {
+    const long = {
+      ...SECOND_ORGANIZATION,
+      id: "0199c2d0-0000-7000-8000-00000000a003",
+      name: "Loja do centro da cidade com um nome bem comprido para quebrar linha no menu",
+    };
+    await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION, long]);
+    await page.goto("/products");
+    await more(page).click();
+    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
+    await store.click();
+    // a click only lands if nothing (the sheet or its veil) covers the option: Playwright checks what is hit
+    const option = page.getByRole("option", { exact: true, name: long.name });
+    await expect(option).toBeVisible();
+    const box = await option.boundingBox();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+    // Escape closes the menu only: the sheet (the dialog around it) stays open
+    await page.keyboard.press("Escape");
+    await expect(option).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Mais" })).toBeVisible();
+    await store.click();
+    await option.click();
+    await expect(store).toContainText("Loja do centro da cidade");
   });
 
   test("Mais abre e fecha com o teclado, e o foco volta para o botão", async ({

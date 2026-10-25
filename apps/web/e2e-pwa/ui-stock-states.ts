@@ -246,7 +246,7 @@ export const stockStates = {
         ) as Promise<void>,
     });
     await rowOf(page, SHIRT_ROW).waitFor();
-    await page.getByLabel("Buscar").fill("zzz");
+    await page.getByLabel("Buscar no estoque").fill("zzz");
     await page.getByText("Nenhuma variante encontrada para “zzz”.").waitFor();
     await showScreenAlone(page);
   },

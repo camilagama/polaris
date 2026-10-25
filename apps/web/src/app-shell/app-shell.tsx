@@ -15,16 +15,26 @@ import TagIcon from "lucide-react/dist/esm/icons/tag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
-  type ChangeEvent,
   type ComponentType,
   lazy,
+  type MouseEvent,
   type ReactNode,
   Suspense,
   useCallback,
   useEffect,
+  useRef,
+  useState,
 } from "react";
 import { Button } from "@/ui/button";
+import { Label } from "@/ui/label";
 import { Logo } from "@/ui/logo";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -111,9 +121,30 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
 function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
   const { organization, organizations, select } = current;
   const handleChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => select(event.target.value),
+    (id: string | null) => {
+      if (id !== null) {
+        select(id);
+      }
+    },
     [select]
   );
+  const items = organizations.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }));
+  // The "Mais" sheet of the phone is a modal <dialog> (top layer): a menu portaled to <body> would open behind it,
+  // so the menu goes inside that dialog. On the desktop there is none and the menu goes to <body>.
+  const [dialog, setDialog] = useState<HTMLElement | null>(null);
+  const findDialog = useCallback((node: HTMLElement | null) => {
+    setDialog(node?.closest("dialog") ?? null);
+  }, []);
+
+  // A native label would press the trigger and open the menu; "Loja" only takes the focus there, like the label of a field.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const focusTrigger = useCallback((event: MouseEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    trigger.current?.focus();
+  }, []);
 
   if (organizations.length < 2) {
     return (
@@ -124,22 +155,36 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
     );
   }
   return (
-    <div className="grid gap-1.5">
-      <label className="text-xs" htmlFor="app-organization">
+    <div className="grid gap-1.5" ref={findDialog}>
+      <Label
+        className="font-normal text-xs"
+        htmlFor="app-organization"
+        id="app-organization-label"
+        onClick={focusTrigger}
+      >
         Loja
-      </label>
-      <select
-        className="focus-ring h-ctl-md touch:h-12 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm"
-        id="app-organization"
-        onChange={handleChange}
+      </Label>
+      <Select
+        items={items}
+        onValueChange={handleChange}
         value={organization.id}
       >
-        {organizations.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          aria-labelledby="app-organization-label"
+          className="w-full min-w-0 data-[size=default]:touch:h-12"
+          id="app-organization"
+          ref={trigger}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent {...(dialog ? { container: dialog } : {})}>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value} wrap>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
