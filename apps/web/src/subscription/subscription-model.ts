@@ -88,7 +88,7 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   if (plan.renewalCancelled && proUntil !== null) {
     return plan.refundPending
       ? {
-          badge: { text: "reembolso pendente", tone: "warning" },
+          badge: { text: "Reembolso pendente", tone: "warning" },
           support:
             "A renovação foi cancelada. O reembolso ainda não foi concluído.",
           title: `Pro até ${proUntil}`,
@@ -224,11 +224,8 @@ export function usageRows(plan: BillingPlanView): UsageRow[] {
   ];
 }
 
-/**
- * What the store already keeps (AS-24, amendment D1): "N vendas, N produtos e N meses de histórico", each part in
- * the singular for 1 and left out at 0; no line when the three are 0. The numbers are the server's.
- */
-export function keptLine(kept: BillingPlanView["kept"]): string | null {
+/** "N vendas, N produtos e N meses de histórico", each part in the singular for 1 and left out at 0; null at 0. */
+export function keptList(kept: BillingPlanView["kept"]): string | null {
   const parts = [
     kept.sales > 0 ? plural(kept.sales, "venda", "vendas") : null,
     kept.products > 0 ? plural(kept.products, "produto", "produtos") : null,
@@ -240,8 +237,18 @@ export function keptLine(kept: BillingPlanView["kept"]): string | null {
     return null;
   }
   const last = parts.pop();
-  const listed = parts.length === 0 ? last : `${parts.join(", ")} e ${last}`;
-  return `O que a sua loja já guardou: ${listed}. Seus dados não são apagados.`;
+  return parts.length === 0 ? (last ?? null) : `${parts.join(", ")} e ${last}`;
+}
+
+/**
+ * What the store already keeps (AS-24, amendment D1): "N vendas, N produtos e N meses de histórico", each part in
+ * the singular for 1 and left out at 0; no line when the three are 0. The numbers are the server's.
+ */
+export function keptLine(kept: BillingPlanView["kept"]): string | null {
+  const listed = keptList(kept);
+  return listed === null
+    ? null
+    : `O que a sua loja já guardou: ${listed}. Seus dados não são apagados.`;
 }
 
 /** The notice of a refund asked and not completed, by whether the app may still complete it (AS-42, E-RP). */

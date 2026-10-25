@@ -26,6 +26,13 @@ import {
   UNCONFIRMED_RETURN_TEXT,
   waitsForProvider,
 } from "./subscription-model";
+import {
+  awaitsRefundFact,
+  type CommandDialog,
+  type CommandOutcome,
+  PlanActions,
+  RefundRetry,
+} from "./subscription-commands";
 import { type CheckoutRequest, OfferCard } from "./subscription-offer";
 import {
   PlanCard,
@@ -332,6 +339,34 @@ function useCheckout(input: {
   return { clearRefusal, pending, refusal, start };
 }
 
+/** The longest wait `setTimeout` takes (about 24.8 days); a later end is read again on the next read. */
+const LONGEST_TIMER_MS = 2_147_483_647;
+
+/**
+ * The plan is read again just after the server's end of the refund window, so the button leaves and the footer says
+ * the day it ended (the client counts no window: the server's `until` and its next read decide).
+ */
+function useRereadAtRefundEnd(
+  plan: BillingPlanView | null,
+  load: () => Promise<void>
+) {
+  const until =
+    plan === null || plan.refundPending ? null : (plan.refund?.until ?? null);
+  useEffect(() => {
+    if (until === null) {
+      return;
+    }
+    const wait = new Date(until).getTime() + 1000 - Date.now();
+    if (wait <= 0 || wait > LONGEST_TIMER_MS) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      load().catch(() => undefined);
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [load, until]);
+}
+
 function SubscriptionScreen({ organizationId }: { organizationId: string }) {
   const returned = useCheckoutReturn();
   const now = useNow(60_000);
@@ -356,6 +391,11 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
     }
   }, [granted]);
 
+  // the owner's commands: the dialog open, and what the last one did (said until the screen is left)
+  const [dialog, setDialog] = useState<CommandDialog | null>(null);
+  const [outcome, setOutcome] = useState<CommandOutcome | null>(null);
+  // the card's refund taken by the provider: its fact comes by webhook, and the plan is read again until it does
+  const refundAwaited = awaitsRefundFact(outcome, plan);
   const waiting =
     plan !== null &&
     (waitsForProvider(plan, returned) || (pix !== null && !granted));
@@ -363,7 +403,7 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
     load,
     paused: loadError !== null || !online,
     plan,
-    waiting,
+    waiting: waiting || refundAwaited,
   });
   const afterPix = useCallback(
     (handoff: PixHandoff) => {
@@ -397,6 +437,7 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
     waitedOut,
     waiting,
   });
+  useRereadAtRefundEnd(plan, load);
   // the payer's fields are a form while they show: offline, the notice says what was typed stays
   useConnectionNoticeForm(showOffer && !stale);
   return (
@@ -416,7 +457,12 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
           <CardConfirming onReread={reread} waitedOut={waitedOut} />
         ) : null}
         {plan ? (
-          <PlanCard headline={planHeadline(plan, now)} plan={plan}>
+          <PlanCard
+            headline={planHeadline(plan, now)}
+            pendingAction={<RefundRetry onDialog={setDialog} plan={plan} />}
+            refundAwaited={refundAwaited}
+            plan={plan}
+          >
             <WaitingPart
               onChooseAgain={chooseAgain}
               onReread={reread}
@@ -425,6 +471,15 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
               waitingForMethod={
                 plan.state === "trial_setup" && !choosing && !confirming
               }
+            />
+            <PlanActions
+              dialog={dialog}
+              onDialog={setDialog}
+              onOutcome={setOutcome}
+              onReread={reread}
+              organizationId={organizationId}
+              outcome={outcome}
+              plan={plan}
             />
           </PlanCard>
         ) : null}
