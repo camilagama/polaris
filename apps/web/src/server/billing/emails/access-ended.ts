@@ -38,7 +38,7 @@ export function accessEndedContent(
       `O que muda: ${FREE_CHANGED}. Imagens acima do limite do Free ficam guardadas; só não entram novas.`,
       ...(overLimit
         ? [
-            `A loja tem ${overLimit.variants} variantes e o plano Free permite ${overLimit.limit}. Nos próximos 7 dias, até ${lastDayOf(overLimit.chooseUntil, store.timeZone)}, você escolhe quais continuam recebendo vendas e entradas de estoque. Depois desse prazo, só dá para aumentar a escolha até o limite. Abra Assinatura para ver o prazo.`,
+            `A loja tem ${overLimit.variants} variantes e o plano Free permite ${overLimit.limit}. Nos próximos 7 dias, até ${lastDayOf(overLimit.chooseUntil, store.timeZone)}, você escolhe quais continuam recebendo vendas e entradas de estoque. Depois desse prazo, só dá para aumentar a escolha até o limite.`,
           ]
         : []),
       "Para voltar ao Pro, abra Assinatura.",

@@ -849,7 +849,9 @@ async function claimOwedNotice(
             ) AS paid_since_notice,
             (SELECT started.sent_at FROM public.billing_notices AS started
               WHERE started.organization_id = notice.organization_id AND started.kind = 'trial_started'
-                AND started.dedupe_key = billing.provider_ref) AS trial_started_sent_at
+                AND started.dedupe_key = billing.provider_ref) AS trial_started_sent_at,
+            -- clock_timestamp() makes the statement volatile, so a pooler that caches reads never answers it
+            pg_catalog.clock_timestamp() AS at
        FROM public.billing_notices AS notice
        LEFT JOIN public.organization_billing AS billing ON billing.organization_id = notice.organization_id
       WHERE notice.id = $1::uuid AND notice.organization_id = $2
@@ -1029,8 +1031,9 @@ async function readOwedNoticeStore(
     return null;
   }
   // named arguments: the function takes the store first, the port the notice first, and a swap answers null
+  // clock_timestamp() makes the statement volatile, so a pooler that caches reads never answers it
   const result = await pool.query<{ facts: NoticeStoreRow | null }>(
-    "SELECT public.billing_notice_store(p_organization => $2::text, p_notice => $1::uuid) AS facts",
+    "SELECT public.billing_notice_store(p_organization => $2::text, p_notice => $1::uuid) AS facts, pg_catalog.clock_timestamp() AS at",
     [noticeId, organizationId]
   );
   const facts = result.rows[0]?.facts;
@@ -1144,29 +1147,32 @@ async function recordTransitionNotices(
   organizationId: string,
   transition: BillingNoticeTransition
 ): Promise<void> {
-  // E7 waits a day when the owner asked for the refund of the current link
-  const refundRequestedAt =
-    transition.fact?.type === "subscription_cancelled"
-      ? ((
-          await client.query<{ refund_requested_at: Date | null }>(
-            "SELECT refund_requested_at FROM public.organization_billing WHERE organization_id = $1",
-            [organizationId]
-          )
-        ).rows[0]?.refund_requested_at ?? null)
-      : null;
-  const marks = noticesFor({ ...transition, refundRequestedAt });
-  if (marks.length === 0) {
-    return;
-  }
+  // everything the notices need runs inside the savepoint, the read of the refund request included: a failed query
+  // aborts the transaction, and it must not take the fact with it
   await client.query("SAVEPOINT billing_notices");
+  let kinds = "unknown";
   try {
-    await recordNotices(client, organizationId, marks);
+    // E7 waits a day when the owner asked for the refund of the current link
+    const refundRequestedAt =
+      transition.fact?.type === "subscription_cancelled"
+        ? ((
+            await client.query<{ refund_requested_at: Date | null }>(
+              "SELECT refund_requested_at FROM public.organization_billing WHERE organization_id = $1",
+              [organizationId]
+            )
+          ).rows[0]?.refund_requested_at ?? null)
+        : null;
+    const marks = noticesFor({ ...transition, refundRequestedAt });
+    kinds = marks.map((mark) => mark.kind).join(",");
+    if (marks.length > 0) {
+      await recordNotices(client, organizationId, marks);
+    }
     await client.query("RELEASE SAVEPOINT billing_notices");
   } catch (error: unknown) {
     await client.query("ROLLBACK TO SAVEPOINT billing_notices");
     logger.error("billing_notice_record_failed", {
       ...describeError(error),
-      kinds: marks.map((mark) => mark.kind).join(","),
+      kinds,
       organizationId: opaqueId(organizationId),
     });
   }

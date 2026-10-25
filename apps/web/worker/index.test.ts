@@ -360,13 +360,33 @@ describe("the scheduled maintenance", () => {
       "maintenance",
       "rearm",
       "refund net",
-      "handover",
       "woovi",
       "unclaimed",
+      "handover",
     ]);
     expect(mocks.rearmRenewalCancellations).toHaveBeenCalledWith(
       expect.objectContaining({ close: mocks.billingClose })
     );
+  });
+
+  it("hands the notices over last, and a handover that throws leaves the reconciliation and the settlement already done", async () => {
+    const order: string[] = [];
+    mocks.runWooviReconciliation.mockImplementation(() => {
+      order.push("woovi");
+      return Promise.resolve(null);
+    });
+    mocks.runUnclaimedTrialSettlement.mockImplementation(() => {
+      order.push("unclaimed");
+      return Promise.resolve(null);
+    });
+    mocks.handOverOwedBillingNotices.mockImplementation(() => {
+      order.push("handover");
+      return Promise.reject(new Error("handover_failed"));
+    });
+
+    await expect(runScheduled(configured)).rejects.toThrow("handover_failed");
+    expect(order).toEqual(["woovi", "unclaimed", "handover"]);
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
   it("reports a failed retry of the renewal cancellations, and still settles the unclaimed trials", async () => {

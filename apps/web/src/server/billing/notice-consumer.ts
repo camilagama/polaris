@@ -57,11 +57,20 @@ const RESEND_KEY_TAKEN = "invalid_idempotent_request";
 
 /** A notice due within this long goes back to the queue with a delay; a later one waits for the hourly handover. */
 const BILLING_NOTICE_QUEUE_WAIT_MS = 3_600_000;
+/**
+ * A notice owed longer than this is not sent again: Resend keeps an idempotency key for 24 hours, and past them a
+ * send whose marking failed would go out twice. One hour of margin under the 24.
+ */
+const BILLING_NOTICE_DELIVERY_WINDOW_MS = 23 * 3_600_000;
 /** The queue brings a deferred notice back a little after it is due. */
 const DEFER_MARGIN_SECONDS = 5;
 
-/** Notices the handover sends in one hourly run, at most (one at a time, under the provider's rate limit). */
-const BILLING_NOTICE_HANDOVER_BATCH = 20;
+/**
+ * Notices the handover sends in one hourly run, at most (one at a time, under the provider's rate limit). Each one
+ * is a render and a send inside the cron's 10 ms of CPU on the Free plan, so the batch is small: what is left goes out
+ * in the next hour.
+ */
+const BILLING_NOTICE_HANDOVER_BATCH = 5;
 
 /** A notice as the billing role reads it again, with the record of its store and what its rule needs. */
 export type BillingNoticeDelivery = StoredBillingNotice;
@@ -113,8 +122,14 @@ interface BillingNoticeRecipients {
   ) => Promise<BillingNoticeRecipient | null>;
 }
 
-/** Why the consumer itself did not send: nobody to send to, or an address nobody proved. */
-type BillingNoticeDeliverySkip = "email_not_verified" | "no_recipient";
+/**
+ * Why the consumer itself did not send: nobody to send to, an address nobody proved, or a notice owed for so long that
+ * a new send would escape the provider's idempotency window.
+ */
+type BillingNoticeDeliverySkip =
+  | "delivery_window_passed"
+  | "email_not_verified"
+  | "no_recipient";
 
 /** The provider's configuration (secrets): never logged. */
 export interface BillingNoticeEmailConfig {
@@ -608,6 +623,13 @@ async function deliverBillingNotice(
   const checked = await skipReasonOf(dependencies, delivery, now);
   if ("reason" in checked) {
     return { outcome: await skip(checked.reason) };
+  }
+  // after the rules above, so an old notice keeps its real reason (closed store, e-mail off, state changed)
+  if (
+    now.getTime() - delivery.dueAt.getTime() >
+    BILLING_NOTICE_DELIVERY_WINDOW_MS
+  ) {
+    return { outcome: await skip("delivery_window_passed") };
   }
   const { config, store } = checked;
   const email = billingNoticeEmailOf(delivery, store, config.appOrigin);

@@ -562,6 +562,47 @@ describe("the consumer of a billing notice: skipped before sending", () => {
 });
 
 describe("the consumer of a billing notice: the recipient", () => {
+  it("skips as delivery_window_passed, without sending, a notice due more than 23 hours ago, and sends one due exactly 23 hours ago", async () => {
+    const late = setup({
+      delivery: deliveryOf({
+        dueAt: new Date(NOW.getTime() - 23 * HOUR_MS - MINUTE_MS),
+      }),
+    });
+
+    expect(await handleBillingNotice(late.dependencies, envelope())).toBe(
+      "skipped"
+    );
+
+    expect(late.notices.markSkipped).toHaveBeenCalledWith(
+      NOTICE,
+      ORG,
+      "delivery_window_passed"
+    );
+    expect(late.send).not.toHaveBeenCalled();
+    expect(late.notices.markFailed).not.toHaveBeenCalled();
+
+    const edge = setup({
+      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() - 23 * HOUR_MS) }),
+    });
+
+    expect(await handleBillingNotice(edge.dependencies, envelope())).toBe(
+      "sent"
+    );
+    expect(edge.send).toHaveBeenCalledTimes(1);
+
+    // an old notice keeps the reason of the rules: the e-mail off is not hidden by the window
+    const off = setup({
+      billingEmail: null,
+      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() - 30 * HOUR_MS) }),
+    });
+    await handleBillingNotice(off.dependencies, envelope());
+    expect(off.notices.markSkipped).toHaveBeenCalledWith(
+      NOTICE,
+      ORG,
+      "email_not_configured"
+    );
+  });
+
   it("skips as no_recipient when the recipient is null", async () => {
     const spies = spyLogger();
     const { dependencies, notices, send } = setup({ recipient: null });
@@ -771,7 +812,7 @@ describe("the handover of the owed billing notices", () => {
       sent: 0,
       skipped: 0,
     });
-    expect(notices.listOwed).toHaveBeenCalledWith(NOW, 20);
+    expect(notices.listOwed).toHaveBeenCalledWith(NOW, 5);
   });
 });
 
@@ -1163,10 +1204,10 @@ describe("the consumer's dependencies in the Worker", () => {
     );
     await dependencies.notices.claim(NOTICE, ORG);
     expect(store.claimNotice).toHaveBeenCalledWith(NOTICE, ORG);
-    expect(await dependencies.notices.listOwed(NOW, 20)).toEqual([
+    expect(await dependencies.notices.listOwed(NOW, 5)).toEqual([
       { noticeId: NOTICE, organizationId: ORG },
     ]);
-    expect(store.listOwedNotices).toHaveBeenCalledWith(NOW, 20);
+    expect(store.listOwedNotices).toHaveBeenCalledWith(NOW, 5);
     expect(await dependencies.notices.markSent(NOTICE, ORG)).toBe(true);
     expect(store.markNoticeSent).toHaveBeenCalledWith(NOTICE, ORG);
     await dependencies.notices.markFailed(NOTICE, ORG, "email_rejected");

@@ -571,7 +571,11 @@ describe("the links", () => {
         "A loja tem 73 variantes e o plano Free permite 50."
       );
       expect(part).toContain("até 5 de novembro de 2026");
-      expect(part).toContain("Abra Assinatura para ver o prazo.");
+      expect(part).not.toContain("Abra Assinatura para ver o prazo.");
+      expect(part).toContain(
+        "Depois desse prazo, só dá para aumentar a escolha até o limite."
+      );
+      expect(part).toContain("Para voltar ao Pro, abra Assinatura.");
     }
     expect(hrefs(over?.out.html ?? "")).toEqual([SUBSCRIPTION_URL]);
     expect(flat(over?.out.text ?? "")).toContain(
