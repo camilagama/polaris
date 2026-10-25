@@ -6,6 +6,11 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "files": {
+    // Bklit UI as the registry distributes it (ADR 0103, amendment "Gráficos"): code of someone else, kept byte for byte so a
+    // `shadcn add` shows its diff. Not linted nor formatted here; the adaptations of Polaris live in apps/web/src/ui/charts/.
+    "includes": ["!apps/web/src/ui/bklit"]
+  },
   "overrides": [
     {
       "includes": ["packages/domain/**"],

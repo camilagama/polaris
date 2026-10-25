@@ -120,6 +120,35 @@
   --card-ring: oklch(0.945 0.005 85 / 0.06);
 }
 
+/* The variables Bklit UI's chart blocks read (src/ui/bklit/charts/), mapped once to the tokens above and to nothing of
+   their own: the ink for the series (`--chart-5`), the mid grey for the second one (`--chart-3`), the border for the
+   grid, the card for the tooltip panel, the foreground at 35% for the crosshair. Both themes with one block: `.dark` is
+   on the same element as `:root` (`applyTheme`), so each one follows the token it points at. The emerald (`--chart-1`) is not a series: only the dot of
+   the best day. */
+:root {
+  --chart-line-primary: var(--chart-5);
+  --chart-line-secondary: var(--chart-3);
+  --chart-grid: var(--border);
+  --chart-crosshair: color-mix(in oklab, var(--foreground) 35%, transparent);
+  --chart-background: transparent;
+  --chart-foreground: var(--foreground);
+  --chart-foreground-muted: var(--muted-foreground);
+  --chart-label: var(--muted-foreground);
+  --chart-tooltip-background: var(--card);
+  --chart-tooltip-foreground: var(--card-foreground);
+  --chart-tooltip-muted: var(--muted-foreground);
+  --chart-brush-border: var(--border);
+  --chart-indicator-color: var(--foreground);
+  --chart-indicator-secondary-color: var(--muted);
+  --chart-marker-background: var(--muted);
+  --chart-marker-border: var(--border);
+  --chart-marker-foreground: var(--foreground);
+  --chart-marker-badge-background: var(--foreground);
+  --chart-marker-badge-foreground: var(--background);
+  --chart-segment-background: var(--muted);
+  --chart-segment-line: var(--border);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -144,6 +173,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-label: var(--chart-label);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

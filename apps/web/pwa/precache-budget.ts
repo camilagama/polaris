@@ -16,11 +16,12 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   warns, past 44 KB and past the second mark of 80 KB alike (see `BUDGET_MODE`). The build prints
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
- * - the charts chunk (`charts-*.js`, t285), gzipped, at most 8 KB, a line of its own: the drawing code of the charts
- *   and d3-shape. It is in the precache so a chart opens offline, loaded on demand by the screen that asks for it and
- *   never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
- *   move for it. A guard fails the build when a module of `src/ui/charts/`, `d3-shape` or `d3-path` is in any other
- *   chunk (`chartsPlacementProblems`).
+ * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
+ *   other three, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
+ *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. It is in the
+ *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's first script; it counts here and in no other line, so the baseline of the rest does not
+ *   move for it. A guard fails the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only
+ *   they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
  * What going past a line does is one mode for the four of them, `BUDGET_MODE`: "warn" until the cut step, the build
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
@@ -76,10 +77,10 @@ const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
- * loader that every screen imports) and the libraries only they bring.
+ * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]charts[\\/](?!on-demand\.tsx$)[^\\/]+\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:d3-shape|d3-path)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|motion|framer-motion|motion-dom|motion-utils|classnames)[\\/])/;
 /**
  * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
  * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which

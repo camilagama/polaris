@@ -267,9 +267,12 @@ function elementsOutside(tolerance: number) {
       );
     } else if (parent && parent !== document.body && inFlow) {
       const outer = parent.getBoundingClientRect();
+      // a label centered on a point (the dates of the chart's x axis, Bklit UI) sits in an anchor box with no width:
+      // the text is centered on it by construction and is held by the chart's own box, which this check reads above
       if (
-        box.right > outer.right + tolerance ||
-        box.left < outer.left - tolerance
+        outer.width > 1 &&
+        (box.right > outer.right + tolerance ||
+          box.left < outer.left - tolerance)
       ) {
         found.push(
           `${labelOf(element)} sai de ${labelOf(parent)}: ${Math.round(box.right - outer.right)} px à direita, ${Math.round(outer.left - box.left)} px à esquerda`

@@ -475,7 +475,7 @@ test.describe("loja com venda", () => {
     await expect(today).toContainText("R$ 320,10");
     await expect(today).toContainText("Vendas líquidas · 2 vendas");
     // the miniature is a reinforcement: hidden from the screen reader, with no axis
-    await expect(today.locator("svg")).toHaveAttribute("aria-hidden", "true");
+    await expect(today.locator("[aria-hidden=true] svg")).toHaveCount(1);
     await expect(today.locator("svg text")).toHaveCount(0);
 
     const month = region(page, "Outubro");

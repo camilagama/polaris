@@ -1,35 +1,44 @@
-/* adapted from Bklit UI (bklit/bklit-ui@3e9af3b), MIT */
+/* Polaris adaptation of the Bklit UI area chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
+import { useReducedMotion } from "motion/react";
 import {
   type ChangeEvent,
-  type PointerEvent,
+  type MutableRefObject,
   useCallback,
-  useId,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { Area, AreaChart as BklitAreaChart } from "../bklit/charts/area-chart";
+import { Grid } from "../bklit/charts/grid";
+import { ChartTooltip } from "../bklit/charts/tooltip";
+import { YAxis } from "../bklit/charts/y-axis";
+import { ChartBridge, type ChartHandle, DateAxis } from "./chart-bridge";
 import {
+  bestIndex,
   type ChartColor,
   type ChartDatum,
-  type ChartLayout,
-  type ChartMargin,
-  chartLayout,
-  estimateLabelWidth,
-  nearestIndex,
+  type ChartPoint,
+  chartPoints,
+  EXTRA_HEIGHT,
+  LEFT_MARGIN_MIN,
+  MARGIN,
   seriesMax,
-} from "./chart-geometry";
-import { useElementWidth } from "./use-element-width";
+  yAxisMargin,
+} from "./chart-data";
+import { Legend, Reading, spokenValue, TooltipLines } from "./chart-text";
 
-const AXIS_FONT_SIZE = 11;
-const MAX_GRID_LINES = 4;
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
-   drawing shows the point in focus) and deaf to the pointer (the box under it moves the focus), so that its box is the
-   box of the chart, which is what a touch finds, and the 3 px outline of the keyboard focus goes round the chart. */
+   drawing shows the point in focus, with the tooltip of the block) and deaf to the pointer (the box under it moves
+   the focus), so that its box is the box of the chart, which is what a touch finds, and the 3 px outline of the
+   keyboard focus goes round the chart. */
 const RANGE_CLASS =
   "focus-ring pointer-events-none absolute inset-0 m-0 size-full appearance-none rounded-md bg-transparent [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none";
-const BASE_MARGIN: ChartMargin = { bottom: 24, left: 8, right: 8, top: 8 };
 /* the dash of the second series: the legend and the line draw the same one */
-const DASH = "5 4";
+const DASH = "5,4";
+const Y_LINES = 4;
+const INK: ChartColor = "var(--chart-5)";
+const GRAY: ChartColor = "var(--chart-3)";
 
 /** A second series in the box of the chart: a dashed line with no fill, on the scale of the main one. */
 interface AreaChartSecondary {
@@ -52,15 +61,19 @@ export interface AreaChartProps {
   data: readonly ChartDatum[];
   /** The text of a value on the y axis ("1 mil"); `formatValue` when absent. */
   formatAxis?: (value: number) => string;
-  /** The text of a value in the reading of the day in focus and in the spoken value of the keyboard control. */
+  /** The text of a value in the reading of the day in focus, in the tooltip and in the spoken value of the keyboard control. */
   formatValue: (value: number) => string;
-  /** The height of the drawing in pixels: 180 for seven days, 220 for thirty or two series. */
+  /** The height of the plot in pixels: 180 for seven days, 220 for thirty or two series. The margins come on top of it. */
   height?: number;
   /** What the chart answers, with the figures that matter: it is the name of the image for a screen reader. */
   label: string;
   /** The name of the main series in the legend, with `secondary`. */
   legend?: string;
-  /** The short name of the main series in the reading of the day, with `secondary` ("Vendas"). */
+  /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
+  loading?: boolean;
+  /** The text that shimmers in the middle of the chart while `loading` ("Carregando"). */
+  loadingLabel?: string | undefined;
+  /** The short name of the main series in the reading of the day and in the tooltip ("Vendas"). */
   name?: string;
   /** The name of the keyboard control that walks through the points. */
   rangeLabel?: string;
@@ -68,514 +81,292 @@ export interface AreaChartProps {
   readingNote?: (index: number) => string | null;
   /** A second series, dashed, with a legend (Resultado: the costs against the sales). */
   secondary?: AreaChartSecondary;
-  /** A fixed width in pixels, for a test or a static page; measured from the box when absent. */
-  width?: number;
-}
-
-interface DayReading {
-  formatValue: (value: number) => string;
-  name: string;
-  note: string | null;
-  point: ChartLayout["points"][number];
-  secondary: AreaChartSecondary | undefined;
-  secondaryPoint: ChartLayout["points"][number] | undefined;
 }
 
 /**
- * The reading of the day in focus, a line of text above the drawing. With a second series it says both, and the note
- * of the caller after them ("05/10 · Vendas R$ 320,00 · Custos R$ 2.050,00 · inclui R$ 1.800,00 de despesas").
- * No aria-live: the keyboard control speaks the same day and value (`aria-valuetext`); a live line would say it twice.
+ * What `prefers-reduced-motion: reduce` asks of the blocks: the reveal, the tween of the y domain, the morph of the
+ * path and the spring of the tooltip off (the chart appears finished and the cursor jumps); without it, the blocks'
+ * own defaults.
  */
-function Reading({
-  formatValue,
-  name,
-  note,
-  point,
-  secondary,
-  secondaryPoint,
-}: DayReading) {
-  return (
-    <p
-      className="flex min-h-[1.125rem] flex-wrap items-baseline gap-x-2 text-muted-foreground text-support"
-      data-chart-reading=""
-    >
-      <span>{point.label}</span>{" "}
-      {secondary && secondaryPoint ? (
-        <>
-          <span>{`· ${name}`}</span>{" "}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatValue(point.value)}
-          </span>{" "}
-          <span>{`· ${secondary.name}`}</span>{" "}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatValue(secondaryPoint.value)}
-          </span>
-          {note ? (
-            <>
-              {" "}
-              <span>{`· ${note}`}</span>
-            </>
-          ) : null}
-        </>
-      ) : (
-        <span className="font-medium text-foreground tabular-nums">
-          {formatValue(point.value)}
-        </span>
-      )}
-    </p>
-  );
+function useMotion() {
+  const reduced = useReducedMotion() === true;
+  return reduced
+    ? ({
+        animate: false,
+        animationDuration: 0,
+        damping: 0,
+        yDomainTween: false,
+      } as const)
+    : ({
+        animate: true,
+        animationDuration: 1100,
+        damping: 20,
+        yDomainTween: true,
+      } as const);
 }
 
-/** What the keyboard control says for the day in focus: the date and the value of each line. */
-function spokenValue({
-  formatValue,
-  name,
-  note,
-  point,
-  secondary,
-  secondaryPoint,
-}: DayReading): string {
-  if (!(secondary && secondaryPoint)) {
-    return `${point.label}: ${formatValue(point.value)}`;
-  }
-  const both = `${point.label}: ${name} ${formatValue(point.value)}, ${secondary.name} ${formatValue(secondaryPoint.value)}`;
-  return note ? `${both}, ${note}` : both;
-}
-
-/** A sample of a line in the legend: its color and, for the second series, its dash. */
-function LegendKey({ color, dashed }: { color: string; dashed?: boolean }) {
-  return (
-    <svg aria-hidden="true" height={8} width={16}>
-      <line
-        stroke={color}
-        strokeDasharray={dashed ? DASH : undefined}
-        strokeLinecap="round"
-        strokeWidth={2}
-        x1={1}
-        x2={15}
-        y1={4}
-        y2={4}
-      />
-    </svg>
-  );
-}
-
-/** The names of the two lines, each with its own trace: color is never the only sign. */
-function Legend({
-  color,
-  legend,
-  secondary,
-  secondaryColor,
+function EmptyChart({
+  className,
+  height,
+  label,
 }: {
-  color: string;
-  legend: string;
-  secondary: AreaChartSecondary;
-  secondaryColor: string;
-}) {
-  return (
-    <ul
-      className="flex flex-wrap gap-x-4 gap-y-1 justify-self-end text-muted-foreground text-xs"
-      data-chart-legend=""
-    >
-      <li className="flex items-center gap-1.5">
-        <LegendKey color={color} />
-        {legend}
-      </li>
-      <li className="flex items-center gap-1.5">
-        <LegendKey color={secondaryColor} dashed />
-        {secondary.legend}
-      </li>
-    </ul>
-  );
-}
-
-/** The dashed line of the second series; nothing with fewer than two points. */
-function SecondaryLine({
-  color,
-  d,
-}: {
-  color: string;
-  d: string | null | undefined;
-}) {
-  return d ? (
-    <path
-      d={d}
-      fill="none"
-      stroke={color}
-      strokeDasharray={DASH}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-    />
-  ) : null;
-}
-
-/** The ring of the second series on the day in focus. */
-function SecondaryRing({
-  color,
-  point,
-}: {
-  color: string;
-  point: ChartLayout["points"][number] | undefined;
-}) {
-  return point ? (
-    <circle
-      className="fill-card"
-      cx={point.x}
-      cy={point.y}
-      r={4.5}
-      stroke={color}
-      strokeWidth={2}
-    />
-  ) : null;
-}
-
-/** The dates of the x axis: the first starts at the left edge and the last ends at the right one, the others are centered. */
-function DateLabels({ layout }: { layout: ChartLayout }) {
-  const last = layout.points.length - 1;
-  return layout.labelIndexes.map((index) => {
-    const item = layout.points[index];
-    if (!item) {
-      return null;
-    }
-    let anchor: "end" | "middle" | "start" = "middle";
-    if (index === 0 && last > 0) {
-      anchor = "start";
-    } else if (index === last && last > 0) {
-      anchor = "end";
-    }
-    return (
-      <text
-        className="fill-muted-foreground text-xs"
-        key={item.label + String(index)}
-        textAnchor={anchor}
-        x={item.x}
-        y={layout.floor + 16}
-      >
-        {item.label}
-      </text>
-    );
-  });
-}
-
-interface DrawingProps {
-  axisText: (value: number, isTop: boolean) => string;
-  best: ChartLayout["points"][number] | undefined;
-  color: string;
-  count: number;
-  gradient: string;
+  className: string | undefined;
   height: number;
   label: string;
-  layout: ChartLayout;
-  margin: ChartMargin;
-  point: ChartLayout["points"][number] | undefined;
-  secondaryColor: string;
-  secondaryLayout: ChartLayout | null;
-  secondaryPoint: ChartLayout["points"][number] | undefined;
-  width: number;
+}) {
+  // the floor, faint, where the drawing would be: it says what is missing without drawing a series of zeros
+  return (
+    <div
+      aria-label={label}
+      className={cn("relative w-full", className)}
+      data-chart-empty=""
+      role="img"
+      style={{ height: height + EXTRA_HEIGHT }}
+    >
+      <div
+        className="absolute inset-x-0 border-border border-t"
+        style={{ bottom: 32 }}
+      />
+    </div>
+  );
 }
 
-/** The image: the grid and its labels, the dates, the area and the line of each series, the best day and the day in focus. */
-function Drawing({
+interface PlotProps {
+  axisText: (value: number, isTop: boolean) => string;
+  best: number | null;
+  color: ChartColor | undefined;
+  formatValue: (value: number) => string;
+  handle: MutableRefObject<ChartHandle | null>;
+  height: number;
+  loading: boolean;
+  loadingLabel: string | undefined;
+  margin: typeof MARGIN;
+  name: string;
+  points: ChartPoint[];
+  readingNote: ((index: number) => string | null) | undefined;
+  secondary: AreaChartSecondary | undefined;
+}
+
+/** The blocks of Bklit UI, put together: the grid, the axes, one `Area` for each series and the tooltip. */
+function Plot({
   axisText,
   best,
   color,
-  count,
-  gradient,
+  formatValue,
+  handle,
   height,
-  label,
-  layout,
+  loading,
+  loadingLabel,
   margin,
-  point,
-  secondaryColor,
-  secondaryLayout,
-  secondaryPoint,
-  width,
-}: DrawingProps) {
-  return (
-    <svg
-      aria-label={label}
-      className="block animate-rise select-none"
-      height={height}
-      role="img"
-      width={width}
-    >
-      <defs>
-        <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor={color} stopOpacity={0.28} />
-          <stop offset="1" stopColor={color} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path
-        className="stroke-border"
-        d={layout.grid}
-        fill="none"
-        strokeWidth={1}
+  name,
+  points,
+  readingNote,
+  secondary,
+}: PlotProps) {
+  const motion = useMotion();
+  const labels = useMemo(() => points.map((item) => item.label), [points]);
+  const style = useMemo(() => ({ height }), [height]);
+  const secondaryColor = secondary?.color ?? GRAY;
+  const content = useCallback(
+    ({ index }: { index: number }) => (
+      <TooltipLines
+        color={color ?? INK}
+        formatValue={formatValue}
+        name={name}
+        note={readingNote?.(index) ?? null}
+        point={points[index]}
+        secondary={secondary}
+        secondaryColor={secondaryColor}
       />
-      {layout.ticks.map((tick, index) => (
-        <text
-          className="fill-muted-foreground text-[11px]"
-          dominantBaseline="central"
-          key={tick.value}
-          textAnchor="end"
-          x={margin.left - 6}
-          y={tick.y}
-        >
-          {axisText(tick.value, index === layout.ticks.length - 1)}
-        </text>
-      ))}
-      <DateLabels layout={layout} />
-      {layout.area ? <path d={layout.area} fill={`url(#${gradient})`} /> : null}
-      {layout.line ? (
-        <path
-          d={layout.line}
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
+    ),
+    [color, formatValue, name, points, readingNote, secondary, secondaryColor]
+  );
+  return (
+    <BklitAreaChart
+      animationDuration={motion.animationDuration}
+      aspectRatio="auto"
+      data={points}
+      loadingLabel={loadingLabel}
+      margin={margin}
+      status={loading ? "loading" : "ready"}
+      style={style}
+      yDomainTween={motion.yDomainTween}
+    >
+      <Grid numTicksRows={Y_LINES} />
+      <DateAxis labels={labels} />
+      <YAxis formatValue={axisText} numTicks={Y_LINES} />
+      <Area
+        animate={motion.animate}
+        dataKey="drawn"
+        showMarkers={points.length === 1}
+        {...(color ? { fill: color, stroke: color } : {})}
+      />
+      {secondary ? (
+        <Area
+          animate={motion.animate}
+          dashArray={DASH}
+          dashFromIndex={0}
+          dataKey="drawnSecondary"
+          fill={secondaryColor}
+          fillOpacity={0}
+          stroke={secondaryColor}
         />
       ) : null}
-      <SecondaryLine color={secondaryColor} d={secondaryLayout?.line} />
-      {best ? (
-        <circle
-          className="stroke-card"
-          cx={best.x}
-          cy={best.y}
-          fill="var(--chart-1)"
-          r={4}
-          strokeWidth={2}
-        />
-      ) : null}
-      {point ? (
-        <>
-          {count > 1 ? (
-            <line
-              className="stroke-foreground/35"
-              strokeWidth={1}
-              x1={point.x}
-              x2={point.x}
-              y1={margin.top}
-              y2={layout.floor}
-            />
-          ) : null}
-          <SecondaryRing color={secondaryColor} point={secondaryPoint} />
-          <circle
-            className="fill-card"
-            cx={point.x}
-            cy={point.y}
-            r={4.5}
-            stroke={color}
-            strokeWidth={2}
-          />
-        </>
-      ) : null}
-    </svg>
+      <ChartTooltip
+        content={content}
+        damping={motion.damping}
+        dateLabels={labels}
+      />
+      <ChartBridge bestIndex={best} handle={handle} />
+    </BklitAreaChart>
   );
 }
 
-interface LayoutInput {
-  axisText: (value: number, isTop: boolean) => string;
-  data: readonly ChartDatum[];
-  height: number;
-  secondaryData: readonly ChartDatum[] | undefined;
-  width: number;
-}
-
 /**
- * The layout of the series in the box. The labels of the y axis decide the left margin, so the layout is made twice:
- * once for the lines, once to fit them. With a second series each one takes the other's maximum as its ceiling, so that
- * both have the same scale.
- */
-function useChartLayouts({
-  axisText,
-  data,
-  height,
-  secondaryData,
-  width,
-}: LayoutInput) {
-  return useMemo(() => {
-    const options = { height, maxLines: MAX_GRID_LINES, width };
-    const ownCeiling = secondaryData ? seriesMax(secondaryData) : 0;
-    const labelWidth = estimateLabelWidth(
-      chartLayout(data, {
-        ...options,
-        ceiling: ownCeiling,
-        margin: BASE_MARGIN,
-      }).ticks.map((tick, index, ticks) =>
-        axisText(tick.value, index === ticks.length - 1)
-      ),
-      AXIS_FONT_SIZE
-    );
-    const fitted = {
-      ...BASE_MARGIN,
-      left: labelWidth > 0 ? labelWidth + 14 : BASE_MARGIN.left,
-    };
-    return {
-      layout: chartLayout(data, {
-        ...options,
-        ceiling: ownCeiling,
-        margin: fitted,
-      }),
-      margin: fitted,
-      secondaryLayout: secondaryData
-        ? chartLayout(secondaryData, {
-            ...options,
-            ceiling: seriesMax(data),
-            margin: fitted,
-          })
-        : null,
-    };
-  }, [axisText, data, height, secondaryData, width]);
-}
-
-/**
- * The area chart of one series (Bklit UI adapted to the tokens of the app): a 2 px line, a fill that fades to
- * nothing, horizontal grid only, two to four labeled lines above the floor (the count that fits the series best) and
- * the dates of the x axis. The day in focus
- * (the last one, until a touch, the mouse or the arrows move it) is read in a line of text above the drawing, never
- * in a floating box that would cover the axis at 360 px.
+ * The area chart of the screens: Bklit UI's `AreaChart`, `Area`, `Grid`, `XAxis`, `YAxis` and `ChartTooltip` with
+ * their own animation (reveal, y-domain tween, morph of the path when the data changes, spring of the cursor and of the
+ * tooltip), and what the blocks do not bring: the colors by the tokens (`theme.css`), the dates and the money in pt-BR, a
+ * name and a summary for a screen reader (`role="img"`), a native range input that walks through the points with the
+ * arrows, the reading line above the drawing and `prefers-reduced-motion`.
  *
- * The drawing is an image for a screen reader (`role="img"` with the summary in `aria-label`); the way to walk
- * through the points without a pointer is a native range input laid over the drawing, transparent, that speaks the
- * date and the value (`aria-valuetext`) and draws the 3 px focus outline around the chart. The chart is a reinforcement and never the only source of a number: the caller writes the
- * total and the best day beside it, and "Ver os números" shows the table. Movement is a fade-in of the opacity
- * only (`animate-rise`), which `prefers-reduced-motion` zeroes with the rest of the page.
- *
+ * The day in focus is read in a line of text above the drawing (the last one, until the arrows move it); the pointer
+ * and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
  * With `secondary` the chart draws a second, dashed line on the same scale (the costs against the sales of the
- * Resultado): the legend names both lines and the reading of the day says both values, never in a floating box.
+ * Resultado). The chart is a reinforcement and never the only source of a number: the caller writes the total and the
+ * best day beside it, and "Ver os números" shows the table.
  */
 export function AreaChart({
   axisUnit,
   className,
-  color = "var(--chart-5)",
+  color,
   data,
   formatAxis,
   formatValue,
   height = 180,
   label,
   legend,
-  name = "",
+  loading = false,
+  loadingLabel,
+  name = "Vendas",
   rangeLabel = "Dia",
   readingNote,
   secondary,
-  width: fixedWidth,
 }: AreaChartProps) {
-  const [measure, measuredWidth] = useElementWidth<HTMLDivElement>();
-  const width = fixedWidth ?? measuredWidth;
-  const gradient = `chart-fill-${useId().replaceAll(":", "")}`;
+  const handle: MutableRefObject<ChartHandle | null> = useRef(null);
   const secondaryData = secondary?.data;
-  const secondaryColor = secondary?.color ?? "var(--chart-3)";
-  const signature = `${data.map((datum) => `${datum.label}:${datum.value}`).join()}|${(secondaryData ?? []).map((datum) => datum.value).join()}`;
+  const points = useMemo(
+    () => chartPoints(data, secondaryData),
+    [data, secondaryData]
+  );
+  const signature = useMemo(
+    () =>
+      `${data.map((datum) => `${datum.label}:${datum.value}`).join()}|${(secondaryData ?? []).map((datum) => datum.value).join()}`,
+    [data, secondaryData]
+  );
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(
     null
   );
+  const last = data.length - 1;
+  const active =
+    picked && picked.key === signature ? Math.min(picked.index, last) : last;
 
   const axisValue = formatAxis ?? formatValue;
-  // the unit goes once, on the highest line (the last tick): the margin is measured by the widest label, so it fits
+  // the unit goes once, on the highest line: the margin is measured by the widest label, so it fits
   const axisText = useCallback(
     (value: number, isTop: boolean) =>
       axisUnit && isTop ? `${axisUnit} ${axisValue(value)}` : axisValue(value),
     [axisUnit, axisValue]
   );
-  const { layout, margin, secondaryLayout } = useChartLayouts({
-    axisText,
-    data,
-    height,
-    secondaryData,
-    width,
-  });
-
-  const last = data.length - 1;
-  const active =
-    picked && picked.key === signature ? Math.min(picked.index, last) : last;
-  const point = layout.points[active];
-  const secondaryPoint = secondaryLayout?.points[active];
-  const note = readingNote?.(active) ?? null;
-  const best =
-    layout.bestIndex === null ? undefined : layout.points[layout.bestIndex];
-
-  const pick = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const box = event.currentTarget.getBoundingClientRect();
-      setPicked({
-        index: nearestIndex(layout, event.clientX - box.left),
-        key: signature,
-      });
-    },
-    [layout, signature]
+  const top = Math.max(seriesMax(data), seriesMax(secondaryData ?? []));
+  const margin = useMemo(
+    () => ({
+      ...MARGIN,
+      left: Math.max(LEFT_MARGIN_MIN, yAxisMargin(axisText(top, true))),
+    }),
+    [axisText, top]
   );
+
   const walk = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      setPicked({ index: Number(event.currentTarget.value), key: signature }),
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const index = Number(event.currentTarget.value);
+      setPicked({ index, key: signature });
+      handle.current?.show(index);
+    },
     [signature]
   );
+  const show = useCallback(() => handle.current?.show(active), [active]);
+  const hide = useCallback(() => {
+    handle.current?.hide();
+    setPicked(null);
+  }, []);
+
+  if (data.length === 0) {
+    return <EmptyChart className={className} height={height} label={label} />;
+  }
+
+  const reading = {
+    formatValue,
+    name,
+    note: readingNote?.(active) ?? null,
+    point: points[active],
+    secondary,
+  };
+  const boxHeight = height + EXTRA_HEIGHT;
 
   return (
-    <div className={cn("grid gap-2", className)}>
-      {point ? (
-        <Reading
-          formatValue={formatValue}
-          name={name}
-          note={note}
-          point={point}
-          secondary={secondary}
-          secondaryPoint={secondaryPoint}
-        />
-      ) : null}
+    <div className={cn("grid gap-2", className)} data-chart="">
+      {loading ? (
+        <p aria-hidden="true" className="min-h-[1.125rem]" />
+      ) : (
+        <Reading {...reading} />
+      )}
       {secondary ? (
         <Legend
-          color={color}
+          color={color ?? INK}
+          dash={DASH}
           legend={legend ?? name}
           secondary={secondary}
-          secondaryColor={secondaryColor}
+          secondaryColor={secondary.color ?? GRAY}
         />
       ) : null}
-      <div
-        className="relative touch-pan-y rounded-md"
-        onPointerDown={pick}
-        onPointerMove={pick}
-        ref={measure}
-        style={{ height }}
-      >
-        {width > 0 ? (
-          <Drawing
+      <div className="relative rounded-md" style={{ height: boxHeight }}>
+        <div
+          aria-label={label}
+          className="size-full"
+          data-chart-area=""
+          role="img"
+        >
+          <Plot
             axisText={axisText}
-            best={best}
+            best={bestIndex(data)}
             color={color}
-            count={data.length}
-            gradient={gradient}
-            height={height}
-            label={label}
-            layout={layout}
+            formatValue={formatValue}
+            handle={handle}
+            height={boxHeight}
+            loading={loading}
+            loadingLabel={loadingLabel}
             margin={margin}
-            point={point}
-            secondaryColor={secondaryColor}
-            secondaryLayout={secondaryLayout}
-            secondaryPoint={secondaryPoint}
-            width={width}
+            name={name}
+            points={points}
+            readingNote={readingNote}
+            secondary={secondary}
           />
-        ) : null}
-        {point ? (
+        </div>
+        {loading ? null : (
           <input
             aria-label={rangeLabel}
-            aria-valuetext={spokenValue({
-              formatValue,
-              name,
-              note,
-              point,
-              secondary,
-              secondaryPoint,
-            })}
+            aria-valuetext={spokenValue(reading)}
             className={RANGE_CLASS}
             max={last}
             min={0}
+            onBlur={hide}
             onChange={walk}
+            onFocus={show}
             step={1}
             type="range"
             value={active}
           />
-        ) : null}
+        )}
       </div>
     </div>
   );

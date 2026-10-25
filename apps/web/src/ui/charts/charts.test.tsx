@@ -4,9 +4,11 @@ import { AreaChart } from "./area-chart";
 import { Sparkline } from "./sparkline";
 
 /**
- * The markup of the charts (ADR 0103, amendment "Gráficos"): the role and the name each one gives the screen reader,
- * the keyboard control and the colors as tokens. The browser checks (e2e-pwa/ui-charts.e2e.ts) run the same ones in
- * the gallery, with axe, the real width and the keyboard.
+ * The markup of what Polaris adds around the blocks of Bklit UI (ADR 0103, amendment "Gráficos", t336): the name and
+ * the summary a screen reader gets, the reading line, the legend, the keyboard control and the empty state. The blocks
+ * measure their box with a ResizeObserver, so the plot itself has no width on the server and is not in this markup:
+ * what the browser draws (the reveal, the tooltip with the value in pt-BR, the arrows moving the point in focus, the
+ * reduced motion, the colors) is measured by e2e-pwa/ui-charts.e2e.ts, in the gallery.
  */
 const WEEK = [
   { label: "17/10", value: 120 },
@@ -18,18 +20,21 @@ const WEEK = [
   { label: "23/10", value: 520 },
 ];
 
-const money = (value: number) => `R$ ${value}`;
+const money = (value: number) => `R$ ${value},00`;
 const html = (node: React.ReactNode) => renderToStaticMarkup(node);
 
-const IMG_SVG = /<svg[^>]*role="img"[^>]*>/;
+const IMG = /<div[^>]*role="img"[^>]*>/;
 const ARIA_LABEL = /aria-label="([^"]*)"/;
 const RANGE = /<input[^>]*type="range"[^>]*>/;
+const READING = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
+const TAGS = /<[^>]+>/g;
+const LEGEND = /<ul[^>]*data-chart-legend[\s\S]*?<\/ul>/;
+const note = (index: number) =>
+  index === 6 ? "inclui R$ 100,00 de despesas" : null;
+const plain = (value: number) => `R$ ${String(value).replace(".", ",")}`;
 const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
-const STOP_COLORS = /stop-color="([^"]*)"/g;
-const SVG_TEXT = /<text[^>]*>([^<]*)<\/text>/g;
-const READING_LINE = /<p[^>]*data-chart-reading=""[^>]*>.*23\/10.*R\$ 520/;
-const TOP_LABEL_X = /<text[^>]*x="(\d+(?:\.\d+)?)"[^>]*>R\$ 2 mil/;
-const abbreviate = (value: number) => `${value / 1000} mil`;
+const text = (markup: string) =>
+  markup.replace(TAGS, "").replaceAll("&#x27;", "'");
 
 describe("AreaChart", () => {
   const markup = html(
@@ -37,14 +42,12 @@ describe("AreaChart", () => {
       data={WEEK}
       formatValue={money}
       label="Vendas líquidas por dia, de 17/10 a 23/10"
-      width={328}
     />
   );
 
   it("is an image named by its summary", () => {
-    const svg = markup.match(IMG_SVG)?.[0] ?? "";
-    expect(svg).toContain('role="img"');
-    expect(svg.match(ARIA_LABEL)?.[1]).toBe(
+    const image = markup.match(IMG)?.[0] ?? "";
+    expect(image.match(ARIA_LABEL)?.[1]).toBe(
       "Vendas líquidas por dia, de 17/10 a 23/10"
     );
   });
@@ -52,278 +55,135 @@ describe("AreaChart", () => {
   it("walks through the points with a range input that speaks the date and the value", () => {
     const input = markup.match(RANGE)?.[0] ?? "";
     expect(input).toContain('aria-label="Dia"');
-    expect(input).toContain('aria-valuetext="23/10: R$ 520"');
+    expect(input).toContain('aria-valuetext="23/10: R$ 520,00"');
     expect(input).toContain('min="0"');
     expect(input).toContain('max="6"');
     expect(input).toContain('value="6"');
     expect(input).toContain("pointer-events-none");
-  });
-
-  it("reads the day in focus (the last) in a line above the drawing, not live: the keyboard control speaks it", () => {
-    expect(markup).toMatch(READING_LINE);
-    expect(markup.indexOf("data-chart-reading")).toBeLessThan(
-      markup.indexOf("<svg")
+    // the control is a sibling of the image: an image has no interactive children for a screen reader
+    expect(markup.indexOf("</div><input")).toBeGreaterThan(
+      markup.indexOf('role="img"')
     );
-    // said once, by the control (Petković, PR 283): a live line would repeat it
-    expect(markup).not.toContain("aria-live");
   });
 
-  it("labels the axes: money in the two lines the series fills, four dates on a phone", () => {
-    const texts = [...markup.matchAll(SVG_TEXT)].map((match) => match[1]);
-    expect(texts).toEqual(expect.arrayContaining(["R$ 1000", "R$ 2000"]));
-    expect(texts).not.toContain("R$ 3000");
-    expect(texts).toEqual(
-      expect.arrayContaining(["17/10", "19/10", "21/10", "23/10"])
+  it("reads the last day in a line above the drawing, not live: the keyboard control speaks it", () => {
+    const reading = markup.match(READING)?.[0] ?? "";
+    expect(text(reading)).toBe("23/10 R$ 520,00");
+    expect(reading).not.toContain("aria-live");
+  });
+
+  it("names the keyboard control as the caller says", () => {
+    const named = html(
+      <AreaChart
+        data={WEEK}
+        formatValue={money}
+        label="x"
+        rangeLabel="Dia, últimos 7 dias"
+      />
     );
-    expect(texts).not.toContain("18/10");
-  });
-
-  it("marks the best day in the first token and draws the series in the ink", () => {
-    expect(markup).toContain('fill="var(--chart-1)"');
-    expect(markup).toContain('stroke="var(--chart-5)"');
-    expect(markup.match(STOP_COLORS)).toEqual([
-      'stop-color="var(--chart-5)"',
-      'stop-color="var(--chart-5)"',
-    ]);
+    expect(named.match(RANGE)?.[0]).toContain(
+      'aria-label="Dia, últimos 7 dias"'
+    );
   });
 
   it("takes only a token as a color: none written in the markup", () => {
     expect(markup).not.toMatch(OKLCH_OR_HEX);
   });
 
-  it("fades in with the page's fade and no other animation", () => {
-    expect(markup).toContain("animate-rise");
-    expect(markup).not.toContain("<animate");
-  });
-
-  it("draws nothing before the box has a width, and keeps the keyboard control", () => {
-    const unmeasured = html(
-      <AreaChart data={WEEK} formatValue={money} label="x" />
-    );
-    expect(unmeasured).not.toContain("<svg");
-    expect(unmeasured).toMatch(RANGE);
-  });
-
-  it("an empty series has the floor, no reading and no keyboard control", () => {
+  it("an empty series is the named floor: no reading, no keyboard control", () => {
     const empty = html(
-      <AreaChart data={[]} formatValue={money} label="Sem vendas" width={328} />
+      <AreaChart data={[]} formatValue={money} label="Vendas, sem dados" />
     );
-    expect(empty).toMatch(IMG_SVG);
+    expect(empty).toContain('aria-label="Vendas, sem dados"');
+    expect(empty).toContain("data-chart-empty");
     expect(empty).not.toContain("data-chart-reading");
-    expect(empty).not.toMatch(RANGE);
-    expect(empty).not.toContain("NaN");
+    expect(empty).not.toContain("<input");
   });
 
-  it("a single point is a ring and no line", () => {
+  it("a single point has one stop on the keyboard control", () => {
     const one = html(
       <AreaChart
-        data={[{ label: "23/10", value: 500 }]}
+        data={[{ label: "23/10", value: 740 }]}
         formatValue={money}
-        label="Um dia"
-        width={328}
+        label="Vendas, um dia"
       />
     );
-    expect(one).toContain("<circle");
-    expect(one).not.toContain('fill="none" stroke="var(--chart-5)"');
-    expect(one).toContain('max="0"');
+    expect(one.match(RANGE)?.[0]).toContain('max="0"');
+    expect(text(one.match(READING)?.[0] ?? "")).toBe("23/10 R$ 740,00");
   });
 
-  it("all zero draws no labeled line above the floor", () => {
-    const zero = html(
+  it("speaks the value as the caller formats it, a number only positions the point", () => {
+    const odd = html(
       <AreaChart
-        data={WEEK.map((day) => ({ ...day, value: 0 }))}
-        formatValue={money}
-        label="Tudo zero"
-        width={328}
-      />
-    );
-    expect([...zero.matchAll(SVG_TEXT)].map((match) => match[1])).toEqual([
-      "17/10",
-      "19/10",
-      "21/10",
-      "23/10",
-    ]);
-    expect(zero).not.toContain("NaN");
-  });
-
-  it("uses the axis formatter for the lines and the value formatter for the reading", () => {
-    const abbreviated = html(
-      <AreaChart
-        data={WEEK}
-        formatAxis={abbreviate}
-        formatValue={money}
+        data={[
+          { label: "22/10", value: -5 },
+          { label: "23/10", value: 1234.5 },
+        ]}
+        formatValue={plain}
         label="x"
-        width={328}
       />
     );
-    expect(abbreviated).toContain(">1 mil<");
-    expect(abbreviated).toContain("R$ 520");
-  });
-});
-
-describe("AreaChart: the unit of the axis", () => {
-  const texts = (axisUnit?: string, data = WEEK) =>
-    [
-      ...html(
-        <AreaChart
-          {...(axisUnit ? { axisUnit } : {})}
-          data={data}
-          formatAxis={abbreviate}
-          formatValue={money}
-          label="x"
-          width={328}
-        />
-      ).matchAll(SVG_TEXT),
-    ].map((match) => match[1] as string);
-
-  it("is written once, on the label of the top line only", () => {
-    expect(texts("R$")).toEqual(expect.arrayContaining(["1 mil", "R$ 2 mil"]));
-    expect(texts("R$").filter((text) => text.startsWith("R$"))).toHaveLength(1);
-  });
-
-  it("is not written without the prop", () => {
-    expect(texts()).toEqual(expect.arrayContaining(["1 mil", "2 mil"]));
-    expect(texts()).not.toContain("R$ 2 mil");
-  });
-
-  it("widens the left margin to the label with the unit, so it fits", () => {
-    const x = html(
-      <AreaChart
-        axisUnit="R$"
-        data={WEEK}
-        formatAxis={abbreviate}
-        formatValue={money}
-        label="x"
-        width={328}
-      />
-    ).match(TOP_LABEL_X)?.[1];
-    // the label ends 6 px before the plot: 0.58 em of 11 px for each of the 8 characters of "R$ 2 mil", plus 14
-    expect(Number(x)).toBe(Math.ceil(8 * 11 * 0.58) + 14 - 6);
-  });
-
-  it("is not drawn on an all-zero series, which has no labeled line", () => {
-    const zeros = WEEK.map((day) => ({ ...day, value: 0 }));
-    expect(texts("R$", zeros).some((text) => text.startsWith("R$"))).toBe(
-      false
+    expect(odd.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: R$ 1234,5"'
     );
   });
 });
-
-describe("Sparkline", () => {
-  const markup = html(<Sparkline values={[3, 5, 4, 9, 7]} width={120} />);
-
-  it("is hidden from a screen reader: the number beside it is the information", () => {
-    expect(markup).toContain('aria-hidden="true"');
-    expect(markup).not.toContain("role=");
-    expect(markup).not.toContain("<text");
-    expect(markup).not.toContain("<input");
-  });
-
-  it("draws one line with a fade and a dot on the last value, in a token", () => {
-    expect(markup).toContain('stroke="var(--chart-5)"');
-    expect(markup).toContain('fill="var(--chart-5)"');
-    expect(markup.match(/<circle/g)).toHaveLength(1);
-    expect(markup).not.toMatch(OKLCH_OR_HEX);
-  });
-
-  it("draws nothing without values or before it has a width", () => {
-    expect(html(<Sparkline values={[]} width={120} />)).not.toContain("<svg");
-    expect(html(<Sparkline values={[1, 2]} />)).not.toContain("<svg");
-  });
-
-  it("an all-zero series is a flat line, no NaN", () => {
-    const flat = html(<Sparkline values={[0, 0, 0]} width={120} />);
-    expect(flat).toContain("<path");
-    expect(flat).not.toContain("NaN");
-  });
-});
-
-const noteOf = (index: number) =>
-  index === 6 ? "inclui R$ 1800 de despesas do período" : null;
-const AXIS_AMOUNT = /^R\$ (\d+)$/;
-const READING_PARAGRAPH = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
-/** The text between two tags: the words of the reading, read node by node instead of stripping the markup. */
-const TEXT_NODE = />([^<]+)</g;
 
 describe("AreaChart: a second series (the costs of the Resultado)", () => {
-  const COSTS = [
-    { label: "17/10", value: 60 },
-    { label: "18/10", value: 100 },
-    { label: "19/10", value: 2050 },
-    { label: "20/10", value: 700 },
-    { label: "21/10", value: 300 },
-    { label: "22/10", value: 40 },
-    { label: "23/10", value: 200 },
-  ];
-  const secondary = {
-    data: COSTS,
-    legend: "Custos (CMV, taxas e despesas)",
-    name: "Custos",
-  };
+  const costs = WEEK.map((day) => ({ ...day, value: day.value * 2 }));
   const markup = html(
     <AreaChart
       data={WEEK}
       formatValue={money}
-      label="Vendas líquidas e custos por dia"
+      label="Vendas e custos"
       legend="Vendas líquidas"
       name="Vendas"
-      readingNote={noteOf}
-      secondary={secondary}
-      width={328}
+      readingNote={note}
+      secondary={{ data: costs, legend: "Custos", name: "Custos" }}
     />
   );
 
   it("names both lines in a legend, each with its own trace, the second one dashed", () => {
-    expect(markup).toContain('data-chart-legend=""');
-    expect(markup).toContain("Vendas líquidas");
-    expect(markup).toContain("Custos (CMV, taxas e despesas)");
-    // two samples in the legend and the line of the series in the drawing: three dashes in all? only the second is
-    expect(markup.match(/stroke-dasharray="5 4"/g)).toHaveLength(2);
+    expect(markup).toContain("data-chart-legend");
+    const legend = markup.match(LEGEND)?.[0] ?? "";
+    expect(text(legend)).toBe("Vendas líquidasCustos");
+    expect(legend.match(/stroke-dasharray/g)).toHaveLength(1);
+    expect(legend).toContain('stroke="var(--chart-3)"');
   });
 
-  it("draws the second series dashed in the mid grey token, with no fill of its own", () => {
-    const dashedPaths =
-      markup.match(/<path[^>]*stroke-dasharray="5 4"[^>]*>/g) ?? [];
-    expect(dashedPaths).toHaveLength(1);
-    expect(dashedPaths[0]).toContain('stroke="var(--chart-3)"');
-    expect(dashedPaths[0]).toContain('fill="none"');
-    expect(markup).not.toMatch(OKLCH_OR_HEX);
-  });
-
-  it("reads both values of the day in focus and the note, in a line of text above the drawing", () => {
-    const reading = markup.match(READING_PARAGRAPH)?.[1] ?? "";
-    const text = [...reading.matchAll(TEXT_NODE)]
-      .map((node) => node[1])
-      .join("");
-    expect(text).toBe(
-      "23/10 · Vendas R$ 520 · Custos R$ 200 · inclui R$ 1800 de despesas do período"
-    );
-    expect(markup.indexOf("data-chart-reading")).toBeLessThan(
-      markup.indexOf("<svg")
+  it("reads both values of the day in focus and the note, in a line of text", () => {
+    expect(text(markup.match(READING)?.[0] ?? "")).toBe(
+      "23/10 · Vendas R$ 520,00 · Custos R$ 1040,00 · inclui R$ 100,00 de despesas"
     );
   });
 
   it("speaks both values and the note through the keyboard control", () => {
-    const input = markup.match(RANGE)?.[0] ?? "";
-    expect(input).toContain(
-      'aria-valuetext="23/10: Vendas R$ 520, Custos R$ 200, inclui R$ 1800 de despesas do período"'
+    expect(markup.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: Vendas R$ 520,00, Custos R$ 1040,00, inclui R$ 100,00 de despesas"'
     );
   });
 
-  it("puts both lines on one scale: the costs peak sets the top, so the sales never pass it", () => {
-    const tops = [...markup.matchAll(SVG_TEXT)]
-      .map((match) => AXIS_AMOUNT.exec(match[1] ?? "")?.[1])
-      .filter((amount): amount is string => amount !== undefined)
-      .map(Number);
-    // 2050 is the highest value of either series: the grid reaches it, which the sales alone (1840) would not need
-    expect(Math.max(...tops)).toBeGreaterThanOrEqual(2050);
+  it("has no legend without the second series", () => {
+    expect(
+      html(<AreaChart data={WEEK} formatValue={money} label="x" />)
+    ).not.toContain("data-chart-legend");
+  });
+});
+
+describe("Sparkline", () => {
+  it("is hidden from a screen reader: the number beside it is the information", () => {
+    const markup = html(<Sparkline values={[1, 2, 3]} />);
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).not.toContain("<input");
   });
 
-  it("is the same as before without the second series: one line, no legend", () => {
-    const plain = html(
-      <AreaChart data={WEEK} formatValue={money} label="x" width={328} />
-    );
-    expect(plain).not.toContain("data-chart-legend");
-    expect(plain).not.toContain("stroke-dasharray");
+  it("draws nothing without values", () => {
+    expect(html(<Sparkline values={[]} />)).toBe("");
+  });
+
+  it("takes only a token as a color", () => {
+    expect(
+      html(<Sparkline color="var(--chart-3)" values={[1, 2, 3]} />)
+    ).not.toMatch(OKLCH_OR_HEX);
   });
 });
