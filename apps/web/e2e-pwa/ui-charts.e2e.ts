@@ -426,7 +426,7 @@ test("a miniatura sai da leitura: escondida, sem texto e sem controle", async ({
 });
 
 for (const theme of THEMES) {
-  test(`tema ${theme.name}: as cores vêm dos tokens, a tinta na série e o esmeralda só no melhor dia`, async ({
+  test(`tema ${theme.name}: as cores vêm dos tokens: a tinta na série e no anel do melhor dia, nunca o esmeralda (v7)`, async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -455,7 +455,9 @@ for (const theme of THEMES) {
     // the line of the series is the ink; the grid and the tooltip are the border and the card, never the emerald
     expect(colors.strokes).toContain(ink);
     expect(colors.strokes).not.toContain(emerald);
-    expect(colors.best).toContain(emerald);
+    // since v7 the best day is marked by its shape (a larger ring in the color of the series), not by the emerald
+    expect(colors.best).toContain(ink);
+    expect(colors.best).not.toContain(emerald);
     // the ink and the emerald are never the same color, in either theme
     expect(ink).not.toBe(emerald);
     // a sparkline is the ink too
@@ -583,13 +585,14 @@ test("enquanto o pedaço vem, uma caixa da altura do gráfico guarda o lugar", a
   });
   await openGallery(page);
   const boxes = page.locator("[data-chart-loading]");
-  await expect(boxes).toHaveCount(14);
+  await expect(boxes).toHaveCount(15);
   const heights = await boxes.evaluateAll((items) =>
     items.map((item) => Math.round(item.getBoundingClientRect().height))
   );
   // the eight area charts: the plot, the margins of the blocks (40 px) and the line of reading above it (26 px), and
-  // 44 px more for the legend of two series; the six miniatures: 32 px
+  // 44 px more for the legend of two series; the six miniatures: 32 px; the sparkline of the KPI card: 64 px
   expect(heights.filter((height) => height === 32)).toHaveLength(6);
+  expect(heights.filter((height) => height === 64)).toHaveLength(1);
   expect(
     heights.filter((height) => [246, 286, 330].includes(height))
   ).toHaveLength(8);

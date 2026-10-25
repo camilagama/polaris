@@ -116,8 +116,10 @@ export interface KpiRange {
   valueText: string;
 }
 
+/* transparent, with no track and no thumb (the sparkline shows the point read) and deaf to the pointer (the drawing
+   under it reads the pointer); the 3 px outline of the keyboard focus is drawn inside the strip, which the card clips */
 const RANGE_CLASS =
-  "pointer-events-none absolute inset-0 m-0 size-full appearance-none bg-transparent opacity-0";
+  "pointer-events-none absolute inset-0 m-0 size-full appearance-none rounded-b-xl bg-transparent focus-visible:outline-3 focus-visible:outline-ring focus-visible:-outline-offset-3 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none";
 
 function SparkSlot({
   compact,
@@ -135,11 +137,10 @@ function SparkSlot({
     [onChange]
   );
   return (
-    // the outline of the keyboard focus goes round the strip, inside the card's rounded bottom
     <div
       className={cn(
-        "relative -mx-(--card-spacing) mt-auto touch-pan-y rounded-b-[inherit] has-[input:focus-visible]:outline-3 has-[input:focus-visible]:outline-ring has-[input:focus-visible]:-outline-offset-3",
-        compact ? "h-10 md:h-16" : "h-[3.25rem] md:h-16"
+        "relative -mx-(--card-spacing) mt-auto touch-pan-y",
+        compact ? "h-12 md:h-16" : "h-[3.25rem] md:h-16"
       )}
       data-kpi-spark=""
     >
@@ -181,7 +182,7 @@ export function KpiCard({
   action?: ReactNode;
   chip?: ReactNode;
   className?: string;
-  /** Half the width on a phone: a shorter sparkline. */
+  /** Half the width on a phone: a shorter sparkline (48 px, the touch area of its control). */
   compact?: boolean;
   date: string;
   entity: KpiEntity;
@@ -207,7 +208,8 @@ export function KpiCard({
       data-kpi={entity}
       role="region"
     >
-      <div className="flex min-w-0 items-center justify-between gap-2 text-[0.8125rem] text-muted-foreground leading-[1.125rem]">
+      {/* the date goes under the name when both do not fit (a card of half the width on a phone) */}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[0.8125rem] text-muted-foreground leading-[1.125rem]">
         <h2
           className="flex min-w-0 items-center font-medium text-foreground"
           id={id}

@@ -959,12 +959,13 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       // biome-ignore lint/performance/noAwaitInLoops: one card at a time
       await expect(card.locator("[data-kpi-date]")).toHaveText("1 a 22/10");
     }
-    // the outline of the keyboard focus goes round the strip
+    // the outline of the keyboard focus goes round the strip, inside it
     expect(
-      await sales
-        .locator("[data-kpi-spark]")
-        .evaluate((node) => getComputedStyle(node).outlineWidth)
-    ).toBe("3px");
+      await slider.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return [style.outlineWidth, style.outlineOffset];
+      })
+    ).toEqual(["3px", "-3px"]);
 
     const today = region(page, "Vendas hoje").getByRole("slider");
     await today.focus();

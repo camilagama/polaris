@@ -39,12 +39,12 @@ function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
-/** The height of a sparkline: 64 px from 760 px; on a phone 52, and 40 in a card of half the width (v7). */
+/** The height of a sparkline: 64 px from 760 px; on a phone 52, and 48 in a card of half the width (its touch area). */
 function sparkHeight(still: boolean, compact: boolean): number {
   if (!still) {
     return 64;
   }
-  return compact ? 40 : 52;
+  return compact ? 48 : 52;
 }
 
 function Chip({ reading }: { reading: KpiReading }) {
