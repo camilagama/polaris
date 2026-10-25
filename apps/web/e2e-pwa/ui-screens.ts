@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
-import type { BrowserContext, Page } from "@playwright/test";
+import type { BrowserContext, Locator, Page } from "@playwright/test";
 import {
   acceptanceStates,
   firstAccessStates,
@@ -111,8 +111,33 @@ async function openAndClose(
     popup.name ? { name: popup.name } : {}
   );
   await surface.first().waitFor();
-  await page.keyboard.press("Escape");
-  await surface.waitFor({ state: "detached" });
+  await escapeUntilGone(page, surface);
+  // no backdrop of a menu or a select (the Base UI marks it `data-base-ui-inert`) is left over the page
+  await page.locator("[data-base-ui-inert]").first().waitFor({
+    state: "detached",
+  });
+}
+
+/**
+ * Escape, asked again until the overlay leaves: one that has just opened (or opened again during the exit of the
+ * last one) listens for the key only after its first effects, so an Escape sent right after it showed can be lost.
+ */
+async function escapeUntilGone(page: Page, surface: Locator) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one try at a time
+    await page.keyboard.press("Escape");
+    const gone = await surface
+      .first()
+      .waitFor({ state: "detached", timeout: 1500 })
+      .then(
+        () => true,
+        () => false
+      );
+    if (gone) {
+      return;
+    }
+  }
+  await surface.first().waitFor({ state: "detached" });
 }
 
 async function exerciseGallery(page: Page) {
