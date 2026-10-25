@@ -17,7 +17,11 @@ export interface Period {
   to: string;
 }
 
-type Daily = PeriodSummaryReadModel["daily"];
+/** What the Início reads of a day: the costs of the day are the Resultado's. */
+type Daily = Pick<
+  PeriodSummaryReadModel["daily"][number],
+  "date" | "netSales" | "salesCount"
+>[];
 
 const DAY = 86_400_000;
 
