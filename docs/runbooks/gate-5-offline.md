@@ -140,6 +140,17 @@ Por fluxo, nos dois aparelhos: fluxo 1 (clientes) 7/7, fluxo 2 (venda, sem limpa
 - Valem as limitações de sempre: o runtime lê a caixa "Rede disponível" do laboratório, o servidor é simulado na página (não prova API, Neon nem RLS), e instalar na tela inicial, relógio, modo avião real e ITP seguem no checklist manual. A suíte não exercita a revogação nem o `device.check` contra servidor real: isso continua nos gates de banco e no item "Revogar um aparelho perdido" do checklist manual.
 - Esta execução substitui a pendência do registro anterior: a prova do aparelho real sobre o runtime atual passou nos dois aparelhos. O Gate 5 só fecha com o checklist manual abaixo, que segue bloqueando ligar a escrita offline em produção. Além disso, ligar a escrita offline depende da tela de entrada (`/entrar`) e da tela de aparelhos com "encerrar as outras sessões", que ainda não estão montadas: vários itens do checklist (abrir o app sem rede, "Sair", revogar um aparelho perdido) só podem ser executados depois delas.
 
+### Registro do fluxo 4 (seletor de data), 25/10/2026
+
+Uma execução parcial (`GATE5_FLOWS=4`, `partial: true`: não é a prova do Gate 5 inteiro), de 16:53:31Z a 16:57:59Z, os dois aparelhos em sequência, sem segunda tentativa, no commit `517cab7a` da branch `feat/ui-datas-nas-telas` (t373/t379, primeira tela que usa o seletor de data do `ui/`). Antes dela, uma execução por aparelho no mesmo código (16:25Z e 16:28Z) também passou 10/10. É a condição combinada na revisão do calendário (t363): Safari real antes do merge da primeira tela com o seletor. O `report.md` fica só na máquina de quem rodou; este é o resumo, sem credenciais e sem links da conta do BrowserStack.
+
+| Aparelho | 4a (abre e escolhe) | 4b (sem rede, SW controlando) | 4c (chunk 503, sem SW) | Encerramento |
+| --- | --- | --- | --- | --- |
+| iPhone 18 Pro Max, iOS 27, Safari | 3/3 | 3/3 | 3/3: "O calendário não abriu." e "Recarregar a página"; a marca em `window` continuou 5 s depois e sumiu só com o toque | 1/1 |
+| Google Pixel 11 Pro, Android 17, Chrome | 3/3 | 3/3 | 3/3: "O calendário não abriu." e "Tentar novamente"; com a chave desligada, o toque abriu o calendário e a marca continuou (sem recarregar) | 1/1 |
+
+Nenhum passo reprovado nem pulado. Em 4a o campo foi de 25/10/2026 a 10/10/2026. Os fluxos 1 a 3 não rodaram nesta execução: a marca do Worker no servidor estático (sem ela o laboratório não chega a `ready` desde a F7) entrou nesta mesma mudança e ainda não foi provada neles em aparelho real. As capturas do Safari (e do Chrome) ficam fora do repositório, com as evidências da revisão.
+
 ### Como o BrowserStack foi escolhido (fontes consultadas em 18/10/2026)
 
 - [Playwright em iOS real](https://www.browserstack.com/docs/automate/playwright/playwright-ios/nodejs) existe (Safari, SDK Node.js, Playwright 1.50.1 ou mais novo), mas no Android real o Playwright só aparece até a versão 1.59 na [tabela de versões](https://www.browserstack.com/docs/automate/playwright/browsers-and-os) e o repositório usa 1.63. Por isso a suíte usa WebDriver (WebdriverIO), igual nas duas plataformas.
