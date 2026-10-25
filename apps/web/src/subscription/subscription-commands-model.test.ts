@@ -196,29 +196,9 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
 });
 
 describe("pay the charge that failed (AC-43)", () => {
-  it("a renewal already cancelled in grace says the charge will not be paid, the Pro until and the day to subscribe again", () => {
-    const grace = plan({
-      accessEndsAt: "2026-10-31T03:00:00.000Z",
-      recovery: "provider_page",
-      renewalCancelled: true,
-      resubscribeFrom: "2026-10-31T03:00:00.000Z",
-      state: "grace",
-    });
-    expect(cancelledGraceText(grace)).toBe(
-      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até 30/10/2026; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de 30/10/2026."
-    );
-    // no day from the server: the day to subscribe again is the end of the grace
-    expect(cancelledGraceText({ ...grace, resubscribeFrom: null })).toBe(
-      cancelledGraceText(grace)
-    );
-    expect(
-      cancelledGraceText({
-        ...grace,
-        accessEndsAt: null,
-        resubscribeFrom: null,
-      })
-    ).toBe(
-      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até o fim do prazo; depois a loja volta ao Free e seus dados ficam."
+  it("a renewal already cancelled in grace says only that the charge will not be paid", () => {
+    expect(cancelledGraceText()).toBe(
+      "Renovação cancelada. A cobrança pendente não será paga."
     );
   });
 

@@ -705,7 +705,7 @@ test("pagar a cobrança pendente: um endereço fora dos hosts exatos do Asaas n�
   await expect(page.getByRole("button", CANCEL_BUTTON)).toBeVisible();
 });
 
-test("carência com a renovação já cancelada: sem o botão de pagar, o cartão diz que a cobrança não será paga e até quando vai o Pro (AS-43)", async ({
+test("carência com a renovação já cancelada: sem o botão de pagar, o cartão diz só que a cobrança não será paga (AS-43)", async ({
   page,
 }) => {
   await openScreen(page, {
@@ -720,9 +720,12 @@ test("carência com a renovação já cancelada: sem o botão de pagar, o cartã
   await expect(page.getByRole("button", PAY_BUTTON)).toHaveCount(0);
   await expect(page.getByRole("button", CANCEL_BUTTON)).toHaveCount(0);
   await expect(
-    page.getByText(
-      "Renovação cancelada. A cobrança pendente não será paga. Seu Pro continua até 30/10/2026; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de 30/10/2026."
-    )
+    page.getByText("Renovação cancelada. A cobrança pendente não será paga.")
+  ).toBeVisible();
+  // the date and the day to subscribe again are the page's, not the box's
+  await expect(page.getByText("Seu Pro vai até 30/10/2026.")).toBeVisible();
+  await expect(
+    page.getByText("Dá para assinar de novo depois de 30/10/2026")
   ).toBeVisible();
 });
 

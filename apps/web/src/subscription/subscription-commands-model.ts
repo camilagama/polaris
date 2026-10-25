@@ -221,21 +221,11 @@ export function overdueText(plan: BillingPlanView): string {
 
 /**
  * The grace of a renewal already cancelled (AS-43 asks for the server's page, but a renewal cancelled is not told to
- * pay it): in the place of the button, that the charge will not be paid, until when the Pro goes and from when the
- * store may subscribe again. The days are the plan's (the end of the grace, the last day paid for).
+ * pay it): in the place of the button, only that the charge will not be paid. The head and the resubscribe line of the
+ * page already say until when the Pro goes and from when the store may subscribe again.
  */
-export function cancelledGraceText(plan: BillingPlanView): string {
-  const until =
-    plan.accessEndsAt === null ? null : accessDateText(plan.accessEndsAt);
-  const again =
-    plan.resubscribeFrom === null
-      ? until
-      : accessDateText(plan.resubscribeFrom);
-  const head = "Renovação cancelada. A cobrança pendente não será paga.";
-  if (until === null) {
-    return `${head} Seu Pro continua até o fim do prazo; depois a loja volta ao Free e seus dados ficam.`;
-  }
-  return `${head} Seu Pro continua até ${until}; depois a loja volta ao Free e seus dados ficam. Dá para assinar de novo depois de ${again}.`;
+export function cancelledGraceText(): string {
+  return "Renovação cancelada. A cobrança pendente não será paga.";
 }
 
 /** The exact hosts of Asaas's page of a charge (ADR 0104, decision 3): never by suffix. */

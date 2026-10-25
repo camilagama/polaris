@@ -553,7 +553,7 @@ export function PlanActions({
       ) : null}
       {graceCancelled ? (
         <p className="m-0 rounded-lg border px-3 py-2.5 text-muted-foreground">
-          {cancelledGraceText(plan)}
+          {cancelledGraceText()}
         </p>
       ) : null}
       {cancel ? (
