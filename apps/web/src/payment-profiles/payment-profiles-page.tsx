@@ -273,10 +273,13 @@ export function PaymentProfilesPage() {
     setDraft(blankDraft());
     setFieldErrors({});
   }, []);
-  /** A message to read (what the save said) takes the focus; without one, it goes back to what opened the form. */
+  /**
+   * What the save said takes the focus when the form closes; a cancel (the notice was cleared when it opened) goes
+   * back to what opened the form, even with the warning of a cut connection still on screen.
+   */
   const finalFocus = useCallback(
-    () => feedbackRef.current ?? originRef.current() ?? true,
-    []
+    () => (notice ? feedbackRef.current : null) ?? originRef.current() ?? true,
+    [notice]
   );
 
   const saveProfile = useCallback(
