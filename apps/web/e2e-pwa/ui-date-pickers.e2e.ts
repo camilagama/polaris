@@ -13,7 +13,8 @@ import { axeFaults } from "./ui-guardrails";
  * asks for no motion stops it. axe finds nothing with each picker open, in both themes. "Hoje" is 24/10/2026 in the
  * gallery.
  */
-const CALENDAR_CHUNK = "**/assets/calendar-*.js";
+// with or without the query of a second try (`?retry=1`)
+const CALENDAR_CHUNK = /\/assets\/calendar-[\w-]+\.js(\?.*)?$/;
 const CALENDAR_CHUNK_URL = /\/assets\/calendar-[\w-]+\.js$/;
 const VIEWPORTS = [
   { height: 740, width: 360 },
@@ -98,21 +99,129 @@ test("o calendário vem do seu próprio chunk, baixado quando a galeria pede um"
   expect(csp.violations()).toEqual([]);
 });
 
-test("sem o chunk do calendário o seletor abre e diz que o calendário não abriu", async ({
+const FAILED_TEXT = "O calendário não abriu.";
+const OFFLINE_TEXT = "Sem internet. O calendário abre quando a conexão voltar.";
+
+/** The box of the calendar inside the section of the gallery that shows the month alone. */
+const inlineBox = (page: Page) =>
+  page.getByRole("region", { name: "Calendário" }).getByRole("alert");
+
+test("sem o chunk do calendário, com rede: o seletor abre, diz que o calendário não abriu e oferece Tentar novamente; Hoje continua no rodapé", async ({
   page,
 }) => {
   await page.route(CALENDAR_CHUNK, (route) => route.abort());
   await page.goto("/ui-galeria");
-  await expect(
-    page
-      .getByRole("region", { name: "Calendário" })
-      .getByRole("alert")
-      .filter({ hasText: "O calendário não abriu" })
-  ).toBeVisible();
+  await expect(inlineBox(page)).toHaveText(`${FAILED_TEXT}Tentar novamente`);
   await trigger(page, "Data da despesa,").click();
+  const popup = page.getByRole("dialog", { name: "Data da despesa" });
+  await expect(popup.getByRole("alert")).toContainText(FAILED_TEXT);
   await expect(
-    page.getByRole("dialog", { name: "Data da despesa" }).getByRole("alert")
-  ).toHaveText("O calendário não abriu. Confira a conexão e abra de novo.");
+    popup.getByRole("button", { name: "Tentar novamente" })
+  ).toBeVisible();
+  await expect(popup.getByRole("button", { name: "Hoje" })).toBeVisible();
+});
+
+test("sem o chunk do calendário e sem internet: diz Sem internet, sem botão, Hoje continua e o calendário abre sozinho quando a conexão volta", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as unknown as { offlineNow: boolean }).offlineNow = true;
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => !(window as unknown as { offlineNow: boolean }).offlineNow,
+    });
+  });
+  const connection: { blocked: boolean } = { blocked: true };
+  await page.route(CALENDAR_CHUNK, (route) =>
+    connection.blocked ? route.abort("internetdisconnected") : route.fallback()
+  );
+  await page.goto("/ui-galeria");
+  await expect(inlineBox(page)).toHaveText(OFFLINE_TEXT);
+  await expect(
+    inlineBox(page).getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await trigger(page, "Data da despesa,").click();
+  const popup = page.getByRole("dialog", { name: "Data da despesa" });
+  await expect(popup.getByRole("alert")).toHaveText(OFFLINE_TEXT);
+  await expect(popup.getByRole("button", { name: "Hoje" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // the connection is back: the event makes the calendar ask again, with no click
+  connection.blocked = false;
+  await page.evaluate(() => {
+    (window as unknown as { offlineNow: boolean }).offlineNow = false;
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect(
+    page.getByRole("region", { name: "Calendário" }).getByRole("grid")
+  ).toBeVisible();
+});
+
+test("Tentar novamente refaz o pedido do chunk sem recarregar a página e o calendário abre", async ({
+  page,
+}) => {
+  let asked = 0;
+  await page.route(CALENDAR_CHUNK, (route) => {
+    asked += 1;
+    return asked === 1 ? route.abort("failed") : route.fallback();
+  });
+  await page.goto("/ui-galeria");
+  await expect(inlineBox(page)).toContainText(FAILED_TEXT);
+  await page.evaluate(() => {
+    (window as unknown as { stillHere: boolean }).stillHere = true;
+  });
+  await inlineBox(page)
+    .getByRole("button", { name: "Tentar novamente" })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Calendário" }).getByRole("grid")
+  ).toBeVisible();
+  expect(asked).toBe(2);
+  // the same page: nothing reloaded
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { stillHere?: boolean }).stillHere
+    )
+  ).toBe(true);
+});
+
+test("enquanto o chunk não chega a caixa de espera é um status que diz Abrindo o calendário… e tem o tamanho do mês", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(CALENDAR_CHUNK, async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await page.goto("/ui-galeria");
+  const waiting = page
+    .getByRole("region", { name: "Calendário" })
+    .getByRole("status")
+    .filter({ hasText: "Abrindo o calendário…" });
+  await expect(waiting).toBeVisible();
+  const before = await waiting.boundingBox();
+  release();
+  const grid = page
+    .getByRole("region", { name: "Calendário" })
+    .getByRole("grid");
+  await expect(grid).toBeVisible();
+  await expect(waiting).toHaveCount(0);
+  // the box was the size of the month: the grid that came in its place has the same width and height
+  const calendar = page
+    .getByRole("region", { name: "Calendário" })
+    .locator('[data-slot="calendar"]');
+  const after = await calendar.boundingBox();
+  expect(before).not.toBeNull();
+  expect(after).not.toBeNull();
+  expect(Math.abs((after?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(
+    1.5
+  );
+  expect(Math.abs((after?.height ?? 0) - (before?.height ?? 0))).toBeLessThan(
+    1.5
+  );
 });
 
 for (const viewport of VIEWPORTS) {

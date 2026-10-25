@@ -222,6 +222,19 @@ describe("the build manifest", () => {
     ]);
   });
 
+  it("lists the chunks that load on demand, the charts and the calendar, so they open offline (t363, t369)", () => {
+    const listed = precacheList({
+      files: [
+        "index.html",
+        "assets/calendar-Ab12_x.js",
+        "assets/charts-Dk3jf9.js",
+        "assets/index-AAA.js",
+      ],
+    });
+    expect(listed).toContain("/assets/calendar-Ab12_x.js");
+    expect(listed).toContain("/assets/charts-Dk3jf9.js");
+  });
+
   it("changes the build id when the shell or an unhashed file changes, not otherwise", () => {
     const files = ["index.html", "assets/a-1.js", "manifest.webmanifest"];
     const contents: Record<string, string> = {

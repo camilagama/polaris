@@ -452,7 +452,7 @@ function touchTooSmall(
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
  * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
  * over it) and the days of one `[data-slot=calendar]` (a grid of 44 px cells that touch each other, t363: the 48 px
- * areas of two neighbouring days meet only on their shared edge); a control inside another (a link in a clickable
+ * areas of two neighbouring days overlap by about 4 px, 2 px into each cell, not only on the shared edge); a control inside another (a link in a clickable
  * card) is nested.
  */
 function touchOverlaps(selector: string) {

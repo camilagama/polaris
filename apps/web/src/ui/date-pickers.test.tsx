@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Calendar } from "@/ui/calendar";
+import { calendarChunkUrl, OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
@@ -159,5 +160,58 @@ describe("Calendar", () => {
     expect(dayButton(markup, "2026-10-23")).toContain("size-(--cell-size)");
     expect(dayButton(markup, "2026-10-23")).toContain("focus-ring");
     expect(markup).toContain('data-slot="calendar"');
+  });
+});
+
+describe("OnDemandCalendar, a espera do chunk", () => {
+  // the first render of a page that has not downloaded the chunk (and the server render) is the waiting box
+  const markup = html(<OnDemandCalendar mode="single" />);
+
+  it("a caixa de espera é um status que diz Abrindo o calendário… só para o leitor de tela", () => {
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain(
+      '<span class="sr-only">Abrindo o calendário…</span>'
+    );
+    expect(markup).toContain("data-calendar-loading");
+    expect(markup).not.toContain('role="alert"');
+  });
+
+  it("e tem o tamanho de um mês, o mesmo que o calendário ocupa", () => {
+    expect(markup).toContain("h-[calc(var(--cell-size)*7+3.1875rem)]");
+    expect(markup).toContain("w-[calc(var(--cell-size)*7)]");
+  });
+});
+
+describe("calendarChunkUrl, o chunk que falhou", () => {
+  const url = "https://app.polaris.example/assets/calendar-Ab12_x-9.js";
+
+  it("lê a URL na mensagem do Chrome e do Firefox, sem a query de uma tentativa anterior", () => {
+    expect(
+      calendarChunkUrl(
+        new TypeError(`Failed to fetch dynamically imported module: ${url}`)
+      )
+    ).toBe(url);
+    expect(
+      calendarChunkUrl(
+        new TypeError(
+          `error loading dynamically imported module: ${url}?retry=1`
+        )
+      )
+    ).toBe(url);
+  });
+
+  it("nada na mensagem do Safari, no chunk de outra coisa e no que não é erro", () => {
+    expect(
+      calendarChunkUrl(new TypeError("Importing a module script failed."))
+    ).toBeNull();
+    expect(
+      calendarChunkUrl(
+        new TypeError(
+          "Failed to fetch dynamically imported module: https://app.polaris.example/assets/charts-Dk3jf9.js"
+        )
+      )
+    ).toBeNull();
+    expect(calendarChunkUrl(url)).toBeNull();
+    expect(calendarChunkUrl(undefined)).toBeNull();
   });
 });
