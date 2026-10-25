@@ -16,7 +16,7 @@ export function isProductAlreadyCreated(error: unknown): boolean {
 }
 
 /** The plan's active-variant limit refused the new product: the only limit the registration meets. No number, no key (the server sends none) and no way out the screen could not keep (archived still counts). */
-const PRODUCT_LIMIT_REACHED =
+export const PRODUCT_LIMIT_REACHED =
   "Seu plano chegou ao limite de variantes. Nada foi cadastrado.";
 
 /** A refusal of the registration that the server could not name: it does not blame the category. */
@@ -35,6 +35,34 @@ export function isProductLimitReached(error: unknown): boolean {
     rpcErrorCode(error) === "CONFLICT" &&
     rpcErrorReason(error) === "entitlement_limit_reached"
   );
+}
+
+/** For whom cannot change the plan: the same limit text, and who can (AC-10 of the corte 61b, stage 2). */
+export const PRODUCT_LIMIT_ASK_OWNER =
+  "Fale com o dono da loja para mudar o plano.";
+
+/**
+ * What goes with the limit text (stage 2 of the corte 61b, AC-10), only with the Assinatura on: "Conhecer o Pro" for
+ * whom may open it (`billing:manage`) while the store has a bigger plan to see (Free, or Free over the limit); for
+ * whom may not, the way to the owner; nothing on Pro, in a trial or a plan that could not be read.
+ */
+export type ProductLimitHelp = "ask_owner" | "upgrade" | null;
+
+export function productLimitHelp(input: {
+  billingSelfService: boolean;
+  canManageBilling: boolean;
+  /** The state `billing.readPlan` gave, or null when it was not read. */
+  planState: string | null;
+}): ProductLimitHelp {
+  if (!input.billingSelfService) {
+    return null;
+  }
+  if (!input.canManageBilling) {
+    return "ask_owner";
+  }
+  return input.planState === "free" || input.planState === "free_over_limit"
+    ? "upgrade"
+    : null;
 }
 
 export type ProductAction = "archive" | "restore";

@@ -88,7 +88,7 @@ describe("billingProviderPortOf", () => {
     expect(fetched[0]?.url).toContain("api-sandbox.asaas.com");
     const body = JSON.parse(String(fetched[0]?.body));
     expect(body.callback.successUrl).toBe(
-      "https://app.example.test/?assinatura=concluida"
+      "https://app.example.test/subscription?retorno=concluida"
     );
     expect(new URL(body.callback.successUrl).origin).toBe(
       "https://app.example.test"

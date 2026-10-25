@@ -1,5 +1,6 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
+import BadgeCheckIcon from "lucide-react/dist/esm/icons/badge-check";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
 import CreditCardIcon from "lucide-react/dist/esm/icons/credit-card";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
@@ -64,15 +65,17 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
+import { canManageBilling } from "../lib/billing-access";
+import { GraceNoticeSlot } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
   inBottomBar,
+  menuItemsOf,
   NAV_ITEMS,
   type NavId,
   navGroups,
-  OFFLINE_NAV_ITEMS,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
@@ -101,12 +104,8 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
   products: TagIcon,
   "public-catalog": GlobeIcon,
   sale: ShoppingBagIcon,
+  subscription: BadgeCheckIcon,
 };
-
-const menuItems = () => [
-  ...NAV_ITEMS,
-  ...(OFFLINE_RUNTIME_ENABLED ? OFFLINE_NAV_ITEMS : []),
-];
 
 /** One organization is shown as context; more than one can be switched. */
 function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
@@ -165,9 +164,16 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
     }
   }, [isMobile, setOpenMobile]);
   const email = useSignedInEmail();
-  const items = menuItems().filter(
-    (item) => !(isMobile && inBottomBar(item.id))
-  );
+  const items = menuItemsOf({
+    offline: OFFLINE_RUNTIME_ENABLED,
+    // the plan only for whom may manage it (ADR 0104): the server refuses the others anyway
+    subscription:
+      organization !== null &&
+      canManageBilling(
+        organization.billingSelfService,
+        organization.organization.role
+      ),
+  }).filter((item) => !(isMobile && inBottomBar(item.id)));
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
       <SidebarHeader className="px-4 pt-4 pb-2">
@@ -528,7 +534,7 @@ export function AppShell({
   requiresOrganization = true,
   updateNotice,
 }: AppShellProps) {
-  const { load, reload, select } = useOrganizationLoad();
+  const { billingSelfService, load, reload, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
   // the remembered organizations only draw the screen: with the offline access expired they are hidden, not deleted
   const accessExpired = useOfflineAccessExpired();
@@ -547,6 +553,7 @@ export function AppShell({
   const organization: CurrentOrganization | null =
     load.status === "ready" && !accessExpired
       ? {
+          billingSelfService,
           organization: load.current,
           organizationId: load.current.id,
           organizations: load.organizations,
@@ -599,6 +606,11 @@ export function AppShell({
               onlineOnly && !sessionOver ? { form: connectionForm } : null
             }
             session={showNotice}
+          />
+          <GraceNoticeSlot
+            hidden={sessionOver}
+            onSubscription={navId === "subscription"}
+            organization={organization}
           />
           <OfflineAccessGate>
             {requiresOrganization ? (

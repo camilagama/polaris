@@ -5,9 +5,11 @@ import {
   documentTitle,
   entryPageFor,
   NAV_ITEMS,
+  menuItemsOf,
   navGroups,
   OFFLINE_NAV_ITEMS,
   resolveRoute,
+  SUBSCRIPTION_NAV_ITEM,
 } from "./navigation-model";
 
 describe("main menu", () => {
@@ -81,6 +83,40 @@ describe("main menu", () => {
     expect(route).toMatchObject({ id: "attention", navId: "attention" });
     expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
     expect(bottomBarMark("attention")).toBe("more");
+  });
+
+  it("puts the Assinatura first in Configurações, only when it may show (AS-10: Mais, then Assinatura)", () => {
+    const groupsOf = (subscription: boolean, offline: boolean) =>
+      navGroups(menuItemsOf({ offline, subscription })).map((group) => [
+        group.label,
+        group.items.map((item) => item.label),
+      ]);
+    expect(groupsOf(true, true).at(-1)).toEqual([
+      "Configurações",
+      ["Assinatura", "Perfis de pagamento", "Catálogo público", "Aparelhos"],
+    ]);
+    expect(groupsOf(false, true).at(-1)).toEqual([
+      "Configurações",
+      ["Perfis de pagamento", "Catálogo público", "Aparelhos"],
+    ]);
+    expect(
+      menuItemsOf({ offline: false, subscription: true }).filter(
+        (item) => item.id === "subscription"
+      )
+    ).toHaveLength(1);
+    expect(menuItemsOf({ offline: false, subscription: false })).toEqual(
+      NAV_ITEMS
+    );
+    expect(bottomBarMark("subscription")).toBe("more");
+    expect(resolveRoute(SUBSCRIPTION_NAV_ITEM.href)).toEqual({
+      // never a plan of before: offline it loads by itself on the return (AS-8)
+      connectionForm: false,
+      id: "subscription",
+      kind: "page",
+      navId: "subscription",
+      onlineOnly: true,
+      title: "Assinatura",
+    });
   });
 
   it("does not offer the customer-of-a-sale page, which opens from a sale of the history", () => {
