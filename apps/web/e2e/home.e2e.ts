@@ -33,7 +33,8 @@ const NOON = Date.parse("2026-10-23T15:00:00.000Z");
 const PRODUCT = "0199c2d0-0000-7000-8000-0000000000b1";
 const DELETED = "0199c2d0-0000-7000-8000-0000000000b2";
 const SALES_PATH = /\/sales$/;
-const DASHBOARD_PATH = /\/dashboard$/;
+/** The link opens the Metas tab and the address keeps it: `aba=metas`, and no `meta=nova` (corte resultado-v2, AC-13). */
+const DASHBOARD_GOALS_PATH = /\/dashboard\?aba=metas$/;
 const SHIRT = /Camiseta básica/;
 const PRODUCT_LINK =
   /\/products\?produto=0199c2d0-0000-7000-8000-0000000000b1$/;
@@ -818,7 +819,7 @@ test.describe("meta (AC-10, AC-11)", () => {
       .click();
     await expect(page.getByLabel("Indicador")).toBeFocused();
     // the link did its work: a reload is the screen as it is, not the form again
-    await expect(page).toHaveURL(DASHBOARD_PATH);
+    await expect(page).toHaveURL(DASHBOARD_GOALS_PATH);
   });
 });
 
