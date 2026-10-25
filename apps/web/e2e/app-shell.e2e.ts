@@ -357,6 +357,29 @@ test.describe("celular (360 px)", () => {
     }
   });
 
+  test("em Mais, o menu da loja abre acima da folha (que é um diálogo modal), cabe na tela e troca a loja", async ({
+    page,
+  }) => {
+    const long = {
+      ...SECOND_ORGANIZATION,
+      id: "0199c2d0-0000-7000-8000-00000000a003",
+      name: "Loja do centro da cidade com um nome bem comprido para quebrar linha no menu",
+    };
+    await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION, long]);
+    await page.goto("/products");
+    await more(page).click();
+    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
+    await store.click();
+    // a click only lands if nothing (the sheet or its veil) covers the option: Playwright checks what is hit
+    const option = page.getByRole("option", { exact: true, name: long.name });
+    await expect(option).toBeVisible();
+    const box = await option.boundingBox();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+    await option.click();
+    await expect(store).toContainText("Loja do centro da cidade");
+  });
+
   test("Mais abre e fecha com o teclado, e o foco volta para o botão", async ({
     page,
   }) => {

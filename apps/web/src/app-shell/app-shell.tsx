@@ -21,6 +21,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useState,
 } from "react";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
@@ -129,6 +130,12 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
     label: item.name,
     value: item.id,
   }));
+  // The "Mais" sheet of the phone is a modal <dialog> (top layer): a menu portaled to <body> would open behind it,
+  // so the menu goes inside that dialog. On the desktop there is none and the menu goes to <body>.
+  const [dialog, setDialog] = useState<HTMLElement | null>(null);
+  const findDialog = useCallback((node: HTMLElement | null) => {
+    setDialog(node?.closest("dialog") ?? null);
+  }, []);
 
   if (organizations.length < 2) {
     return (
@@ -139,7 +146,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
     );
   }
   return (
-    <div className="grid gap-1.5">
+    <div className="grid gap-1.5" ref={findDialog}>
       <Label className="font-normal text-xs" id="app-organization-label">
         Loja
       </Label>
@@ -155,10 +162,9 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
         >
           <SelectValue />
         </SelectTrigger>
-        {/* wider than the trigger when a name asks for it: the item text does not shrink */}
-        <SelectContent className="w-auto min-w-(--anchor-width) max-w-[calc(100vw-1rem)]">
+        <SelectContent {...(dialog ? { container: dialog } : {})}>
           {items.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
+            <SelectItem key={item.value} value={item.value} wrap>
               {item.label}
             </SelectItem>
           ))}

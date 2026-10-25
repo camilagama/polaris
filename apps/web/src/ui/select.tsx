@@ -68,14 +68,16 @@ function SelectContent({
   align = "center",
   alignOffset = 0,
   alignItemWithTrigger = false /* Polaris: opens below the field, never over it */,
+  container,
   ...props
 }: SelectPrimitive.Popup.Props &
+  Pick<SelectPrimitive.Portal.Props, "container"> &
   Pick<
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={container}>
       <SelectPrimitive.Positioner
         align={align}
         alignItemWithTrigger={alignItemWithTrigger}
@@ -118,11 +120,13 @@ function SelectLabel({
   );
 }
 
+/* `wrap`: a long label (a store name) breaks into lines inside the menu instead of being cut at its edge. */
 function SelectItem({
   className,
   children,
+  wrap = false,
   ...props
-}: SelectPrimitive.Item.Props) {
+}: SelectPrimitive.Item.Props & { wrap?: boolean }) {
   return (
     <SelectPrimitive.Item
       className={cn(
@@ -132,7 +136,12 @@ function SelectItem({
       data-slot="select-item"
       {...props}
     >
-      <SelectPrimitive.ItemText className="flex flex-1 shrink-0 gap-2 whitespace-nowrap">
+      <SelectPrimitive.ItemText
+        className={cn(
+          "flex flex-1 gap-2",
+          wrap ? "min-w-0 break-words" : "shrink-0 whitespace-nowrap"
+        )}
+      >
         {children}
       </SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator
