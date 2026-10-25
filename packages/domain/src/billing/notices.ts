@@ -1,5 +1,5 @@
 import { localDate } from "../organization/closure-deadlines";
-import type { BillingState } from "./entitlements";
+import { type BillingState, grantsPro } from "./entitlements";
 import type { BillingFact, BillingRecord } from "./facts";
 import { type BillingEvent, GRACE_DAYS } from "./subscription-state";
 
@@ -212,7 +212,8 @@ export function sweepNoticesFor(
       mark("renewal_failed", renewalFailedKey(paidEnd, "d3"));
     }
     if (
-      today === addCalendarDays(localDate(record.accessEndsAt, timeZone), -1)
+      today ===
+      addCalendarDays(lastCoveredDay(record.accessEndsAt, timeZone), -1)
     ) {
       mark("renewal_failed", renewalFailedKey(paidEnd, "dlast"));
     }
@@ -225,7 +226,7 @@ export function sweepNoticesFor(
     record.accessEndsAt &&
     today ===
       addCalendarDays(
-        localDate(record.accessEndsAt, timeZone),
+        lastCoveredDay(record.accessEndsAt, timeZone),
         -ANNUAL_RENEWAL_REMINDER_LEAD_DAYS
       )
   ) {
@@ -237,6 +238,15 @@ export function sweepNoticesFor(
 /** The welcome of a person (E1): one per person, whatever the store (the database holds it to that). */
 export function welcomeNotice(userId: string, now: Date): BillingNoticeMark {
   return { dedupeKey: userId, dueAt: now, kind: "welcome" };
+}
+
+/**
+ * The last local day an access that ends at `endsAt` covers: it runs up to that instant, and a period ends at midnight,
+ * so the day of the instant itself is not covered. The day before the end of the grace and the yearly charge (the last
+ * day of the paid period) are counted from it.
+ */
+export function lastCoveredDay(endsAt: Date, timeZone: string): string {
+  return localDate(new Date(endsAt.getTime() - 1), timeZone);
 }
 
 /** The end of the period already paid, from the end of the grace that followed it (RN:19). */
@@ -285,4 +295,311 @@ function withinSweepHours(now: Date, timeZone: string): boolean {
     hour >= BILLING_NOTICE_SWEEP_HOURS.from &&
     hour < BILLING_NOTICE_SWEEP_HOURS.until
   );
+}
+
+/** Why a notice did not go out (`billing_notices.skipped_reason`): a short code, never a person's data. */
+export type BillingNoticeSkipReason =
+  | "email_not_configured"
+  | "organization_closed"
+  | "link_replaced"
+  | "state_changed"
+  | "refunded"
+  | "cancelled"
+  | "window_passed"
+  | "trial_started_recently"
+  | "recovered"
+  | "milestone_passed"
+  | "same_day"
+  | "refund_in_progress"
+  | "resubscribed"
+  | "no_owner"
+  | "price_unknown";
+
+/** What `noticeStillTrue` reads when a notice is about to go out: the notice, the record now and the store. */
+export interface BillingNoticeCheck {
+  /** The e-mail of this kind is on (the billing switch, or the welcome's, with the provider's configuration). */
+  emailEnabled: boolean;
+  /**
+   * The fact of the ledger row the notice names (E4, E7 and E-R are keyed by it), read again; null for the others or
+   * when the row is not there.
+   */
+  event: BillingFact | null;
+  /** The provider's link the notice was recorded under, when it can be told (the key or the ledger row); else null. */
+  noticeProviderRef: string | null;
+  notice: Pick<BillingNoticeMark, "dedupeKey" | "kind"> & {
+    recordedAt: Date;
+  };
+  now: Date;
+  /** The store is closed (in closure, closed or waiting for the purge): no billing notice goes to it (EM-7). */
+  organizationClosed: boolean;
+  /** The owner of the welcome is still an active owner of a store (E1 only). */
+  ownerActive: boolean;
+  /** The amount the notice writes, from what the checkout or the provider recorded; null when none was recorded. */
+  amount: string | null;
+  /** A charge was applied to the store after the notice was recorded (E-C1: the store paid after all). */
+  paidSinceNotice: boolean;
+  /** The current link to the provider. */
+  providerRef: string | null;
+  /** The record of the store now. */
+  record: BillingRecord;
+  /** The day of the first charge set at the provider (`first_charge_on`, YYYY-MM-DD). */
+  firstChargeOn: string | null;
+  /** When the owner asked for the refund of the current link, if they did. */
+  refundRequestedAt: Date | null;
+  /** When the other notices of the same failed renewal (E-C2 of the same paid period) went out. */
+  renewalFailedSentAt: readonly Date[];
+  timeZone: string;
+  /** When the E-A of the current link went out, if it did. */
+  trialStartedSentAt: Date | null;
+}
+
+/** The notices that write an amount (AC-11): without one recorded, the price of the catalog is never put in its place. */
+const NOTICES_WITH_AMOUNT: readonly BillingNoticeKind[] = [
+  "trial_started",
+  "trial_charge_eve",
+  "first_charge_failed",
+  "charge_receipt",
+  "refund_confirmed",
+  "annual_renewal_reminder",
+];
+
+/** E-B is not sent this soon after the E-A (who approves on the eve gets one e-mail). */
+const TRIAL_STARTED_RECENT_MS = 24 * 3_600_000;
+const SAME_PERIOD_MS = DAY_MS;
+
+/** The paid period and the milestone a notice of a failed renewal names (its key); null for a key not of that form. */
+export function renewalFailedOf(
+  dedupeKey: string
+): { milestone: RenewalFailedMilestone; paidEnd: Date } | null {
+  const separator = dedupeKey.lastIndexOf(":");
+  const milestone = dedupeKey.slice(separator + 1);
+  const paidEnd = new Date(dedupeKey.slice(0, separator));
+  if (
+    separator < 0 ||
+    !(RENEWAL_FAILED_MILESTONES as readonly string[]).includes(milestone) ||
+    Number.isNaN(paidEnd.getTime())
+  ) {
+    return null;
+  }
+  return { milestone: milestone as RenewalFailedMilestone, paidEnd };
+}
+
+/** The local day a failed renewal's milestone falls on: the failure, the 3rd day, the day before the last day of Pro. */
+export function renewalFailedDayOf(
+  milestone: RenewalFailedMilestone,
+  paidEnd: Date,
+  timeZone: string
+): string {
+  if (milestone === "d3") {
+    return addCalendarDays(localDate(paidEnd, timeZone), 3);
+  }
+  const graceEnd = new Date(paidEnd.getTime() + GRACE_DAYS * DAY_MS);
+  return milestone === "dlast"
+    ? addCalendarDays(lastCoveredDay(graceEnd, timeZone), -1)
+    : localDate(paidEnd, timeZone);
+}
+
+function periodRefunded(record: BillingRecord, periodEndsAt?: Date): boolean {
+  if (record.revoked?.reason !== "refund") {
+    return false;
+  }
+  return (
+    periodEndsAt === undefined ||
+    Math.abs(record.revoked.periodEndsAt.getTime() - periodEndsAt.getTime()) <=
+      SAME_PERIOD_MS
+  );
+}
+
+function periodOfEvent(event: BillingFact | null): Date | undefined {
+  return event && "periodEndsAt" in event ? event.periodEndsAt : undefined;
+}
+
+/**
+ * Whether a notice recorded earlier is still true now, when it is about to go out (ADR 0104, decision 7; design t268
+ * v2, §9): null to send it, or the reason it is skipped. The common rules come first, top to bottom (the e-mail off,
+ * a closed store, a link replaced by a new subscription; the welcome follows only the first), then the row of its kind,
+ * then an amount that was never recorded. Pure: the consumer reads the notice, the record and the store, and marks the
+ * notice with the answer.
+ */
+export function noticeStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { kind } = check.notice;
+  if (!check.emailEnabled) {
+    return "email_not_configured";
+  }
+  if (kind === "welcome") {
+    return check.ownerActive ? null : "no_owner";
+  }
+  if (check.organizationClosed) {
+    return "organization_closed";
+  }
+  if (
+    check.noticeProviderRef !== null &&
+    check.noticeProviderRef !== check.providerRef
+  ) {
+    return "link_replaced";
+  }
+  const reason = kindStillTrue(check);
+  if (reason) {
+    return reason;
+  }
+  if (NOTICES_WITH_AMOUNT.includes(kind) || isRenewalFailedDay0(check)) {
+    return check.amount === null ? "price_unknown" : null;
+  }
+  return null;
+}
+
+function isRenewalFailedDay0(check: BillingNoticeCheck): boolean {
+  return (
+    check.notice.kind === "renewal_failed" &&
+    renewalFailedOf(check.notice.dedupeKey)?.milestone === "d0"
+  );
+}
+
+type KindRule = (check: BillingNoticeCheck) => BillingNoticeSkipReason | null;
+
+const KIND_RULES: Readonly<Record<BillingNoticeKind, KindRule>> = {
+  access_ended: ({ record }) => {
+    if (periodRefunded(record)) {
+      return "refunded";
+    }
+    return FREE_STATES.includes(record.state) ? null : "state_changed";
+  },
+  annual_renewal_reminder: annualRenewalReminderStillTrue,
+  charge_receipt: ({ event, record }) => {
+    if (event?.type !== "charge_succeeded") {
+      return "state_changed";
+    }
+    return periodRefunded(record, event.periodEndsAt) ? "refunded" : null;
+  },
+  first_charge_failed: ({ paidSinceNotice, record }) =>
+    FREE_STATES.includes(record.state) && !paidSinceNotice ? null : "recovered",
+  refund_confirmed: ({ event, record }) =>
+    event?.type === "charge_refunded" &&
+    periodRefunded(record, periodOfEvent(event))
+      ? null
+      : "state_changed",
+  renewal_cancelled: renewalCancelledStillTrue,
+  renewal_failed: renewalFailedStillTrue,
+  trial_charge_eve: trialChargeEveStillTrue,
+  trial_started: ({ record }) => {
+    if (periodRefunded(record)) {
+      return "refunded";
+    }
+    return record.state === "trialing" ? null : "state_changed";
+  },
+  // the welcome is settled before the rules of the billing notices
+  welcome: () => null,
+};
+
+function kindStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  return KIND_RULES[check.notice.kind](check);
+}
+
+function renewalCancelledStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { now, record, refundRequestedAt } = check;
+  if (periodRefunded(record)) {
+    return "refunded";
+  }
+  if (
+    refundRequestedAt &&
+    now.getTime() - refundRequestedAt.getTime() < BILLING_NOTICE_REFUND_WAIT_MS
+  ) {
+    return "refund_in_progress";
+  }
+  // a store already back on Free has no "Pro until" to tell
+  if (!grantsPro(record.state)) {
+    return "state_changed";
+  }
+  return record.cancelAtPeriodEnd ? null : "resubscribed";
+}
+
+function annualRenewalReminderStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { notice, now, record, timeZone } = check;
+  if (periodRefunded(record)) {
+    return "refunded";
+  }
+  if (record.cancelAtPeriodEnd) {
+    return "cancelled";
+  }
+  return record.state === "active" &&
+    record.cycleMonths === 12 &&
+    record.revoked === null &&
+    record.accessEndsAt?.toISOString() === notice.dedupeKey &&
+    localDate(now, timeZone) ===
+      addCalendarDays(
+        lastCoveredDay(record.accessEndsAt, timeZone),
+        -ANNUAL_RENEWAL_REMINDER_LEAD_DAYS
+      )
+    ? null
+    : "state_changed";
+}
+
+function trialChargeEveStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { now, record, timeZone } = check;
+  if (periodRefunded(record)) {
+    return "refunded";
+  }
+  if (record.state !== "trialing") {
+    return "state_changed";
+  }
+  if (record.cancelAtPeriodEnd) {
+    return "cancelled";
+  }
+  if (
+    check.firstChargeOn !== addCalendarDays(localDate(now, timeZone), 1) ||
+    localHour(now, timeZone) >= BILLING_NOTICE_SWEEP_HOURS.until
+  ) {
+    return "window_passed";
+  }
+  if (
+    check.trialStartedSentAt &&
+    now.getTime() - check.trialStartedSentAt.getTime() < TRIAL_STARTED_RECENT_MS
+  ) {
+    return "trial_started_recently";
+  }
+  return null;
+}
+
+function renewalFailedStillTrue(
+  check: BillingNoticeCheck
+): BillingNoticeSkipReason | null {
+  const { now, record, timeZone } = check;
+  const key = renewalFailedOf(check.notice.dedupeKey);
+  if (
+    !key ||
+    record.state !== "grace" ||
+    !record.accessEndsAt ||
+    Math.abs(
+      paidPeriodEndOf(record.accessEndsAt).getTime() - key.paidEnd.getTime()
+    ) > SAME_PERIOD_MS
+  ) {
+    return "recovered";
+  }
+  // the d0 has no day rule: it goes out while the grace is the same one, within the delivery window (23 h,
+  // `delivery_window_passed`); the reminders only while the renewal stands and on their own day
+  if (key.milestone === "d0") {
+    return null;
+  }
+  if (record.cancelAtPeriodEnd) {
+    return "cancelled";
+  }
+  const today = localDate(now, timeZone);
+  if (today > renewalFailedDayOf(key.milestone, key.paidEnd, timeZone)) {
+    return "milestone_passed";
+  }
+  return check.renewalFailedSentAt.some(
+    (sentAt) => localDate(sentAt, timeZone) === today
+  )
+    ? "same_day"
+    : null;
 }
