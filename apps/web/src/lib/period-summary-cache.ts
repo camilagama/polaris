@@ -16,9 +16,12 @@ export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
-/** A day as kept: a copy written before the costs of the day existed has neither `costs` nor `operatingResult`. */
-type StoredDay = Omit<SummaryDay, "costs" | "operatingResult"> &
-  Partial<Pick<SummaryDay, "costs" | "operatingResult">>;
+/** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
+type StoredDay = Omit<
+  SummaryDay,
+  "costs" | "operatingExpenses" | "operatingResult"
+> &
+  Partial<Pick<SummaryDay, "costs" | "operatingExpenses" | "operatingResult">>;
 
 /**
  * A summary as kept on the device: a copy written before the daily series
@@ -177,6 +180,8 @@ function isDaily(value: unknown, period: unknown): boolean {
         isMoney(day.netSales) &&
         isCount(day.salesCount) &&
         isOptionalMoney(day.costs) &&
+        (day.operatingExpenses === undefined ||
+          isMoney(day.operatingExpenses)) &&
         isOptionalMoney(day.operatingResult)
     ) &&
     (value.at(-1) as Dictionary).date === period.to

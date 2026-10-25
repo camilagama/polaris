@@ -383,7 +383,10 @@ const periodSummary = z.object({
    * `costs` is the sum of the parts (cost of goods, fees, linked expenses and
    * the expenses with no sale of that competence date), never negative;
    * `operatingResult` is the day's estimate. Both are null, never zero, when a
-   * cost or a fee of a sale of the day is unknown. When no day is null, the
+   * cost or a fee of a sale of the day is unknown. `operatingExpenses` is the
+   * part of `costs` with no sale (the expenses of that competence date), always
+   * present and never null: "0.00" on a day without expenses, and filled even
+   * when `costs` is null. When no day is null, the
    * costs add up to the chain's cogs, fees and expenses and the results to
    * `chain.estimatedOperatingResult`.
    */
@@ -392,6 +395,7 @@ const periodSummary = z.object({
       costs: z.string().nullable(),
       date: z.string(),
       netSales: z.string(),
+      operatingExpenses: z.string(),
       operatingResult: z.string().nullable(),
       salesCount: z.number().int().nonnegative(),
     })

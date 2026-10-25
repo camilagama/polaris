@@ -102,6 +102,12 @@ export interface DailyEconomics extends DailySales {
    */
   costs: string | null;
   /**
+   * The expenses with no sale whose competence is that date, exact BRL text:
+   * the part of `costs` that never depends on a sale, so it is known even when
+   * `costs` is `null`. "0.00" on a day without expenses, never null.
+   */
+  operatingExpenses: string;
+  /**
    * The estimated operating result of the day, exact BRL text: net sales minus
    * the costs of the day plus the commercial surcharges. `null` exactly when
    * `costs` is.
@@ -169,8 +175,14 @@ export function dailyEconomics(
   }
   return series.map((day) => {
     const totals = days.get(day.date) as DayTotals;
+    const expensesOfDay = Money.fromMinorUnits(totals.operating).toString();
     if (!totals.known) {
-      return { ...day, costs: null, operatingResult: null };
+      return {
+        ...day,
+        costs: null,
+        operatingExpenses: expensesOfDay,
+        operatingResult: null,
+      };
     }
     const net = Money.from(day.netSales).minorUnits;
     return {
@@ -178,6 +190,7 @@ export function dailyEconomics(
       costs: Money.fromMinorUnits(
         net + totals.surcharges - totals.margin + totals.operating
       ).toString(),
+      operatingExpenses: expensesOfDay,
       operatingResult: Money.fromMinorUnits(
         totals.margin - totals.operating
       ).toString(),

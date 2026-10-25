@@ -513,6 +513,11 @@ describe("the costs of the day in the kept series", () => {
     ],
     ["costs and result unknown", { costs: null, operatingResult: null }],
     ["costs only", { costs: "0.00" }],
+    ["operating expenses as money", { operatingExpenses: "62.34" }],
+    [
+      "operating expenses filled while costs are unknown",
+      { costs: null, operatingExpenses: "50.00", operatingResult: null },
+    ],
   ])("accepts %s", (_label, day) => {
     expect(isPeriodSummary(withDay(day))).toBe(true);
   });
@@ -522,6 +527,10 @@ describe("the costs of the day in the kept series", () => {
     ["costs that are not money", { costs: "abc" }],
     ["costs of three decimals", { costs: "1.234" }],
     ["costs that are empty text", { costs: "" }],
+    ["operating expenses that are null", { operatingExpenses: null }],
+    ["operating expenses that are a number", { operatingExpenses: 0 }],
+    ["operating expenses that are not money", { operatingExpenses: "1,50" }],
+    ["operating expenses of three decimals", { operatingExpenses: "1.234" }],
     ["a result that is a boolean", { operatingResult: false }],
     ["a result that is not money", { operatingResult: "1,50" }],
   ])("refuses %s", (_label, day) => {

@@ -167,6 +167,7 @@ describe("dailyEconomics", () => {
       costs: "47.00",
       date: "2026-10-02",
       netSales: "100.00",
+      operatingExpenses: "0.00",
       operatingResult: "53.00",
       salesCount: 1,
     });
@@ -175,6 +176,7 @@ describe("dailyEconomics", () => {
       costs: "0.00",
       date: "2026-10-01",
       netSales: "0.00",
+      operatingExpenses: "0.00",
       operatingResult: "0.00",
       salesCount: 0,
     });
@@ -236,6 +238,35 @@ describe("dailyEconomics", () => {
     expect(series[0]).toMatchObject({ costs: null, operatingResult: null });
   });
 
+  it("a day with an expense and an unknown cost of goods has costs null and operatingExpenses filled", () => {
+    const series = dailyEconomics(
+      [
+        sale({
+          items: [
+            {
+              chargedUnitPrice: "100.00",
+              position: 0,
+              productId: P1,
+              quantity: 1,
+              unitCost: null,
+            },
+          ],
+          occurredOn: "2026-10-01",
+        }),
+      ],
+      [expense("2026-10-01", "50.00"), expense("2026-10-01", "12.34")],
+      "2026-10-01",
+      "2026-10-02"
+    );
+    expect(day(series, "2026-10-01")).toMatchObject({
+      costs: null,
+      operatingExpenses: "62.34",
+      operatingResult: null,
+    });
+    // a day without expenses is "0.00", never null or missing
+    expect(day(series, "2026-10-02")?.operatingExpenses).toBe("0.00");
+  });
+
   it("a cancelled sale with unknown inputs counts as nothing: the day is zero, not null", () => {
     const series = dailyEconomics(
       [
@@ -268,6 +299,7 @@ describe("dailyEconomics", () => {
       costs: "2050.50",
       date: "2026-10-05",
       netSales: "0.00",
+      operatingExpenses: "2050.50",
       operatingResult: "-2050.50",
       salesCount: 0,
     });
@@ -287,6 +319,7 @@ describe("dailyEconomics", () => {
     expect(series.at(-1)).toMatchObject({
       costs: "900.00",
       date: "2026-10-31",
+      operatingExpenses: "900.00",
       operatingResult: "-900.00",
     });
   });
@@ -662,11 +695,52 @@ describe("period series properties", () => {
             ).toBe(costsOf(result));
             expect(
               series.reduce(
+                (total, entry) => total + minor(entry.operatingExpenses),
+                0n
+              )
+            ).toBe(minor(result.operatingExpenses));
+            expect(
+              series.reduce(
                 (total, entry) =>
                   total + minor(entry.operatingResult as string),
                 0n
               )
             ).toBe(minor(result.estimatedOperatingResult));
+          }
+        )
+      );
+    });
+
+    it("the operating expenses of the days add up to the chain's, also when a day is null, and never exceed a known day's costs", () => {
+      assertProperty(
+        fc.property(
+          fc.array(datedSale, { maxLength: 12 }),
+          fc.array(datedExpense, { maxLength: 6 }),
+          (sales, expenses) => {
+            const result = periodResult(
+              sales,
+              expenses.map((entry) => entry.amount)
+            );
+            const series = dailyEconomics(sales, expenses, FROM, TO);
+            expect(
+              series.reduce(
+                (total, entry) => total + minor(entry.operatingExpenses),
+                0n
+              )
+            ).toBe(minor(result.operatingExpenses));
+            for (const entry of series) {
+              if (entry.costs !== null) {
+                expect(minor(entry.operatingExpenses)).toBeLessThanOrEqual(
+                  minor(entry.costs)
+                );
+              }
+            }
+            // a day with no sale at all: its costs are its expenses
+            for (const entry of series) {
+              if (entry.salesCount === 0 && entry.costs !== null) {
+                expect(entry.costs).toBe(entry.operatingExpenses);
+              }
+            }
           }
         )
       );
@@ -738,6 +812,7 @@ describe("period series properties", () => {
                 : Money.fromMinorUnits(costsOf(alone)).toString(),
               date,
               netSales: alone.netSales,
+              operatingExpenses: alone.operatingExpenses,
               operatingResult: hasUnknown(alone)
                 ? null
                 : alone.estimatedOperatingResult,

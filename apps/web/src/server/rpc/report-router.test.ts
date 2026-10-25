@@ -97,6 +97,7 @@ const daily = [
     costs: "95.00",
     date: "2026-10-01",
     netSales: "200.00",
+    operatingExpenses: "0.00",
     operatingResult: "115.00",
     salesCount: 1,
   },
@@ -104,6 +105,7 @@ const daily = [
     costs: null,
     date: "2026-10-02",
     netSales: "0.00",
+    operatingExpenses: "50.00",
     operatingResult: null,
     salesCount: 0,
   },
@@ -272,10 +274,12 @@ describe("report.periodSummary", () => {
     });
     expect(summary.daily[0]).toMatchObject({
       costs: "95.00",
+      operatingExpenses: "0.00",
       operatingResult: "115.00",
     });
     expect(summary.daily[1]).toMatchObject({
       costs: null,
+      operatingExpenses: "50.00",
       operatingResult: null,
     });
   });
