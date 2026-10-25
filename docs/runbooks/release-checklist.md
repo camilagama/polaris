@@ -190,6 +190,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
 - `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. Antes dele, o e-mail manda o dono pedir a cópia ou desfazer o encerramento num painel que não existe. Com o PR G, o link e o botão do e-mail apontam para essa tela. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
+- `BILLING_SUPPORT_EMAIL` (a caixa do rodapé e do `reply-to` dos e-mails de cobrança e do E1, ADR 0104) fica vazia no `wrangler.jsonc` até o responsável definir a caixa do ambiente; sem ela, `BILLING_SELF_SERVICE_ENABLED` e `WELCOME_EMAIL_ENABLED` ligados não enviam nada e os avisos saem `email_not_configured`.
 - `WELCOME_EMAIL_ENABLED` (boas-vindas, E1, ADR 0104) só fica `"true"` com o consumidor de `billing.notice` no ar (PR G do F1), a base legal do E1 confirmada (EM-37) e a P48. Antes do consumidor, cada boas-vindas gravada vira evento sem handler: tentativas, DLQ e incidente. Ligada, a varredura horária grava as boas-vindas só das lojas criadas nas últimas 24 horas (não manda atrasadas).
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
@@ -202,8 +203,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 24. Teto firme do precache de volta (BLOCK)
 
-- Critério: `REST_GROWTH_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, o crescimento do resto só avisa (`"warn"`, trava dura de +80 000 B); sem essa etapa, não há go-live.
-- Evidência: o valor de `REST_GROWTH_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
+- Critério: `BUDGET_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, as quatro linhas de tamanho (resto em +44 000 B e a marca de +80 000 B, fontes, primitivos e gráficos) só avisam (`"warn"`, emendas de 24/10/2026 e de 25/10/2026); só o guarda de lugar dos gráficos e o de chunks só de teste reprovam em qualquer modo, e voltar o modo a `"block"` fora da etapa de corte é decisão do usuário; sem essa etapa, não há go-live.
+- Evidência: o valor de `BUDGET_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
 - Severidade BLOCK: decidida pelo Arrascaeta (t278).
 
 ## Veredito

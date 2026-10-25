@@ -11,9 +11,9 @@ import {
   keptLine,
   type PlanHeadline,
   paymentLines,
-  REFUND_RULE,
   type Refusal,
   refundPendingNotice,
+  refundRuleLine,
   resubscribeLine,
   SUPPLIER_LINE,
   type UsageRow,
@@ -188,13 +188,15 @@ export function PlanLoadError({
   );
 }
 
-/** The rule of the refund and the supplier; the Terms and the Privacy Policy are the shell's (AS-14). */
-export function SubscriptionFooter() {
+/**
+ * The rule of the refund, where it is true, and the supplier, always; the Terms and the Privacy Policy are the
+ * shell's (AS-14, Emenda 2).
+ */
+export function SubscriptionFooter({ plan }: { plan: BillingPlanView }) {
+  const rule = refundRuleLine(plan);
   return (
     <footer className="text-muted-foreground text-support">
-      <p className="m-0">
-        {REFUND_RULE} {SUPPLIER_LINE}
-      </p>
+      <p className="m-0">{rule ? `${rule} ${SUPPLIER_LINE}` : SUPPLIER_LINE}</p>
     </footer>
   );
 }

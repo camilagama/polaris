@@ -22,6 +22,9 @@
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
+    // the support box of the billing e-mails, their footer and reply-to (ADR 0104): empty on purpose until the
+    // responsible sets it; without it the billing e-mails and the welcome stay off (their notices are skipped)
+    "BILLING_SUPPORT_EMAIL": "",
     "WELCOME_EMAIL_ENABLED": "false",
     // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
     // on it is published and the service worker had time to update every device (release checklist)
@@ -46,9 +49,11 @@
   // Hyperdrive configurations with query caching disabled:
   // - HYPERDRIVE: tenant role (RLS, no access to the auth tables)
   // - AUTH_HYPERDRIVE: Better Auth role (DML only on user/account/session/verification, plus the functions of the sign-in lock
-  //   and the one that reads the address of a closure notice, closure_notice_recipient, and the one that deletes the users
-  //   never verified, purge_unverified_users)
+  //   and the one that reads the address of a closure notice, closure_notice_recipient, the one of a billing notice,
+  //   billing_notice_recipient, and the one that deletes the users never verified, purge_unverified_users)
   // - OUTBOX_HYPERDRIVE: outbox role (dispatcher and queue processing record, functions only; ADR 0084)
+  // - BILLING_HYPERDRIVE: billing role (webhooks, the sweep and the billing notices, which it reads owed and marks
+  //   once: a cached read would send a notice twice)
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -223,6 +228,7 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
+        "BILLING_SUPPORT_EMAIL": "",
         "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
@@ -366,6 +372,7 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
+        "BILLING_SUPPORT_EMAIL": "",
         "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",

@@ -49,6 +49,7 @@
     "./inventory-schema": "./src/schema/inventory.ts",
     "./media-schema": "./src/schema/media.ts",
     "./media-repository": "./src/media-repository.ts",
+    "./billing-notice-recipient": "./src/billing-notice-recipient.ts",
     "./billing-store": "./src/billing-store.ts",
     "./billing-repository": "./src/billing-repository.ts",
     "./plan-read-repository": "./src/plan-read-repository.ts",
