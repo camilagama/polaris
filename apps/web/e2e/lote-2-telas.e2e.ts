@@ -512,8 +512,10 @@ test("Clientes: a lista que não carrega diz o motivo e 'Tentar novamente' lê d
     "A lista de clientes está temporariamente indisponível."
   );
   await expect(page.getByText("Nenhum cliente cadastrado.")).toHaveCount(0);
+  expect(reads).toBe(2); // the first try and the one repeat, no more
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByText("Ana Lima")).toBeVisible();
+  expect(reads).toBe(3);
 });
 
 test("Clientes a 320 px: nada transborda com nome e e-mail longos, o formulário e a confirmação", async ({
@@ -618,8 +620,10 @@ test("Catálogo público: a leitura que falha diz o motivo, não mostra o formul
   const alert = page.getByRole("alert");
   await expect(alert).toContainText("temporariamente indisponível");
   await expect(page.getByLabel("Nome público")).toHaveCount(0);
+  expect(reads).toBe(2); // the first try and the one repeat, no more
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByLabel("Nome público")).toBeVisible();
+  expect(reads).toBe(3);
 });
 
 test("Catálogo público a 320 px: nada transborda com o endereço de teste longo, o erro do campo e a lista de produtos", async ({

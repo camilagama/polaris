@@ -5,10 +5,14 @@ import { rpcErrorCode, rpcErrorReason } from "./rpc-error";
 /** Where the second try waits: the Worker that was killed at a cold start is warm by then, as on a reload. */
 const RETRY_AFTER_MS = 1500;
 
+/** The `data.reason` of the 503 the router gives an unexpected fault: "try again" (`unexpectedRpcError`). */
+const TRANSIENT_REASON = "server_busy";
+
 /**
  * A READ that failed in a way a second try may fix: no answer (`isNoAnswer`, which includes a response
- * without the Worker's mark), `SERVICE_UNAVAILABLE` (with or without `data.reason: "server_busy"`), or a 5xx
- * with no reason of its own: the 500 of an error nobody named, and the page the runtime or Cloudflare
+ * without the Worker's mark), `SERVICE_UNAVAILABLE` with no reason or with the transient one the server gives
+ * an unexpected fault (`server_busy`; one with another reason, like `billing_not_configured`, is not tried
+ * again), or a 5xx with no reason of its own: the 500 of an error nobody named, and the page the runtime or Cloudflare
  * answers for a Worker it killed (the CPU limit, "code had hung"), which oRPC reads as an error of the
  * status it carries (502, 504, 52x...). A 4xx is the server's answer: trying again says the same.
  */
@@ -16,15 +20,12 @@ export function isTransientReadFailure(error: unknown): boolean {
   if (isNoAnswer(error)) {
     return true;
   }
+  const reason = rpcErrorReason(error);
   if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
-    return true;
+    return reason === undefined || reason === TRANSIENT_REASON;
   }
   const { status } = (error ?? {}) as { status?: unknown };
-  return (
-    typeof status === "number" &&
-    status >= 500 &&
-    rpcErrorReason(error) === undefined
-  );
+  return typeof status === "number" && status >= 500 && reason === undefined;
 }
 
 export interface ReadWithRetryOptions {

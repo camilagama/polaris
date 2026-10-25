@@ -86,6 +86,18 @@ describe("readWithRetry", () => {
     expect(t.waits).toEqual([]);
   });
 
+  it("a SERVICE_UNAVAILABLE with a deterministic reason is shown at once: one try, no wait", async () => {
+    const t = setup();
+    const fixed = new ORPCError("SERVICE_UNAVAILABLE", {
+      data: { reason: "billing_not_configured" },
+    });
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(fixed);
+
+    await expect(readWithRetry(read, t.options)).rejects.toBe(fixed);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(t.waits).toEqual([]);
+  });
+
   it("with no answer at all it tries once more, and only once", async () => {
     const t = setup();
     const read = vi
@@ -161,6 +173,21 @@ describe("isTransientReadFailure", () => {
         })
       )
     ).toBe(true);
+  });
+
+  it("is false for SERVICE_UNAVAILABLE with a reason other than server_busy", () => {
+    for (const reason of [
+      "billing_not_configured",
+      "billing_provider_unavailable",
+      "billing_audit_unavailable",
+    ]) {
+      expect(
+        isTransientReadFailure(
+          new ORPCError("SERVICE_UNAVAILABLE", { data: { reason } })
+        ),
+        reason
+      ).toBe(false);
+    }
   });
 
   it("is true for a 500 with no reason, and false for one with a reason of its own", () => {
@@ -239,14 +266,93 @@ describe("what the real client throws for the runtime's own page", () => {
   });
 });
 
-const READ_PROCEDURE = /^(get|list|periodSummary|setup|targetChanges)/;
-const CALL =
-  /readWithRetry\(\s*\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/g;
+/** The reads `readWithRetry` wraps today, as `router.procedure`: a new one is added here on purpose, after checking it only reads. */
+const READ_PROCEDURES = [
+  "category.list",
+  "customer.list",
+  "expense.list",
+  "expense.listCategories",
+  "expense.listRules",
+  "goal.list",
+  "goal.targetChanges",
+  "inventory.listBalances",
+  "paymentProfile.list",
+  "product.list",
+  "publicCatalog.setup",
+  "report.periodSummary",
+  "sale.get",
+  "sale.getCustomerLink",
+  "sale.list",
+];
+const MODULE_IMPORT =
+  /import\s+([^;]*?)\s+from\s+["'][^"']*read-with-retry(?:\.ts)?["'];?/g;
+const PLAIN_SPECIFIERS =
+  /^\{\s*(?:type\s+\w+,\s*)*readWithRetry(?:,\s*type\s+\w+)*\s*\}$/;
+const USE = /\breadWithRetry\b/g;
+const FORM =
+  /readWithRetry\(\s*\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/y;
 const SOURCE_FILE = /\.tsx?$/;
+const THE_FORM =
+  "escreva como `readWithRetry(() => orpcClient.<rota>.<leitura>(...))`";
 
-/** The procedures `readWithRetry` wraps are reads: a write that got no answer may have been saved, and never runs twice. */
+/** The text of the call that opens at `start` (the `(` after the name): up to its closing parenthesis. */
+function callBody(text: string, start: number): string {
+  let depth = 0;
+  for (let i = start; i < text.length; i += 1) {
+    if (text[i] === "(") {
+      depth += 1;
+    } else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+  return text.slice(start);
+}
+
+/**
+ * Every use of the name `readWithRetry` in a text (an alias, a reference, `?.(`, a generic, a call all count,
+ * except the plain import), sorted into the calls in the one form the guard can read (`router.procedure`, with
+ * a single `orpcClient` in the body, so a write cannot ride along) and the uses outside it.
+ */
+function scan(text: string) {
+  const recognized: string[] = [];
+  let outside = 0;
+  const rest = text.replace(MODULE_IMPORT, (_all, clause: string) => {
+    outside += PLAIN_SPECIFIERS.test(clause.trim()) ? 0 : 1;
+    return "";
+  });
+  for (const use of rest.matchAll(USE)) {
+    FORM.lastIndex = use.index;
+    const form = FORM.exec(rest);
+    const body = callBody(rest, use.index + "readWithRetry".length);
+    if (form && body.split("orpcClient").length === 2) {
+      recognized.push(`${form[1]}.${form[2]}`);
+    } else {
+      outside += 1;
+    }
+  }
+  return { outside, recognized };
+}
+
+/** The violations of a set of source texts: uses outside the form, and procedures outside the closed list. */
+function check(texts: string[]) {
+  const scanned = texts.map(scan);
+  const recognized = scanned.flatMap((file) => file.recognized);
+  return {
+    notReads: recognized.filter((name) => !READ_PROCEDURES.includes(name)),
+    outside: scanned.reduce((sum, file) => sum + file.outside, 0),
+    recognized,
+  };
+}
+
+/** The guard of the writes: only these reads are wrapped, and a use it cannot read fails the test instead of slipping by. */
 describe("where readWithRetry is used", () => {
   const src = fileURLToPath(new URL("..", import.meta.url));
+  const moduleFile = fileURLToPath(
+    new URL("./read-with-retry.ts", import.meta.url)
+  );
 
   function sources(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -254,24 +360,59 @@ describe("where readWithRetry is used", () => {
       if (entry.isDirectory()) {
         return sources(path);
       }
-      return SOURCE_FILE.test(entry.name) && !entry.name.includes(".test.")
+      return SOURCE_FILE.test(entry.name) &&
+        !entry.name.includes(".test.") &&
+        path !== moduleFile
         ? [path]
         : [];
     });
   }
 
-  it("wraps only the procedures that read, and at least the screens of the task", () => {
-    const wrapped = sources(src)
-      .filter((path) => !path.endsWith("read-with-retry.ts"))
-      .flatMap((path) =>
-        [...readFileSync(path, "utf8").matchAll(CALL)].map(
-          ([, router, procedure]) => `${router}.${procedure}`
-        )
-      );
+  const result = check(sources(src).map((path) => readFileSync(path, "utf8")));
 
-    expect(wrapped.length).toBeGreaterThanOrEqual(20);
+  it(`every use is a call in the one form the guard reads: ${THE_FORM}`, () => {
     expect(
-      wrapped.filter((name) => !READ_PROCEDURE.test(name.split(".")[1] ?? ""))
-    ).toEqual([]);
+      result.outside,
+      `há uso de readWithRetry fora da forma; ${THE_FORM}`
+    ).toBe(0);
+  });
+
+  it("wraps only procedures of the closed list, and the list has no entry left over", () => {
+    expect(result.notReads).toEqual([]);
+    expect([...new Set(result.recognized)].sort()).toEqual(
+      [...READ_PROCEDURES].sort()
+    );
+  });
+
+  it("the guard flags what is outside the form, and a write", () => {
+    const own = 'import { readWithRetry } from "../lib/read-with-retry";\n';
+    const inForm = `${own}await readWithRetry(() => orpcClient.sale.list({ a }), o);`;
+    expect(check([inForm])).toEqual({
+      notReads: [],
+      outside: 0,
+      recognized: ["sale.list"],
+    });
+    for (const outside of [
+      "readWithRetry(read)",
+      "readWithRetry(() => save(sale))",
+      "readWithRetry(() => otherClient.sale.list())",
+      "readWithRetry<Sale>(read)",
+      "readWithRetry<() => Sale>(read)",
+      "readWithRetry (read)",
+      "readWithRetry(\n  read\n)",
+      "readWithRetry?.(read)",
+      "readWithRetry.call(null, read)",
+      "const r = readWithRetry; r(read)",
+      "readWithRetry(() => orpcClient.sale.list(a).then(() => orpcClient.sale.confirm(b)))",
+      'import { readWithRetry as rwr } from "./read-with-retry";\nrwr(() => orpcClient.sale.confirm(i))',
+      'import * as retry from "./read-with-retry";\nretry.readWithRetry(read)',
+    ]) {
+      expect(check([`${own}${outside}`]).outside, outside).toBeGreaterThan(0);
+    }
+    // a write in the right form is read, and the closed list refuses it
+    const write = check([
+      `${own}readWithRetry(() => orpcClient.sale.confirm(input))`,
+    ]);
+    expect(write.notReads).toEqual(["sale.confirm"]);
   });
 });
