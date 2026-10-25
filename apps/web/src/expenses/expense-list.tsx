@@ -26,6 +26,8 @@ const statusTabs: ReadonlyArray<readonly [ExpenseStatusFilter, string]> = [
 
 interface ExpenseFiltersBarProps {
   categories: readonly ExpenseCategoryReadModel[];
+  /** The store's current month, YYYY-MM. */
+  currentMonth: string;
   filters: ExpenseFilters;
   onChange: (filters: ExpenseFilters) => void;
 }
@@ -33,6 +35,7 @@ interface ExpenseFiltersBarProps {
 /** Month, category and status of the list. */
 export function ExpenseFiltersBar({
   categories,
+  currentMonth,
   filters,
   onChange,
 }: ExpenseFiltersBarProps) {
@@ -55,6 +58,7 @@ export function ExpenseFiltersBar({
     <div className="grid gap-4">
       <div className="grid gap-4 min-[30rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:items-end">
         <MonthPicker
+          currentMonth={currentMonth}
           id="expense-month"
           label="Mês de competência"
           month={month}
