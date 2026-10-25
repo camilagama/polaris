@@ -683,7 +683,7 @@ test.describe("loja com venda", () => {
     await openHome(page, server);
     const chart = region(page, "Vendas por dia");
     const area = chart.locator("[data-chart-area]");
-    await expect(area.locator("svg")).toBeVisible();
+    await expect(area.locator("svg").first()).toBeVisible();
 
     // the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on the chart still
     // scrolls the page: a "none" anywhere between the drawing and the document takes the vertical gesture away
