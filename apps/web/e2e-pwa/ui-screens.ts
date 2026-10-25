@@ -23,6 +23,7 @@ import { resultStates } from "./ui-result-states";
 import { saleDetailStates } from "./ui-sale-detail-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
+import { subscriptionStates } from "./ui-subscription-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
@@ -612,6 +613,21 @@ const ACCOUNT_SOURCES = [
   "src/sign-in/entry-ui.tsx",
 ];
 
+/** The files of the Assinatura (t328), with the notice of grace of the shell. */
+const SUBSCRIPTION_SOURCES = [
+  "src/subscription",
+  "src/app-shell/grace-notice.tsx",
+];
+
+const subscriptionScreen = (
+  name: string,
+  open: UiScreen["open"]
+): UiScreen => ({
+  name: `assinatura ${name}`,
+  open,
+  sourceDirs: SUBSCRIPTION_SOURCES,
+});
+
 /** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
 const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
@@ -780,6 +796,10 @@ export const SCREENS: UiScreen[] = [
   homeScreen("erro nos números", homeStates.error),
   homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),
   homeScreen("sem rede, sem cópia", homeStates.offlineNoCopy),
+  subscriptionScreen("oferta com Pix", subscriptionStates.offer),
+  subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
+  subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),
