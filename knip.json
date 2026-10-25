@@ -37,6 +37,7 @@
         "e2e-pwa/**/*.e2e.ts",
         "vite.ui.ts"
       ],
+      "ignore": ["src/ui/bklit/**"],
       "ignoreBinaries": ["openssl"],
       "ignoreDependencies": [
         "cloudflare",

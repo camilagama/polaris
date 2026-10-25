@@ -1,14 +1,13 @@
-/* adapted from Bklit UI (bklit/bklit-ui@3e9af3b), MIT */
-import { useId } from "react";
+/* Polaris adaptation of the Bklit UI sparkline (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
+import { useReducedMotion } from "motion/react";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { type ChartColor, chartLayout } from "./chart-geometry";
-import { useElementWidth } from "./use-element-width";
-
-const MARGIN = { bottom: 4, left: 4, right: 4, top: 4 };
+import { AreaSparkline } from "../bklit/charts/sparkline";
+import { type ChartColor, drawn } from "./chart-data";
 
 export interface SparklineProps {
   className?: string;
-  /** The color of the series: a token of the chart palette. The ink (`--chart-5`) when absent. */
+  /** The color of the series: a token of the chart palette. The ink (`--chart-line-primary`) when absent. */
   color?: ChartColor;
   /** The height of the drawing in pixels. */
   height?: number;
@@ -19,63 +18,45 @@ export interface SparklineProps {
 }
 
 /**
- * The miniature of a series inside a card with a number (Bklit UI adapted): one line, a fill that fades to
- * nothing and a dot on the last value; no axis, no grid, no focus. It is `aria-hidden`: the number beside it is the
- * information, and a screen reader hears that, not a drawing it cannot read.
+ * The miniature of a series inside a card with a number: Bklit UI's `AreaSparkline` (its entrance, a fill that fades to
+ * nothing, a dot on the last value), with no axis, no grid, no focus and no pointer reading. It is `aria-hidden`: the
+ * number beside it is the information, and a screen reader hears that, not a drawing it cannot read.
+ * `prefers-reduced-motion: reduce` turns the entrance and the morph off.
  */
 export function Sparkline({
   className,
-  color = "var(--chart-5)",
+  color,
   height = 32,
   values,
-  width: fixedWidth,
+  width,
 }: SparklineProps) {
-  const [measure, measuredWidth] = useElementWidth<HTMLSpanElement>();
-  const width = fixedWidth ?? measuredWidth;
-  const gradient = `spark-fill-${useId().replaceAll(":", "")}`;
-  const layout = chartLayout(
-    values.map((value) => ({ label: "", value })),
-    { height, maxLines: 0, margin: MARGIN, width }
+  const reduced = useReducedMotion() === true;
+  // the data follow the content of the values, not the identity of the array a screen builds on each render
+  const signature = values.join();
+  const data = useMemo(
+    () => values.map((value) => ({ value: drawn(value) })),
+    [signature]
   );
-  const end = layout.points.at(-1);
-
+  if (values.length === 0) {
+    return null;
+  }
   return (
     <span
       aria-hidden="true"
       className={cn("block w-full", className)}
-      ref={measure}
       style={{ height }}
     >
-      {width > 0 && end ? (
-        <svg
-          className="block animate-rise"
-          aria-hidden="true"
-          focusable="false"
-          height={height}
-          width={width}
-        >
-          <defs>
-            <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0" stopColor={color} stopOpacity={0.3} />
-              <stop offset="1" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          {layout.area ? (
-            <path d={layout.area} fill={`url(#${gradient})`} />
-          ) : null}
-          {layout.line ? (
-            <path
-              d={layout.line}
-              fill="none"
-              stroke={color}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-            />
-          ) : null}
-          <circle cx={end.x} cy={end.y} fill={color} r={3} />
-        </svg>
-      ) : null}
+      <AreaSparkline
+        animate={!reduced}
+        {...(reduced ? { dataTransitionDuration: 0 } : {})}
+        {...(color ? { color } : {})}
+        data={data}
+        dataKey="value"
+        endDot
+        height={height}
+        interactive={false}
+        width={width}
+      />
     </span>
   );
 }
