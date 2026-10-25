@@ -127,6 +127,7 @@ async function isGoogleOAuthRequest(request: Request): Promise<boolean> {
 
 const CHANGE_PASSWORD_PATH = "/api/auth/change-password";
 const SET_PASSWORD_PATH = "/api/auth/set-password";
+const GET_SESSION_PATH = "/api/auth/get-session";
 /** The password routes: the lock and the notices live in the handler, so only the exact path may reach it. */
 const passwordRoutePaths = [
   EMAIL_SIGN_IN_PATH,
@@ -168,6 +169,10 @@ function isPasswordRouteLookalike(request: Request): boolean {
 
 function isExactPost(request: Request, path: string): boolean {
   return request.method === "POST" && new URL(request.url).pathname === path;
+}
+
+function isExactGet(request: Request, path: string): boolean {
+  return request.method === "GET" && new URL(request.url).pathname === path;
 }
 
 function isPasswordRoute(request: Request): boolean {
@@ -949,7 +954,11 @@ export async function handleBetterAuthRequest(
     runInBackground,
     async (runtime) => {
       const { auth } = runtime;
-      await enforceAbsoluteSessionLifetime(auth, request);
+      // `/get-session` applies the absolute limit on its own single read (hook of `createBetterAuth`); the other routes
+      // read the session once before, to end one that is past it
+      if (!isExactGet(request, GET_SESSION_PATH)) {
+        await enforceAbsoluteSessionLifetime(auth, request);
+      }
       if (isExactPost(request, SET_PASSWORD_PATH)) {
         return await handleSetPasswordRequest(auth, request, runtime.effects);
       }

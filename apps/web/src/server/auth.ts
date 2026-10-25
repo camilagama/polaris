@@ -12,6 +12,7 @@ import {
   getSessionFromCtx,
   isAPIError,
 } from "better-auth/api";
+import { deleteSessionCookie } from "better-auth/cookies";
 import type { GoogleOptions } from "better-auth/social-providers";
 import {
   LEGAL_DOCUMENT_IDS,
@@ -48,6 +49,7 @@ import {
   betterAuthSecurityOptions,
 } from "./auth/security-options";
 import {
+  isSessionPastAbsoluteExpiration,
   SESSION_IDLE_TTL_SECONDS,
   SESSION_REFRESH_INTERVAL_SECONDS,
 } from "./auth/session-policy";
@@ -734,6 +736,7 @@ function accessLogEventFor(
 }
 
 interface StoredSession {
+  createdAt?: Date | string;
   id?: string;
   ipAddress?: string | null;
   token?: string;
@@ -983,23 +986,11 @@ export function createBetterAuth({
   });
   const auditHook = createAuthMiddleware(async (context) => {
     const authContext = context.context as unknown as AuthHookContext;
-    if (
-      isGoogleCallbackPath(context.path, context.params) &&
-      !authContext.newSession?.user?.id &&
-      googleCallbackRedirectLocation(authContext.returned) !== undefined &&
-      !authContext.session?.user?.id
-    ) {
-      try {
-        const callbackSession = (await getSessionFromCtx(context)) as unknown as
-          | AuthHookContext["session"]
-          | null;
-        if (callbackSession) {
-          authContext.session = callbackSession;
-        }
-      } catch {
-        // A successful OAuth callback can be a link flow with an existing session.
-      }
+    if (await revokeSessionPastAbsoluteLimit(context, authContext.returned)) {
+      // the answer of a session that no longer exists: nothing to audit, nothing to record
+      return context.json(null);
     }
+    await attachGoogleCallbackSession(context, authContext);
     const { logoutActorId: capturedLogoutActorId } = currentState();
     const event = buildAuthSecurityAuditEvent({
       body: context.body,
@@ -1041,6 +1032,62 @@ export function createBetterAuth({
       await writeAuditEvent(event);
     }
   });
+
+  // A successful Google callback that opened no session of its own: the session it carries, if any, is the actor of
+  // the audit event.
+  async function attachGoogleCallbackSession(
+    context: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+    authContext: AuthHookContext
+  ): Promise<void> {
+    if (
+      !(
+        isGoogleCallbackPath(context.path, context.params) &&
+        !authContext.newSession?.user?.id &&
+        googleCallbackRedirectLocation(authContext.returned) !== undefined &&
+        !authContext.session?.user?.id
+      )
+    ) {
+      return;
+    }
+    try {
+      const callbackSession = (await getSessionFromCtx(context)) as unknown as
+        | AuthHookContext["session"]
+        | null;
+      if (callbackSession) {
+        authContext.session = callbackSession;
+      }
+    } catch {
+      // A successful OAuth callback can be a link flow with an existing session.
+    }
+  }
+
+  // The absolute limit of 30 days (ADR 0017) is applied to the one read `/get-session` already made, so the request
+  // never reads the session twice. A session past it is revoked here and its cookie cleared; the answer becomes
+  // `null`, as for a session that does not exist. A failed revoke leaves as an error: the session is never answered.
+  // Says whether it did: a request that is not a `/get-session`, or whose session is inside the limit, is left alone.
+  async function revokeSessionPastAbsoluteLimit(
+    context: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+    returned: unknown
+  ): Promise<boolean> {
+    if (context.path !== "/get-session") {
+      return false;
+    }
+    const session = sessionFromGetSession(returned);
+    if (
+      !(
+        session?.token &&
+        (session.createdAt === undefined ||
+          isSessionPastAbsoluteExpiration(session.createdAt))
+      )
+    ) {
+      return false;
+    }
+    await context.context.internalAdapter.deleteSession(session.token);
+    deleteSessionCookie(
+      context as unknown as Parameters<typeof deleteSessionCookie>[0]
+    );
+    return true;
+  }
 
   // A request from another IP than the one the session row holds is an access of its own: it is recorded when
   // it happens, not only at the daily refresh, and the row then holds the new IP (so the next request of the
@@ -1141,6 +1188,10 @@ export function createBetterAuth({
                 currentState().refreshing.delete(hookContext)
               )
             ) {
+              return;
+            }
+            // `/get-session` revokes this session right after the refresh (absolute limit): no access to record
+            if (isSessionPastAbsoluteExpiration(session.createdAt)) {
               return;
             }
             const ip = requestIp(

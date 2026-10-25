@@ -20,10 +20,15 @@ interface CapturedOptions {
 }
 
 const fake = vi.hoisted(() => ({
+  /** How many times a route read the session through `api.getSession` before its own handler. */
+  apiReads: 0,
   /** What each request's Better Auth call saw through the shared instance. */
   calls: [] as { database: string; requestId: string }[],
   databases: 0,
-  /** What the request's own `getSession` answers. */
+  /**
+   * What the one session read of `/get-session` answers: the handler makes it (the absolute limit is applied by a hook
+   * on that read, so no `api.getSession` runs before it).
+   */
   getSession: (() => Promise.resolve(null)) as () => Promise<unknown>,
   /** Whether the next instance fails to start (its `$context` rejects, as Better Auth's does). */
   startFails: false,
@@ -48,9 +53,13 @@ const createBetterAuth = vi.hoisted(() =>
       ? Promise.reject(new Error("the start failed"))
       : Promise.resolve({}),
     api: {
-      getSession: () => fake.getSession(),
+      getSession: () => {
+        fake.apiReads += 1;
+        return fake.getSession();
+      },
     },
-    handler: () => {
+    handler: async () => {
+      await fake.getSession();
       // read through the instance at the time of the call, as Better Auth's adapter and hooks do
       fake.calls.push({
         database: options.database.name,
@@ -67,7 +76,7 @@ const createBetterAuth = vi.hoisted(() =>
           })
         );
       }
-      return Promise.resolve(Response.json(null));
+      return Response.json(null);
     },
   }))
 );
@@ -101,6 +110,7 @@ function getSession(
 
 describe("the /api/auth/* routes share one Better Auth per isolate", () => {
   afterEach(() => {
+    fake.apiReads = 0;
     fake.calls.length = 0;
     fake.ranInBackground.length = 0;
     fake.holdBackground = undefined;
@@ -151,6 +161,32 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     expect(fake.ranInBackground).toEqual([
       { database: first?.database, requestId: "request-one" },
     ]);
+  });
+
+  it("reads the session once for /get-session, and once before any other route", async () => {
+    await getSession("get-session", vi.fn());
+    expect(fake.apiReads).toBe(0);
+    expect(fake.calls).toHaveLength(1);
+
+    await handleBetterAuthRequest(
+      new Request("https://polaris.example.invalid/api/auth/list-sessions"),
+      bindings,
+      "list-sessions",
+      vi.fn()
+    );
+    expect(fake.apiReads).toBe(1);
+    expect(fake.calls).toHaveLength(2);
+
+    // only the GET of /get-session is the read itself: a POST of it keeps the read before
+    await handleBetterAuthRequest(
+      new Request("https://polaris.example.invalid/api/auth/get-session", {
+        method: "POST",
+      }),
+      bindings,
+      "post-get-session",
+      vi.fn()
+    );
+    expect(fake.apiReads).toBe(2);
   });
 
   it("is the same instance for the next request, and a new one when the secret changes", async () => {
