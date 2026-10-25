@@ -68,7 +68,9 @@ interface State {
   data: ChartDatum[];
   height: number;
   label: string;
+  loading?: boolean;
   name: string;
+  secondary?: { data: ChartDatum[]; legend: string; name: string };
 }
 
 const STATES: State[] = [
@@ -111,6 +113,27 @@ const STATES: State[] = [
   },
 ];
 
+STATES.push(
+  {
+    data: WEEK,
+    height: 180,
+    label: "Vendas líquidas por dia, de 17/10 a 23/10, carregando",
+    loading: true,
+    name: "Carregando",
+  },
+  {
+    data: WEEK,
+    height: 220,
+    label: "Vendas e custos por dia, de 17/10 a 23/10, dados de exemplo",
+    name: "Duas séries",
+    secondary: {
+      data: WEEK.map((day) => ({ ...day, value: day.value * 0.6 })),
+      legend: "Custos (CMV, taxas e despesas)",
+      name: "Custos",
+    },
+  }
+);
+
 const SPARKS = [
   { name: "7 dias", values: SPARK_WEEK },
   { name: "30 dias", values: SPARK_MONTH },
@@ -140,6 +163,9 @@ export function ChartStates() {
                 formatValue={money}
                 height={state.height}
                 label={state.label}
+                loading={state.loading ?? false}
+                loadingLabel={state.loading ? "Carregando" : undefined}
+                {...(state.secondary ? { secondary: state.secondary } : {})}
                 rangeLabel={`Dia, ${state.name.toLowerCase()}`}
               />
             </div>
