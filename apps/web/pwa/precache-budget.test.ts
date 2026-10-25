@@ -17,6 +17,7 @@ import {
   chartsBudgetProblems,
   chartsBudgetWarnings,
   chartsLine,
+  calendarPlacementProblems,
   chartsPlacementProblems,
   FONT_BUDGET_BYTES,
   interfaceShares,
@@ -652,6 +653,56 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
       ),
       expect.stringContaining(
         "chart module d3-shape/src/line.js is in assets/sale-def.js"
+      ),
+    ]);
+  });
+
+  it("fails the calendar, react-day-picker or date-fns in a chunk that is not the calendar chunk (control: in its own chunk, and the loader and the pickers anywhere, it passes)", () => {
+    const calendar = "/repo/apps/web/src/ui/calendar.tsx";
+    const dayPicker =
+      "/repo/node_modules/.bun/react-day-picker@10.0.2+0ac650c0/node_modules/react-day-picker/dist/esm/DayPicker.js";
+    const dateFns =
+      "/repo/node_modules/.bun/date-fns@4.4.0/node_modules/date-fns/format.js";
+    const tz =
+      "/repo/node_modules/.bun/@date-fns+tz@1.5.0/node_modules/@date-fns/tz/date/index.js";
+    const loader = "/repo/apps/web/src/ui/calendar-on-demand.tsx";
+    const picker = "/repo/apps/web/src/ui/date-picker.tsx";
+    const values = "/repo/apps/web/src/ui/date-values.ts";
+    const heavy = {
+      [calendar]: { renderedLength: 1 },
+      [dateFns]: { renderedLength: 1 },
+      [dayPicker]: { renderedLength: 1 },
+      [tz]: { renderedLength: 1 },
+    };
+    expect(
+      calendarPlacementProblems([
+        { fileName: "assets/calendar-Ab12_x.js", modules: heavy },
+        {
+          fileName: "assets/index-abc.js",
+          modules: {
+            [loader]: { renderedLength: 1 },
+            [picker]: { renderedLength: 1 },
+            [values]: { renderedLength: 1 },
+          },
+        },
+      ])
+    ).toEqual([]);
+    expect(
+      calendarPlacementProblems([
+        { fileName: "assets/index-abc.js", modules: heavy },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "calendar module /repo/apps/web/src/ui/calendar.tsx is in assets/index-abc.js"
+      ),
+      expect.stringContaining(
+        "calendar module date-fns/format.js is in assets/index-abc.js"
+      ),
+      expect.stringContaining(
+        "calendar module react-day-picker/dist/esm/DayPicker.js is in assets/index-abc.js"
+      ),
+      expect.stringContaining(
+        "calendar module @date-fns/tz/date/index.js is in assets/index-abc.js"
       ),
     ]);
   });

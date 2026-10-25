@@ -31,6 +31,14 @@ const TOAST_VIEWPORT_NAMED =
   /<ToastPrimitive\.Viewport\b[^>]*\saria-label="Avisos"/;
 const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
 
+/**
+ * A component that only loads on demand is in the gallery through its loader, as in the app: a static import of it
+ * would put its chunk in the gallery's and fail the placement guard of `pwa/precache-budget.ts` (t363).
+ */
+const ON_DEMAND_LOADER: Record<string, string> = {
+  calendar: "calendar-on-demand",
+};
+
 const read = (path: string) =>
   readFileSync(join(web, path), "utf8").replace(COMMENT, "");
 
@@ -72,7 +80,10 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     "%s has an entry in the /ui-galeria gallery",
     (file) => {
       const gallery = read("src/ui-gallery/ui-gallery.tsx");
-      expect(gallery).toContain(`from "@/ui/${file.replace(TSX, "")}"`);
+      const name = file.replace(TSX, "");
+      expect(gallery).toContain(
+        `from "@/ui/${ON_DEMAND_LOADER[name] ?? name}"`
+      );
     }
   );
 

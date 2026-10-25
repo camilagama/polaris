@@ -87,6 +87,15 @@ Este arquivo define direção visual e de interação, não bibliotecas; a base 
 - Texto de interface em português do Brasil (`lang="pt-BR"`); valores em BRL.
 - Erro de renderização numa tela cai no `ErrorBoundary` do shell (explica em linguagem simples, oferece tentar de novo e nunca mostra a pilha), cada área carrega sob demanda com o aviso "Carregando…" e endereço desconhecido mostra a página "Página não encontrada" (404) dentro do shell. A aparência dessas peças está em "Peças em volta das telas".
 
+## Datas
+
+Desenho da padronização de 24/10/2026 (Petković), componentes em `apps/web/src/ui/` (t363); as telas trocam os `<input type="date">` em tarefas próprias.
+
+- **Data única (`DatePicker`):** botão de contorno com o ícone de calendário e a data escrita "24/10/2026" ("Escolher data" sem data); abre o mês num Popover, com "Hoje" no rodapé. Um toque num dia escolhe e fecha. O nome do botão é o rótulo do campo e o texto dele ("Data de competência, 24/10/2026"). Erro: "Escolha uma data", nunca "campo obrigatório".
+- **Período (`DateRangePicker`):** um campo só, no lugar de "De" e "Até": "01/10 a 24/10" ("24/10/2026" quando é um dia; o ano aparece quando o período não é todo do ano de hoje). Atalhos acima do mês, num segmentado pequeno: Hoje · 7 dias · Este mês · Mês passado (contados do dia da loja). O primeiro toque marca o início e o popover fica aberto ("Início 10/10/2026. Escolha o último dia."); o segundo fecha o período, e um dia antes do início vira o início, então o período invertido não existe. "Limpar" no rodapé. Dois meses lado a lado a partir de 1280 px; abaixo, um.
+- **Calendário:** dias de 36 px no mouse e 44 px no toque (abaixo de 360 px encolhem para a semana caber em 320), seis semanas sempre (o popover não muda de altura entre meses), hoje sublinhado, o dia escolhido em tinta e o período em fundo suave. As áreas de 48 px de dois dias vizinhos se encontram na borda comum: a grade é uma unidade, como um grupo de botões. Dia fora do permitido fica riscado e apagado, com `aria-disabled` e o motivo lido pelo leitor de tela ("Só até hoje"). As setas andam entre os dias e o foco é o contorno de 3 px.
+- **Celular:** por enquanto o mesmo Popover; abaixo de 760 px o calendário passa ao Dialog de tela inteira quando ele existir (t331). Movimento: o do Popover, desligado por `prefers-reduced-motion`.
+
 ## Peças em volta das telas
 
 Aparecem em volta de qualquer tela e não são de uma tela só (t233). Todas usam os componentes de `src/ui/`; o texto de cada uma não mudou com a migração.
@@ -274,5 +283,5 @@ O painel de movimento abre dentro da linha, abaixo dela (a linha ganha fundo sua
 
 - Só o cabeçalho da casca foi verificado em navegador a 360 px; nenhuma tela foi verificada no iPhone nesta fase; as telas de cancelamento, devolução e datas da venda só têm testes dos modelos de visão.
 - `theme-color` por `prefers-color-scheme`, sem acompanhar o seletor de tema; recorte de mídia sem `aria-valuetext`.
-- Sem desenho na v5.1: Toast, Combobox e Calendário, o widget do Turnstile (de terceiro) e a tabela que vira cartão com `data-label` (o desenho usa `Item`). Aparelhos e Pendências não têm mockup: a auditoria de 22/10 achou que as peças de `src/ui` já cobrem (cartão por item, selo, alerta, diálogo), e as duas telas foram feitas só com elas. As telas de senha têm o desenho v5.2 (20/10/2026), todas no código. O ícone que gira dos estados pendentes do mockup não entra.
+- Sem desenho na v5.1: Toast e Combobox, o widget do Turnstile (de terceiro) e a tabela que vira cartão com `data-label` (o desenho usa `Item`). Aparelhos e Pendências não têm mockup: a auditoria de 22/10 achou que as peças de `src/ui` já cobrem (cartão por item, selo, alerta, diálogo), e as duas telas foram feitas só com elas. As telas de senha têm o desenho v5.2 (20/10/2026), todas no código. O ícone que gira dos estados pendentes do mockup não entra.
 - Histórico de vendas sem filtro nem busca (a paginação usa "Carregar mais"); a lista mostra o momento comercial e só o detalhe mostra as três datas.

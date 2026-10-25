@@ -704,6 +704,11 @@ export const SCREENS: UiScreen[] = [
         .locator("[data-chart-loading]")
         .first()
         .waitFor({ state: "detached" });
+      // and the calendar of the date pickers, from its own chunk too (t363)
+      await page
+        .locator("[data-calendar-loading]")
+        .first()
+        .waitFor({ state: "detached" });
       await page.evaluate(() => document.fonts.ready);
     },
     sourceDirs: ["src/ui-gallery"],

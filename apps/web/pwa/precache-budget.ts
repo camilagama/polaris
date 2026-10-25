@@ -24,9 +24,9 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  * What going past a line does is one mode for the four of them, `BUDGET_MODE`: "warn" until the cut step, the build
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
- * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guard of the
- * charts (`chartsPlacementProblems`) and the guard of the chunks that exist for the browser checks only
- * (`testOnlyChunkProblems`).
+ * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guards of the
+ * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`, t363) and
+ * the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
@@ -80,6 +80,14 @@ const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
  */
 const CHARTS_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]charts[\\/](?!on-demand\.tsx$)[^\\/]+\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:d3-shape|d3-path)[\\/])/;
+/** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
+const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
+/**
+ * What belongs to the calendar chunk and to nothing else: `src/ui/calendar.tsx` (not `calendar-on-demand.tsx`, the
+ * loader the pickers import) and the libraries only it brings (react-day-picker, date-fns and @date-fns/tz).
+ */
+const CALENDAR_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]calendar\.tsx$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react-day-picker|date-fns|@date-fns[\\/]tz)[\\/])/;
 /**
  * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
  * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which
@@ -228,6 +236,26 @@ export function chartsPlacementProblems(
         .map(
           (id) =>
             `chart module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the charts chunk`
+        )
+    );
+}
+
+/**
+ * The same guard for the calendar of the date pickers (t363): react-day-picker and date-fns load on demand, when a
+ * picker opens, never with the shell's first script. Its size counts in the rest line (the chunk is precached so a
+ * picker opens offline); only its place is checked here.
+ */
+export function calendarPlacementProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  return chunks
+    .filter((chunk) => !CALENDAR_CHUNK.test(chunk.fileName))
+    .flatMap((chunk) =>
+      Object.keys(chunk.modules)
+        .filter((id) => CALENDAR_MODULE.test(id))
+        .map(
+          (id) =>
+            `calendar module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the calendar chunk`
         )
     );
 }
@@ -425,7 +453,10 @@ export function precacheBudgetPlugin(
         interface: interfaceShares(chunks),
         primitives: primitiveShares(chunks),
       };
-      placement = chartsPlacementProblems(chunks);
+      placement = [
+        ...chartsPlacementProblems(chunks),
+        ...calendarPlacementProblems(chunks),
+      ];
     },
     name: "polaris:precache-budget",
     writeBundle(output) {
