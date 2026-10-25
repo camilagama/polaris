@@ -58,8 +58,9 @@ const RESEND_KEY_TAKEN = "invalid_idempotent_request";
 /** A notice due within this long goes back to the queue with a delay; a later one waits for the hourly handover. */
 const BILLING_NOTICE_QUEUE_WAIT_MS = 3_600_000;
 /**
- * A notice owed longer than this is not sent again: Resend keeps an idempotency key for 24 hours, and past them a
- * send whose marking failed would go out twice. One hour of margin under the 24.
+ * A notice first tried longer ago than this is not sent again: Resend keeps an idempotency key for 24 hours, and past
+ * them a send whose marking failed would go out twice. One hour of margin under the 24. It counts from the first
+ * attempt, not from when the notice was due: one never tried has no key at the provider and can still go out.
  */
 const BILLING_NOTICE_DELIVERY_WINDOW_MS = 23 * 3_600_000;
 /** The queue brings a deferred notice back a little after it is due. */
@@ -86,6 +87,8 @@ export interface BillingNoticeReader {
     now: Date,
     limit: number
   ) => Promise<{ noticeId: string; organizationId: string }[]>;
+  /** Writes the first attempt (once, in a statement of its own) before the send, so it stays if the send throws. */
+  markAttempted: (noticeId: string, organizationId: string) => Promise<boolean>;
   markFailed: (
     noticeId: string,
     organizationId: string,
@@ -123,8 +126,8 @@ interface BillingNoticeRecipients {
 }
 
 /**
- * Why the consumer itself did not send: nobody to send to, an address nobody proved, or a notice owed for so long that
- * a new send would escape the provider's idempotency window.
+ * Why the consumer itself did not send: nobody to send to, an address nobody proved, or a notice first tried so long
+ * ago that a new send would escape the provider's idempotency window.
  */
 type BillingNoticeDeliverySkip =
   | "delivery_window_passed"
@@ -229,6 +232,7 @@ export type BillingNoticeStore = Pick<
   BillingStore,
   | "claimNotice"
   | "listOwedNotices"
+  | "markNoticeAttempted"
   | "markNoticeFailed"
   | "markNoticeSent"
   | "markNoticeSkipped"
@@ -289,6 +293,8 @@ export function billingNoticeDependenciesOf(
         claim: (noticeId, organizationId) =>
           store.claimNotice(noticeId, organizationId),
         listOwed: (now, limit) => store.listOwedNotices(now, limit),
+        markAttempted: (noticeId, organizationId) =>
+          store.markNoticeAttempted(noticeId, organizationId),
         markFailed: (noticeId, organizationId, code) =>
           store.markNoticeFailed(noticeId, organizationId, code),
         markSent: (noticeId, organizationId) =>
@@ -624,11 +630,20 @@ async function deliverBillingNotice(
   if ("reason" in checked) {
     return { outcome: await skip(checked.reason) };
   }
-  // after the rules above, so an old notice keeps its real reason (closed store, e-mail off, state changed)
+  // after the rules above, so an old notice keeps its real reason (closed store, e-mail off, state changed); only one
+  // already tried can go out twice, so one never tried goes out at any age
   if (
-    now.getTime() - delivery.dueAt.getTime() >
-    BILLING_NOTICE_DELIVERY_WINDOW_MS
+    delivery.firstAttemptedAt &&
+    now.getTime() - delivery.firstAttemptedAt.getTime() >
+      BILLING_NOTICE_DELIVERY_WINDOW_MS
   ) {
+    // a notice that was owed and never got out: an alert (Sentry), the same level as the failures of the cron
+    logger.error("billing_notice_delivery_window_passed", {
+      ...fields,
+      kind,
+      outcome: "failure",
+      reason: "delivery_window_passed",
+    });
     return { outcome: await skip("delivery_window_passed") };
   }
   const { config, store } = checked;
@@ -682,6 +697,8 @@ async function sendBillingNotice(
       from: config.from,
       replyTo: config.supportEmail,
     });
+  // the provider's key starts to count here: written first and on its own, so it stays if the send throws
+  await dependencies.notices.markAttempted(noticeId, organizationId);
   const result = await send({
     ...message,
     idempotencyKey: noticeId,

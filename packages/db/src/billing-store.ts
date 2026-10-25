@@ -115,6 +115,8 @@ export interface StoredBillingNotice {
   dueAt: Date;
   /** The ledger row the notice names (E4, E7, E-R), read again; null for the others or when it is not there. */
   event: { fact: BillingFact; id: string; providerRef: string | null } | null;
+  /** When the consumer first went to send it (the database's clock); null while it was never tried. */
+  firstAttemptedAt: Date | null;
   firstChargeAmount: string | null;
   firstChargeAt: Date | null;
   firstChargeEventId: string | null;
@@ -510,13 +512,23 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<StoredBillingNotice | null>;
   /**
-   * The notices owed that the queue left behind (due at least 10 minutes ago: the queue had them first), oldest due
-   * first, at most `limit`: the hourly handover sends them.
+   * The notices owed that the queue left behind (due at least 10 minutes ago: the queue had them first), at most
+   * `limit`: the ones never tried first, then the least recently started, each group oldest due first, so a notice that
+   * throws every time goes behind the others instead of holding the batch. The hourly handover sends them.
    */
   listOwedNotices: (
     now: Date,
     limit: number
   ) => Promise<{ noticeId: string; organizationId: string }[]>;
+  /**
+   * Writes when the consumer first went to send a notice still owed, once (the database's clock), in a statement of its
+   * own: it stays written when the send that follows throws. False when it was already written or the notice was
+   * settled meanwhile.
+   */
+  markNoticeAttempted: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<boolean>;
   /** Marks a notice still owed as sent, once; false when it was settled meanwhile. */
   markNoticeSent: (
     noticeId: string,
@@ -791,6 +803,7 @@ const OWED = "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
 interface NoticeRow extends BillingRow {
   dedupe_key: string;
   due_at: Date;
+  first_attempted_at: Date | null;
   first_charge_amount: string | null;
   first_charge_at: Date | null;
   first_charge_event_id: string | null;
@@ -832,7 +845,8 @@ async function claimOwedNotice(
   }
   const found = await pool.query<NoticeRow>(
     `SELECT notice.id::text AS notice_id, notice.organization_id AS notice_organization_id, notice.kind,
-            notice.dedupe_key, notice.due_at, notice.recorded_at, billing.organization_id IS NOT NULL AS has_record,
+            notice.dedupe_key, notice.due_at, notice.first_attempted_at, notice.recorded_at,
+            billing.organization_id IS NOT NULL AS has_record,
             ${BILLING_COLUMNS.split(", ")
               .map((column) => `billing.${column}`)
               .join(", ")},
@@ -873,6 +887,7 @@ async function claimOwedNotice(
     event: NOTICES_OF_AN_EVENT.includes(kind)
       ? await noticeEventOf(pool, organizationId, row.dedupe_key)
       : null,
+    firstAttemptedAt: row.first_attempted_at,
     firstChargeAmount: row.first_charge_amount,
     firstChargeAt: row.first_charge_at,
     firstChargeEventId: row.first_charge_event_id,
@@ -984,20 +999,32 @@ async function renewalFailedSentAtOf(
   return at;
 }
 
-/** The outcome of a notice still owed, written once; false when it was settled meanwhile (or is not of that store). */
+/**
+ * The outcome of a notice still owed, or its first attempt, written once; false when it was settled meanwhile (or is not
+ * of that store).
+ */
 async function markOwedNotice(
   pool: Pool,
   noticeId: string,
   organizationId: string,
-  outcome: { failureCode: string } | { sent: true } | { skippedReason: string }
+  outcome:
+    | { attempted: true }
+    | { failureCode: string }
+    | { sent: true }
+    | { skippedReason: string }
 ): Promise<boolean> {
   if (!NOTICE_ID_PATTERN.test(noticeId)) {
     return false;
   }
   // the columns are fixed text of this module; the code and the reason go as parameters
   let assignment = "sent_at = pg_catalog.now()";
+  let only = "";
   const values: string[] = [noticeId, organizationId];
-  if ("failureCode" in outcome) {
+  if ("attempted" in outcome) {
+    // the first attempt only; clock_timestamp() is the instant of the statement, not of the transaction
+    assignment = "first_attempted_at = pg_catalog.clock_timestamp()";
+    only = " AND first_attempted_at IS NULL";
+  } else if ("failureCode" in outcome) {
     assignment = "failed_at = pg_catalog.now(), failure_code = $3";
     values.push(outcome.failureCode);
   } else if ("skippedReason" in outcome) {
@@ -1006,7 +1033,7 @@ async function markOwedNotice(
   }
   const result = await pool.query(
     `UPDATE public.billing_notices SET ${assignment}
-      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}`,
+      WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}${only}`,
     values
   );
   return (result.rowCount ?? 0) > 0;
@@ -3140,7 +3167,7 @@ export function createBillingStore(
       }>(
         `SELECT id::text AS notice_id, organization_id FROM public.billing_notices
           WHERE ${OWED} AND due_at <= $1
-          ORDER BY due_at, id
+          ORDER BY first_attempted_at NULLS FIRST, due_at, id
           LIMIT $2`,
         [new Date(now.getTime() - NOTICE_HANDOVER_AFTER_MS), limit]
       );
@@ -3149,6 +3176,8 @@ export function createBillingStore(
         organizationId: row.organization_id,
       }));
     },
+    markNoticeAttempted: (noticeId, organizationId) =>
+      markOwedNotice(pool, noticeId, organizationId, { attempted: true }),
     markNoticeFailed: (noticeId, organizationId, code) =>
       markOwedNotice(pool, noticeId, organizationId, { failureCode: code }),
     markNoticeSent: (noticeId, organizationId) =>
