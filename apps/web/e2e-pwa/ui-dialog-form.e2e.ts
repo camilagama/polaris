@@ -52,11 +52,11 @@ for (const width of [360, 1280]) {
 
     // Tab never leaves the dialog, forwards or backwards (Base UI's focus guards hand the focus back at once)
     for (const key of ["Tab", "Shift+Tab"]) {
-      for (let step = 0; step < 14; step++) {
+      for (let step = 0; step < 14; step += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one key after the other, the focus is read after each
         await page.keyboard.press(key);
-        await expect
-          .poll(() => focusIsInDialog(page))
-          .toBe(true);
+        // biome-ignore lint/performance/noAwaitInLoops: the same
+        await expect.poll(() => focusIsInDialog(page)).toBe(true);
       }
     }
 
@@ -99,7 +99,9 @@ test("360 px: tela inteira, cabeçalho e rodapé presos, só o meio rola", async
   expect(footer.y + footer.height).toBeCloseTo(740, 0);
   // nothing scrolls but the body: the page under the veil and the dialog itself stay
   expect(
-    await dialog.evaluate((element) => element.scrollHeight - element.clientHeight)
+    await dialog.evaluate(
+      (element) => element.scrollHeight - element.clientHeight
+    )
   ).toBeLessThanOrEqual(0);
 
   // the main button is last in the order and on top in the column: the way out is under it
@@ -149,7 +151,9 @@ test("1280 px: diálogo central e largo, com rodapé à direita", async ({
   const cancel = await dialog
     .getByRole("button", { name: "Cancelar" })
     .boundingBox();
-  const save = await dialog.getByRole("button", { name: "Salvar" }).boundingBox();
+  const save = await dialog
+    .getByRole("button", { name: "Salvar" })
+    .boundingBox();
   // side by side, "Cancelar" first and "Salvar" at the right end
   expect(cancel?.y).toBeCloseTo(save?.y ?? 0, 0);
   expect(cancel?.x ?? 0).toBeLessThan(save?.x ?? 0);

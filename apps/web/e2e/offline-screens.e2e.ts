@@ -41,6 +41,7 @@ async function start(page: Page, heading = "Clientes") {
 }
 
 async function register(page: Page, customer: { name: string; phone: string }) {
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.locator("#customer-name").fill(customer.name);
   await page.locator("#customer-phone").fill(customer.phone);
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
@@ -69,7 +70,11 @@ async function expectCustomerItem(
   await (state === "enabled"
     ? expect(entry).toBeEnabled()
     : expect(entry).toBeDisabled());
-  await page.keyboard.press("Escape");
+  // an Escape that comes before the menu has finished opening is lost: press it until the menu is gone
+  await expect(async () => {
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
+  }).toPass();
 }
 
 test("com rede, cadastra pelo aparelho, o servidor confirma e o selo de envio some", async ({
@@ -165,6 +170,8 @@ async function editName(page: Page, from: string, to: string) {
   await (await customerMenuItem(page, from, "Editar")).click();
   await page.locator("#customer-name").fill(to);
   await page.getByRole("button", { name: "Salvar alterações" }).click();
+  // the form is a dialog that fades out; what comes next (a menu, the lab controls) waits for it to be gone
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o servidor a aplica quando a rede volta", async ({
@@ -1166,6 +1173,7 @@ for (const mode of ["offline", "mentindo"] as const) {
       ).toBeVisible();
       await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
       await expect(page.getByText("Tentar novamente")).toHaveCount(0);
+      await page.getByRole("button", { name: "Novo perfil" }).click();
       await page.getByLabel("Nome do perfil").fill("Maquininha");
       const create = page.getByRole("button", { name: "Criar perfil" });
       await expect(create).toHaveAttribute("aria-disabled", "true");
@@ -1412,6 +1420,7 @@ test.describe("conexão com prova", () => {
       await page.route("**/health", cutNetwork);
       await route.abort("connectionreset");
     });
+    await page.getByRole("button", { name: "Novo perfil" }).click();
     await page.getByLabel("Nome do perfil").fill("Maquininha");
     await page.getByRole("button", { name: "Criar perfil" }).click();
     await expect(
@@ -1425,12 +1434,10 @@ test.describe("conexão com prova", () => {
     ).toBeVisible();
 
     await page.unroute("**/health", cutNetwork);
-    // the list read on the return shows the saved profile; the warning and the typed form stay to be checked
+    // the list read on the return shows the saved profile (under the form, which is still open, so it is found by
+    // its markup: the dialog hides the list from the reader); the warning and the typed form stay to be checked
     await expect(
-      page
-        .getByRole("region", { name: "Perfis cadastrados" })
-        .getByRole("listitem")
-        .filter({ hasText: "Maquininha" })
+      page.locator("li[data-profile-id]").filter({ hasText: "Maquininha" })
     ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
     await expect(

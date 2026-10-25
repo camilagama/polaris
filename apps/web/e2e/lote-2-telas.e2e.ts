@@ -424,6 +424,7 @@ test("Clientes: sem nome o campo diz o que falta, com o cursor nele, e nada é e
     },
     "customer/list": reply({ customers: [] }),
   });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.getByLabel("Telefone").fill("11900000001");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   await expect(page.getByText("Informe o nome do cliente.")).toBeVisible();
@@ -435,7 +436,7 @@ test("Clientes: sem nome o campo diz o que falta, com o cursor nele, e nada é e
   expect(looked).toBe(0);
 });
 
-test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e deixa o cursor no nome para o próximo", async ({
+test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o próximo abre vazio", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {
@@ -444,12 +445,19 @@ test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e de
     "customer/list": reply({ customers: [] }),
   });
   const name = page.getByLabel("Nome", { exact: true });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await name.fill("Bia Souza");
   await page.getByLabel("Telefone").fill("11900000002");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Cliente cadastrado." })
-  ).toBeVisible();
+  const done = page
+    .getByRole("status")
+    .filter({ hasText: "Cliente cadastrado." });
+  await expect(done).toBeVisible();
+  // the form closed, and the focus is on the notice the person has to read
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(done.locator("xpath=..")).toBeFocused();
+  // the next one starts empty
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
 });
@@ -531,6 +539,14 @@ test("Clientes a 320 px: nada transborda com nome e e-mail longos, o formulário
     }),
   });
   await expectNoSidewaysScroll(page);
+  // the form is a dialog, the whole screen at this width
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Novo cliente" })
+  ).toBeVisible();
+  await expectNoSidewaysScroll(page);
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: BRUNO_MENU }).click();
   await page.getByRole("menuitem", { exact: true, name: "Anonimizar" }).click();
   await expect(

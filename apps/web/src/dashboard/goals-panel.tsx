@@ -2,7 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
@@ -156,18 +156,20 @@ export function GoalsPanel({
     useGoalCommands(organizationId, reload);
   // the address the Início links to, read once: `?meta=nova` opens the form, `?meta=lista` goes to the goals
   const [link] = useState(() => readGoalsLink(window.location.search));
+  // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
-  const [formCount, setFormCount] = useState(0);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
 
-  const closeForm = useCallback(() => {
-    setCreating(false);
-    setFormCount((count) => count + 1);
-  }, []);
+  const closeForm = useCallback(() => setCreating(false), []);
   const handleNew = useCallback(() => {
     clearFeedback();
     setCreating(true);
-    focusLater(() => document.getElementById("goal-create-kind")?.focus());
   }, [clearFeedback]);
+  // the focus goes back to what opened the form (the button, or the heading when the address did)
+  const finalFocus = useCallback(
+    () => newButtonRef.current ?? document.getElementById(HEADING_ID) ?? true,
+    []
+  );
   useEffect(() => {
     if (link !== null) {
       // the link did its work: a reload or a step back is the screen as it is, not the form opening again
@@ -179,9 +181,7 @@ export function GoalsPanel({
         `${url.pathname}${url.search}${url.hash}`
       );
     }
-    if (link === "new") {
-      focusLater(() => document.getElementById("goal-create-kind")?.focus());
-    } else if (link === "list") {
+    if (link === "list") {
       focusLater(() => {
         const heading = document.getElementById(HEADING_ID);
         heading?.scrollIntoView({ block: "start" });
@@ -236,31 +236,31 @@ export function GoalsPanel({
             <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
             <span className="max-sm:hidden">Atualizar</span>
           </Button>
-          {creating ? null : (
-            <Button
-              disabled={busy !== null}
-              onClick={handleNew}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Nova meta
-            </Button>
-          )}
+          <Button
+            disabled={busy !== null}
+            onClick={handleNew}
+            ref={newButtonRef}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova meta
+          </Button>
         </div>
       </div>
-      <ActionNotice feedback={feedback} />
-      {creating ? (
-        <GoalCreateForm
-          disabled={busy !== null}
-          key={formCount}
-          month={month}
-          onCancel={closeForm}
-          onSave={handleSave}
-          saving={busy === "create"}
-        />
-      ) : null}
+      {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
+      <ActionNotice feedback={creating ? null : feedback} />
+      <GoalCreateForm
+        disabled={busy !== null}
+        feedback={feedback?.kind === "error" ? feedback : null}
+        finalFocus={finalFocus}
+        month={month}
+        onCancel={closeForm}
+        onSave={handleSave}
+        open={creating}
+        saving={busy === "create"}
+      />
       <GoalList
         busyKey={busy}
         goals={state.goals}

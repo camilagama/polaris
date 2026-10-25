@@ -213,7 +213,12 @@ async function expectNoSidewaysScroll(page: Page) {
       // the root of the screen: the header with the title is its first child
       ?.closest("header")?.parentElement;
     const limit = window.innerWidth + 0.5;
-    const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
+    // the form is a dialog, in a portal outside the root of the screen: measured too when it is open
+    const dialogs = [...document.querySelectorAll("[role=dialog]")];
+    const inside = [root, ...dialogs].flatMap((box) => [
+      ...(box?.querySelectorAll("*") ?? []),
+    ]);
+    const boxes = inside.map((element) => ({
       right: element.getBoundingClientRect().right,
       text: (element.textContent ?? "").trim().slice(0, 40),
     }));
@@ -337,6 +342,7 @@ test("nome vazio é dito no campo, com o cursor nele, e nada vai ao servidor", a
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const name = page.getByLabel("Nome do perfil");
   await expect(page.getByText("Informe o nome do perfil.")).toBeVisible();
@@ -349,6 +355,7 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await chooseOption(
     page,
@@ -378,7 +385,7 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   await expect(page.getByLabel("Número de parcelas")).toBeFocused();
 });
 
-test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carregando'", async ({
+test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lista não volta a 'Carregando'", async ({
   page,
 }) => {
   let created = false;
@@ -393,6 +400,7 @@ test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carr
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha da loja");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const notice = page.getByText("Perfil “Maquininha da loja” criado.");
@@ -401,6 +409,9 @@ test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carr
     notice.locator("xpath=ancestor::div[@tabindex='-1']")
   ).toBeFocused();
   await expect(page.getByText("Maquininha da loja").last()).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // the next one starts empty
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(page.getByLabel("Nome do perfil")).toHaveValue("");
 });
 
@@ -444,6 +455,7 @@ test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56
     lists: [answer([])],
     others: { "paymentProfile/create": (route) => route.fulfill(badRequest) },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const refused = page.getByRole("alert").filter({
@@ -467,6 +479,7 @@ test("duas regras para o mesmo método são recusadas antes de enviar", async ({
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await page.getByRole("button", { name: "Adicionar regra" }).click();
   await page.getByRole("button", { name: "Criar perfil" }).click();

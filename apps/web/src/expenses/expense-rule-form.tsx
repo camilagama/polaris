@@ -15,6 +15,13 @@ import {
   useState,
 } from "react";
 import { Button } from "@/ui/button";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { Field, FieldDescription, FieldTitle } from "@/ui/field";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -22,8 +29,13 @@ import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
-import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
+import {
+  ActionNotice,
+  ExpenseCategorySelect,
+  ExpenseTextField,
+} from "./expense-fields";
 import { moneyInputText } from "./expense-model";
+import type { Feedback } from "./use-command-runner";
 import {
   isRuleFrequency,
   newRuleDraft,
@@ -42,6 +54,8 @@ interface ExpenseRuleFormProps {
   categories: readonly ExpenseCategoryReadModel[];
   disabled: boolean;
   editing: ExpenseRuleReadModel | null;
+  /** What the last command said while the form is open: the dialog covers the top of the screen. */
+  feedback: Feedback | null;
   onCancel: () => void;
   /** Resolves true when the rule was saved. */
   onSave: (input: RuleCreateInput) => Promise<boolean>;
@@ -111,13 +125,15 @@ const FREQUENCY_OPTIONS = RULE_FREQUENCIES.map((item) => ({
 }));
 
 /**
- * Creates a recurring rule, or edits the one given. The parent gives it a new
- * `key` to start over (a different rule, or a fresh one after saving).
+ * The content of the form dialog (the whole screen on a phone): creates a recurring rule, or edits the one given. It
+ * lives only while the dialog does, so each opening starts from the rule (or from a blank one); the parent also
+ * gives it a new `key` for a different rule.
  */
 export function ExpenseRuleForm({
   categories,
   disabled,
   editing,
+  feedback,
   onCancel,
   onSave,
   saving,
@@ -186,99 +202,106 @@ export function ExpenseRuleForm({
   );
 
   return (
-    <form
-      className="grid gap-4 md:grid-cols-2"
-      noValidate
-      onSubmit={handleSubmit}
-    >
-      <ExpenseTextField
-        disabled={disabled}
-        error={errors.amount}
-        id={fieldId("amount")}
-        inputMode="decimal"
-        label="Valor de cada ocorrência (R$)"
-        name="amount"
-        onChange={handleChange}
-        placeholder="0,00"
-        value={draft.amount}
-      />
-      <ExpenseCategorySelect
-        categories={selectable}
-        disabled={disabled}
-        error={errors.categoryId}
-        id={fieldId("categoryId")}
-        label="Categoria"
-        onChange={handleCategory}
-        placeholder="Escolha uma categoria"
-        value={draft.categoryId}
-      />
+    <DialogForm onSubmit={handleSubmit}>
+      <DialogHeader>
+        <DialogTitle>
+          {editing ? "Editar despesa recorrente" : "Nova despesa recorrente"}
+        </DialogTitle>
+      </DialogHeader>
+      <DialogBody className="md:grid-cols-2">
+        {feedback ? (
+          <div className="md:col-span-2">
+            <ActionNotice feedback={feedback} />
+          </div>
+        ) : null}
+        <ExpenseTextField
+          disabled={disabled}
+          error={errors.amount}
+          id={fieldId("amount")}
+          inputMode="decimal"
+          label="Valor de cada ocorrência (R$)"
+          name="amount"
+          onChange={handleChange}
+          placeholder="0,00"
+          value={draft.amount}
+        />
+        <ExpenseCategorySelect
+          categories={selectable}
+          disabled={disabled}
+          error={errors.categoryId}
+          id={fieldId("categoryId")}
+          label="Categoria"
+          onChange={handleCategory}
+          placeholder="Escolha uma categoria"
+          value={draft.categoryId}
+        />
 
-      {editing ? (
-        <FixedSchedule rule={editing} />
-      ) : (
-        <>
-          <SelectField
-            disabled={disabled}
-            error={errors.frequency}
-            id={fieldId("frequency")}
-            label="Frequência"
-            onChange={handleFrequency}
-            options={FREQUENCY_OPTIONS}
-            placeholder="Escolha a frequência"
-            value={draft.frequency}
-          />
-          <ExpenseTextField
-            disabled={disabled}
-            error={errors.startsOn}
-            hint="Se a data já passou, as ocorrências atrasadas são lançadas de uma vez."
-            id={fieldId("startsOn")}
-            label="Começa em"
-            min={EARLIEST_EXPENSE_COMPETENCE}
-            name="startsOn"
-            onChange={handleChange}
-            type="date"
-            value={draft.startsOn}
-          />
-        </>
-      )}
+        {editing ? (
+          <FixedSchedule rule={editing} />
+        ) : (
+          <>
+            <SelectField
+              disabled={disabled}
+              error={errors.frequency}
+              id={fieldId("frequency")}
+              label="Frequência"
+              onChange={handleFrequency}
+              options={FREQUENCY_OPTIONS}
+              placeholder="Escolha a frequência"
+              value={draft.frequency}
+            />
+            <ExpenseTextField
+              disabled={disabled}
+              error={errors.startsOn}
+              hint="Se a data já passou, as ocorrências atrasadas são lançadas de uma vez."
+              id={fieldId("startsOn")}
+              label="Começa em"
+              min={EARLIEST_EXPENSE_COMPETENCE}
+              name="startsOn"
+              onChange={handleChange}
+              type="date"
+              value={draft.startsOn}
+            />
+          </>
+        )}
 
-      <ExpenseTextField
-        disabled={disabled}
-        error={errors.endsOn}
-        hint="Em branco, repete sem data de término."
-        id={fieldId("endsOn")}
-        label="Termina em"
-        min={draft.startsOn}
-        name="endsOn"
-        onChange={handleChange}
-        optional
-        type="date"
-        value={draft.endsOn}
-      />
-      <ExpenseTextField
-        disabled={disabled}
-        error={errors.payee}
-        id={fieldId("payee")}
-        label="Favorecido"
-        maxLength={MAX_EXPENSE_PAYEE_LENGTH}
-        name="payee"
-        onChange={handleChange}
-        optional
-        value={draft.payee}
-      />
-      <ExpenseTextField
-        className="md:col-span-2"
-        disabled={disabled}
-        error={errors.description}
-        id={fieldId("description")}
-        label="Descrição"
-        maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
-        name="description"
-        onChange={handleChange}
-        value={draft.description}
-      />
-
-      <div className="flex flex-wrap justify-end gap-3 md:col-span-2">
+        <ExpenseTextField
+          disabled={disabled}
+          error={errors.endsOn}
+          hint="Em branco, repete sem data de término."
+          id={fieldId("endsOn")}
+          label="Termina em"
+          min={draft.startsOn}
+          name="endsOn"
+          onChange={handleChange}
+          optional
+          type="date"
+          value={draft.endsOn}
+        />
+        <ExpenseTextField
+          disabled={disabled}
+          error={errors.payee}
+          id={fieldId("payee")}
+          label="Favorecido"
+          maxLength={MAX_EXPENSE_PAYEE_LENGTH}
+          name="payee"
+          onChange={handleChange}
+          optional
+          value={draft.payee}
+        />
+        <ExpenseTextField
+          className="md:col-span-2"
+          disabled={disabled}
+          error={errors.description}
+          id={fieldId("description")}
+          label="Descrição"
+          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
+          name="description"
+          onChange={handleChange}
+          value={draft.description}
+        />
+      </DialogBody>
+      <DialogFooter>
         <Button
           disabled={disabled}
           onClick={onCancel}
@@ -295,7 +318,7 @@ export function ExpenseRuleForm({
         >
           {submitLabel(saving, editing !== null)}
         </Button>
-      </div>
-    </form>
+      </DialogFooter>
+    </DialogForm>
   );
 }

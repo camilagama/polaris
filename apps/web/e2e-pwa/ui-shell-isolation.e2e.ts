@@ -429,6 +429,7 @@ const LOT2_SCREENS = [
         page,
         "/customers",
         async () => {
+          await page.getByRole("button", { name: "Novo cliente" }).click();
           await page.getByRole("button", { name: "Cadastrar cliente" }).click();
           await expect(
             page.getByText("Informe o nome do cliente.")
@@ -622,7 +623,11 @@ const openPaymentProfiles = (
 const PAYMENT_SCREENS = [
   {
     name: "Perfis de pagamento no shell: lista e formulário novo",
-    open: (page: Page) => openPaymentProfiles(page),
+    open: (page: Page) =>
+      openPaymentProfiles(page, async () => {
+        await page.getByRole("button", { name: "Novo perfil" }).click();
+        await expect(page.getByLabel("Nome do perfil")).toBeFocused();
+      }),
   },
   {
     // the form filled by an edit: selects, a fee with a percentage, and the hint of the unknown fee

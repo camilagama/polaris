@@ -583,13 +583,16 @@ async function openRulesPanel(page: Page) {
 async function createMonthlyRule(page: Page, description: string) {
   const panel = rulesPanel(page);
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
-  await panel.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
-  await choose(page, panel, "Categoria", "Aluguel");
-  await choose(page, panel, "Frequência", "Todo mês");
-  await panel.getByLabel("Começa em").fill("2026-07-14");
-  await panel.getByLabel("Descrição").fill(description);
-  await panel.getByRole("button", { name: "Criar despesa recorrente" }).click();
+  // the form is a dialog, outside the region of the panel
+  const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
+  await form.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+  await choose(page, form, "Categoria", "Aluguel");
+  await choose(page, form, "Frequência", "Todo mês");
+  await form.getByLabel("Começa em").fill("2026-07-14");
+  await form.getByLabel("Descrição").fill(description);
+  await form.getByRole("button", { name: "Criar despesa recorrente" }).click();
   await expect(panel.getByText("Despesa recorrente criada.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 test("uma despesa recorrente criada no passado lança a ocorrência do mês e mostra a próxima", async ({

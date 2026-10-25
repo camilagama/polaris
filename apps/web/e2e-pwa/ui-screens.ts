@@ -432,11 +432,19 @@ async function exerciseCancelReason(page: Page) {
 }
 
 async function exerciseSaleCustomer(page: Page) {
+  // the customer is chosen in a form dialog: opened, the list of customers opened and closed inside it, then closed
+  await page
+    .getByRole("button", { exact: true, name: "Trocar cliente" })
+    .click();
+  const choose = page.getByRole("dialog", { name: "Trocar cliente" });
+  await choose.waitFor();
   await openAndClose(
     page,
     { name: "Cliente", role: "combobox" },
     { role: "listbox" }
   );
+  await page.keyboard.press("Escape");
+  await choose.waitFor({ state: "detached" });
   await openAndClose(
     page,
     { name: "Remover cliente", role: "button" },
@@ -804,6 +812,7 @@ export const SCREENS: UiScreen[] = [
     saleDetailStates.customer,
     exerciseSaleCustomer
   ),
+  saleDetailScreen("trocar o cliente", saleDetailStates.customerChoose),
   shellPieceScreen("404", "nao-encontrada", headingOf("Página não encontrada")),
   shellPieceScreen(
     "falha da tela",

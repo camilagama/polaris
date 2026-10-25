@@ -212,7 +212,10 @@ test.describe("the customer of the sale", () => {
     page,
   }) => {
     const asked = await openCustomer(page);
-    const swap = page.getByRole("button", { name: "Trocar cliente" });
+    // the choice is made in a dialog: the button that opens it, then the one that sends the choice
+    await page.getByRole("button", { name: "Trocar cliente" }).click();
+    const dialog = page.getByRole("dialog", { name: "Trocar cliente" });
+    const swap = dialog.getByRole("button", { name: "Trocar cliente" });
     await expect(swap).toHaveAttribute("aria-disabled", "true");
     await expect(swap).toHaveAccessibleDescription("Escolha um cliente ativo.");
     await swap.focus();
@@ -233,7 +236,9 @@ test.describe("the customer of the sale", () => {
       ...link,
       current: { customerId: null, version: 2 },
     });
-    const assign = page.getByRole("button", { name: "Associar cliente" });
+    await page.getByRole("button", { name: "Associar cliente" }).click();
+    const dialog = page.getByRole("dialog", { name: "Associar cliente" });
+    const assign = dialog.getByRole("button", { name: "Associar cliente" });
     await expect(assign).toHaveAttribute("aria-disabled", "true");
     await expect(assign).toHaveAccessibleDescription(
       "Escolha um cliente ativo."

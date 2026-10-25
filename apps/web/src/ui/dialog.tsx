@@ -2,7 +2,8 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import XIcon from "lucide-react/dist/esm/icons/x";
-import * as React from "react";
+import { createContext, useContext } from "react";
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -19,14 +20,16 @@ import {
  * whole screen below 760 px and a wider centred dialog from there (DESIGN.md, "Diálogo de formulário").
  */
 type DialogLayout = "dialog" | "form";
-const DialogLayoutContext = React.createContext<DialogLayout>("dialog");
+const DialogLayoutContext = createContext<DialogLayout>("dialog");
 
 /**
  * Keeps the form dialog on the part of the screen the person can see. With the keyboard open the layout viewport
  * does not shrink (iOS, and Chrome for Android since 108), so a box sized by `dvh` would put its footer under the
  * keyboard; the box follows the visual viewport instead, through two custom properties (`dialog-layout.ts`).
  */
-function followVisualViewport(popup: HTMLElement | null): (() => void) | void {
+function followVisualViewport(
+  popup: HTMLElement | null
+): (() => void) | undefined {
   const viewport = window.visualViewport;
   if (!(popup && viewport)) {
     return;
@@ -132,7 +135,7 @@ function DialogContent({
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
-  const isForm = React.useContext(DialogLayoutContext) === "form";
+  const isForm = useContext(DialogLayoutContext) === "form";
   return (
     <div
       className={cn(
@@ -177,7 +180,7 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean;
 }) {
-  const isForm = React.useContext(DialogLayoutContext) === "form";
+  const isForm = useContext(DialogLayoutContext) === "form";
   return (
     <div
       className={cn(

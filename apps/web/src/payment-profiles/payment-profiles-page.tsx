@@ -1,6 +1,7 @@
 import type { PaymentProfileReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
   type FormEvent,
@@ -11,6 +12,7 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -26,7 +28,6 @@ import {
   blankRule,
   draftProblems,
   hasRepeatedRules,
-  NAME_ID,
   type ProfileDraft,
   profileDraft,
   profileDraftKey,
@@ -139,8 +140,13 @@ export function PaymentProfilesPage() {
   const [notLoaded, setNotLoaded] = useState(false);
   // a change the connection cut: amber, the form stays, and it stays said after the list is read again
   const [uncertain, setUncertain] = useState<string | null>(null);
+  // the form is a dialog: it opens for a new profile or for an edit, and the draft is only cleared once it has closed
+  const [formOpen, setFormOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  // where the focus goes back to when the form closes without a message to read: what opened it
+  const originRef = useRef<() => HTMLElement | null>(() => null);
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
   const readOnce = useRef<boolean>(false);
   useReportUnsentWork(
@@ -247,23 +253,31 @@ export function PaymentProfilesPage() {
     focusLater(() => document.getElementById("payment-add-rule")?.focus());
   }, []);
 
-  /** Back to where the person was: the "Editar" of the profile that was open. */
-  const focusEditButton = useCallback((profileId: string | undefined) => {
-    focusLater(() =>
-      rootRef.current
-        ?.querySelector<HTMLElement>(
-          `[data-profile-id="${profileId}"] [data-profile-edit]`
-        )
-        ?.focus()
-    );
-  }, []);
-  const handleCancelEdit = useCallback(() => {
-    focusEditButton(editing?.id);
+  const handleNew = useCallback(() => {
+    originRef.current = () => newButtonRef.current;
     setEditing(null);
     setDraft(blankDraft());
     setFieldErrors({});
     setError(null);
-  }, [editing, focusEditButton]);
+    setNotice(null);
+    setFormOpen(true);
+  }, []);
+  const handleCancelEdit = useCallback(() => {
+    setFormOpen(false);
+    setFieldErrors({});
+    setError(null);
+  }, []);
+  /** The form is empty again only once it has finished closing, so it does not turn into a new one while it fades. */
+  const handleFormClosed = useCallback(() => {
+    setEditing(null);
+    setDraft(blankDraft());
+    setFieldErrors({});
+  }, []);
+  /** A message to read (what the save said) takes the focus; without one, it goes back to what opened the form. */
+  const finalFocus = useCallback(
+    () => feedbackRef.current ?? originRef.current() ?? true,
+    []
+  );
 
   const saveProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -292,6 +306,7 @@ export function PaymentProfilesPage() {
       setError(null);
       setNotice(null);
       setUncertain(null);
+      let saved = false;
       try {
         const rules = draft.rules.map(ruleInput);
         const name = draft.name.trim();
@@ -312,8 +327,8 @@ export function PaymentProfilesPage() {
           });
           setNotice(`Perfil “${name}” criado.`);
         }
-        setEditing(null);
-        setDraft(blankDraft());
+        setFormOpen(false);
+        saved = true;
         await loadProfiles();
       } catch (cause) {
         if (isConnectionFailure(cause)) {
@@ -324,7 +339,11 @@ export function PaymentProfilesPage() {
         }
       } finally {
         setPending(false);
-        focusFeedback();
+        // a save closes the form and the focus goes to the notice when it has closed (`finalFocus`); what failed is
+        // said inside the form, which is still open
+        if (!saved) {
+          focusFeedback();
+        }
       }
     },
     [
@@ -338,12 +357,17 @@ export function PaymentProfilesPage() {
     ]
   );
   const editProfile = useCallback((profile: PaymentProfileReadModel) => {
+    // the "Editar" of the profile that opened the form
+    originRef.current = () =>
+      rootRef.current?.querySelector<HTMLElement>(
+        `[data-profile-id="${profile.id}"] [data-profile-edit]`
+      ) ?? null;
     setEditing(profile);
     setDraft(profileDraft(profile));
     setFieldErrors({});
     setError(null);
     setNotice(null);
-    focusLater(() => document.getElementById(NAME_ID)?.focus());
+    setFormOpen(true);
   }, []);
   const changeLifecycle = useCallback(
     async (profile: PaymentProfileReadModel) => {
@@ -395,33 +419,60 @@ export function PaymentProfilesPage() {
   return (
     <div ref={rootRef}>
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-        <header className="grid gap-1">
-          <h1 className="text-title">Perfis de pagamento</h1>
-          <p className="text-muted-foreground text-support">
-            Organize métodos, parcelamento, prazo de recebimento e taxas por
-            perfil.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="grid gap-1">
+            <h1 className="text-title">Perfis de pagamento</h1>
+            <p className="text-muted-foreground text-support">
+              Organize métodos, parcelamento, prazo de recebimento e taxas por
+              perfil.
+            </p>
+          </div>
+          <Button
+            disabled={pending}
+            onClick={handleNew}
+            ref={newButtonRef}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Novo perfil
+          </Button>
         </header>
-        <ActionFeedback
-          error={error}
-          notice={notice}
-          regionRef={feedbackRef}
-          uncertain={uncertain}
-        />
-        <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <PaymentProfileForm
-            draft={draft}
-            editingName={editing ? editing.name : null}
-            errors={fieldErrors}
-            onAddRule={handleAddRule}
-            onCancel={handleCancelEdit}
-            online={online}
-            onNameChange={handleNameChange}
-            onRemoveRule={handleRemoveRule}
-            onSubmit={saveProfile}
-            onUpdateRule={updateRule}
-            pending={pending}
+        {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
+        {formOpen ? null : (
+          <ActionFeedback
+            error={error}
+            notice={notice}
+            regionRef={feedbackRef}
+            uncertain={uncertain}
           />
+        )}
+        <PaymentProfileForm
+          draft={draft}
+          editingName={editing ? editing.name : null}
+          errors={fieldErrors}
+          feedback={
+            formOpen ? (
+              <ActionFeedback
+                error={error}
+                notice={null}
+                regionRef={feedbackRef}
+                uncertain={uncertain}
+              />
+            ) : null
+          }
+          finalFocus={finalFocus}
+          onAddRule={handleAddRule}
+          onCancel={handleCancelEdit}
+          onClosed={handleFormClosed}
+          online={online}
+          onNameChange={handleNameChange}
+          onRemoveRule={handleRemoveRule}
+          onSubmit={saveProfile}
+          onUpdateRule={updateRule}
+          open={formOpen}
+          pending={pending}
+        />
+        <div className="grid items-start gap-4">
           <PaymentProfileList
             hasAnyProfile={profiles.length > 0}
             includeArchived={showArchived}
