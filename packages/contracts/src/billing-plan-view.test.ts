@@ -15,6 +15,7 @@ const plan: BillingPlanView = {
   recovery: null,
   refund: { amount: "24.90", until: "2026-10-18T02:59:59.000Z", via: "app" },
   refundPending: false,
+  refundWindowEndedOn: null,
   renewalCancelled: false,
   resubscribeFrom: null,
   state: "active",
@@ -25,6 +26,17 @@ const plan: BillingPlanView = {
 describe("billing.readPlan output (AS-2)", () => {
   it("takes the plan as the server builds it", () => {
     expect(billingPlanView.parse(plan)).toEqual(plan);
+  });
+
+  it("takes the day the window of the right of withdrawal ended, and only a calendar day", () => {
+    const ended = { ...plan, refund: null, refundWindowEndedOn: "2026-10-17" };
+    expect(billingPlanView.parse(ended)).toEqual(ended);
+    expect(
+      billingPlanView.safeParse({
+        ...ended,
+        refundWindowEndedOn: "2026-10-17T23:59:59.000Z",
+      }).success
+    ).toBe(false);
   });
 
   it.each([

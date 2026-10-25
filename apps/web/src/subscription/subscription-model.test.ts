@@ -26,7 +26,9 @@ import {
   paymentLines,
   planHeadline,
   readRefusal,
+  REFUND_RULE,
   refundPendingNotice,
+  refundRuleLine,
   safeProviderUrl,
   usageRows,
   waitsForProvider,
@@ -50,6 +52,7 @@ function plan(overrides: Partial<BillingPlanView> = {}): BillingPlanView {
     recovery: null,
     refund: null,
     refundPending: false,
+    refundWindowEndedOn: null,
     renewalCancelled: false,
     resubscribeFrom: null,
     state: "free",
@@ -309,6 +312,108 @@ describe("refundPendingNotice", () => {
       title: "Cancelamos a renovação. O reembolso está com o nosso suporte.",
     });
     expect(`${notice?.title} ${notice?.description}`).not.toContain("Tentar");
+  });
+});
+
+describe("refundRuleLine (AS-14, Emenda 2)", () => {
+  const ENDED =
+    "O reembolso integral vale nos primeiros 7 dias depois da primeira cobrança. Esse prazo terminou em 17/10/2026.";
+  const refund = {
+    amount: "24.90",
+    until: "2026-10-18T02:59:59.000Z",
+    via: "app" as const,
+  };
+  const pro = {
+    accessEndsAt: "2026-11-11T03:00:00.000Z",
+    method: "card" as const,
+    state: "active" as const,
+  };
+
+  it.each([
+    // the state × the window × refundPending → the line
+    ["Free (the offer)", plan(), REFUND_RULE],
+    [
+      "Free, still with the date of an old window",
+      plan({ refundWindowEndedOn: "2026-10-17" }),
+      REFUND_RULE,
+    ],
+    ["Free over the limit", plan({ state: "free_over_limit" }), REFUND_RULE],
+    ["waiting for the method", plan({ state: "trial_setup" }), REFUND_RULE],
+    ["trial", plan({ state: "trialing" }), REFUND_RULE],
+    ["Pro in the window, card", plan({ ...pro, refund }), REFUND_RULE],
+    [
+      "Pro in the window, Pix by support",
+      plan({ ...pro, refund: { ...refund, via: "suporte" } }),
+      REFUND_RULE,
+    ],
+    [
+      "Pro in the window, renewal cancelled",
+      plan({ ...pro, refund, renewalCancelled: true }),
+      REFUND_RULE,
+    ],
+    [
+      "Pro after the 7th day",
+      plan({ ...pro, refundWindowEndedOn: "2026-10-17" }),
+      ENDED,
+    ],
+    [
+      "Pro after the renewal",
+      plan({
+        ...pro,
+        accessEndsAt: "2026-12-11T03:00:00.000Z",
+        refundWindowEndedOn: "2026-10-17",
+      }),
+      ENDED,
+    ],
+    [
+      "renewal cancelled, window over",
+      plan({
+        ...pro,
+        refundWindowEndedOn: "2026-10-17",
+        renewalCancelled: true,
+      }),
+      ENDED,
+    ],
+    ["Pro without any date from the server", plan({ ...pro }), null],
+    [
+      "Pro read from a Worker of the previous version (no field)",
+      { ...plan({ ...pro }), refundWindowEndedOn: undefined } as never,
+      null,
+    ],
+    [
+      "refund not completed, in the 72 hours",
+      plan({ ...pro, refund, refundPending: true, renewalCancelled: true }),
+      null,
+    ],
+    [
+      "refund not completed, with support",
+      plan({
+        ...pro,
+        refundPending: true,
+        refundWindowEndedOn: "2026-10-17",
+        renewalCancelled: true,
+      }),
+      null,
+    ],
+    ["refund not completed, back on Free", plan({ refundPending: true }), null],
+    [
+      "grace",
+      plan({ ...pro, refundWindowEndedOn: "2026-10-17", state: "grace" }),
+      null,
+    ],
+  ])("%s", (_label, value, line) => {
+    expect(refundRuleLine(value)).toBe(line);
+  });
+
+  it("never says the rule where the screen speaks of the refund asked or of the charge that failed", () => {
+    for (const value of [
+      plan({ ...pro, refund, refundPending: true }),
+      plan({ ...pro, refundPending: true }),
+      plan({ ...pro, refund, state: "grace" }),
+    ]) {
+      expect(refundRuleLine(value) ?? "").not.toContain("Você pode desistir");
+      expect(refundRuleLine(value) ?? "").not.toContain("reembolso integral");
+    }
   });
 });
 
