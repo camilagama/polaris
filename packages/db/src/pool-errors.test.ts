@@ -17,7 +17,7 @@ vi.mock("pg", () => ({
   },
 }));
 
-const { createDatabase } = await import("./client");
+const { connectionsClosedByUs, createDatabase } = await import("./client");
 const { createBillingStore } = await import("./billing-store");
 const { createAuthLoginLockMaintenanceClient } = await import(
   "./auth-login-lock-maintenance"
@@ -83,4 +83,76 @@ describe("pools made per request survive a connection error after the response",
       });
     });
   }
+});
+
+/**
+ * A connection as `pg-pool` hands it over: the pool's own listener of an idle connection is attached before the pool
+ * emits `connect`, and on an error it ends the connection and passes the error on to the pool (pg-pool 3.14).
+ */
+function idleConnection(pool: EventEmitter) {
+  const client = Object.assign(new EventEmitter(), {
+    end: vi.fn(() => Promise.resolve()),
+  });
+  client.on("error", (error: unknown) => {
+    client.end();
+    pool.emit("error", error, client);
+  });
+  pool.emit("connect", client);
+  return client;
+}
+
+/** What workerd gives the pending read of a socket the Worker closed itself (pg-cloudflare 1.4.1). */
+const ownCloseRead = () => new TypeError("This socket has been closed.");
+
+describe("one connection error is one log, and the close of a connection this side ends is not one (CPU-1d)", () => {
+  afterEach(() => {
+    pools.length = 0;
+    vi.restoreAllMocks();
+  });
+
+  it("logs an error of an idle connection once, though the pool passes it on", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    createDatabase("postgres://u:secret@h/db");
+    const client = idleConnection(pools[0] as EventEmitter);
+    client.emit("error", socketClosed());
+    expect(warn).toHaveBeenCalledExactlyOnceWith("database_pool_error", {
+      errorClass: "Error",
+      errorCode: "ECONNRESET",
+    });
+  });
+
+  it("only counts the read that fails because the connection was being ended here", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    createDatabase("postgres://u:secret@h/db");
+    const client = idleConnection(pools[0] as EventEmitter);
+    const before = connectionsClosedByUs();
+    await client.end();
+    client.emit("error", ownCloseRead());
+    expect(warn).not.toHaveBeenCalled();
+    expect(connectionsClosedByUs()).toBe(before + 1);
+  });
+
+  it("still logs that same error, once, when nothing here was ending the connection", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    createDatabase("postgres://u:secret@h/db");
+    const client = idleConnection(pools[0] as EventEmitter);
+    const before = connectionsClosedByUs();
+    client.emit("error", ownCloseRead());
+    expect(warn).toHaveBeenCalledExactlyOnceWith("database_pool_error", {
+      errorClass: "TypeError",
+    });
+    expect(connectionsClosedByUs()).toBe(before);
+  });
+
+  it("logs any other error of a connection being ended", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    createDatabase("postgres://u:secret@h/db");
+    const client = idleConnection(pools[0] as EventEmitter);
+    await client.end();
+    client.emit("error", socketClosed());
+    expect(warn).toHaveBeenCalledExactlyOnceWith("database_pool_error", {
+      errorClass: "Error",
+      errorCode: "ECONNRESET",
+    });
+  });
 });

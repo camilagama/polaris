@@ -75,6 +75,8 @@ interface Fixture {
   organizations: { a: Organization; b: Organization };
 }
 
+const UUID = /^[0-9a-f-]{36}$/;
+
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
 const HYPERDRIVES: Binding[] = [
   "AUTH_HYPERDRIVE",
@@ -807,6 +809,53 @@ describe("the e-mail and password flows of the web worker", () => {
     });
     expect(out.status).toBe(200);
     expect(await sessionOf(cookie, ip)).toBeNull();
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("closes the connections of a signed-in get-session and sync/pull without a database_pool_error (CPU-1d)", async () => {
+    const network = fakeNetwork();
+    const address = email("pool-close");
+    const ip = "198.51.100.17";
+    await verifiedUser(network, address, ip);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const created = await call("/rpc/organization/createInitial", {
+      body: {
+        json: { name: "Loja do fechamento", timezone: "America/Sao_Paulo" },
+      },
+      cookie,
+      ip,
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      (await created.json()) as { json: { organization: { id: string } } }
+    ).json.organization.id;
+
+    const events = loggedEvents();
+    expect(await sessionOf(cookie, ip)).not.toBeNull();
+    const pulled = await call("/rpc/sync/pull", {
+      body: { json: { limit: 10, organizationId } },
+      cookie,
+      ip,
+    });
+    expect(pulled.status).toBe(200);
+    // the pools end after the answer and the socket's read rejects a moment later: give it the time
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const logged = events();
+    expect(
+      logged.filter((entry) => entry.event === "database_pool_error")
+    ).toEqual([]);
+    // the request log says which isolate answered and the place of the request in it
+    const timed = logged.filter(
+      (entry) => entry.event === "http_request_timed"
+    );
+    expect(timed.length).toBeGreaterThanOrEqual(2);
+    for (const entry of timed) {
+      expect(entry.isolate).toEqual({
+        closedByUs: expect.any(Number),
+        id: expect.stringMatching(UUID),
+        seq: expect.any(Number),
+      });
+    }
     expect(network.strangers).toEqual([]);
   });
 

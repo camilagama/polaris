@@ -1,13 +1,17 @@
+import { connectionsClosedByUs } from "@polaris/db/client";
 import { isCriticalRoute } from "@polaris/observability/alerts";
 import { startWideEvent } from "@polaris/observability/wide-event";
 import type { MiddlewareHandler } from "hono";
 import { routePath } from "hono/route";
 import type { ServerEnv } from "../environment";
+import { countIsolateInvocation } from "../observability/isolate";
 
 /**
  * The latency signal of the alerts (PR119, ADR 0095): one `http_request_timed` wide event per request to a
  * critical route (`criticalRoutes` in the observability package), with `route`, `method`, `httpStatus` and
- * `durationMs` (wall-clock time). Other routes emit nothing, so the volume in the Workers Logs stays small
+ * `durationMs` (wall-clock time), and `isolate` (CPU-1d): its `id`, the `seq` of this request in it (1 is the cold
+ * one) and how many connection errors it dropped as the close of a connection it was ending itself (`pool-errors.ts`
+ * of the db package). Every request counts in `seq`, logged or not. Other routes emit nothing, so the volume in the Workers Logs stays small
  * (ADR 0094). The route is a pattern, never the URL: an oRPC call is `/rpc/<procedure>` (the arguments travel in
  * the body); anything that is not a critical route is not logged.
  */
@@ -34,6 +38,7 @@ export const routeTimingMiddleware: MiddlewareHandler<ServerEnv> = async (
   context,
   next
 ) => {
+  const isolate = countIsolateInvocation();
   const wide = startWideEvent("http_request_timed", {
     method: context.req.method,
     requestId: context.get("requestId"),
@@ -45,7 +50,15 @@ export const routeTimingMiddleware: MiddlewareHandler<ServerEnv> = async (
       const route = routeLabel(context);
       if (isCriticalRoute(route)) {
         const httpStatus = context.res.status;
-        wide.set({ httpStatus, route });
+        wide.set({
+          httpStatus,
+          isolate: {
+            closedByUs: connectionsClosedByUs(),
+            id: isolate.id,
+            seq: isolate.seq,
+          },
+          route,
+        });
         wide.emit(outcomeOf(httpStatus));
       }
     } catch {
