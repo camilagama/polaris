@@ -14,8 +14,11 @@ import type { SparklineProps } from "./sparkline";
  * out of the chunk. It imports the others as types only; a guard in the budget plugin fails the build otherwise.
  */
 export type { AreaChartProps } from "./area-chart";
-export type { ChartDatum } from "./chart-geometry";
+export type { ChartDatum } from "./chart-data";
 export type { SparklineProps } from "./sparkline";
+
+/** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
+const EXTRA_HEIGHT = 40;
 
 type Charts = typeof import("./charts");
 
@@ -112,14 +115,17 @@ export function OnDemandAreaChart({
   if (state.status === "failed") {
     return failed ?? null;
   }
-  // the reading line above the drawing is one line of text: the box holds that line too (with a second series the
-  // reading takes two lines on a phone and the legend one more)
-  // the floor of the drawing is 24 px above its bottom (the dates of the x axis)
+  // the box of the chart is its plot plus the margins of the blocks (`EXTRA_HEIGHT` of chart-data.ts, which this loader
+  // may not import), and the reading line above the drawing is one line of text that the box holds too (with a second
+  // series the reading takes two lines on a phone and the legend one more)
+  // the floor of the drawing is 32 px above its bottom (the dates of the x axis)
   return (
     <Reserved
       className={props.className}
-      floor={24}
-      height={(props.height ?? 180) + (props.secondary ? 26 + 44 : 26)}
+      floor={32}
+      height={
+        (props.height ?? 180) + EXTRA_HEIGHT + (props.secondary ? 26 + 44 : 26)
+      }
     />
   );
 }
