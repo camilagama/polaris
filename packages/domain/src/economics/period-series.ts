@@ -83,6 +83,121 @@ export function dailySales(
   }));
 }
 
+/** An expense with no sale (or tied to a cancelled one) and the date of its competence. */
+export interface OperatingExpenseFact {
+  /** Exact BRL text. */
+  amount: string;
+  /** `YYYY-MM-DD`: the day the cost belongs to, no apportioning. */
+  competenceOn: string;
+}
+
+export interface DailyEconomics extends DailySales {
+  /**
+   * The costs of the day, exact BRL text: the cost of goods, the processing and
+   * anticipation fees and the expenses linked to the sales of the date, plus
+   * the expenses with no sale whose competence is that date. It is the sum of
+   * the parts (commercial surcharges never lower it, so it is never negative),
+   * and `null` when a cost, processing fee or anticipation fee of a sale of
+   * the date is unknown: an unknown amount is never zero.
+   */
+  costs: string | null;
+  /**
+   * The expenses with no sale whose competence is that date, exact BRL text:
+   * the part of `costs` that never depends on a sale, so it is known even when
+   * `costs` is `null`. "0.00" on a day without expenses, never null.
+   */
+  operatingExpenses: string;
+  /**
+   * The estimated operating result of the day, exact BRL text: net sales minus
+   * the costs of the day plus the commercial surcharges. `null` exactly when
+   * `costs` is.
+   */
+  operatingResult: string | null;
+}
+
+interface DayTotals {
+  known: boolean;
+  /** Σ contribution margin of the day's sales, in minor units. */
+  margin: bigint;
+  /** Σ expenses with no sale of the day, in minor units. */
+  operating: bigint;
+  /** Σ commercial surcharges of the day's sales, in minor units. */
+  surcharges: bigint;
+}
+
+/**
+ * The daily series with the costs and the result of each date (ADR 0056, D2).
+ * Every date of the period is present, also those after today: an expense
+ * belongs to its competence date wherever it falls, and the caller decides
+ * what to show. The days add up to the period: Σ `costs` (when no day is
+ * `null`) is the cost of goods plus the fees plus the linked and the operating
+ * expenses of `periodResult`, and Σ `operatingResult` is its
+ * `estimatedOperatingResult`. Pass `economics` as for `dailySales`.
+ *
+ * This runs over every sale of the period (a year at most), so each sale is
+ * read twice, not five times: the costs of a day come from the chain's own
+ * identity, margin = net sales + surcharges - (cost of goods + fees + linked
+ * expenses), so costs = net sales + surcharges - margin (+ the day's expenses
+ * with no sale). The properties in the tests hold it to the sum of the parts.
+ */
+export function dailyEconomics(
+  sales: readonly SaleFact[],
+  operatingExpenses: readonly OperatingExpenseFact[],
+  from: string,
+  to: string,
+  economics: readonly SaleEconomics[] = sales.map(saleEconomics)
+): DailyEconomics[] {
+  const series = dailySales(sales, from, to, economics);
+  const days = new Map<string, DayTotals>(
+    series.map((day) => [
+      day.date,
+      { known: true, margin: 0n, operating: 0n, surcharges: 0n },
+    ])
+  );
+  sales.forEach((fact, index) => {
+    // dailySales already refused a sale without a date or outside the period
+    const day = days.get(fact.occurredOn as string) as DayTotals;
+    const entry = economics[index] as SaleEconomics;
+    day.margin += Money.from(entry.contributionMargin).minorUnits;
+    day.surcharges += Money.from(entry.commercialSurcharges).minorUnits;
+    day.known &&=
+      entry.unknown.costItems === 0 &&
+      entry.unknown.processingFees === 0 &&
+      entry.unknown.anticipationFees === 0;
+  });
+  for (const expense of operatingExpenses) {
+    const day = days.get(expense.competenceOn);
+    if (!day) {
+      // an expense outside the period cannot be placed
+      throw new InvalidSaleFactError();
+    }
+    day.operating += Money.from(expense.amount).minorUnits;
+  }
+  return series.map((day) => {
+    const totals = days.get(day.date) as DayTotals;
+    const expensesOfDay = Money.fromMinorUnits(totals.operating).toString();
+    if (!totals.known) {
+      return {
+        ...day,
+        costs: null,
+        operatingExpenses: expensesOfDay,
+        operatingResult: null,
+      };
+    }
+    const net = Money.from(day.netSales).minorUnits;
+    return {
+      ...day,
+      costs: Money.fromMinorUnits(
+        net + totals.surcharges - totals.margin + totals.operating
+      ).toString(),
+      operatingExpenses: expensesOfDay,
+      operatingResult: Money.fromMinorUnits(
+        totals.margin - totals.operating
+      ).toString(),
+    };
+  });
+}
+
 export interface ProductSales {
   /** Net sales of the product's items, exact BRL text. */
   netSales: string;
