@@ -22,6 +22,7 @@ const RE_TRIAL_BEGAN =
   /^Seu teste grátis do plano Pro começou na loja Loja Aurora\. /;
 const RE_D3 = /O pagamento ainda não foi confirmado\. Seu Pro continua até \d/;
 const RE_IN_7_DAYS = /^Em 7 dias, \d/;
+const RE_ENTITY = /&(amp|lt|gt|quot|#x27);/g;
 const RE_DAY = /^\d{1,2}º? de [a-zç]+ de \d{4}$/;
 const RE_1 = /oklch\(/i;
 const RE_2 = /rgba?\(/i;
@@ -211,17 +212,34 @@ function flat(value: string): string {
   return value.replaceAll(/\s+/g, " ");
 }
 
-// the visible text of the HTML: no comments, no tags, entities decoded, the preview's invisible padding gone
+const ENTITIES: Readonly<Record<string, string>> = {
+  "#x27": "'",
+  amp: "&",
+  gt: ">",
+  lt: "<",
+  quot: '"',
+};
+
+// the visible text of the HTML: no comments, no tags, entities decoded once, the preview's invisible padding gone
 function htmlText(html: string): string {
+  let text = "";
+  let at = 0;
+  while (at < html.length) {
+    if (html.startsWith("<!--", at)) {
+      const end = html.indexOf("-->", at + 4);
+      at = end < 0 ? html.length : end + 3;
+    } else if (html[at] === "<") {
+      const end = html.indexOf(">", at + 1);
+      at = end < 0 ? html.length : end + 1;
+      text += " ";
+    } else {
+      text += html[at];
+      at += 1;
+    }
+  }
   return flat(
-    html
-      .replaceAll(/<!--[\s\S]*?-->/g, "")
-      .replaceAll(/<[^>]*>/g, " ")
-      .replaceAll("&amp;", "&")
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      .replaceAll("&quot;", '"')
-      .replaceAll("&#x27;", "'")
+    text
+      .replaceAll(RE_ENTITY, (entity, name: string) => ENTITIES[name] ?? entity)
       .replaceAll(INVISIBLE, " ")
   );
 }
@@ -692,8 +710,8 @@ describe("the form of the message", () => {
       const withoutDoctype = html.replace(RE_19, "");
       const addresses = withoutDoctype.match(/https?:\/\/[^\s"'<>)]+/g) ?? [];
       for (const address of addresses) {
-        expect(address.startsWith(ORIGIN), `${item.label}: ${address}`).toBe(
-          true
+        expect(new URL(address).origin, `${item.label}: ${address}`).toBe(
+          new URL(ORIGIN).origin
         );
       }
     }
