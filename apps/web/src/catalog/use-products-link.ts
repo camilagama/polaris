@@ -1,6 +1,7 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import type { Workspace } from "./product-commands";
 import {
   findLinkedProduct,
@@ -34,10 +35,9 @@ async function readProducts(
       ...listLocalProducts(rows, organizationId, "archived"),
     ];
   }
-  const { products } = await orpcClient.product.list({
-    organizationId,
-    status: "all",
-  });
+  const { products } = await readWithRetry(() =>
+    orpcClient.product.list({ organizationId, status: "all" })
+  );
   return products;
 }
 

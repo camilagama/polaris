@@ -146,6 +146,10 @@ class FakeGoalServer {
   readonly created: Record<string, unknown>[] = [];
   /** When set, `goal.list` answers this ORPC error instead of the goals. */
   listFailure: { code: string; status: number } | null = null;
+  /** How many of the next listings answer 503 before the server recovers (an isolate killed for CPU). */
+  listUnavailable = 0;
+  /** Every listing that reached the server, the failed ones included. */
+  listCalls = 0;
   /** When set, `goal.cancel` answers this ORPC error and the goal is left as it was. */
   cancelFailure: { code: string; status: number } | null = null;
   /** The figures of the month; a test can change them. */
@@ -249,6 +253,11 @@ class FakeGoalServer {
   }
 
   private list(input: Record<string, unknown>) {
+    this.listCalls += 1;
+    if (this.listUnavailable > 0) {
+      this.listUnavailable -= 1;
+      return this.fail("SERVICE_UNAVAILABLE", 503);
+    }
     if (this.listFailure) {
       return this.fail(this.listFailure.code, this.listFailure.status);
     }
@@ -757,4 +766,51 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
+});
+
+/** Remembers, in the page, whether an alert ever showed: the screen must not pass through the error. */
+async function watchAlerts(page: Page) {
+  await page.addInitScript(() => {
+    const seen = { alert: false };
+    (window as unknown as { alertSeen: typeof seen }).alertSeen = seen;
+    new MutationObserver(() => {
+      if (document.querySelector("[role=alert]")) {
+        seen.alert = true;
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+}
+
+const alertSeen = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { alertSeen: { alert: boolean } }).alertSeen.alert
+  );
+
+test("a primeira leitura das metas com 503 repete sozinha e abre sem o aviso", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({ kind: "net_sales", name: "Depois do 503", target: "1000.00" });
+  server.listUnavailable = 1;
+  await watchAlerts(page);
+  await openGoals(page, server);
+
+  await expect(card(page, "Depois do 503")).toContainText("Em andamento");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await alertSeen(page)).toBe(false);
+  expect(server.listCalls).toBe(2);
+});
+
+test("dois 503 seguidos nas metas mostram o erro, depois de uma única repetição", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.listUnavailable = 2;
+  await openGoals(page, server);
+
+  await expect(page.getByRole("alert")).toContainText(
+    "As metas estão temporariamente indisponíveis. Tente novamente."
+  );
+  expect(server.listCalls).toBe(2);
 });

@@ -6,6 +6,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   readPaymentProfileCache,
   writePaymentProfileCache,
@@ -86,10 +87,9 @@ export function useSaleCatalog(
     }
     setProfiles(keepReady);
     try {
-      const result = await orpcClient.paymentProfile.list({
-        organizationId,
-        status: "active",
-      });
+      const result = await readWithRetry(() =>
+        orpcClient.paymentProfile.list({ organizationId, status: "active" })
+      );
       if (request !== profilesRequest.current) {
         return;
       }
@@ -183,8 +183,11 @@ export function useSaleCatalog(
         return next;
       });
       for (const chunk of chunkIds(variantIds)) {
-        orpcClient.inventory
-          .listBalances(lineBalancesRequest(organizationId, chunk))
+        readWithRetry(() =>
+          orpcClient.inventory.listBalances(
+            lineBalancesRequest(organizationId, chunk)
+          )
+        )
           .then(({ entries }) => {
             if (generation.current === current) {
               setStock((map) => stockAfterRefresh(map, chunk, entries));

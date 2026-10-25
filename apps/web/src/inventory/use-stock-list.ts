@@ -2,6 +2,7 @@ import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   filterLocalStockEntries,
   localStockEntries,
@@ -103,8 +104,13 @@ export function useStockList(
         latest.current += 1;
       };
     }
-    orpcClient.inventory
-      .listBalances(stockListRequest(organizationId, effective, null))
+    readWithRetry(
+      () =>
+        orpcClient.inventory.listBalances(
+          stockListRequest(organizationId, effective, null)
+        ),
+      { isCurrent: () => request === latest.current }
+    )
       .then((page) => {
         if (request === latest.current) {
           setState((current) => stockLoaded(current, page));
@@ -135,8 +141,13 @@ export function useStockList(
     latest.current += 1;
     const request = latest.current;
     setState(stockMoreStarted);
-    orpcClient.inventory
-      .listBalances(stockListRequest(organizationId, effective, cursor))
+    readWithRetry(
+      () =>
+        orpcClient.inventory.listBalances(
+          stockListRequest(organizationId, effective, cursor)
+        ),
+      { isCurrent: () => request === latest.current }
+    )
       .then((page) => {
         if (request === latest.current) {
           setState((current) => stockMoreLoaded(current, page));

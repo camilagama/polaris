@@ -676,8 +676,12 @@ const SHIRT_ENTRY = {
   version: 1,
 };
 
-/** The server answers the reads of the sale form, but the sale itself never gets an answer. */
-async function serveSaleReadsOnly(page: Page) {
+/** The server answers the reads of the sale form, but the sale itself never gets an answer (or the one `confirm` gives). */
+async function serveSaleReadsOnly(
+  page: Page,
+  confirm: (route: Route) => Promise<void> = (route) =>
+    route.abort("connectionreset")
+) {
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill({
       body: JSON.stringify({ json: { profiles: [] }, meta: [] }),
@@ -695,9 +699,7 @@ async function serveSaleReadsOnly(page: Page) {
       headers: { ...WORKER_MARK },
     })
   );
-  await page.route("**/rpc/sale/confirm", (route) =>
-    route.abort("connectionreset")
-  );
+  await page.route("**/rpc/sale/confirm", confirm);
 }
 
 test.describe("venda sem resposta do servidor", () => {
@@ -757,6 +759,66 @@ test.describe("venda sem resposta do servidor", () => {
     await expect(page.getByTestId("server-records")).toHaveText("1", {
       timeout: 20_000,
     });
+  });
+
+  test("o Worker em 5xx do runtime (cf-ray, sem motivo): a venda fica travada com os itens e o mesmo ID, repetir reenvia o mesmo pedido, guardar vai uma vez à fila e nada se descarta sozinho", async ({
+    page,
+  }) => {
+    const commandIds: string[] = [];
+    await serveSaleReadsOnly(page, (route) => {
+      const { json } = route.request().postDataJSON() as {
+        json: { commandId: string };
+      };
+      commandIds.push(json.commandId);
+      // what Cloudflare answers for a Worker it killed: a 502 page with `cf-ray`, no Worker mark, no reason
+      return route.fulfill({
+        body: "<html>Error 1102 Worker exceeded resource limits</html>",
+        contentType: "text/html",
+        headers: { "cf-ray": "e2e-GRU" },
+        status: 502,
+      });
+    });
+    await openSaleLab(page, `user-${crypto.randomUUID()}`);
+
+    await fillShirtSale(page, 2);
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+
+    const retry = page.getByRole("button", {
+      name: "Tentar novamente (seguro)",
+    });
+    const keep = page.getByRole("button", {
+      name: "Guardar esta venda neste aparelho",
+    });
+    await expect(retry).toBeVisible();
+    await expect(keep).toBeVisible();
+    await expect(page.getByLabel("Quantidade")).toBeDisabled();
+    await expect(page.getByLabel("Quantidade")).toHaveValue("2");
+    expect(commandIds).toHaveLength(1);
+
+    // the safe retry sends the same request once and, with the Worker still down, the sale stays locked
+    await retry.click();
+    await expect.poll(() => commandIds.length).toBe(2);
+    expect(commandIds[1]).toBe(commandIds[0]);
+    await expect(retry).toBeVisible();
+    await expect(keep).toBeVisible();
+    await expect(page.getByLabel("Quantidade")).toHaveValue("2");
+    // nothing was queued or discarded by itself
+    await expect(page.getByTestId("server-records")).toHaveText("0");
+    await expect(page.getByText("Vendas guardadas neste aparelho")).toHaveCount(
+      0
+    );
+
+    await keep.click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Venda guardada neste aparelho" })
+    ).toBeVisible();
+    // the runtime is online: the queued command reaches the server once, and `confirm` is not called again
+    await expect(page.getByTestId("server-records")).toHaveText("1", {
+      timeout: 20_000,
+    });
+    expect(commandIds).toHaveLength(2);
   });
 });
 
@@ -1488,14 +1550,39 @@ test.describe("conexão com prova", () => {
     expect(server.creates).toBe(1); // read again, never sent again
   });
 
-  test("Perfis: a leitura cortada uma vez, com /health respondendo, mostra o erro com Tentar novamente", async ({
+  test("Perfis: a leitura cortada uma vez repete sozinha e abre sem o erro", async ({
     page,
   }) => {
     const server = await serveProfiles(page);
-    let cut = true;
+    let cuts = 0;
     await page.route("**/rpc/paymentProfile/list", async (route) => {
-      if (cut) {
-        cut = false;
+      if (cuts < 1) {
+        cuts += 1;
+        await route.abort("connectionreset");
+        return;
+      }
+      await route.fallback();
+    });
+    await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+    await start(page, "Perfis de pagamento");
+    await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente" })
+    ).toHaveCount(0);
+    expect(cuts).toBe(1);
+    expect(server.lists).toBeGreaterThanOrEqual(1);
+  });
+
+  test("Perfis: a leitura cortada duas vezes, com /health respondendo, mostra o erro com Tentar novamente", async ({
+    page,
+  }) => {
+    const server = await serveProfiles(page);
+    let cuts = 0;
+    await page.route("**/rpc/paymentProfile/list", async (route) => {
+      if (cuts < 2) {
+        cuts += 1;
         await route.abort("connectionreset");
         return;
       }

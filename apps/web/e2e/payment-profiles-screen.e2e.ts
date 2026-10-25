@@ -300,7 +300,12 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e nunca 
   page,
 }) => {
   await openServerScreen(page, {
-    lists: [(route) => route.fulfill(unavailable), answer([MACHINE])],
+    // the read tries once more by itself: only the second 503 reaches the screen
+    lists: [
+      (route) => route.fulfill(unavailable),
+      (route) => route.fulfill(unavailable),
+      answer([MACHINE]),
+    ],
   });
   const alert = page.getByRole("alert");
   await expect(alert).toBeVisible();
