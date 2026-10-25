@@ -397,8 +397,13 @@ async function signIn(page: Page, user: string, extra = "") {
   await page.goto(`/offline-screens-lab?screen=dashboard${extra}`);
   await page.getByLabel("Usuário").fill(user);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  // the form of a new goal can be open already (the address `?meta=nova`): the dialog hides the page from the reader
   await expect(
-    page.getByRole("heading", { exact: true, name: "Resultado" })
+    page.getByRole("heading", {
+      exact: true,
+      includeHidden: true,
+      name: "Resultado",
+    })
   ).toBeVisible({ timeout: 20_000 });
 }
 
@@ -1119,7 +1124,11 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server, "&meta=nova");
-    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    // the form is a dialog, so the tabs are under it: found by their markup
+    await expect(
+      page.getByRole("tab", { includeHidden: true, name: METAS_TAB })
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
     await expect(page.locator("#goal-create-kind")).toBeVisible();
     await expect.poll(() => search(page).get("aba")).toBe("metas");
     expect(search(page).get("meta")).toBeNull();
@@ -1139,7 +1148,9 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server, "&aba=resultado&meta=nova");
-    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("tab", { includeHidden: true, name: METAS_TAB })
+    ).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#goal-create-kind")).toBeVisible();
   });
 });

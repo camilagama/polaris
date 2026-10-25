@@ -102,6 +102,8 @@ async function openAndClose(
   trigger: { name: string; role: "button" | "combobox" },
   popup: { name?: string; role: "dialog" | "listbox" | "menu" }
 ) {
+  // a form dialog can be open already (its own backdrop stays): what must go is the one of this overlay
+  const backdrops = await page.locator("[data-base-ui-inert]").count();
   await page
     .getByRole(trigger.role, { exact: true, name: trigger.name })
     .first()
@@ -113,9 +115,10 @@ async function openAndClose(
   await surface.first().waitFor();
   await escapeUntilGone(page, surface);
   // no backdrop of a menu or a select (the Base UI marks it `data-base-ui-inert`) is left over the page
-  await page.locator("[data-base-ui-inert]").first().waitFor({
-    state: "detached",
-  });
+  await page.waitForFunction(
+    (most) => document.querySelectorAll("[data-base-ui-inert]").length <= most,
+    backdrops
+  );
 }
 
 /**
