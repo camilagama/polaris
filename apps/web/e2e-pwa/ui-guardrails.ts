@@ -26,11 +26,7 @@ export interface MotionRecord {
   /** Names the animated element within the page, so two targets with the same animation are two records. */
   id: number;
   iterations: number;
-  moved: boolean;
   name: string;
-  overlay: boolean;
-  /** The distinct transform, translate, scale and rotate the target went through (the evidence of `moved`). */
-  poses: string[];
   target: string;
 }
 
@@ -684,32 +680,12 @@ export async function focusFaults(page: Page) {
 
 /**
  * In page, an init script (installed before the page's own scripts): notes every animation and transition the
- * browser runs (its length and its repeats), whether it belongs to an overlay (a portal at the end of `<body>`:
- * dialog, popover, menu, select, tooltip, toast) and, for an overlay, whether its transform, translate, scale or
- * rotate changed while it ran. It watches the values, not the names: the `enter` keyframes of tw-animate-css
- * list `transform` even when every value of it is the identity, and floating-ui moves the positioner, not the popup.
+ * browser runs (its length and its repeats), to prove that nothing runs under `prefers-reduced-motion: reduce`.
  */
 export function startMotionRecorder() {
   const records: MotionRecord[] = [];
-  const seen = new Map<Element, Set<string>>();
   const ids = new Map<Element, number>();
   window.__motion = records;
-  // the identity matrix is "none" under another name: the `enter` keyframes end on it
-  const plain = (value: string) => {
-    const numbers = value.startsWith("matrix")
-      ? value
-          .slice(value.indexOf("(") + 1, -1)
-          .split(",")
-          .map(Number)
-      : [];
-    const unit = [1, 0, 0, 1, 0, 0];
-    const unit3d = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    const identity = (numbers.length === 6 ? unit : unit3d).every(
-      (expected, index) =>
-        Math.abs((numbers[index] ?? Number.NaN) - expected) < 1e-6
-    );
-    return numbers.length > 0 && identity ? "none" : value;
-  };
   const tick = () => {
     for (const animation of document.getAnimations()) {
       const effect = animation.effect as KeyframeEffect | null;
@@ -718,17 +694,6 @@ export function startMotionRecorder() {
       if (!(effect && timing && target)) {
         continue;
       }
-      // a portal is a child of body other than the root of the app (the overlays of src/ui)
-      const overlay = Boolean(target.closest("body > :not(#root)"));
-      const style = getComputedStyle(target);
-      const pose = [style.transform, style.translate, style.scale, style.rotate]
-        .map(plain)
-        .join("|");
-      const poses = seen.get(target) ?? new Set<string>();
-      poses.add(pose);
-      seen.set(target, poses);
-      // an overlay that fades keeps one pose; one that zooms or slides goes through several
-      const moved = overlay && poses.size > 1;
       const name =
         animation instanceof CSSAnimation
           ? animation.animationName
@@ -736,24 +701,18 @@ export function startMotionRecorder() {
       const duration = Number(timing.duration);
       const id = ids.get(target) ?? ids.size + 1;
       ids.set(target, id);
-      const known = records.find(
+      const known = records.some(
         (record) =>
           record.id === id &&
           record.name === name &&
           record.duration === duration
       );
-      if (known) {
-        known.moved ||= moved;
-        known.poses = [...poses];
-      } else {
+      if (!known) {
         records.push({
           duration,
           id,
           iterations: timing.iterations ?? 1,
-          moved,
           name,
-          overlay,
-          poses: [...poses],
           target: `${target.tagName.toLowerCase()} "${(target.textContent ?? "").trim().slice(0, 20)}"`,
         });
       }
@@ -771,14 +730,4 @@ export function runningMotion(records: MotionRecord[]) {
   return records.filter(
     (record) => record.duration > 1 || record.iterations > 1
   );
-}
-
-/** Overlays only fade: no overlay element moves or grows while it animates. */
-export function overlayMovement(records: MotionRecord[]) {
-  return records
-    .filter((record) => record.overlay && record.moved)
-    .map(
-      (record) =>
-        `${record.target}: ${record.name} (${record.duration} ms) move ou cresce a sobreposição: ${record.poses.join(" → ")}`
-    );
 }

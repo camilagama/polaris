@@ -2160,6 +2160,20 @@ Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103
 | Custo | Medido | Linha do resto −91 B (runtime offline desligado) e −168 B (ligado); primitivos do Base UI +1 376 B; primeiro script +33 B. Números no ADR e no PR. |
 | Provas | Parcial | Unitário do `StatusNav`; e2e das cinco telas (clique, setas, Tab, `aria-selected`, endereço de Produtos e de Estoque) e do carregando das três telas (`role="status"`, esqueleto escondido do leitor de tela); `/sales/customer` sem `saleId` e com endereço inválido. O que só roda no CI (WebKit, `e2e-real`) está no corpo do PR. |
 
+### Movimento dos componentes volta ao padrão do shadcn (t341; sem migration)
+
+Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) e regra "Movimento" do [DESIGN.md](../DESIGN.md). Nenhum texto, contrato nem regra de negócio muda.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Popover, Select, Menu, Tooltip | Em revisão | Classes de animação do registry `base-nova` como vêm: `zoom-in-95`/`zoom-out-95`, `slide-in-from-*` pelo lado, `duration-100`. |
+| Painel lateral do celular (`sidebar.tsx`) | Em revisão | Entrada como o `Sheet` do registry (200 ms, `ease-in-out`, desvanecer e deslize de 2,5 rem pelo lado). A saída é animada como a entrada (`data-closing`, `animate-out`, véu junto) e o `<dialog>` fecha no `animationend`, com guarda de 300 ms; Esc, véu, "Fechar" e o estado vindo de fora passam pelo mesmo caminho; com `reduce` fecha de uma vez. |
+| `Collapsible` | Em revisão | Altura animada (200 ms, `ease-out`), como o painel do Accordion do registry; o registry não traz animação para o Collapsible, então as chaves (`collapsible-down`/`-up`) estão em `theme.css`. O `className` do painel vai a uma caixa interna. |
+| `Collapsible` na primeira pintura | Em revisão | Montado aberto (`defaultOpen` ou `open` já verdadeiro) não anima; só anima a mudança de estado. |
+| `Dialog` e Toast | Fora | Ficam como estão; o Dialog é da t331 e entra numa tarefa própria depois dela. Gráficos (t336) e barra de filtros também ficam de fora. |
+| `prefers-reduced-motion` | Sem mudança | A regra global de `theme.css` leva animação e transição a 0,01 ms; o e2e `com prefers-reduced-motion: reduce nada anima` roda em cada tela e abre popover, menu, seletor, dica, diálogo e aviso. |
+| Testes | Em revisão | Saíram a regra de fonte contra `zoom-*`, `slide-*`, `translate`/`scale`/`rotate` e `animate-*` que não desvanece, e a medida de pose das sobreposições. Entrou um teste que exige as classes do shadcn nos quatro primitivos e um e2e que prova que, sem `reduce`, o popover e os outros animam em 100 ms. |
+
 ### Resultado v2, PR do servidor: custo e resultado por dia no `periodSummary` (t332; emenda de 24/10 do ADR 0056; sem migration)
 
 Corte resultado-v2 (AC-8 a AC-10 e AC-21, com a emenda de 24/10) e desenho de 24/10 20:22 (Q-4).
