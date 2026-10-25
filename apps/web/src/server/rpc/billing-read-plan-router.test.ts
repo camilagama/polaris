@@ -689,19 +689,18 @@ describe("billing.readPlan: what it answers", () => {
       )
     ).toBe("2026-10-17");
     // after a refund or a chargeback there is no deadline to tell
-    for (const reason of ["refund", "chargeback"] as const) {
-      expect(
-        await ended(
-          {
-            ...activeRecord,
-            accessEndsAt: null,
-            revoked: { reason },
-            state: "free",
-          },
-          day8
-        )
-      ).toBeNull();
-    }
+    const revoked = (reason: "chargeback" | "refund") =>
+      ended(
+        {
+          ...activeRecord,
+          accessEndsAt: null,
+          revoked: { reason },
+          state: "free",
+        },
+        day8
+      );
+    expect(await revoked("refund")).toBeNull();
+    expect(await revoked("chargeback")).toBeNull();
   });
 
   it("the day the window ended is the day of the last second refundWindowOf offered (AS-30)", async () => {
@@ -713,7 +712,7 @@ describe("billing.readPlan: what it answers", () => {
     );
 
     expect(inside).toMatchObject({ refundWindowEndedOn: null });
-    const until = (inside.refund as { until: string }).until;
+    const { until } = inside.refund as { until: string };
     expect(after).toMatchObject({ refund: null });
     expect(after.refundWindowEndedOn).toBe(
       new Date(new Date(until).getTime() - 3 * 3_600_000)

@@ -376,6 +376,11 @@ describe("refundRuleLine (AS-14, Emenda 2)", () => {
     ],
     ["Pro without any date from the server", plan({ ...pro }), null],
     [
+      "Pro read from a Worker of the previous version (no field)",
+      { ...plan({ ...pro }), refundWindowEndedOn: undefined } as never,
+      null,
+    ],
+    [
       "refund not completed, in the 72 hours",
       plan({ ...pro, refund, refundPending: true, renewalCancelled: true }),
       null,

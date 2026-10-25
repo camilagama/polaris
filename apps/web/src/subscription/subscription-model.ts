@@ -453,7 +453,7 @@ export const REFUND_RULE =
   "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.";
 
 /** The rule once the window is over, with the day it ended (AS-14, Emenda 2; the mockup's text). */
-export function refundRuleEndedText(endedOn: string): string {
+function refundRuleEndedText(endedOn: string): string {
   return `O reembolso integral vale nos primeiros 7 dias depois da primeira cobrança. Esse prazo terminou em ${formatCalendarDate(endedOn)}.`;
 }
 
@@ -474,9 +474,10 @@ export function refundRuleLine(plan: BillingPlanView): string | null {
   if (plan.refund !== null) {
     return REFUND_RULE;
   }
-  return plan.refundWindowEndedOn === null
-    ? null
-    : refundRuleEndedText(plan.refundWindowEndedOn);
+  // a Worker of the previous version answers without the field: no date, no line
+  return plan.refundWindowEndedOn
+    ? refundRuleEndedText(plan.refundWindowEndedOn)
+    : null;
 }
 
 /** The supplier, as in the Terms (AS-14; the final text waits on P48). */
