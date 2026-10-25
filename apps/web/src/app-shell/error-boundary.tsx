@@ -2,6 +2,7 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button, buttonVariants } from "@/ui/button";
 import { reportRenderError } from "../observability/sentry";
+import { isChunkLoadError, reloadOnceForChunkError } from "./chunk-load-error";
 import { StatePanel } from "./state-panel";
 
 interface ErrorBoundaryProps {
@@ -10,10 +11,22 @@ interface ErrorBoundaryProps {
   fullPage?: boolean;
   /** Shown above the actions; the technical error is never displayed. */
   message?: string;
+  /** Called on "Tentar novamente" (but a chunk that did not download reloads the page): resets the lazy screen it shows. */
+  onRetry?: () => void;
 }
 
 interface ErrorBoundaryState {
+  /** The screen failed to download (its `import()`), not to render. */
+  chunkFailed: boolean;
   failed: boolean;
+}
+
+function browserStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -24,10 +37,10 @@ export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  override state: ErrorBoundaryState = { failed: false };
+  override state: ErrorBoundaryState = { chunkFailed: false, failed: false };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return { chunkFailed: isChunkLoadError(error), failed: true };
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
@@ -36,7 +49,18 @@ export class ErrorBoundary extends Component<
   }
 
   readonly handleRetry = () => {
-    this.setState({ failed: false });
+    // `React.lazy` keeps the rejected promise of the import, so rendering again cannot recover a chunk that did not
+    // download: reload the page (once; a second failure in a row only asks the import again, below).
+    if (
+      this.state.chunkFailed &&
+      reloadOnceForChunkError(browserStorage(), Date.now(), () =>
+        window.location.reload()
+      )
+    ) {
+      return;
+    }
+    this.props.onRetry?.();
+    this.setState({ chunkFailed: false, failed: false });
   };
 
   override render(): ReactNode {

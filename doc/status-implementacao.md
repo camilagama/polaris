@@ -2099,6 +2099,18 @@ Decisões antes do código da Assinatura: leitura do plano, cancelar, desistir e
 | PR E: tela de Assinatura (t328) | Em revisão | `/subscription` ("Assinatura"), 1º item de Configurações (2 toques no celular: Mais, Assinatura), só com `BILLING_SELF_SERVICE_ENABLED` e `billing:manage` (`listMine.billingSelfService`); pedaço sob demanda. Os estados do `readPlan` (Free, Free acima do limite, falta autorizar, teste, Pro, renovação cancelada, carência, reembolso pendente dentro e depois das 72 h), uso do plano, o que a loja guardou (AS-24), a oferta com os preços e métodos do servidor (mensal marcado, anual com "2 meses grátis"), o pagador do Pix Automático, o checkout (cartão leva à página do Asaas; Pix mostra o "copia e cola" e a página, sem QR), a volta `/subscription?retorno=…` com releitura a cada 5 s por até 2 min e depois "Atualizar" (a raiz `/?assinatura=` leva à tela), uma recusa por motivo, sem plano velho sem conexão e o aviso de carência no topo das telas do dono. Etapa 2 do corte 61b: "Conhecer o Pro" no limite de variantes para o dono em Free, "Fale com o dono da loja para mudar o plano." para quem não é dono. Sem migration. |
 | PR E2, G, H, Gate 7 | Não iniciado | Sequência no ADR 0104, decisão 10. |
 
+### Telas que só voltam recarregando (t344; sem migration)
+
+Achados do QA de 24/10/2026 no staging. Emendas dos [ADR 0040](../docs/adr/0040-service-worker-do-app-shell.md) e [ADR 0041](../docs/adr/0041-ciclo-de-atualizacao-do-app.md).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| "Tentar novamente" | Em revisão | `app-shell/error-boundary.tsx`: erro de baixar o pedaço da tela recarrega a página (uma vez por janela de 10 s, marca em `sessionStorage`); outro erro recria o componente lazy (`app-shell/lazy-screen.ts`). Todas as telas lazy de `app.tsx` usam `lazyScreen`. |
+| `/assets/*` ausente | Em revisão | `src/server/built-assets.ts`, `run_worker_first` e binding `ASSETS`: 404 `no-store` em vez do HTML do SPA; o chunk 200 recebe os cabeçalhos de segurança do Worker onde o `_headers` não pôs. Prova no Worker real (`vite preview`) em `e2e-real/pilha/fumaca.e2e.ts`. |
+| Service worker | Em revisão | Instalação e cache-first só com 200 e o `content-type` do arquivo; sem `builtAt` no `sw.js` (mesmo conteúdo, mesmo worker, sem aviso); cache por id, ordem pela criação; cópia servida em `clone()` (aviso de console "cross-world service worker resource mismatch" some). |
+| Atualizar com várias abas | Em revisão | Espera de 5 s e recarga própria, reabilita o botão, a aba que não pediu não recarrega (ADR 0041, "Nunca automático"), com fila vazia ou não. |
+| Provas | Em revisão | Unitários (`chunk-load-error`, `lazy-screen`, `error-boundary`, `sw`, `update`, `built-assets`, `worker/index`); `e2e-pwa/lazy-retry.e2e.ts`, `e2e-pwa/update.e2e.ts` (mesmo conteúdo sem aviso; duas abas). |
+
 ### Início (F2), PR 2: filtro "sem custo" e endereços diretos (t286; sem migration)
 
 Desenho t269 v2, seção 2.3.
