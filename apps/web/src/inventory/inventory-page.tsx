@@ -1,8 +1,6 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import SearchIcon from "lucide-react/dist/esm/icons/search";
 import {
-  type ChangeEvent,
   type MouseEvent,
   type ReactNode,
   useCallback,
@@ -16,7 +14,7 @@ import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusNav } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -227,8 +225,7 @@ export function InventoryPage() {
     state.status === "ready" ? stockCountText(state, filters, offline) : null;
 
   const handleQuery = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) =>
-      setFilters({ query: event.target.value }),
+    (query: string) => setFilters({ query }),
     [setFilters]
   );
   const handleArchived = useCallback(
@@ -285,24 +282,13 @@ export function InventoryPage() {
       {offline ? <OfflineStockNotice /> : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
-        <Field className="md:max-w-md">
-          <FieldLabel className="sr-only" htmlFor="stock-query">
-            Buscar
-          </FieldLabel>
-          <InputGroup>
-            <InputGroupAddon>
-              <SearchIcon aria-hidden="true" />
-            </InputGroupAddon>
-            <InputGroupInput
-              autoComplete="off"
-              id="stock-query"
-              onChange={handleQuery}
-              placeholder="Produto, variante ou SKU"
-              type="search"
-              value={filters.query}
-            />
-          </InputGroup>
-        </Field>
+        <SearchField
+          className="md:max-w-md"
+          label="Buscar no estoque"
+          onValueChange={handleQuery}
+          placeholder="Produto, variante ou SKU"
+          value={filters.query}
+        />
         <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
           <StatusNav
             label="Filtrar por saldo"

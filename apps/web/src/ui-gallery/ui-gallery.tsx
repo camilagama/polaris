@@ -1,3 +1,4 @@
+import { useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -81,6 +82,7 @@ import {
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { SearchField } from "@/ui/search-field";
 import { ScrollArea } from "@/ui/scroll-area";
 import {
   Select,
@@ -162,6 +164,19 @@ const LONG_LIST = Array.from(
   { length: 40 },
   (_, index) => `Movimento de estoque ${index + 1}`
 );
+
+/** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
+function GallerySearch() {
+  const [text, setText] = useState("Camiseta");
+  return (
+    <SearchField
+      label="Buscar produto"
+      onValueChange={setText}
+      placeholder="Nome do produto"
+      value={text}
+    />
+  );
+}
 
 function showToast() {
   toastManager.add({
@@ -581,6 +596,7 @@ export function UiGallery() {
                     Informe um preço maior que zero.
                   </FieldError>
                 </Field>
+                <GallerySearch />
                 <Field>
                   <FieldLabel htmlFor="galeria-observacao">
                     Observação (opcional)
