@@ -230,6 +230,31 @@
       opacity: 1;
     }
   }
+  /* The height of the `Collapsible` panel, as the Accordion of shadcn does it (accordion-down and accordion-up in
+     shadcn-tailwind.css: 200 ms, ease-out) with the variable of the Base UI Collapsible. The panel clips only while
+     the animation runs, so the 3 px focus ring of a field at its edge is not cut when it is open. */
+  --animate-collapsible-down: collapsible-down 200ms ease-out;
+  --animate-collapsible-up: collapsible-up 200ms ease-out;
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+      overflow: hidden;
+    }
+    to {
+      height: var(--collapsible-panel-height);
+      overflow: hidden;
+    }
+  }
+  @keyframes collapsible-up {
+    from {
+      height: var(--collapsible-panel-height);
+      overflow: hidden;
+    }
+    to {
+      height: 0;
+      overflow: hidden;
+    }
+  }
 }
 
 /* Touch (phone, tablet) or a narrow screen: the visible height goes one step up, the side margin shrinks, the big

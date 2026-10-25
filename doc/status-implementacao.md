@@ -2159,6 +2159,20 @@ Mitigação do estouro de CPU no isolate frio do Worker (diagnóstico de 24/10/2
 | Conexão | Em revisão | A sondagem de `/health` cuja resposta é a do runtime sem a marca (5xx com `cf-ray`) não conta como desconectado nem como tempo esgotado (`TIMEOUTS_FOR_OFFLINE`): a via existe, o servidor falhou. Um estouro de CPU não mostra "sem conexão". |
 | Provas | Parcial | Unitários do ajudante (503 e depois sucesso sem erro; dois 503 mostram o erro; 4xx não repete) e da conexão; e2e das Metas com a 1ª resposta 503 (abre sem o aviso) e com dois 503 (mostra o erro após uma única repetição). Os e2e de Perfis de pagamento, Produtos e Clientes que falhavam só na 1ª leitura passaram a falhar nas duas. Não coberto: o catálogo público de fora (renderizado no servidor, sem esta repetição) e as categorias do cadastro. Quando a aba já se sabe sem rede, ou a leitura ficou velha (a tela saiu ou outra leitura a trocou), não há espera nem 2ª tentativa; Início, detalhe de produto por endereço, lista de despesas e formas de receber da venda ainda não cancelam a espera. |
 
+### Movimento dos componentes volta ao padrão do shadcn (t341; sem migration)
+
+Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) e regra "Movimento" do [DESIGN.md](../DESIGN.md). Nenhum texto, contrato nem regra de negócio muda.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Popover, Select, Menu, Tooltip | Em revisão | Classes de animação do registry `base-nova` como vêm: `zoom-in-95`/`zoom-out-95`, `slide-in-from-*` pelo lado, `duration-100`. |
+| Painel lateral do celular (`sidebar.tsx`) | Em revisão | Entrada como o `Sheet` do registry (200 ms, `ease-in-out`, desvanecer e deslize de 2,5 rem pelo lado). A saída é animada como a entrada (`data-closing`, `animate-out`, véu junto) e o `<dialog>` fecha no `animationend`, com guarda de 300 ms; Esc, véu, "Fechar" e o estado vindo de fora passam pelo mesmo caminho; com `reduce` fecha de uma vez. |
+| `Collapsible` | Em revisão | Altura animada (200 ms, `ease-out`), como o painel do Accordion do registry; o registry não traz animação para o Collapsible, então as chaves (`collapsible-down`/`-up`) estão em `theme.css`. O `className` do painel vai a uma caixa interna. |
+| `Collapsible` na primeira pintura | Em revisão | Montado aberto (`defaultOpen` ou `open` já verdadeiro) não anima; só anima a mudança de estado. |
+| `Dialog` e Toast | Fora | Ficam como estão; o Dialog é da t331 e entra numa tarefa própria depois dela. Gráficos (t336) e barra de filtros também ficam de fora. |
+| `prefers-reduced-motion` | Sem mudança | A regra global de `theme.css` leva animação e transição a 0,01 ms; o e2e `com prefers-reduced-motion: reduce nada anima` roda em cada tela e abre popover, menu, seletor, dica, diálogo e aviso. |
+| Testes | Em revisão | Saíram a regra de fonte contra `zoom-*`, `slide-*`, `translate`/`scale`/`rotate` e `animate-*` que não desvanece, e a medida de pose das sobreposições. Entrou um teste que exige as classes do shadcn nos quatro primitivos e um e2e que prova que, sem `reduce`, o popover e os outros animam em 100 ms. |
+
 ### Resultado v2, PR do servidor: custo e resultado por dia no `periodSummary` (t332; emenda de 24/10 do ADR 0056; sem migration)
 
 Corte resultado-v2 (AC-8 a AC-10 e AC-21, com a emenda de 24/10) e desenho de 24/10 20:22 (Q-4).

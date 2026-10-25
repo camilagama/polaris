@@ -8,7 +8,7 @@ import { BROWSER_TARGET } from "../vite.ui";
  * Rules of the interface base that the review would otherwise have to remember (ADR 0103):
  * - colors only in OKLCH in src/ui/ and in the CSS of the base (decision 3);
  * - lucide icons one file at a time, never the whole package (section 2);
- * - the primitives only fade (DESIGN.md, motion): no `zoom-*` nor `slide-in-from-*`;
+ * - the primitives keep the animation that shadcn brings (DESIGN.md, motion), and the page zeroes it with reduce;
  * - the browser floor of Tailwind 4 is the same in `build.target` and in `browserslist` (section 2).
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
@@ -30,7 +30,6 @@ const BASE_UI_STYLE = /^base-/;
 const TOAST_VIEWPORT_NAMED =
   /<ToastPrimitive\.Viewport\b[^>]*\saria-label="Avisos"/;
 const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
-const MOVING = /\b(?:zoom-(?:in|out)|slide-(?:in|out)-from)-/;
 
 const read = (path: string) =>
   readFileSync(join(web, path), "utf8").replace(COMMENT, "");
@@ -108,24 +107,23 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect(read(`src/ui/${file}`)).not.toMatch(WHOLE_LUCIDE);
   });
 
-  it.each(uiFiles)("%s only fades: no zoom nor slide", (file) => {
-    expect(read(`src/ui/${file}`)).not.toMatch(MOVING);
-  });
-
-  it.each([
-    ["popover.tsx", ["duration-[140ms]"]],
-    ["dropdown-menu.tsx", ["duration-[140ms]"]],
-    ["select.tsx", ["duration-[140ms]"]],
-    ["tooltip.tsx", ["duration-[140ms]"]],
-    ["dialog.tsx", ["duration-[220ms]"]],
-    ["toast.tsx", ["duration-[220ms]", "data-[ending-style]:duration-[140ms]"]],
-  ])("%s fades for the time of DESIGN.md", (file, durations) => {
-    const source = read(`src/ui/${file}`);
-    for (const duration of durations) {
-      expect(source).toContain(duration);
+  it.each(["popover.tsx", "dropdown-menu.tsx", "select.tsx", "tooltip.tsx"])(
+    "%s keeps the shadcn animation (zoom, slide by side, 100 ms)",
+    (file) => {
+      const source = read(`src/ui/${file}`);
+      for (const part of [
+        "data-open:animate-in",
+        "data-open:zoom-in-95",
+        "data-closed:animate-out",
+        "data-closed:zoom-out-95",
+        "data-[side=bottom]:slide-in-from-top-2",
+        "data-[side=top]:slide-in-from-bottom-2",
+        "duration-100",
+      ]) {
+        expect(source, part).toContain(part);
+      }
     }
-    expect(source).not.toContain("duration-100");
-  });
+  );
 
   it("names the toast viewport in Portuguese", () => {
     expect(read("src/ui/toast.tsx")).toMatch(TOAST_VIEWPORT_NAMED);
@@ -173,9 +171,6 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
     expect("bg-[rgb(0_0_0)]").toMatch(NOT_OKLCH);
     expect("oklch(0.2 0.005 85 / 0.4)").not.toMatch(NOT_OKLCH);
     expect('import { X } from "lucide-react"').toMatch(WHOLE_LUCIDE);
-    expect("data-open:zoom-in-95").toMatch(MOVING);
-    expect("data-[side=top]:slide-in-from-bottom-2").toMatch(MOVING);
-    expect("data-open:fade-in-0").not.toMatch(MOVING);
     expect('const a = "https://x/#fff"; // note'.replace(COMMENT, "")).toMatch(
       NOT_OKLCH
     );
