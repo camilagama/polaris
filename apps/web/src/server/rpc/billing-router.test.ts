@@ -516,7 +516,7 @@ describe("billing.startCheckout", () => {
     }
   );
 
-  it("does not turn an unexpected failure into a reason the client can read", async () => {
+  it("turns an unexpected failure into the neutral server_busy reason, with no internals", async () => {
     const fixture = setup({
       storeOverrides: {
         attachProvider: vi.fn(() =>
@@ -529,7 +529,10 @@ describe("billing.startCheckout", () => {
       .startCheckout(valid)
       .catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    expect(failure).toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+    });
     expect(JSON.stringify(failure)).not.toContain("secret internals");
   });
 });

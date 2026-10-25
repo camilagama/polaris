@@ -69,6 +69,21 @@ function backgroundTaskRunner(context: Context<ServerEnv>) {
   };
 }
 
+/**
+ * The router wraps an unexpected fault in a 503 `server_busy`; the log keeps the class and the SQLSTATE of the
+ * fault itself on top, as it did when the fault went out as a 500.
+ */
+function loggedFault(error: unknown): unknown {
+  if (
+    error instanceof ORPCError &&
+    error.cause !== undefined &&
+    (error.data as { reason?: unknown } | undefined)?.reason === "server_busy"
+  ) {
+    return error.cause;
+  }
+  return error;
+}
+
 export function createServerApp({
   authAbuseProtector = protectAuthRequest,
   authHandler = handleBetterAuthRequest,
@@ -89,7 +104,7 @@ export function createServerApp({
           return;
         }
         logServerError({
-          error,
+          error: loggedFault(error),
           method: "POST",
           requestId: requestId ?? "unknown",
           route: `/rpc/${options.path.join("/")}`,
