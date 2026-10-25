@@ -125,6 +125,12 @@ export const billingNotices = pgTable(
       to: billingOwnerRole,
       using: sql`${table.kind} = 'welcome'`,
     }),
+    // the notice of the scope the store's function wrote (`billing_notice_store`), still owed
+    pgPolicy("billing_notices_billing_owner_select_owed", {
+      for: "select",
+      to: billingOwnerRole,
+      using: sql`${table.sentAt} IS NULL AND ${table.failedAt} IS NULL AND ${table.skippedReason} IS NULL AND ${table.id} = (CASE WHEN pg_catalog.current_setting('app.owner_scope.billing_notice_store_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.billing_notice_store_notice_id', true)::uuid END)`,
+    }),
     pgPolicy("billing_notices_recipient_owner_select_owed", {
       for: "select",
       to: noticeRecipientOwnerRole,
