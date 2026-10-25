@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { bestIndex, chartPoints, seriesMax, yAxisMargin } from "./chart-data";
+import {
+  bestIndex,
+  chartPoints,
+  drawn,
+  seriesMax,
+  yAxisMargin,
+} from "./chart-data";
 
 const days = (values: number[]) =>
   values.map((value, index) => ({ label: `d${index}`, value }));
@@ -61,5 +67,15 @@ describe("yAxisMargin", () => {
   it("grows with the label so the one with the unit fits", () => {
     expect(yAxisMargin("R$ 12,5 mil")).toBeGreaterThan(yAxisMargin("500"));
     expect(yAxisMargin("")).toBe(16);
+  });
+});
+
+describe("drawn", () => {
+  it("is the value when it is a positive number, the floor for anything else", () => {
+    expect(drawn(7.5)).toBe(7.5);
+    expect(drawn(0)).toBe(0);
+    expect(drawn(-3)).toBe(0);
+    expect(drawn(Number.NaN)).toBe(0);
+    expect(drawn(Number.POSITIVE_INFINITY)).toBe(0);
   });
 });

@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   type MutableRefObject,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -254,15 +255,11 @@ export function AreaChart({
 }: AreaChartProps) {
   const handle: MutableRefObject<ChartHandle | null> = useRef(null);
   const secondaryData = secondary?.data;
-  const points = useMemo(
-    () => chartPoints(data, secondaryData),
-    [data, secondaryData]
-  );
-  const signature = useMemo(
-    () =>
-      `${data.map((datum) => `${datum.label}:${datum.value}`).join()}|${(secondaryData ?? []).map((datum) => datum.value).join()}`,
-    [data, secondaryData]
-  );
+  const signature = `${data.map((datum) => `${datum.label}:${datum.value}`).join()}|${(secondaryData ?? []).map((datum) => datum.value).join()}`;
+  // the points follow the content of the series, not the identity of the arrays a screen builds on each render: the
+  // blocks redraw (and the memoized parts below recompute) only when a label or a value changes
+  const points = useMemo(() => chartPoints(data, secondaryData), [signature]);
+  const rangeRef = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(
     null
   );
@@ -299,6 +296,16 @@ export function AreaChart({
     handle.current?.hide();
     setPicked(null);
   }, []);
+
+  // new data under the keyboard focus: the tooltip goes to the day in focus, which is the last one again; with no focus,
+  // a tooltip of the old data goes away
+  useEffect(() => {
+    if (document.activeElement === rangeRef.current) {
+      handle.current?.show(last);
+    } else {
+      handle.current?.hide();
+    }
+  }, [signature]);
 
   if (data.length === 0) {
     return <EmptyChart className={className} height={height} label={label} />;
@@ -362,6 +369,7 @@ export function AreaChart({
             onBlur={hide}
             onChange={walk}
             onFocus={show}
+            ref={rangeRef}
             step={1}
             type="range"
             value={active}

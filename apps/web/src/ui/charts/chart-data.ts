@@ -41,7 +41,7 @@ export interface ChartPoint extends Record<string, unknown> {
   rawSecondary?: number;
 }
 
-const drawn = (value: number) =>
+export const drawn = (value: number) =>
   Number.isFinite(value) && value > 0 ? value : 0;
 
 /**

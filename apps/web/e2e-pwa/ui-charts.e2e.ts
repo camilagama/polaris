@@ -156,7 +156,7 @@ test("o teclado move o ponto em foco do gráfico: o tooltip do bloco mostra a da
   const rows = week.locator("[data-chart-tooltip-row]");
   const pill = week.locator(".rounded-full.bg-foreground");
   const date = () => week.evaluate(visiblePillDate);
-  await page.waitForTimeout(1500);
+  // focused right away, before the reveal ends: the tooltip comes as soon as the chart can show it
   // no focus, no tooltip: the pointer and the arrows are what open it
   await expect(rows).toHaveCount(0);
   await slider.focus();

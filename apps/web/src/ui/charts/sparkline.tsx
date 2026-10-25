@@ -3,7 +3,7 @@ import { useReducedMotion } from "motion/react";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { AreaSparkline } from "../bklit/charts/sparkline";
-import type { ChartColor } from "./chart-data";
+import { type ChartColor, drawn } from "./chart-data";
 
 export interface SparklineProps {
   className?: string;
@@ -31,7 +31,10 @@ export function Sparkline({
   width,
 }: SparklineProps) {
   const reduced = useReducedMotion() === true;
-  const data = useMemo(() => values.map((value) => ({ value })), [values]);
+  const data = useMemo(
+    () => values.map((value) => ({ value: drawn(value) })),
+    [values]
+  );
   if (values.length === 0) {
     return null;
   }

@@ -1,5 +1,5 @@
 /* Polaris adaptation of the Bklit UI area chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
-import { type MutableRefObject, useEffect } from "react";
+import { type MutableRefObject, useEffect, useRef } from "react";
 import {
   useChart,
   useChartStable,
@@ -62,29 +62,40 @@ export function ChartBridge({
 }) {
   const { data, isLoaded, lines, setTooltipData, xAccessor, xScale, yScale } =
     useChart();
+  // The point the keyboard control asked for: it is shown as soon as the chart can show it (the block is not loaded
+  // until its reveal ends) and follows the scales while they move, until the control takes it away.
+  const wanted = useRef<number | null>(null);
   useEffect(() => {
-    handle.current = {
-      hide: () => setTooltipData(null),
-      show: (index) => {
-        const point = data[index];
-        if (!(isLoaded && point)) {
-          return;
+    const show = (index: number) => {
+      wanted.current = index;
+      const point = data[index];
+      if (!(isLoaded && point)) {
+        return;
+      }
+      const yPositions: Record<string, number> = {};
+      for (const line of lines) {
+        const value = point[line.dataKey];
+        if (typeof value === "number") {
+          yPositions[line.dataKey] = yScale(value) ?? 0;
         }
-        const yPositions: Record<string, number> = {};
-        for (const line of lines) {
-          const value = point[line.dataKey];
-          if (typeof value === "number") {
-            yPositions[line.dataKey] = yScale(value) ?? 0;
-          }
-        }
-        setTooltipData({
-          index,
-          point,
-          x: xScale(xAccessor(point)) ?? 0,
-          yPositions,
-        });
-      },
+      }
+      setTooltipData({
+        index,
+        point,
+        x: xScale(xAccessor(point)) ?? 0,
+        yPositions,
+      });
     };
+    handle.current = {
+      hide: () => {
+        wanted.current = null;
+        setTooltipData(null);
+      },
+      show,
+    };
+    if (wanted.current !== null) {
+      show(wanted.current);
+    }
     return () => {
       handle.current = null;
     };
