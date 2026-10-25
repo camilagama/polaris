@@ -663,9 +663,8 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
 });
 
-test("o seletor de mês mostra o mês por extenso, anda com as setas e aceita o mês digitado", async ({
-  page,
-}) => {
+/** Opens the screen and records the month of every list the screen asks for. */
+async function openExpensesWatchingMonths(page: Page) {
   await page.clock.setFixedTime(new Date(NOW));
   const server = new FakeExpenseServer();
   const months: string[] = [];
@@ -678,73 +677,178 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e aceita o 
       await route.fallback();
     })
   );
-  // the words over the month field (the field itself is invisible)
-  const picker = page.locator("#expense-month").locator("..");
-  await expect(picker).toHaveText("Outubro de 2026");
-  // the month field is named by its label, and the browser's own text never shows
-  await expect(page.getByLabel("Mês de competência")).toHaveValue("2026-10");
+  return months;
+}
+
+test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe na grade de meses", async ({
+  page,
+}) => {
+  const months = await openExpensesWatchingMonths(page);
+  // one button in the middle with the month in words, named by the label; no native month field
+  const trigger = page.locator("#expense-month");
+  await expect(trigger).toHaveAccessibleName(
+    "Mês de competência, Outubro de 2026"
+  );
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect(page.locator('input[type="month"]')).toHaveCount(0);
 
   await page.getByRole("button", { name: "Próximo mês" }).click();
-  await expect(picker).toHaveText("Novembro de 2026");
+  await expect(trigger).toHaveText("Novembro de 2026");
   // the total of the list follows the month
   await expect(
     page.getByText("Total do período").locator("../..")
   ).toContainText("novembro de 2026");
   await page.getByRole("button", { name: "Mês anterior" }).click();
   await page.getByRole("button", { name: "Mês anterior" }).click();
-  await expect(picker).toHaveText("Setembro de 2026");
+  await expect(trigger).toHaveText("Setembro de 2026");
 
-  await page.getByLabel("Mês de competência").fill("2026-03");
-  await expect(picker).toHaveText("Março de 2026");
+  // the grid opens on the year of the month on screen, with that month pressed
+  await trigger.click();
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  await expect(popup.getByText("2026", { exact: true })).toBeVisible();
+  const grid = popup.getByRole("group", { name: "Meses de 2026" });
+  await expect(grid.getByRole("button")).toHaveCount(12);
+  await expect(
+    grid.getByRole("button", { name: "setembro de 2026" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    grid.getByRole("button", { name: "outubro de 2026" })
+  ).toHaveAttribute("aria-pressed", "false");
+
+  // a month of the grid is chosen with one touch, and closes the popover
+  await grid.getByRole("button", { name: "março de 2026" }).click();
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Março de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-03");
+  await expect(trigger).toBeFocused();
+
+  // the year has its own arrows, and a month ahead of today is chosen as the arrow does (the list reads any month)
+  await trigger.click();
+  await popup.getByRole("button", { name: "Próximo ano" }).click();
+  await expect(popup.getByText("2027", { exact: true })).toBeVisible();
+  await popup
+    .getByRole("group", { name: "Meses de 2027" })
+    .getByRole("button", { name: "dezembro de 2027" })
+    .click();
+  await expect(trigger).toHaveText("Dezembro de 2027");
+  await expect.poll(() => months.at(-1)).toBe("2027-12");
   expect(months).toEqual(
-    expect.arrayContaining(["2026-10", "2026-11", "2026-09"])
+    expect.arrayContaining(["2026-10", "2026-11", "2026-09", "2026-03"])
   );
+
+  // the arrow after December goes to January of the next year
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(trigger).toHaveText("Janeiro de 2028");
+
+  // "Este mês" in the footer chooses the store's current month (the clock says October 2026), closes, gives the focus back
+  await trigger.click();
+  await expect(popup.getByText("2028", { exact: true })).toBeVisible();
+  await popup.getByRole("button", { name: "Este mês" }).click();
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await expect(trigger).toBeFocused();
 });
 
-test("com o teclado o campo do mês aparece no lugar do texto e aceita o mês digitado", async ({
+test("a grade de meses não volta de janeiro de 2000, pelos botões nem pelo teclado, e o futuro continua livre", async ({
   page,
 }) => {
-  await page.clock.setFixedTime(new Date(NOW));
-  const server = new FakeExpenseServer();
-  const months: string[] = [];
-  await openExpenses(page, server, (target) =>
-    target.route("**/rpc/expense/list", async (route) => {
-      const body = route.request().postDataJSON() as {
-        json?: { from?: string };
-      };
-      months.push(String(body.json?.from ?? "").slice(0, 7));
-      await route.fallback();
-    })
-  );
-  const field = page.getByLabel("Mês de competência");
-  const words = page.locator("#expense-month").locator("..").locator("span");
-  await expect(field).toHaveCSS("opacity", "0");
-  await expect(words).toHaveCSS("opacity", "1");
+  const months = await openExpensesWatchingMonths(page);
+  const trigger = page.getByRole("button", { name: "Mês de competência," });
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  const previousYear = popup.getByRole("button", { name: "Ano anterior" });
+  const month = (name: string) => popup.getByRole("button", { name });
 
-  // the mouse (and the touch) keep the field invisible under the words, even focused
-  await field.click({ force: true });
-  await expect(field).toBeFocused();
-  await expect(field).toHaveCSS("opacity", "0");
-  await expect(words).toHaveCSS("opacity", "1");
-  await page.keyboard.press("Escape");
+  await trigger.click();
+  await expect(previousYear).not.toHaveAttribute("aria-disabled", "true");
+  for (let year = 2025; year >= 2001; year -= 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one year at a time, the grid redraws between them
+    await previousYear.click();
+    await expect(popup.getByText(String(year), { exact: true })).toBeVisible();
+  }
+  await expect(previousYear).not.toHaveAttribute("aria-disabled", "true");
+  await previousYear.click();
+  await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  // in 2000 the arrow is off, still focusable, and Enter on it does nothing
+  await expect(previousYear).toHaveAttribute("aria-disabled", "true");
+  await previousYear.focus();
+  await page.keyboard.press("Enter");
+  await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  await expect(
+    popup.getByRole("button", { name: "Próximo ano" })
+  ).not.toHaveAttribute("aria-disabled", "true");
 
-  // Tab from the previous-month arrow lands on the field, and it shows itself instead of the words
+  // the keys stop at January 2000 too; going forward is free
+  await month("outubro de 2000").focus();
+  await page.keyboard.press("Home");
+  await expect(month("janeiro de 2000")).toBeFocused();
+  for (const key of ["ArrowLeft", "ArrowUp", "PageUp"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: the keys are pressed in order
+    await page.keyboard.press(key);
+    await expect(month("janeiro de 2000")).toBeFocused();
+    await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  }
+  await page.keyboard.press("PageDown");
+  await expect(month("janeiro de 2001")).toBeFocused();
+  await page.keyboard.press("PageUp");
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Janeiro de 2000");
+  await expect.poll(() => months.at(-1)).toBe("2000-01");
+});
+
+test("o teclado abre a grade de meses, anda por ela e escolhe o mês", async ({
+  page,
+}) => {
+  const months = await openExpensesWatchingMonths(page);
+  const trigger = page.getByRole("button", { name: "Mês de competência," });
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  const month = (name: string) => popup.getByRole("button", { name });
+
+  // the first Tab stop of the group after the arrow: Enter opens, and the focus goes to the month on screen
   await page.getByRole("button", { name: "Mês anterior" }).focus();
   await page.keyboard.press("Tab");
-  await expect(field).toBeFocused();
-  await expect(field).toHaveCSS("opacity", "1");
-  await expect(words).toHaveCSS("opacity", "0");
-
-  // typing the digits of the month into the visible field: the list follows
-  await page.keyboard.type("112026");
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(field).toHaveValue("2026-11");
-  await expect.poll(() => months.at(-1)).toBe("2026-11");
+  await expect(month("outubro de 2026")).toBeFocused();
+
+  // only the month with the cursor is in the tab order (the arrows move inside the grid)
+  await expect(month("novembro de 2026")).toHaveAttribute("tabindex", "-1");
+  await page.keyboard.press("ArrowRight");
+  await expect(month("novembro de 2026")).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(month("julho de 2026")).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(month("janeiro de 2026")).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(month("dezembro de 2026")).toBeFocused();
+  // past December: January of the next year (the grid changes its year, the focus follows)
+  await page.keyboard.press("ArrowRight");
   await expect(
-    page.getByText("Total do período").locator("../..")
-  ).toContainText("novembro de 2026");
-  await expect(words).toHaveText("Novembro de 2026");
+    popup.getByRole("group", { name: "Meses de 2027" })
+  ).toBeVisible();
+  await expect(month("janeiro de 2027")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(month("abril de 2027")).toBeFocused();
+  await page.keyboard.press("PageUp");
+  await expect(month("abril de 2026")).toBeFocused();
+
+  // Enter chooses, closes and gives the focus back to the button
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Abril de 2026");
+  await expect(trigger).toBeFocused();
+  await expect.poll(() => months.at(-1)).toBe("2026-04");
+
+  // Escape closes without changing the month
+  await page.keyboard.press("Enter");
+  await expect(month("abril de 2026")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Abril de 2026");
+  await expect(trigger).toBeFocused();
 });
 
 test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nunca a lista vazia", async ({
