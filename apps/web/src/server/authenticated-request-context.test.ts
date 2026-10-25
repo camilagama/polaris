@@ -165,6 +165,77 @@ describe("Better Auth once per isolate", () => {
   });
 });
 
+describe("when the isolate drops the Better Auth instance", () => {
+  const session = {
+    session: { createdAt: new Date(), id: "session-1" },
+    user: { id: "test-user" },
+  };
+
+  /** `startFails` makes the instance's `$context` reject, as Better Auth's does when its assembling fails. */
+  function isolate(getSession: () => Promise<unknown>, startFails = false) {
+    const createAuth = vi.fn(() => ({
+      $context: startFails
+        ? Promise.reject(new Error("the start failed"))
+        : Promise.resolve({}),
+      api: { getSession: vi.fn(getSession) },
+    }));
+    const run = createAuthenticatedRequestContext({
+      createAuth:
+        createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createDatabase: (() => ({
+        db: {},
+        pool: { end: () => Promise.resolve() },
+      })) as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
+    });
+    const request = () =>
+      run({
+        bindings: baseBindings,
+        operation: async () => "ok",
+        request: new Request("https://polaris.example.invalid/rpc"),
+      });
+    return { createAuth, request };
+  }
+
+  it("keeps it when a request fails on the database: the next one does not assemble it again", async () => {
+    const outage: { down: boolean } = { down: true };
+    const { createAuth, request } = isolate(() =>
+      outage.down
+        ? Promise.reject(new Error("the database is down"))
+        : Promise.resolve(session)
+    );
+
+    await expect(request()).rejects.toThrow("the database is down");
+    await expect(request()).rejects.toThrow("the database is down");
+    outage.down = false;
+    await expect(request()).resolves.toBe("ok");
+
+    expect(createAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps it when the session lookup is refused", async () => {
+    const { createAuth, request } = isolate(() =>
+      Promise.reject(new Error("invalid session token"))
+    );
+
+    await expect(request()).rejects.toThrow("invalid session token");
+    await expect(request()).rejects.toThrow("invalid session token");
+
+    expect(createAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("assembles it again on the next request when its start (`$context`) rejected", async () => {
+    const { createAuth, request } = isolate(
+      () => Promise.reject(new Error("the start failed")),
+      true
+    );
+
+    await expect(request()).rejects.toThrow("the start failed");
+    await expect(request()).rejects.toThrow("the start failed");
+
+    expect(createAuth).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("authenticated request database connection", () => {
   it("allows a longer local Hyperdrive-emulation timeout when configured", async () => {
     const {

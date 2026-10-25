@@ -819,8 +819,11 @@ async function withAuthRuntime(
   }
 }
 
-/** Whether the start of the instance failed: Better Auth keeps that rejection in `$context` for good. */
-function startFailed(auth: BetterAuthInstance): Promise<boolean> {
+/**
+ * Whether the start of the instance failed: Better Auth keeps that rejection in `$context` for good. The `/rpc` instance
+ * (`authenticated-request-context.ts`) follows the same rule.
+ */
+export function startFailed(auth: { $context?: unknown }): Promise<boolean> {
   return Promise.resolve(auth.$context).then(
     () => false,
     () => true
