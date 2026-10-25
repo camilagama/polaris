@@ -487,8 +487,14 @@ export function FilterBar({
       className={cn("grid grid-cols-[minmax(0,1fr)] gap-2", className)}
       ref={searchRef}
     >
-      <ScrollArea className="-m-1.5 min-w-0" horizontal>
-        <div className="flex w-max items-center gap-2 p-1.5 md:w-full md:flex-wrap">
+      {/* The 6 px the focus ring needs: up and down as a negative margin (the bar keeps its height); sideways as padding
+          of the row, because a box wider than its parent is a layout fault. Above 760 px nothing scrolls, so the viewport
+          stops clipping and the padding goes. */}
+      <ScrollArea
+        className="md:[&>[data-slot=scroll-area-viewport]]:overflow-visible! -my-1.5 min-w-0"
+        horizontal
+      >
+        <div className="flex w-max items-center gap-2 px-1.5 py-1.5 md:w-full md:flex-wrap md:px-0">
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
