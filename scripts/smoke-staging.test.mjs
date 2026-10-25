@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runSmoke } from "./smoke-staging.mjs";
+import {
+  REFUSAL,
+  refusalOf,
+  runSmoke,
+  STAGING_FIXED_HOST,
+} from "./smoke-staging.mjs";
 
 const origins = {
   catalog: "https://catalogo.araute.app",
-  web: "https://polaris-web-staging.example.workers.dev",
+  web: "https://dash.araute.app",
 };
 
 const noPause = () => Promise.resolve();
@@ -121,14 +126,64 @@ describe("the staging smoke", () => {
   });
 
   it("accepts the fixed staging web host and checks it like any other staging origin", async () => {
-    const web = "https://dash.araute.app";
     const urls = [];
     const fetchImpl = (url) => {
       urls.push(url);
       return fakeStaging()(url);
     };
-    expect(await runSmoke({ ...origins, web }, fetchImpl, noPause)).toEqual([]);
-    expect(urls).toContain(`${web}/health`);
+    expect(await runSmoke(origins, fetchImpl, noPause)).toEqual([]);
+    expect(urls).toContain(`${origins.web}/health`);
+  });
+
+  it("refuses the workers.dev web, before any request, saying that only the fixed host is accepted", async () => {
+    const refusing = vi.fn();
+    expect(
+      await runSmoke(
+        {
+          ...origins,
+          web: "https://polaris-web-staging.example.workers.dev",
+        },
+        refusing,
+        noPause
+      )
+    ).toEqual([
+      "web: the staging web only accepts https://dash.araute.app, without a path",
+    ]);
+    expect(refusing).not.toHaveBeenCalled();
+  });
+
+  it("has a refusal message of its own for every key that accepts a host", () => {
+    for (const [key, host] of Object.entries(STAGING_FIXED_HOST)) {
+      expect(Object.hasOwn(REFUSAL, key)).toBe(true);
+      expect(REFUSAL[key]).toContain(`https://${host}`);
+    }
+    expect(Object.keys(REFUSAL).sort()).toEqual(
+      Object.keys(STAGING_FIXED_HOST).sort()
+    );
+  });
+
+  it("fails loudly for a key with no fixed host or message, naming the key", async () => {
+    expect(refusalOf("admin")).toContain("admin:");
+    for (const key of ["constructor", "toString", "__proto__"]) {
+      expect(refusalOf(key)).toContain("no staging host is accepted");
+    }
+    const fetchImpl = vi.fn();
+    const failures = await runSmoke(
+      { ...origins, admin: "https://admin.araute.app" },
+      fetchImpl,
+      noPause
+    );
+    expect(failures).toHaveLength(1);
+    const inherited = await runSmoke(
+      { ...origins, constructor: "https://dash.araute.app" },
+      fetchImpl,
+      noPause
+    );
+    expect(inherited[0]).toContain("constructor: no staging host");
+    expect(failures[0].startsWith("admin: no staging host is accepted")).toBe(
+      true
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("accepts the fixed staging catalog host and refuses the workers.dev one, before any request", async () => {
@@ -161,7 +216,7 @@ describe("the staging smoke", () => {
     const refused = (key) => [
       key === "catalog"
         ? "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path"
-        : "web: the origin must be https://polaris-<app>-staging.… or https://dash.araute.app, without a path",
+        : "web: the staging web only accepts https://dash.araute.app, without a path",
     ];
     for (const web of [
       "http://polaris-web-staging.example.workers.dev",
