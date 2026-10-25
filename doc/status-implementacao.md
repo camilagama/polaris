@@ -2181,8 +2181,8 @@ Regra do usuário (24/10/2026): até a etapa de corte, nenhum teto de bytes do r
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Trava de +80 000 B | Em revisão | `REST_GROWTH_HARD_CAP_GZIP_BYTES` vira marca: acima dela o build passa e o aviso diz o excesso sobre a referência e sobre a marca. A linha `PRECACHE-GROWTH` segue em todo build. Nenhum limite técnico real justifica um erro (ADR 0103, emenda). |
-| Fontes, primitivos e gráficos | Sem mudança | Seguem reprovando; estender o aviso a eles fica para o responsável confirmar. |
+| Trava de +80 000 B | Em revisão | `REST_GROWTH_MARK_GZIP_BYTES` (antes `REST_GROWTH_HARD_CAP_GZIP_BYTES`) vira marca: acima dela o build passa e o aviso diz o excesso sobre a referência e sobre a marca. A linha `PRECACHE-GROWTH` segue em todo build. Nenhum limite técnico real justifica um erro (ADR 0103, emenda). |
+| Fontes, primitivos e gráficos | Em revisão (t360) | Passam a só avisar, com total, teto e excesso, sob o modo único `BUDGET_MODE` (`"warn"`, antes `REST_GROWTH_MODE`), que vale para as quatro linhas de tamanho; com `"block"` todas reprovam. Só o guarda de lugar dos gráficos e o de chunks só de teste reprovam em qualquer modo (ADR 0103, emenda de 25/10). Prova: `pwa/precache-budget.test.ts`, um caso de cada lado de cada linha nos dois modos, `block` reprovando em +83 007 B e os dois guardas reprovando em `"warn"`. |
 | Provas | Em revisão | `pwa/precache-budget.test.ts`: +83 007 B avisa e não reprova; a marca de +80 000 B; o plugin sobre um diretório de saída real. |
 
 ### Resultado v2, PR do servidor: custo e resultado por dia no `periodSummary` (t332; emenda de 24/10 do ADR 0056; sem migration)
