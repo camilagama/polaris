@@ -785,7 +785,7 @@ for (const viewport of FORM_VIEWPORTS) {
     ).toHaveAccessibleName("Período da meta, Escolher período");
     await page.getByRole("button", { name: "Criar meta" }).click();
     await expect(
-      page.getByText("Informe uma data de início válida.")
+      page.getByText("Escolha o período da meta.")
     ).toBeVisible();
     await expect(datePickerButton(page, "Período da meta")).toBeFocused();
     await expect(datePickerButton(page, "Período da meta")).toHaveAttribute(
@@ -800,7 +800,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await touchDay(again, "2026-10-25");
     await expect(again).toBeHidden();
     await expect(
-      page.getByText("Informe uma data de início válida.")
+      page.getByText("Escolha o período da meta.")
     ).toHaveCount(0);
     await page.getByRole("button", { name: "Criar meta" }).click();
     await expect(page.getByText("Meta criada.")).toBeVisible();
@@ -810,6 +810,42 @@ for (const viewport of FORM_VIEWPORTS) {
     });
   });
 }
+
+test("a 360 px o período da meta abre no mês do período, e com pouco espaço só o mês rola: atalhos, a linha do início e Limpar ficam à vista", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  // the field in the middle of the screen, as in the form at 360: neither above nor below is there room for the whole
+  // popover (shortcuts, month and footer)
+  await datePickerButton(page, "Período da meta").evaluate((button) =>
+    button.scrollIntoView({ block: "center" })
+  );
+  const top = await datePickerButton(page, "Período da meta").evaluate(
+    (button) => button.getBoundingClientRect().top
+  );
+  expect(top).toBeGreaterThan(300);
+  expect(top).toBeLessThan(440);
+  const popup = await openDatePicker(page, "Período da meta");
+  // one month at 360: the month of the start of 01/10 a 31/10, never the one before it
+  await expect(popup.getByText("Outubro de 2026")).toBeVisible();
+  await expect(popup.getByText("Setembro de 2026")).toHaveCount(0);
+  await popup.locator('button[data-day="2026-10-05"]').click();
+  const whole = { ratio: 1 };
+  await expect(popup.getByText(HALF_RANGE_NOTE)).toBeInViewport(whole);
+  await expect(popup.getByRole("button", { name: "Limpar" })).toBeInViewport(
+    whole
+  );
+  await expect(
+    popup.getByRole("group", { name: "Atalhos do período" })
+  ).toBeInViewport(whole);
+  // the popover fits the screen; what does not fit is the month, which scrolls inside it
+  const box = await popup.boundingBox();
+  expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(740);
+});
 
 test("o calendário do período da meta se usa só com o teclado: setas andam pelos dias, Enter marca e Escape fecha", async ({
   page,
