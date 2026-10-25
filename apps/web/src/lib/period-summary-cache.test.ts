@@ -506,6 +506,79 @@ describe("a day's amount in the kept series", () => {
   });
 });
 
+describe("the costs of the day in the kept series (AC-9)", () => {
+  const withCosts = (
+    costs: (index: number) => unknown,
+    operatingResult: (index: number) => unknown = () => "0.00"
+  ) =>
+    ({
+      ...summaryOf("2026-10"),
+      daily: Array.from({ length: 28 }, (_, index) => ({
+        costs: costs(index),
+        date: `2026-10-${String(index + 1).padStart(2, "0")}`,
+        netSales: "0.00",
+        operatingResult: operatingResult(index),
+        salesCount: 0,
+      })),
+    }) as unknown;
+
+  it("accepts the costs as money, as unknown (null) or absent", () => {
+    expect(isPeriodSummary(withCosts(() => "12.30"))).toBe(true);
+    expect(
+      isPeriodSummary(withCosts((index) => (index === 4 ? null : "0.00")))
+    ).toBe(true);
+    expect(
+      isPeriodSummary(
+        withCosts(
+          () => undefined,
+          () => undefined
+        )
+      )
+    ).toBe(true);
+    // one field known and the other absent is still a shape the screen reads (it draws neither)
+    expect(
+      isPeriodSummary(
+        withCosts(
+          () => "5.00",
+          () => undefined
+        )
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ["a number", 12.3],
+    ["text that is not money", "abc"],
+    ["three decimals", "1.234"],
+    ["an empty text", ""],
+    ["a boolean", false],
+    ["an object", {}],
+  ])("refuses costs that are %s", (_label, value) => {
+    expect(
+      isPeriodSummary(withCosts((index) => (index === 2 ? value : "1.00")))
+    ).toBe(false);
+    expect(
+      isPeriodSummary(
+        withCosts(
+          () => "1.00",
+          (index) => (index === 2 ? value : "1.00")
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("keeps the costs and the unknown days through a write and a read", () => {
+    const summary = withCosts((index) =>
+      index === 4 ? null : "3.50"
+    ) as StoredPeriodSummary;
+    const { storage } = memoryStorage();
+    writePeriodSummaryCache(storage, ORG, "2026-10", summary, ALLOWED);
+    const read = readPeriodSummaryCache(storage, ORG, "2026-10");
+    expect(read).toEqual(summary);
+    expect(read?.daily?.[4]?.costs).toBeNull();
+  });
+});
+
 describe("forgetting the copies of one organization (clearOrganizationResultCopies)", () => {
   it("removes the months and the Início's copy of that organization only", () => {
     const { storage, values } = memoryStorage();

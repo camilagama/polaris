@@ -237,3 +237,90 @@ describe("Sparkline", () => {
     expect(flat).not.toContain("NaN");
   });
 });
+
+const noteOf = (index: number) =>
+  index === 6 ? "inclui R$ 1800 de despesas do período" : null;
+const AXIS_AMOUNT = /^R\$ (\d+)$/;
+const READING_PARAGRAPH = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
+const ANY_TAG = /<[^>]*>/g;
+
+describe("AreaChart: a second series (the costs of the Resultado)", () => {
+  const COSTS = [
+    { label: "17/10", value: 60 },
+    { label: "18/10", value: 100 },
+    { label: "19/10", value: 2050 },
+    { label: "20/10", value: 700 },
+    { label: "21/10", value: 300 },
+    { label: "22/10", value: 40 },
+    { label: "23/10", value: 200 },
+  ];
+  const secondary = {
+    data: COSTS,
+    legend: "Custos (CMV, taxas e despesas)",
+    name: "Custos",
+  };
+  const markup = html(
+    <AreaChart
+      data={WEEK}
+      formatValue={money}
+      label="Vendas líquidas e custos por dia"
+      legend="Vendas líquidas"
+      name="Vendas"
+      readingNote={noteOf}
+      secondary={secondary}
+      width={328}
+    />
+  );
+
+  it("names both lines in a legend, each with its own trace, the second one dashed", () => {
+    expect(markup).toContain('data-chart-legend=""');
+    expect(markup).toContain("Vendas líquidas");
+    expect(markup).toContain("Custos (CMV, taxas e despesas)");
+    // two samples in the legend and the line of the series in the drawing: three dashes in all? only the second is
+    expect(markup.match(/stroke-dasharray="5 4"/g)).toHaveLength(2);
+  });
+
+  it("draws the second series dashed in the mid grey token, with no fill of its own", () => {
+    const dashedPaths =
+      markup.match(/<path[^>]*stroke-dasharray="5 4"[^>]*>/g) ?? [];
+    expect(dashedPaths).toHaveLength(1);
+    expect(dashedPaths[0]).toContain('stroke="var(--chart-3)"');
+    expect(dashedPaths[0]).toContain('fill="none"');
+    expect(markup).not.toMatch(OKLCH_OR_HEX);
+  });
+
+  it("reads both values of the day in focus and the note, in a line of text above the drawing", () => {
+    const reading = markup.match(READING_PARAGRAPH)?.[1] ?? "";
+    const text = reading.replace(ANY_TAG, "");
+    expect(text).toBe(
+      "23/10 · Vendas R$ 520 · Custos R$ 200 · inclui R$ 1800 de despesas do período"
+    );
+    expect(markup.indexOf("data-chart-reading")).toBeLessThan(
+      markup.indexOf("<svg")
+    );
+  });
+
+  it("speaks both values and the note through the keyboard control", () => {
+    const input = markup.match(RANGE)?.[0] ?? "";
+    expect(input).toContain(
+      'aria-valuetext="23/10: Vendas R$ 520, Custos R$ 200, inclui R$ 1800 de despesas do período"'
+    );
+  });
+
+  it("puts both lines on one scale: the costs peak sets the top, so the sales never pass it", () => {
+    const tops = [...markup.matchAll(SVG_TEXT)]
+      .map((match) => AXIS_AMOUNT.exec(match[1] ?? "")?.[1])
+      .filter((amount): amount is string => amount !== undefined)
+      .map(Number);
+    // 2050 is the highest value of either series: the grid reaches it, which the sales alone (1840) would not need
+    expect(Math.max(...tops)).toBeGreaterThanOrEqual(2050);
+  });
+
+  it("is the same as before without the second series: one line, no legend", () => {
+    const plain = html(
+      <AreaChart data={WEEK} formatValue={money} label="x" width={328} />
+    );
+    expect(plain).not.toContain("data-chart-legend");
+    expect(plain).not.toContain("stroke-dasharray");
+  });
+});

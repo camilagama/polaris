@@ -112,13 +112,14 @@ export function OnDemandAreaChart({
   if (state.status === "failed") {
     return failed ?? null;
   }
-  // the reading line above the drawing is one line of text: the box holds that line too
+  // the reading line above the drawing is one line of text: the box holds that line too (with a second series the
+  // reading takes two lines on a phone and the legend one more)
   // the floor of the drawing is 24 px above its bottom (the dates of the x axis)
   return (
     <Reserved
       className={props.className}
       floor={24}
-      height={(props.height ?? 180) + 26}
+      height={(props.height ?? 180) + (props.secondary ? 26 + 44 : 26)}
     />
   );
 }

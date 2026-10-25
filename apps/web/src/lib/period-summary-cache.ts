@@ -15,12 +15,25 @@ const KEY_PREFIX = "polaris.offline.periodSummary.";
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
 /**
- * A summary as kept on the device: a copy written before the daily series
- * existed has no `daily` (the screen then draws no series for that month), and
- * the most sold products are there only when the read asked for them.
+ * A day of the series as the screen reads it. `costs` and `operatingResult` are the fields the server adds in the
+ * t332 (`feat/period-summary-custos-dia`, AC-8): BRL text, or `null` when the day has an unknown cost or fee. They are
+ * absent (`undefined`) from an older server and from an older copy. This is the one place the local shape lives: when
+ * the t332 is on the main, `PeriodSummaryReadModel["daily"][number]` carries them and this type goes away.
  */
-export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
-  Partial<Pick<PeriodSummaryReadModel, "daily">>;
+export type StoredDay = PeriodSummaryReadModel["daily"][number] & {
+  costs?: string | null;
+  operatingResult?: string | null;
+};
+
+/**
+ * A summary as kept on the device: a copy written before the daily series
+ * existed has no `daily` (the screen then draws no series for that month), a
+ * copy written before the costs of the day has days without `costs`, and the
+ * most sold products are there only when the read asked for them.
+ */
+export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> & {
+  daily?: StoredDay[];
+};
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 /** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
@@ -145,6 +158,10 @@ function dateAfter(date: string, days: number): string {
     .slice(0, 10);
 }
 
+/** The costs of a day: absent (an older server or copy), unknown (`null`) or money, and nothing else. */
+const isOptionalMoney = (value: unknown): boolean =>
+  value === undefined || value === null || isMoney(value);
+
 /** Absent (an older copy), or one entry per date of the period, in order. */
 function isDaily(value: unknown, period: unknown): boolean {
   if (value === undefined) {
@@ -161,7 +178,9 @@ function isDaily(value: unknown, period: unknown): boolean {
         isDictionary(day) &&
         day.date === dateAfter(from, index) &&
         isMoney(day.netSales) &&
-        isCount(day.salesCount)
+        isCount(day.salesCount) &&
+        isOptionalMoney(day.costs) &&
+        isOptionalMoney(day.operatingResult)
     ) &&
     (value.at(-1) as Dictionary).date === period.to
   );
