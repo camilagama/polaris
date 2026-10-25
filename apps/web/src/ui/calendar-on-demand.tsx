@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import type { CalendarProps } from "./calendar";
 
@@ -186,7 +187,11 @@ export function OnDemandCalendar(props: CalendarProps) {
   // when it arrives
   return (
     <div
-      className="grid h-[calc(var(--cell-size)*7+3.1875rem)] w-[calc(var(--cell-size)*7)] place-items-center content-center justify-items-center gap-3 p-2 text-center text-muted-foreground text-support [--cell-size:2.25rem] touch:[--cell-size:min(2.75rem,calc((100vw_-_3rem)/7))]"
+      className={cn(
+        "grid h-[calc(var(--cell-size)*7+3.1875rem)] w-[calc(var(--cell-size)*7)] place-items-center content-center justify-items-center gap-3 p-2 text-center text-muted-foreground text-support [--cell-size:2.25rem] touch:[--cell-size:min(2.75rem,calc((100vw_-_3rem)/7))]",
+        // the calendar's own class (the gallery narrows the cells to fit its frame): the box takes it too, same size
+        props.className
+      )}
       data-calendar-loading={state.status === "loading" ? "" : undefined}
       role={state.status === "loading" ? "status" : "alert"}
     >
