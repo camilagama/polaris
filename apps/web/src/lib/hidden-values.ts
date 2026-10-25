@@ -7,7 +7,7 @@ import { browserStorage } from "./theme";
  * the Início and on the Resultado. While it is on, every amount in reais is written "R$ ••••" and read "valor
  * escondido"; percents, counts and the shape of the charts stay.
  */
-export const HIDDEN_VALUES_STORAGE_KEY = "polaris-valores";
+const HIDDEN_VALUES_STORAGE_KEY = "polaris-valores";
 const HIDDEN = "escondidos";
 
 /** What an amount becomes on the screen, and what a screen reader says in its place. */
@@ -94,7 +94,7 @@ function subscribe(listener: () => void) {
   };
 }
 
-export function setHiddenValues(hidden: boolean) {
+function setHiddenValues(hidden: boolean) {
   saveHiddenValues(browserStorage(), hidden);
   current = hidden;
   for (const listener of listeners) {

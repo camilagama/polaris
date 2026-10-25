@@ -74,7 +74,7 @@ function DayMarks({
     label ? [best, last].filter((index) => index !== null) : []
   );
   return (
-    <g aria-hidden="true" data-chart-marks="">
+    <g data-chart-marks="">
       {shown.map((mark) => {
         const sold = mark.value > 0;
         return (
@@ -190,11 +190,6 @@ export function ChartBridge({
     yScale,
   ]);
   return (
-    <DayMarks
-      best={bestIndex}
-      color={color}
-      label={label}
-      markers={markers}
-    />
+    <DayMarks best={bestIndex} color={color} label={label} markers={markers} />
   );
 }

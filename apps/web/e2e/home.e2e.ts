@@ -135,7 +135,8 @@ function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
     return entry;
   }
   // a day listed as null has an unknown cost; a day not listed has a result of zero
-  const result = day in scenario.results ? scenario.results[day] : 0;
+  const listed = scenario.results[day];
+  const result = listed === undefined ? 0 : listed;
   return {
     ...entry,
     costs: result === null ? null : money(Math.max(0, cents - result)),

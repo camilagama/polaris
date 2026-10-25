@@ -56,10 +56,7 @@ export function Sparkline({
     () => values.map((value) => ({ value: drawn(value) })),
     [signature]
   );
-  const read = useCallback(
-    (index: number | null) => onRead?.(index),
-    [onRead]
-  );
+  const read = useCallback((index: number | null) => onRead?.(index), [onRead]);
   if (values.length === 0) {
     return null;
   }

@@ -92,7 +92,7 @@ function weekdayOf(day: string) {
 }
 
 /** "domingo, 25/10": the date of the card of a day. */
-export function weekdayDate(day: string): string {
+function weekdayDate(day: string): string {
   return `${weekdayOf(day).name}, ${shortDate(day)}`;
 }
 
@@ -198,7 +198,7 @@ function cumulate(days: readonly Day[]): Cumulative[] {
 }
 
 /** Why the result's card draws no sparkline and no chip, and the sentence it says then (AC-9). */
-export type ResultSeries =
+type ResultSeries =
   | { kind: "known" }
   /** Some day from the 1st to today has no known cost: "N de M dias sem custo informado". */
   | { kind: "incomplete"; total: number; unknown: number }
