@@ -130,10 +130,18 @@ export function createAuthenticatedRequestContext(
   // Built once per isolate: assembling Better Auth costs more CPU than a cold isolate has left in the Free plan.
   // It holds configuration only. The `db` it reads through is the one of the running request, resolved at each
   // call from the request scope; no `pool` and no `db` of a request stays here (ADR 0017, emenda de 24/10/2026).
-  let sessionAuth:
-    | { auth: SessionAuth; baseURL: string; secret: string }
-    | undefined;
-  const sessionAuthFor = (baseURL: string, secret: string): SessionAuth => {
+  // Only `getSession` is reachable from it: the sign-in, sign-out and password routes keep an instance per request
+  // (`auth/handler.ts`), because their hooks keep state of the request they serve.
+  interface SessionAuthEntry {
+    auth: SessionAuth;
+    baseURL: string;
+    secret: string;
+  }
+  let sessionAuth: SessionAuthEntry | undefined;
+  const sessionAuthFor = (
+    baseURL: string,
+    secret: string
+  ): SessionAuthEntry => {
     if (sessionAuth?.baseURL !== baseURL || sessionAuth.secret !== secret) {
       sessionAuth = {
         auth: authFactory({
@@ -146,7 +154,28 @@ export function createAuthenticatedRequestContext(
         secret,
       };
     }
-    return sessionAuth.auth;
+    return sessionAuth;
+  };
+
+  const readSession = async (
+    baseURL: string,
+    secret: string,
+    request: Request,
+    database: Database
+  ): Promise<AuthenticatedRequestSession | null> => {
+    const entry = sessionAuthFor(baseURL, secret);
+    try {
+      return await runWithRequestScope(
+        { database, requestId: crypto.randomUUID() },
+        () => entry.auth.api.getSession({ headers: request.headers })
+      );
+    } catch (error) {
+      // a failed start of the instance would otherwise be kept for the whole life of the isolate
+      if (sessionAuth === entry) {
+        sessionAuth = undefined;
+      }
+      throw error;
+    }
   };
 
   return async function runAuthenticatedRequestContext<T>(
@@ -181,10 +210,11 @@ export function createAuthenticatedRequestContext(
     let tenantDatabase: typeof authDatabase | undefined;
 
     try {
-      const auth = sessionAuthFor(baseURL, secret);
-      const session = await runWithRequestScope(
-        { database: authDatabase.db, requestId: crypto.randomUUID() },
-        () => auth.api.getSession({ headers: input.request.headers })
+      const session = await readSession(
+        baseURL,
+        secret,
+        input.request,
+        authDatabase.db
       );
 
       // the session id links devices to this session; a session without one is refused

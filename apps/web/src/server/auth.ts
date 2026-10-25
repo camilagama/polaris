@@ -461,8 +461,6 @@ function passwordPolicyApiError(error: PasswordPolicyError): APIError {
   });
 }
 
-const MAX_RECORDED_SESSION_IPS = 500;
-
 /** A fixed identifier is normalized once; a function is asked again at each use, for the request that is running. */
 function requestIdResolver(
   requestId: string | (() => string | undefined) | undefined
@@ -882,13 +880,21 @@ export function createBetterAuth({
           })
         : () => Promise.resolve(false))
   );
-  // The last IP recorded for a session by this instance (one per request in production, so it only keeps one
-  // request from recording the same change twice); the session row keeps it between requests.
+  // The last IP recorded for a session in the request that is running: it only keeps one request from recording the
+  // same change twice, and the session row keeps it between requests. The instance of the RPC context serves many
+  // requests, so what a request recorded is forgotten as soon as another one starts (the database drops a repeat of
+  // the same IP within minutes, ADR 0092; a lost entry costs a query, a kept one would cost a record of access).
   const recordedSessionIps = new Map<string, string>();
-  // The instance of the RPC context lives as long as the isolate, so the map is capped.
+  let recordingRequestId: string | undefined;
+  const recordedSessionIp = (sessionId: string): string | undefined =>
+    recordingRequestId === currentRequestId()
+      ? recordedSessionIps.get(sessionId)
+      : undefined;
   const rememberRecordedSessionIp = (sessionId: string, ip: string) => {
-    if (recordedSessionIps.size >= MAX_RECORDED_SESSION_IPS) {
+    const requestIdNow = currentRequestId();
+    if (recordingRequestId !== requestIdNow) {
       recordedSessionIps.clear();
+      recordingRequestId = requestIdNow;
     }
     recordedSessionIps.set(sessionId, ip);
   };
@@ -1034,7 +1040,7 @@ export function createBetterAuth({
     }
     // the refresh of this very request may have recorded the IP already: then only the row is left to update
     const recorded =
-      recordedSessionIps.get(session.id) === ip ||
+      recordedSessionIp(session.id) === ip ||
       (await writeAccessLog({
         event: "session_refreshed",
         ip,
@@ -1113,7 +1119,7 @@ export function createBetterAuth({
               hookContext.headers ?? hookContext.request?.headers
             );
             // the hooks of the update run after the ones of `/get-session`, which may have recorded this IP already
-            if (ip && recordedSessionIps.get(session.id) === ip) {
+            if (ip && recordedSessionIp(session.id) === ip) {
               return;
             }
             const recorded = await writeAccessLog({
