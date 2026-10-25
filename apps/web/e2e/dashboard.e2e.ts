@@ -434,8 +434,30 @@ const preset = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name });
 const chartRegion = (page: Page) =>
   page.getByRole("region", { name: "Vendas × custos por dia" });
+/** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
+const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
+const periodSelect = (page: Page) =>
+  page.getByRole("combobox", { name: "Período" });
+/** What is on screen to choose the period: the Select on a phone, "Este mês" of the strip otherwise. */
+const periodChoice = (page: Page) =>
+  compact(page) ? periodSelect(page) : preset(page, "Este mês");
+async function choosePreset(page: Page, name: string) {
+  if (compact(page)) {
+    await periodSelect(page).click();
+    await page.getByRole("option", { exact: true, name }).click();
+    return;
+  }
+  await preset(page, name).click();
+}
+async function expectPreset(page: Page, name: string) {
+  if (compact(page)) {
+    await expect(periodSelect(page)).toContainText(name);
+    return;
+  }
+  await expect(preset(page, name)).toHaveAttribute("aria-pressed", "true");
+}
 const rangeFields = async (page: Page, from: string, to: string) => {
-  await preset(page, "Período").click();
+  await choosePreset(page, "Período");
   await page.getByLabel("De", { exact: true }).fill(from);
   await page.getByLabel("Até", { exact: true }).fill(to);
   await page.getByRole("button", { name: "Ver período" }).click();
@@ -462,10 +484,7 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
 
   // the period asked for is this month, the first to the last day, and it is the one pressed
   expect(server.periods[0]).toEqual({ from: "2026-10-01", to: "2026-10-31" });
-  await expect(preset(page, "Este mês")).toHaveAttribute(
-    "aria-pressed",
-    "true"
-  );
+  await expectPreset(page, "Este mês");
 
   // complete data: a quiet line, no incomplete-estimate tag
   await expect(quality(page)).toContainText(
@@ -526,7 +545,7 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   await openDashboard(page, server);
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
 
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
 
   const banner = quality(page);
   await expect(banner).toContainText("Estimativa incompleta");
@@ -562,22 +581,16 @@ test("trocar entre este mês e o mês passado carrega o período dele de novo", 
   await openDashboard(page, server);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 
-  await preset(page, "Mês passado").click();
-  await expect(preset(page, "Mês passado")).toHaveAttribute(
-    "aria-pressed",
-    "true"
-  );
+  await choosePreset(page, "Mês passado");
+  await expectPreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   expect(server.periods.at(-1)).toEqual({
     from: "2026-09-01",
     to: "2026-09-30",
   });
 
-  await preset(page, "Este mês").click();
-  await expect(preset(page, "Este mês")).toHaveAttribute(
-    "aria-pressed",
-    "true"
-  );
+  await choosePreset(page, "Este mês");
+  await expectPreset(page, "Este mês");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   expect(server.periods.map((period) => period.from)).toEqual([
     "2026-10-01",
@@ -609,7 +622,7 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
   await openDashboard(page, server);
 
   // October is still pending when September is asked for and answered
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
   await expect(quality(page)).toContainText("Estimativa incompleta");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
 
@@ -620,10 +633,7 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
   // give the late answer time to reach the screen, where it must be ignored
   await page.waitForTimeout(300);
 
-  await expect(preset(page, "Mês passado")).toHaveAttribute(
-    "aria-pressed",
-    "true"
-  );
+  await expectPreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
 });
@@ -675,7 +685,7 @@ test("com o servidor, a tela diz até quando está atualizada e guarda o mês pa
   await expect(copyNotice(page)).toHaveCount(0);
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   expect(await cachedMonths(page)).toEqual(["2026-09", "2026-10"]);
 });
@@ -719,7 +729,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
 }) => {
   const server = new FakeReportServer();
   await openDashboard(page, server);
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
   await expect(quality(page)).toContainText("Estimativa incompleta");
 
   server.networkDown = true;
@@ -732,7 +742,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
   await expect(copyNotice(page)).toHaveCount(0);
 
   // a month that was read shows its own copy, never the one of another period
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
@@ -749,21 +759,21 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 
   server.networkDown = true;
-  await preset(page, "Mês passado").click();
+  await choosePreset(page, "Mês passado");
   await expect(page.getByRole("alert")).toContainText(
     "Sem internet e sem números guardados neste aparelho."
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // the last 30 days is a window that moves: no copy, and the screen says why
-  await preset(page, "Últimos 30 dias").click();
+  await choosePreset(page, "Últimos 30 dias");
   await expect(page.getByRole("alert")).toContainText(
     "Este período só abre com internet."
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // this month was read: its copy is still there
-  await preset(page, "Este mês").click();
+  await choosePreset(page, "Este mês");
   await expect(copyNotice(page)).toContainText(COPY_NOTICE);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
@@ -870,8 +880,8 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
 
     // "Ver os números": a row for each day up to today, and the line for what comes after
     await region.getByRole("button", { name: "Ver os números" }).click();
-    const table = region.getByRole("table");
-    expect(await table.getByRole("columnheader").allTextContents()).toEqual([
+    const table = region.locator("table");
+    expect(await table.locator("thead th").allTextContents()).toEqual([
       "Dia",
       "Vendas líquidas",
       "Custos",
@@ -906,8 +916,8 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
       "31/07 · Vendas R$ 0,00 · Custos R$ 18,00 · inclui R$ 18,00 de despesas do período"
     );
     await region.getByRole("button", { name: "Ver os números" }).click();
-    await expect(region.getByRole("table").locator("tbody tr")).toHaveCount(31);
-    await expect(region.getByRole("table").locator("tfoot")).toHaveCount(0);
+    await expect(region.locator("table").locator("tbody tr")).toHaveCount(31);
+    await expect(region.locator("table").locator("tfoot")).toHaveCount(0);
   });
 
   test("com um custo desconhecido, a linha de custos e o resultado do dia não são desenhados, e a tabela diz 'sem custo'", async ({
@@ -915,7 +925,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    await preset(page, "Mês passado").click();
+    await choosePreset(page, "Mês passado");
 
     const region = chartRegion(page);
     await expect(region).toContainText("estimativa incompleta");
@@ -933,10 +943,10 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(region.getByRole("img")).toBeVisible();
 
     await region.getByRole("button", { name: "Ver os números" }).click();
-    const first = region.getByRole("table").locator("tbody tr").first();
+    const first = region.locator("table").locator("tbody tr").first();
     await expect(first).toContainText("01/09/2026");
-    await expect(first.getByRole("cell").nth(1)).toHaveText("sem custo");
-    await expect(first.getByRole("cell").nth(2)).toHaveText("sem custo");
+    await expect(first.locator("td").nth(1)).toHaveText("sem custo");
+    await expect(first.locator("td").nth(2)).toHaveText("sem custo");
   });
 
   test("com o pedaço do gráfico bloqueado, ficam os totais, o melhor dia e a tabela, e o texto do Início", async ({
@@ -955,7 +965,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(region).toContainText("R$ 130,00");
     await expect(region).toContainText("Melhor dia: 01/10, R$ 130,00");
     await region.getByRole("button", { name: "Ver os números" }).click();
-    await expect(region.getByRole("table").locator("tbody tr")).toHaveCount(14);
+    await expect(region.locator("table").locator("tbody tr")).toHaveCount(14);
   });
 });
 
@@ -968,7 +978,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     // "Este ano" waits for the CPU measure (AC-23)
     await expect(preset(page, "Este ano")).toHaveCount(0);
 
-    await preset(page, "Últimos 30 dias").click();
+    await choosePreset(page, "Últimos 30 dias");
     await expect(chartRegion(page)).toContainText(
       "15 de setembro a 14 de outubro"
     );
@@ -977,7 +987,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       to: "2026-10-14",
     });
 
-    await preset(page, "Mês passado").click();
+    await choosePreset(page, "Mês passado");
     await expect(chartRegion(page)).toContainText("1 a 30 de setembro");
     expect(server.periods.at(-1)).toEqual({
       from: "2026-09-01",
@@ -985,10 +995,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     });
 
     await rangeFields(page, "2026-10-05", "2026-10-12");
-    await expect(preset(page, "Período")).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
+    await expectPreset(page, "Período");
     expect(server.periods.at(-1)).toEqual({
       from: "2026-10-05",
       to: "2026-10-12",
@@ -1003,7 +1010,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     const asked = server.periods.length;
 
-    await preset(page, "Período").click();
+    await choosePreset(page, "Período");
     await page.getByLabel("De", { exact: true }).fill("2026-10-10");
     await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
     await page.getByRole("button", { name: "Ver período" }).click();
@@ -1034,7 +1041,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 
     const release = server.hold("2026-09");
-    await preset(page, "Mês passado").click();
+    await choosePreset(page, "Mês passado");
     await expect(page.locator("#dashboard-updated")).toHaveText("Atualizando…");
     // still the figures of October, said so, and never under the name of September
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
@@ -1046,10 +1053,10 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(page.getByText("Mostrando 1 a 31 de outubro")).toHaveCount(0);
 
     // a failure leaves no figures of the period before (the last 30 days keep no copy to stand in)
-    await preset(page, "Este mês").click();
+    await choosePreset(page, "Este mês");
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
-    await preset(page, "Últimos 30 dias").click();
+    await choosePreset(page, "Últimos 30 dias");
     await expect(page.getByRole("alert")).toContainText(
       "Não foi possível carregar o resultado. Tente novamente."
     );
@@ -1072,13 +1079,13 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
     await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
     expect(search(page).get("aba")).toBe("metas");
     // the period and the chart belong to the Resultado tab only (AC-15)
-    await expect(preset(page, "Este mês")).toHaveCount(0);
+    await expect(periodChoice(page)).toHaveCount(0);
     await expect(chartRegion(page)).toHaveCount(0);
     await expect(goalsRegion(page)).toBeVisible();
 
     await resultTab(page).click();
     expect(search(page).get("aba")).toBeNull();
-    await expect(preset(page, "Este mês")).toBeVisible();
+    await expect(periodChoice(page)).toBeVisible();
     // the "voltar" of the browser leaves the screen: the tabs added no step
     expect(await page.evaluate(() => window.history.length)).toBe(steps);
   });
@@ -1216,7 +1223,7 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    await preset(page, "Período").click();
+    await choosePreset(page, "Período");
     await page.getByLabel("De", { exact: true }).fill("2026-10-10");
     await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
     await page.getByRole("button", { name: "Ver período" }).click();
