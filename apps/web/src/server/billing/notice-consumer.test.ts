@@ -86,6 +86,7 @@ function deliveryOf(
       id: EVENT_ID,
       providerRef: PROVIDER_REF,
     },
+    firstAttemptedAt: null,
     firstChargeAmount: null,
     firstChargeAt: null,
     firstChargeEventId: null,
@@ -168,6 +169,9 @@ function setup(
         Promise.resolve([]) as Promise<
           { noticeId: string; organizationId: string }[]
         >
+    ),
+    markAttempted: vi.fn((_notice: string, _org: string) =>
+      Promise.resolve(true)
     ),
     markFailed: vi.fn((_notice: string, _org: string, _code: string) =>
       Promise.resolve(true)
@@ -562,10 +566,12 @@ describe("the consumer of a billing notice: skipped before sending", () => {
 });
 
 describe("the consumer of a billing notice: the recipient", () => {
-  it("skips as delivery_window_passed, without sending, a notice due more than 23 hours ago, and sends one due exactly 23 hours ago", async () => {
+  it("skips as delivery_window_passed, without sending, a notice first tried more than 23 hours ago, and sends one first tried exactly 23 hours ago", async () => {
+    const spies = spyLogger();
     const late = setup({
       delivery: deliveryOf({
-        dueAt: new Date(NOW.getTime() - 23 * HOUR_MS - MINUTE_MS),
+        dueAt: new Date(NOW.getTime() - 40 * HOUR_MS),
+        firstAttemptedAt: new Date(NOW.getTime() - 23 * HOUR_MS - MINUTE_MS),
       }),
     });
 
@@ -579,10 +585,19 @@ describe("the consumer of a billing notice: the recipient", () => {
       "delivery_window_passed"
     );
     expect(late.send).not.toHaveBeenCalled();
+    expect(late.notices.markAttempted).not.toHaveBeenCalled();
     expect(late.notices.markFailed).not.toHaveBeenCalled();
+    // the alert: the same level as the failures of the cron, with the opaque IDs and the kind only
+    expect(spies.error).toHaveBeenCalledWith(
+      "billing_notice_delivery_window_passed",
+      expect.objectContaining({ kind: "charge_receipt" })
+    );
+    expectNoPersonalData(everythingLogged(spies));
 
     const edge = setup({
-      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() - 23 * HOUR_MS) }),
+      delivery: deliveryOf({
+        firstAttemptedAt: new Date(NOW.getTime() - 23 * HOUR_MS),
+      }),
     });
 
     expect(await handleBillingNotice(edge.dependencies, envelope())).toBe(
@@ -590,10 +605,23 @@ describe("the consumer of a billing notice: the recipient", () => {
     );
     expect(edge.send).toHaveBeenCalledTimes(1);
 
+    // never tried: no key at the provider, so it goes out at any age (a stopped cron does not cost the d0)
+    const untried = setup({
+      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() - 30 * HOUR_MS) }),
+    });
+    expect(await handleBillingNotice(untried.dependencies, envelope())).toBe(
+      "sent"
+    );
+    expect(untried.send).toHaveBeenCalledTimes(1);
+    expect(untried.notices.markSkipped).not.toHaveBeenCalled();
+
     // an old notice keeps the reason of the rules: the e-mail off is not hidden by the window
     const off = setup({
       billingEmail: null,
-      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() - 30 * HOUR_MS) }),
+      delivery: deliveryOf({
+        dueAt: new Date(NOW.getTime() - 30 * HOUR_MS),
+        firstAttemptedAt: new Date(NOW.getTime() - 29 * HOUR_MS),
+      }),
     });
     await handleBillingNotice(off.dependencies, envelope());
     expect(off.notices.markSkipped).toHaveBeenCalledWith(
@@ -652,6 +680,37 @@ describe("the consumer of a billing notice: the recipient", () => {
 });
 
 describe("the consumer of a billing notice: the provider's answer", () => {
+  it("writes the first attempt before the send, and keeps it when the send throws", async () => {
+    spyLogger();
+    const { dependencies, notices, send } = setup();
+    const order: string[] = [];
+    notices.markAttempted.mockImplementation(() => {
+      order.push("attempted");
+      return Promise.resolve(true);
+    });
+    send.mockImplementation(() => {
+      order.push("send");
+      return Promise.reject(new Error("the network broke"));
+    });
+
+    await expect(handleBillingNotice(dependencies, envelope())).rejects.toThrow(
+      "the network broke"
+    );
+
+    expect(order).toEqual(["attempted", "send"]);
+    expect(notices.markAttempted).toHaveBeenCalledWith(NOTICE, ORG);
+    expect(notices.markSent).not.toHaveBeenCalled();
+    expect(notices.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("does not write an attempt for a notice it does not send (not true any more, no recipient)", async () => {
+    spyLogger();
+    const noRecipient = setup({ recipient: null });
+    await handleBillingNotice(noRecipient.dependencies, envelope());
+    expect(noRecipient.notices.markAttempted).not.toHaveBeenCalled();
+    expect(noRecipient.send).not.toHaveBeenCalled();
+  });
+
   it("sends once under the notice's ID as the idempotency key, then marks it sent", async () => {
     const spies = spyLogger();
     const { dependencies, notices, send } = setup();
@@ -1077,6 +1136,7 @@ describe("the consumer's dependencies in the Worker", () => {
       listOwedNotices: vi.fn(() =>
         Promise.resolve([{ noticeId: NOTICE, organizationId: ORG }])
       ),
+      markNoticeAttempted: vi.fn(() => Promise.resolve(true)),
       markNoticeFailed: vi.fn(() => Promise.resolve(true)),
       markNoticeSent: vi.fn(() => Promise.resolve(true)),
       markNoticeSkipped: vi.fn(() => Promise.resolve(false)),
@@ -1208,6 +1268,8 @@ describe("the consumer's dependencies in the Worker", () => {
       { noticeId: NOTICE, organizationId: ORG },
     ]);
     expect(store.listOwedNotices).toHaveBeenCalledWith(NOW, 5);
+    expect(await dependencies.notices.markAttempted(NOTICE, ORG)).toBe(true);
+    expect(store.markNoticeAttempted).toHaveBeenCalledWith(NOTICE, ORG);
     expect(await dependencies.notices.markSent(NOTICE, ORG)).toBe(true);
     expect(store.markNoticeSent).toHaveBeenCalledWith(NOTICE, ORG);
     await dependencies.notices.markFailed(NOTICE, ORG, "email_rejected");

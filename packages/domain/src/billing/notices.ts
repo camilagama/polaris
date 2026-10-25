@@ -585,8 +585,8 @@ function renewalFailedStillTrue(
   ) {
     return "recovered";
   }
-  // the d0 has no day rule: it goes out while the grace is the same one, within the delivery window (23 h,
-  // `delivery_window_passed`); the reminders only while the renewal stands and on their own day
+  // the d0 has no day rule: it goes out while the grace is the same one, until the delivery window (23 h from the
+  // first attempt, `delivery_window_passed`) has passed; the reminders only while the renewal stands and on their own day
   if (key.milestone === "d0") {
     return null;
   }
