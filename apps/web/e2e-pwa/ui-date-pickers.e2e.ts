@@ -185,6 +185,90 @@ test("Tentar novamente refaz o pedido do chunk sem recarregar a página e o cale
   ).toBe(true);
 });
 
+/**
+ * Safari: the failed `import()` does not name the chunk, so there is no second try by path. The chunk answers with a
+ * module that throws Safari's own message, which Chromium hands to the page as the reason of the rejection.
+ */
+const SAFARI_MESSAGE = "Importing a module script failed.";
+const RELOAD_TEXT = "Recarregar a página";
+const RELOAD_OFFLINE_TEXT =
+  "Sem internet. Conecte-se e recarregue a página para abrir o calendário.";
+
+async function chunkFailsLikeSafari(page: Page, count: { asked: number }) {
+  await page.route(CALENDAR_CHUNK, (route) => {
+    count.asked += 1;
+    return route.fulfill({
+      body: `throw new Error(${JSON.stringify(SAFARI_MESSAGE)});`,
+      contentType: "text/javascript",
+    });
+  });
+}
+
+test("Safari com rede: o botão é Recarregar a página, nada recarrega sozinho e o clique recarrega", async ({
+  page,
+}) => {
+  const count = { asked: 0 };
+  await chunkFailsLikeSafari(page, count);
+  await page.goto("/ui-galeria");
+  await expect(inlineBox(page)).toHaveText(`${FAILED_TEXT}${RELOAD_TEXT}`);
+  await expect(
+    inlineBox(page).getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as { stillHere: boolean }).stillHere = true;
+  });
+  // a while with the box open: the page is not reloaded by itself
+  await page.waitForTimeout(500);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { stillHere?: boolean }).stillHere
+    )
+  ).toBe(true);
+  expect(count.asked).toBe(1);
+  const reloaded = page.waitForEvent("load");
+  await inlineBox(page).getByRole("button", { name: RELOAD_TEXT }).click();
+  await reloaded;
+  // a new page load: what the old page kept in memory is gone
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { stillHere?: boolean }).stillHere
+    )
+  ).toBeUndefined();
+});
+
+test("Safari sem internet: manda conectar e recarregar, sem botão; com a conexão de volta aparece Recarregar a página, sem recarregar", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as unknown as { offlineNow: boolean }).offlineNow = true;
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => !(window as unknown as { offlineNow: boolean }).offlineNow,
+    });
+  });
+  const count = { asked: 0 };
+  await chunkFailsLikeSafari(page, count);
+  await page.goto("/ui-galeria");
+  await expect(inlineBox(page)).toHaveText(RELOAD_OFFLINE_TEXT);
+  await expect(inlineBox(page).getByRole("button")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as { stillHere: boolean }).stillHere = true;
+  });
+
+  await page.evaluate(() => {
+    (window as unknown as { offlineNow: boolean }).offlineNow = false;
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect(inlineBox(page)).toHaveText(`${FAILED_TEXT}${RELOAD_TEXT}`);
+  // the same page, the chunk not asked for again: only the person's click reloads
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { stillHere?: boolean }).stillHere
+    )
+  ).toBe(true);
+  expect(count.asked).toBe(1);
+});
+
 test("enquanto o chunk não chega a caixa de espera é um status que diz Abrindo o calendário… e tem o tamanho do mês", async ({
   page,
 }) => {

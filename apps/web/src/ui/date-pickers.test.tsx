@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Calendar } from "@/ui/calendar";
-import { calendarChunkPath, OnDemandCalendar } from "@/ui/calendar-on-demand";
+import {
+  CalendarFailure,
+  calendarChunkPath,
+  OnDemandCalendar,
+  whenBackOnline,
+} from "@/ui/calendar-on-demand";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
@@ -231,3 +236,131 @@ describe("calendarChunkPath, o chunk que falhou", () => {
     expect(calendarChunkPath(undefined, origin)).toBeNull();
   });
 });
+
+describe("OnDemandCalendar, a falha onde o navegador não diz o chunk (Safari: só uma nova carga de página)", () => {
+  const failure = (
+    props: { inPlace?: boolean; offline?: boolean; unsent?: boolean } = {}
+  ) =>
+    html(
+      <CalendarFailure
+        inPlace={props.inPlace ?? false}
+        offline={props.offline ?? false}
+        onReload={noop}
+        onRetry={noop}
+        unsent={props.unsent ?? false}
+      />
+    );
+
+  it("com rede e sem trabalho a perder: diz que não abriu e o botão se chama Recarregar a página", () => {
+    const markup = failure();
+    expect(markup).toContain("O calendário não abriu.");
+    expect(markup).toContain("Recarregar a página");
+    expect(markup).not.toContain("Tentar novamente");
+    expect(markup).not.toContain("apaga");
+  });
+
+  it("com rede e trabalho a perder: avisa antes do botão que recarregar apaga o que foi preenchido", () => {
+    const markup = failure({ unsent: true });
+    expect(markup).toContain(
+      "O calendário não abriu. Recarregar a página apaga o que você preencheu nesta tela."
+    );
+    expect(markup.indexOf("apaga")).toBeLessThan(markup.indexOf("<button"));
+    expect(markup).toContain("Recarregar a página</button>");
+  });
+
+  it("sem rede: manda conectar e recarregar, não promete abrir sozinho e não tem botão", () => {
+    for (const unsent of [false, true]) {
+      const markup = failure({ offline: true, unsent });
+      expect(markup).toContain(
+        "Sem internet. Conecte-se e recarregue a página para abrir o calendário."
+      );
+      expect(markup).not.toContain("conexão voltar");
+      expect(markup).not.toContain("<button");
+    }
+  });
+
+  it("o caminho com o chunk conhecido não muda: Tentar novamente, e sem rede abre sozinho", () => {
+    expect(failure({ inPlace: true, unsent: true })).toContain(
+      "O calendário não abriu.</p><button"
+    );
+    expect(failure({ inPlace: true, unsent: true })).toContain(
+      "Tentar novamente"
+    );
+    const offline = failure({ inPlace: true, offline: true });
+    expect(offline).toContain(
+      "Sem internet. O calendário abre quando a conexão voltar."
+    );
+    expect(offline).not.toContain("<button");
+  });
+});
+
+describe("whenBackOnline, a volta da conexão no caminho sem o chunk conhecido", () => {
+  const fakeWindow = new EventTarget();
+  const reload = vi.fn();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    reload.mockReset();
+  });
+
+  const stubDevice = (onLine: boolean) => {
+    vi.stubGlobal(
+      "window",
+      Object.assign(fakeWindow, { location: { reload } })
+    );
+    vi.stubGlobal("navigator", { onLine });
+  };
+
+  it("sem rede: espera o evento online, troca o texto pelo do botão e nunca recarrega sozinho", () => {
+    stubDevice(false);
+    let offline = true;
+    const stop = whenBackOnline(() => {
+      offline = false;
+    });
+    const show = () => failureMarkup({ offline });
+    expect(show()).not.toContain("<button");
+    expect(offline).toBe(true);
+    fakeWindow.dispatchEvent(new Event("online"));
+    expect(offline).toBe(false);
+    expect(show()).toContain("Recarregar a página</button>");
+    expect(reload).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("com trabalho a perder, o estado com rede traz o aviso junto do botão", () => {
+    expect(failureMarkup({ offline: false, unsent: true })).toContain(
+      "Recarregar a página apaga o que você preencheu nesta tela."
+    );
+  });
+
+  it("para de escutar ao desmontar", () => {
+    stubDevice(false);
+    const back = vi.fn();
+    const stop = whenBackOnline(back);
+    stop();
+    fakeWindow.dispatchEvent(new Event("online"));
+    expect(back).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("se a conexão já voltou, avisa na hora (nenhum evento viria) e não escuta", () => {
+    stubDevice(true);
+    const back = vi.fn();
+    whenBackOnline(back);
+    expect(back).toHaveBeenCalledTimes(1);
+    fakeWindow.dispatchEvent(new Event("online"));
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+function failureMarkup(props: { offline: boolean; unsent?: boolean }) {
+  return html(
+    <CalendarFailure
+      inPlace={false}
+      offline={props.offline}
+      onReload={noop}
+      onRetry={noop}
+      unsent={props.unsent ?? false}
+    />
+  );
+}

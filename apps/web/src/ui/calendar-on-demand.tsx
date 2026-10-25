@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useHasUnsentWork } from "@/lib/unsent-work";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import type { CalendarProps } from "./calendar";
@@ -8,7 +9,10 @@ import type { CalendarProps } from "./calendar";
  * downloaded when the first calendar is asked for, never with the shell's first script, the same way as the charts
  * (`charts/on-demand.tsx`). The service worker precaches the chunk, so it opens offline too once the app is
  * installed. Until it arrives a box of the size of a month holds the place; if the download fails the box says so,
- * and offers "Tentar novamente" (with no connection it says so and tries again by itself when it is back).
+ * and offers "Tentar novamente" (with no connection it says so and tries again by itself when it is back). Where the
+ * browser does not name the chunk (Safari) the only second try is a new page load: the box offers "Recarregar a
+ * página" (only on a click, never by itself), warns when that would take what the person filled in, and with no
+ * connection says to connect and reload, with no button until the connection is back.
  *
  * The only module of the calendar that the rest of the app imports: it imports `calendar.tsx` as a type only, and a
  * guard of the budget plugin fails the build when a module of the calendar is in another chunk.
@@ -105,24 +109,37 @@ type State =
 const deviceOffline = () =>
   typeof navigator !== "undefined" && navigator.onLine === false;
 
-function useCalendarModule(): { retry: () => void; state: State } {
+/**
+ * Calls `back` once the device is online: at once when it already is (the connection came back between the failure
+ * and now, so no event is coming), else on the `online` event. Returns the function that stops listening.
+ */
+export function whenBackOnline(back: () => void): () => void {
+  if (!deviceOffline()) {
+    back();
+    return () => undefined;
+  }
+  window.addEventListener("online", back);
+  return () => window.removeEventListener("online", back);
+}
+
+function useCalendarModule(): {
+  reload: () => void;
+  retry: () => void;
+  state: State;
+} {
   // a chunk already downloaded draws on the first render: no box in its place, no jump
   const [state, setState] = useState<State>(
     loaded ? { module: loaded, status: "ready" } : { status: "loading" }
   );
   const waiting = state.status === "loading";
   const failed = state.status === "failed";
-  const again = failed && state.inPlace && state.offline;
   const inPlace = failed && state.inPlace;
-  const retry = useCallback(() => {
-    if (!inPlace) {
-      // the browser did not say which chunk failed (Safari), so it cannot be asked for again by its path: a new page
-      // load is the only second try
-      window.location.reload();
-      return;
-    }
-    setState({ status: "loading" });
-  }, [inPlace]);
+  const again = inPlace && state.offline;
+  const offlineWithoutRetry = failed && !state.inPlace && state.offline;
+  const retry = useCallback(() => setState({ status: "loading" }), []);
+  // the browser did not say which chunk failed (Safari), so it cannot be asked for again by its path: a new page load
+  // is the only second try, and only the person's click starts it
+  const reload = useCallback(() => window.location.reload(), []);
   useEffect(() => {
     if (!waiting) {
       return;
@@ -158,28 +175,82 @@ function useCalendarModule(): { retry: () => void; state: State } {
   useEffect(() => {
     // "abre quando a conexão voltar": with no connection the calendar asks again by itself when it is back (never by
     // reloading the page, which would take what the person typed: only when the chunk can be asked for again)
-    if (!again) {
+    return again ? whenBackOnline(retry) : undefined;
+  }, [again, retry]);
+  useEffect(() => {
+    // no way to ask again without a new page load: when the connection is back the box swaps its text for the one
+    // with the button to reload, and the click stays the person's
+    if (!offlineWithoutRetry) {
       return;
     }
-    const ask = () => setState({ status: "loading" });
-    if (!deviceOffline()) {
-      // the connection came back between the failure and this effect: no event is coming
-      ask();
-      return;
-    }
-    window.addEventListener("online", ask);
-    return () => window.removeEventListener("online", ask);
-  }, [again]);
-  return { retry, state };
+    return whenBackOnline(() =>
+      setState((now) =>
+        now.status === "failed" ? { ...now, offline: false } : now
+      )
+    );
+  }, [offlineWithoutRetry]);
+  return { reload, retry, state };
 }
 
 /** The texts of the box that holds the place of the calendar (DESIGN.md, "Datas"). */
 const LOADING_TEXT = "Abrindo o calendário…";
 const FAILED_TEXT = "O calendário não abriu.";
 const OFFLINE_TEXT = "Sem internet. O calendário abre quando a conexão voltar.";
+const OFFLINE_RELOAD_TEXT =
+  "Sem internet. Conecte-se e recarregue a página para abrir o calendário.";
+const RELOAD_WARNING =
+  "Recarregar a página apaga o que você preencheu nesta tela.";
+
+interface FailureProps {
+  inPlace: boolean;
+  offline: boolean;
+  onReload: () => void;
+  onRetry: () => void;
+  /** Whether a screen holds work that is typed and not sent (a reload would take it). */
+  unsent: boolean;
+}
+
+/** What the box says and offers once the download failed, for each way the second try can be made. */
+export function CalendarFailure({
+  inPlace,
+  offline,
+  onReload,
+  onRetry,
+  unsent,
+}: FailureProps) {
+  if (inPlace) {
+    return (
+      <>
+        <p>{offline ? OFFLINE_TEXT : FAILED_TEXT}</p>
+        {offline ? null : (
+          <Button onClick={onRetry} size="sm" variant="outline">
+            Tentar novamente
+          </Button>
+        )}
+      </>
+    );
+  }
+  if (offline) {
+    return <p>{OFFLINE_RELOAD_TEXT}</p>;
+  }
+  return (
+    <>
+      <p>{unsent ? `${FAILED_TEXT} ${RELOAD_WARNING}` : FAILED_TEXT}</p>
+      <Button onClick={onReload} size="sm" variant="outline">
+        Recarregar a página
+      </Button>
+    </>
+  );
+}
+
+/** `CalendarFailure` with the page's unsent work read live (the work can change while the box is shown). */
+function FailedBox(props: Omit<FailureProps, "unsent">) {
+  const unsent = useHasUnsentWork();
+  return <CalendarFailure {...props} unsent={unsent} />;
+}
 
 export function OnDemandCalendar(props: CalendarProps) {
-  const { retry, state } = useCalendarModule();
+  const { reload, retry, state } = useCalendarModule();
   if (state.status === "ready") {
     return <state.module.Calendar {...props} />;
   }
@@ -198,14 +269,12 @@ export function OnDemandCalendar(props: CalendarProps) {
       {state.status === "loading" ? (
         <span className="sr-only">{LOADING_TEXT}</span>
       ) : (
-        <>
-          <p>{state.offline ? OFFLINE_TEXT : FAILED_TEXT}</p>
-          {state.offline && state.inPlace ? null : (
-            <Button onClick={retry} size="sm" variant="outline">
-              Tentar novamente
-            </Button>
-          )}
-        </>
+        <FailedBox
+          inPlace={state.inPlace}
+          offline={state.offline}
+          onReload={reload}
+          onRetry={retry}
+        />
       )}
     </div>
   );
