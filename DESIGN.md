@@ -89,7 +89,7 @@ Este arquivo define direção visual e de interação, não bibliotecas; a base 
 
 ## Datas
 
-Desenho da padronização de 24/10/2026 (Petković), componentes em `apps/web/src/ui/` (t363); as telas trocam os `<input type="date">` em tarefas próprias.
+Desenho da padronização de 24/10/2026 (Petković), componentes em `apps/web/src/ui/` (t363); Metas, Despesas, Despesas recorrentes, Estoque e o Histórico já usam os seletores (t373); o período do Resultado e o `type="month"` das Despesas ficam para tarefas próprias.
 
 - **Data única (`DatePicker`):** botão de contorno com o ícone de calendário e a data escrita "24/10/2026" ("Escolher data" sem data); abre o mês num Popover, com "Hoje" no rodapé. Um toque num dia escolhe e fecha. O nome do botão é o rótulo do campo e o texto dele ("Data de competência, 24/10/2026"). Erro: "Escolha uma data", nunca "campo obrigatório".
 - **Período (`DateRangePicker`):** um campo só, no lugar de "De" e "Até": "01/10 a 24/10" ("24/10/2026" quando é um dia; o ano aparece quando o período não é todo do ano de hoje). Atalhos acima do mês, num segmentado pequeno: Hoje · 7 dias · Este mês · Mês passado (contados do dia da loja). O primeiro toque marca o início e o popover fica aberto ("Início 10/10/2026. Escolha o último dia."); o segundo fecha o período, e um dia antes do início vira o início, então o período invertido não existe. "Limpar" no rodapé. Dois meses lado a lado a partir de 1280 px; abaixo, um.

@@ -35,15 +35,12 @@ interface ExpenseTextFieldProps {
   inputMode?: ComponentProps<"input">["inputMode"];
   label: string;
   maxLength?: number | undefined;
-  min?: string | undefined;
   /** The draft field the change writes (the form reads it from the event). */
   name?: string | undefined;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   /** "Opcional" beside the label, in the same words on every form. */
   optional?: boolean | undefined;
   placeholder?: string | undefined;
-  /** A date takes the browser's picker; the default is text. */
-  type?: "date" | "text" | undefined;
   value: string;
 }
 
@@ -57,12 +54,10 @@ export function ExpenseTextField({
   inputMode,
   label,
   maxLength,
-  min,
   name,
   onChange,
   optional,
   placeholder,
-  type,
   value,
 }: ExpenseTextFieldProps) {
   return (
@@ -83,11 +78,9 @@ export function ExpenseTextField({
           id={id}
           inputMode={inputMode}
           maxLength={maxLength}
-          min={min}
           name={name}
           onChange={onChange}
           placeholder={placeholder}
-          type={type}
           value={value}
         />
       </InputGroup>

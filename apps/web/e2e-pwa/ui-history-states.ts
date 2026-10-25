@@ -137,14 +137,19 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The period backwards: the message of the field. */
-  async periodError(page: Page) {
+  /** The period chosen in the calendar: the field shows "05/10 a 12/10" and the filter count is 1. */
+  async period(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
     await openFilters(page);
-    await page.getByLabel("De (data da venda)").fill("2026-10-20");
-    await page.getByLabel("Até (data da venda)").fill("2026-10-10");
-    await page.getByText("A data inicial é posterior à data final.").waitFor();
+    await page
+      .getByRole("button", { name: "Período (data da venda)," })
+      .click();
+    const popup = page.getByRole("dialog", { name: "Período (data da venda)" });
+    await popup.locator('button[data-day="2026-10-12"]').click();
+    await popup.locator('button[data-day="2026-10-05"]').click();
+    await popup.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Limpar filtros (1)" }).waitFor();
     await showScreenAlone(page);
   },
 };

@@ -193,13 +193,6 @@ export function activeFilterCount(filters: HistoryFilters): number {
   ].filter(Boolean).length;
 }
 
-/** The period is the only filter that can contradict itself. */
-export function periodError(filters: HistoryFilters): string | null {
-  return filters.from !== "" && filters.to !== "" && filters.from > filters.to
-    ? "A data inicial é posterior à data final."
-    : null;
-}
-
 type ListInput = Parameters<PolarisRpcClient["sale"]["list"]>[0];
 
 /** The list request: only the filters in use are sent. */

@@ -123,7 +123,7 @@ export function DatePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto gap-2 p-2"
+          className="max-h-(--available-height) w-auto gap-2 overflow-y-auto p-2"
           initialFocus={false}
         >
           <OnDemandCalendar

@@ -1,5 +1,6 @@
 import FunnelIcon from "lucide-react/dist/esm/icons/funnel";
 import { useCallback, useState } from "react";
+import type { DateRange } from "@/ui/date-values";
 import { useIsMobile } from "@/lib/use-mobile";
 import { Button } from "@/ui/button";
 import {
@@ -7,7 +8,7 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/ui/collapsible";
-import { SelectField, TextField } from "./sale-fields";
+import { DateRangeField, SelectField, TextField } from "./sale-fields";
 import {
   activeFilterCount,
   HISTORY_STATUS_FILTERS,
@@ -32,7 +33,6 @@ interface FiltersProps {
   offline: boolean;
   onChange: (changes: Partial<HistoryFilters>) => void;
   onReset: () => void;
-  period: string | null;
 }
 
 export function HistoryFiltersBar({
@@ -40,14 +40,13 @@ export function HistoryFiltersBar({
   offline,
   onChange,
   onReset,
-  period,
 }: FiltersProps) {
   const active = activeFilterCount(filters);
-  const handleFrom = useCallback(
-    (from: string) => onChange({ from }),
+  const handlePeriod = useCallback(
+    (range: DateRange | null) =>
+      onChange({ from: range?.from ?? "", to: range?.to ?? "" }),
     [onChange]
   );
-  const handleTo = useCallback((to: string) => onChange({ to }), [onChange]);
   const handleStatus = useCallback(
     (value: string) => {
       const status = value === ALL ? "" : value;
@@ -63,28 +62,19 @@ export function HistoryFiltersBar({
     (query: string) => onChange({ query }),
     [onChange]
   );
-  // Below 760 px the five fields would push the first sale a screen down: they sit in a panel under "Filtrar",
-  // closed unless the screen arrives with a filter on, and held open while the period contradicts itself (its
-  // message is in the panel). From 760 px they are in the page, as before.
+  // Below 760 px the four fields would push the first sale a screen down: they sit in a panel under "Filtrar",
+  // closed unless the screen arrives with a filter on. From 760 px they are in the page, as before.
   const mobile = useIsMobile();
   const [open, setOpen] = useState(active > 0);
   const fields = (
     <>
-      <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <TextField
-          id="history-from"
-          label="De (data da venda)"
-          onChange={handleFrom}
-          type="date"
-          value={filters.from}
-        />
-        <TextField
-          error={period ?? undefined}
-          id="history-to"
-          label="Até (data da venda)"
-          onChange={handleTo}
-          type="date"
-          value={filters.to}
+      <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DateRangeField
+          from={filters.from}
+          id="history-period"
+          label="Período (data da venda)"
+          onChange={handlePeriod}
+          to={filters.to}
         />
         <SelectField
           id="history-status"
@@ -124,7 +114,7 @@ export function HistoryFiltersBar({
   return (
     <search aria-label="Filtrar vendas" className="grid gap-3">
       {mobile ? (
-        <Collapsible onOpenChange={setOpen} open={open || period !== null}>
+        <Collapsible onOpenChange={setOpen} open={open}>
           <CollapsibleTrigger render={<Button variant="outline" />}>
             <FunnelIcon aria-hidden="true" data-icon="inline-start" />
             {active > 0 ? `Filtrar · ${active}` : "Filtrar"}

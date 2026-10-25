@@ -175,7 +175,7 @@ export function DateRangePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto max-w-[calc(100vw-1rem)] gap-3 p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto p-2"
           initialFocus={false}
         >
           {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
