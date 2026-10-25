@@ -18,10 +18,11 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   sees what a screen costs.
  * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
  *   others, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
- *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. It is in the
- *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's
+ *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. `motion` is in
+ *   a chunk of its own (`motion-*.js`, t383), which the filter bar shares with the charts, and that chunk counts in this
+ *   line. It is in the precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's
  *   first script; it counts here and in no other line, so the baseline of the rest does not move for it. A guard fails
- *   the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
+ *   the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any other chunk, or when `motion` (`MOTION_MODULE`) is in a chunk that is neither the charts chunk nor the motion chunk (`chartsPlacementProblems`).
  * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
  *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
  *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
@@ -84,12 +85,22 @@ const FONT = /\.woff2?$/;
 const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 /** The chunk the charts live in: the one the `import()` of `src/ui/charts/charts.ts` makes, named after that file. */
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
+/** The chunk `motion` lives in, shared by the charts and the filter bar (t383): the one the group named `motion` of the Vite configs makes. */
+const MOTION_CHUNK = /(^|\/)assets\/motion-[\w-]+\.js$/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
  * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|motion|framer-motion|motion-dom|motion-utils|classnames)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
+/**
+ * The animation library and what only it brings (`motion`, `framer-motion`, `motion-dom`, `motion-utils`). The charts draw
+ * with it and so does the filter bar (`src/ui/filter-bar.tsx`, t383), so it cannot sit in the charts chunk alone: it has
+ * a chunk of its own, `motion-*.js`, which the charts chunk and the filter bar import. It belongs to that chunk or to the
+ * charts chunk and to no other, so it never comes with the shell's first script.
+ */
+export const MOTION_MODULE =
+  /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:motion|framer-motion|motion-dom|motion-utils)[\\/]/;
 /** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
 const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
 /**
@@ -220,7 +231,7 @@ export function measurePrecache(
       continue;
     }
     const gzip = gzipSync(bytes, { level: 9 }).byteLength;
-    if (CHARTS_CHUNK.test(path)) {
+    if (CHARTS_CHUNK.test(path) || MOTION_CHUNK.test(path)) {
       charts += gzip;
       continue;
     }
@@ -245,23 +256,33 @@ export function measurePrecache(
 }
 
 /**
- * One problem for each module of the charts that is in a chunk other than the charts chunk (the ids are those of the
- * modules of the bundle). A static import of a chart from a screen would put d3 in the shell's first script, outside
- * the 8 KB line that was set for the chunk and with no way to see it there.
+ * One problem for each module of the charts that is in a chunk other than the charts chunk, and for each module of
+ * `motion` that is in a chunk other than the charts chunk or the motion chunk (the ids are those of the modules of the
+ * bundle). A static import of a chart from a screen would put d3 in the shell's first script, outside the 8 KB line that
+ * was set for the chunk and with no way to see it there; the same for `motion`, which only the charts and the filter
+ * bar use, each loaded on demand.
  */
 export function chartsPlacementProblems(
   chunks: readonly ChunkModules[]
 ): string[] {
-  return chunks
-    .filter((chunk) => !CHARTS_CHUNK.test(chunk.fileName))
-    .flatMap((chunk) =>
-      Object.keys(chunk.modules)
-        .filter((id) => CHARTS_MODULE.test(id))
-        .map(
-          (id) =>
-            `chart module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the charts chunk`
-        )
-    );
+  return chunks.flatMap((chunk) => {
+    const inCharts = CHARTS_CHUNK.test(chunk.fileName);
+    const inMotion = MOTION_CHUNK.test(chunk.fileName);
+    return Object.keys(chunk.modules).flatMap((id) => {
+      const name = id.replace(NODE_MODULES_PREFIX, "");
+      if (!inCharts && CHARTS_MODULE.test(id)) {
+        return [
+          `chart module ${name} is in ${chunk.fileName}, outside the charts chunk`,
+        ];
+      }
+      if (!(inCharts || inMotion) && MOTION_MODULE.test(id)) {
+        return [
+          `motion module ${name} is in ${chunk.fileName}, outside the charts and motion chunks`,
+        ];
+      }
+      return [];
+    });
+  });
 }
 
 /**

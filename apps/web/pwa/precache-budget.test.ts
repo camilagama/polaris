@@ -690,6 +690,83 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
   });
 
+  it("counts the motion chunk in the charts line (the filter bar shares it with the charts), not in the rest", () => {
+    const files: Record<string, Uint8Array> = {
+      "assets/charts-Dk3jf9.js": random(10_000),
+      "assets/index-abc.js": random(10_000),
+      "assets/motion-B0SXIb_6.js": random(10_000),
+    };
+    const size = measurePrecache(
+      Object.keys(files),
+      (path) => files[path] as Uint8Array
+    );
+    const chartsOnly = measurePrecache(["assets/charts-Dk3jf9.js"], () =>
+      random(10_000)
+    );
+    expect(size.charts).toBeGreaterThan(chartsOnly.charts);
+    const withoutCharts = measurePrecache(["assets/index-abc.js"], () =>
+      random(10_000)
+    );
+    expect(size.rest).toBe(withoutCharts.rest);
+    // a name that only starts like it is another chunk
+    expect(
+      measurePrecache(["assets/motion-page-abc.css"], () => random(1000)).charts
+    ).toBe(0);
+  });
+
+  it("fails motion, framer-motion or motion-utils in a chunk that is neither the charts nor the motion chunk (control: in either of them it passes; a chart module still cannot sit in the motion chunk)", () => {
+    const motion =
+      "/repo/node_modules/.bun/motion@14.3.0/node_modules/motion/dist/es/react.mjs";
+    const framer =
+      "/repo/node_modules/.bun/framer-motion@14.3.0/node_modules/framer-motion/dist/es/context/PresenceContext.mjs";
+    const utils =
+      "/repo/node_modules/.bun/motion-utils@14.3.0/node_modules/motion-utils/dist/es/noop.mjs";
+    const heavy = {
+      [framer]: { renderedLength: 1 },
+      [motion]: { renderedLength: 1 },
+      [utils]: { renderedLength: 1 },
+    };
+    expect(
+      chartsPlacementProblems([
+        { fileName: "assets/motion-B0SXIb_6.js", modules: heavy },
+        { fileName: "assets/charts-Dk3jf9.js", modules: heavy },
+        {
+          fileName: "assets/index-abc.js",
+          modules: {
+            "/repo/apps/web/src/ui/filter-bar.tsx": { renderedLength: 1 },
+          },
+        },
+      ])
+    ).toEqual([]);
+    expect(
+      chartsPlacementProblems([
+        { fileName: "assets/react-Ds8upiYS.js", modules: heavy },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "motion module framer-motion/dist/es/context/PresenceContext.mjs is in assets/react-Ds8upiYS.js, outside the charts and motion chunks"
+      ),
+      expect.stringContaining("motion module motion/dist/es/react.mjs"),
+      expect.stringContaining("motion module motion-utils/dist/es/noop.mjs"),
+    ]);
+    expect(
+      chartsPlacementProblems([
+        {
+          fileName: "assets/motion-B0SXIb_6.js",
+          modules: {
+            "/repo/apps/web/src/ui/charts/area-chart.tsx": {
+              renderedLength: 1,
+            },
+          },
+        },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "chart module /repo/apps/web/src/ui/charts/area-chart.tsx is in assets/motion-B0SXIb_6.js, outside the charts chunk"
+      ),
+    ]);
+  });
+
   it("fails the calendar, react-day-picker or date-fns in a chunk that is not the calendar chunk (control: in its own chunk, and the loader and the pickers anywhere, it passes)", () => {
     const calendar = "/repo/apps/web/src/ui/calendar.tsx";
     const dayPicker =

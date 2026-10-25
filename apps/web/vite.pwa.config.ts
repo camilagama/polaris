@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import { precacheBudgetPlugin } from "./pwa/precache-budget";
+import { MOTION_MODULE, precacheBudgetPlugin } from "./pwa/precache-budget";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -32,6 +32,14 @@ export default defineConfig({
     ...uiBuild.build,
     emptyOutDir: true,
     outDir: "dist/pwa-e2e",
+    // the same chunk for `motion` as the production build (vite.config.ts)
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{ name: "motion", priority: 30, test: MOTION_MODULE }],
+        },
+      },
+    },
   },
   // The sale screen is measured in the lab of the screens, over the real offline runtime (the runtime is off in
   // the shell of this build: it needs a session, which the static server does not have).

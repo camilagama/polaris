@@ -3,7 +3,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { legalBuildGuardPlugin } from "./legal/legal-build-guard-plugin";
-import { precacheBudgetPlugin } from "./pwa/precache-budget";
+import { MOTION_MODULE, precacheBudgetPlugin } from "./pwa/precache-budget";
 import { appShellHeadersPlugin, sentryBuildSettings } from "./pwa/sentry-build";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
@@ -40,6 +40,13 @@ export default defineConfig(({ mode }) => {
           // gzip in the precache for no new code (t233). One group keeps them in a single chunk, with what they import.
           codeSplitting: {
             groups: [
+              // `motion` is used by the charts and by the filter bar, each loaded on demand: one chunk of its own, so it is
+              // neither in the shell's first script nor copied into two chunks (the guard of `pwa/precache-budget.ts`).
+              {
+                name: "motion",
+                priority: 30,
+                test: MOTION_MODULE,
+              },
               {
                 name: "app-core",
                 priority: 20,
