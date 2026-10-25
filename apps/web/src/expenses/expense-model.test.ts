@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EARLIEST_EXPENSE_MONTH,
   EXPENSE_GROUP_ORDER,
   type ExpenseDraft,
   expenseGroupLabel,
@@ -191,13 +192,31 @@ describe("months", () => {
     expect(moveMonthCursor("2026-10", "PageDown")).toBe("2027-10");
     expect(moveMonthCursor("2026-10", "Home")).toBe("2026-01");
     expect(moveMonthCursor("2026-10", "End")).toBe("2026-12");
-    expect(moveMonthCursor("0005-03", "Home")).toBe("0005-01");
+    expect(moveMonthCursor("2005-03", "Home")).toBe("2005-01");
+    // the first month of the grid is January 2000 (the floor of the Data de competência): it is reached, not passed
+    expect(moveMonthCursor("2000-02", "ArrowLeft")).toBe("2000-01");
+    expect(moveMonthCursor("2000-04", "ArrowUp")).toBe("2000-01");
+    expect(moveMonthCursor("2001-01", "ArrowLeft")).toBe("2000-12");
+    expect(moveMonthCursor("2001-03", "PageUp")).toBe("2000-03");
+    expect(moveMonthCursor("2000-06", "Home")).toBe("2000-01");
     // the edges: the key is the grid's, so it is taken, and the cursor stays
+    expect(moveMonthCursor("2000-01", "ArrowLeft")).toBe("2000-01");
+    expect(moveMonthCursor("2000-03", "ArrowUp")).toBe("2000-03");
+    expect(moveMonthCursor("2000-03", "PageUp")).toBe("2000-03");
+    // a month the arrows beside the picker reached before 2000 stays where it is going back, and still moves forward
+    expect(moveMonthCursor("1999-06", "PageUp")).toBe("1999-06");
+    expect(moveMonthCursor("1999-06", "Home")).toBe("1999-06");
+    expect(moveMonthCursor("1999-06", "ArrowLeft")).toBe("1999-06");
+    expect(moveMonthCursor("1999-06", "ArrowRight")).toBe("1999-07");
+    expect(moveMonthCursor("1999-06", "PageDown")).toBe("2000-06");
+    expect(moveMonthCursor("1999-12", "End")).toBe("1999-12");
     expect(moveMonthCursor("0000-01", "ArrowLeft")).toBe("0000-01");
-    expect(moveMonthCursor("0000-03", "PageUp")).toBe("0000-03");
+    // the future is free, up to the end of the calendar
+    expect(moveMonthCursor("2026-10", "PageDown")).toBe("2027-10");
     expect(moveMonthCursor("9999-12", "ArrowRight")).toBe("9999-12");
     expect(moveMonthCursor("9999-11", "ArrowDown")).toBe("9999-11");
     expect(moveMonthCursor("9999-02", "PageDown")).toBe("9999-02");
+    expect(EARLIEST_EXPENSE_MONTH).toBe("2000-01");
     // not a key of the grid, and not a month
     expect(moveMonthCursor("2026-10", "Enter")).toBeNull();
     expect(moveMonthCursor("x", "ArrowRight")).toBeNull();

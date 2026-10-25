@@ -12,17 +12,24 @@ import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { Field, FieldLabel } from "@/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { formatMonthLabel, moveMonthCursor, shiftMonth } from "./expense-model";
+import {
+  EARLIEST_EXPENSE_MONTH,
+  formatMonthLabel,
+  moveMonthCursor,
+  shiftMonth,
+} from "./expense-model";
 
-/* The month picker of the v5.1 (Despesas, and Resultado after it): "‹ Outubro de 2026 ›" glued in one ButtonGroup.
-   The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months; a touch or a click
-   on a month chooses it and closes. The month is written by the screen, never by the browser's locale, so there is
-   no native month field and no fallback for the browsers that lack one. The phone uses the same Popover; the
-   full-screen Dialog comes with t331. Every month from 0000-01 to 9999-12 can be chosen, as before: the list of the
-   expenses reads any month, future ones included. */
+/* The month picker of Despesas (v5.1): "‹ Outubro de 2026 ›" glued in one ButtonGroup.
+   The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
+   "Este mês" (the store's current month, like the "Hoje" of the DatePicker); a touch or a click on a month chooses it
+   and closes. The month is written by the screen, never by the browser's locale, so there is no native month field
+   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes with
+   t331. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
+   list of the expenses reads any month, future ones included. The arrows beside the month keep reaching every month
+   from 0000-01 to 9999-12, as before. */
 
 const MONTH_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
-const FIRST_YEAR = 0;
+const FIRST_YEAR = Number(EARLIEST_EXPENSE_MONTH.slice(0, 4));
 const LAST_YEAR = 9999;
 
 function capitalized(text: string): string {
@@ -56,9 +63,11 @@ interface MonthCellProps {
 function MonthCell({ cursor, month, onChoose, selected }: MonthCellProps) {
   const choose = useCallback(() => onChoose(month), [month, onChoose]);
   const words = formatMonthLabel(month);
+  const short = capitalized(words.slice(0, 3));
   return (
     <button
-      aria-label={words}
+      // the name starts with the text the cell shows ("Jan, janeiro de 2026"): the name holds the visible text (WCAG 2.5.3)
+      aria-label={`${short}, ${words}`}
       aria-pressed={selected}
       className="touch-hit focus-ring relative inline-flex h-ctl-md touch:h-11 items-center justify-center rounded-md border border-transparent font-medium text-sm transition-[background-color,color] hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground"
       data-month={month}
@@ -66,12 +75,14 @@ function MonthCell({ cursor, month, onChoose, selected }: MonthCellProps) {
       tabIndex={cursor ? 0 : -1}
       type="button"
     >
-      <span aria-hidden="true">{capitalized(words.slice(0, 3))}</span>
+      {short}
     </button>
   );
 }
 
 interface MonthGridProps {
+  /** The store's current month, YYYY-MM. */
+  currentMonth: string;
   month: string;
   onChoose: (month: string) => void;
 }
@@ -79,9 +90,10 @@ interface MonthGridProps {
 /**
  * The year with its arrows over the twelve months. The arrow keys move the cursor in the grid (past January or
  * December it goes to the next or the previous year), Home and End go to the year's first and last month, PageUp and
- * PageDown to the same month of another year; Enter and Space choose, as on any button.
+ * PageDown to the same month of another year (none goes back past January 2000); Enter and Space choose, as on any
+ * button. "Este mês" in the footer chooses the store's current month.
  */
-function MonthGrid({ month, onChoose }: MonthGridProps) {
+function MonthGrid({ currentMonth, month, onChoose }: MonthGridProps) {
   const [cursor, setCursor] = useState(month);
   const grid = useRef<HTMLFieldSetElement>(null);
   // the grid is only mounted while the popover is open: the focus goes to the month on screen as it opens
@@ -111,17 +123,25 @@ function MonthGrid({ month, onChoose }: MonthGridProps) {
     },
     [cursor]
   );
+  // the arrows of the year are PageUp and PageDown: the same floor, the same edge
   const handlePreviousYear = useCallback(
-    () => setCursor((current) => shiftMonth(current, -12) ?? current),
+    () => setCursor((current) => moveMonthCursor(current, "PageUp") ?? current),
     []
   );
   const handleNextYear = useCallback(
-    () => setCursor((current) => shiftMonth(current, 12) ?? current),
+    () =>
+      setCursor((current) => moveMonthCursor(current, "PageDown") ?? current),
     []
   );
+  const handleCurrentMonth = useCallback(
+    () => onChoose(currentMonth),
+    [currentMonth, onChoose]
+  );
 
+  // gap-2.5: the 48 px touch area of an arrow (32 px + 8 above and below) and the one of a month (44 px + 2) end at the
+  // same line, not one over the other
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2.5">
       <div className="flex items-center justify-between gap-2">
         <Button
           aria-label="Ano anterior"
@@ -172,12 +192,24 @@ function MonthGrid({ month, onChoose }: MonthGridProps) {
           );
         })}
       </fieldset>
+      <div className="flex justify-end border-border border-t pt-2">
+        <Button
+          onClick={handleCurrentMonth}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Este mês
+        </Button>
+      </div>
     </div>
   );
 }
 
 interface MonthPickerProps {
   className?: string | undefined;
+  /** The store's current month, YYYY-MM: what "Este mês" chooses. */
+  currentMonth: string;
   id: string;
   label: string;
   /** YYYY-MM */
@@ -187,6 +219,7 @@ interface MonthPickerProps {
 
 export function MonthPicker({
   className,
+  currentMonth,
   id,
   label,
   month,
@@ -250,10 +283,14 @@ export function MonthPicker({
           <PopoverContent
             align="center"
             aria-label={label}
-            className="w-72"
+            className="w-72 gap-2 p-2"
             initialFocus={false}
           >
-            <MonthGrid month={month} onChoose={choose} />
+            <MonthGrid
+              currentMonth={currentMonth}
+              month={month}
+              onChoose={choose}
+            />
           </PopoverContent>
         </Popover>
         <Button

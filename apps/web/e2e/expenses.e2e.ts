@@ -739,6 +739,62 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   // the arrow after December goes to January of the next year
   await page.getByRole("button", { name: "Próximo mês" }).click();
   await expect(trigger).toHaveText("Janeiro de 2028");
+
+  // "Este mês" in the footer chooses the store's current month (the clock says October 2026), closes, gives the focus back
+  await trigger.click();
+  await expect(popup.getByText("2028", { exact: true })).toBeVisible();
+  await popup.getByRole("button", { name: "Este mês" }).click();
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await expect(trigger).toBeFocused();
+});
+
+test("a grade de meses não volta de janeiro de 2000, pelos botões nem pelo teclado, e o futuro continua livre", async ({
+  page,
+}) => {
+  const months = await openExpensesWatchingMonths(page);
+  const trigger = page.getByRole("button", { name: "Mês de competência," });
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  const previousYear = popup.getByRole("button", { name: "Ano anterior" });
+  const month = (name: string) => popup.getByRole("button", { name });
+
+  await trigger.click();
+  await expect(previousYear).not.toHaveAttribute("aria-disabled", "true");
+  for (let year = 2025; year >= 2001; year -= 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one year at a time, the grid redraws between them
+    await previousYear.click();
+    await expect(popup.getByText(String(year), { exact: true })).toBeVisible();
+  }
+  await expect(previousYear).not.toHaveAttribute("aria-disabled", "true");
+  await previousYear.click();
+  await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  // in 2000 the arrow is off, still focusable, and Enter on it does nothing
+  await expect(previousYear).toHaveAttribute("aria-disabled", "true");
+  await previousYear.focus();
+  await page.keyboard.press("Enter");
+  await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  await expect(
+    popup.getByRole("button", { name: "Próximo ano" })
+  ).not.toHaveAttribute("aria-disabled", "true");
+
+  // the keys stop at January 2000 too; going forward is free
+  await month("outubro de 2000").focus();
+  await page.keyboard.press("Home");
+  await expect(month("janeiro de 2000")).toBeFocused();
+  for (const key of ["ArrowLeft", "ArrowUp", "PageUp"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: the keys are pressed in order
+    await page.keyboard.press(key);
+    await expect(month("janeiro de 2000")).toBeFocused();
+    await expect(popup.getByText("2000", { exact: true })).toBeVisible();
+  }
+  await page.keyboard.press("PageDown");
+  await expect(month("janeiro de 2001")).toBeFocused();
+  await page.keyboard.press("PageUp");
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  await expect(trigger).toHaveText("Janeiro de 2000");
+  await expect.poll(() => months.at(-1)).toBe("2000-01");
 });
 
 test("o teclado abre a grade de meses, anda por ela e escolhe o mês", async ({

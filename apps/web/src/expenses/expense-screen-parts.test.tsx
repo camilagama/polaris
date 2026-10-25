@@ -19,6 +19,7 @@ describe("MonthPicker", () => {
   it("says the month in words in a button that opens the grid, between the two arrows, with no native month field", () => {
     const html = renderToStaticMarkup(
       <MonthPicker
+        currentMonth="2026-10"
         id="m"
         label="Mês de competência"
         month="2026-10"
@@ -35,7 +36,13 @@ describe("MonthPicker", () => {
 
   it("turns off the arrow past the first month there is", () => {
     const html = renderToStaticMarkup(
-      <MonthPicker id="m" label="Mês" month="0000-01" onChange={noop} />
+      <MonthPicker
+        currentMonth="2026-10"
+        id="m"
+        label="Mês"
+        month="0000-01"
+        onChange={noop}
+      />
     );
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     const previous = buttons.find((tag) => tag.includes("Mês anterior"));

@@ -849,6 +849,7 @@ export const SCREENS: UiScreen[] = [
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
   expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
   resultScreen("mês incompleto e gráfico de vendas", resultStates.list),

@@ -360,10 +360,14 @@ export function shiftMonth(month: string, delta: number): string | null {
   return `${String(year).padStart(4, "0")}-${twoDigits((index % 12) + 1)}`;
 }
 
+/** The first month the month grid goes to: the one of the first competence date an expense can have. */
+export const EARLIEST_EXPENSE_MONTH = monthOfDay(EARLIEST_EXPENSE_COMPETENCE);
+
 /**
  * Where a key of the month grid takes the cursor from `month`: the arrows move a month or a row, PageUp and PageDown a
- * year, Home and End go to the first and the last month of the year. At the edge of the calendar (0000-01 and 9999-12)
- * the cursor stays; null for a key that is not one of the grid's, or a non-month.
+ * year, Home and End go to the first and the last month of the year. The cursor never goes back past the first month
+ * of the calendar of the expenses (2000-01, like the Data de competência) and never forward past 9999-12; the future
+ * is free. At the edge it stays; null for a key that is not one of the grid's, or a non-month.
  */
 export function moveMonthCursor(month: string, key: string): string | null {
   const parsed = parseMonth(month);
@@ -371,6 +375,10 @@ export function moveMonthCursor(month: string, key: string): string | null {
     return null;
   }
   const prefix = String(parsed.year).padStart(4, "0");
+  const within = (target: string | null): string =>
+    target === null || (target < EARLIEST_EXPENSE_MONTH && target < month)
+      ? month
+      : target;
   const steps: Record<string, number> = {
     ArrowDown: 3,
     ArrowLeft: -1,
@@ -381,10 +389,10 @@ export function moveMonthCursor(month: string, key: string): string | null {
   };
   const step = steps[key];
   if (step !== undefined) {
-    return shiftMonth(month, step) ?? month;
+    return within(shiftMonth(month, step));
   }
   if (key === "Home") {
-    return `${prefix}-01`;
+    return within(`${prefix}-01`);
   }
   return key === "End" ? `${prefix}-12` : null;
 }
