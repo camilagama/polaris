@@ -361,12 +361,13 @@ export function useChartInteraction({
         onTouchStart: handleTouchStart,
         onTouchMove: handleTouchMove,
         onTouchEnd: handleTouchEnd,
+        onTouchCancel: handleTouchEnd,
       }
     : {};
 
   const interactionStyle: React.CSSProperties = {
     cursor: canInteract ? "crosshair" : "default",
-    touchAction: "none",
+    touchAction: "pan-y",
   };
 
   return {

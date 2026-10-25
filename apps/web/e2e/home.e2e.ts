@@ -674,6 +674,45 @@ test.describe("loja com venda", () => {
     );
     expect(periodCalls(server).length).toBeGreaterThan(before);
   });
+
+  test("o gráfico deixa a página rolar na vertical (pan-y) e a troca 7 → 30 dias mantém o mesmo gráfico (morph, não nova revelação)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    const chart = region(page, "Vendas por dia");
+    const area = chart.locator("[data-chart-area]");
+    await expect(area.locator("svg")).toBeVisible();
+
+    // touch-action: the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on
+    // the chart still scrolls the page (a "none" anywhere in the chain takes the vertical gesture away)
+    const touchActions = await area.evaluate((node) =>
+      [node, ...node.querySelectorAll("*")]
+        .map((element) => getComputedStyle(element).touchAction)
+        .filter((value) => value !== "auto")
+    );
+    expect(touchActions.length).toBeGreaterThan(1);
+    expect(new Set(touchActions)).toEqual(new Set(["pan-y"]));
+
+    // the same element after the change of period: it was not mounted again, so the path morphs
+    await chart
+      .locator("[data-chart]")
+      .evaluate((node) => node.setAttribute("data-first-mount", ""));
+    await expect(chart.locator('input[type="range"]')).toHaveAttribute(
+      "max",
+      "6"
+    );
+    await chart.getByRole("tab", { name: "30 dias" }).click();
+    await expect(chart.locator('input[type="range"]')).toHaveAttribute(
+      "max",
+      "29"
+    );
+    await expect(chart.locator("[data-chart]")).toHaveCount(1);
+    await expect(chart.locator("[data-chart][data-first-mount]")).toHaveCount(
+      1
+    );
+  });
 });
 
 test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {

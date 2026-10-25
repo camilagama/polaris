@@ -257,7 +257,8 @@ export function AreaChart({
   const secondaryData = secondary?.data;
   const signature = `${data.map((datum) => `${datum.label}:${datum.value}`).join()}|${(secondaryData ?? []).map((datum) => datum.value).join()}`;
   // the points follow the content of the series, not the identity of the arrays a screen builds on each render: the
-  // blocks redraw (and the memoized parts below recompute) only when a label or a value changes
+  // blocks redraw (and the memoized parts below recompute) only when a label or a value changes. `data` and
+  // `secondaryData` are left out of the dependencies on purpose: `signature` holds everything the points read from them
   const points = useMemo(() => chartPoints(data, secondaryData), [signature]);
   const rangeRef = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(

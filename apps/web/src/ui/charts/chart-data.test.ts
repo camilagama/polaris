@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveTimeSeriesYDomain } from "../bklit/charts/y-domain-utils";
 import {
   bestIndex,
   chartPoints,
@@ -39,6 +40,32 @@ describe("chartPoints", () => {
     expect(chartPoints(days([1]), undefined)[0]).not.toHaveProperty(
       "drawnSecondary"
     );
+  });
+});
+
+describe("the scale of two series", () => {
+  const domain = (sales: number[], costs: number[]) =>
+    resolveTimeSeriesYDomain(
+      chartPoints(days(sales), days(costs)),
+      ["drawn", "drawnSecondary"],
+      undefined
+    );
+
+  it("is one scale for both lines: it reaches the highest of the two, from zero", () => {
+    // costs above the sales: the sales line is drawn on the scale of the costs, not on a scale of its own
+    expect(domain([100, 200], [500, 1000])).toEqual([0, 1000 * 1.1]);
+    expect(domain([500, 1000], [100, 200])).toEqual([0, 1000 * 1.1]);
+  });
+
+  it("is the highest value of the two series that the margin of the y axis is measured by", () => {
+    const sales = days([100, 200]);
+    const costs = days([500, 1000]);
+    const top = Math.max(seriesMax(sales), seriesMax(costs));
+    expect(domain([100, 200], [500, 1000])[1]).toBe(top * 1.1);
+  });
+
+  it("draws a value below zero on the floor, so a negative cost does not pull the scale down", () => {
+    expect(domain([100, 200], [-50, 0])).toEqual([0, 200 * 1.1]);
   });
 });
 

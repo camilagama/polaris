@@ -187,11 +187,10 @@ export function ChartBlock({
           <TabsTrigger value="7">7 dias</TabsTrigger>
           <TabsTrigger value="30">30 dias</TabsTrigger>
         </TabsList>
-        <TabsContent value="7">
-          <Period days={7} figures={figures} />
-        </TabsContent>
-        <TabsContent value="30">
-          <Period days={30} figures={figures} />
+        {/* one panel for both periods, so the chart is the same instance when the tab changes: 7 → 30 days is the
+            morph of the path (500 ms) of the Bklit chart, not a new reveal of a chart that mounted again */}
+        <TabsContent value={days}>
+          <Period days={days === "30" ? 30 : 7} figures={figures} />
         </TabsContent>
       </Tabs>
     </HomeBlock>
