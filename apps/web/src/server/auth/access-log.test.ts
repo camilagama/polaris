@@ -206,7 +206,7 @@ function createAccessLogTestApp(
   options: {
     failWrites?: boolean;
     rejectWrites?: boolean;
-    requestId?: string;
+    requestId?: string | (() => string);
   } = {}
 ) {
   let failuresLeft = 0;
@@ -468,6 +468,33 @@ describe("the access log in the server of authentication", () => {
       await getSession(test, cookie, "203.0.113.20");
       expect(test.entries).toHaveLength(2);
       expect(test.entries[1]).toMatchObject({ ip: "203.0.113.20" });
+    });
+
+    it("keeps what one request recorded from silencing the next request of the same instance", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+      let requests = 0;
+      const test = createAccessLogTestApp({
+        requestId: () =>
+          `00000000-0000-4000-8000-${String(requests).padStart(12, "0")}`,
+      });
+      const cookie = await loggedIn(test, "203.0.113.20");
+
+      // one instance serves every request (the RPC context): the daily refresh of each day is a record of its own
+      const refreshOnDay = async (day: number) => {
+        requests += 1;
+        vi.setSystemTime(
+          new Date(Date.UTC(2026, 2, 1, 12) + day * (dayMilliseconds + 1000))
+        );
+        await getSession(test, cookie, "203.0.113.20");
+      };
+      await refreshOnDay(1);
+      await refreshOnDay(2);
+
+      expect(
+        test.entries.filter((item) => item.event === "session_refreshed")
+      ).toHaveLength(2);
+      expect(new Set(test.entries.map((item) => item.requestId)).size).toBe(2);
     });
 
     it("records a change of IP on the day of a refresh only once", async () => {

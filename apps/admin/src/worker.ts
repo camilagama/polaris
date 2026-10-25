@@ -34,6 +34,7 @@ import {
   scheduleOrganizationPurge,
   suspendOrganization,
 } from "@polaris/db/admin-support-repository";
+import { readRefundWindow } from "@polaris/db/admin-refund-window-repository";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { renewalBlocksPurge } from "@polaris/domain/billing/renewal-cancellation";
 import {
@@ -213,6 +214,12 @@ const dependencies: AdminDependencies = {
     scope: (principalId, caseId, input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         recordPrivacyScope(client, principalId, caseId, input)
+      ),
+  },
+  refundWindow: {
+    read: (principalId, caseId, organizationId, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readRefundWindow(client, principalId, caseId, organizationId)
       ),
   },
   report: (event, fields) => logger.warn(`admin.${event}`, fields),
