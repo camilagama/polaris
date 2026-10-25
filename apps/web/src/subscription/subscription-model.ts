@@ -1,0 +1,657 @@
+import type { BillingPlanView } from "@polaris/contracts";
+import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
+import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
+import { Money } from "@polaris/domain/money/money";
+import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import {
+  isConnectionFailure,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
+import {
+  accessDateText,
+  DAY_MS,
+  daysLeftText,
+  daysUntil,
+  lastDayOf,
+  plural,
+  untilText,
+} from "./plan-notice";
+
+/**
+ * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17; design t268 v2, § 11; the wireframes of
+ * the Petković). Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
+ * counted on the client but the day the trial's first charge would fall on, before any checkout (the same rule the
+ * server sets at the provider).
+ */
+
+export type PlanMethod = "card" | "pix_automatic";
+export type CycleMonths = 1 | 6 | 12;
+
+type BadgeTone = "ink" | "outline" | "secondary" | "warning";
+
+export interface PlanHeadline {
+  badge: { text: string; tone: BadgeTone } | null;
+  support: string | null;
+  title: string;
+}
+
+function freeSupport(plan: BillingPlanView): string | null {
+  const limit = plan.limits.variants;
+  return limit === null
+    ? null
+    : `Você usa ${plan.usage.variants} de ${limit} variantes.`;
+}
+
+/** The title, the badge and the line under it, one per state (AC-9, with the amendment of the "Ativo" line). */
+export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
+  const proUntil =
+    plan.accessEndsAt === null ? null : accessDateText(plan.accessEndsAt);
+  switch (plan.state) {
+    case "free":
+      return { badge: null, support: freeSupport(plan), title: "Plano Free" };
+    case "free_over_limit":
+      return {
+        badge: { text: "acima do limite", tone: "warning" },
+        support:
+          "Sua loja tem mais variantes do que o Free permite. Seus dados estão guardados.",
+        title: "Plano Free",
+      };
+    case "trial_setup":
+      return {
+        badge: null,
+        support: "O teste começa quando o pagamento ficar pronto.",
+        title: "Falta autorizar o pagamento",
+      };
+    case "grace": {
+      const today = saoPauloDateOf(now);
+      return {
+        badge:
+          plan.accessEndsAt === null
+            ? null
+            : {
+                text: daysLeftText(
+                  daysUntil(lastDayOf(plan.accessEndsAt), today)
+                ),
+                tone: "warning",
+              },
+        support:
+          proUntil === null
+            ? null
+            : `Seu Pro vai até ${proUntil}. Depois a loja volta ao Free e seus dados ficam.`,
+        title: "Pagamento não confirmado",
+      };
+    }
+    default:
+      break;
+  }
+  if (plan.renewalCancelled && proUntil !== null) {
+    return plan.refundPending
+      ? {
+          badge: { text: "reembolso pendente", tone: "warning" },
+          support:
+            "A renovação foi cancelada. O reembolso ainda não foi concluído.",
+          title: `Pro até ${proUntil}`,
+        }
+      : {
+          badge: { text: "Renovação cancelada", tone: "secondary" },
+          support: "Depois dessa data a loja volta ao Free. Seus dados ficam.",
+          title: `Pro até ${proUntil}`,
+        };
+  }
+  const charge = plan.nextCharge;
+  if (plan.state === "trialing") {
+    return {
+      // the Pix trial counts from the bank's approval: no number of days (AC-12, amendment t268)
+      badge: {
+        text:
+          plan.method === "pix_automatic" ? "teste grátis" : "7 dias grátis",
+        tone: "secondary",
+      },
+      support:
+        charge === null
+          ? null
+          : `A primeira cobrança é em ${formatCalendarDate(charge.on)}. Cancele antes e nada é cobrado.`,
+      title: "Pro, em teste",
+    };
+  }
+  return {
+    badge: { text: "Ativo", tone: "ink" },
+    support:
+      charge === null
+        ? null
+        : `Próxima cobrança em ${formatCalendarDate(charge.on)}, ${formatBrlAmount(charge.amount)}.`,
+    title: "Plano Pro",
+  };
+}
+
+/** The line of the payment that comes next, in the "Pagamento" block. */
+export interface ChargeLine {
+  label: string;
+  value: string;
+}
+
+export const METHOD_NAMES: Readonly<Record<PlanMethod, string>> = {
+  card: "Cartão de crédito",
+  pix_automatic: "Pix Automático",
+};
+
+const CYCLE_NAMES: Readonly<Record<CycleMonths, string>> = {
+  1: "Mensal",
+  6: "Semestral",
+  12: "Anual",
+};
+
+const CYCLE_UNITS: Readonly<Record<CycleMonths, string>> = {
+  1: "por mês",
+  6: "por semestre",
+  12: "por ano",
+};
+
+function cycleName(cycleMonths: CycleMonths): string {
+  return CYCLE_NAMES[cycleMonths];
+}
+
+/**
+ * The "Pagamento" block of a Pro store: how it pays, the cycle and the charge to come ("Nenhuma" once the renewal is
+ * cancelled). Null on Free and while the method is not ready. In grace the charge that failed is not in the read:
+ * the block says how the store pays and nothing about a date.
+ */
+export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
+  if (
+    !(
+      plan.state === "trialing" ||
+      plan.state === "active" ||
+      plan.state === "grace"
+    ) ||
+    plan.method === null
+  ) {
+    return null;
+  }
+  const lines: ChargeLine[] = [
+    { label: "Como paga", value: METHOD_NAMES[plan.method] },
+  ];
+  if (plan.cycleMonths !== null) {
+    lines.push({
+      label: "Ciclo",
+      value:
+        plan.nextCharge === null
+          ? cycleName(plan.cycleMonths)
+          : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
+    });
+  }
+  if (plan.state === "grace") {
+    return lines;
+  }
+  const label =
+    plan.state === "trialing" ? "Primeira cobrança" : "Próxima cobrança";
+  if (plan.renewalCancelled) {
+    lines.push({ label: "Próxima cobrança", value: "Nenhuma" });
+  } else if (plan.nextCharge !== null) {
+    lines.push({
+      label,
+      value: `${formatCalendarDate(plan.nextCharge.on)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
+    });
+  }
+  return lines;
+}
+
+export interface UsageRow {
+  id: "goals" | "images" | "variants";
+  label: string;
+  limit: number | null;
+  used: number;
+}
+
+/** The three limits of the plan and what the store uses of each (the server's counts, AS-4). */
+export function usageRows(plan: BillingPlanView): UsageRow[] {
+  return [
+    {
+      id: "variants",
+      label: "Variantes",
+      limit: plan.limits.variants,
+      used: plan.usage.variants,
+    },
+    {
+      id: "images",
+      label: "Imagens",
+      limit: plan.limits.images,
+      used: plan.usage.images,
+    },
+    {
+      id: "goals",
+      label: "Metas em andamento",
+      limit: plan.limits.goals,
+      used: plan.usage.goals,
+    },
+  ];
+}
+
+/**
+ * What the store already keeps (AS-24, amendment D1): "N vendas, N produtos e N meses de histórico", each part in
+ * the singular for 1 and left out at 0; no line when the three are 0. The numbers are the server's.
+ */
+export function keptLine(kept: BillingPlanView["kept"]): string | null {
+  const parts = [
+    kept.sales > 0 ? plural(kept.sales, "venda", "vendas") : null,
+    kept.products > 0 ? plural(kept.products, "produto", "produtos") : null,
+    kept.historyMonths > 0
+      ? `${plural(kept.historyMonths, "mês", "meses")} de histórico`
+      : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) {
+    return null;
+  }
+  const last = parts.pop();
+  const listed = parts.length === 0 ? last : `${parts.join(", ")} e ${last}`;
+  return `O que a sua loja já guardou: ${listed}. Seus dados não são apagados.`;
+}
+
+/** The notice of a refund asked and not completed, by whether the app may still complete it (AS-42, E-RP). */
+export interface RefundPendingNotice {
+  description: string;
+  title: string;
+}
+
+export function refundPendingNotice(
+  plan: BillingPlanView
+): RefundPendingNotice | null {
+  if (!plan.refundPending) {
+    return null;
+  }
+  if (plan.refund !== null) {
+    return {
+      description: `Nada será cobrado a mais. O prazo de desistência continua valendo até ${untilText(plan.refund.until)}.`,
+      title: "Cancelamos a renovação, mas o reembolso não foi concluído.",
+    };
+  }
+  // past the 72 hours the request is the operator's (ADR 0104, decision 3): no way to try again here
+  return {
+    description:
+      "Nada será cobrado a mais. Você recebe um e-mail quando o reembolso for concluído.",
+    title: "Cancelamos a renovação. O reembolso está com o nosso suporte.",
+  };
+}
+
+/**
+ * When a store whose renewal was cancelled may subscribe again (AS-27): after the last day already paid for, as the
+ * refusal of the checkout says it (`renewal_cancelled_until`).
+ */
+export function resubscribeLine(plan: BillingPlanView): string | null {
+  return plan.resubscribeFrom === null
+    ? null
+    : `Dá para assinar de novo depois de ${accessDateText(plan.resubscribeFrom)}, quando este período termina.`;
+}
+
+// ---- the offer -------------------------------------------------------------------------------------------------
+
+export interface OfferCycle {
+  amount: string;
+  /** "2 meses grátis" against twelve months of the monthly price, when the catalog has both. */
+  bonus: string | null;
+  cycleMonths: CycleMonths;
+  name: string;
+  /** "R$ 24,90" */
+  price: string;
+  /** "por mês", or "por ano · R$ 20,75 por mês" */
+  unit: string;
+}
+
+/** The price per month of a longer cycle, for display only: half-up to the cent, never stored nor charged. */
+function perMonth(amount: string, months: number): string {
+  const cents = Money.from(amount).minorUnits;
+  const divisor = BigInt(months);
+  const rounded = (cents * 2n + divisor) / (2n * divisor);
+  return formatBrlAmount(Money.fromMinorUnits(rounded).toString());
+}
+
+/** Whole months the longer cycle saves against the monthly price ("2 meses grátis"); null under one. */
+function bonusOf(
+  amount: string,
+  months: number,
+  monthly: string | null
+): string | null {
+  if (monthly === null || months === 1) {
+    return null;
+  }
+  const monthlyCents = Money.from(monthly).minorUnits;
+  if (monthlyCents <= 0n) {
+    return null;
+  }
+  const saved = monthlyCents * BigInt(months) - Money.from(amount).minorUnits;
+  const free = Number(saved / monthlyCents);
+  if (free < 1) {
+    return null;
+  }
+  return `${plural(free, "mês", "meses")} grátis`;
+}
+
+/** The cycles of the catalog's active prices (AS-5), shortest first, each with its total price (AS-11). */
+export function offerCycles(plan: BillingPlanView): OfferCycle[] {
+  const prices = [...plan.offer.prices].sort(
+    (left, right) => left.cycleMonths - right.cycleMonths
+  );
+  const monthly =
+    prices.find((price) => price.cycleMonths === 1)?.amount ?? null;
+  return prices.map(({ amount, cycleMonths }) => ({
+    amount,
+    bonus: bonusOf(amount, cycleMonths, monthly),
+    cycleMonths,
+    name: CYCLE_NAMES[cycleMonths],
+    price: formatBrlAmount(amount),
+    unit:
+      cycleMonths === 1
+        ? CYCLE_UNITS[1]
+        : `${CYCLE_UNITS[cycleMonths]} · ${perMonth(amount, cycleMonths)} por mês`,
+  }));
+}
+
+/** The monthly cycle comes chosen (AS-11); without it, the first the catalog has. */
+export function defaultCycle(
+  cycles: readonly OfferCycle[]
+): CycleMonths | null {
+  return (
+    cycles.find((cycle) => cycle.cycleMonths === 1)?.cycleMonths ??
+    cycles[0]?.cycleMonths ??
+    null
+  );
+}
+
+export const METHOD_HINTS: Readonly<Record<PlanMethod, string>> = {
+  card: "Você vai pagar na página segura do Asaas. O Polaris não vê o número do cartão.",
+  pix_automatic: "Você autoriza uma vez no app do banco.",
+};
+
+/** The methods the server offers (AS-6), the card first. */
+export function offerMethods(plan: BillingPlanView): PlanMethod[] {
+  return (["card", "pix_automatic"] as const).filter((method) =>
+    plan.offer.methods.includes(method)
+  );
+}
+
+/** The day the first charge falls on: today in São Paulo, or after the trial (the rule the checkout sets). */
+export function firstChargeDay(now: Date, trial: boolean): string {
+  return saoPauloDateOf(
+    trial ? new Date(now.getTime() + TRIAL_DAYS * DAY_MS) : now
+  );
+}
+
+export interface OfferTerms {
+  /** The button that starts the checkout. */
+  action: string;
+  /** The rest of the first line: when and how much the first charge is. */
+  charge: string;
+  /** The words in bold that open the box: what the person gets now. */
+  lead: string;
+}
+
+/**
+ * The box above the button (AC-12, amendment t268): with the trial, "Começar os 7 dias grátis" on the card and
+ * "Começar o teste grátis" on Pix, which counts from the bank's approval; without it, "Assinar o Pro" and that the
+ * trial was used. Never "sem cartão".
+ */
+export function offerTerms(input: {
+  amount: string;
+  method: PlanMethod;
+  now: Date;
+  trialAvailable: boolean;
+}): OfferTerms {
+  const price = formatBrlAmount(input.amount);
+  if (!input.trialAvailable) {
+    return {
+      action: "Assinar o Pro",
+      charge: `A primeira cobrança, de ${price}, é hoje.`,
+      lead: "Seu teste grátis já foi usado.",
+    };
+  }
+  const day = formatCalendarDate(firstChargeDay(input.now, true));
+  const charge = `A primeira cobrança, de ${price}, é em ${day}. Cancele antes e nada é cobrado.`;
+  return input.method === "pix_automatic"
+    ? { action: "Começar o teste grátis", charge, lead: "Teste grátis." }
+    : { action: "Começar os 7 dias grátis", charge, lead: "7 dias grátis." };
+}
+
+/**
+ * What the Pro adds, true for every catalog (no number: the limits are the catalog's and change without code). The
+ * wireframe's "sem limite" is not said: the Pro has limits too.
+ */
+export const PRO_PITCH =
+  "Catálogo público no ar, vendas sem internet e mais variantes, imagens e metas.";
+
+/** Only an https address of the provider's page is opened (the contract only says it is a URL). */
+export function safeProviderUrl(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  // `new URL`, not `URL.parse`, which Safari 16.4 (the floor) lacks
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+export const REFUND_RULE =
+  "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.";
+
+/** The supplier, as in the Terms (AS-14; the final text waits on P48). */
+export const SUPPLIER_LINE =
+  "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.";
+
+// ---- the Pix payer ---------------------------------------------------------------------------------------------
+
+/** Only the digits of a CPF or CNPJ typed with dots, dashes or a slash. */
+export function taxIdDigits(value: string): string {
+  return value.replace(/\D+/g, "");
+}
+
+// ---- the return of the checkout and the reading again ----------------------------------------------------------
+
+export type CheckoutReturn = "cancelada" | "concluida" | "expirada";
+
+/** `?retorno=` of the provider's page (the URLs are the server's): anything else is no return. */
+export function checkoutReturnOf(search: string): CheckoutReturn | null {
+  const value = new URLSearchParams(search).get("retorno");
+  return value === "concluida" || value === "cancelada" || value === "expirada"
+    ? value
+    : null;
+}
+
+/** Every 5 s for up to 2 min, then "Atualizar" (design t268 v2, § 3, T-1). */
+export const REREAD_EVERY_MS = 5000;
+export const REREAD_FOR_MS = 120_000;
+
+/** The plan is still waiting for the provider's fact: the screen reads it again by itself. */
+export function waitsForProvider(
+  plan: BillingPlanView,
+  returned: CheckoutReturn | null
+): boolean {
+  if (returned === "cancelada" || returned === "expirada") {
+    // the card's page said no payment was made: nothing to wait for
+    return false;
+  }
+  if (plan.state === "trial_setup") {
+    return true;
+  }
+  return (
+    returned === "concluida" &&
+    (plan.state === "free" || plan.state === "free_over_limit")
+  );
+}
+
+/** What the screen says when the person came back from the card's page without paying (AS-15: nothing spent). */
+export function abandonedCheckoutText(
+  returned: CheckoutReturn | null,
+  plan: BillingPlanView
+): string | null {
+  if (returned !== "cancelada" && returned !== "expirada") {
+    return null;
+  }
+  if (
+    !(
+      plan.state === "free" ||
+      plan.state === "free_over_limit" ||
+      plan.state === "trial_setup"
+    )
+  ) {
+    return null;
+  }
+  return plan.trialAvailable
+    ? "O pagamento não foi feito e nada foi cobrado. Seu teste grátis continua disponível."
+    : "O pagamento não foi feito e nada foi cobrado.";
+}
+
+// ---- the refusals -----------------------------------------------------------------------------------------------
+
+export interface Refusal {
+  /** The plan may have changed: the screen offers "Atualizar", which reads it again, instead of trying. */
+  reread: boolean;
+  /** Trying the same again is safe and may work. */
+  retry: boolean;
+  text: string;
+}
+
+const CONNECTION_TEXT =
+  "A conexão falhou antes da resposta. Nada foi cobrado. Confira a conexão e tente de novo.";
+
+/** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
+export function checkoutRefusal(error: unknown): Refusal {
+  if (isConnectionFailure(error)) {
+    return { reread: false, retry: true, text: CONNECTION_TEXT };
+  }
+  const code = rpcErrorCode(error);
+  const reason = rpcErrorReason(error);
+  switch (reason) {
+    case "already_subscribed":
+      return {
+        reread: true,
+        retry: false,
+        text: "Sua loja já tem o Pro. Atualize para ver o plano.",
+      };
+    case "checkout_in_progress":
+      return {
+        reread: false,
+        retry: true,
+        text: "Outro pedido de assinatura com esse documento está em andamento. Aguarde um instante e tente de novo.",
+      };
+    case "checkout_pending_confirmation":
+      return {
+        reread: true,
+        retry: false,
+        text: "Seu pagamento anterior ainda está sendo confirmado. Aguarde alguns minutos e atualize antes de começar de novo.",
+      };
+    case "cycle_not_offered":
+      return {
+        reread: true,
+        retry: false,
+        text: "Esse ciclo não está mais disponível. Atualize e escolha de novo.",
+      };
+    case "payer_not_accepted":
+      // the same text whatever the reason: it never tells whether the document is known
+      return {
+        reread: false,
+        retry: false,
+        text: "Não foi possível iniciar o Pix Automático com esses dados. Confira o nome, o CPF ou CNPJ e o e-mail, ou escolha o cartão.",
+      };
+    case "renewal_cancelled_until": {
+      const until =
+        typeof error === "object" &&
+        error !== null &&
+        "data" in error &&
+        typeof (error.data as { until?: unknown } | null)?.until === "string"
+          ? accessDateText((error.data as { until: string }).until)
+          : null;
+      return {
+        reread: true,
+        retry: false,
+        text:
+          until === null
+            ? "Você cancelou a renovação. Dá para assinar de novo quando o período pago terminar."
+            : `Você cancelou a renovação. Dá para assinar de novo depois de ${until}.`,
+      };
+    }
+    case "trial_already_used":
+      return {
+        reread: true,
+        retry: false,
+        text: "Seu teste grátis já foi usado. Atualize para assinar sem o teste.",
+      };
+    case "trial_in_progress":
+      return {
+        reread: true,
+        retry: false,
+        text: "Seu teste grátis já está em andamento em outra loja. O teste vale uma vez por pessoa.",
+      };
+    case "billing_provider_unavailable":
+      return {
+        reread: false,
+        retry: true,
+        text: "O pagamento está fora do ar agora. Nada foi cobrado. Tente de novo em alguns minutos.",
+      };
+    case "billing_not_configured":
+    case "billing_self_service_off":
+      return {
+        reread: false,
+        retry: false,
+        text: "A assinatura não está disponível agora.",
+      };
+    case "billing_manage_required":
+      return {
+        reread: false,
+        retry: false,
+        text: "Só o dono da loja pode ver e mudar a assinatura.",
+      };
+    case "command_in_progress":
+      return {
+        reread: false,
+        retry: true,
+        text: "Outro pedido da loja está em andamento. Aguarde um instante e tente de novo.",
+      };
+    case "billing_command_rate_limited":
+      return {
+        reread: false,
+        retry: true,
+        text: "Foram muitos pedidos seguidos. Aguarde um minuto e tente de novo.",
+      };
+    default:
+      break;
+  }
+  if (code === "SERVICE_UNAVAILABLE") {
+    return {
+      reread: false,
+      retry: true,
+      text: "O pagamento está fora do ar agora. Nada foi cobrado. Tente de novo em alguns minutos.",
+    };
+  }
+  return {
+    reread: true,
+    retry: false,
+    text: "Não foi possível começar a assinatura agora. Atualize e tente de novo.",
+  };
+}
+
+/** Why the plan could not be read (the alert of the screen, "Tentar novamente" when it may help). */
+export function readRefusal(error: unknown): Refusal {
+  const reason = rpcErrorReason(error);
+  if (
+    reason === "billing_manage_required" ||
+    reason === "billing_self_service_off" ||
+    reason === "billing_not_configured" ||
+    rpcErrorCode(error) === "NOT_FOUND"
+  ) {
+    return {
+      reread: false,
+      retry: false,
+      text:
+        reason === "billing_manage_required"
+          ? "Só o dono da loja pode ver e mudar a assinatura."
+          : "A assinatura não está disponível agora.",
+    };
+  }
+  return {
+    reread: false,
+    retry: true,
+    text: "O servidor não respondeu. Nada mudou no seu plano.",
+  };
+}

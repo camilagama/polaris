@@ -22,9 +22,11 @@ import {
 import {
   isProductAlreadyCreated,
   type ProductAction,
+  type ProductLimitHelp,
   productErrorMessage,
 } from "./product-errors";
 import { emptyDraft, type ProductDraft, ProductForm } from "./product-form";
+import { LimitHelp, useLimitHelp } from "./product-limit-help";
 import { ProductList, type ProductListStatus } from "./product-list";
 import { ProductMediaPanel } from "./product-media-panel";
 import { validateOpening } from "./product-opening-model";
@@ -76,7 +78,8 @@ function linkFeedbackError(
 }
 
 export function ProductsPage() {
-  const { organization, organizationId } = useCurrentOrganization();
+  const { billingSelfService, organization, organizationId } =
+    useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
   const [status, setStatus] = useState<ProductListStatus>("active");
   const { categories, isLoading, loadError, products, refresh, syncStates } =
@@ -93,6 +96,13 @@ export function ProductsPage() {
   // the product the last action archived: the notice offers to restore it
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // what goes with the plan's limit refusal (stage 2 of the corte 61b); shown only while that error is shown
+  const [limitHelp, setLimitHelp] = useState<ProductLimitHelp>(null);
+  const showLimitHelp = useLimitHelp(setLimitHelp, {
+    billingSelfService,
+    organizationId,
+    role: organization.role,
+  });
   // the product of the address could not be read: what to say and whether trying again can help
   const [linkFailure, setLinkFailure] = useState<ProductLinkFailure | null>(
     null
@@ -232,6 +242,7 @@ export function ProductsPage() {
           newProductNames.current = null;
         }
         setError(productErrorMessage(cause, action));
+        showLimitHelp(cause, action);
         refresh();
       } finally {
         setPendingAction(null);
@@ -240,6 +251,7 @@ export function ProductsPage() {
     },
     [
       draft,
+      showLimitHelp,
       editingProductId,
       focusFeedback,
       organization.timezone,
@@ -482,6 +494,9 @@ export function ProductsPage() {
         {isOffline ? <OfflineNotice /> : null}
         <ActionFeedback
           error={feedbackError.message}
+          errorExtra={
+            <LimitHelp error={feedbackError.message} help={limitHelp} />
+          }
           notice={notice}
           onRetryError={feedbackError.onRetry}
           onUndo={undoProduct ? handleUndoArchive : undefined}

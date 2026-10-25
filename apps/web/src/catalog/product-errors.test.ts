@@ -3,6 +3,7 @@ import {
   isProductAlreadyCreated,
   isProductLimitReached,
   productErrorMessage,
+  productLimitHelp,
 } from "./product-errors";
 
 /** The limit text has no unit but the variant, no Assinatura, no archiving or deleting, and no number. */
@@ -121,5 +122,38 @@ describe("mensagem de erro de produto", () => {
     expect(productErrorMessage("texto solto")).toBe(
       "Não foi possível concluir a operação. Tente novamente."
     );
+  });
+});
+
+describe("o que acompanha o limite de variantes (etapa 2 do 61b, AC-10)", () => {
+  const help = (
+    billingSelfService: boolean,
+    canManageBilling: boolean,
+    planState: string | null
+  ) => productLimitHelp({ billingSelfService, canManageBilling, planState });
+
+  it("o dono numa loja Free, ou Free acima do limite, ganha 'Conhecer o Pro'", () => {
+    expect(help(true, true, "free")).toBe("upgrade");
+    expect(help(true, true, "free_over_limit")).toBe("upgrade");
+  });
+
+  it("o dono no Pro, em teste, na carência ou sem a leitura do plano não vê oferta", () => {
+    for (const state of ["trialing", "active", "grace", "trial_setup", null]) {
+      expect(help(true, true, state)).toBeNull();
+    }
+  });
+
+  it("quem não é dono lê o caminho até o dono, em qualquer plano", () => {
+    for (const state of ["free", "trialing", "active", null]) {
+      expect(help(true, false, state)).toBe("ask_owner");
+    }
+  });
+
+  it("com a assinatura desligada, nada muda: só o texto da etapa 1", () => {
+    for (const manage of [true, false]) {
+      for (const state of ["free", "active", null]) {
+        expect(help(false, manage, state)).toBeNull();
+      }
+    }
   });
 });

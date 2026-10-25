@@ -47,8 +47,8 @@ export interface AsaasPortConfig {
 }
 
 /**
- * Where the provider's page sends the payer back, built from the app's origin.
- * The client never names these URLs: an open redirect through the checkout
+ * Where the provider's page sends the payer back, built from the app's origin: the Assinatura screen, which reads
+ * the plan again (design t268 v2, § 11). The client never names these URLs: an open redirect through the checkout
  * would otherwise be one request away.
  */
 export function checkoutReturnUrls(appBaseUrl: string): CheckoutReturnUrls {
@@ -58,7 +58,7 @@ export function checkoutReturnUrls(appBaseUrl: string): CheckoutReturnUrls {
     throw new TypeError("invalid_app_base_url");
   }
   const { origin } = url;
-  const back = (result: string) => `${origin}/?assinatura=${result}`;
+  const back = (result: string) => `${origin}/subscription?retorno=${result}`;
   return {
     cancelUrl: back("cancelada"),
     returnUrl: back("expirada"),
