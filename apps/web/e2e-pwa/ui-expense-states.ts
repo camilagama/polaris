@@ -215,6 +215,31 @@ export const expenseStates = {
     await showScreenAlone(page);
   },
 
+  /** The grid of months open over the list: the year arrows, the twelve months and "Este mês" are measured open. */
+  async monthGrid(page: Page) {
+    await openExpensesLab(page);
+    await page
+      .getByRole("button", {
+        exact: true,
+        name: "Mês de competência, Outubro de 2026",
+      })
+      .click();
+    await page.getByRole("dialog", { name: "Mês de competência" }).waitFor();
+    await page.getByRole("button", { name: "Este mês" }).waitFor();
+    // `showScreenAlone` blurs the focus: the popover stays open on a blur (it closes on Escape or a press outside)
+    await showScreenAlone(page);
+    await page.getByRole("dialog", { name: "Mês de competência" }).waitFor();
+    // the popover is not modal, so the page under it is still on screen: what is measured is the grid, not the controls
+    // it covers (the checks skip what is `inert`)
+    await page.evaluate(() => {
+      for (const child of document.body.children) {
+        if (!child.querySelector("[data-slot=popover-content]")) {
+          child.setAttribute("inert", "");
+        }
+      }
+    });
+  },
+
   /** Both closed sections opened, the paused rules and archived categories shown, and the form of a new rule. */
   async sections(page: Page) {
     await openExpensesLab(page);
