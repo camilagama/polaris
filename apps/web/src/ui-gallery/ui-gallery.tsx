@@ -647,6 +647,16 @@ export function UiGallery() {
                 Aluguel e internet, todo dia 5.
               </CollapsiblePanel>
             </Collapsible>
+            <Collapsible className="mt-2" defaultOpen>
+              <CollapsibleTrigger
+                render={<Button size="sm" variant="outline" />}
+              >
+                Despesas fixas
+              </CollapsibleTrigger>
+              <CollapsiblePanel className="pt-2 text-muted-foreground">
+                Condomínio, todo dia 10.
+              </CollapsiblePanel>
+            </Collapsible>
             <Progress value={70}>
               <ProgressLabel>Meta de vendas</ProgressLabel>
               <ProgressValue />

@@ -102,7 +102,10 @@ describe("RPC request guards", () => {
 
     await expect(
       client.category.create({ name: "Camisas", organizationId: "org-1" })
-    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+    });
 
     expect(logger).toHaveBeenCalledOnce();
     const [entry] = logger.mock.calls[0] ?? [];
@@ -111,7 +114,7 @@ describe("RPC request guards", () => {
       errorClass: "DatabaseError",
       event: "server_error",
       route: "/rpc/category/create",
-      httpStatus: 500,
+      httpStatus: 503,
     });
     const serialized = JSON.stringify(entry);
     for (const secretValue of [

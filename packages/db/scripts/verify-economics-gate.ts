@@ -4,6 +4,8 @@ import {
   dashboardCards,
   resultQuality,
 } from "@polaris/domain/economics/period-summary";
+import type { PeriodResult } from "@polaris/domain/economics/sale-economics";
+import { Money } from "@polaris/domain/money/money";
 import { createDatabase } from "../src/client";
 import {
   EconomicsSnapshotRequiredError,
@@ -34,7 +36,6 @@ import {
   gateBranchPattern,
   journalMigrationCount,
   poolerPattern,
-  recentInstant,
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
@@ -54,11 +55,47 @@ const expectedDatabase =
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
+/**
+ * The costs and the result of a period read on its own, as the daily series
+ * says them for a day: the sum of the parts, or null when an input is unknown.
+ */
+function costsOfDay(alone: PeriodResult): {
+  costs: string | null;
+  operatingExpenses: string;
+  operatingResult: string | null;
+} {
+  const { anticipationFees, costItems, processingFees } = alone.unknown;
+  if (anticipationFees + costItems + processingFees > 0) {
+    return {
+      costs: null,
+      operatingExpenses: alone.operatingExpenses,
+      operatingResult: null,
+    };
+  }
+  const costs = [
+    alone.cogs,
+    alone.processingFees,
+    alone.anticipationFees,
+    alone.linkedExpenses,
+    alone.operatingExpenses,
+  ].reduce((total, value) => total + BigInt(value.replace(".", "")), 0n);
+  return {
+    costs: Money.fromMinorUnits(costs).toString(),
+    operatingExpenses: alone.operatingExpenses,
+    operatingResult: alone.estimatedOperatingResult,
+  };
+}
+
 function dateFrom(day: string, days: number): string {
   const [year, month, date] = day.split("-").map(Number);
   const shifted = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, date ?? 1));
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return shifted.toISOString().slice(0, 10);
+}
+
+// noon of a store date in America/Sao_Paulo (UTC-3, no DST), as the instant a sale carries
+function noonOf(day: string): string {
+  return `${day}T15:00:00.000Z`;
 }
 
 async function run() {
@@ -151,6 +188,8 @@ async function run() {
         ],
       })
     );
+    // S1..S4 sit at noon of yesterday: "3 hours ago" fell on yesterday before 03:00 BRT and on today after it
+    const yesterdayNoon = noonOf(dateFrom(today, -1));
     const sell = (
       items: {
         chargedUnitPrice: string;
@@ -167,7 +206,7 @@ async function run() {
           commandId: randomUUID(),
           commandVersion: 1,
           items,
-          occurredAt: recentInstant(3),
+          occurredAt: yesterdayNoon,
           payment: { anticipationRequested: false, method: "pix" },
           paymentProfile: withProfile
             ? { expectedVersion: profile.version, id: profile.id }
@@ -504,7 +543,7 @@ async function run() {
             variantId: p3.variantId,
           },
         ],
-        occurredAt: recentInstant(24 * 5),
+        occurredAt: noonOf(dateFrom(today, -5)),
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: null,
         requestId: randomUUID(),
@@ -551,11 +590,28 @@ async function run() {
       );
       assert.equal(day.netSales, alone.netSales, `net sales of ${day.date}`);
       assert.equal(day.salesCount, alone.salesCount, `sales of ${day.date}`);
+      assert.deepEqual(
+        {
+          costs: day.costs,
+          operatingExpenses: day.operatingExpenses,
+          operatingResult: day.operatingResult,
+        },
+        costsOfDay(alone),
+        `costs and result of ${day.date}`
+      );
     }
-    // worked out by hand: S5 (45.00) is the only sale five days ago (the others are hours old)
+    // worked out by hand: S5 (45.00) is the only sale five days ago (S1..S4 are yesterday)
     assert.deepEqual(
       summary.daily.find((day) => day.date === s5Date),
-      { date: s5Date, netSales: "45.00", salesCount: 1 }
+      // S5 has no payment profile, so its processing fee is unknown: the costs of its day are null, never zero
+      {
+        costs: null,
+        date: s5Date,
+        netSales: "45.00",
+        operatingExpenses: "0.00",
+        operatingResult: null,
+        salesCount: 1,
+      }
     );
     // independent SQL: the count of not cancelled sales per commercial date
     const perDay = await admin.pool.query<{ day: string; sales: number }>(
@@ -635,7 +691,12 @@ async function run() {
     assert.deepEqual(otherSummary.topProducts, []);
     assert.ok(
       otherSummary.daily.every(
-        (day) => day.netSales === "0.00" && day.salesCount === 0
+        (day) =>
+          day.netSales === "0.00" &&
+          day.salesCount === 0 &&
+          day.costs === "0.00" &&
+          day.operatingExpenses === "0.00" &&
+          day.operatingResult === "0.00"
       )
     );
     for (const topProducts of [0, 11, 1.5]) {
@@ -657,6 +718,209 @@ async function run() {
     );
     tests.push(
       "the ranking is cut at the limit and only when asked (without it no product is read), another organization sees an all-zero series and no product, a limit outside 1..10 is refused and another capability is not enough"
+    );
+
+    // ---------------- 7. the costs and the result of each day (AC-8, AC-9, AC-21)
+    // S6, two days ago: 2 x 80.00 with a known cost (10.00), freight 30.00 and the
+    // profile (1.5% of 190.00 = 2.85), so the day is known and has a surcharge
+    const s6 = await as(tenantA, "sale:create", (tx, identity) =>
+      confirmSale(tx, identity, {
+        adjustments: [
+          { kind: "freight", value: { amount: "30.00", type: "fixed" } },
+        ],
+        commandId: randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "80.00",
+            listedUnitPrice: "80.00",
+            quantity: 2,
+            variantId: p1.variantId,
+          },
+        ],
+        occurredAt: noonOf(dateFrom(today, -2)),
+        payment: { anticipationRequested: false, method: "pix" },
+        paymentProfile: { expectedVersion: profile.version, id: profile.id },
+        requestId: randomUUID(),
+      })
+    );
+    const s6Date = dateFrom(today, -2);
+    assert.equal(
+      (
+        await admin.pool.query<{ day: string }>(
+          "SELECT to_char(occurred_on, 'YYYY-MM-DD') AS day FROM public.sales WHERE id = $1",
+          [s6.sale.id]
+        )
+      ).rows[0]?.day,
+      s6Date
+    );
+    // an expense with no sale on the same day, and the rent of two days from now (after today)
+    await expense("50.00", rent.id, s6Date, null);
+    await expense("75.00", rent.id, dateFrom(today, -3), null);
+    // an expense with no sale on the day of S5, whose fee is unknown: costs null, operating expenses known
+    await expense("12.34", rent.id, s5Date, null);
+    const futureDate = dateFrom(today, 2);
+    await expense("300.00", rent.id, futureDate, null);
+    const longPeriod = { from: dateFrom(today, -7), to: futureDate };
+
+    const costsSummary = await asReport(tenantA, (tx, identity) =>
+      readPeriodSummary(tx, identity, longPeriod)
+    );
+    // every date to the end of the period, also the ones after today
+    assert.deepEqual(
+      costsSummary.daily.map((day) => day.date),
+      Array.from({ length: 10 }, (_, index) => dateFrom(longPeriod.from, index))
+    );
+    const dayOf = (date: string) =>
+      costsSummary.daily.find((entry) => entry.date === date);
+    // worked out by hand: cost of goods 20.00 + fee 2.85 + the 50.00 expense of the day;
+    // net 160.00 + freight 30.00 - 72.85: the freight stays in the result and does not lower the costs
+    assert.deepEqual(dayOf(s6Date), {
+      costs: "72.85",
+      date: s6Date,
+      netSales: "160.00",
+      operatingExpenses: "50.00",
+      operatingResult: "117.15",
+      salesCount: 1,
+    });
+    // the rent with no sale: the cost of its competence day, a negative result, and no other day
+    assert.deepEqual(dayOf(futureDate), {
+      costs: "300.00",
+      date: futureDate,
+      netSales: "0.00",
+      operatingExpenses: "300.00",
+      operatingResult: "-300.00",
+      salesCount: 0,
+    });
+    // the day of S1..S4 (S2 has an unknown cost and fee) and the day of S5 (no profile, so an unknown fee): null, never zero
+    const s2Date = (
+      await admin.pool.query<{ day: string }>(
+        "SELECT to_char(occurred_on, 'YYYY-MM-DD') AS day FROM public.sales WHERE id = $1",
+        [s2.sale.id]
+      )
+    ).rows[0]?.day;
+    assert.ok(s2Date);
+    assert.equal(dayOf(s2Date)?.costs, null);
+    assert.equal(dayOf(s2Date)?.operatingResult, null);
+    assert.equal(dayOf(s5Date)?.costs, null);
+    assert.equal(dayOf(s5Date)?.operatingResult, null);
+    // the expenses with no sale never depend on a sale: a day with unknown costs still carries them
+    // S2's day (yesterday) is also the competence date of the 200.00 rent with no sale
+    assert.equal(s2Date, dateFrom(today, -1));
+    assert.equal(dayOf(s2Date)?.operatingExpenses, "200.00");
+    assert.equal(dayOf(s5Date)?.operatingExpenses, "12.34");
+    // a day with only an expense with no sale (3 days ago) is a known cost and a negative result
+    assert.deepEqual(dayOf(dateFrom(today, -3)), {
+      costs: "75.00",
+      date: dateFrom(today, -3),
+      netSales: "0.00",
+      operatingExpenses: "75.00",
+      operatingResult: "-75.00",
+      salesCount: 0,
+    });
+    assert.equal(dayOf(dateFrom(today, 1))?.costs, "0.00");
+    for (const day of costsSummary.daily) {
+      // biome-ignore lint/performance/noAwaitInLoops: each day is read as its own period
+      const alone = await asReport(tenantA, (tx, identity) =>
+        readPeriodSummary(tx, identity, { from: day.date, to: day.date })
+      );
+      assert.deepEqual(
+        {
+          costs: day.costs,
+          operatingExpenses: day.operatingExpenses,
+          operatingResult: day.operatingResult,
+        },
+        costsOfDay(alone.result),
+        `the day ${day.date} equals the summary of from = to = that day`
+      );
+      assert.deepEqual(alone.daily, [day]);
+    }
+    // independent SQL: the active expenses with no sale (or tied to a cancelled one) per competence date
+    const expensesPerDay = await admin.pool.query<{
+      amount: string;
+      day: string;
+    }>(
+      `SELECT to_char(e.competence_on, 'YYYY-MM-DD') AS day, to_char(sum(e.amount), 'FM999999990.00') AS amount
+         FROM public.expenses e
+        WHERE e.organization_id = $1 AND e.competence_on BETWEEN $2::date AND $3::date
+          AND e.voided_at IS NULL
+          AND (e.sale_id IS NULL OR EXISTS (SELECT 1 FROM public.sale_cancellations c WHERE c.organization_id = e.organization_id AND c.sale_id = e.sale_id))
+        GROUP BY 1`,
+      [tenantA.organizationId, longPeriod.from, longPeriod.to]
+    );
+    const oracleExpenses = new Map(
+      expensesPerDay.rows.map((entry) => [entry.day, entry.amount])
+    );
+    assert.ok(oracleExpenses.size >= 3, "the oracle must meet the expenses");
+    for (const day of costsSummary.daily) {
+      assert.equal(
+        day.operatingExpenses,
+        oracleExpenses.get(day.date) ?? "0.00",
+        `operating expenses of ${day.date} against SQL`
+      );
+    }
+    tests.push(
+      "each day of the series carries its costs and result: the cost of goods, fees, linked and operating expenses (the 72.85 of the day of S6 with a 30.00 freight that stays in the result, 117.15), an expense with no sale on a day without sales (75.00, result -75.00), the rent of a competence date after today on its own day (300.00, result -300.00) while every date to the end of the period is returned, null in both fields (never 0.00) for the days with an unknown cost or fee, and each day equals the summary of from = to = that day. The operating expenses of each day are also returned alone, never null: 50.00 on the day of S6, 200.00 and 12.34 on the days of S2 and S5, whose costs are null, 0.00 on the other days, and each equals an independent SQL sum per competence date"
+    );
+
+    // a period with no unknown input: the days add up to the chain of the same summary
+    const knownSummary = await asReport(tenantA, (tx, identity) =>
+      readPeriodSummary(tx, identity, {
+        from: dateFrom(today, -4),
+        to: dateFrom(today, -2),
+      })
+    );
+    assert.ok(knownSummary.daily.every((day) => day.costs !== null));
+    const parts = knownSummary.result;
+    assert.equal(
+      knownSummary.daily.reduce(
+        (total, day) => total + cents(day.costs as string),
+        0n
+      ),
+      [
+        parts.cogs,
+        parts.processingFees,
+        parts.anticipationFees,
+        parts.linkedExpenses,
+        parts.operatingExpenses,
+      ].reduce((total, value) => total + cents(value), 0n)
+    );
+    assert.equal(
+      knownSummary.daily.reduce(
+        (total, day) => total + cents(day.operatingExpenses),
+        0n
+      ),
+      cents(parts.operatingExpenses)
+    );
+    assert.equal(
+      knownSummary.daily.reduce(
+        (total, day) => total + cents(day.operatingResult as string),
+        0n
+      ),
+      cents(parts.estimatedOperatingResult)
+    );
+    // worked out by hand: 117.15 of the day of S6 minus the 75.00 expense of 3 days ago
+    assert.equal(parts.estimatedOperatingResult, "42.15");
+    tests.push(
+      "in a period with nothing unknown (S6 and an expense with no sale) the costs of the days add up to the cost of goods, the fees and the linked and operating expenses of the chain, and the results to the estimated result"
+    );
+
+    // another organization reads none of it: every day is zero and known (RLS and the tenant of the session)
+    const otherCosts = await asReport(tenantB, (tx, identity) =>
+      readPeriodSummary(tx, identity, longPeriod)
+    );
+    assert.equal(otherCosts.daily.length, 10);
+    assert.ok(
+      otherCosts.daily.every(
+        (day) =>
+          day.costs === "0.00" &&
+          day.operatingExpenses === "0.00" &&
+          day.operatingResult === "0.00" &&
+          day.netSales === "0.00"
+      )
+    );
+    tests.push(
+      "another organization sees every day at zero, without a cost, a result or an expense of this one"
     );
 
     console.log(

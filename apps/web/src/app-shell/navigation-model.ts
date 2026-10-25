@@ -11,7 +11,8 @@ export type NavId =
   | "payment-profiles"
   | "products"
   | "public-catalog"
-  | "sale";
+  | "sale"
+  | "subscription";
 
 export type RouteId =
   | "account-security"
@@ -29,7 +30,8 @@ export type RouteId =
   | "sale"
   | "sale-customer"
   | "sale-detail"
-  | "sale-history";
+  | "sale-history"
+  | "subscription";
 
 /** The group of the sidebar an item is in; the first one has no label. */
 export type NavGroup = "Catálogo" | "Configurações" | "Resultado" | null;
@@ -75,6 +77,40 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Catálogo público",
   },
 ];
+
+/**
+ * The plan of the store (ADR 0104): only for whom may manage it (`billing:manage`) and only with the billing
+ * self-service on; the first item of Configurações, as in the wireframe of the Assinatura (2 taps on the phone:
+ * "Mais", then "Assinatura").
+ */
+export const SUBSCRIPTION_NAV_ITEM: NavItem = {
+  group: "Configurações",
+  href: "/subscription",
+  id: "subscription",
+  label: "Assinatura",
+};
+
+/**
+ * The menu in its order: the "Assinatura" heads Configurações when it shows, and the items of the offline runtime
+ * close the list.
+ */
+export function menuItemsOf(options: {
+  offline: boolean;
+  subscription: boolean;
+}): NavItem[] {
+  const items: NavItem[] = [];
+  for (const item of NAV_ITEMS) {
+    if (
+      options.subscription &&
+      item.group === "Configurações" &&
+      !items.includes(SUBSCRIPTION_NAV_ITEM)
+    ) {
+      items.push(SUBSCRIPTION_NAV_ITEM);
+    }
+    items.push(item);
+  }
+  return options.offline ? [...items, ...OFFLINE_NAV_ITEMS] : items;
+}
 
 /**
  * Menu items that only exist while the offline runtime is on (a device is
@@ -195,6 +231,11 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
     navId: "history",
     title: "Histórico de vendas",
   },
+  "/subscription": {
+    id: "subscription",
+    navId: "subscription",
+    title: "Assinatura",
+  },
 };
 
 /**
@@ -211,6 +252,7 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "public-catalog",
   "sale-customer",
   "sale-detail",
+  "subscription",
 ];
 
 /**
@@ -221,6 +263,8 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
 const ONLINE_ONLY_WITHOUT_FORM: readonly RouteId[] = [
   "public-catalog",
   "sale-detail",
+  // never a plan of before (AS-8): offline it shows nothing, and loads by itself on the return
+  "subscription",
 ];
 
 export type ResolvedRoute =

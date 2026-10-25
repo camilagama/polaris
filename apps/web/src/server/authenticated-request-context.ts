@@ -5,6 +5,11 @@ import {
   AuthDatabaseNotConfiguredError,
   resolveAuthConnectionString,
 } from "./auth/auth-database";
+import {
+  currentRequestId,
+  requestScopedDatabase,
+  runWithRequestScope,
+} from "./auth/request-database";
 import { isSessionPastAbsoluteExpiration } from "./auth/session-policy";
 import type { WorkerBindings } from "./environment";
 import {
@@ -59,6 +64,7 @@ export interface AuthenticatedRequestContextDependencies {
   createAuth: (options: {
     baseURL: string;
     database: Database;
+    requestId: () => string;
     secret: string;
   }) => SessionAuth;
   createDatabase: typeof createHyperdriveDatabase;
@@ -121,6 +127,56 @@ export function createAuthenticatedRequestContext(
     ((options) => createBetterAuth(options) as SessionAuth);
   const readAccepted =
     overrides.readAcceptedLegalVersions ?? readAcceptedLegalVersions;
+  // Built once per isolate: assembling Better Auth costs more CPU than a cold isolate has left in the Free plan.
+  // It holds configuration only. The `db` it reads through is the one of the running request, resolved at each
+  // call from the request scope; no `pool` and no `db` of a request stays here (ADR 0017, emenda de 24/10/2026).
+  // Only `getSession` is reachable from it: the sign-in, sign-out and password routes keep an instance per request
+  // (`auth/handler.ts`), because their hooks keep state of the request they serve.
+  interface SessionAuthEntry {
+    auth: SessionAuth;
+    baseURL: string;
+    secret: string;
+  }
+  let sessionAuth: SessionAuthEntry | undefined;
+  const sessionAuthFor = (
+    baseURL: string,
+    secret: string
+  ): SessionAuthEntry => {
+    if (sessionAuth?.baseURL !== baseURL || sessionAuth.secret !== secret) {
+      sessionAuth = {
+        auth: authFactory({
+          baseURL,
+          database: requestScopedDatabase(),
+          requestId: currentRequestId,
+          secret,
+        }),
+        baseURL,
+        secret,
+      };
+    }
+    return sessionAuth;
+  };
+
+  const readSession = async (
+    baseURL: string,
+    secret: string,
+    request: Request,
+    database: Database
+  ): Promise<AuthenticatedRequestSession | null> => {
+    const entry = sessionAuthFor(baseURL, secret);
+    try {
+      return await runWithRequestScope(
+        { database, requestId: crypto.randomUUID() },
+        () => entry.auth.api.getSession({ headers: request.headers })
+      );
+    } catch (error) {
+      // a failed start of the instance would otherwise be kept for the whole life of the isolate
+      if (sessionAuth === entry) {
+        sessionAuth = undefined;
+      }
+      throw error;
+    }
+  };
 
   return async function runAuthenticatedRequestContext<T>(
     input: AuthenticatedRequestContextInput<T>
@@ -154,14 +210,12 @@ export function createAuthenticatedRequestContext(
     let tenantDatabase: typeof authDatabase | undefined;
 
     try {
-      const auth = authFactory({
+      const session = await readSession(
         baseURL,
-        database: authDatabase.db,
         secret,
-      });
-      const session = await auth.api.getSession({
-        headers: input.request.headers,
-      });
+        input.request,
+        authDatabase.db
+      );
 
       // the session id links devices to this session; a session without one is refused
       const sessionId: unknown = session?.session.id;

@@ -11,6 +11,10 @@ import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance"
 import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { app } from "../src/server/app";
 import {
+  isBuiltAssetRequest,
+  serveBuiltAsset,
+} from "../src/server/built-assets";
+import {
   reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
@@ -714,7 +718,10 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
 configureLogging({ service: "polaris-web" });
 
 export default {
-  fetch: app.fetch,
+  fetch: (request: Request, env: WorkerBindings, context?: ExecutionContext) =>
+    env.ASSETS && isBuiltAssetRequest(request)
+      ? serveBuiltAsset(request, env.ASSETS)
+      : app.fetch(request, env, context),
   queue: (batch: QueueBatch, env) => consumeQueue(batch, env),
   scheduled: (controller, env) => runScheduledTick(controller.cron, env),
 } satisfies ExportedHandler<WorkerBindings>;

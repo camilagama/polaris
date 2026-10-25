@@ -33,6 +33,11 @@ import { writeSessionMarker } from "./session-marker";
 import { isSigningOut } from "./sign-out";
 
 interface OrganizationContextValue {
+  /**
+   * BILLING_SELF_SERVICE_ENABLED is on (ADR 0104), as `organization.listMine` said: the owner's "Assinatura" may show.
+   * False until the server says so, and when the list came from the device's copy.
+   */
+  billingSelfService: boolean;
   load: OrganizationLoad;
   /** Reads the user's organizations again, e.g. after onboarding. */
   reload: () => void;
@@ -55,6 +60,7 @@ interface OrganizationProviderProps {
  */
 export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [load, setLoad] = useState<OrganizationLoad>({ status: "loading" });
+  const [billingSelfService, setBillingSelfService] = useState(false);
   const latestRequest = useRef(0);
   const fromCache = useRef<boolean>(false);
   const opened = useRef(false);
@@ -64,9 +70,10 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     const request = latestRequest.current;
     orpcClient.organization
       .listMine()
-      .then(({ organizations }) => {
+      .then(({ billingSelfService: billing, organizations }) => {
         if (request === latestRequest.current) {
           opened.current = true;
+          setBillingSelfService(billing === true);
           fromCache.current = false;
           if (!isSigningOut()) {
             writeSessionMarker("ativa");
@@ -92,6 +99,8 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           clearPaymentProfileCaches(browserStorage());
           clearPeriodSummaryCaches(browserStorage());
         }
+        // the flag is the server's word: a list from the device's copy does not carry it
+        setBillingSelfService(false);
         const outcome = organizationLoadAfterFailure({
           atOpen: !opened.current,
           cached: readOrganizationsCache(browserStorage()),
@@ -144,8 +153,8 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   }, []);
 
   const value = useMemo(
-    () => ({ load, reload, select }),
-    [load, reload, select]
+    () => ({ billingSelfService, load, reload, select }),
+    [billingSelfService, load, reload, select]
   );
   return createElement(OrganizationContext.Provider, { value }, children);
 }
@@ -160,6 +169,8 @@ export function useOrganizationLoad(): OrganizationContextValue {
 }
 
 export interface CurrentOrganization {
+  /** The billing self-service is on (ADR 0104): with `billing:manage`, the "Assinatura" may show. */
+  billingSelfService: boolean;
   organization: Organization;
   /** The requested context for every call. The server still authorizes it. */
   organizationId: string;
@@ -172,13 +183,14 @@ export interface CurrentOrganization {
  * resolved one, so this never returns "no organization".
  */
 export function useCurrentOrganization(): CurrentOrganization {
-  const { load, select } = useOrganizationLoad();
+  const { billingSelfService, load, select } = useOrganizationLoad();
   if (load.status !== "ready") {
     throw new Error(
       "useCurrentOrganization was used before an organization was resolved."
     );
   }
   return {
+    billingSelfService,
     organization: load.current,
     organizationId: load.current.id,
     organizations: load.organizations,
@@ -191,14 +203,17 @@ export function useCurrentOrganization(): CurrentOrganization {
  * server (they are only built in the offline-poc mode).
  */
 export function StaticOrganizationProvider({
+  billingSelfService = false,
   children,
   organization,
 }: {
+  billingSelfService?: boolean;
   children: ReactNode;
   organization: Organization;
 }) {
   const value = useMemo<OrganizationContextValue>(
     () => ({
+      billingSelfService,
       load: {
         current: organization,
         organizations: [organization],
@@ -207,7 +222,7 @@ export function StaticOrganizationProvider({
       reload: () => undefined,
       select: () => undefined,
     }),
-    [organization]
+    [billingSelfService, organization]
   );
   return createElement(OrganizationContext.Provider, { value }, children);
 }
