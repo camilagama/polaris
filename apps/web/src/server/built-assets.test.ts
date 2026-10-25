@@ -86,6 +86,8 @@ describe("the files under /assets/", () => {
       assets
     );
     expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("GET, HEAD");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(assets.fetch).not.toHaveBeenCalled();
   });
 });

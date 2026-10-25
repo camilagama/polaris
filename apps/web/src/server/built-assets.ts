@@ -19,15 +19,17 @@ export function isBuiltAssetRequest(request: Request): boolean {
   return new URL(request.url).pathname.startsWith(ASSETS_PREFIX);
 }
 
-function notFound(): Response {
+/** An answer of the Worker itself (not a file): never cached, with the security headers of the Worker's answers. */
+function refusal(status: number, body: string | null, init: HeadersInit = {}) {
   const headers = new Headers({
     "Cache-Control": "no-store",
     "Content-Type": "text/plain; charset=utf-8",
+    ...init,
   });
   for (const [name, value] of SECURITY_HEADERS) {
     headers.set(name, value);
   }
-  return new Response("Not found", { headers, status: 404 });
+  return new Response(body, { headers, status });
 }
 
 export async function serveBuiltAsset(
@@ -35,13 +37,13 @@ export async function serveBuiltAsset(
   assets: AssetsBinding
 ): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, { headers: { Allow: "GET, HEAD" }, status: 405 });
+    return refusal(405, null, { Allow: "GET, HEAD" });
   }
   const response = await assets.fetch(request);
   const type = response.headers.get("Content-Type") ?? "";
   if (response.status === 404 || (response.ok && HTML_TYPE.test(type))) {
     await response.body?.cancel();
-    return notFound();
+    return refusal(404, "Not found");
   }
   return response;
 }

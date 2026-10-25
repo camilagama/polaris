@@ -107,6 +107,17 @@ describe("the shell caches", () => {
     );
   });
 
+  it("count the caches named with the time of the build (before t344) as older ones, in the order they were created", () => {
+    const current = shellCacheName({ id: "c" });
+    const legacy = (time: string) => `${SHELL_CACHE_PREFIX}${time}-abc`;
+    const names = [
+      legacy("001792882534887"),
+      legacy("001792887639279"),
+      current,
+    ];
+    expect(cachesToDelete(names, current)).toEqual([legacy("001792882534887")]);
+  });
+
   it("keep everything when there is nothing older than one previous build", () => {
     const current = shellCacheName({ id: "b" });
     expect(

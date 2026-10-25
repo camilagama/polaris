@@ -67,4 +67,10 @@ test("o preview responde 404, nunca a página, para um pedaço de /assets/ que n
   const present = await request.get(script as string);
   expect(present.status()).toBe(200);
   expect(present.headers()["content-type"]).toContain("javascript");
+  // passing through the Worker does not cost the file the headers of \`_headers\`
+  expect(present.headers()["content-security-policy"]).toContain(
+    "default-src 'self'"
+  );
+  expect(present.headers()["cross-origin-resource-policy"]).toBe("same-origin");
+  expect(present.headers()["x-content-type-options"]).toBe("nosniff");
 });
