@@ -178,24 +178,30 @@ function inPage<Result>(
 
 // ---- 3. contrast ----------------------------------------------------------------------------------------
 
-/** What axe finds on the page, by rule and node, for the WCAG 2.2 A and AA rules. */
-export async function axeViolations(page: Page) {
+/**
+ * What axe finds on the page, by rule and node, for the WCAG 2.2 A and AA rules. `within` narrows it to the elements
+ * that match a selector (an open popover, whose box covers the controls under it on purpose).
+ */
+export async function axeViolations(page: Page, within?: string) {
   await page.evaluate(axe.source);
-  return page.evaluate(async (tags) => {
-    const result = await window.axe.run(document, {
-      resultTypes: ["violations"],
-      runOnly: { type: "tag", values: tags },
-    });
-    return result.violations.map((violation) => ({
-      id: violation.id,
-      nodes: violation.nodes.map((node) => node.target.join(" ")),
-    }));
-  }, WCAG_TAGS);
+  return page.evaluate(
+    async ([tags, selector]) => {
+      const result = await window.axe.run(selector ?? document, {
+        resultTypes: ["violations"],
+        runOnly: { type: "tag", values: tags },
+      });
+      return result.violations.map((violation) => ({
+        id: violation.id,
+        nodes: violation.nodes.map((node) => node.target.join(" ")),
+      }));
+    },
+    [WCAG_TAGS, within] as const
+  );
 }
 
 /** The same, one line per rule and node: `rule: selector`. */
-export async function axeFaults(page: Page) {
-  return (await axeViolations(page)).flatMap((violation) =>
+export async function axeFaults(page: Page, within?: string) {
+  return (await axeViolations(page, within)).flatMap((violation) =>
     violation.nodes.map((node) => `${violation.id}: ${node}`)
   );
 }
@@ -445,7 +451,9 @@ function touchTooSmall(
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
  * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
- * over it); a control inside another (a link in a clickable card) is nested.
+ * over it) and the days of one `[data-slot=calendar]` (a grid of 44 px cells that touch each other, t363: the 48 px
+ * areas of two neighbouring days overlap by about 4 px, 2 px into each cell, not only on the shared edge); a control inside another (a link in a clickable
+ * card) is nested.
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]
@@ -489,14 +497,25 @@ function touchOverlaps(selector: string) {
     scrolling.scrollHeight - window.innerHeight - window.scrollY
   );
   const toTop = window.scrollY;
-  /** One control fused with the other (a button group, an input group) or inside it (a link in a clickable card). */
+  /** Two days of one month grid (not its arrows, which keep their own area). */
+  const daysOfOneCalendar = (one: Element, other: Element) => {
+    const calendar = one.closest("[data-slot=calendar]");
+    return (
+      calendar !== null &&
+      calendar === other.closest("[data-slot=calendar]") &&
+      one.matches("button[data-day]") &&
+      other.matches("button[data-day]")
+    );
+  };
+  /** One control fused with the other (a button group, an input group, two days of a calendar) or inside it (a link in a clickable card). */
   const joined = (first: Control, second: Control) =>
     first.element.contains(second.element) ||
     second.element.contains(first.element) ||
     ["button-group", "input-group"].some((slot) => {
       const group = first.element.closest(`[data-slot=${slot}]`);
       return group && group === second.element.closest(`[data-slot=${slot}]`);
-    });
+    }) ||
+    daysOfOneCalendar(first.element, second.element);
   /** How much the two areas overlap, across and down; zero or less is apart. */
   const pairOverlap = (first: Control, second: Control) => {
     const one = reachable(first, second);
