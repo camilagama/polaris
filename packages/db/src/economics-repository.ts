@@ -1,6 +1,7 @@
 import {
-  type DailySales,
-  dailySales,
+  type DailyEconomics,
+  dailyEconomics,
+  type OperatingExpenseFact,
   type ProductSales,
   topProducts,
 } from "@polaris/domain/economics/period-series";
@@ -224,7 +225,10 @@ function readLinkedExpenses(
 }
 
 export interface PeriodFacts {
+  /** The amounts of the expenses with no sale (or tied to a cancelled one) of the period. */
   operatingExpenses: string[];
+  /** The same expenses, in the same order, with the date of their competence. */
+  operatingExpenseDays: OperatingExpenseFact[];
   /** How many rows each read brought, for the per-request record (counts only). */
   reads: PeriodReadCounts;
   /** Each sale carries its commercial date and each item its product. */
@@ -284,7 +288,7 @@ export async function readPeriodFacts(
     )
     .orderBy(asc(sales.occurredOn), asc(sales.id));
   const operatingRows = await transaction
-    .select({ amount: expenses.amount })
+    .select({ amount: expenses.amount, competenceOn: expenses.competenceOn })
     .from(expenses)
     .where(
       and(
@@ -302,6 +306,12 @@ export async function readPeriodFacts(
       )
     );
   const operatingExpenses = operatingRows.map((row) => row.amount);
+  const operatingExpenseDays = operatingRows.map(
+    (row): OperatingExpenseFact => ({
+      amount: row.amount,
+      competenceOn: row.competenceOn,
+    })
+  );
   const reads: PeriodReadCounts = {
     adjustments: 0,
     cancellations: 0,
@@ -313,7 +323,7 @@ export async function readPeriodFacts(
     sales: saleRows.length,
   };
   if (saleRows.length === 0) {
-    return { operatingExpenses, reads, sales: [] };
+    return { operatingExpenseDays, operatingExpenses, reads, sales: [] };
   }
   const ids = saleRows.map((row) => row.id);
 
@@ -390,7 +400,7 @@ export async function readPeriodFacts(
       ),
     };
   });
-  return { operatingExpenses, reads, sales: facts };
+  return { operatingExpenseDays, operatingExpenses, reads, sales: facts };
 }
 
 /** The estimated result of a period: facts read from the database, calculated by the pure engine. */
@@ -423,8 +433,8 @@ export interface TopProduct extends ProductSales {
 }
 
 export interface PeriodSummaryRead {
-  /** One entry per date of the period, in order (ADR 0056, D2). */
-  daily: DailySales[];
+  /** One entry per date of the period, in order, with its costs and result (ADR 0056, D2). */
+  daily: DailyEconomics[];
   /** Rows read, by table, plus the product names when ranked. */
   reads: PeriodReadCounts & { products: number };
   result: PeriodResult;
@@ -454,7 +464,13 @@ export async function readPeriodSummary(
   const facts = await readPeriodFacts(transaction, identity, period);
   const economics = facts.sales.map(saleEconomics);
   const result = periodResult(facts.sales, facts.operatingExpenses, economics);
-  const daily = dailySales(facts.sales, period.from, period.to, economics);
+  const daily = dailyEconomics(
+    facts.sales,
+    facts.operatingExpenseDays,
+    period.from,
+    period.to,
+    economics
+  );
   if (limit === undefined) {
     return { daily, reads: { ...facts.reads, products: 0 }, result };
   }
