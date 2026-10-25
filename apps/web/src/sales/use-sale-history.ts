@@ -18,7 +18,6 @@ import {
   moreLoaded,
   moreLoadFailed,
   nextOffset,
-  periodError,
 } from "./sale-history-model";
 
 const SEARCH_DELAY_MS = 300;
@@ -27,8 +26,6 @@ interface SaleHistory {
   /** What the inputs show now; the list follows after the search pauses. */
   filters: HistoryFilters;
   loadMore: () => void;
-  /** The period contradicts itself, so nothing is requested until it is fixed. */
-  period: string | null;
   reload: () => void;
   reset: () => void;
   setFilters: (changes: Partial<HistoryFilters>) => void;
@@ -67,16 +64,11 @@ export function useSaleHistory(
     }),
     [debouncedCustomer, debouncedQuery, from, status, to]
   );
-  const period = periodError(filters);
-  const effectivePeriod = periodError(effective);
   const localWriter = local?.stores.writer;
   const localVersion = local?.dataVersion ?? -1;
 
   useEffect(() => {
     latest.current += 1;
-    if (effectivePeriod !== null) {
-      return;
-    }
     const request = latest.current;
     setState(historyLoading);
     if (localWriter && localVersion >= 0) {
@@ -116,14 +108,7 @@ export function useSaleHistory(
     return () => {
       latest.current += 1;
     };
-  }, [
-    effective,
-    effectivePeriod,
-    localVersion,
-    localWriter,
-    organizationId,
-    reloadVersion,
-  ]);
+  }, [effective, localVersion, localWriter, organizationId, reloadVersion]);
 
   const loadMore = useCallback(() => {
     if (!canLoadMore(state)) {
@@ -162,5 +147,5 @@ export function useSaleHistory(
     []
   );
 
-  return { filters, loadMore, period, reload, reset, setFilters, state };
+  return { filters, loadMore, reload, reset, setFilters, state };
 }

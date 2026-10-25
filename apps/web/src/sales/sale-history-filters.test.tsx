@@ -18,14 +18,13 @@ const NOOP = () => undefined;
 const CLOSED_TRIGGER = /aria-expanded="false"[^>]*>.*Filtrar<\/button>/s;
 const OPEN_TRIGGER = /aria-expanded="true"/;
 
-const render = (status: "" | "cancelled" = "", period: string | null = null) =>
+const render = (status: "" | "cancelled" = "") =>
   renderToStaticMarkup(
     <HistoryFiltersBar
       filters={{ ...emptyHistoryFilters, status }}
       offline={false}
       onChange={NOOP}
       onReset={NOOP}
-      period={period}
     />
   );
 
@@ -38,7 +37,7 @@ describe("HistoryFiltersBar", () => {
     expect(html).toContain('aria-label="Filtrar vendas"');
     expect(html).toMatch(CLOSED_TRIGGER);
     expect(html).not.toContain("Limpar filtros");
-    expect(html).not.toContain("De (data da venda)");
+    expect(html).not.toContain("Período (data da venda)");
   });
 
   it("below 760 px opens by itself, and counts the filters, when one is on", () => {
@@ -47,20 +46,13 @@ describe("HistoryFiltersBar", () => {
     expect(html).toMatch(OPEN_TRIGGER);
     expect(html).toContain("Filtrar · 1");
     expect(html).toContain("Limpar filtros (1)");
-    expect(html).toContain("De (data da venda)");
-  });
-
-  it("below 760 px keeps the panel open while the period contradicts itself, so the message stays", () => {
-    width(true);
-    const html = render("", "A data inicial é posterior à data final.");
-    expect(html).toMatch(OPEN_TRIGGER);
-    expect(html).toContain("A data inicial é posterior à data final.");
+    expect(html).toContain("Período (data da venda)");
   });
 
   it("from 760 px has the filters in the page, with no trigger", () => {
     width(false);
     const html = render();
-    expect(html).toContain("De (data da venda)");
+    expect(html).toContain("Período (data da venda)");
     expect(html).toContain("Limpar filtros");
     expect(html).not.toContain("collapsible-trigger");
     expect(html).not.toContain("Filtrar<");

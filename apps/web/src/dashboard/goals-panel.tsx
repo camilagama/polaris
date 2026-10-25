@@ -261,6 +261,7 @@ export function GoalsPanel({
           onCancel={closeForm}
           onSave={handleSave}
           saving={busy === "create"}
+          today={today}
         />
       ) : null}
       <GoalList

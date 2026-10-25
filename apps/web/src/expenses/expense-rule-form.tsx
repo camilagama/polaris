@@ -21,7 +21,7 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
-import { SelectField } from "../sales/sale-fields";
+import { DateField, SelectField } from "../sales/sale-fields";
 import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
 import { moneyInputText } from "./expense-model";
 import {
@@ -153,6 +153,16 @@ export function ExpenseRuleForm({
     setErrors((current) => ({ ...current, [name]: undefined }));
   }, []);
 
+  const handleStartsOn = useCallback((startsOn: string) => {
+    setDraft((current) => ({ ...current, startsOn }));
+    setErrors((current) => ({ ...current, startsOn: undefined }));
+  }, []);
+
+  const handleEndsOn = useCallback((endsOn: string) => {
+    setDraft((current) => ({ ...current, endsOn }));
+    setErrors((current) => ({ ...current, endsOn: undefined }));
+  }, []);
+
   const handleFrequency = useCallback((value: string) => {
     if (isRuleFrequency(value)) {
       setDraft((current) => ({ ...current, frequency: value }));
@@ -227,32 +237,31 @@ export function ExpenseRuleForm({
             placeholder="Escolha a frequência"
             value={draft.frequency}
           />
-          <ExpenseTextField
+          <DateField
             disabled={disabled}
             error={errors.startsOn}
             hint="Se a data já passou, as ocorrências atrasadas são lançadas de uma vez."
             id={fieldId("startsOn")}
             label="Começa em"
             min={EARLIEST_EXPENSE_COMPETENCE}
-            name="startsOn"
-            onChange={handleChange}
-            type="date"
+            onChange={handleStartsOn}
+            today={today}
             value={draft.startsOn}
           />
         </>
       )}
 
-      <ExpenseTextField
+      <DateField
+        clearLabel="Limpar data de término"
         disabled={disabled}
         error={errors.endsOn}
         hint="Em branco, repete sem data de término."
         id={fieldId("endsOn")}
         label="Termina em"
-        min={draft.startsOn}
-        name="endsOn"
-        onChange={handleChange}
+        min={draft.startsOn || undefined}
+        onChange={handleEndsOn}
         optional
-        type="date"
+        today={today}
         value={draft.endsOn}
       />
       <ExpenseTextField

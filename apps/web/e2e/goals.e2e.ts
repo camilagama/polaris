@@ -1,6 +1,13 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  datePickerButton,
+  FORM_VIEWPORTS,
+  openDatePicker,
+  pickPeriod,
+  touchDay,
+} from "./date-pickers";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -13,6 +20,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
+const ANY_NAME = /.+/;
+const HALF_RANGE_NOTE = /Início \d\d\/\d\d\/\d{4}\. Escolha o último dia\./;
 const rpcPrefix = /^\/rpc\//;
 const goalActionName = /^(Editar|Cancelar) meta/;
 const fortyFivePercent = /45,0%/;
@@ -436,8 +445,9 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await page.getByRole("button", { name: "Nova meta" }).click();
 
   // the period starts as the current month: the tab does not follow the period of the Resultado (AC-15)
-  await expect(page.locator("#goal-create-startsOn")).toHaveValue("2026-10-01");
-  await expect(page.locator("#goal-create-endsOn")).toHaveValue("2026-10-31");
+  await expect(datePickerButton(page, "Período da meta")).toHaveAccessibleName(
+    "Período da meta, 01/10 a 31/10"
+  );
   await page.locator("#goal-create-name").fill("Meta de outubro");
   await page.locator("#goal-create-target").fill("1.000,00");
   await page.getByRole("button", { name: "Criar meta" }).click();
@@ -742,10 +752,158 @@ test("a validação mostra o erro junto do campo e não envia nada", async ({
 
   // a period over 366 days is refused before it is sent
   await page.locator("#goal-create-target").fill("100");
-  await page.locator("#goal-create-endsOn").fill("2027-12-31");
+  await pickPeriod(page, "Período da meta", "2026-10-01", "2027-12-31");
   await page.getByRole("button", { name: "Criar meta" }).click();
-  await expect(page.locator("#goal-create-endsOn-error")).toContainText("366");
+  await expect(
+    page.getByText("O período não pode passar de 366 dias.")
+  ).toBeVisible();
   expect(server.created).toHaveLength(0);
+});
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o período da meta, a ${viewport.name} px: escolhe dois dias, o inverso se ordena, limpar pede o período e o erro some ao escolher`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const server = new FakeGoalServer();
+    await openGoals(page, server);
+    await page.getByRole("button", { name: "Nova meta" }).click();
+    await page.locator("#goal-create-target").fill("100");
+
+    // the second day is before the first: the range is made in order, so "Termina em antes de Começa em" cannot exist
+    await pickPeriod(page, "Período da meta", "2026-10-20", "2026-10-10");
+    await expect(
+      datePickerButton(page, "Período da meta")
+    ).toHaveAccessibleName("Período da meta, 10/10 a 20/10");
+
+    // "Limpar" empties the period; sending it says what is missing, at the field
+    const popup = await openDatePicker(page, "Período da meta");
+    await popup.getByRole("button", { name: "Limpar" }).click();
+    await expect(popup).toBeHidden();
+    await expect(
+      datePickerButton(page, "Período da meta")
+    ).toHaveAccessibleName("Período da meta, Escolher período");
+    await page.getByRole("button", { name: "Criar meta" }).click();
+    await expect(page.getByText("Escolha o período da meta.")).toBeVisible();
+    await expect(datePickerButton(page, "Período da meta")).toBeFocused();
+    await expect(datePickerButton(page, "Período da meta")).toHaveAttribute(
+      "aria-invalid",
+      "true"
+    );
+    expect(server.created).toHaveLength(0);
+
+    // choosing again clears the error and sends the period as the days it was made of
+    const again = await openDatePicker(page, "Período da meta");
+    await touchDay(again, "2026-10-05");
+    await touchDay(again, "2026-10-25");
+    await expect(again).toBeHidden();
+    await expect(page.getByText("Escolha o período da meta.")).toHaveCount(0);
+    await page.getByRole("button", { name: "Criar meta" }).click();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    expect(server.created[0]).toMatchObject({
+      endsOn: "2026-10-25",
+      startsOn: "2026-10-05",
+    });
+  });
+}
+
+test("a 360 px o período da meta abre no mês do período, e com pouco espaço só o mês rola: atalhos, a linha do início e Limpar ficam à vista", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  // the field in the middle of the screen, as in the form at 360: neither above nor below is there room for the whole
+  // popover (shortcuts, month and footer)
+  await datePickerButton(page, "Período da meta").evaluate((button) =>
+    button.scrollIntoView({ block: "center" })
+  );
+  const top = await datePickerButton(page, "Período da meta").evaluate(
+    (button) => button.getBoundingClientRect().top
+  );
+  expect(top).toBeGreaterThan(300);
+  expect(top).toBeLessThan(440);
+  const popup = await openDatePicker(page, "Período da meta");
+  // one month at 360: the month of the start of 01/10 a 31/10, never the one before it
+  await expect(popup.getByText("Outubro de 2026")).toBeVisible();
+  await expect(popup.getByText("Setembro de 2026")).toHaveCount(0);
+  await popup.locator('button[data-day="2026-10-05"]').click();
+  const whole = { ratio: 1 };
+  await expect(popup.getByText(HALF_RANGE_NOTE)).toBeInViewport(whole);
+  await expect(popup.getByRole("button", { name: "Limpar" })).toBeInViewport(
+    whole
+  );
+  await expect(
+    popup.getByRole("group", { name: "Atalhos do período" })
+  ).toBeInViewport(whole);
+  // the popover fits the screen; what does not fit is the month, which scrolls inside it
+  // the popover is placed first and flipped and clamped a frame later: poll until it has settled
+  await expect
+    .poll(async () => {
+      const box = await popup.boundingBox();
+      return box && box.y >= 0 && box.y + box.height <= 740;
+    })
+    .toBe(true);
+});
+
+test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado ao lado, atalhos e rodapé à vista", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 340, width: 1280 });
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  await datePickerButton(page, "Período da meta").evaluate((button) =>
+    button.scrollIntoView({ block: "center" })
+  );
+  const popup = await openDatePicker(page, "Período da meta");
+  await expect(popup.getByRole("grid")).toHaveCount(2);
+  const months = popup.locator("[data-range-month]");
+  const { clientHeight, clientWidth, scrollHeight, scrollWidth } =
+    await months.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight,
+      scrollWidth: element.scrollWidth,
+    }));
+  // the room is short: the months scroll, and only up and down
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  const whole = { ratio: 1 };
+  await expect(
+    popup.getByRole("group", { name: "Atalhos do período" })
+  ).toBeInViewport(whole);
+  await expect(popup.getByRole("button", { name: "Limpar" })).toBeInViewport(
+    whole
+  );
+});
+
+test("o calendário do período da meta se usa só com o teclado: setas andam pelos dias, Enter marca e Escape fecha", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  await datePickerButton(page, "Período da meta").focus();
+  await page.keyboard.press("Enter");
+  const popup = page.getByRole("dialog", { name: "Período da meta" });
+  await expect(popup.getByRole("grid").first()).toBeVisible();
+  // the grid is named for the screen reader, and the days are in it
+  await expect(popup.getByRole("grid").first()).toHaveAccessibleName(ANY_NAME);
+  const first = popup.locator("button[data-day]:focus");
+  await expect(first).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeVisible();
+  await expect(popup.getByText(HALF_RANGE_NOTE)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(datePickerButton(page, "Período da meta")).toBeFocused();
+  // closing with only the start marked keeps the period there was
+  await expect(datePickerButton(page, "Período da meta")).toHaveAccessibleName(
+    "Período da meta, 01/10 a 31/10"
+  );
 });
 
 test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
