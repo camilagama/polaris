@@ -4,6 +4,7 @@ import { resolveLegalRoute } from "../legal/legal-routes";
 import { OrganizationProvider } from "../lib/current-organization";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
+import { legacyCheckoutReturnPath } from "../subscription/plan-notice";
 import { getUpdateStore } from "../pwa/runtime";
 import { UpdateBanner } from "../pwa/update-banner";
 import { AppShell } from "./app-shell";
@@ -104,6 +105,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
   "sale-history": lazyScreen(() =>
     import("../sales/sale-history-page").then((module) => ({
       default: module.SaleHistoryPage,
+    }))
+  ),
+  subscription: lazy(() =>
+    import("../subscription/subscription-page").then((module) => ({
+      default: module.SubscriptionPage,
     }))
   ),
 };
@@ -280,6 +286,15 @@ export function App() {
   }
   if (isLegalAcceptancePath(window.location.pathname)) {
     return <AcceptanceApp />;
+  }
+  // a card checkout opened before the return moved to the Assinatura comes back to the root: the same return there
+  const checkoutReturn = legacyCheckoutReturnPath(
+    window.location.pathname,
+    window.location.search
+  );
+  if (checkoutReturn) {
+    window.location.replace(checkoutReturn);
+    return null;
   }
   const entryPage = entryPageFor(window.location.pathname);
   if (entryPage && TRAILING_SLASHES.test(window.location.pathname)) {
