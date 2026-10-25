@@ -9,8 +9,8 @@ import { useSyncExternalStore } from "react";
  * - `none`: `prefers-reduced-motion: reduce`. It wins over everything: not even the essential motion runs (theme.css).
  * - `essential`: a phone, a coarse pointer on a narrow screen (under 760 px, the line of the sidebar and of
  *   `useIsMobile`) or a short one (500 px or less: the phone on its side). Only the motion of `ESSENTIAL_MOTION`
- *   (ui-design-rules.test.ts) runs: the press of a button, the pulse of the skeleton, the drag of a toast, the tooltip
- *   of a chart following the finger and the row of pills scrolling to a pill.
+ *   (scripts/ui-source-rules.test.ts) runs: the press of a button, the pulse of the skeleton, the drag of a toast,
+ *   the tooltip of a chart following the finger and the row of pills scrolling to a pill.
  * - `full`: the rest, the tablet and the narrow desktop window included.
  */
 export type MotionLevel = "essential" | "full" | "none";

@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
 /**
@@ -480,18 +481,8 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
   }) => {
     await page.emulateMedia({ reducedMotion });
     await openGallery(page);
-    // the level of the page (src/lib/motion-level.ts): the Pixel 5 project is a phone, `essential`, as the reduce is `none`
-    const level = await page.evaluate(
-      () => document.documentElement.dataset.motion
-    );
-    const phone = await page.evaluate(
-      () =>
-        matchMedia(
-          "(pointer: coarse) and (max-width: 759.98px), (pointer: coarse) and (max-height: 500px)"
-        ).matches
-    );
-    const expected = phone ? "essential" : "full";
-    expect(level).toBe(reducedMotion === "reduce" ? "none" : expected);
+    // the level of the page: the Pixel 5 project at 360 px is a phone (`essential`), the reduce is `none`
+    const level = await expectMotionLevel(page);
     const moves = level === "full";
     if (moves) {
       // the animated layer comes by import() after the first paint

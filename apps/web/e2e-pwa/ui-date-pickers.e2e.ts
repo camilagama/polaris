@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails";
 
 /**
@@ -533,10 +534,7 @@ for (const viewport of VIEWPORTS) {
         );
         const seconds = Number.parseFloat(duration);
         // on a phone (the Pixel 5 project at 360 px, `essential`) the popover has no animation at all
-        const full =
-          (await page.evaluate(
-            () => document.documentElement.dataset.motion
-          )) === "full";
+        const full = (await expectMotionLevel(page)) === "full";
         if (reducedMotion === "reduce" || !full) {
           expect(seconds).toBeLessThan(0.001);
         } else {

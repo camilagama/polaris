@@ -93,24 +93,30 @@ function loadMotionLayer(): Promise<MotionLayer> {
 /**
  * The animated layer of the pills, only at the `full` level of motion: it comes by `import()`, so a phone never asks
  * for the `motion` chunk. Until it arrives (and if it cannot) the pills are drawn still, with the same DOM and the same
- * final state; the first paint does not animate anyway.
+ * final state; the first paint does not animate anyway. Changing between the two remounts the pills, so it waits while
+ * an editor is open (`busy`): the focus and the text being typed are never lost to it.
  */
-function useMotionLayer(level: MotionLevel): MotionLayer | null {
-  const [layer, setLayer] = useState(loadedLayer);
+function useMotionLayer(level: MotionLevel, busy: boolean): MotionLayer | null {
+  const [loaded, setLoaded] = useState(loadedLayer);
   useEffect(() => {
-    if (level !== "full" || layer) {
+    if (level !== "full" || loaded) {
       return;
     }
     let current = true;
     loadMotionLayer().then(
-      (loaded) => current && setLayer(loaded),
+      (layer) => current && setLoaded(layer),
       () => undefined
     );
     return () => {
       current = false;
     };
-  }, [layer, level]);
-  return level === "full" ? layer : null;
+  }, [level, loaded]);
+  const wanted = level === "full" ? loaded : null;
+  const [shown, setShown] = useState(wanted);
+  if (!busy && shown !== wanted) {
+    setShown(wanted);
+  }
+  return shown;
 }
 
 /** A pill with no motion: the frame the animated layer draws as `motion.div`, as a plain element. */
@@ -491,13 +497,13 @@ export function FilterBar({
   value,
 }: FilterBarProps) {
   const level = useMotionLevel();
-  const layer = useMotionLayer(level);
-  const PillList = layer?.PillList ?? StillPillList;
   const searchRef = useRef<HTMLElement>(null);
   /** The field chosen in the menu, whose pill waits for a value. */
   const [adding, setAdding] = useState<string | null>(null);
   /** The field whose editor is open. */
   const [editing, setEditing] = useState<string | null>(null);
+  const layer = useMotionLayer(level, editing !== null || adding !== null);
+  const PillList = layer?.PillList ?? StillPillList;
   /** Choosing a field closes the menu and opens an editor: the menu must not take the focus back from it. */
   const handOverFocus = useRef(false);
 

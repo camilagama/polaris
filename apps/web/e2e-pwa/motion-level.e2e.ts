@@ -120,7 +120,7 @@ async function addedPillStyle(page: Page) {
 const drawing = (image: ReturnType<Page["getByRole"]>) =>
   image.evaluate((element) => {
     const root = element.closest("[data-chart]") ?? element;
-    const top = root.getBoundingClientRect().top;
+    const { top } = root.getBoundingClientRect();
     return {
       path: element.querySelector("svg path[stroke]")?.getAttribute("d") ?? "",
       ticks: [...root.querySelectorAll(".text-chart-label")]
@@ -210,7 +210,7 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   expect(await drawing(chart)).toEqual(next);
 });
 
-test("c) no celular o essencial ainda anima (o pulso do Skeleton e o toque no botão) e nada mais se move no Início com o painel Mais", async ({
+test("c) no celular o essencial continua (o pulso do Skeleton, o botão afundando no toque) e nada mais se move no Início com o painel Mais", async ({
   page,
 }) => {
   await openGallery(page);
@@ -225,17 +225,22 @@ test("c) no celular o essencial ainda anima (o pulso do Skeleton e o toque no bo
       }))
     );
   expect(pulse).toEqual([{ duration: 2000, name: "pulse" }]);
-  // the press of a button: a transition of the transform only, with the duration of the theme
-  const press = await bar(page)
-    .getByRole("button", { exact: true, name: "Filtrar" })
-    .evaluate((element) => {
+  // the press of a button: it sinks at once (`scale` 0.98 while pressed), with no transition of its colors
+  const confirm = page
+    .getByRole("region", { name: "Botões" })
+    .getByRole("button", { name: "Confirmar venda" });
+  const box = await confirm.boundingBox();
+  expect(box).not.toBeNull();
+  if (box) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const pressed = await confirm.evaluate((element) => {
       const style = getComputedStyle(element);
-      return {
-        duration: style.transitionDuration,
-        property: style.transitionProperty,
-      };
+      return { duration: style.transitionDuration, scale: style.scale };
     });
-  expect(press).toEqual({ duration: "0.14s", property: "transform" });
+    await page.mouse.up();
+    expect(pressed).toEqual({ duration: "0s", scale: "0.98" });
+  }
 
   // the Início with sales, with the "Mais" panel opened and closed: whatever ran was essential
   const home = SCREENS.find((screen) => screen.name === "início com vendas");
