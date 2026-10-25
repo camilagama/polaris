@@ -18,27 +18,37 @@ type CalendarModule = typeof import("./calendar");
 
 let loading: Promise<CalendarModule> | null = null;
 let loaded: CalendarModule | null = null;
-/** The URL of the chunk whose download failed, once the browser's message has named it. */
+/** The path of the chunk whose download failed (`/assets/calendar-<hash>.js`), once the browser's message has named it. */
 let failedChunk: string | null = null;
 let retries = 0;
+/** The calendars that show a failure, told when another one gets the chunk. */
+const waitingForTheChunk = new Set<() => void>();
 
 const CHUNK_URL = /https?:\/\/[^\s"')?#]*\/assets\/calendar-[\w-]+\.js/;
 
 /**
- * The URL of the calendar chunk in the message of a failed `import()`: Chrome ("Failed to fetch dynamically imported
+ * The path of the calendar chunk in the message of a failed `import()`: Chrome ("Failed to fetch dynamically imported
  * module: <url>") and Firefox ("error loading dynamically imported module: <url>") name it, Safari ("Importing a
- * module script failed.") does not. Null when the message does not name the calendar chunk (or the error is not one).
+ * module script failed.") does not. Only a chunk of this page's own origin counts (the second try asks for the path,
+ * never for a URL the message carried). Null when the message does not name the calendar chunk of `origin`.
  */
-export function calendarChunkUrl(error: unknown): string | null {
-  return error instanceof Error
-    ? (CHUNK_URL.exec(error.message)?.[0] ?? null)
-    : null;
+export function calendarChunkPath(
+  error: unknown,
+  origin: string
+): string | null {
+  const found =
+    error instanceof Error ? CHUNK_URL.exec(error.message)?.[0] : undefined;
+  if (!found) {
+    return null;
+  }
+  const url = new URL(found);
+  return url.origin === origin ? url.pathname : null;
 }
 
 /**
  * The browser keeps a module whose download failed in its module map, so a second `import("./calendar")` fails at
  * once without asking the network (the same reason the screens' "Tentar novamente" reloads the page,
- * `app-shell/chunk-load-error.ts`). The chunk never ran, so asking for its URL with a new query is a clean second try
+ * `app-shell/chunk-load-error.ts`). The chunk never ran, so asking for its path with a new query is a clean second try
  * that shares its dependencies with the first.
  */
 function importCalendar(): Promise<CalendarModule> {
@@ -55,12 +65,16 @@ function preloadCalendar(): Promise<CalendarModule> {
     loading = importCalendar().then(
       (module) => {
         loaded = module;
+        for (const tell of waitingForTheChunk) {
+          tell();
+        }
         return module;
       },
       (error: unknown) => {
         // a failed download is tried again by the next calendar that asks, which may find the connection back
         loading = null;
-        failedChunk = calendarChunkUrl(error) ?? failedChunk;
+        failedChunk =
+          calendarChunkPath(error, window.location.origin) ?? failedChunk;
         throw error;
       }
     );
@@ -78,7 +92,12 @@ export function warmCalendar(): void {
 
 type State =
   | { module: CalendarModule; status: "ready" }
-  | { offline: boolean; status: "failed" }
+  | {
+      /** Whether the chunk can be asked for again without a new page load (its path is known). */
+      inPlace: boolean;
+      offline: boolean;
+      status: "failed";
+    }
   | { status: "loading" };
 
 /** Whether the device says it has no connection (the same read of `navigator.onLine` as the app's chip). */
@@ -91,16 +110,18 @@ function useCalendarModule(): { retry: () => void; state: State } {
     loaded ? { module: loaded, status: "ready" } : { status: "loading" }
   );
   const waiting = state.status === "loading";
-  const offline = state.status === "failed" && state.offline;
+  const failed = state.status === "failed";
+  const again = failed && state.inPlace && state.offline;
+  const inPlace = failed && state.inPlace;
   const retry = useCallback(() => {
-    if (failedChunk === null) {
-      // the browser did not say which chunk failed (Safari), so it cannot be asked for again by its URL: a new page
+    if (!inPlace) {
+      // the browser did not say which chunk failed (Safari), so it cannot be asked for again by its path: a new page
       // load is the only second try
       window.location.reload();
       return;
     }
     setState({ status: "loading" });
-  }, []);
+  }, [inPlace]);
   useEffect(() => {
     if (!waiting) {
       return;
@@ -108,22 +129,46 @@ function useCalendarModule(): { retry: () => void; state: State } {
     let current = true;
     preloadCalendar().then(
       (module) => current && setState({ module, status: "ready" }),
-      () => current && setState({ offline: deviceOffline(), status: "failed" })
+      () =>
+        current &&
+        setState({
+          inPlace: failedChunk !== null,
+          offline: deviceOffline(),
+          status: "failed",
+        })
     );
     return () => {
       current = false;
     };
   }, [waiting]);
   useEffect(() => {
-    // "abre quando a conexão voltar": with no connection the calendar asks again by itself when it is back
-    // (never by reloading the page, which would take what the person typed: only when the chunk can be asked again)
-    if (!offline || failedChunk === null) {
+    // another calendar (or a warm-up) got the chunk while this one shows the failure
+    if (!failed) {
       return;
     }
-    const again = () => setState({ status: "loading" });
-    window.addEventListener("online", again);
-    return () => window.removeEventListener("online", again);
-  }, [offline]);
+    const arrived = () =>
+      loaded && setState({ module: loaded, status: "ready" });
+    arrived();
+    waitingForTheChunk.add(arrived);
+    return () => {
+      waitingForTheChunk.delete(arrived);
+    };
+  }, [failed]);
+  useEffect(() => {
+    // "abre quando a conexão voltar": with no connection the calendar asks again by itself when it is back (never by
+    // reloading the page, which would take what the person typed: only when the chunk can be asked for again)
+    if (!again) {
+      return;
+    }
+    const ask = () => setState({ status: "loading" });
+    if (!deviceOffline()) {
+      // the connection came back between the failure and this effect: no event is coming
+      ask();
+      return;
+    }
+    window.addEventListener("online", ask);
+    return () => window.removeEventListener("online", ask);
+  }, [again]);
   return { retry, state };
 }
 
@@ -150,7 +195,7 @@ export function OnDemandCalendar(props: CalendarProps) {
       ) : (
         <>
           <p>{state.offline ? OFFLINE_TEXT : FAILED_TEXT}</p>
-          {state.offline ? null : (
+          {state.offline && state.inPlace ? null : (
             <Button onClick={retry} size="sm" variant="outline">
               Tentar novamente
             </Button>

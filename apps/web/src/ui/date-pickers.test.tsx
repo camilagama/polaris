@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Calendar } from "@/ui/calendar";
-import { calendarChunkUrl, OnDemandCalendar } from "@/ui/calendar-on-demand";
+import { calendarChunkPath, OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
@@ -182,36 +182,52 @@ describe("OnDemandCalendar, a espera do chunk", () => {
   });
 });
 
-describe("calendarChunkUrl, o chunk que falhou", () => {
-  const url = "https://app.polaris.example/assets/calendar-Ab12_x-9.js";
+describe("calendarChunkPath, o chunk que falhou", () => {
+  const origin = "https://app.polaris.example";
+  const path = "/assets/calendar-Ab12_x-9.js";
+  const url = `${origin}${path}`;
 
-  it("lê a URL na mensagem do Chrome e do Firefox, sem a query de uma tentativa anterior", () => {
+  it("lê o caminho na mensagem do Chrome e do Firefox, sem a query de uma tentativa anterior", () => {
     expect(
-      calendarChunkUrl(
-        new TypeError(`Failed to fetch dynamically imported module: ${url}`)
+      calendarChunkPath(
+        new TypeError(`Failed to fetch dynamically imported module: ${url}`),
+        origin
       )
-    ).toBe(url);
+    ).toBe(path);
     expect(
-      calendarChunkUrl(
+      calendarChunkPath(
         new TypeError(
           `error loading dynamically imported module: ${url}?retry=1`
-        )
+        ),
+        origin
       )
-    ).toBe(url);
+    ).toBe(path);
   });
 
-  it("nada na mensagem do Safari, no chunk de outra coisa e no que não é erro", () => {
+  it("nada na mensagem do Safari, no chunk de outra coisa, em outra origem e no que não é erro", () => {
     expect(
-      calendarChunkUrl(new TypeError("Importing a module script failed."))
-    ).toBeNull();
-    expect(
-      calendarChunkUrl(
-        new TypeError(
-          "Failed to fetch dynamically imported module: https://app.polaris.example/assets/charts-Dk3jf9.js"
-        )
+      calendarChunkPath(
+        new TypeError("Importing a module script failed."),
+        origin
       )
     ).toBeNull();
-    expect(calendarChunkUrl(url)).toBeNull();
-    expect(calendarChunkUrl(undefined)).toBeNull();
+    expect(
+      calendarChunkPath(
+        new TypeError(
+          `Failed to fetch dynamically imported module: ${origin}/assets/charts-Dk3jf9.js`
+        ),
+        origin
+      )
+    ).toBeNull();
+    expect(
+      calendarChunkPath(
+        new TypeError(
+          `Failed to fetch dynamically imported module: https://evil.example${path}`
+        ),
+        origin
+      )
+    ).toBeNull();
+    expect(calendarChunkPath(url, origin)).toBeNull();
+    expect(calendarChunkPath(undefined, origin)).toBeNull();
   });
 });

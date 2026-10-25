@@ -37,6 +37,8 @@ import {
 const GROWTH_LINE =
   /PRECACHE-GROWTH total \d+ B gzip, growth [+-]?\d+ B over the baseline of \d+ B \(reference \+44000 B/;
 
+const CALENDAR_LINE = /CALENDAR chunk \d+ B gzip of 26000 B/;
+
 const CHARTS_LINE = /CHARTS chunk \d+ B gzip of 8000 B \(\d+ B left\)/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
@@ -216,9 +218,9 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(budgetProblems(pr306, floor, "block")).toEqual([
       expect.stringContaining("past the +44000 B budget"),
     ]);
-    // all four lines at once
+    // all five lines at once
     const all = {
-      calendar: 0,
+      calendar: CALENDAR_BUDGET_GZIP_BYTES + 5,
       charts: CHARTS_BUDGET_GZIP_BYTES + 10,
       fonts: FONT_BUDGET_BYTES + 20,
       interface: 0,
@@ -226,8 +228,11 @@ describe("precache budget (ADR 0103, section 4)", () => {
       rest: floor + REST_GROWTH_BUDGET_GZIP_BYTES + 40,
     };
     expect(budgetProblems(all, floor, "warn")).toEqual([]);
-    expect(budgetWarnings(all, floor, "warn")).toHaveLength(4);
-    expect(budgetProblems(all, floor, "block")).toHaveLength(4);
+    expect(budgetWarnings(all, floor, "warn")).toHaveLength(5);
+    expect(budgetProblems(all, floor, "block")).toHaveLength(5);
+    expect(budgetProblems(all, floor, "block")).toContainEqual(
+      expect.stringContaining("calendar chunk")
+    );
   });
 
   it('the chunk lines alone: a warning in "warn", a problem in "block"', () => {
@@ -903,5 +908,76 @@ describe("the calendar line (ADR 0103, amendment Datas, t363, t369)", () => {
       "CALENDAR chunk 22645 B gzip of 26000 B (3355 B left)"
     );
     expect(calendarLine(asSize(26_100))).toContain("over by 100 B");
+  });
+
+  it("the plugin over a real output directory: prints the CALENDAR line, warns past 26 KB, fails in block, and with only chunks looks at nothing else", () => {
+    const run = (
+      options: { mode?: "warn" | "block"; only?: "chunks" },
+      files: Record<string, Uint8Array>
+    ) => {
+      const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      for (const [name, content] of Object.entries(files)) {
+        writeFileSync(join(directory, "assets", name), content);
+      }
+      const said = {
+        error: [] as string[],
+        info: [] as string[],
+        warn: [] as string[],
+      };
+      const plugin = precacheBudgetPlugin(options);
+      (plugin.configResolved as (config: unknown) => void)({ env: {} });
+      const context = {
+        environment: { name: "client" },
+        error: (message: string) => said.error.push(message),
+        info: (message: string) => said.info.push(message),
+        warn: (message: string) => said.warn.push(message),
+      };
+      try {
+        (
+          plugin.generateBundle as (
+            this: unknown,
+            options: unknown,
+            bundle: unknown
+          ) => void
+        ).call(context, {}, {});
+        (
+          plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+        ).call(context, { dir: directory });
+      } finally {
+        rmSync(directory, { force: true, recursive: true });
+      }
+      return said;
+    };
+    const none = run({}, { "app-abc.js": random(2000) });
+    expect(none.info.join("\n")).toContain(
+      "CALENDAR no calendar chunk in this build"
+    );
+    const small = run({}, { "calendar-Ab12_x.js": randomBytes(3000) });
+    expect(small.error).toEqual([]);
+    expect(small.info.join("\n")).toMatch(CALENDAR_LINE);
+    const big = { "calendar-Ab12_x.js": randomBytes(27_000) };
+    const warned = run({}, big);
+    expect(warned.error).toEqual([]);
+    expect(warned.warn).toEqual([
+      expect.stringContaining("calendar chunk over its line"),
+    ]);
+    expect(run({ mode: "block" }, big).error).toEqual([
+      expect.stringContaining("calendar chunk"),
+    ]);
+    const only = run({ only: "chunks" }, big);
+    expect(only.error).toEqual([]);
+    expect(only.warn).toEqual([expect.stringContaining("excess +")]);
+    expect(only.info.join("\n")).toContain("over by");
+    expect(run({ mode: "block", only: "chunks" }, big).error).toEqual([
+      expect.stringContaining("calendar chunk"),
+    ]);
+    expect(
+      run(
+        { mode: "block", only: "chunks" },
+        { "app-abc.js": randomBytes(1_200_000) }
+      ).error
+    ).toEqual([]);
   });
 });
