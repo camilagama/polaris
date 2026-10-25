@@ -188,9 +188,12 @@
   "triggers": {
     "crons": ["17 * * * *", "19 * * * *"]
   },
+  // The Worker also runs first for /assets/*: the single-page fallback would answer a chunk that does not exist
+  // with the shell (200 text/html), and `import()` and the service worker took it for the chunk (src/server/built-assets.ts).
   "assets": {
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*"]
+    "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*", "/assets/*"]
   },
   "env": {
     // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
