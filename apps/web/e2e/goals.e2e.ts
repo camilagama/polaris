@@ -784,9 +784,7 @@ for (const viewport of FORM_VIEWPORTS) {
       datePickerButton(page, "Período da meta")
     ).toHaveAccessibleName("Período da meta, Escolher período");
     await page.getByRole("button", { name: "Criar meta" }).click();
-    await expect(
-      page.getByText("Escolha o período da meta.")
-    ).toBeVisible();
+    await expect(page.getByText("Escolha o período da meta.")).toBeVisible();
     await expect(datePickerButton(page, "Período da meta")).toBeFocused();
     await expect(datePickerButton(page, "Período da meta")).toHaveAttribute(
       "aria-invalid",
@@ -799,9 +797,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await touchDay(again, "2026-10-05");
     await touchDay(again, "2026-10-25");
     await expect(again).toBeHidden();
-    await expect(
-      page.getByText("Escolha o período da meta.")
-    ).toHaveCount(0);
+    await expect(page.getByText("Escolha o período da meta.")).toHaveCount(0);
     await page.getByRole("button", { name: "Criar meta" }).click();
     await expect(page.getByText("Meta criada.")).toBeVisible();
     expect(server.created[0]).toMatchObject({
