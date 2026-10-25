@@ -453,7 +453,7 @@ describe("sale.confirm RPC", () => {
     expect(confirmSale.mock.calls[0]?.[1]?.organizationId).toBe(organizationId);
   });
 
-  it("does not map unexpected failures to client errors", async () => {
+  it("answers an unexpected failure with 503 and the neutral server_busy reason", async () => {
     const client = createRpcClient(
       createRpcRouter({
         confirmSale: vi.fn<ConfirmSale>(),
@@ -461,7 +461,9 @@ describe("sale.confirm RPC", () => {
       })
     );
     await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+      status: 503,
     });
   });
 

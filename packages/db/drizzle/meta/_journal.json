@@ -708,6 +708,13 @@
       "when": 1792863036929,
       "tag": "0101_avisos_de_cobranca",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1792886916096,
+      "tag": "0102_loja_do_aviso_de_cobranca",
+      "breakpoints": true
     }
   ]
 }

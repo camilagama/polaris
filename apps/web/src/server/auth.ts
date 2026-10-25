@@ -180,7 +180,8 @@ interface CreateBetterAuthOptions {
   /** Forgets the lock after a password reset; the default goes through `database`, none without one. */
   loginLockClearer?: LoginLockClearer;
   plugins?: BetterAuthOptions["plugins"];
-  requestId?: string;
+  /** A function lets one instance serve many requests, each with its own identifier. */
+  requestId?: string | (() => string | undefined);
   runInBackground?: BackgroundTaskHandler;
   secret: string;
   /** Records the end of the validity of each verification link sent; the default writes through `database`, none without one. */
@@ -459,6 +460,18 @@ function passwordPolicyApiError(error: PasswordPolicyError): APIError {
     message: details.message,
   });
 }
+
+/** A fixed identifier is normalized once; a function is asked again at each use, for the request that is running. */
+function requestIdResolver(
+  requestId: string | (() => string | undefined) | undefined
+): () => string {
+  if (typeof requestId === "function") {
+    return () => normalizeRequestId(requestId());
+  }
+  const fixed = normalizeRequestId(requestId);
+  return () => fixed;
+}
+
 function normalizeRequestId(requestId: string | undefined): string {
   if (requestId && requestIdPattern.test(requestId)) {
     return requestId;
@@ -752,9 +765,10 @@ export function databaseVerificationLinkRecorder(
   if (!database) {
     return undefined;
   }
-  const client = database.$client as unknown as VerificationLinkQueryable;
+  // read at each call, never held: the instance of the RPC context outlives the request that built it
+  const client = () => database.$client as unknown as VerificationLinkQueryable;
   return async (userId) => {
-    const result = await client.query(
+    const result = await client().query(
       'UPDATE public."user" SET verification_link_expires_at = pg_catalog.clock_timestamp() + pg_catalog.make_interval(secs => $2::integer) WHERE id = $1 AND created_at > pg_catalog.clock_timestamp() - pg_catalog.make_interval(secs => $3::integer)',
       [
         userId,
@@ -767,7 +781,7 @@ export function databaseVerificationLinkRecorder(
     }
     // Only an UPDATE that matched nothing can be the cap; any other count is a failure of the record.
     if (result.rowCount === 0) {
-      const exists = await client.query(
+      const exists = await client().query(
         'SELECT 1 FROM public."user" WHERE id = $1',
         [userId]
       );
@@ -848,7 +862,7 @@ export function createBetterAuth({
   secret,
   verificationLinkRecorder,
 }: CreateBetterAuthOptions) {
-  const safeRequestId = normalizeRequestId(requestId);
+  const currentRequestId = requestIdResolver(requestId);
   const writeAuditEvent =
     auditEventWriter ??
     (database ? databaseAuditEventWriter(database) : undefined);
@@ -860,12 +874,30 @@ export function createBetterAuth({
   const writeAccessLog: AccessLogWriter = guardAccessLogWriter(
     accessLogWriter ??
       (database
-        ? createDatabaseAccessLogWriter(database.$client)
+        ? // the pool is read at each write, never held: this instance may outlive the request that built it
+          createDatabaseAccessLogWriter({
+            query: (config) => database.$client.query(config),
+          })
         : () => Promise.resolve(false))
   );
-  // The last IP recorded for a session by this instance (one per request in production, so it only keeps one
-  // request from recording the same change twice); the session row keeps it between requests.
+  // The last IP recorded for a session in the request that is running: it only keeps one request from recording the
+  // same change twice, and the session row keeps it between requests. The instance of the RPC context serves many
+  // requests, so what a request recorded is forgotten as soon as another one starts (the database drops a repeat of
+  // the same IP within minutes, ADR 0092; a lost entry costs a query, a kept one would cost a record of access).
   const recordedSessionIps = new Map<string, string>();
+  let recordingRequestId: string | undefined;
+  const recordedSessionIp = (sessionId: string): string | undefined =>
+    recordingRequestId === currentRequestId()
+      ? recordedSessionIps.get(sessionId)
+      : undefined;
+  const rememberRecordedSessionIp = (sessionId: string, ip: string) => {
+    const requestIdNow = currentRequestId();
+    if (recordingRequestId !== requestIdNow) {
+      recordedSessionIps.clear();
+      recordingRequestId = requestIdNow;
+    }
+    recordedSessionIps.set(sessionId, ip);
+  };
   // the update requests that extend a session (the daily refresh), told apart from the other updates of a session
   const refreshing = new WeakSet<object>();
 
@@ -888,7 +920,7 @@ export function createBetterAuth({
       ? (entry) =>
           recordLegalAcceptance(
             database.$client as unknown as LegalAcceptanceQueryable,
-            { ...entry, origin: "signup", requestId: safeRequestId }
+            { ...entry, origin: "signup", requestId: currentRequestId() }
           )
       : undefined);
 
@@ -954,7 +986,7 @@ export function createBetterAuth({
       params: context.params,
       path: context.path,
       query: context.query,
-      requestId: safeRequestId,
+      requestId: currentRequestId(),
     });
 
     if (accessLogEnabled) {
@@ -966,7 +998,7 @@ export function createBetterAuth({
           params: context.params,
           path: context.path,
           query: context.query,
-          requestId: safeRequestId,
+          requestId: currentRequestId(),
         },
         event
       );
@@ -975,7 +1007,7 @@ export function createBetterAuth({
         await writeAccessLog({
           ...accessEvent,
           ip: requestIp(context.headers ?? context.request?.headers),
-          requestId: safeRequestId,
+          requestId: currentRequestId(),
         });
       }
       if (context.path === "/get-session") {
@@ -1008,17 +1040,17 @@ export function createBetterAuth({
     }
     // the refresh of this very request may have recorded the IP already: then only the row is left to update
     const recorded =
-      recordedSessionIps.get(session.id) === ip ||
+      recordedSessionIp(session.id) === ip ||
       (await writeAccessLog({
         event: "session_refreshed",
         ip,
-        requestId: safeRequestId,
+        requestId: currentRequestId(),
         userId: session.userId,
       }));
     if (!recorded) {
       return;
     }
-    recordedSessionIps.set(session.id, ip);
+    rememberRecordedSessionIp(session.id, ip);
     try {
       await (
         context.context as unknown as {
@@ -1034,7 +1066,7 @@ export function createBetterAuth({
       logServerError({
         error,
         method: "GET",
-        requestId: safeRequestId,
+        requestId: currentRequestId(),
         route: "/api/auth/get-session",
       });
     }
@@ -1065,7 +1097,7 @@ export function createBetterAuth({
               ip: requestIp(
                 hookContext?.headers ?? hookContext?.request?.headers
               ),
-              requestId: safeRequestId,
+              requestId: currentRequestId(),
               userId: session.userId,
             });
           },
@@ -1087,17 +1119,17 @@ export function createBetterAuth({
               hookContext.headers ?? hookContext.request?.headers
             );
             // the hooks of the update run after the ones of `/get-session`, which may have recorded this IP already
-            if (ip && recordedSessionIps.get(session.id) === ip) {
+            if (ip && recordedSessionIp(session.id) === ip) {
               return;
             }
             const recorded = await writeAccessLog({
               event: "session_refreshed",
               ip,
-              requestId: safeRequestId,
+              requestId: currentRequestId(),
               userId: session.userId,
             });
             if (recorded && ip) {
-              recordedSessionIps.set(session.id, ip);
+              rememberRecordedSessionIp(session.id, ip);
             }
           },
         },
@@ -1133,7 +1165,7 @@ export function createBetterAuth({
               const described = describeError(error);
               logger.error("legal_acceptance_signup_record_failed", {
                 errorClass: described.errorClass,
-                requestId: safeRequestId,
+                requestId: currentRequestId(),
                 sqlState: isSqlState(described.errorCode)
                   ? described.errorCode
                   : undefined,
@@ -1168,7 +1200,7 @@ export function createBetterAuth({
                   passwordAuditEvent(
                     "password_reset_completed",
                     user.id,
-                    safeRequestId
+                    currentRequestId()
                   )
                 ),
             ];
@@ -1180,7 +1212,7 @@ export function createBetterAuth({
                 logServerError({
                   error,
                   method: "POST",
-                  requestId: safeRequestId,
+                  requestId: currentRequestId(),
                   route: "/api/auth/reset-password",
                 });
               }
