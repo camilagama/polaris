@@ -1,10 +1,5 @@
-import {
-  type ComponentType,
-  type LazyExoticComponent,
-  lazy,
-  Suspense,
-  useEffect,
-} from "react";
+import { Suspense, useEffect } from "react";
+import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import { resolveLegalRoute } from "../legal/legal-routes";
 import { OrganizationProvider } from "../lib/current-organization";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
@@ -14,6 +9,7 @@ import { getUpdateStore } from "../pwa/runtime";
 import { UpdateBanner } from "../pwa/update-banner";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
+import { type LazyScreen, lazyScreen } from "./lazy-screen";
 import {
   documentTitle,
   type EntryPageId,
@@ -25,93 +21,93 @@ import {
 import { NotFoundPage } from "./not-found-page";
 import { PageLoading } from "./page-loading";
 
-type Page = LazyExoticComponent<ComponentType>;
+type Page = LazyScreen;
 
 const TRAILING_SLASHES = /\/+$/;
 
 /** Each area is its own chunk; a screen only loads when it is opened. */
 const pages: Readonly<Record<RouteId, Page>> = {
-  "account-security": lazy(() =>
+  "account-security": lazyScreen(() =>
     import("../sign-in/change-password-page").then((module) => ({
       default: module.ChangePasswordPage,
     }))
   ),
-  attention: lazy(() =>
+  attention: lazyScreen(() =>
     import("../offline/runtime/attention-page").then((module) => ({
       default: module.AttentionPage,
     }))
   ),
-  categories: lazy(() =>
+  categories: lazyScreen(() =>
     import("../catalog/categories-page").then((module) => ({
       default: module.CategoriesPage,
     }))
   ),
-  customers: lazy(() =>
+  customers: lazyScreen(() =>
     import("../customers/customers-page").then((module) => ({
       default: module.CustomersPage,
     }))
   ),
-  dashboard: lazy(() =>
+  dashboard: lazyScreen(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
     }))
   ),
-  devices: lazy(() =>
+  devices: lazyScreen(() =>
     import("../offline/runtime/devices-page").then((module) => ({
       default: module.DevicesPage,
     }))
   ),
-  expenses: lazy(() =>
+  expenses: lazyScreen(() =>
     import("../expenses/expenses-page").then((module) => ({
       default: module.ExpensesPage,
     }))
   ),
-  home: lazy(() =>
+  home: lazyScreen(() =>
     import("../home/home-page").then((module) => ({
       default: module.HomePage,
     }))
   ),
-  inventory: lazy(() =>
+  inventory: lazyScreen(() =>
     import("../inventory/inventory-page").then((module) => ({
       default: module.InventoryPage,
     }))
   ),
-  "payment-profiles": lazy(() =>
+  "payment-profiles": lazyScreen(() =>
     import("../payment-profiles/payment-profiles-page").then((module) => ({
       default: module.PaymentProfilesPage,
     }))
   ),
-  products: lazy(() =>
+  products: lazyScreen(() =>
     import("../catalog/products-page").then((module) => ({
       default: module.ProductsPage,
     }))
   ),
-  "public-catalog": lazy(() =>
+  "public-catalog": lazyScreen(() =>
     import("../catalog/public-catalog-page").then((module) => ({
       default: module.PublicCatalogPage,
     }))
   ),
-  sale: lazy(() =>
+  sale: lazyScreen(() =>
     import("../sales/sale-page").then((module) => ({
       default: module.SalePage,
     }))
   ),
-  "sale-customer": lazy(() =>
+  "sale-customer": lazyScreen(() =>
     import("../sales/sale-customer-page").then((module) => ({
       default: module.SaleCustomerPage,
     }))
   ),
-  "sale-detail": lazy(() =>
+  "sale-detail": lazyScreen(() =>
     import("../sales/sale-detail-page").then((module) => ({
       default: module.SaleDetailPage,
     }))
   ),
-  "sale-history": lazy(() =>
+  "sale-history": lazyScreen(() =>
     import("../sales/sale-history-page").then((module) => ({
       default: module.SaleHistoryPage,
     }))
   ),
-  subscription: lazy(() =>
+  subscription: lazyScreen(() =>
     import("../subscription/subscription-page").then((module) => ({
       default: module.SubscriptionPage,
     }))
@@ -119,11 +115,11 @@ const pages: Readonly<Record<RouteId, Page>> = {
 };
 
 /** A legal text is its own chunk, kept by the service worker: the shell and the entry pages do not carry it. */
-const LegalApp = lazy(() =>
+const LegalApp = lazyScreen<{ document: LegalDocumentId }>(() =>
   import("../legal/legal-app").then((module) => ({ default: module.LegalApp }))
 );
 
-const AcceptancePage = lazy(() =>
+const AcceptancePage: Page = lazyScreen(() =>
   import("../legal/acceptance/acceptance-page").then((module) => ({
     default: module.AcceptancePage,
   }))
@@ -131,32 +127,32 @@ const AcceptancePage = lazy(() =>
 
 /** The sign-in group: each page its own chunk, all outside the shell (ADR 0100). */
 const entryPages: Record<EntryPageId, Page> = {
-  "confirm-email": lazy(() =>
+  "confirm-email": lazyScreen(() =>
     import("../sign-in/confirm-email-page").then((module) => ({
       default: module.ConfirmEmailPage,
     }))
   ),
-  "forgot-password": lazy(() =>
+  "forgot-password": lazyScreen(() =>
     import("../sign-in/forgot-password-page").then((module) => ({
       default: module.ForgotPasswordPage,
     }))
   ),
-  "reset-password": lazy(() =>
+  "reset-password": lazyScreen(() =>
     import("../sign-in/reset-password-page").then((module) => ({
       default: module.ResetPasswordPage,
     }))
   ),
-  "sign-in": lazy(() =>
+  "sign-in": lazyScreen(() =>
     import("../sign-in/sign-in-page").then((module) => ({
       default: module.SignInPage,
     }))
   ),
-  "sign-up": lazy(() =>
+  "sign-up": lazyScreen(() =>
     import("../sign-in/sign-up-page").then((module) => ({
       default: module.SignUpPage,
     }))
   ),
-  unlock: lazy(() =>
+  unlock: lazyScreen(() =>
     import("../sign-in/unlock-page").then((module) => ({
       default: module.UnlockPage,
     }))
@@ -183,7 +179,7 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       onlineOnly={route.onlineOnly}
       updateNotice={<UpdateSlot />}
     >
-      <ErrorBoundary>
+      <ErrorBoundary onRetry={Page.reset}>
         <Suspense fallback={<PageLoading />}>
           <Page />
         </Suspense>
@@ -218,6 +214,7 @@ function SignInApp({ page }: { page: EntryPageId }) {
     <ErrorBoundary
       fullPage
       message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+      onRetry={EntryPage.reset}
     >
       <UpdateSlot standalone />
       {/* `fullPage`: the color of the page while the chunk loads, so there is no white flash in the dark theme */}
@@ -237,6 +234,7 @@ function AcceptanceApp() {
     <ErrorBoundary
       fullPage
       message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+      onRetry={AcceptancePage.reset}
     >
       <UpdateSlot standalone />
       <Suspense fallback={<PageLoading fullPage />}>
@@ -275,9 +273,15 @@ export function App() {
   const legalDocument = resolveLegalRoute(window.location.pathname);
   if (legalDocument) {
     return (
-      <Suspense fallback={<PageLoading fullPage />}>
-        <LegalApp document={legalDocument} />
-      </Suspense>
+      <ErrorBoundary
+        fullPage
+        message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+        onRetry={LegalApp.reset}
+      >
+        <Suspense fallback={<PageLoading fullPage />}>
+          <LegalApp document={legalDocument} />
+        </Suspense>
+      </ErrorBoundary>
     );
   }
   if (isLegalAcceptancePath(window.location.pathname)) {

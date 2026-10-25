@@ -5,7 +5,6 @@ import {
   axeFaults,
   focusFaults,
   overflowFaults,
-  overlayMovement,
   readMotion,
   runningMotion,
   startMotionRecorder,
@@ -30,7 +29,7 @@ import {
  * docs/runbooks/testes-de-tela.md.
  *
  *   1. nothing leaves its container nor the viewport      4. colors only in OKLCH and tokens: scripts/ui-source-rules.test.ts
- *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: overlays only fade; nothing animates with reduce
+ *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: nothing animates with reduce
  *   3. axe, WCAG 2.2 A and AA                              6. keyboard focus draws the 3 px ring
  */
 
@@ -136,20 +135,6 @@ for (const screen of SCREENS) {
 
   // Motion (5): once per state, in one context, and once more with reduce.
   const motionWhere = `${screen.name} · ${contextName(MOTION_CONTEXT)}`;
-  test.describe(`${motionWhere} · movimento`, () => {
-    test.use(contextOptions(MOTION_CONTEXT));
-
-    test("as sobreposições só desvanecem", async ({ page }) => {
-      test.skip(!screen.exercise, "the screen has no overlay");
-      await openScreen(screen, page);
-      await screen.exercise?.(page);
-      const records = await readMotion(page);
-      // the recorder saw overlays animate: an empty list of faults is not a recorder that saw nothing
-      expect(records.some((record) => record.overlay)).toBe(true);
-      expect(overlayMovement(records)).toEqual([]);
-    });
-  });
-
   test.describe(`${motionWhere} · movimento reduzido`, () => {
     test.use({ ...contextOptions(MOTION_CONTEXT), reducedMotion: "reduce" });
 
@@ -174,6 +159,15 @@ test.describe("controle: cada verificação pega a falha", () => {
   if (!gallery) {
     throw new Error(
       "ui-screens.ts must list the gallery: the control cases run on it"
+    );
+  }
+
+  const homeSold = SCREENS.find(
+    (screen) => screen.name === "início com vendas"
+  );
+  if (!homeSold) {
+    throw new Error(
+      "ui-screens.ts must list the Início with sales: the sheet control cases run on it"
     );
   }
 
@@ -401,37 +395,165 @@ test.describe("controle: cada verificação pega a falha", () => {
     ]);
   });
 
-  test("5. uma sobreposição que cresce é pega; a que só desvanece passa", async ({
+  test("5. sem reduce, o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({
     page,
   }) => {
     await openScreen(gallery, page);
-    await page.evaluate(() => {
-      const portal = document.createElement("div");
-      const fades = document.createElement("div");
-      const grows = document.createElement("div");
-      fades.textContent = "só desvanece";
-      grows.textContent = "cresce";
-      portal.append(fades, grows);
-      document.body.append(portal);
-      // long enough for a busy machine to sample the growing overlay in more than one pose
-      fades.animate([{ opacity: 0 }, { opacity: 1 }], 3000);
-      grows.animate(
-        [
-          { opacity: 0, transform: "scale(0.8)" },
-          { opacity: 1, transform: "scale(1)" },
-        ],
-        3000
+    // a panel that mounts open does not animate on the first paint: the recorder, installed before the page, saw none
+    await expect(page.getByText("Condomínio, todo dia 10.")).toBeVisible();
+    expect(
+      (await readMotion(page)).filter(
+        (record) => record.name === "collapsible-down"
+      )
+    ).toEqual([]);
+    // half way (100 ms of 200): paused there, the box is taller than 0 and shorter than the end
+    const halfway = await page.evaluate(async () => {
+      const trigger = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Despesas recorrentes"
       );
+      const root = trigger?.closest('[data-slot="collapsible"]');
+      if (!(trigger && root)) {
+        throw new Error("the gallery has no collapsible panel");
+      }
+      trigger.click();
+      // the panel is not in the page while closed: it appears with the click
+      let panel: Element | null = null;
+      let animation: Animation | undefined;
+      for (let frame = 0; frame < 120 && !animation; frame += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one frame at a time
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        panel = root.querySelector('[data-slot="collapsible-content"]');
+        animation = panel
+          ?.getAnimations()
+          .find(
+            (item) =>
+              (item as CSSAnimation).animationName === "collapsible-down"
+          );
+      }
+      if (!(panel && animation)) {
+        throw new Error("the panel did not start the opening animation");
+      }
+      animation.pause();
+      animation.currentTime = 100;
+      const middle = panel.getBoundingClientRect().height;
+      animation.finish();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return { end: panel.getBoundingClientRect().height, middle };
     });
-    // the recorder samples once per frame: wait until it has seen the growing overlay in a second pose
-    await expect
-      .poll(async () => overlayMovement(await readMotion(page)).length)
-      .toBe(1);
-    const records = await readMotion(page);
-    const moves = overlayMovement(records);
-    expect(moves).toHaveLength(1);
-    expect(moves[0]).toContain('div "cresce"');
-    expect(runningMotion(records).length).toBeGreaterThan(0);
+    expect(halfway.middle).toBeGreaterThan(0);
+    expect(halfway.middle).toBeLessThan(halfway.end);
+    // closed again: the exercise of the gallery opens it itself
+    await page.getByRole("button", { name: "Despesas recorrentes" }).click();
+    await page
+      .getByText("Aluguel e internet, todo dia 5.")
+      .waitFor({ state: "detached" });
+    await gallery.exercise?.(page);
+    const running = runningMotion(await readMotion(page));
+    expect(running.some((record) => record.duration === 100)).toBe(true);
+    expect(
+      running.some(
+        (record) =>
+          record.name === "collapsible-down" && record.duration === 200
+      )
+    ).toBe(true);
+  });
+
+  test("5. sem reduce, o painel do celular sai animado (200 ms) por Esc, véu e Fechar, reabrir na saída fica aberto e a guarda o fecha se o animationend não vem", async ({
+    page,
+  }) => {
+    await openScreen(homeSold, page);
+    const more = page.getByRole("button", { exact: true, name: "Mais" });
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    const close = () => page.keyboard.press("Escape");
+    const veil = () => page.mouse.click(8, 400);
+    const button = () =>
+      panel.getByRole("button", { exact: true, name: "Fechar" }).click();
+    for (const [, ask] of [
+      ["Esc", close],
+      ["véu", veil],
+      ["Fechar", button],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one way out at a time
+      await more.click();
+      await expect(panel).toBeVisible();
+      // the entrance is over before the exit is asked for
+      await panel.evaluate((node: HTMLDialogElement) =>
+        Promise.all(node.getAnimations().map((item) => item.finished))
+      );
+      await ask();
+      // right after the request the panel is still there, closing, and the 200 ms exit animation runs
+      expect(
+        await panel.evaluate((node: HTMLDialogElement) => ({
+          closing: node.hasAttribute("data-closing"),
+          exit: node
+            .getAnimations()
+            .some((item) => (item as CSSAnimation).animationName === "exit"),
+          open: node.open,
+        }))
+      ).toEqual({ closing: true, exit: true, open: true });
+      await expect(panel).toBeHidden();
+      await expect(more).toBeFocused();
+      await expect(more).toHaveAttribute("aria-expanded", "false");
+    }
+    // asked to open again while it leaves (the "Sair" warning does it): it stays open
+    await more.click();
+    await expect(panel).toBeVisible();
+    await panel.evaluate((node: HTMLDialogElement) =>
+      Promise.all(node.getAnimations().map((item) => item.finished))
+    );
+    await close();
+    await more.evaluate((node: HTMLButtonElement) => node.click());
+    await page.waitForTimeout(600);
+    expect(
+      await panel.evaluate((node: HTMLDialogElement) => ({
+        closing: node.hasAttribute("data-closing"),
+        open: node.open,
+      }))
+    ).toEqual({ closing: false, open: true });
+    await close();
+    await expect(panel).toBeHidden();
+    // no `animationend` (a browser that skips the animation): the guard of 300 ms closes it
+    await page.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(
+        "dialog[data-closing], dialog[data-closing]::backdrop { animation: none !important }"
+      );
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    });
+    await more.click();
+    await expect(panel).toBeVisible();
+    await close();
+    await expect(panel).toBeHidden({ timeout: 1500 });
+    await expect(more).toBeFocused();
+  });
+
+  test("5. com reduce, o painel do celular fecha de uma vez, sem animação de saída", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: "light",
+      hasTouch: true,
+      isMobile: true,
+      reducedMotion: "reduce",
+      viewport: { height: 740, width: 360 },
+    });
+    const page = await context.newPage();
+    await openScreen(homeSold, page);
+    const more = page.getByRole("button", { exact: true, name: "Mais" });
+    const panel = page.locator('dialog[data-slot="sidebar"]');
+    await more.click();
+    await expect(panel).toBeVisible();
+    await panel.getByRole("button", { exact: true, name: "Fechar" }).click();
+    // closed in the click itself: not marked as closing, nothing left running
+    expect(
+      await panel.evaluate((node: HTMLDialogElement) => ({
+        closing: node.hasAttribute("data-closing"),
+        open: node.open,
+      }))
+    ).toEqual({ closing: false, open: false });
+    await expect(more).toBeFocused();
+    expect(runningMotion(await readMotion(page))).toEqual([]);
+    await context.close();
   });
 
   test("5. com reduce, uma animação que escapa da regra é pega e a comum não", async ({

@@ -1,4 +1,5 @@
 import type { RequestIdVariables } from "hono/request-id";
+import type { AssetsBinding } from "./built-assets";
 import type { MediaImagesBinding } from "./media-image-pipeline";
 
 export interface HyperdriveBinding {
@@ -61,6 +62,8 @@ export interface MediaBucketBinding {
 }
 
 export interface WorkerBindings {
+  /** The static assets of the build (`assets.binding`): the Worker answers `/assets/*` through it, 404 for a file that is not there. */
+  ASSETS?: AssetsBinding;
   /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */
   ASAAS_API_KEY?: string;
   /** `https://api-sandbox.asaas.com/v3` in staging, `https://api.asaas.com/v3` in production. */

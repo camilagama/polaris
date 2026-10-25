@@ -20,12 +20,19 @@
  * (`SKIP_WAITING`), so an update never swaps the files under a running app or
  * reloads it while work is queued (PR61).
  *
- * The build tool prepends `POLARIS_BUILD` (the build id, its time and the list of
- * files to precache) and bundles this file as a classic script.
+ * It only stores and serves what is the kind of file it asked for: a 200 with the
+ * content type of a script for a `.js`, of a style sheet for a `.css`, and never an
+ * HTML page for anything but a page. The host answers an unknown path with the
+ * shell (a chunk that is not there yet, or no longer) and that must not be
+ * cached as if it were the chunk.
+ *
+ * The build tool prepends `POLARIS_BUILD` (the build id and the list of files to
+ * precache) and bundles this file as a classic script. Nothing in it depends on
+ * when the build was made: the same content is the same worker, so the browser
+ * finds no update (and the person is told of none) when only the time changed.
  */
 export interface BuildManifest {
-  /** Milliseconds since the epoch when the build was made; orders the caches. */
-  builtAt: number;
+  /** A hash of what a user downloads: the worker changes when, and only when, it changes. */
   id: string;
   /** Paths served by the app, `/` first (the shell). */
   precache: string[];
@@ -54,9 +61,44 @@ const WORKER_EXACT_PATHS = ["/health", "/ready"];
 
 export type RequestRoute = "asset" | "bypass" | "navigate";
 
-export function shellCacheName(build: Pick<BuildManifest, "builtAt" | "id">) {
-  // Zero-padded so that sorting the names as text sorts the builds by time.
-  return `${SHELL_CACHE_PREFIX}${String(build.builtAt).padStart(15, "0")}-${build.id}`;
+export function shellCacheName(build: Pick<BuildManifest, "id">) {
+  return `${SHELL_CACHE_PREFIX}${build.id}`;
+}
+
+const JAVASCRIPT_TYPE = /^(?:text|application)\/(?:x-)?(?:java|ecma)script/i;
+const CSS_TYPE = /^text\/css/i;
+const HTML_TYPE = /^text\/html/i;
+const FILE_EXTENSION = /\.([a-z0-9]+)$/i;
+
+interface ResponseLike {
+  headers: { get: (name: string) => string | null };
+  status: number;
+}
+
+/**
+ * Whether a response is the file asked for: 200, and the content type its extension calls for (script, style
+ * sheet or page); any other file only has to not be a page.
+ */
+export function isExpectedResponse(
+  path: string,
+  response: ResponseLike
+): boolean {
+  if (response.status !== 200) {
+    return false;
+  }
+  const type = response.headers.get("content-type") ?? "";
+  const extension = FILE_EXTENSION.exec(path)?.[1]?.toLowerCase();
+  if (extension === "js" || extension === "mjs") {
+    return JAVASCRIPT_TYPE.test(type);
+  }
+  if (extension === "css") {
+    return CSS_TYPE.test(type);
+  }
+  const isPage =
+    extension === "html" ||
+    path === SHELL_PATH ||
+    AUTH_ENTRY_PATHS.includes(path);
+  return isPage ? HTML_TYPE.test(type) : !HTML_TYPE.test(type);
 }
 
 function isWorkerPath(pathname: string): boolean {
@@ -96,17 +138,18 @@ export function routeFor(
 /**
  * Of the shell caches present, the ones to delete: everything except the current
  * build and the newest other one. The previous build is kept because a page that
- * is still open may load one more lazy chunk of it.
+ * is still open may load one more lazy chunk of it. `names` come in the order the
+ * caches were created (what `caches.keys()` returns), which is the order of the
+ * builds: the names carry no time.
  */
 export function cachesToDelete(
   names: readonly string[],
   current: string
 ): string[] {
-  const others = names
-    .filter((name) => name.startsWith(SHELL_CACHE_PREFIX) && name !== current)
-    .sort()
-    .reverse();
-  return others.slice(1);
+  const others = names.filter(
+    (name) => name.startsWith(SHELL_CACHE_PREFIX) && name !== current
+  );
+  return others.slice(0, -1);
 }
 
 /** The messages a page may send. */
@@ -140,19 +183,29 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
   const lookup = async (request: Request | string) =>
     (await (await caches.open(cacheName)).match(request, MATCH_OPTIONS)) ??
     (await caches.match(request, MATCH_OPTIONS));
+  /** The file from the network, only if it is the file asked for (see `isExpectedResponse`). */
+  const fetchExpected = async (path: string) => {
+    const request = new Request(path, { cache: "reload" });
+    const response = await fetch(request);
+    if (!isExpectedResponse(path, response)) {
+      throw new Error(`unexpected response for ${path}`);
+    }
+    return { request, response };
+  };
 
   scope.addEventListener("install", ((event: WaitableEvent) => {
     event.waitUntil(
       (async () => {
         const cache = await caches.open(cacheName);
-        // All or nothing: a half-cached shell is worse than none.
-        await cache.addAll(
-          build.precache.map((path) => new Request(path, { cache: "reload" }))
+        // All or nothing: a half-cached shell is worse than none, and so is a page cached in place of a chunk.
+        const files = await Promise.all(build.precache.map(fetchExpected));
+        await Promise.all(
+          files.map(({ request, response }) => cache.put(request, response))
         );
         // The sign-in copy is a bonus: without it a sign-in page offline gets the shell of / (the challenge
         // then says to reload), so a failure here never stops the worker from installing.
-        await cache
-          .add(new Request(AUTH_ENTRY_SHELL_PATH, { cache: "reload" }))
+        await fetchExpected(AUTH_ENTRY_SHELL_PATH)
+          .then(({ request, response }) => cache.put(request, response))
           .catch(() => undefined);
       })()
     );
@@ -193,8 +246,17 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
       );
       return;
     }
+    const { pathname } = new URL(event.request.url);
     event.respondWith(
-      lookup(event.request).then((cached) => cached ?? fetch(event.request))
+      lookup(event.request).then((cached) =>
+        // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
+        // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
+        // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker
+        // resource mismatch") and fetch it a second time; a clone is taken as the preload's (measured, t344).
+        cached && isExpectedResponse(pathname, cached)
+          ? cached.clone()
+          : fetch(event.request)
+      )
     );
   }) as never);
 }

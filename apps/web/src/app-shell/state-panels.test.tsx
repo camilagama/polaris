@@ -17,7 +17,7 @@ describe("the panels of the 404 and of the failure of a screen", () => {
 
   it("send the failure of a screen back to the Início", () => {
     const boundary = new ErrorBoundary({ children: null });
-    boundary.state = { failed: true };
+    boundary.state = { chunkFailed: false, failed: true };
     const html = renderToStaticMarkup(boundary.render() as ReactElement);
     expect(html).toContain("Algo deu errado nesta tela");
     expect(html).toMatch(HOME_LINK);

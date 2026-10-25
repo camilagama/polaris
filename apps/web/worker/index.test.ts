@@ -133,6 +133,7 @@ vi.mock("../src/server/billing/renewal-cancellation", () => ({
 }));
 
 const { default: worker } = await import("./index");
+const { app } = await import("../src/server/app");
 
 const configured = {
   BILLING_HYPERDRIVE: { connectionString: "postgresql://billing.invalid/db" },
@@ -1701,6 +1702,46 @@ describe("the queue consumer", () => {
   });
 });
 
+describe("the static assets", () => {
+  const html = () =>
+    new Response("<html></html>", { headers: { "Content-Type": "text/html" } });
+  const request = (path: string) => new Request(`https://app.example${path}`);
+
+  it("answers /assets/* through the assets: a chunk that is not there is a 404, not the shell", async () => {
+    const assets = { fetch: vi.fn(() => Promise.resolve(html())) };
+    const response = await worker.fetch(
+      request("/assets/gone-ZZZZ.js") as never,
+      { ASSETS: assets } as never,
+      {} as ExecutionContext
+    );
+    expect(response.status).toBe(404);
+    expect(assets.fetch).toHaveBeenCalledTimes(1);
+    expect(app.fetch).not.toHaveBeenCalled();
+  });
+
+  it("leaves every other path to the application", async () => {
+    const assets = { fetch: vi.fn() };
+    vi.mocked(app.fetch).mockResolvedValueOnce(new Response("ok"));
+    await worker.fetch(
+      request("/rpc/sale/confirm") as never,
+      { ASSETS: assets } as never,
+      {} as ExecutionContext
+    );
+    expect(app.fetch).toHaveBeenCalledTimes(1);
+    expect(assets.fetch).not.toHaveBeenCalled();
+  });
+
+  it("is declared in wrangler.jsonc: the binding, and the Worker first for /assets/*", () => {
+    const config = readFileSync(
+      new URL("../wrangler.jsonc", import.meta.url),
+      "utf8"
+    );
+    expect(config).toContain('"binding": "ASSETS"');
+    expect(config).toMatch(RUN_WORKER_FIRST_ASSETS);
+  });
+});
+
+const RUN_WORKER_FIRST_ASSETS = /"run_worker_first": \[[^\]]*"\/assets\/\*"/;
 const CRONS_LIST = /"crons":\s*\[([^\]]*)\]/;
 const QUOTED = /"([^"]+)"/g;
 
