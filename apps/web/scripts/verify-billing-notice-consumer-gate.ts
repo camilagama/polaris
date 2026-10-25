@@ -57,13 +57,19 @@ import { DeferredHandlerError } from "../src/server/queue/consumer";
  *      event finds nothing to do; neither throws (no retry, no dead letter, no incident);
  *   5. cases 3 and 4 of item 5: the owner's refund request repeated with the same request ID records nothing new, and
  *      another request ID records no second `subscription_cancelled` and no second E7; the E7 waits 24 hours, and the
- *      hourly handover (the real `listOwed`) settles it `refunded` once the refund came in.
+ *      hourly handover (the real `listOwed`) settles it `refunded` once the refund came in;
+ *   6. the delivery window counts from the first attempt (t356): a notice never tried goes out at any age, one first
+ *      tried more than 23 hours ago is skipped `delivery_window_passed`, the attempt stays written when the send
+ *      throws, and the real `listOwed` puts a notice that threw behind the ones never tried, so the next one goes in
+ *      the same batch, and among the ones already tried the one tried longest ago (`last_attempted_at`) goes first.
  * The fixtures stay, as in the other gates; the logins are dropped at the end.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
+
+const handoverIncomplete = /billing_notice_handover_incomplete/;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -91,7 +97,9 @@ interface NoticeRow {
   dedupe_key: string;
   due_at: Date;
   failed_at: Date | null;
+  first_attempted_at: Date | null;
   id: string;
+  last_attempted_at: Date | null;
   kind: string;
   recorded_at: Date;
   sent_at: Date | null;
@@ -269,7 +277,7 @@ async function run() {
     const notices = async (tenant: TenantFixture) =>
       (
         await owner.pool.query<NoticeRow>(
-          `SELECT id::text AS id, kind, dedupe_key, due_at, recorded_at, sent_at, failed_at, skipped_reason
+          `SELECT id::text AS id, kind, dedupe_key, due_at, recorded_at, sent_at, failed_at, skipped_reason, first_attempted_at, last_attempted_at
              FROM public.billing_notices WHERE organization_id = $1 ORDER BY recorded_at, id`,
           [tenant.organizationId]
         )
@@ -695,6 +703,233 @@ async function run() {
     assert.equal(sent.length, before + 1, "the E7 did not go out");
     tests.push(
       "cases 3 and 4 of item 5 with the real store and commands: the owner's refund request records one subscription_cancelled and one E7 that waits 24 hours; the same request ID again and another request ID record no second cancellation, no second E7 and no new outbox event; the E7 is left owed by the consumer and not listed by listOwed until due; the refund's webhook records E-R, which goes to the owner; a day later the hourly handover lists the E7 and settles it skipped refunded"
+    );
+
+    // ------------------------------------------------ 6. the window counts from the first attempt; the round-robin
+    const receiptTenant = async (label: string, dueHoursAgo: number) => {
+      const tenant = await newTenant(label);
+      const tenantRef = ref("chk");
+      const chargeAt = new Date((await dbNow()).getTime() - DAY);
+      await billing.attachProvider(tenant.organizationId, "asaas", tenantRef, {
+        firstChargeOn: localDate(chargeAt, zone),
+        priceAmount: "24.90",
+        priceId: "pro-1",
+      });
+      assert.equal(
+        (
+          await apply(tenant, tenantRef, {
+            amount: { currency: "BRL", value: "24.90" },
+            cycleMonths: 1,
+            occurredAt: chargeAt,
+            periodEndsAt: new Date(chargeAt.getTime() + 30 * DAY),
+            type: "charge_succeeded",
+          })
+        ).status,
+        "applied"
+      );
+      const receiptOf = await noticeOf(tenant, "charge_receipt");
+      // only due_at moves back (recorded_at stays: a charge processed after it would read as paid since the notice)
+      await owner.pool.query(
+        "UPDATE public.billing_notices SET due_at = now() - make_interval(hours => $2) WHERE id = $1::uuid",
+        [receiptOf.id, dueHoursAgo]
+      );
+      return { notice: receiptOf, tenant };
+    };
+    const noticeNow = async (tenant: TenantFixture) =>
+      await noticeOf(tenant, "charge_receipt");
+
+    // (a) never tried, due 30 hours ago: it goes out, and the attempt is written
+    const untried = await receiptTenant("never tried", 30);
+    assert.equal((await noticeNow(untried.tenant)).first_attempted_at, null);
+    const beforeUntried = sent.length;
+    assert.equal(
+      await handleBillingNotice(
+        dependencies(await dbNow()),
+        await envelopeOf(untried.tenant, untried.notice.id)
+      ),
+      "sent"
+    );
+    assert.equal(
+      sent.length,
+      beforeUntried + 1,
+      "a notice never tried goes out"
+    );
+    const untriedAfter = await noticeNow(untried.tenant);
+    assert.ok(untriedAfter.sent_at);
+    assert.ok(untriedAfter.first_attempted_at, "the first attempt is written");
+    assert.ok(
+      untriedAfter.first_attempted_at <= untriedAfter.sent_at,
+      "written before the sending was marked"
+    );
+
+    // (b) first tried 23 hours and a minute ago: the window passed, nothing is sent, and the attempt is not moved
+    const stale = await receiptTenant("tried long ago", 30);
+    await owner.pool.query(
+      "UPDATE public.billing_notices SET first_attempted_at = now() - interval '23 hours 1 minute' WHERE id = $1::uuid",
+      [stale.notice.id]
+    );
+    const staleBefore = (await noticeNow(stale.tenant)).first_attempted_at;
+    const beforeStale = sent.length;
+    assert.equal(
+      await handleBillingNotice(
+        dependencies(await dbNow()),
+        await envelopeOf(stale.tenant, stale.notice.id)
+      ),
+      "skipped"
+    );
+    const staleAfter = await noticeNow(stale.tenant);
+    assert.equal(staleAfter.skipped_reason, "delivery_window_passed");
+    assert.equal(sent.length, beforeStale, "nothing went out");
+    assert.equal(
+      staleAfter.first_attempted_at?.getTime(),
+      staleBefore?.getTime()
+    );
+    // and one first tried 22 hours ago still goes out
+    const recent = await receiptTenant("tried recently", 30);
+    await owner.pool.query(
+      "UPDATE public.billing_notices SET first_attempted_at = now() - interval '22 hours' WHERE id = $1::uuid",
+      [recent.notice.id]
+    );
+    assert.equal(
+      await handleBillingNotice(
+        dependencies(await dbNow()),
+        await envelopeOf(recent.tenant, recent.notice.id)
+      ),
+      "sent"
+    );
+
+    // (c) and (d): the one that throws stays written as tried and goes behind the ones never tried
+    const thrower = await receiptTenant("thrower", 40);
+    const next = await receiptTenant("next", 35);
+    const ours = new Set([thrower, next].map((x) => x.tenant.organizationId));
+    const realNotices = wired.dependencies.notices;
+    const ourList = async (at: Date, limit: number) =>
+      (await realNotices.listOwed(at, 100_000))
+        .filter((owed) => ours.has(owed.organizationId))
+        .slice(0, limit);
+    const ids = (list: { noticeId: string }[]) =>
+      list.map((owed) => owed.noticeId);
+    assert.deepEqual(
+      ids(await ourList(await dbNow(), 5)),
+      [thrower.notice.id, next.notice.id],
+      "both never tried: the oldest due first"
+    );
+    const throwing: ClosureNoticeSender = (message: Sent) =>
+      message.idempotencyKey === thrower.notice.id
+        ? Promise.reject(new Error("the provider call broke"))
+        : send(message);
+    const beforeThrow = sent.length;
+    await assert.rejects(
+      handOverOwedBillingNotices(
+        {
+          ...dependencies(await dbNow()),
+          notices: { ...realNotices, listOwed: ourList },
+          send: throwing,
+        },
+        5
+      ),
+      handoverIncomplete
+    );
+    assert.equal(
+      sent.length,
+      beforeThrow + 1,
+      "the next one went in the same batch"
+    );
+    assert.ok((await noticeNow(next.tenant)).sent_at);
+    const thrown = await noticeNow(thrower.tenant);
+    assert.equal(thrown.sent_at, null, "the one that threw is still owed");
+    assert.ok(thrown.first_attempted_at, "its attempt stayed written");
+    const later = await receiptTenant("later", 20);
+    ours.add(later.tenant.organizationId);
+    assert.deepEqual(
+      ids(await ourList(await dbNow(), 5)),
+      [later.notice.id, thrower.notice.id],
+      "never tried first, though the one that threw is due earlier"
+    );
+    assert.deepEqual(
+      ids(await ourList(await dbNow(), 1)),
+      [later.notice.id],
+      "a batch of one reaches the one never tried"
+    );
+    // (e): two notices already tried rotate by the last attempt, not by the first, through the consumer
+    const triedA = await receiptTenant("tried-a", 50);
+    const triedB = await receiptTenant("tried-b", 45);
+    let rotation = [triedA];
+    const rotationList = async (at: Date, limit: number) =>
+      (await realNotices.listOwed(at, 100_000))
+        .filter((owed) =>
+          rotation.some(
+            (one) => one.tenant.organizationId === owed.organizationId
+          )
+        )
+        .slice(0, limit);
+    const handOverRotation = async (
+      batch: number,
+      sender: ClosureNoticeSender
+    ) =>
+      handOverOwedBillingNotices(
+        {
+          ...dependencies(await dbNow()),
+          notices: { ...realNotices, listOwed: rotationList },
+          send: sender,
+        },
+        batch
+      );
+    const throwAlways: ClosureNoticeSender = () =>
+      Promise.reject(new Error("the provider call broke"));
+    // B is tried first, then A, then B again: B has the older first attempt and the newer last one
+    for (const [group, batch] of [
+      [[triedB], 1],
+      [[triedA], 1],
+      [[triedB], 1],
+    ] as const) {
+      rotation = [...group];
+      await assert.rejects(
+        handOverRotation(batch, throwAlways),
+        handoverIncomplete
+      );
+    }
+    const aTried = await noticeNow(triedA.tenant);
+    const bTried = await noticeNow(triedB.tenant);
+    assert.ok(aTried.first_attempted_at && bTried.first_attempted_at);
+    assert.ok(aTried.last_attempted_at && bTried.last_attempted_at);
+    assert.ok(
+      bTried.first_attempted_at < aTried.first_attempted_at,
+      "B was first tried before A"
+    );
+    assert.ok(
+      bTried.last_attempted_at > aTried.last_attempted_at,
+      "and tried again after it"
+    );
+    assert.ok(
+      bTried.first_attempted_at < bTried.last_attempted_at,
+      "the second attempt moved only the last one"
+    );
+    rotation = [triedA, triedB];
+    assert.deepEqual(
+      ids(await rotationList(await dbNow(), 5)),
+      [triedA.notice.id, triedB.notice.id],
+      "both tried: the one tried longest ago first, though B's first attempt is older"
+    );
+    const throwingB: ClosureNoticeSender = (message: Sent) =>
+      message.idempotencyKey === triedB.notice.id
+        ? throwAlways(message)
+        : send(message);
+    const beforeRotation = sent.length;
+    assert.equal(
+      (await handOverRotation(1, throwingB)).sent,
+      1,
+      "a batch of one reaches A: B, the one that failed last, is behind it"
+    );
+    assert.equal(sent.length, beforeRotation + 1);
+    assert.ok((await noticeNow(triedA.tenant)).sent_at);
+    assert.equal((await noticeNow(triedB.tenant)).sent_at, null);
+    tests.push(
+      "two notices already tried rotate by the last attempt, written by the consumer: the one first tried earlier but tried again later goes behind the other (the order by the first attempt would put it ahead), the second attempt moves only last_attempted_at, and a batch of one sends the other"
+    );
+
+    tests.push(
+      "the delivery window counts from the first attempt: a notice never tried and due 30 hours ago is sent and its first attempt is written (before it is marked sent); one first tried 23 hours and a minute ago is skipped delivery_window_passed without a send and with the attempt untouched; one first tried 22 hours ago is sent; a notice whose send throws keeps its attempt written and stays owed, the next one never tried is sent in the same batch, and the real listOwed then puts a never-tried notice, even a later-due one, ahead of the one that threw"
     );
 
     console.log(
