@@ -2175,6 +2175,17 @@ Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103
 | Custo | Medido | Linha do resto −91 B (runtime offline desligado) e −168 B (ligado); primitivos do Base UI +1 376 B; primeiro script +33 B. Números no ADR e no PR. |
 | Provas | Parcial | Unitário do `StatusNav`; e2e das cinco telas (clique, setas, Tab, `aria-selected`, endereço de Produtos e de Estoque) e do carregando das três telas (`role="status"`, esqueleto escondido do leitor de tela); `/sales/customer` sem `saleId` e com endereço inválido. O que só roda no CI (WebKit, `e2e-real`) está no corpo do PR. |
 
+### Leituras do app repetem uma vez antes de mostrar o erro (t338; sem migration)
+
+Mitigação do estouro de CPU no isolate frio do Worker (diagnóstico de 24/10/2026): o app repete a leitura uma vez, como o usuário recarregando. O corte de CPU no servidor é de outra tarefa. Sem mudança de texto nem de estado de tela.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| `readWithRetry` (`src/lib/read-with-retry.ts`) | Em revisão | Só leitura. Repete uma vez, depois de cerca de 1,5 s (±20%), quando a leitura não teve resposta (`isNoAnswer`, que inclui a resposta sem a marca do Worker), deu `SERVICE_UNAVAILABLE` sem motivo ou com `server_busy` (outro motivo não repete), qualquer 5xx sem motivo próprio, o que inclui a página do runtime sem a marca (o oRPC a lê como erro do status que ela traz: 502, 504, 52x). 4xx nunca repete. Enquanto repete, a tela segue em "Carregando…"; só a 2ª falha mostra "Tentar novamente". |
+| Onde entra | Em revisão | Metas (lista e histórico do alvo), Início, Resultado, produtos e categorias da tela de Produtos, endereço direto de produto, catálogo público do painel, estoque (lista, mais itens e saldo das linhas da venda), histórico de vendas, detalhe da venda, cliente da venda, despesas (lista, categorias e regras), formas de receber e clientes. Nenhuma escrita: o teste de varredura falha fechado (toda chamada de `readWithRetry` precisa estar na forma `readWithRetry(() => orpcClient.<rota>.<leitura>(...))`, com a leitura numa lista fechada) e é a guarda. |
+| Conexão | Em revisão | A sondagem de `/health` cuja resposta é a do runtime sem a marca (5xx com `cf-ray`) não conta como desconectado nem como tempo esgotado (`TIMEOUTS_FOR_OFFLINE`): a via existe, o servidor falhou. Um estouro de CPU não mostra "sem conexão". |
+| Provas | Parcial | Unitários do ajudante (503 e depois sucesso sem erro; dois 503 mostram o erro; 4xx não repete) e da conexão; e2e das Metas com a 1ª resposta 503 (abre sem o aviso) e com dois 503 (mostra o erro após uma única repetição). Os e2e de Perfis de pagamento, Produtos e Clientes que falhavam só na 1ª leitura passaram a falhar nas duas. Não coberto: o catálogo público de fora (renderizado no servidor, sem esta repetição) e as categorias do cadastro. Quando a aba já se sabe sem rede, ou a leitura ficou velha (a tela saiu ou outra leitura a trocou), não há espera nem 2ª tentativa; Início, detalhe de produto por endereço, lista de despesas e formas de receber da venda ainda não cancelam a espera. |
+
 ### Movimento dos componentes volta ao padrão do shadcn (t341; sem migration)
 
 Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) e regra "Movimento" do [DESIGN.md](../DESIGN.md). Nenhum texto, contrato nem regra de negócio muda.
@@ -2188,6 +2199,7 @@ Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-d
 | `Dialog` e Toast | Fora | Ficam como estão; o Dialog é da t331 e entra numa tarefa própria depois dela. Gráficos (t336) e barra de filtros também ficam de fora. |
 | `prefers-reduced-motion` | Sem mudança | A regra global de `theme.css` leva animação e transição a 0,01 ms; o e2e `com prefers-reduced-motion: reduce nada anima` roda em cada tela e abre popover, menu, seletor, dica, diálogo e aviso. |
 | Testes | Em revisão | Saíram a regra de fonte contra `zoom-*`, `slide-*`, `translate`/`scale`/`rotate` e `animate-*` que não desvanece, e a medida de pose das sobreposições. Entrou um teste que exige as classes do shadcn nos quatro primitivos e um e2e que prova que, sem `reduce`, o popover e os outros animam em 100 ms. |
+| Escape perdido nos e2e do menu (t357) | Em revisão | O gate offline falhou no PR 306 com o fundo do menu "Mais ações" bloqueando o clique. O fundo não estava inerte: o menu estava aberto, porque um Escape enviado logo depois de abrir ou reabrir o menu (pelo furo do fundo, durante a saída) é perdido até os efeitos do Base UI instalarem o fechamento, e os itens do popup que sai ainda estão visíveis. Não é a animação de saída: o menu desmonta ao fim dela, com e sem `prefers-reduced-motion`. Os e2e passam a repetir o Escape até o menu sumir e conferem que não sobra fundo inerte; teste novo cobre os dois modos de movimento. A falha não reproduziu localmente; a prova é o CI. |
 
 ### Precache: a trava de +80 000 B só avisa (t353; emenda de 24/10 do ADR 0103; sem migration)
 

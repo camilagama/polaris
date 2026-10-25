@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { filterLocalSales } from "./local-history";
@@ -97,8 +98,11 @@ export function useSaleHistory(
         latest.current += 1;
       };
     }
-    orpcClient.sale
-      .list(historyListRequest(organizationId, effective, 0))
+    readWithRetry(
+      () =>
+        orpcClient.sale.list(historyListRequest(organizationId, effective, 0)),
+      { isCurrent: () => request === latest.current }
+    )
       .then((page) => {
         if (request === latest.current) {
           setState((current) => historyLoaded(current, page));
@@ -128,8 +132,13 @@ export function useSaleHistory(
     latest.current += 1;
     const request = latest.current;
     setState(loadMoreStarted);
-    orpcClient.sale
-      .list(historyListRequest(organizationId, effective, nextOffset(state)))
+    readWithRetry(
+      () =>
+        orpcClient.sale.list(
+          historyListRequest(organizationId, effective, nextOffset(state))
+        ),
+      { isCurrent: () => request === latest.current }
+    )
       .then((page) => {
         if (request === latest.current) {
           setState((current) => moreLoaded(current, page));
