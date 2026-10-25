@@ -17,6 +17,11 @@ import { subjectStore } from "./format";
 const ORIGIN = "https://dash.exemplo.app";
 const SUPPORT = "suporte@exemplo.app";
 const SUBSCRIPTION_URL = `${ORIGIN}/subscription`;
+const RE_PRO_BEGAN = /^O plano Pro começou na loja Loja Aurora\. /;
+const RE_TRIAL_BEGAN =
+  /^Seu teste grátis do plano Pro começou na loja Loja Aurora\. /;
+const RE_D3 = /O pagamento ainda não foi confirmado\. Seu Pro continua até \d/;
+const RE_IN_7_DAYS = /^Em 7 dias, \d/;
 const RE_DAY = /^\d{1,2}º? de [a-zç]+ de \d{4}$/;
 const RE_1 = /oklch\(/i;
 const RE_2 = /rgba?\(/i;
@@ -441,15 +446,11 @@ describe("singular and plural", () => {
     const today = started("2026-10-22");
     expect(today.subject).toBe("Seu Polaris Pro começou");
     expect(today.heading).toBe("Seu Polaris Pro começou");
-    expect(today.paragraphs[0]).toMatch(
-      /^O plano Pro começou na loja Loja Aurora\. /
-    );
+    expect(today.paragraphs[0]).toMatch(RE_PRO_BEGAN);
     expect(today.paragraphs.join(" ")).not.toContain("teste");
     const later = started("2026-10-29");
     expect(later.subject).toBe("Seu teste do Polaris Pro começou");
-    expect(later.paragraphs[0]).toMatch(
-      /^Seu teste grátis do plano Pro começou na loja Loja Aurora\. /
-    );
+    expect(later.paragraphs[0]).toMatch(RE_TRIAL_BEGAN);
   });
 });
 
@@ -588,9 +589,7 @@ describe("the texts of the review of 24/10 (Petković, 20:31)", () => {
   });
 
   it("says the payment is still not confirmed on the 3rd day of the grace", () => {
-    expect(bodyOf(kindCase("renewal_failed d3").email)).toMatch(
-      /O pagamento ainda não foi confirmado\. Seu Pro continua até \d/
-    );
+    expect(bodyOf(kindCase("renewal_failed d3").email)).toMatch(RE_D3);
   });
 
   it("says the next subscription is charged the same day after a first charge that failed (T329-4)", () => {
@@ -603,7 +602,7 @@ describe("the texts of the review of 24/10 (Petković, 20:31)", () => {
     const content = billingNoticeContent(
       kindCase("annual_renewal_reminder (card)").email
     );
-    expect(content.paragraphs[0]).toMatch(/^Em 7 dias, \d/);
+    expect(content.paragraphs[0]).toMatch(RE_IN_7_DAYS);
     expect(content.preview).toBe(
       "A renovação anual da loja Loja Aurora é em 7 dias."
     );

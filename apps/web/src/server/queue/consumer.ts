@@ -57,6 +57,20 @@ export class PermanentHandlerError extends Error {
   }
 }
 
+/**
+ * The handler asks for the same message again in `delaySeconds` (a billing notice not yet due, ADR 0104): not a
+ * failure, so it is logged as information; the platform still counts the delivery.
+ */
+export class DeferredHandlerError extends Error {
+  readonly delaySeconds: number;
+
+  constructor(delaySeconds: number) {
+    super("queue_message_deferred");
+    this.name = "DeferredHandlerError";
+    this.delaySeconds = delaySeconds;
+  }
+}
+
 /** What the consumer needs of the producer of the dead-letter queue. */
 export interface DeadLetterProducer {
   send: (
@@ -229,6 +243,16 @@ async function processMessage(
     await handler(envelope);
   } catch (error: unknown) {
     await ledger.release(key, claim.token).catch(() => undefined);
+    if (error instanceof DeferredHandlerError) {
+      logger.info("queue_message_deferred", {
+        delaySeconds: error.delaySeconds,
+        eventId: envelope.eventId,
+        eventType: envelope.type,
+        messageId: message.id,
+      });
+      message.retry({ delaySeconds: error.delaySeconds });
+      return;
+    }
     const permanent = error instanceof PermanentHandlerError;
     logger.error("queue_message_failed", {
       correlationId: envelope.correlationId,

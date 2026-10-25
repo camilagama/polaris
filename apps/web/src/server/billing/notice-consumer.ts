@@ -1,8 +1,3 @@
-import type {
-  BillingCycleMonths,
-  BillingFact,
-  BillingRecord,
-} from "@polaris/domain/billing/facts";
 import {
   type BillingNoticeKind,
   type BillingNoticeSkipReason,
@@ -16,16 +11,21 @@ import {
   refundWindowClosesAt,
 } from "@polaris/domain/billing/plan-view";
 import type { BillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
-import type { BillingStore } from "@polaris/db/billing-store";
+import type {
+  BillingStore,
+  BillingNoticeStoreFacts as StoredNoticeStoreFacts,
+  StoredBillingNotice,
+} from "@polaris/db/billing-store";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { localDate } from "@polaris/domain/organization/closure-deadlines";
 import { logger, opaqueId } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import {
   type ClosureNoticeSender,
   createResendClosureNoticeSender,
 } from "../privacy/closure-notice-email";
-import { PermanentHandlerError } from "../queue/consumer";
+import { DeferredHandlerError, PermanentHandlerError } from "../queue/consumer";
 import {
   type BillingNoticeEmail,
   renderBillingNoticeEmail,
@@ -55,40 +55,16 @@ const EMAIL_REJECTED = "email_rejected";
  */
 const RESEND_KEY_TAKEN = "invalid_idempotent_request";
 
+/** A notice due within this long goes back to the queue with a delay; a later one waits for the hourly handover. */
+const BILLING_NOTICE_QUEUE_WAIT_MS = 3_600_000;
+/** The queue brings a deferred notice back a little after it is due. */
+const DEFER_MARGIN_SECONDS = 5;
+
 /** Notices the handover sends in one hourly run, at most (one at a time, under the provider's rate limit). */
 const BILLING_NOTICE_HANDOVER_BATCH = 20;
 
 /** A notice as the billing role reads it again, with the record of its store and what its rule needs. */
-export interface BillingNoticeDelivery {
-  /** The cycle of the current link: the record's while Pro, else the one the method was set up with. */
-  cycleMonths: BillingCycleMonths | null;
-  dedupeKey: string;
-  /** Not to go out before this instant (E4 and E7 wait for the fact that would suppress them). */
-  dueAt: Date;
-  /** The ledger row the notice names (E4, E7, E-R), read again; null for the others. */
-  event: { fact: BillingFact; id: string; providerRef: string | null } | null;
-  firstChargeAmount: string | null;
-  firstChargeAt: Date | null;
-  firstChargeEventId: string | null;
-  firstChargeOn: string | null;
-  kind: BillingNoticeKind;
-  noticeId: string;
-  organizationId: string;
-  /** When the store went over the Free limit (the 7 days to choose the variants count from it). */
-  overLimitSince: Date | null;
-  /** A charge was applied to the store after the notice was recorded. */
-  paidSinceNotice: boolean;
-  priceAmount: string | null;
-  provider: string | null;
-  providerRef: string | null;
-  record: BillingRecord;
-  recordedAt: Date;
-  refundRequestedAt: Date | null;
-  /** When the other E-C2 of the same paid period went out (or, for a d0 still owed, when it was recorded). */
-  renewalFailedSentAt: readonly Date[];
-  /** When the E-A of the current link went out. */
-  trialStartedSentAt: Date | null;
-}
+export type BillingNoticeDelivery = StoredBillingNotice;
 
 /** The billing role: reads a notice still owed, lists the owed ones that are due, and marks the outcome once. */
 export interface BillingNoticeReader {
@@ -114,18 +90,8 @@ export interface BillingNoticeReader {
   ) => Promise<boolean>;
 }
 
-/** What the e-mail says of the store the notice is of, read for a notice still owed. */
-export interface BillingNoticeStoreFacts {
-  /** The store is in closure, closed or waiting for the purge (EM-7). */
-  closed: boolean;
-  name: string;
-  /** The owner the notice is for is still an active owner (E1). */
-  ownerActive: boolean;
-  timeZone: string;
-  /** The Free limit of active variants (the live catalog) and how many the store has active. */
-  variantLimit: number;
-  variants: number;
-}
+/** What the e-mail says of the store the notice is of, read for a notice still owed (`billing_notice_store`). */
+export type BillingNoticeStoreFacts = StoredNoticeStoreFacts;
 
 interface BillingNoticeStores {
   /** Null when there is no such store any more (purged): the notice has no one to go to. */
@@ -190,6 +156,7 @@ export type BillingNoticeOutcome =
   | "skipped";
 
 const BILLING_SELF_SERVICE_ON = "true";
+const SUPPORT_EMAIL = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 
 /**
  * The configuration of the e-mails, or null when off: the switch (only the exact text `true`), the provider's key, the
@@ -211,7 +178,16 @@ export function billingNoticeEmailConfig(
   const from = bindings.AUTH_EMAIL_FROM?.trim();
   const supportEmail = bindings.BILLING_SUPPORT_EMAIL?.trim();
   const appOrigin = originOf(bindings.BETTER_AUTH_BASE_URL);
-  if (!(apiKey && from && supportEmail && appOrigin)) {
+  // one address, never a list: it is the reply-to and the footer
+  if (
+    !(
+      apiKey &&
+      from &&
+      supportEmail &&
+      appOrigin &&
+      SUPPORT_EMAIL.test(supportEmail)
+    )
+  ) {
     return null;
   }
   return { apiKey, appOrigin, from, supportEmail };
@@ -279,6 +255,15 @@ export function billingNoticeDependenciesOf(
     authConnection && (billingEmail || welcomeEmail)
       ? openRecipients(authConnection)
       : null;
+  // a switch on whose e-mail cannot go out: its notices are skipped email_not_configured, so a person must see it
+  for (const [email, on, config] of [
+    ["billing", bindings.BILLING_SELF_SERVICE_ENABLED, billingEmail],
+    ["welcome", bindings.WELCOME_EMAIL_ENABLED, welcomeEmail],
+  ] as const) {
+    if (on === BILLING_SELF_SERVICE_ON && !(config && recipients)) {
+      logger.warn("billing_notice_email_misconfigured", { email });
+    }
+  }
   return {
     close: async () => {
       await recipients?.close();
@@ -584,7 +569,7 @@ async function deliverBillingNotice(
   dependencies: BillingNoticeDependencies,
   noticeId: string,
   organizationId: string
-): Promise<BillingNoticeOutcome> {
+): Promise<{ outcome: BillingNoticeOutcome; waitMs?: number }> {
   const now = dependencies.now?.() ?? new Date();
   const fields = {
     noticeId: opaqueId(noticeId),
@@ -593,12 +578,15 @@ async function deliverBillingNotice(
   const delivery = await dependencies.notices.claim(noticeId, organizationId);
   if (!delivery) {
     logger.info("billing_notice_not_due", { ...fields, outcome: "skipped" });
-    return "not_due";
+    return { outcome: "not_due" };
   }
   const { kind } = delivery;
   if (delivery.dueAt.getTime() > now.getTime()) {
     logger.info("billing_notice_not_yet_due", { ...fields, kind });
-    return "not_yet_due";
+    return {
+      outcome: "not_yet_due",
+      waitMs: delivery.dueAt.getTime() - now.getTime(),
+    };
   }
   const skip = async (
     reason: BillingNoticeSkipReason | BillingNoticeDeliverySkip
@@ -619,24 +607,24 @@ async function deliverBillingNotice(
   };
   const checked = await skipReasonOf(dependencies, delivery, now);
   if ("reason" in checked) {
-    return await skip(checked.reason);
+    return { outcome: await skip(checked.reason) };
   }
   const { config, store } = checked;
   const email = billingNoticeEmailOf(delivery, store, config.appOrigin);
   if (!email) {
-    return await skip("state_changed");
+    return { outcome: await skip("state_changed") };
   }
   const recipient = await dependencies.recipients.recipient(
     noticeId,
     organizationId
   );
   if (!recipient) {
-    return await skip("no_recipient");
+    return { outcome: await skip("no_recipient") };
   }
   if (!recipient.verified) {
-    return await skip("email_not_verified");
+    return { outcome: await skip("email_not_verified") };
   }
-  return await sendBillingNotice(dependencies, {
+  const outcome = await sendBillingNotice(dependencies, {
     config,
     email,
     fields,
@@ -645,6 +633,7 @@ async function deliverBillingNotice(
     organizationId,
     to: recipient.email,
   });
+  return { outcome };
 }
 
 async function sendBillingNotice(
@@ -751,14 +740,27 @@ export async function handleBillingNotice(
   ) {
     throw new PermanentHandlerError("billing_notice_event_invalid");
   }
-  return await deliverBillingNotice(
+  const delivered = await deliverBillingNotice(
     dependencies,
     noticeId,
     envelope.organizationId
   );
+  if (
+    delivered.waitMs !== undefined &&
+    delivered.waitMs <= BILLING_NOTICE_QUEUE_WAIT_MS
+  ) {
+    // a receipt or a cancellation that waits its 10 minutes: the queue brings it back when it is due; a longer
+    // wait (a cancellation with a refund request) is left to the hourly handover
+    throw new DeferredHandlerError(
+      Math.ceil(delivered.waitMs / 1000) + DEFER_MARGIN_SECONDS
+    );
+  }
+  return delivered.outcome;
 }
 
 export interface BillingNoticeHandoverReport {
+  /** Notices whose delivery threw something else than a failure of the provider: left owed, the run incomplete. */
+  errors: number;
   failed: number;
   handedOver: number;
   retry: number;
@@ -767,14 +769,17 @@ export interface BillingNoticeHandoverReport {
 }
 
 /**
- * The hourly handover of the notices left owed and now due: a receipt or a cancellation that waited, a delivery the
- * queue gave up on. One at a time; the failure of one never stops the others.
+ * The hourly handover of the notices the queue left owed: a cancellation that waited its day, a delivery the queue
+ * gave up on. One at a time; the failure of one never stops the others. A notice that throws something else than a
+ * failure of the provider is logged (its opaque IDs and the class of the error) and left owed, and the run ends with
+ * `billing_notice_handover_incomplete` after the others were sent.
  */
 export async function handOverOwedBillingNotices(
   dependencies: BillingNoticeDependencies,
   limit = BILLING_NOTICE_HANDOVER_BATCH
 ): Promise<BillingNoticeHandoverReport> {
   const report: BillingNoticeHandoverReport = {
+    errors: 0,
     failed: 0,
     handedOver: 0,
     retry: 0,
@@ -787,7 +792,7 @@ export async function handOverOwedBillingNotices(
   for (const notice of owed) {
     try {
       // biome-ignore lint/performance/noAwaitInLoops: one message at a time, under the provider's rate limit
-      const outcome = await deliverBillingNotice(
+      const { outcome } = await deliverBillingNotice(
         dependencies,
         notice.noticeId,
         notice.organizationId
@@ -796,11 +801,21 @@ export async function handOverOwedBillingNotices(
         report[outcome] += 1;
       }
     } catch (error: unknown) {
-      if (!(error instanceof BillingNoticeRetryError)) {
-        throw error;
+      if (error instanceof BillingNoticeRetryError) {
+        report.retry += 1;
+        continue;
       }
-      report.retry += 1;
+      report.errors += 1;
+      logger.error("billing_notice_handover_failed", {
+        ...describeError(error),
+        noticeId: opaqueId(notice.noticeId),
+        organizationId: opaqueId(notice.organizationId),
+      });
     }
+  }
+  if (report.errors > 0) {
+    logger.info("billing_notice_handover_complete", { ...report });
+    throw new Error("billing_notice_handover_incomplete");
   }
   return report;
 }

@@ -41,6 +41,7 @@ import type {
   ClosureNoticeSender,
   ClosureNoticeSendResult,
 } from "../src/server/privacy/closure-notice-email";
+import { DeferredHandlerError } from "../src/server/queue/consumer";
 
 /**
  * The consumer of `billing.notice` and the recording of the notices (ADR 0104, decision 7; PR G of design t268 v2,
@@ -448,7 +449,13 @@ async function run() {
     assert.equal(facts.ownerActive, true);
     assert.equal(facts.variants, 0);
     assert.ok(facts.variantLimit > 0);
-    assert.ok(facts.name.startsWith("notice consumer paid "));
+    const storeName = (
+      await owner.pool.query<{ name: string }>(
+        "SELECT name FROM public.organizations WHERE id = $1",
+        [paid.organizationId]
+      )
+    ).rows[0]?.name;
+    assert.equal(facts.name, storeName, "the store's own name");
     assert.equal(
       await billing.readNoticeStore(receipt.id, trial.organizationId),
       null,
@@ -469,17 +476,20 @@ async function run() {
       [receipt.id, paid.organizationId]
     );
     assert.equal(swappedRecipient.rows[0]?.recipient, null, "swapped: null");
-    assert.equal(
-      await handleBillingNotice(
+    await assert.rejects(
+      handleBillingNotice(
         dependencies(await dbNow()),
         await envelopeOf(paid, receipt.id)
       ),
-      "not_yet_due",
-      "the receipt waits its 10 minutes, still owed"
+      (error: unknown) =>
+        error instanceof DeferredHandlerError &&
+        error.delaySeconds > 9 * 60 &&
+        error.delaySeconds <= 10 * 60 + 5,
+      "the receipt waits its 10 minutes: the queue brings it back then"
     );
     assert.equal((await noticeOf(paid, "charge_receipt")).sent_at, null);
     tests.push(
-      "billing_notice_store and billing_notice_recipient through the real clients (named arguments) answer the store, its time zone mapped to timeZone, and the owner's verified address for a notice owed; called with the notice and the store swapped they answer null; another store's notice reads as none; the receipt waits 10 minutes, still owed"
+      "billing_notice_store and billing_notice_recipient through the real clients (named arguments) answer the store, its time zone mapped to timeZone, and the owner's verified address for a notice owed; called with the notice and the store swapped they answer null; another store's notice reads as none; the receipt waits 10 minutes, still owed, and the queue brings it back when it is due"
     );
 
     // ------------------------------------------------ 4. after the purge: no_recipient, then nothing to do

@@ -7,7 +7,7 @@ import type {
   ClosureNoticeSender,
   ClosureNoticeSendResult,
 } from "../privacy/closure-notice-email";
-import { PermanentHandlerError } from "../queue/consumer";
+import { DeferredHandlerError, PermanentHandlerError } from "../queue/consumer";
 import {
   type BillingNoticeDelivery,
   type BillingNoticeDependencies,
@@ -267,9 +267,10 @@ describe("the consumer of a billing notice: not yet due", () => {
       delivery: deliveryOf({ dueAt: new Date(NOW.getTime() + MINUTE_MS) }),
     });
 
-    const outcome = await handleBillingNotice(dependencies, envelope());
-
-    expect(outcome).toBe("not_yet_due");
+    // a minute ahead: the queue brings it back a little after it is due
+    await expect(
+      handleBillingNotice(dependencies, envelope())
+    ).rejects.toMatchObject({ delaySeconds: 65, name: "DeferredHandlerError" });
     expect(stores.storeOf).not.toHaveBeenCalled();
     expect(recipients.recipient).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
@@ -287,9 +288,9 @@ describe("the consumer of a billing notice: not yet due", () => {
     const onTime = setup({ delivery: deliveryOf({ dueAt }) });
     onTime.dependencies.now = () => dueAt;
 
-    expect(await handleBillingNotice(early.dependencies, envelope())).toBe(
-      "not_yet_due"
-    );
+    await expect(
+      handleBillingNotice(early.dependencies, envelope())
+    ).rejects.toBeInstanceOf(DeferredHandlerError);
     expect(await handleBillingNotice(onTime.dependencies, envelope())).toBe(
       "sent"
     );
@@ -322,11 +323,29 @@ describe("the consumer of a billing notice: not yet due", () => {
     const onTime = setup({ delivery: cancellation({ dueAt }) });
     onTime.dependencies.now = () => dueAt;
 
-    expect(await handleBillingNotice(early.dependencies, envelope())).toBe(
-      "not_yet_due"
-    );
+    await expect(
+      handleBillingNotice(early.dependencies, envelope())
+    ).rejects.toMatchObject({ delaySeconds: 6 });
     expect(await handleBillingNotice(onTime.dependencies, envelope())).toBe(
       "sent"
+    );
+  });
+
+  it("defers through the queue only a wait of up to an hour; a longer one is left to the hourly handover", async () => {
+    spyLogger();
+    const hour = setup({
+      delivery: deliveryOf({ dueAt: new Date(NOW.getTime() + HOUR_MS) }),
+    });
+    await expect(
+      handleBillingNotice(hour.dependencies, envelope())
+    ).rejects.toMatchObject({ delaySeconds: 3605 });
+    const later = setup({
+      delivery: deliveryOf({
+        dueAt: new Date(NOW.getTime() + HOUR_MS + 1000),
+      }),
+    });
+    expect(await handleBillingNotice(later.dependencies, envelope())).toBe(
+      "not_yet_due"
     );
   });
 
@@ -336,7 +355,8 @@ describe("the consumer of a billing notice: not yet due", () => {
     const dueAt = new Date(requestedAt.getTime() + 24 * HOUR_MS);
     const delivery = cancellation({ dueAt, refundRequestedAt: requestedAt });
     const early = setup({ delivery });
-    early.dependencies.now = () => new Date(dueAt.getTime() - MINUTE_MS);
+    // as the queue first brings it, right after the request: a day ahead, left to the hourly handover
+    early.dependencies.now = () => requestedAt;
     const onTime = setup({ delivery });
     onTime.dependencies.now = () => dueAt;
 
@@ -691,6 +711,7 @@ describe("the handover of the owed billing notices", () => {
 
     expect(notices.listOwed).toHaveBeenCalledWith(NOW, 10);
     expect(report).toEqual({
+      errors: 0,
       failed: 1,
       handedOver: 4,
       retry: 1,
@@ -711,6 +732,31 @@ describe("the handover of the owed billing notices", () => {
     expectNoPersonalData(everythingLogged(spies));
   });
 
+  it("goes on past a notice that throws, sends the others, and ends the run incomplete", async () => {
+    const spies = spyLogger();
+    const { dependencies, notices, send } = setup();
+    const owed = ["1", "2"].map((digit) => ({
+      noticeId: `0199f0aa-2b3c-7d4e-8f90-12345678900${digit}`,
+      organizationId: `org_${digit}`,
+    }));
+    notices.listOwed.mockResolvedValueOnce(owed);
+    notices.claim
+      .mockRejectedValueOnce(new Error(`${ADDRESS} broke`))
+      .mockImplementation((noticeId, organizationId) =>
+        Promise.resolve(deliveryOf({ noticeId, organizationId }))
+      );
+
+    await expect(handOverOwedBillingNotices(dependencies)).rejects.toThrow(
+      "billing_notice_handover_incomplete"
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0].idempotencyKey).toBe(owed[1]?.noticeId);
+    expect(notices.markSent).toHaveBeenCalledWith(owed[1]?.noticeId, "org_2");
+    const logged = everythingLogged(spies);
+    expect(logged).toContain("billing_notice_handover_failed");
+    expectNoPersonalData(logged);
+  });
+
   it("reports nothing when nothing is owed", async () => {
     spyLogger();
     const { dependencies, notices } = setup();
@@ -718,6 +764,7 @@ describe("the handover of the owed billing notices", () => {
     const report = await handOverOwedBillingNotices(dependencies);
 
     expect(report).toEqual({
+      errors: 0,
       failed: 0,
       handedOver: 0,
       retry: 0,
@@ -1037,9 +1084,9 @@ describe("the consumer's dependencies in the Worker", () => {
       supportEmail: "suporte@example.invalid",
     });
     expect(billing.dependencies.welcomeEmail).toBeNull();
-    expect(await billing.dependencies.recipients.recipient(NOTICE, ORG)).toEqual(
-      { email: ADDRESS, verified: true }
-    );
+    expect(
+      await billing.dependencies.recipients.recipient(NOTICE, ORG)
+    ).toEqual({ email: ADDRESS, verified: true });
     await billing.close();
     expect(client.close).toHaveBeenCalledTimes(1);
 
@@ -1073,6 +1120,38 @@ describe("the consumer's dependencies in the Worker", () => {
       expect(wired.dependencies.welcomeEmail).toBeNull();
     }
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("takes one support address, never a list, and warns when a switch is on but its e-mail cannot go out", () => {
+    const spies = spyLogger();
+    for (const box of [
+      "a@example.invalid, b@example.invalid",
+      "a@example.invalid;b@example.invalid",
+      "suporte",
+      "Suporte <a@example.invalid>",
+    ]) {
+      expect(
+        billingNoticeEmailConfig(
+          { ...configured, BILLING_SUPPORT_EMAIL: box },
+          "true"
+        ),
+        box
+      ).toBeNull();
+    }
+    billingNoticeDependenciesOf(
+      {
+        ...configured,
+        BILLING_SELF_SERVICE_ENABLED: "true",
+        BILLING_SUPPORT_EMAIL: "",
+      },
+      billingStore(),
+      recipientClient
+    );
+    expect(spies.warn).toHaveBeenCalledWith(
+      "billing_notice_email_misconfigured",
+      { email: "billing" }
+    );
+    expect(spies.warn).toHaveBeenCalledTimes(1);
   });
 
   it("reads and marks the notice through the billing store, with the arguments in the store's order", async () => {

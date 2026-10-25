@@ -23,6 +23,7 @@ import {
 import {
   type BillingNoticeKind,
   type BillingNoticeMark,
+  type BillingNoticeTransition,
   isBillingNoticeKind,
   noticesFor,
   renewalFailedOf,
@@ -509,15 +510,18 @@ export interface BillingStore {
     organizationId: string
   ) => Promise<StoredBillingNotice | null>;
   /**
-   * The notices owed and due that the queue left behind (recorded at least 10 minutes ago), oldest due first, at most
-   * `limit`: the hourly handover sends them.
+   * The notices owed that the queue left behind (due at least 10 minutes ago: the queue had them first), oldest due
+   * first, at most `limit`: the hourly handover sends them.
    */
   listOwedNotices: (
     now: Date,
     limit: number
   ) => Promise<{ noticeId: string; organizationId: string }[]>;
   /** Marks a notice still owed as sent, once; false when it was settled meanwhile. */
-  markNoticeSent: (noticeId: string, organizationId: string) => Promise<boolean>;
+  markNoticeSent: (
+    noticeId: string,
+    organizationId: string
+  ) => Promise<boolean>;
   /** Marks a notice still owed as refused by the provider for good, with a short code. */
   markNoticeFailed: (
     noticeId: string,
@@ -780,10 +784,9 @@ const NOTICES_OF_AN_EVENT: readonly BillingNoticeKind[] = [
   "renewal_cancelled",
   "refund_confirmed",
 ];
-/** A notice the queue has had this long to send is the hourly handover's. */
+/** A notice due this long ago that is still owed is the hourly handover's (the queue had it first). */
 const NOTICE_HANDOVER_AFTER_MS = 10 * 60_000;
-const OWED =
-  "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
+const OWED = "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
 
 interface NoticeRow extends BillingRow {
   dedupe_key: string;
@@ -837,6 +840,8 @@ async function claimOwedNotice(
             round(billing.first_charge_amount, 2)::text AS first_charge_amount,
             billing.first_charge_event_id::text AS first_charge_event_id,
             round(billing.price_amount, 2)::text AS price_amount, billing.refund_requested_at,
+            -- processed_at is the Worker's clock and recorded_at the database's: seconds apart, and E-C1 also asks
+            -- that the store is still on Free, which a charge applied before the notice would have changed
             EXISTS (
               SELECT 1 FROM public.billing_events AS charge
                WHERE charge.organization_id = notice.organization_id AND charge.fact_type = 'charge_succeeded'
@@ -855,7 +860,7 @@ async function claimOwedNotice(
   if (!(row && isBillingNoticeKind(row.kind))) {
     return null;
   }
-  const kind = row.kind;
+  const { kind } = row;
   const record = row.has_record ? toRecord(row) : NO_RECORD;
   return {
     cycleMonths:
@@ -982,27 +987,25 @@ async function markOwedNotice(
   pool: Pool,
   noticeId: string,
   organizationId: string,
-  outcome:
-    | { failureCode: string }
-    | { sent: true }
-    | { skippedReason: string }
+  outcome: { failureCode: string } | { sent: true } | { skippedReason: string }
 ): Promise<boolean> {
   if (!NOTICE_ID_PATTERN.test(noticeId)) {
     return false;
   }
-  const [assignment, value] =
-    "sent" in outcome
-      ? ["sent_at = pg_catalog.now()", null]
-      : "failureCode" in outcome
-        ? [
-            "failed_at = pg_catalog.now(), failure_code = $3",
-            outcome.failureCode,
-          ]
-        : ["skipped_reason = $3", outcome.skippedReason];
+  // the columns are fixed text of this module; the code and the reason go as parameters
+  let assignment = "sent_at = pg_catalog.now()";
+  const values: string[] = [noticeId, organizationId];
+  if ("failureCode" in outcome) {
+    assignment = "failed_at = pg_catalog.now(), failure_code = $3";
+    values.push(outcome.failureCode);
+  } else if ("skippedReason" in outcome) {
+    assignment = "skipped_reason = $3";
+    values.push(outcome.skippedReason);
+  }
   const result = await pool.query(
     `UPDATE public.billing_notices SET ${assignment}
       WHERE id = $1::uuid AND organization_id = $2 AND ${OWED}`,
-    value === null ? [noticeId, organizationId] : [noticeId, organizationId, value]
+    values
   );
   return (result.rowCount ?? 0) > 0;
 }
@@ -1088,7 +1091,9 @@ async function sweepNotices(
        FROM public.organization_billing WHERE organization_id = ANY($1::text[])`,
     [zoned.map((zone) => zone.organization_id)]
   );
-  const byStore = new Map(records.rows.map((row) => [row.organization_id, row]));
+  const byStore = new Map(
+    records.rows.map((row) => [row.organization_id, row])
+  );
   let failed = 0;
   let recorded = 0;
   for (const zone of zoned) {
@@ -1112,6 +1117,13 @@ async function sweepNotices(
         recordNotices(client, zone.organization_id, marks)
       );
     } catch (error: unknown) {
+      if (error instanceof RangeError) {
+        // a zone the database knows and Intl does not: passed over like a store with none, not a failed run
+        logger.warn("billing_notice_sweep_unknown_time_zone", {
+          organizationId: opaqueId(zone.organization_id),
+        });
+        continue;
+      }
       failed += 1;
       logger.error("billing_notice_sweep_failed", {
         ...describeError(error),
@@ -1122,16 +1134,42 @@ async function sweepNotices(
   return { failed, recorded };
 }
 
-/** When the owner asked for the refund of the current link (E7 then waits a day); read in the caller's transaction. */
-async function refundRequestedAtOf(
+/**
+ * The notices of a transition applied in the caller's transaction, with their outbox events (ADR 0104, decision 7):
+ * they commit with it. A notice that cannot be recorded never undoes the change of the record: it is rolled back to
+ * its savepoint and logged (the kind of failure and the opaque store), and the fact applies without it.
+ */
+async function recordTransitionNotices(
   client: PoolClient,
-  organizationId: string
-): Promise<Date | null> {
-  const result = await client.query<{ refund_requested_at: Date | null }>(
-    "SELECT refund_requested_at FROM public.organization_billing WHERE organization_id = $1",
-    [organizationId]
-  );
-  return result.rows[0]?.refund_requested_at ?? null;
+  organizationId: string,
+  transition: BillingNoticeTransition
+): Promise<void> {
+  // E7 waits a day when the owner asked for the refund of the current link
+  const refundRequestedAt =
+    transition.fact?.type === "subscription_cancelled"
+      ? ((
+          await client.query<{ refund_requested_at: Date | null }>(
+            "SELECT refund_requested_at FROM public.organization_billing WHERE organization_id = $1",
+            [organizationId]
+          )
+        ).rows[0]?.refund_requested_at ?? null)
+      : null;
+  const marks = noticesFor({ ...transition, refundRequestedAt });
+  if (marks.length === 0) {
+    return;
+  }
+  await client.query("SAVEPOINT billing_notices");
+  try {
+    await recordNotices(client, organizationId, marks);
+    await client.query("RELEASE SAVEPOINT billing_notices");
+  } catch (error: unknown) {
+    await client.query("ROLLBACK TO SAVEPOINT billing_notices");
+    logger.error("billing_notice_record_failed", {
+      ...describeError(error),
+      kinds: marks.map((mark) => mark.kind).join(","),
+      organizationId: opaqueId(organizationId),
+    });
+  }
 }
 
 async function inTransaction<T>(
@@ -1640,25 +1678,17 @@ async function processInTransaction(
     fact,
     organizationId,
   });
-  // the notices this applied fact causes and their outbox events, in this transaction (ADR 0104, decision 7): an
-  // ignored or duplicated fact never gets here, and the same notice twice records one
-  await recordNotices(
-    client,
-    organizationId,
-    noticesFor({
-      after: result.record,
-      before,
-      eventId,
-      fact,
-      now,
-      providerRef: row.provider_ref,
-      refundRequestedAt:
-        fact.type === "subscription_cancelled"
-          ? await refundRequestedAtOf(client, organizationId)
-          : null,
-      transition: result.transition,
-    })
-  );
+  // the notices this applied fact causes: an ignored or duplicated fact never gets here
+  await recordTransitionNotices(client, organizationId, {
+    after: result.record,
+    before,
+    eventId,
+    fact,
+    now,
+    providerRef: row.provider_ref,
+    refundRequestedAt: null,
+    transition: result.transition,
+  });
   await finishEvent(
     client,
     eventId,
@@ -1728,20 +1758,16 @@ async function sweepOne(
     }
     await saveRecord(client, organizationId, before, due.record, now);
     // what time ended tells the owner: the grace that began (E-C2 on its day) or the access that ended (E-D)
-    await recordNotices(
-      client,
-      organizationId,
-      noticesFor({
-        after: due.record,
-        before,
-        eventId: null,
-        fact: null,
-        now,
-        providerRef: row.provider_ref,
-        refundRequestedAt: null,
-        transition: due.transition,
-      })
-    );
+    await recordTransitionNotices(client, organizationId, {
+      after: due.record,
+      before,
+      eventId: null,
+      fact: null,
+      now,
+      providerRef: row.provider_ref,
+      refundRequestedAt: null,
+      transition: due.transition,
+    });
     await writeLedger(
       client,
       {
@@ -3107,10 +3133,10 @@ export function createBillingStore(
         organization_id: string;
       }>(
         `SELECT id::text AS notice_id, organization_id FROM public.billing_notices
-          WHERE ${OWED} AND due_at <= $1 AND recorded_at <= $2
+          WHERE ${OWED} AND due_at <= $1
           ORDER BY due_at, id
-          LIMIT $3`,
-        [now, new Date(now.getTime() - NOTICE_HANDOVER_AFTER_MS), limit]
+          LIMIT $2`,
+        [new Date(now.getTime() - NOTICE_HANDOVER_AFTER_MS), limit]
       );
       return result.rows.map((row) => ({
         noticeId: row.notice_id,
