@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEnv } from "../environment";
 import { requestIdMiddleware } from "./request-id";
 import { routeTimingMiddleware } from "./route-timing";
 
 const requestId = "5f0f3a0e-9d63-4d7b-8a93-6f9a1f0f3a0e";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function createApp() {
   const app = new Hono<ServerEnv>();
@@ -147,5 +148,26 @@ describe("route timing middleware", () => {
       outcome: "failure",
       route: "/rpc/sync/bootstrapPage",
     });
+  });
+
+  it("says which isolate answered and the place of the request in it, counting the requests it does not log", async () => {
+    const logs = spyLogs();
+    const app = createApp();
+
+    await app.request("/api/auth/get-session");
+    await app.request("/health");
+    await app.request("/api/auth/get-session");
+
+    const [first, second] = timedEvents(logs) as {
+      isolate: { closedByUs: number; id: string; seq: number };
+    }[];
+    expect(first?.isolate).toEqual({
+      closedByUs: expect.any(Number),
+      id: expect.stringMatching(UUID),
+      seq: expect.any(Number),
+    });
+    expect(second?.isolate.id).toBe(first?.isolate.id);
+    // `/health` is not logged, but it is a request of the isolate
+    expect(second?.isolate.seq).toBe((first?.isolate.seq ?? 0) + 2);
   });
 });

@@ -43,6 +43,7 @@ import {
   handleClosureNotice,
   handOverOwedClosureNotices,
 } from "../src/server/privacy/closure-notice";
+import { countIsolateInvocation } from "../src/server/observability/isolate";
 import { runDataExports } from "../src/server/privacy/data-export-job";
 import {
   createClosedExportReader,
@@ -780,11 +781,25 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
 
 configureLogging({ service: "polaris-web" });
 
+// every invocation counts in the isolate's `seq` (the request log tells a cold request by it); the app counts its own
 export default {
-  fetch: (request: Request, env: WorkerBindings, context?: ExecutionContext) =>
-    env.ASSETS && isBuiltAssetRequest(request)
-      ? serveBuiltAsset(request, env.ASSETS)
-      : app.fetch(request, env, context),
-  queue: (batch: QueueBatch, env) => consumeQueue(batch, env),
-  scheduled: (controller, env) => runScheduledTick(controller.cron, env),
+  fetch: (
+    request: Request,
+    env: WorkerBindings,
+    context?: ExecutionContext
+  ) => {
+    if (env.ASSETS && isBuiltAssetRequest(request)) {
+      countIsolateInvocation();
+      return serveBuiltAsset(request, env.ASSETS);
+    }
+    return app.fetch(request, env, context);
+  },
+  queue: (batch: QueueBatch, env) => {
+    countIsolateInvocation();
+    return consumeQueue(batch, env);
+  },
+  scheduled: (controller, env) => {
+    countIsolateInvocation();
+    return runScheduledTick(controller.cron, env);
+  },
 } satisfies ExportedHandler<WorkerBindings>;

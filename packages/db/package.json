@@ -10,6 +10,7 @@
     "./organization-repository": "./src/organization-repository.ts",
     "./organization-membership-query": "./src/organization-membership-query.ts",
     "./client": "./src/client.ts",
+    "./pool-errors": "./src/pool-errors.ts",
     "./schema/poc": "./src/schema/poc.ts",
     "./rls-poc-client": "./src/rls-poc-client.ts",
     "./rls-poc-gate": "./src/rls-poc-gate.ts",
