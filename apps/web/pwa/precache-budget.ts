@@ -5,7 +5,7 @@ import type { Plugin } from "vite";
 import { listFiles, precacheList } from "./service-worker-plugin";
 
 /**
- * The bundle budget of the interface base (ADR 0103, decision 4 and section 4), in five lines, over what the
+ * The bundle budget of the interface base (ADR 0103, decision 4 and section 4), in six lines, over what the
  * service worker precaches (the shell a user downloads):
  * - fonts: the woff2 bytes (already compressed; gzip does not shrink them), at most 55 KB;
  * - the JS of the Base UI primitives, gzipped, at most 95 KB, charged once, in the pull request that brings
@@ -18,10 +18,17 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   sees what a screen costs.
  * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
  *   others, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
- *   until the cut step), a line of its own: the drawing code of the charts, `motion`, `@visx/*` and d3. It is in the
- *   precache so a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's
- *   first script; it counts here and in no other line, so the baseline of the rest does not move for it. A guard fails
- *   the build when a module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any other chunk (`chartsPlacementProblems`).
+ *   until the cut step), a line of its own: the drawing code of the charts, `@visx/*` and d3. It is in the precache so
+ *   a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's first script; it
+ *   counts here and in no other line, so the baseline of the rest does not move for it. A guard fails the build when a
+ *   module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any
+ *   other chunk (`chartsPlacementProblems`).
+ * - the motion chunk (`motion-*.js`, t383, t385), gzipped, 56 KB as the reference of the line, which only warns, a line
+ *   of its own, as the calendar's is: `motion` and what only it brings, which the charts and the filter bar share, each
+ *   loaded on demand. It is in the precache so a chart or the bar animates offline, and it counts here and in no other
+ *   line. Two guards fail the build: `motion` in a chunk that is neither the charts chunk nor the motion chunk
+ *   (`chartsPlacementProblems`), and the motion chunk reachable from the entry by static imports, which would put it in the
+ *   shell's first load (`motionLoadProblems`); only a dynamic `import()` may load it.
  * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
  *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
  *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
@@ -29,18 +36,20 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   first script; it counts here and in no other line. The worker does not change: it precaches every file of the
  *   build, and no screen asks for a picker yet, so a production build has no such chunk until one does. A guard fails
  *   the build when a module of the calendar is in any other chunk (`calendarPlacementProblems`).
- * What going past a line does is one mode for the five of them, `BUDGET_MODE`: "warn" until the cut step, the build
+ * What going past a line does is one mode for the six of them, `BUDGET_MODE`: "warn" until the cut step, the build
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
  * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guards of the
- * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`, t363) and
- * the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
+ * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`, t363), the
+ * guard of who loads `motion` (`motionLoadProblems`, t385) and the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
 export const CHARTS_BUDGET_GZIP_BYTES = 8000;
 /** The calendar chunk measured 22 645 B gzip at its first build (t369); a line like the charts', with some room. */
 export const CALENDAR_BUDGET_GZIP_BYTES = 26_000;
+/** The motion chunk measures about 49.5 KB gzip (t385, without the React that the first build of t383 had put in it); a line like the calendar's, with some room. */
+export const MOTION_BUDGET_GZIP_BYTES = 56_000;
 export type BudgetMode = "warn" | "block";
 
 /**
@@ -60,7 +69,7 @@ export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
 export const REST_GROWTH_MARK_GZIP_BYTES = 80_000;
 /**
  * What going past any of the size lines does (the rest at +44 000 B and its +80 000 B mark, the fonts, the
- * primitives, the charts and the calendar). "warn" until the cut step before the go-live (Phase 5 of the execution plan), by
+ * primitives, the charts, the motion chunk and the calendar). "warn" until the cut step before the go-live (Phase 5 of the execution plan), by
  * decision of the user on 23/10/2026 and 24/10/2026 (ADR 0103, amendments): the build prints the total, the line and
  * the excess and passes. The cut step takes `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the
  * screens and goes back to "block" with firm ceilings. A constant, not an environment variable: changing it is a
@@ -84,12 +93,22 @@ const FONT = /\.woff2?$/;
 const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 /** The chunk the charts live in: the one the `import()` of `src/ui/charts/charts.ts` makes, named after that file. */
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
+/** The chunk `motion` lives in, shared by the charts and the filter bar (t383): the one the group named `motion` of the Vite configs makes; a line of its own (t385). */
+const MOTION_CHUNK = /(^|\/)assets\/motion-[\w-]+\.js$/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
  * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|motion|framer-motion|motion-dom|motion-utils|classnames)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
+/**
+ * The animation library and what only it brings (`motion`, `framer-motion`, `motion-dom`, `motion-utils`). The charts draw
+ * with it and so does the filter bar (`src/ui/filter-bar.tsx`, t383), so it cannot sit in the charts chunk alone: it has
+ * a chunk of its own, `motion-*.js`, which the charts chunk and the filter bar import. It belongs to that chunk or to the
+ * charts chunk and to no other, so it never comes with the shell's first script.
+ */
+export const MOTION_MODULE =
+  /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:motion|framer-motion|motion-dom|motion-utils)[\\/]/;
 /** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
 const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
 /**
@@ -139,6 +158,8 @@ export interface PrecacheSize {
   fonts: number;
   /** The interface infrastructure (see `INTERFACE_MODULE`); counts in the +40 KB line with `rest`. */
   interface: number;
+  /** The motion chunk (`MOTION_CHUNK`): a line of its own, apart from the charts and the rest. */
+  motion: number;
   primitives: number;
   rest: number;
 }
@@ -155,6 +176,10 @@ export interface PrecacheShares {
 /** What a chunk is made of: the rendered length of each module, by module id. */
 export interface ChunkModules {
   fileName: string;
+  /** The chunks this one imports statically (`import ... from`), by file name; a dynamic `import()` is not here. */
+  imports?: readonly string[];
+  /** Whether the chunk is an entry of the build (the shell's first script). */
+  isEntry?: boolean;
   modules: Record<string, { renderedLength: number }>;
 }
 
@@ -210,6 +235,7 @@ export function measurePrecache(
   let calendar = 0;
   let charts = 0;
   let fonts = 0;
+  let motion = 0;
   let primitives = 0;
   let infrastructure = 0;
   let rest = 0;
@@ -222,6 +248,10 @@ export function measurePrecache(
     const gzip = gzipSync(bytes, { level: 9 }).byteLength;
     if (CHARTS_CHUNK.test(path)) {
       charts += gzip;
+      continue;
+    }
+    if (MOTION_CHUNK.test(path)) {
+      motion += gzip;
       continue;
     }
     if (CALENDAR_CHUNK.test(path)) {
@@ -239,29 +269,89 @@ export function measurePrecache(
     charts,
     fonts,
     interface: infrastructure,
+    motion,
     primitives,
     rest,
   };
 }
 
 /**
- * One problem for each module of the charts that is in a chunk other than the charts chunk (the ids are those of the
- * modules of the bundle). A static import of a chart from a screen would put d3 in the shell's first script, outside
- * the 8 KB line that was set for the chunk and with no way to see it there.
+ * One problem for each module of the charts that is in a chunk other than the charts chunk, and for each module of
+ * `motion` that is in a chunk other than the charts chunk or the motion chunk (the ids are those of the modules of the
+ * bundle). A static import of a chart from a screen would put d3 in the shell's first script, outside the 8 KB line that
+ * was set for the chunk and with no way to see it there; the same for `motion`, which only the charts and the filter
+ * bar use, each loaded on demand.
  */
 export function chartsPlacementProblems(
   chunks: readonly ChunkModules[]
 ): string[] {
-  return chunks
-    .filter((chunk) => !CHARTS_CHUNK.test(chunk.fileName))
-    .flatMap((chunk) =>
-      Object.keys(chunk.modules)
-        .filter((id) => CHARTS_MODULE.test(id))
-        .map(
-          (id) =>
-            `chart module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the charts chunk`
-        )
-    );
+  return chunks.flatMap((chunk) => {
+    const inCharts = CHARTS_CHUNK.test(chunk.fileName);
+    const inMotion = MOTION_CHUNK.test(chunk.fileName);
+    return Object.keys(chunk.modules).flatMap((id) => {
+      const name = id.replace(NODE_MODULES_PREFIX, "");
+      if (!inCharts && CHARTS_MODULE.test(id)) {
+        return [
+          `chart module ${name} is in ${chunk.fileName}, outside the charts chunk`,
+        ];
+      }
+      if (!(inCharts || inMotion) && MOTION_MODULE.test(id)) {
+        return [
+          `motion module ${name} is in ${chunk.fileName}, outside the charts and motion chunks`,
+        ];
+      }
+      return [];
+    });
+  });
+}
+
+/**
+ * One problem when the motion chunk can be reached from an entry of the build through static imports only (t385): the
+ * chunk is made to load on demand, with the screen that draws a chart or shows the filter bar, and a static import
+ * anywhere on the way from the entry would make it part of the shell's first load. A dynamic `import()` is the only
+ * way in, and it is not an edge of this graph. The problem names the path, from the entry to the chunk.
+ */
+export function motionLoadProblems(chunks: readonly ChunkModules[]): string[] {
+  const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
+  const via = new Map<string, string | null>();
+  const queue: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.isEntry) {
+      via.set(chunk.fileName, null);
+      queue.push(chunk.fileName);
+    }
+  }
+  // a graph with a motion chunk and no entry would pass for lack of a starting point: that is a fault of the proof, not a pass
+  if (
+    queue.length === 0 &&
+    chunks.some((chunk) => MOTION_CHUNK.test(chunk.fileName))
+  ) {
+    return [
+      "the motion chunk is in the bundle but no chunk is an entry (`isEntry`), so who loads it cannot be checked",
+    ];
+  }
+  const problems: string[] = [];
+  // the queue grows while it is read: a `for...of` over an array visits what is pushed to it meanwhile
+  for (const name of queue) {
+    for (const imported of byName.get(name)?.imports ?? []) {
+      if (via.has(imported)) {
+        continue;
+      }
+      via.set(imported, name);
+      queue.push(imported);
+      if (MOTION_CHUNK.test(imported)) {
+        const path = [imported];
+        for (let from = name; from; ) {
+          path.unshift(from);
+          from = via.get(from) ?? "";
+        }
+        problems.push(
+          `the motion chunk is reachable from the entry by static imports (${path.join(" -> ")}); only a dynamic import() may load it`
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 /**
@@ -291,6 +381,15 @@ export function chartsLine(size: PrecacheSize): string {
   }
   const left = CHARTS_BUDGET_GZIP_BYTES - size.charts;
   return `CHARTS chunk ${size.charts} B gzip of ${CHARTS_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
+}
+
+/** The line the build prints for the motion chunk: how much of its budget it uses, or that this build has none. */
+export function motionLine(size: PrecacheSize): string {
+  if (size.motion === 0) {
+    return `MOTION no motion chunk in this build, 0 B of ${MOTION_BUDGET_GZIP_BYTES} B gzip`;
+  }
+  const left = MOTION_BUDGET_GZIP_BYTES - size.motion;
+  return `MOTION chunk ${size.motion} B gzip of ${MOTION_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
 }
 
 /** The line the build prints for the calendar chunk: how much of its budget it uses, or that this build has none. */
@@ -339,7 +438,7 @@ interface LineExcess {
   unit: number;
 }
 
-/** The fonts, primitives, charts and calendar lines past their numbers (the rest line has its own text and its mark). */
+/** The fonts, primitives, charts, motion and calendar lines past their numbers (the rest line has its own text and its mark). */
 function lineExcesses(size: PrecacheSize): LineExcess[] {
   const lines = [
     { name: "fonts", total: size.fonts, unit: FONT_BUDGET_BYTES },
@@ -352,6 +451,11 @@ function lineExcesses(size: PrecacheSize): LineExcess[] {
       name: "charts chunk",
       total: size.charts,
       unit: CHARTS_BUDGET_GZIP_BYTES,
+    },
+    {
+      name: "motion chunk",
+      total: size.motion,
+      unit: MOTION_BUDGET_GZIP_BYTES,
     },
     {
       name: "calendar chunk",
@@ -425,8 +529,8 @@ export function budgetWarnings(
   return warnings;
 }
 
-/** The lines of the chunks that load on demand (charts and calendar), for the build of the browser checks. */
-const CHUNK_LINES = ["charts chunk", "calendar chunk"];
+/** The lines of the chunks that load on demand (charts, motion and calendar), for the build of the browser checks. */
+const CHUNK_LINES = ["charts chunk", "motion chunk", "calendar chunk"];
 
 /** The chunk lines alone, for the build of the browser checks: a problem in "block", nothing in "warn". */
 export function chunkBudgetProblems(
@@ -459,9 +563,9 @@ function growthLine(size: PrecacheSize, baseline: number): string {
 }
 
 /**
- * Fails the production build of the shell for structure (the placement of the charts and of the calendar, the chunks of the browser
+ * Fails the production build of the shell for structure (the placement of the charts and of the calendar, who loads `motion`, the chunks of the browser
  * checks) and, with `BUDGET_MODE` in "block", when the precache goes past the budget; in "warn" the size lines only
- * warn. With `only: "chunks"` it checks the charts and calendar lines and the placement guards and nothing else:
+ * warn. With `only: "chunks"` it checks the charts, motion and calendar lines and the placement guards and nothing else:
  * the build of the browser checks (`vite.pwa.config.ts`), which has the gallery and so the chunks that the production
  * build has no screen to ask for yet. `mode` is for the tests of the "block" side; the builds use `BUDGET_MODE`.
  */
@@ -487,7 +591,14 @@ export function precacheBudgetPlugin(
       }
       const chunks = Object.values(bundle).flatMap((item) =>
         item.type === "chunk"
-          ? [{ fileName: item.fileName, modules: item.modules }]
+          ? [
+              {
+                fileName: item.fileName,
+                imports: item.imports,
+                isEntry: item.isEntry,
+                modules: item.modules,
+              },
+            ]
           : []
       );
       shares = {
@@ -496,6 +607,7 @@ export function precacheBudgetPlugin(
       };
       placement = [
         ...chartsPlacementProblems(chunks),
+        ...motionLoadProblems(chunks),
         ...calendarPlacementProblems(chunks),
       ];
     },
@@ -519,6 +631,7 @@ export function precacheBudgetPlugin(
       );
       if (options.only === "chunks") {
         this.info(chartsLine(size));
+        this.info(motionLine(size));
         this.info(calendarLine(size));
         for (const warning of chunkBudgetWarnings(size, mode)) {
           this.warn(warning);
@@ -547,6 +660,7 @@ export function precacheBudgetPlugin(
       );
       this.info(growthLine(size, baseline));
       this.info(chartsLine(size));
+      this.info(motionLine(size));
       this.info(calendarLine(size));
       for (const warning of budgetWarnings(size, baseline, mode)) {
         this.warn(warning);
