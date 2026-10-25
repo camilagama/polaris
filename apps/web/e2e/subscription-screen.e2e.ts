@@ -219,9 +219,11 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   await expect(terms(page)).toContainText("de R$ 249,00, é em 30/10/2026");
   // never "sem cartão" next to the Pro
   await expect(page.locator("main")).not.toContainText(NO_CARD_PROMISE);
-  await expect(page.locator("main footer")).toContainText(
-    "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta. Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00."
-  );
+  // the deadline and the legal line, each on its own line
+  await expect(page.locator("main footer p")).toHaveText([
+    "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.",
+    "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.",
+  ]);
   // the Terms and the Privacy Policy are the shell's, once on the screen
   await expect(page.locator("main footer").getByRole("link")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
@@ -407,7 +409,7 @@ test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; dep
       },
     ],
   });
-  await expect(page.getByText("reembolso pendente")).toBeVisible();
+  await expect(page.getByText("Reembolso pendente")).toBeVisible();
   await expect(
     page.getByText("Cancelamos a renovação, mas o reembolso não foi concluído.")
   ).toBeVisible();
@@ -419,7 +421,7 @@ test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; dep
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await openScreen(page, { plans: [{ ...pending, refund: null }] });
-  await expect(page.getByText("reembolso pendente")).toBeVisible();
+  await expect(page.getByText("Reembolso pendente")).toBeVisible();
   await expect(
     page.getByText(
       "Cancelamos a renovação. O reembolso está com o nosso suporte."
@@ -489,8 +491,8 @@ for (const [label, value, text] of [
   }) => {
     await openScreen(page, { plans: [value] });
     const footer = page.locator("main footer");
-    await expect(footer).toHaveText(
-      text === null ? FOOTER_SUPPLIER : `${text} ${FOOTER_SUPPLIER}`
+    await expect(footer.locator("p")).toHaveText(
+      text === null ? [FOOTER_SUPPLIER] : [text, FOOTER_SUPPLIER]
     );
     if (text !== FOOTER_RULE) {
       await expect(page.locator("main")).not.toContainText(

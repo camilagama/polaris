@@ -857,6 +857,7 @@ export const SCREENS: UiScreen[] = [
   subscriptionScreen("oferta com Pix", subscriptionStates.offer),
   subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
   subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("cancelar a renovação", subscriptionStates.cancelDialog),
   subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),

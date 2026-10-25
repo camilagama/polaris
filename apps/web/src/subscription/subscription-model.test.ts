@@ -169,7 +169,7 @@ describe("planHeadline", () => {
       }),
       NOW
     );
-    expect(headline.badge?.text).toBe("reembolso pendente");
+    expect(headline.badge?.text).toBe("Reembolso pendente");
     expect(headline.title).toBe("Pro até 23/11/2026");
   });
 
