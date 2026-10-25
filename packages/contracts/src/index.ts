@@ -1311,6 +1311,12 @@ export const billingPlanView = z
       .strict()
       .nullable(),
     refundPending: z.boolean(),
+    // the São Paulo day the window of the right of withdrawal ended, once the 7th day passed after a first charge
+    // paid and neither refunded nor charged back; null otherwise
+    refundWindowEndedOn: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
     renewalCancelled: z.boolean(),
     resubscribeFrom: z.string().datetime().nullable(),
     state: z.enum([

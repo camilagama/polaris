@@ -77,6 +77,7 @@ const PLAN_KEYS = [
   "refund.until",
   "refund.via",
   "refundPending",
+  "refundWindowEndedOn",
   "renewalCancelled",
   "resubscribeFrom",
   "state",
@@ -393,6 +394,7 @@ describe("billing.readPlan: what it answers", () => {
       recovery: null,
       refund: null,
       refundPending: false,
+      refundWindowEndedOn: null,
       renewalCancelled: false,
       resubscribeFrom: null,
       state: "free",
@@ -656,6 +658,68 @@ describe("billing.readPlan: what it answers", () => {
       resubscribeFrom: null,
       state: "free",
     });
+  });
+
+  it("says the day the window of the right of withdrawal ended only after the 7th day of a first charge kept (AS-14, AS-30)", async () => {
+    const day8 = sp("2026-10-18T00:00:00");
+    const ended = (record: OwnerPlanRecord, now: Date) =>
+      read(setup({ now, record })).then((plan) => plan.refundWindowEndedOn);
+
+    // no first charge paid: Free and the trial
+    expect(await ended(freeRecord, day8)).toBeNull();
+    expect(
+      await ended(
+        {
+          ...activeRecord,
+          firstChargeAmount: null,
+          firstChargeAt: null,
+          state: "trialing",
+        },
+        day8
+      )
+    ).toBeNull();
+    // within the window, up to its last second
+    expect(await ended(activeRecord, sp("2026-10-17T23:59:59"))).toBeNull();
+    // the window is over: the day of its last second, in São Paulo, also after the renewal
+    expect(await ended(activeRecord, day8)).toBe("2026-10-17");
+    expect(
+      await ended(
+        { ...activeRecord, accessEndsAt: sp("2026-12-11T00:00:00") },
+        sp("2026-11-20T09:00:00")
+      )
+    ).toBe("2026-10-17");
+    // after a refund or a chargeback there is no deadline to tell
+    for (const reason of ["refund", "chargeback"] as const) {
+      expect(
+        await ended(
+          {
+            ...activeRecord,
+            accessEndsAt: null,
+            revoked: { reason },
+            state: "free",
+          },
+          day8
+        )
+      ).toBeNull();
+    }
+  });
+
+  it("the day the window ended is the day of the last second refundWindowOf offered (AS-30)", async () => {
+    const inside = await read(
+      setup({ now: sp("2026-10-17T23:59:59"), record: activeRecord })
+    );
+    const after = await read(
+      setup({ now: sp("2026-10-18T00:00:00"), record: activeRecord })
+    );
+
+    expect(inside).toMatchObject({ refundWindowEndedOn: null });
+    const until = (inside.refund as { until: string }).until;
+    expect(after).toMatchObject({ refund: null });
+    expect(after.refundWindowEndedOn).toBe(
+      new Date(new Date(until).getTime() - 3 * 3_600_000)
+        .toISOString()
+        .slice(0, 10)
+    );
   });
 
   it("offers no trial while a subscription runs, even if neither the store nor the person used one", async () => {

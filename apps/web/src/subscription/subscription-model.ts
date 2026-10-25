@@ -452,6 +452,33 @@ export function safeProviderUrl(value: string | null): string | null {
 export const REFUND_RULE =
   "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.";
 
+/** The rule once the window is over, with the day it ended (AS-14, Emenda 2; the mockup's text). */
+export function refundRuleEndedText(endedOn: string): string {
+  return `O reembolso integral vale nos primeiros 7 dias depois da primeira cobrança. Esse prazo terminou em ${formatCalendarDate(endedOn)}.`;
+}
+
+/**
+ * The line of the right of withdrawal in the footer (AS-14, Emenda 2), only where it is true, read from the plan and
+ * never from the client's clock: none while the screen already speaks of the refund asked (`refundPending`) or of
+ * the charge that failed (grace); the rule where the right still comes (the offer, the waiting for the method, the
+ * trial) or still holds (`refund`, with the button or by support); the day it ended once the window is over
+ * (`refundWindowEndedOn`, the server's). A Pro with neither (a link older than the recorded first charge) says nothing.
+ */
+export function refundRuleLine(plan: BillingPlanView): string | null {
+  if (plan.refundPending || plan.state === "grace") {
+    return null;
+  }
+  if (plan.state !== "active") {
+    return REFUND_RULE;
+  }
+  if (plan.refund !== null) {
+    return REFUND_RULE;
+  }
+  return plan.refundWindowEndedOn === null
+    ? null
+    : refundRuleEndedText(plan.refundWindowEndedOn);
+}
+
 /** The supplier, as in the Terms (AS-14; the final text waits on P48). */
 export const SUPPLIER_LINE =
   "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.";
