@@ -14,6 +14,11 @@ import {
   requestIpForSessionRow,
 } from "./access-log";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import {
+  currentAuthRequestState,
+  currentRequestId,
+  runWithRequestScope,
+} from "./request-database";
 
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";
@@ -206,7 +211,9 @@ function createAccessLogTestApp(
   options: {
     failWrites?: boolean;
     rejectWrites?: boolean;
-    requestId?: string | (() => string);
+    requestId?: string;
+    /** One instance for every request, as in the Worker: each request runs in its own scope, with this identifier. */
+    sharedRequestId?: () => string;
   } = {}
 ) {
   let failuresLeft = 0;
@@ -241,12 +248,22 @@ function createAccessLogTestApp(
     }),
     emailDelivery,
     plugins: [testUtils() as unknown as BetterAuthPlugin],
-    requestId: options.requestId ?? "access-log-test",
+    ...(options.sharedRequestId
+      ? { requestId: currentRequestId, requestState: currentAuthRequestState }
+      : { requestId: options.requestId ?? "access-log-test" }),
     secret: testSecret,
   });
+  const { sharedRequestId } = options;
   const app = createServerApp({
     authAbuseProtector: async () => undefined,
-    authHandler: (request) => auth.handler(request),
+    authHandler: sharedRequestId
+      ? (request) =>
+          runWithRequestScope(
+            // the memory adapter holds the rows: the scope's database is never read
+            { database: {} as never, requestId: sharedRequestId() },
+            () => auth.handler(request)
+          )
+      : (request) => auth.handler(request),
   });
   return {
     app,
@@ -475,7 +492,7 @@ describe("the access log in the server of authentication", () => {
       vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
       let requests = 0;
       const test = createAccessLogTestApp({
-        requestId: () =>
+        sharedRequestId: () =>
           `00000000-0000-4000-8000-${String(requests).padStart(12, "0")}`,
       });
       const cookie = await loggedIn(test, "203.0.113.20");

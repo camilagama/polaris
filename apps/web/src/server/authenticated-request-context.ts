@@ -6,6 +6,8 @@ import {
   resolveAuthConnectionString,
 } from "./auth/auth-database";
 import {
+  type AuthRequestState,
+  currentAuthRequestState,
   currentRequestId,
   requestScopedDatabase,
   runWithRequestScope,
@@ -19,6 +21,7 @@ import {
   pendingLegalAcceptance,
   readAcceptedLegalVersions,
 } from "./legal-acceptance";
+import { runningRequestId } from "./middleware/request-id";
 import { TenantRequestContextError } from "./request-context-error";
 
 type Database = ReturnType<typeof createHyperdriveDatabase>["db"];
@@ -65,6 +68,7 @@ export interface AuthenticatedRequestContextDependencies {
     baseURL: string;
     database: Database;
     requestId: () => string;
+    requestState: () => AuthRequestState;
     secret: string;
   }) => SessionAuth;
   createDatabase: typeof createHyperdriveDatabase;
@@ -130,8 +134,8 @@ export function createAuthenticatedRequestContext(
   // Built once per isolate: assembling Better Auth costs more CPU than a cold isolate has left in the Free plan.
   // It holds configuration only. The `db` it reads through is the one of the running request, resolved at each
   // call from the request scope; no `pool` and no `db` of a request stays here (ADR 0017, emenda de 24/10/2026).
-  // Only `getSession` is reachable from it: the sign-in, sign-out and password routes keep an instance per request
-  // (`auth/handler.ts`), because their hooks keep state of the request they serve.
+  // Only `getSession` is reachable from it; the `/api/auth/*` routes have an instance of their own, built the same way
+  // (`auth/handler.ts`).
   interface SessionAuthEntry {
     auth: SessionAuth;
     baseURL: string;
@@ -148,6 +152,7 @@ export function createAuthenticatedRequestContext(
           baseURL,
           database: requestScopedDatabase(),
           requestId: currentRequestId,
+          requestState: currentAuthRequestState,
           secret,
         }),
         baseURL,
@@ -165,8 +170,9 @@ export function createAuthenticatedRequestContext(
   ): Promise<AuthenticatedRequestSession | null> => {
     const entry = sessionAuthFor(baseURL, secret);
     try {
+      // the identifier of the request, so a record of access of this session points at it
       return await runWithRequestScope(
-        { database, requestId: crypto.randomUUID() },
+        { database, requestId: runningRequestId() ?? crypto.randomUUID() },
         () => entry.auth.api.getSession({ headers: request.headers })
       );
     } catch (error) {

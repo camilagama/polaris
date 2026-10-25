@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import type { ServerEnv } from "../environment";
-import { requestIdMiddleware } from "./request-id";
+import { requestIdMiddleware, runningRequestId } from "./request-id";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -65,5 +65,21 @@ describe("request id middleware", () => {
       const response = await app.request(path);
       expect(response.headers.get("X-Request-Id")).toMatch(uuidPattern);
     }
+  });
+
+  it("tells the running request's identifier to code that only has the Request, and none outside", async () => {
+    const app = new Hono<ServerEnv>();
+    app.use("*", requestIdMiddleware);
+    app.get("/", async (context) => {
+      await Promise.resolve();
+      return context.json({ running: runningRequestId() });
+    });
+
+    const response = await app.request("/");
+    const body = (await response.json()) as { running: string };
+
+    expect(body.running).toMatch(uuidPattern);
+    expect(body.running).toBe(response.headers.get("X-Request-Id"));
+    expect(runningRequestId()).toBeUndefined();
   });
 });
