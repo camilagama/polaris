@@ -36,7 +36,6 @@ import {
   gateBranchPattern,
   journalMigrationCount,
   poolerPattern,
-  recentInstant,
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
@@ -92,6 +91,11 @@ function dateFrom(day: string, days: number): string {
   const shifted = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, date ?? 1));
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return shifted.toISOString().slice(0, 10);
+}
+
+// noon of a store date in America/Sao_Paulo (UTC-3, no DST), as the instant a sale carries
+function noonOf(day: string): string {
+  return `${day}T15:00:00.000Z`;
 }
 
 async function run() {
@@ -184,6 +188,8 @@ async function run() {
         ],
       })
     );
+    // S1..S4 sit at noon of yesterday: "3 hours ago" fell on yesterday before 03:00 BRT and on today after it
+    const yesterdayNoon = noonOf(dateFrom(today, -1));
     const sell = (
       items: {
         chargedUnitPrice: string;
@@ -200,7 +206,7 @@ async function run() {
           commandId: randomUUID(),
           commandVersion: 1,
           items,
-          occurredAt: recentInstant(3),
+          occurredAt: yesterdayNoon,
           payment: { anticipationRequested: false, method: "pix" },
           paymentProfile: withProfile
             ? { expectedVersion: profile.version, id: profile.id }
@@ -537,7 +543,7 @@ async function run() {
             variantId: p3.variantId,
           },
         ],
-        occurredAt: recentInstant(24 * 5),
+        occurredAt: noonOf(dateFrom(today, -5)),
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: null,
         requestId: randomUUID(),
@@ -594,7 +600,7 @@ async function run() {
         `costs and result of ${day.date}`
       );
     }
-    // worked out by hand: S5 (45.00) is the only sale five days ago (the others are hours old)
+    // worked out by hand: S5 (45.00) is the only sale five days ago (S1..S4 are yesterday)
     assert.deepEqual(
       summary.daily.find((day) => day.date === s5Date),
       // S5 has no payment profile, so its processing fee is unknown: the costs of its day are null, never zero
@@ -732,7 +738,7 @@ async function run() {
             variantId: p1.variantId,
           },
         ],
-        occurredAt: recentInstant(48),
+        occurredAt: noonOf(dateFrom(today, -2)),
         payment: { anticipationRequested: false, method: "pix" },
         paymentProfile: { expectedVersion: profile.version, id: profile.id },
         requestId: randomUUID(),

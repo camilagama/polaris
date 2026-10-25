@@ -104,7 +104,14 @@ export function createUpdateStore({
       }
       set({ applying: true, message: null });
       const outcome = await applyWhenSafe(source, () => {
-        takeOver(current, container, reload);
+        const asked = takeOver(current, container, reload, () =>
+          set({ applying: false })
+        );
+        if (!asked) {
+          // nothing waits any more: another tab already activated it
+          reload();
+          set({ applying: false });
+        }
       });
       if (outcome.status === "deferred") {
         set({ applying: false, message: DEFERRED_MESSAGES[outcome.reason] });
