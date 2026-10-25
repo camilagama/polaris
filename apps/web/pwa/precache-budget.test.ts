@@ -23,7 +23,10 @@ import {
   chartsPlacementProblems,
   FONT_BUDGET_BYTES,
   interfaceShares,
+  MOTION_BUDGET_GZIP_BYTES,
   measurePrecache,
+  motionLine,
+  motionLoadProblems,
   PRIMITIVES_BUDGET_GZIP_BYTES,
   precacheBudgetPlugin,
   primitiveShares,
@@ -38,6 +41,8 @@ const GROWTH_LINE =
   /PRECACHE-GROWTH total \d+ B gzip, growth [+-]?\d+ B over the baseline of \d+ B \(reference \+44000 B/;
 
 const CALENDAR_LINE = /CALENDAR chunk \d+ B gzip of 26000 B/;
+
+const MOTION_LINE = /^MOTION chunk \d+ B gzip of 56000 B/;
 
 const CHARTS_LINE = /CHARTS chunk \d+ B gzip of 8000 B \(\d+ B left\)/;
 
@@ -113,6 +118,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     charts: 0,
     fonts: 0,
     interface: 0,
+    motion: 0,
     primitives: 0,
     rest: 0,
   };
@@ -218,18 +224,19 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(budgetProblems(pr306, floor, "block")).toEqual([
       expect.stringContaining("past the +44000 B budget"),
     ]);
-    // all five lines at once
+    // all six lines at once
     const all = {
       calendar: CALENDAR_BUDGET_GZIP_BYTES + 5,
       charts: CHARTS_BUDGET_GZIP_BYTES + 10,
       fonts: FONT_BUDGET_BYTES + 20,
       interface: 0,
+      motion: MOTION_BUDGET_GZIP_BYTES + 15,
       primitives: PRIMITIVES_BUDGET_GZIP_BYTES + 30,
       rest: floor + REST_GROWTH_BUDGET_GZIP_BYTES + 40,
     };
     expect(budgetProblems(all, floor, "warn")).toEqual([]);
-    expect(budgetWarnings(all, floor, "warn")).toHaveLength(5);
-    expect(budgetProblems(all, floor, "block")).toHaveLength(5);
+    expect(budgetWarnings(all, floor, "warn")).toHaveLength(6);
+    expect(budgetProblems(all, floor, "block")).toHaveLength(6);
     expect(budgetProblems(all, floor, "block")).toContainEqual(
       expect.stringContaining("calendar chunk")
     );
@@ -267,6 +274,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       charts: 0,
       fonts: 52_528,
       interface: 0,
+      motion: 0,
       primitives: 0,
       rest: 1_105_454,
     };
@@ -360,6 +368,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       charts: 0,
       fonts: 0,
       interface: 15_000,
+      motion: 0,
       primitives: 0,
       rest: baseline + REST_GROWTH_BUDGET_GZIP_BYTES - 15_000,
     };
@@ -593,6 +602,7 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     charts,
     fonts: 0,
     interface: 0,
+    motion: 0,
     primitives: 0,
     rest: 0,
   });
@@ -690,6 +700,59 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
   });
 
+  it("fails motion, framer-motion or motion-utils in a chunk that is neither the charts nor the motion chunk (control: in either of them it passes; a chart module still cannot sit in the motion chunk)", () => {
+    const motion =
+      "/repo/node_modules/.bun/motion@14.3.0/node_modules/motion/dist/es/react.mjs";
+    const framer =
+      "/repo/node_modules/.bun/framer-motion@14.3.0/node_modules/framer-motion/dist/es/context/PresenceContext.mjs";
+    const utils =
+      "/repo/node_modules/.bun/motion-utils@14.3.0/node_modules/motion-utils/dist/es/noop.mjs";
+    const heavy = {
+      [framer]: { renderedLength: 1 },
+      [motion]: { renderedLength: 1 },
+      [utils]: { renderedLength: 1 },
+    };
+    expect(
+      chartsPlacementProblems([
+        { fileName: "assets/motion-B0SXIb_6.js", modules: heavy },
+        { fileName: "assets/charts-Dk3jf9.js", modules: heavy },
+        {
+          fileName: "assets/index-abc.js",
+          modules: {
+            "/repo/apps/web/src/ui/filter-bar.tsx": { renderedLength: 1 },
+          },
+        },
+      ])
+    ).toEqual([]);
+    expect(
+      chartsPlacementProblems([
+        { fileName: "assets/react-Ds8upiYS.js", modules: heavy },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "motion module framer-motion/dist/es/context/PresenceContext.mjs is in assets/react-Ds8upiYS.js, outside the charts and motion chunks"
+      ),
+      expect.stringContaining("motion module motion/dist/es/react.mjs"),
+      expect.stringContaining("motion module motion-utils/dist/es/noop.mjs"),
+    ]);
+    expect(
+      chartsPlacementProblems([
+        {
+          fileName: "assets/motion-B0SXIb_6.js",
+          modules: {
+            "/repo/apps/web/src/ui/charts/area-chart.tsx": {
+              renderedLength: 1,
+            },
+          },
+        },
+      ])
+    ).toEqual([
+      expect.stringContaining(
+        "chart module /repo/apps/web/src/ui/charts/area-chart.tsx is in assets/motion-B0SXIb_6.js, outside the charts chunk"
+      ),
+    ]);
+  });
+
   it("fails the calendar, react-day-picker or date-fns in a chunk that is not the calendar chunk (control: in its own chunk, and the loader and the pickers anywhere, it passes)", () => {
     const calendar = "/repo/apps/web/src/ui/calendar.tsx";
     const dayPicker =
@@ -744,7 +807,12 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     const run = (
       options: { mode?: "warn" | "block"; only?: "chunks" },
       files: Record<string, Uint8Array>,
-      bundle: { fileName: string; modules: Record<string, unknown> }[] = []
+      bundle: {
+        fileName: string;
+        imports?: string[];
+        isEntry?: boolean;
+        modules: Record<string, unknown>;
+      }[] = []
     ) => {
       const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
       mkdirSync(join(directory, "assets"));
@@ -846,6 +914,218 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
         misplaced
       ).error
     ).toEqual([expect.stringContaining("outside the charts chunk")]);
+    // motion reached from the entry by a static import fails in both builds and in both modes; by import() only, it passes
+    const graph = (imports: string[]) => [
+      {
+        fileName: "assets/index-abc.js",
+        imports,
+        isEntry: true,
+        modules: {},
+      },
+      {
+        fileName: "assets/motion-B0SXIb_6.js",
+        imports: [],
+        modules: {},
+      },
+    ];
+    const motionFiles = {
+      "index-abc.js": random(500),
+      "motion-B0SXIb_6.js": random(500),
+    };
+    for (const options of [{}, { only: "chunks" as const }]) {
+      expect(
+        run(options, motionFiles, graph(["assets/motion-B0SXIb_6.js"])).error
+      ).toEqual([expect.stringContaining("reachable from the entry")]);
+      expect(run(options, motionFiles, graph([])).error).toEqual([]);
+    }
+  });
+});
+
+describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", () => {
+  const random = (length: number) =>
+    new Uint8Array(length).map((_, index) => (index * 7919) % 251);
+  const asSize = (motion: number) => ({
+    calendar: 0,
+    charts: 0,
+    fonts: 0,
+    interface: 0,
+    motion,
+    primitives: 0,
+    rest: 0,
+  });
+  const anyModule = { "/repo/apps/web/src/x.tsx": { renderedLength: 1 } };
+
+  it("counts the motion chunk in a line of its own: not in the charts line, not in the rest", () => {
+    const files: Record<string, Uint8Array> = {
+      "assets/charts-Dk3jf9.js": random(10_000),
+      "assets/index-abc.js": random(10_000),
+      "assets/motion-B0SXIb_6.js": random(10_000),
+    };
+    const size = measurePrecache(
+      Object.keys(files),
+      (path) => files[path] as Uint8Array
+    );
+    const chartsOnly = measurePrecache(["assets/charts-Dk3jf9.js"], () =>
+      random(10_000)
+    );
+    const restOnly = measurePrecache(["assets/index-abc.js"], () =>
+      random(10_000)
+    );
+    expect(size.motion).toBeGreaterThan(0);
+    expect(size.charts).toBe(chartsOnly.charts);
+    expect(size.rest).toBe(restOnly.rest);
+    // a name that only starts like it is another file
+    expect(
+      measurePrecache(["assets/motion-page-abc.css"], () => random(1000)).motion
+    ).toBe(0);
+  });
+
+  it('passes at 56 000 B gzip; one byte past it warns in "warn" and fails in "block"', () => {
+    expect(MOTION_BUDGET_GZIP_BYTES).toBe(56_000);
+    expect(chunkBudgetProblems(asSize(56_000), "block")).toEqual([]);
+    expect(chunkBudgetProblems(asSize(56_001), "block")).toEqual([
+      expect.stringContaining("motion chunk: 56001 B gzip, over the 56000 B"),
+    ]);
+    expect(chunkBudgetProblems(asSize(56_001), "warn")).toEqual([]);
+    expect(chunkBudgetWarnings(asSize(56_001), "warn")).toEqual([
+      expect.stringContaining("motion chunk over its line"),
+    ]);
+    expect(budgetWarnings(asSize(56_001), 0, "warn")).toEqual([
+      expect.stringContaining("excess +1 B"),
+    ]);
+  });
+
+  it("prints the line the review greps for, with the bytes left or the excess, or that the build has no chunk", () => {
+    expect(motionLine(asSize(0))).toBe(
+      "MOTION no motion chunk in this build, 0 B of 56000 B gzip"
+    );
+    expect(motionLine(asSize(52_930))).toBe(
+      "MOTION chunk 52930 B gzip of 56000 B (3070 B left)"
+    );
+    expect(motionLine(asSize(56_100))).toContain("over by 100 B");
+  });
+
+  it("fails when the entry reaches the motion chunk by static imports, directly or through other chunks (control: the current graph, where charts and the bar come only by import(), passes)", () => {
+    const current = [
+      {
+        fileName: "assets/index-abc.js",
+        imports: ["assets/react-def.js"],
+        isEntry: true,
+        modules: anyModule,
+      },
+      { fileName: "assets/react-def.js", imports: [], modules: anyModule },
+      // the lazy chunks import motion statically, but the entry only reaches them by import()
+      {
+        fileName: "assets/charts-Dk3jf9.js",
+        imports: ["assets/motion-B0SXIb_6.js", "assets/react-def.js"],
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/ui-gallery-ghi.js",
+        imports: ["assets/motion-B0SXIb_6.js"],
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/motion-B0SXIb_6.js",
+        imports: [],
+        modules: anyModule,
+      },
+    ];
+    expect(motionLoadProblems(current)).toEqual([]);
+    // the entry imports a module that imports the chunk of motion
+    const through = current.map((chunk) =>
+      chunk.fileName === "assets/react-def.js"
+        ? { ...chunk, imports: ["assets/motion-B0SXIb_6.js"] }
+        : chunk
+    );
+    expect(motionLoadProblems(through)).toEqual([
+      expect.stringContaining(
+        "assets/index-abc.js -> assets/react-def.js -> assets/motion-B0SXIb_6.js"
+      ),
+    ]);
+    // the entry imports it itself
+    const direct = current.map((chunk) =>
+      chunk.isEntry
+        ? { ...chunk, imports: [...chunk.imports, "assets/motion-B0SXIb_6.js"] }
+        : chunk
+    );
+    expect(motionLoadProblems(direct)).toEqual([
+      expect.stringContaining(
+        "assets/index-abc.js -> assets/motion-B0SXIb_6.js"
+      ),
+    ]);
+  });
+
+  it("a bundle with a motion chunk and no entry fails: it cannot be proved that the shell does not load it (a graph with no motion chunk and no entry has nothing to prove)", () => {
+    expect(
+      motionLoadProblems([
+        { fileName: "assets/a.js", imports: [], modules: anyModule },
+        { fileName: "assets/motion-B0SXIb_6.js", modules: anyModule },
+      ])
+    ).toEqual([expect.stringContaining("no chunk is an entry")]);
+    expect(
+      motionLoadProblems([
+        { fileName: "assets/a.js", imports: [], modules: anyModule },
+      ])
+    ).toEqual([]);
+  });
+
+  it("does not loop on a cycle of static imports and reports the chunk once", () => {
+    expect(
+      motionLoadProblems([
+        {
+          fileName: "assets/index-abc.js",
+          imports: ["assets/a.js", "assets/b.js"],
+          isEntry: true,
+          modules: anyModule,
+        },
+        {
+          fileName: "assets/a.js",
+          imports: ["assets/b.js", "assets/motion-B0SXIb_6.js"],
+          modules: anyModule,
+        },
+        {
+          fileName: "assets/b.js",
+          imports: ["assets/a.js"],
+          modules: anyModule,
+        },
+        { fileName: "assets/motion-B0SXIb_6.js", modules: anyModule },
+      ])
+    ).toHaveLength(1);
+  });
+
+  it("the plugin prints the MOTION line", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+    try {
+      mkdirSync(join(directory, "assets"));
+      writeFileSync(join(directory, "index.html"), "<!doctype html>");
+      writeFileSync(
+        join(directory, "assets", "motion-B0SXIb_6.js"),
+        random(1000)
+      );
+      const info: string[] = [];
+      const plugin = precacheBudgetPlugin({ only: "chunks" });
+      const write = plugin.writeBundle as (
+        this: unknown,
+        options: { dir: string }
+      ) => void;
+      write.call(
+        {
+          environment: { name: "client" },
+          error: (message: string) => {
+            throw new Error(message);
+          },
+          info: (message: string) => info.push(message),
+          warn: () => undefined,
+        },
+        { dir: directory }
+      );
+      expect(info).toEqual(
+        expect.arrayContaining([expect.stringMatching(MOTION_LINE)])
+      );
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 });
 
@@ -857,6 +1137,7 @@ describe("the calendar line (ADR 0103, amendment Datas, t363, t369)", () => {
     charts: 0,
     fonts: 0,
     interface: 0,
+    motion: 0,
     primitives: 0,
     rest: 0,
   });
