@@ -1,4 +1,4 @@
-import { connectionsClosedByUs } from "@polaris/db/client";
+import { connectionsClosedByUs } from "@polaris/db/pool-errors";
 import { isCriticalRoute } from "@polaris/observability/alerts";
 import { startWideEvent } from "@polaris/observability/wide-event";
 import type { MiddlewareHandler } from "hono";
@@ -8,10 +8,12 @@ import { countIsolateInvocation } from "../observability/isolate";
 
 /**
  * The latency signal of the alerts (PR119, ADR 0095): one `http_request_timed` wide event per request to a
- * critical route (`criticalRoutes` in the observability package), with `route`, `method`, `httpStatus` and
- * `durationMs` (wall-clock time), and `isolate` (CPU-1d): its `id`, the `seq` of this request in it (1 is the cold
- * one) and how many connection errors it dropped as the close of a connection it was ending itself (`pool-errors.ts`
- * of the db package). Every request counts in `seq`, logged or not. Other routes emit nothing, so the volume in the Workers Logs stays small
+ * critical route (`criticalRoutes` in the observability package), with `route`, `method`, `httpStatus`,
+ * `durationMs` (wall-clock time) and `isolate` (CPU-1d): its random `id`, the `seq` of this request among the
+ * invocations of the isolate (1 is the first one, of any kind: the cold one) and `closedByUs`, the running count of
+ * the connection errors the isolate dropped as the close of a connection it was ending itself (`pool-errors.ts` of
+ * the db package; the pools of this request close after the event, so they show in the next one). Every request
+ * counts in `seq`, logged or not. Other routes emit nothing, so the volume in the Workers Logs stays small
  * (ADR 0094). The route is a pattern, never the URL: an oRPC call is `/rpc/<procedure>` (the arguments travel in
  * the body); anything that is not a critical route is not logged.
  */

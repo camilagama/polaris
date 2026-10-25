@@ -17,7 +17,8 @@ vi.mock("pg", () => ({
   },
 }));
 
-const { connectionsClosedByUs, createDatabase } = await import("./client");
+const { createDatabase } = await import("./client");
+const { connectionsClosedByUs } = await import("./pool-errors");
 const { createBillingStore } = await import("./billing-store");
 const { createAuthLoginLockMaintenanceClient } = await import(
   "./auth-login-lock-maintenance"

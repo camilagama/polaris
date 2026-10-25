@@ -26,5 +26,3 @@ export function createDatabase(
     pool,
   };
 }
-
-export { connectionsClosedByUs } from "./pool-errors";

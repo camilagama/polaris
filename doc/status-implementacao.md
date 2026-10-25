@@ -1916,7 +1916,7 @@ Os PRs 166 e 164 recriaram `admin_schedule_organization_purge` com corpos difere
 | Access simulado só no teste | Concluído | `access-mock-confinement.test.ts` (roda em `bun run test`): nenhum arquivo fora das configs de teste, dos testes e do gate nomeia a chave, o time de teste ou o assinador; os `wrangler.jsonc` e os workflows são conferidos por nome; o grafo de imports de `worker.ts` não alcança teste. Com caso de controle. |
 | Production guard | Concluído (parte estática) | `scripts/admin-production-guard.test.mjs`: `workers_dev` e `preview_urls` desligados no topo, no staging e na produção do Admin, nenhuma rota nem domínio, variáveis do Access na produção. A prova com o Access real é o item de go-live do Admin. |
 | Custo | Medido | O gate leva 4 s; o job `database` ficou em 3 min 03 s contra 3 min 02 s da `main`; sem job novo nem mudança de workflow. |
-| Defeito do Admin | Registrado, não corrigido | O pool de `createBillingStore` não tem ouvinte de `error`; ao fechá-lo depois de cada comando de cobrança, o driver emite um erro não tratado ("This socket has been closed."). A config de teste deixa passar só esse erro, e o gate imprime uma nota. Detalhes no [runbook do harness](../docs/runbooks/workers-test-harness.md). |
+| Defeito do Admin | Corrigido | O pool de `createBillingStore` ganhou o ouvinte de `error` (`guardPoolErrors`); a exceção da config de teste ("This socket has been closed.") e a nota do gate saíram na t387, quando esse erro do fechamento passou a ser só contado. Detalhes no [runbook do harness](../docs/runbooks/workers-test-harness.md). |
 
 ### Fase 13 — harness dos Workers Web e Catalog contra PostgreSQL (T-121b, POL-56; sem migration)
 
