@@ -107,7 +107,7 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.SaleHistoryPage,
     }))
   ),
-  subscription: lazy(() =>
+  subscription: lazyScreen(() =>
     import("../subscription/subscription-page").then((module) => ({
       default: module.SubscriptionPage,
     }))

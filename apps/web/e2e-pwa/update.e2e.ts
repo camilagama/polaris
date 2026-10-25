@@ -130,7 +130,7 @@ test("o mesmo conteúdo publicado de novo (outra hora, mesmo id) não gera aviso
   expect(await page.evaluate(() => caches.keys())).toEqual(before);
 });
 
-test("com duas abas abertas, Atualizar agora numa troca a versão nas duas", async ({
+test("com duas abas abertas, Atualizar agora numa só troca a versão dela; a outra não recarrega e mantém o rascunho", async ({
   buildVersion,
   context,
   page,
@@ -139,6 +139,10 @@ test("com duas abas abertas, Atualizar agora numa troca a versão nas duas", asy
   await openControlled(page);
   const other = await context.newPage();
   await openControlled(other);
+  // a draft that lives only in the page's memory: a reload would lose it (ADR 0041, "Nunca automático")
+  await other.evaluate(() => {
+    (window as unknown as { draft?: string }).draft = "rascunho";
+  });
 
   buildVersion("2");
   await checkForUpdate(page);
@@ -151,9 +155,12 @@ test("com duas abas abertas, Atualizar agora numa troca a versão nas duas", asy
   await page.getByRole("button", { name: "Atualizar agora" }).click();
 
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
-  await expect.poll(() => runningVersion(other), { timeout: 20_000 }).toBe("2");
   await expect(banner).toHaveCount(0);
-  await expect(
-    other.getByRole("status", { name: "Atualização do aplicativo" })
-  ).toHaveCount(0);
+
+  // the other tab was not asked: it keeps its page, its build's files and what was typed
+  await other.waitForTimeout(6000);
+  expect(await runningVersion(other)).toBe("1");
+  expect(
+    await other.evaluate(() => (window as unknown as { draft?: string }).draft)
+  ).toBe("rascunho");
 });

@@ -2106,9 +2106,9 @@ Achados do QA de 24/10/2026 no staging. Emendas dos [ADR 0040](../docs/adr/0040-
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | "Tentar novamente" | Em revisão | `app-shell/error-boundary.tsx`: erro de baixar o pedaço da tela recarrega a página (uma vez por janela de 10 s, marca em `sessionStorage`); outro erro recria o componente lazy (`app-shell/lazy-screen.ts`). Todas as telas lazy de `app.tsx` usam `lazyScreen`. |
-| `/assets/*` ausente | Em revisão | `src/server/built-assets.ts`, `run_worker_first` e binding `ASSETS`: 404 `no-store` em vez do HTML do SPA. Prova no Worker real (`vite preview`) em `e2e-real/pilha/fumaca.e2e.ts`. |
+| `/assets/*` ausente | Em revisão | `src/server/built-assets.ts`, `run_worker_first` e binding `ASSETS`: 404 `no-store` em vez do HTML do SPA; o chunk 200 recebe os cabeçalhos de segurança do Worker onde o `_headers` não pôs. Prova no Worker real (`vite preview`) em `e2e-real/pilha/fumaca.e2e.ts`. |
 | Service worker | Em revisão | Instalação e cache-first só com 200 e o `content-type` do arquivo; sem `builtAt` no `sw.js` (mesmo conteúdo, mesmo worker, sem aviso); cache por id, ordem pela criação; cópia servida em `clone()` (aviso de console "cross-world service worker resource mismatch" some). |
-| Atualizar com várias abas | Em revisão | Espera de 5 s e recarga própria, reabilita o botão, abas seguem o `controllerchange` com a fila vazia. |
+| Atualizar com várias abas | Em revisão | Espera de 5 s e recarga própria, reabilita o botão, a aba que não pediu não recarrega (ADR 0041, "Nunca automático"), com fila vazia ou não. |
 | Provas | Em revisão | Unitários (`chunk-load-error`, `lazy-screen`, `error-boundary`, `sw`, `update`, `built-assets`, `worker/index`); `e2e-pwa/lazy-retry.e2e.ts`, `e2e-pwa/update.e2e.ts` (mesmo conteúdo sem aviso; duas abas). |
 
 ### Início (F2), PR 2: filtro "sem custo" e endereços diretos (t286; sem migration)

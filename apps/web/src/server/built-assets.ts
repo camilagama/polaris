@@ -13,7 +13,9 @@ export interface AssetsBinding {
 
 const ASSETS_PREFIX = "/assets/";
 const HTML_TYPE = /^text\/html/i;
-const SECURITY_HEADERS = Object.entries(securityHeaders("api"));
+// the Worker's own answers are not pages (`api`); a file of the build has the policy of the shell, as `_headers` gives it
+const REFUSAL_HEADERS = Object.entries(securityHeaders("api"));
+const FILE_HEADERS = Object.entries(securityHeaders("app-shell"));
 
 export function isBuiltAssetRequest(request: Request): boolean {
   return new URL(request.url).pathname.startsWith(ASSETS_PREFIX);
@@ -26,7 +28,7 @@ function refusal(status: number, body: string | null, init: HeadersInit = {}) {
     "Content-Type": "text/plain; charset=utf-8",
     ...init,
   });
-  for (const [name, value] of SECURITY_HEADERS) {
+  for (const [name, value] of REFUSAL_HEADERS) {
     headers.set(name, value);
   }
   return new Response(body, { headers, status });
@@ -45,5 +47,14 @@ export async function serveBuiltAsset(
     await response.body?.cancel();
     return refusal(404, "Not found");
   }
-  return response;
+  // the file keeps what the platform gave it (`_headers` included) and gets the headers of the shell (the same
+  // module, so the same values) where there are none, so it does not depend on `_headers` having matched this path:
+  // a script worker takes its CSP from its own response, so it must be the app's, never the `api` one
+  const served = new Response(response.body, response);
+  for (const [name, value] of FILE_HEADERS) {
+    if (!served.headers.has(name)) {
+      served.headers.set(name, value);
+    }
+  }
+  return served;
 }

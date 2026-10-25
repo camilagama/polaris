@@ -38,7 +38,78 @@ describe("the files under /assets/", () => {
       get("/assets/a-1.js"),
       assetsAnswering(file)
     );
-    expect(response).toBe(file);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("export default 1");
+    expect(response.headers.get("Content-Type")).toBe(
+      "text/javascript; charset=utf-8"
+    );
+    expect(response.headers.get("ETag")).toBe('"abc"');
+  });
+
+  it("puts the security headers on the 200 of a chunk, without depending on `_headers`", async () => {
+    const response = await serveBuiltAsset(
+      get("/assets/a-1.js"),
+      assetsAnswering(
+        new Response("export default 1", {
+          headers: { "Content-Type": "text/javascript; charset=utf-8" },
+        })
+      )
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe(
+      "same-origin"
+    );
+    expect(response.headers.get("Strict-Transport-Security")).toContain(
+      "max-age="
+    );
+    // the policy of the shell, not the `api` one: a script worker would take it from its own response
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      "default-src 'self'"
+    );
+  });
+
+  it("keeps the 304 and the HEAD a file answers as they are, with the security headers", async () => {
+    const notModified = await serveBuiltAsset(
+      get("/assets/a-1.js"),
+      assetsAnswering(
+        new Response(null, { headers: { ETag: '"abc"' }, status: 304 })
+      )
+    );
+    expect(notModified.status).toBe(304);
+    expect(notModified.headers.get("ETag")).toBe('"abc"');
+    expect(notModified.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const head = await serveBuiltAsset(
+      get("/assets/a-1.js", "HEAD"),
+      assetsAnswering(
+        new Response(null, {
+          headers: {
+            "Content-Length": "16",
+            "Content-Type": "text/javascript; charset=utf-8",
+          },
+        })
+      )
+    );
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Length")).toBe("16");
+    expect(head.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("keeps the header the platform already set (the app's CSP from `_headers`), adding only what is missing", async () => {
+    const csp = "default-src 'self'; script-src 'self'";
+    const response = await serveBuiltAsset(
+      get("/assets/a-1.js"),
+      assetsAnswering(
+        new Response("export default 1", {
+          headers: {
+            "Content-Security-Policy": csp,
+            "Content-Type": "text/javascript; charset=utf-8",
+          },
+        })
+      )
+    );
+    expect(response.headers.get("Content-Security-Policy")).toBe(csp);
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
   it("answers 404, never the shell, for a chunk that does not exist", async () => {

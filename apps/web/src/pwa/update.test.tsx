@@ -301,27 +301,21 @@ describe("the update store", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("with two tabs: the one that did not ask follows when the other applies, if its queue is empty", async () => {
-    const { container, reload, registration, store } = setup([work()]);
-    registration.deliver();
-    await store.refreshWork();
-    container.changeController();
-    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
-    container.changeController();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(reload).toHaveBeenCalledTimes(1);
-  });
-
-  it("with two tabs: the one with queued work keeps its page, whatever the other applies", async () => {
-    const { container, reload, registration, store } = setup([
-      work({ pending: 1 }),
-    ]);
-    registration.deliver();
-    await store.refreshWork();
-    container.changeController();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(reload).not.toHaveBeenCalled();
-  });
+  it.each([
+    ["empty", work()],
+    ["not empty", work({ pending: 1 })],
+  ])(
+    "with two tabs: the one that did not ask never reloads when the other applies, with the queue %s",
+    async (_name, queued) => {
+      const { container, reload, registration, store } = setup([queued]);
+      registration.deliver();
+      await store.refreshWork();
+      container.changeController();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(reload).not.toHaveBeenCalled();
+      expect(store.getSnapshot().applying).toBe(false);
+    }
+  );
 
   it("a click while another tab already took the worker over reloads and leaves the button usable", async () => {
     const { reload, registration, store } = setup([work()]);

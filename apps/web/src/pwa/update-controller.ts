@@ -96,20 +96,3 @@ export function takeOver(
   waiting.postMessage({ type: "SKIP_WAITING" });
   return true;
 }
-
-/**
- * Calls `onTakenOver` when another tab made a new worker take over (the page's controller changed
- * without this page having asked): the files under this tab are now those of the new build.
- * Returns the way to stop. Only a page that already had a controller listens: the first installation
- * does not change it.
- */
-export function watchForTakeOver(
-  container: ContainerLike,
-  onTakenOver: () => void
-): () => void {
-  if (!container.controller) {
-    return () => undefined;
-  }
-  container.addEventListener("controllerchange", onTakenOver);
-  return () => container.removeEventListener("controllerchange", onTakenOver);
-}
