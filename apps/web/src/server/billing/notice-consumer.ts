@@ -686,6 +686,9 @@ async function sendBillingNotice(
   }
 ): Promise<BillingNoticeOutcome> {
   const { config, fields, kind, noticeId, organizationId } = input;
+  // before the render and the send: written on its own, so it stays when either throws (a notice whose render always
+  // throws is closed by the 23-hour window instead of holding the front of the list); the provider's key starts later
+  await dependencies.notices.markAttempted(noticeId, organizationId);
   const message = await renderBillingNoticeEmail(
     input.email,
     config.supportEmail
@@ -697,8 +700,6 @@ async function sendBillingNotice(
       from: config.from,
       replyTo: config.supportEmail,
     });
-  // the provider's key starts to count here: written first and on its own, so it stays if the send throws
-  await dependencies.notices.markAttempted(noticeId, organizationId);
   const result = await send({
     ...message,
     idempotencyKey: noticeId,
