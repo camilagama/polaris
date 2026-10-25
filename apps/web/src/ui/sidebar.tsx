@@ -128,7 +128,7 @@ function MobileSheet({
     // biome-ignore lint/a11y/useKeyWithClickEvents: the keyboard closes it with Escape, which the native dialog handles
     <dialog
       aria-label={title}
-      className="motion-safe:open:fade-in-0 fixed inset-y-0 m-0 h-dvh max-h-none w-(--sidebar-width) max-w-[85vw] border-0 bg-sidebar p-0 text-sidebar-foreground text-sm shadow-lg ring-1 ring-foreground/[0.06] backdrop:bg-overlay open:flex open:flex-col data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:left-auto motion-safe:open:animate-in motion-safe:open:duration-[220ms]"
+      className="open:fade-in-0 data-[side=left]:open:slide-in-from-left-10 data-[side=right]:open:slide-in-from-right-10 fixed inset-y-0 m-0 h-dvh max-h-none w-(--sidebar-width) max-w-[85vw] border-0 bg-sidebar p-0 text-sidebar-foreground text-sm shadow-lg ring-1 ring-foreground/[0.06] backdrop:bg-overlay open:flex open:animate-in open:flex-col open:duration-200 open:ease-in-out data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:left-auto"
       data-mobile="true"
       data-side={side}
       data-sidebar="sidebar"

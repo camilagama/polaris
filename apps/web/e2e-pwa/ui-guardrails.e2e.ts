@@ -5,7 +5,6 @@ import {
   axeFaults,
   focusFaults,
   overflowFaults,
-  overlayMovement,
   readMotion,
   runningMotion,
   startMotionRecorder,
@@ -30,7 +29,7 @@ import {
  * docs/runbooks/testes-de-tela.md.
  *
  *   1. nothing leaves its container nor the viewport      4. colors only in OKLCH and tokens: scripts/ui-source-rules.test.ts
- *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: overlays only fade; nothing animates with reduce
+ *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: nothing animates with reduce
  *   3. axe, WCAG 2.2 A and AA                              6. keyboard focus draws the 3 px ring
  */
 
@@ -136,20 +135,6 @@ for (const screen of SCREENS) {
 
   // Motion (5): once per state, in one context, and once more with reduce.
   const motionWhere = `${screen.name} · ${contextName(MOTION_CONTEXT)}`;
-  test.describe(`${motionWhere} · movimento`, () => {
-    test.use(contextOptions(MOTION_CONTEXT));
-
-    test("as sobreposições só desvanecem", async ({ page }) => {
-      test.skip(!screen.exercise, "the screen has no overlay");
-      await openScreen(screen, page);
-      await screen.exercise?.(page);
-      const records = await readMotion(page);
-      // the recorder saw overlays animate: an empty list of faults is not a recorder that saw nothing
-      expect(records.some((record) => record.overlay)).toBe(true);
-      expect(overlayMovement(records)).toEqual([]);
-    });
-  });
-
   test.describe(`${motionWhere} · movimento reduzido`, () => {
     test.use({ ...contextOptions(MOTION_CONTEXT), reducedMotion: "reduce" });
 
@@ -401,37 +386,15 @@ test.describe("controle: cada verificação pega a falha", () => {
     ]);
   });
 
-  test("5. uma sobreposição que cresce é pega; a que só desvanece passa", async ({
+  test("5. sem reduce, popover, menu, seletor e dica animam (100 ms do shadcn); a verificação com reduce não passa por não haver animação", async ({
     page,
   }) => {
     await openScreen(gallery, page);
-    await page.evaluate(() => {
-      const portal = document.createElement("div");
-      const fades = document.createElement("div");
-      const grows = document.createElement("div");
-      fades.textContent = "só desvanece";
-      grows.textContent = "cresce";
-      portal.append(fades, grows);
-      document.body.append(portal);
-      // long enough for a busy machine to sample the growing overlay in more than one pose
-      fades.animate([{ opacity: 0 }, { opacity: 1 }], 3000);
-      grows.animate(
-        [
-          { opacity: 0, transform: "scale(0.8)" },
-          { opacity: 1, transform: "scale(1)" },
-        ],
-        3000
-      );
-    });
-    // the recorder samples once per frame: wait until it has seen the growing overlay in a second pose
-    await expect
-      .poll(async () => overlayMovement(await readMotion(page)).length)
-      .toBe(1);
-    const records = await readMotion(page);
-    const moves = overlayMovement(records);
-    expect(moves).toHaveLength(1);
-    expect(moves[0]).toContain('div "cresce"');
-    expect(runningMotion(records).length).toBeGreaterThan(0);
+    await gallery.exercise?.(page);
+    const durations = new Set(
+      runningMotion(await readMotion(page)).map((record) => record.duration)
+    );
+    expect(durations.has(100)).toBe(true);
   });
 
   test("5. com reduce, uma animação que escapa da regra é pega e a comum não", async ({

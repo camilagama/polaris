@@ -12,8 +12,8 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  *
  * 4. only OKLCH and only tokens: no `#hex`, `rgb(`, `hsl(` and the like; no color keyword nor Tailwind palette
  *    class; an `oklch(…)` literal lives only in the token sheet (`src/styles/theme.css`).
- * 5. motion: no `zoom-*`, `slide-*`, `translate`, `scale` or `rotate` in an entry or exit state, no animation
- *    that is not a fade; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
+ * 5. motion: the components use the animation they bring (shadcn, Bklit UI); the CSS of an animation lives only in
+ *    the sheets of the base; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 
@@ -48,24 +48,9 @@ const PALETTE = new RegExp(
 );
 const SOURCE_FILE = /\.(?:css|tsx?)$/;
 const TEST_FILE = /\.test\.tsx?$/;
-const TOKEN_SPLIT = /[\s"'`]+/;
-const MOVING = /^(?:.*:)?(?:zoom-(?:in|out)|slide-(?:in|out)-from)-/;
-const ENTRY_OR_EXIT_VARIANT =
-  /(?:^|:)(?:data-(?:\[(?:open|closed|starting-style|ending-style)\]|open|closed|starting-style|ending-style)|starting|in|out)(?=:)/;
-const MOVES_A_BOX = /(?:^|:)-?(?:translate|scale|rotate)(?:-|$)/;
-// the one slide that stays: the toast leaving in the direction of the gesture that dismissed it
-const TOAST_SWIPE =
-  /^data-\[ending-style\]:data-\[swipe-direction=(?:up|down|left|right)\]:-?translate-[xy]-\d+$/;
-const ANIMATE_UTILITY = /^(?:.*:)?animate-([a-z-]+)$/;
-// the fades the base allows: tw-animate-css's `in` and `out` (with `fade-in-0`, never with zoom or slide), none, `rise`
-// and `pulse` (the skeleton of a page that loads; Tailwind's keyframes of it move only the opacity, which a test reads)
-const FADES = new Set(["in", "out", "none", "pulse", "rise"]);
-const SHIMMER = /(?:^|[\s"'`:])shimmer(?:-[a-z]+)?(?=[\s"'`]|$)/;
-// the sheets that may define animations: the tokens and the vendored shadcn sheet; the others only use the fades
+// the sheets that may define animations: the tokens and the vendored shadcn sheet; the others use the utilities of tw-animate-css
 const ANIMATION_SHEETS = [TOKEN_SHEET, MASK_SHEET];
 const OWN_ANIMATION = /@keyframes\b|\banimation(?:-name)?\s*:/;
-const KEYFRAMES = /@keyframes\s+([\w-]+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g;
-const DECLARED_PROPERTY = /([a-z-]+)\s*:/g;
 
 const withoutComments = (text: string) => text.replace(COMMENT, "");
 
@@ -88,33 +73,13 @@ export function sourceFaults(path: string, text: string) {
       "classe da paleta do Tailwind (bg-white, text-red-500…) em vez de token"
     );
   }
-  for (const token of code.split(TOKEN_SPLIT)) {
-    if (MOVING.test(token)) {
-      faults.push(`${token}: a interface só desvanece, sem zoom nem slide`);
-    } else if (
-      ENTRY_OR_EXIT_VARIANT.test(token) &&
-      MOVES_A_BOX.test(token) &&
-      !TOAST_SWIPE.test(token)
-    ) {
-      faults.push(
-        `${token}: translate, scale ou rotate numa entrada ou saída (só opacidade; o deslize do gesto do aviso é a exceção)`
-      );
-    }
-    const animation = ANIMATE_UTILITY.exec(token)?.[1];
-    if (animation && !FADES.has(animation)) {
-      faults.push(`animate-${animation}: não é um desvanecer permitido`);
-    }
-  }
-  if (path.endsWith(".tsx") && SHIMMER.test(code)) {
-    faults.push("shimmer anima o fundo, não só a opacidade");
-  }
   if (
     path.endsWith(".css") &&
     !ANIMATION_SHEETS.includes(path) &&
     OWN_ANIMATION.test(code)
   ) {
     faults.push(
-      "animação própria em CSS novo (@keyframes ou animation): use as utilidades de desvanecer"
+      "animação própria em CSS novo (@keyframes ou animation): use as utilidades do tw-animate-css"
     );
   }
   return faults;
@@ -167,41 +132,8 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   });
 
-  it.each(SCOPE)("%s: só OKLCH, só tokens, só desvanece", (path) => {
+  it.each(SCOPE)("%s: só OKLCH, só tokens", (path) => {
     expect(sourceFaults(path, read(path))).toEqual([]);
-  });
-
-  it("o desvanecer `rise` mexe só na opacidade", () => {
-    const sheet = withoutComments(read(TOKEN_SHEET));
-    const rise = [...sheet.matchAll(KEYFRAMES)].find(
-      (frames) => frames[1] === "rise"
-    );
-    expect(rise).toBeDefined();
-    const properties = new Set(
-      [...(rise?.[2] ?? "").matchAll(DECLARED_PROPERTY)].map(
-        (property) => property[1]
-      )
-    );
-    expect(properties.has("opacity")).toBe(true);
-    expect([...properties].filter((name) => name !== "opacity")).toEqual([]);
-  });
-
-  it("o `pulse` do esqueleto, do Tailwind, mexe só na opacidade", () => {
-    const sheet = readFileSync(
-      join(web, "node_modules/tailwindcss/theme.css"),
-      "utf8"
-    );
-    const pulse = [...sheet.matchAll(KEYFRAMES)].find(
-      (frames) => frames[1] === "pulse"
-    );
-    expect(pulse).toBeDefined();
-    const properties = new Set(
-      [...(pulse?.[2] ?? "").matchAll(DECLARED_PROPERTY)].map(
-        (property) => property[1]
-      )
-    );
-    expect(properties.has("opacity")).toBe(true);
-    expect([...properties].filter((name) => name !== "opacity")).toEqual([]);
   });
 
   it("com prefers-reduced-motion: reduce a base zera animação e transição (a medida está em e2e-pwa)", () => {
@@ -230,16 +162,6 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ["border-color: red;", "cor por nome"],
     ['className="text-red-500 p-2"', "classe da paleta"],
     ['className="bg-white"', "classe da paleta"],
-    ['className="data-open:zoom-in-95"', "zoom nem slide"],
-    ['className="data-[side=top]:slide-in-from-bottom-2"', "zoom nem slide"],
-    ['className="data-open:translate-y-2"', "translate, scale ou rotate"],
-    ['className="data-[ending-style]:scale-95"', "translate, scale ou rotate"],
-    [
-      'className="data-starting-style:-translate-x-4"',
-      "translate, scale ou rotate",
-    ],
-    ['className="animate-bounce"', "não é um desvanecer"],
-    ['className="shimmer"', "shimmer"],
     ["border: 1px solid red;", "cor por nome"],
     ["box-shadow: 0 0 0 3px lightgray;", "cor por nome"],
     ['style={{ color: "white" }}', "cor por nome"],
@@ -251,10 +173,6 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ['className="ring-offset-white"', "classe da paleta"],
     ["color: color(srgb 1 0 0);", "cor fora do OKLCH"],
     ["background: oklch(0 0 0);", "literal oklch"],
-    [
-      'className="data-[swipe-direction=left]:data-open:scale-95"',
-      "translate, scale ou rotate",
-    ],
   ])("%s", (text, fault) => {
     expect(faultsOf(text).join("\n")).toContain(fault);
   });
@@ -283,14 +201,10 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ["color: var(--foreground); background: transparent;", "src/ui/x.tsx"],
     ['className="-translate-x-1/2 translate-y-0.5 size-4"', "src/ui/x.tsx"],
     [
-      'className="data-open:fade-in-0 data-closed:fade-out-0 animate-in animate-out"',
+      'className="data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=top]:slide-in-from-bottom-2 animate-bounce"',
       "src/ui/x.tsx",
     ],
     ['className="animate-pulse rounded-md bg-muted"', "src/ui/x.tsx"],
-    [
-      'className="data-[ending-style]:data-[swipe-direction=right]:translate-x-6"',
-      "src/ui/x.tsx",
-    ],
     [
       "/* #fff and rgb(0 0 0) in a comment */ color: var(--ink);",
       "src/ui/x.css",
