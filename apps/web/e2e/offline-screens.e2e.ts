@@ -58,6 +58,21 @@ async function customerMenuItem(page: Page, customer: string, item: string) {
   return page.getByRole("menuitem", { exact: true, name: item });
 }
 
+/**
+ * Closes the open menu with Escape and waits for it to be gone, back to the page (no popup, no backdrop).
+ * The Escape is asked again until the menu leaves: a menu that has just opened (or been opened again by a click
+ * during the exit of the last one, which the hole of its backdrop lets through) listens for the key only after
+ * its first effects, and the items of the popup that is still leaving are visible meanwhile, so an Escape sent
+ * right after the assertion can be lost and leave the menu open over the page.
+ */
+async function closeMenu(page: Page) {
+  await expect(async () => {
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+  await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
+}
+
 /** Opens the menu of the row, says whether the item is on, and closes it. */
 async function expectCustomerItem(
   page: Page,
@@ -69,7 +84,7 @@ async function expectCustomerItem(
   await (state === "enabled"
     ? expect(entry).toBeEnabled()
     : expect(entry).toBeDisabled());
-  await page.keyboard.press("Escape");
+  await closeMenu(page);
 }
 
 test("com rede, cadastra pelo aparelho, o servidor confirma e o selo de envio some", async ({
@@ -209,6 +224,40 @@ test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar n
   ).toBeVisible();
 });
 
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`depois do Escape o menu "Mais ações" não deixa popup nem fundo inerte, e o clique seguinte funciona (movimento: ${reducedMotion})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    await openLab(page, `user-${crypto.randomUUID()}`);
+    await start(page);
+    await registerConfirmed(page, "Iris Prado", "11900000008");
+
+    const trigger = page.getByRole("button", {
+      name: "Mais ações para Iris Prado",
+    });
+    const network = page.getByLabel("Rede disponível");
+    for (const toggle of ["uncheck", "check", "uncheck"] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one round at a time
+      await trigger.click();
+      await expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await closeMenu(page);
+      // the click right after the exit is not blocked by what is left of the menu
+      await network[toggle]();
+    }
+
+    // the click on the trigger right after the Escape (the hole of the backdrop lets it through while the menu
+    // leaves) opens it again, or closes what the key did not: either way it ends clean
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await trigger.click();
+    await closeMenu(page);
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await network.check();
+  });
+}
+
 test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, sem sobrescrever nada", async ({
   page,
 }) => {
@@ -309,7 +358,7 @@ test.describe("produtos", () => {
     await expect(
       page.getByRole("menuitem", { exact: true, name: "Variantes" })
     ).toBeDisabled();
-    await page.keyboard.press("Escape");
+    await closeMenu(page);
     await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
     await expect(page.getByTestId("server-records")).toHaveText("0");
 
