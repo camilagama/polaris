@@ -2147,3 +2147,16 @@ Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103
 | Seletor de aparência | Sem mudança | Fica com botões `aria-pressed`: o `RadioGroup` no shell sobe o primeiro script em 8 187 B gzip (medido). |
 | Custo | Medido | Linha do resto −91 B (runtime offline desligado) e −168 B (ligado); primitivos do Base UI +1 376 B; primeiro script +33 B. Números no ADR e no PR. |
 | Provas | Parcial | Unitário do `StatusNav`; e2e das cinco telas (clique, setas, Tab, `aria-selected`, endereço de Produtos e de Estoque) e do carregando das três telas (`role="status"`, esqueleto escondido do leitor de tela); `/sales/customer` sem `saleId` e com endereço inválido. O que só roda no CI (WebKit, `e2e-real`) está no corpo do PR. |
+
+### Resultado v2, PR do servidor: custo e resultado por dia no `periodSummary` (t332; emenda de 24/10 do ADR 0056; sem migration)
+
+Corte resultado-v2 (AC-8 a AC-10 e AC-21, com a emenda de 24/10) e desenho de 24/10 20:22 (Q-4).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Domínio | Em revisão | `economics/period-series.ts`: `dailyEconomics` (série diária com `costs`, `operatingExpenses` e `operatingResult`; custo = soma das partes, `null` com custo ou taxa desconhecidos, despesa sem venda no dia da competência; `operatingExpenses` é o `totals.operating` do dia: dinheiro sempre presente, `"0.00"` no dia sem despesa, preenchido mesmo com `costs: null`). Propriedades: os dias somam a cadeia quando nenhum é `null` e Σ `operatingExpenses` é `chain.operatingExpenses` também com dia `null`; dia sem venda tem `costs` igual a `operatingExpenses`; cada dia é o período daquele dia sozinho; um dia `null` é `null` nos dois campos. |
+| Repositório, contrato e RPC | Em revisão | `readPeriodFacts` devolve as despesas sem venda com a data de competência; `daily[].costs` e `daily[].operatingResult` (`string \| null`) e `daily[].operatingExpenses` (`string`, nunca `null`); o contrato recusa período acima de 366 dias. |
+| Cópia local | Em revisão | `isDaily` aceita `costs` e `operatingResult` ausentes, `null` ou dinheiro, e `operatingExpenses` ausente (cópia antiga) ou dinheiro (nunca `null`). |
+| Gate `economics` | Em revisão | Seção 7: dia com frete (custo 72,85, resultado 117,15), despesa com competência depois de hoje no dia dela, dias `null`, cada dia contra `from = to`, soma dos dias contra a cadeia, `operatingExpenses` de cada dia contra uma soma SQL independente por data de competência, outra loja zerada. Só roda no PostgreSQL 18 do CI (esta tarefa é da área app). |
+| Medida de CPU | Pendente | Local, só o motor (Node 24, sem banco): ver o PR. A medida oficial é o AC-23, no staging, antes de ligar "Este ano". |
+
