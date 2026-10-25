@@ -63,6 +63,7 @@ function setup(
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: { diagnostics: vi.fn(), list: vi.fn() },
     privacy: {} as never,
+    refundWindow: { read: vi.fn() },
     report,
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),
     support: {} as never,
