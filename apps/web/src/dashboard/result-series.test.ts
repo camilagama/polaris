@@ -227,6 +227,60 @@ describe("a day with no sale carries its cost as an expense without a sale (AC-8
   });
 });
 
+describe("the expenses of the day come from the server when it sends them (operatingExpenses)", () => {
+  it("names the expense of a day that also had sales: the rent on a day of R$ 320,00", () => {
+    const series = resultSeries(
+      days("2026-10-01", "2026-10-05", (date) =>
+        date === "2026-10-05"
+          ? {
+              costs: "2050.00",
+              netSales: "320.00",
+              operatingExpenses: "1800.00",
+              operatingResult: "-1730.00",
+              salesCount: 4,
+            }
+          : { operatingExpenses: "0.00" }
+      ),
+      "2026-10-31"
+    );
+    const row = series.rows.at(-1);
+    expect(row?.expenses).toBe("1800.00");
+    expect(readingNote(row)).toBe("inclui R$ 1.800,00 de despesas do período");
+    // a day with no expense says nothing
+    expect(series.rows[0]?.expenses).toBeNull();
+  });
+
+  it("names the expense of a day whose cost is unknown (null): the server fills it anyway", () => {
+    const series = resultSeries(
+      days("2026-10-01", "2026-10-02", (date) =>
+        date === "2026-10-02"
+          ? {
+              costs: null,
+              operatingExpenses: "90.00",
+              operatingResult: null,
+              salesCount: 1,
+            }
+          : { operatingExpenses: "0.00" }
+      ),
+      "2026-10-31"
+    );
+    expect(series.rows.at(-1)?.expenses).toBe("90.00");
+    expect(series.costsDrawn).toBe(false);
+  });
+
+  it("trusts the server's zero over the cost of a day with no sale", () => {
+    const series = resultSeries(
+      days("2026-10-01", "2026-10-02", (date) =>
+        date === "2026-10-02"
+          ? { costs: "40.00", operatingExpenses: "0.00", salesCount: 0 }
+          : {}
+      ),
+      "2026-10-31"
+    );
+    expect(series.rows.at(-1)?.expenses).toBeNull();
+  });
+});
+
 describe("long periods group by month with Money (AC-7)", () => {
   /** A year, every day selling R$ 10,10 with a cost of R$ 4,05 and a result of R$ 6,05. */
   const year = days("2026-01-01", "2026-12-31", () => ({

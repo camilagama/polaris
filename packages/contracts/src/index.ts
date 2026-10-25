@@ -332,6 +332,19 @@ const operationalSelection = z.object({
 export type OperationalSelectionReadModel = z.infer<
   typeof operationalSelection
 >;
+/** The longest period a summary reads: one year, leap year included (the same limit as `readPeriodFacts`). */
+const MAX_PERIOD_SUMMARY_DAYS = 366;
+
+const DAY_MS = 86_400_000;
+
+function periodSummaryDays(from: string, to: string): number {
+  return (
+    (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) /
+      DAY_MS +
+    1
+  );
+}
+
 const periodSummary = z.object({
   /** The server clock when this retrieval of the confirmed records was made ("updated until"). */
   generatedAt: z.string().datetime(),
@@ -363,14 +376,27 @@ const periodSummary = z.object({
     returns: z.string(),
   }),
   /**
-   * Every date of the period, in order, with the net sales and the count of
-   * the sales of that commercial date (ADR 0056, D2). A day without sales is
+   * Every date of the period, in order, also those after today, with the net
+   * sales and the count of the sales of that commercial date, and the costs and
+   * the estimated result of the day (ADR 0056, D2). A day without sales is
    * "0.00" and 0; the series adds up to `cards.netSales` and `cards.salesCount`.
+   * `costs` is the sum of the parts (cost of goods, fees, linked expenses and
+   * the expenses with no sale of that competence date), never negative;
+   * `operatingResult` is the day's estimate. Both are null, never zero, when a
+   * cost or a fee of a sale of the day is unknown. `operatingExpenses` is the
+   * part of `costs` with no sale (the expenses of that competence date), always
+   * present and never null: "0.00" on a day without expenses, and filled even
+   * when `costs` is null. When no day is null, the
+   * costs add up to the chain's cogs, fees and expenses and the results to
+   * `chain.estimatedOperatingResult`.
    */
   daily: z.array(
     z.object({
+      costs: z.string().nullable(),
       date: z.string(),
       netSales: z.string(),
+      operatingExpenses: z.string(),
+      operatingResult: z.string().nullable(),
       salesCount: z.number().int().nonnegative(),
     })
   ),
@@ -1846,13 +1872,20 @@ export const polarisContract = {
     // records of the organization, never from the device's pending work.
     periodSummary: oc
       .input(
-        z.object({
-          from: expenseCalendarDate,
-          organizationId: z.string().trim().min(1),
-          to: expenseCalendarDate,
-          /** Also rank this many most sold products (the same read of the period). */
-          topProducts: z.number().int().min(1).max(10).optional(),
-        })
+        z
+          .object({
+            from: expenseCalendarDate,
+            organizationId: z.string().trim().min(1),
+            to: expenseCalendarDate,
+            /** Also rank this many most sold products (the same read of the period). */
+            topProducts: z.number().int().min(1).max(10).optional(),
+          })
+          .refine(
+            ({ from, to }) =>
+              // an inverted or impossible date is the read's own refusal (NaN passes here)
+              !(periodSummaryDays(from, to) > MAX_PERIOD_SUMMARY_DAYS),
+            { message: "period_too_long", path: ["to"] }
+          )
       )
       .output(periodSummary),
   },

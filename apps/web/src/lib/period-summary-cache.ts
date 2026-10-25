@@ -14,22 +14,21 @@ const KEY_PREFIX = "polaris.offline.periodSummary.";
 /** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
-/**
- * A day of the series as the screen reads it. `costs` and `operatingResult` are the fields the server adds in the
- * t332 (`feat/period-summary-custos-dia`, AC-8): BRL text, or `null` when the day has an unknown cost or fee. They are
- * absent (`undefined`) from an older server and from an older copy. This is the one place the local shape lives: when
- * the t332 is on the main, `PeriodSummaryReadModel["daily"][number]` carries them and this type goes away.
- */
-export type StoredDay = PeriodSummaryReadModel["daily"][number] & {
-  costs?: string | null;
-  operatingResult?: string | null;
-};
+type SummaryDay = PeriodSummaryReadModel["daily"][number];
+
+/** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
+export type StoredDay = Omit<
+  SummaryDay,
+  "costs" | "operatingExpenses" | "operatingResult"
+> &
+  Partial<Pick<SummaryDay, "costs" | "operatingExpenses" | "operatingResult">>;
 
 /**
  * A summary as kept on the device: a copy written before the daily series
- * existed has no `daily` (the screen then draws no series for that month), a
- * copy written before the costs of the day has days without `costs`, and the
- * most sold products are there only when the read asked for them.
+ * existed has no `daily` (the screen then draws no series for that month), one
+ * written before the costs of the day has days without `costs` (no series of
+ * costs is drawn), and the most sold products are there only when the read
+ * asked for them.
  */
 export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> & {
   daily?: StoredDay[];
@@ -158,9 +157,10 @@ function dateAfter(date: string, days: number): string {
     .slice(0, 10);
 }
 
-/** The costs of a day: absent (an older server or copy), unknown (`null`) or money, and nothing else. */
-const isOptionalMoney = (value: unknown): boolean =>
-  value === undefined || value === null || isMoney(value);
+/** Absent (an older copy), null (unknown, never zero) or money. */
+function isOptionalMoney(value: unknown): boolean {
+  return value === undefined || value === null || isMoney(value);
+}
 
 /** Absent (an older copy), or one entry per date of the period, in order. */
 function isDaily(value: unknown, period: unknown): boolean {
@@ -180,6 +180,8 @@ function isDaily(value: unknown, period: unknown): boolean {
         isMoney(day.netSales) &&
         isCount(day.salesCount) &&
         isOptionalMoney(day.costs) &&
+        (day.operatingExpenses === undefined ||
+          isMoney(day.operatingExpenses)) &&
         isOptionalMoney(day.operatingResult)
     ) &&
     (value.at(-1) as Dictionary).date === period.to

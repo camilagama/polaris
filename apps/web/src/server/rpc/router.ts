@@ -756,7 +756,21 @@ function toRpcError(error: unknown): never {
     });
   }
 
-  throw error;
+  throw unexpectedRpcError(error);
+}
+
+/**
+ * An error already shaped for the transport keeps its status and data. Any other is an unexpected fault: it
+ * answers 503 with a reason the client reads as "try again", not a generic 500.
+ */
+function unexpectedRpcError(error: unknown): ORPCError<string, unknown> {
+  if (error instanceof ORPCError) {
+    return error;
+  }
+  return new ORPCError("SERVICE_UNAVAILABLE", {
+    cause: error,
+    data: { reason: "server_busy" },
+  });
 }
 
 interface RpcErrorConstructor {

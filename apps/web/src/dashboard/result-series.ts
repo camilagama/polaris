@@ -24,9 +24,9 @@ export interface ResultRow {
   /** The cost of the row: money, unknown (`null`) or not sent (`undefined`, an older server or copy). */
   costs: string | null | undefined;
   /**
-   * The expenses without a sale that fell on the row, only when the row is a day with no sale (then everything it
-   * costs is one: AC-8 adds the cost of goods, the fees and the linked expenses of the sales of the day, and there
-   * are none). On a day with sales the server does not say how much of the cost is an expense: null.
+   * The expenses without a sale that fell on the day (the server's `operatingExpenses`, also on a day with sales),
+   * or null when there is none, or when the day cannot say (a group of months; an older server or copy that sends no
+   * `operatingExpenses`, where only a day with no sale is known: everything it costs is one, AC-8).
    */
   expenses: string | null;
   /** The date of a day, the month ("2026-01") of a group. */
@@ -94,13 +94,20 @@ export function hasUnknownCostDay(days: readonly StoredDay[]): boolean {
   return days.some((day) => day.costs === null || day.operatingResult === null);
 }
 
-function dayRow(day: StoredDay): ResultRow {
-  const expenses =
-    day.salesCount === 0 &&
+/** The expenses without a sale of a day: the server's figure when it sends one, else what a day with no sale costs. */
+function dayExpenses(day: StoredDay): string | null {
+  if (typeof day.operatingExpenses === "string") {
+    return cents(day.operatingExpenses) > 0n ? day.operatingExpenses : null;
+  }
+  return day.salesCount === 0 &&
     typeof day.costs === "string" &&
     cents(day.costs) > 0n
-      ? day.costs
-      : null;
+    ? day.costs
+    : null;
+}
+
+function dayRow(day: StoredDay): ResultRow {
+  const expenses = dayExpenses(day);
   return {
     costs: day.costs,
     expenses,

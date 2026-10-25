@@ -218,6 +218,8 @@ function dailyOf(data: FixtureMonth, from: string, to: string) {
       costs: hidden ? null : money(costs),
       date,
       netSales: first ? money(net) : "0.00",
+      // the part of the cost that is an expense without a sale: the server sends it on every day
+      operatingExpenses: money(last ? operating : 0),
       operatingResult: hidden ? null : money(result),
       salesCount: first ? sales.length : 0,
     };
