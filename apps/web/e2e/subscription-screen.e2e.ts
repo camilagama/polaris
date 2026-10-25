@@ -550,6 +550,42 @@ test("a volta 'concluida' numa loja que segue Free: depois dos 2 minutos a ofert
   expect(calls.reads).toBe(reads);
 });
 
+test("depois do aviso da volta sem o fato, 'Escolher outra forma' depois do Pix devolve a oferta (não a confirmação)", async ({
+  page,
+}) => {
+  await page.clock.install({ time: NOW });
+  await openScreen(page, {
+    checkouts: [
+      (route) =>
+        route.fulfill(
+          rpc({
+            handoff: {
+              emv: PIX_CODE,
+              kind: "pix_authorization",
+              url: PIX_PAGE,
+            },
+          })
+        ),
+    ],
+    path: "/subscription?retorno=concluida",
+    plans: [plan()],
+  });
+  await expect(page.getByText("Confirmando o pagamento…")).toBeVisible();
+  await page.clock.runFor(125_000);
+  await page
+    .getByRole("radiogroup", { name: "Como pagar" })
+    .getByRole("radio", { name: PIX })
+    .click();
+  await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
+  await page.getByRole("button", { name: "Começar o teste grátis" }).click();
+  await expect(page.getByLabel("Código Pix (copia e cola)")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Escolher outra forma de pagamento" })
+    .click();
+  await expect(page.getByRole("radiogroup", { name: "Ciclo" })).toBeVisible();
+  await expect(page.getByText("Confirmando o pagamento…")).toHaveCount(0);
+});
+
 test("volta do cartão cancelada ou expirada: nada foi cobrado e o teste continua disponível (AS-15, RN:6)", async ({
   page,
 }) => {
@@ -939,9 +975,8 @@ test("carência: a leitura que falha é tentada de novo cada vez mais devagar, n
     // biome-ignore lint/performance/noAwaitInLoops: the minutes pass one after the other
     await page.clock.runFor(60_000);
   }
-  // each wait doubles (1, 2, 4, 8 min): a read per minute would be 13
-  expect(calls.reads).toBeGreaterThan(2);
-  expect(calls.reads).toBeLessThanOrEqual(6);
+  // each wait doubles from the minute that started the read: reads at minutes 0, 1, 3 and 7 (one per minute would be 13)
+  expect(calls.reads).toBe(4);
   await expect(page.locator("[data-grace-notice]")).toHaveCount(0);
 });
 

@@ -193,6 +193,7 @@ function screenParts(input: {
     returned === "concluida" &&
     waiting &&
     pix === null &&
+    !choosingAgain &&
     !(waitedOut && stillFree);
   // the offer is back with the notice: the person may have paid already, and must not pay twice
   const unconfirmed =

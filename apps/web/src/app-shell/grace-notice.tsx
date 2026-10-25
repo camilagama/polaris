@@ -60,7 +60,8 @@ function usePlanNoticeFacts(
         const failures = failed.current.failures + 1;
         failed.current = {
           failures,
-          retryAt: Date.now() + planNoticeRetryDelayMs(failures),
+          // from the minute that started the read, so the wait is not stretched by the answer's delay
+          retryAt: now.getTime() + planNoticeRetryDelayMs(failures),
         };
       })
       .finally(() => {

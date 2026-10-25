@@ -415,7 +415,10 @@ export function offerTerms(input: {
 export const PRO_PITCH =
   "Catálogo público no ar, vendas sem internet e mais variantes, imagens e metas.";
 
-/** The hosts of the provider's pages the server hands out: Asaas's (and its subdomains) and Woovi's. */
+/**
+ * The hosts of the provider's pages the server hands out: Asaas's (and its subdomains, as `pickAsaasCheckout` takes
+ * them) and Woovi's (`PAYMENT_LINK_DOMAINS` of the Woovi port). The server is the gate; this is the second one.
+ */
 const PROVIDER_DOMAINS = [
   "asaas.com",
   "woovi.com",
