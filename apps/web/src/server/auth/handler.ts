@@ -808,14 +808,23 @@ async function withAuthRuntime(
       () => use(runtime)
     );
   } catch (error) {
-    // a failed start of the instance would otherwise be kept for the whole life of the isolate
-    if (sharedAuth === entry) {
+    // a failed start of the instance would otherwise be kept for the whole life of the isolate; any other failure (the
+    // database, a route) keeps it, so an outage does not cost a new instance per request
+    if (sharedAuth === entry && (await startFailed(entry.auth))) {
       sharedAuth = undefined;
     }
     throw error;
   } finally {
     await closeAfterBackground(pool, pending, runInBackground);
   }
+}
+
+/** Whether the start of the instance failed: Better Auth keeps that rejection in `$context` for good. */
+function startFailed(auth: BetterAuthInstance): Promise<boolean> {
+  return Promise.resolve(auth.$context).then(
+    () => false,
+    () => true
+  );
 }
 
 /** Ends the pool now, or after the background tasks when there are some. */

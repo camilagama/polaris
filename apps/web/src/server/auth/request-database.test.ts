@@ -99,6 +99,16 @@ describe("request-scoped database", () => {
     expect(() => database instanceof Object).toThrow(
       "request_database_unavailable"
     );
+    for (const use of [
+      () => Object.getOwnPropertyDescriptor(database, "name"),
+      () => Object.defineProperty(database, "name", { value: "outside" }),
+      () => Reflect.deleteProperty(database, "name"),
+      () => Object.setPrototypeOf(database, null),
+      () => Object.preventExtensions(database),
+      () => Object.isExtensible(database),
+    ]) {
+      expect(use).toThrow("request_database_unavailable");
+    }
   });
 
   it("forwards a write, the keys and the prototype to the database of the running request", async () => {
@@ -118,6 +128,7 @@ describe("request-scoped database", () => {
         database.name = "written";
         expect(real.name).toBe("written");
         expect(Reflect.ownKeys(database)).toEqual(["name"]);
+        expect(Object.keys(database)).toEqual(["name"]);
         expect(database).toBeInstanceOf(NamedDatabase);
         return Promise.resolve();
       }

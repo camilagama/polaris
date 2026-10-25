@@ -192,4 +192,16 @@ describe("one Better Auth for every request of the isolate", () => {
       eventType: "logout_succeeded",
     });
   });
+
+  it("refuses to build an instance shared between requests that would keep the state of the hooks itself", () => {
+    expect(() =>
+      createBetterAuth({
+        auditEventWriter: () => Promise.resolve(),
+        baseURL: testBaseURL,
+        databaseAdapter: memoryAdapter({}),
+        requestId: currentRequestId,
+        secret: testSecret,
+      })
+    ).toThrow("needs the request state of the request scope");
+  });
 });

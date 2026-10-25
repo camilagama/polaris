@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
+import {
+  currentAuthRequestState,
+  currentRequestId,
+  runInRequestBackground,
+} from "./request-database";
 
 interface FakeDatabase {
   name: string;
@@ -7,7 +12,10 @@ interface FakeDatabase {
 
 interface CapturedOptions {
   database: FakeDatabase;
+  emailDelivery?: unknown;
+  googleProvider?: { clientId: string };
   requestId: () => string;
+  requestState?: unknown;
   runInBackground: (task: Promise<unknown>) => void;
 }
 
@@ -15,8 +23,10 @@ const fake = vi.hoisted(() => ({
   /** What each request's Better Auth call saw through the shared instance. */
   calls: [] as { database: string; requestId: string }[],
   databases: 0,
-  /** What the request's own `getSession` answers; a throw stands for a failed start of the instance. */
+  /** What the request's own `getSession` answers. */
   getSession: (() => Promise.resolve(null)) as () => Promise<unknown>,
+  /** Whether the next instance fails to start (its `$context` rejects, as Better Auth's does). */
+  startFails: false,
   /** The background task the next request leaves, and what it saw when it ran. */
   holdBackground: undefined as Promise<void> | undefined,
   ranInBackground: [] as { database: string; requestId: string }[],
@@ -34,6 +44,9 @@ vi.mock("@polaris/db/client", () => ({
 
 const createBetterAuth = vi.hoisted(() =>
   vi.fn((options: CapturedOptions) => ({
+    $context: fake.startFails
+      ? Promise.reject(new Error("the start failed"))
+      : Promise.resolve({}),
     api: {
       getSession: () => fake.getSession(),
     },
@@ -92,6 +105,22 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     fake.ranInBackground.length = 0;
     fake.holdBackground = undefined;
     fake.getSession = () => Promise.resolve(null);
+    fake.startFails = false;
+  });
+
+  const lastOptions = () =>
+    createBetterAuth.mock.calls.at(-1)?.[0] as CapturedOptions;
+
+  it("reads the identifier, the background and the state of the hooks from the request scope", async () => {
+    await getSession("wired", vi.fn(), {
+      ...bindings,
+      BETTER_AUTH_SECRET: "w".repeat(32),
+    });
+
+    const options = lastOptions();
+    expect(options.requestId).toBe(currentRequestId);
+    expect(options.requestState).toBe(currentAuthRequestState);
+    expect(options.runInBackground).toBe(runInRequestBackground);
   });
 
   it("builds it once and gives each request its own database and its own waitUntil", async () => {
@@ -138,18 +167,75 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     expect(createBetterAuth.mock.calls.length).toBe(built + 1);
   });
 
-  it("is built again after a failure, so a failed start is not kept for the life of the isolate", async () => {
-    await getSession("warm", vi.fn());
-    const built = createBetterAuth.mock.calls.length;
+  it("is built again after a failed start, and kept after any other failure", async () => {
+    fake.startFails = true;
     fake.getSession = () => Promise.reject(new Error("the start failed"));
-
-    await expect(getSession("failed", vi.fn())).rejects.toThrow(
+    const rotated = { ...bindings, BETTER_AUTH_SECRET: "f".repeat(32) };
+    await expect(getSession("failed-start", vi.fn(), rotated)).rejects.toThrow(
       "the start failed"
     );
+    const built = createBetterAuth.mock.calls.length;
+    fake.startFails = false;
     fake.getSession = () => Promise.resolve(null);
-    await getSession("after", vi.fn());
+
+    await getSession("after-start", vi.fn(), rotated);
+    expect(createBetterAuth.mock.calls.length).toBe(built + 1);
+
+    // the database went down: the instance started fine, so it stays
+    fake.getSession = () => Promise.reject(new Error("the database is down"));
+    await expect(getSession("outage", vi.fn(), rotated)).rejects.toThrow(
+      "the database is down"
+    );
+    fake.getSession = () => Promise.resolve(null);
+    await getSession("after-outage", vi.fn(), rotated);
+    expect(createBetterAuth.mock.calls.length).toBe(built + 1);
+  });
+
+  it.each([
+    ["the base URL", { BETTER_AUTH_BASE_URL: "https://other.example.invalid" }],
+    ["the Google client", { GOOGLE_CLIENT_ID: "other-client" }],
+    ["the Google secret", { GOOGLE_CLIENT_SECRET: "other-secret" }],
+    [
+      "the password switch",
+      {
+        AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+        EMAIL_PASSWORD_AUTH_ENABLED: "true",
+        RESEND_API_KEY: "re_test_only",
+      },
+    ],
+  ])("is built again when %s changes", async (_name, change) => {
+    const google = {
+      ...bindings,
+      GOOGLE_CLIENT_ID: "client",
+      GOOGLE_CLIENT_SECRET: "secret",
+    };
+    await getSession("before-change", vi.fn(), google);
+    const built = createBetterAuth.mock.calls.length;
+
+    await getSession("after-change", vi.fn(), { ...google, ...change });
 
     expect(createBetterAuth.mock.calls.length).toBe(built + 1);
+  });
+
+  it("gives the instance the e-mails and Google only when the environment has them", async () => {
+    await getSession("plain", vi.fn(), {
+      ...bindings,
+      BETTER_AUTH_SECRET: "p".repeat(32),
+    });
+    expect(lastOptions().emailDelivery).toBeUndefined();
+    expect(lastOptions().googleProvider).toBeUndefined();
+
+    await getSession("full", vi.fn(), {
+      ...bindings,
+      AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+      BETTER_AUTH_SECRET: "p".repeat(32),
+      EMAIL_PASSWORD_AUTH_ENABLED: "true",
+      GOOGLE_CLIENT_ID: "client",
+      GOOGLE_CLIENT_SECRET: "secret",
+      RESEND_API_KEY: "re_test_only",
+    });
+    expect(lastOptions().emailDelivery).toBeDefined();
+    expect(lastOptions().googleProvider?.clientId).toBe("client");
   });
 
   it("keys the instance on the environment, never on the request", async () => {

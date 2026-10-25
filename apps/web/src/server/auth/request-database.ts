@@ -26,7 +26,7 @@ export function newAuthRequestState(): AuthRequestState {
   };
 }
 
-export interface RequestScope {
+interface RequestScope {
   database: Database;
   /** The e-mails of the password flows, built for this request; absent while the password is off. */
   emailDelivery?: AuthEmailDelivery;
@@ -100,13 +100,34 @@ export function requestScopedEmailDelivery(): AuthEmailDelivery {
   };
 }
 
-/** A `db` that forwards every access to the one of the running request; it keeps no connection of its own. */
+/**
+ * A `db` that forwards every access to the one of the running request; it keeps no connection of its own. Every trap
+ * reads the scope first, so outside a request any use of it throws.
+ */
 export function requestScopedDatabase(): Database {
   return new Proxy({} as Database, {
+    defineProperty(_target, property, descriptor) {
+      return Reflect.defineProperty(
+        currentRequestScope().database,
+        property,
+        descriptor
+      );
+    },
+    deleteProperty(_target, property) {
+      return Reflect.deleteProperty(currentRequestScope().database, property);
+    },
     get(_target, property) {
       const { database } = currentRequestScope();
       const value: unknown = Reflect.get(database, property, database);
       return typeof value === "function" ? value.bind(database) : value;
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(
+        currentRequestScope().database,
+        property
+      );
+      // the empty target has no property of its own: a proxy may only report one as configurable
+      return descriptor ? { ...descriptor, configurable: true } : undefined;
     },
     getPrototypeOf() {
       return Reflect.getPrototypeOf(currentRequestScope().database);
@@ -114,12 +135,24 @@ export function requestScopedDatabase(): Database {
     has(_target, property) {
       return Reflect.has(currentRequestScope().database, property);
     },
+    isExtensible(target) {
+      currentRequestScope();
+      return Reflect.isExtensible(target);
+    },
     ownKeys() {
       return Reflect.ownKeys(currentRequestScope().database);
+    },
+    preventExtensions() {
+      currentRequestScope();
+      return false;
     },
     set(_target, property, value) {
       const { database } = currentRequestScope();
       return Reflect.set(database, property, value, database);
+    },
+    setPrototypeOf() {
+      currentRequestScope();
+      return false;
     },
   });
 }

@@ -855,12 +855,22 @@ function emailVerificationOptions(
   };
 }
 
-/** The state of the running request; an instance of a single request keeps one, made once with the instance. */
+/**
+ * The state of the running request; an instance of a single request keeps one, made once with the instance. An
+ * instance that serves many requests (its identifier is a function) must read it from the request scope: kept by the
+ * instance, the actor of one logout would reach the audit of another request.
+ */
 function requestStateResolver(
-  requestState: (() => AuthRequestState) | undefined
+  requestState: (() => AuthRequestState) | undefined,
+  requestId: CreateBetterAuthOptions["requestId"]
 ): () => AuthRequestState {
   if (requestState) {
     return requestState;
+  }
+  if (typeof requestId === "function") {
+    throw new Error(
+      "A Better Auth instance shared between requests needs the request state of the request scope."
+    );
   }
   const state = newAuthRequestState();
   return () => state;
@@ -885,7 +895,7 @@ export function createBetterAuth({
   verificationLinkRecorder,
 }: CreateBetterAuthOptions) {
   const currentRequestId = requestIdResolver(requestId);
-  const currentState = requestStateResolver(requestState);
+  const currentState = requestStateResolver(requestState, requestId);
   const writeAuditEvent =
     auditEventWriter ??
     (database ? databaseAuditEventWriter(database) : undefined);
