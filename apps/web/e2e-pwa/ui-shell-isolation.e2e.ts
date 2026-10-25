@@ -769,7 +769,9 @@ const EXPENSE_SCREENS = [
   },
 ];
 
-/** The real route `/dashboard`, the month and the goals answered here, then a state to mount. */
+const GOALS_TAB = /^Metas/;
+
+/** The real route `/dashboard`, the period and the goals answered here, then a state to mount. */
 const openResult = (
   page: Page,
   then: (page: Page) => Promise<void> = async () => undefined
@@ -778,7 +780,9 @@ const openResult = (
     page,
     "/dashboard",
     async () => {
-      await expect(page.getByText("Outubro forte").first()).toBeVisible();
+      await expect(
+        page.getByText("Estimativa incompleta").first()
+      ).toBeVisible();
       await then(page);
     },
     resultAnswers
@@ -786,15 +790,25 @@ const openResult = (
 
 const RESULT_SCREENS = [
   {
-    // the month picker, the warning, the badges, the cards, the chain, and the cards of the goals
-    name: "Resultado e Metas no shell: mês incompleto e metas",
+    // the periods, the warning, the badges, the cards, the chart of the sales, the chain and its parts bar
+    name: "Resultado e Metas no shell: mês incompleto",
     open: (page: Page) => openResult(page),
+  },
+  {
+    // the Metas tab: the cards of the goals
+    name: "Resultado e Metas no shell: metas",
+    open: (page: Page) =>
+      openResult(page, async () => {
+        await page.getByRole("tab", { name: GOALS_TAB }).click();
+        await expect(page.getByText("Outubro forte").first()).toBeVisible();
+      }),
   },
   {
     // the form of a new goal with its error: select, date fields and the amount with its "R$"
     name: "Resultado e Metas no shell: nova meta com erro",
     open: (page: Page) =>
       openResult(page, async () => {
+        await page.getByRole("tab", { name: GOALS_TAB }).click();
         await page.getByRole("button", { name: "Nova meta" }).click();
         await page.getByRole("button", { name: "Criar meta" }).click();
         await expect(page.locator("#goal-create-target-error")).toBeVisible();

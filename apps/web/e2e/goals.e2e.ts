@@ -7,7 +7,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The goals panel of the result screen in a real browser, over a small
@@ -152,6 +152,10 @@ class FakeGoalServer {
   readonly created: Record<string, unknown>[] = [];
   /** When set, `goal.list` answers this ORPC error instead of the goals. */
   listFailure: { code: string; status: number } | null = null;
+  /** How many of the next listings answer 503 before the server recovers (an isolate killed for CPU). */
+  listUnavailable = 0;
+  /** Every listing that reached the server, the failed ones included. */
+  listCalls = 0;
   /** When set, `goal.cancel` answers this ORPC error and the goal is left as it was. */
   cancelFailure: { code: string; status: number } | null = null;
   /** The figures of the month; a test can change them. */
@@ -255,6 +259,11 @@ class FakeGoalServer {
   }
 
   private list(input: Record<string, unknown>) {
+    this.listCalls += 1;
+    if (this.listUnavailable > 0) {
+      this.listUnavailable -= 1;
+      return this.fail("SERVICE_UNAVAILABLE", 503);
+    }
     if (this.listFailure) {
       return this.fail(this.listFailure.code, this.listFailure.status);
     }
@@ -377,8 +386,8 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   });
@@ -397,9 +406,10 @@ async function openDashboard(page: Page, server: FakeGoalServer) {
   ).toBeVisible({ timeout: 20_000 });
 }
 
-/** Opens the screen: "Metas" is always open, a region of its own. */
+/** Opens the screen on its Metas tab, a region of its own (the Resultado tab is the one it opens on). */
 async function openGoals(page: Page, server: FakeGoalServer) {
   await openDashboard(page, server);
+  await page.getByRole("tab", { name: "Metas" }).click();
   await expect(
     page.getByRole("region", { exact: true, name: "Metas" })
   ).toBeVisible();
@@ -425,9 +435,13 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await openGoals(page, server);
 
   await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
+  // no goal in progress: the tab has no count (AC-13)
+  await expect(
+    page.getByRole("tab", { exact: true, name: "Metas" })
+  ).toBeVisible();
   await page.getByRole("button", { name: "Nova meta" }).click();
 
-  // the period starts as the month on screen
+  // the period starts as the current month: the tab does not follow the period of the Resultado (AC-15)
   await expect(page.locator("#goal-create-startsOn")).toHaveValue("2026-10-01");
   await expect(page.locator("#goal-create-endsOn")).toHaveValue("2026-10-31");
   await page.locator("#goal-create-name").fill("Meta de outubro");
@@ -456,6 +470,10 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await expect(bar).toHaveAttribute("aria-valuetext", fortyFivePercent);
   // the form closed
   await expect(page.locator("#goal-create-target")).toHaveCount(0);
+  // and the tab counts the goal in progress, for a screen reader too
+  await expect(
+    page.getByRole("tab", { exact: true, name: "Metas 1 em andamento" })
+  ).toBeVisible();
 });
 
 for (const width of FORM_WIDTHS) {
@@ -821,4 +839,51 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
+});
+
+/** Remembers, in the page, whether an alert ever showed: the screen must not pass through the error. */
+async function watchAlerts(page: Page) {
+  await page.addInitScript(() => {
+    const seen = { alert: false };
+    (window as unknown as { alertSeen: typeof seen }).alertSeen = seen;
+    new MutationObserver(() => {
+      if (document.querySelector("[role=alert]")) {
+        seen.alert = true;
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+}
+
+const alertSeen = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { alertSeen: { alert: boolean } }).alertSeen.alert
+  );
+
+test("a primeira leitura das metas com 503 repete sozinha e abre sem o aviso", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({ kind: "net_sales", name: "Depois do 503", target: "1000.00" });
+  server.listUnavailable = 1;
+  await watchAlerts(page);
+  await openGoals(page, server);
+
+  await expect(card(page, "Depois do 503")).toContainText("Em andamento");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await alertSeen(page)).toBe(false);
+  expect(server.listCalls).toBe(2);
+});
+
+test("dois 503 seguidos nas metas mostram o erro, depois de uma única repetição", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.listUnavailable = 2;
+  await openGoals(page, server);
+
+  await expect(page.getByRole("alert")).toContainText(
+    "As metas estão temporariamente indisponíveis. Tente novamente."
+  );
+  expect(server.listCalls).toBe(2);
 });

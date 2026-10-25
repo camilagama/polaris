@@ -37,6 +37,7 @@ const planOf = (state: string) => ({
   recovery: null,
   refund: null,
   refundPending: false,
+  refundWindowEndedOn: null,
   renewalCancelled: false,
   resubscribeFrom: null,
   state,

@@ -40,7 +40,7 @@ function ResultCard({
       </dt>
       <dd
         className={cn(
-          "font-semibold text-value-lg tabular-nums tracking-[-0.035em]",
+          "whitespace-nowrap font-semibold text-value-lg tabular-nums tracking-[-0.035em]",
           negative && "text-destructive"
         )}
       >
@@ -70,15 +70,16 @@ export function ResultCards({ summary }: { summary: StoredPeriodSummary }) {
   const { cards, quality } = summary;
   const incomplete = isIncompleteEstimate(quality);
   const negative = cards.operatingResult.trim().startsWith("-");
+  // one column under 360 px: the value does not break, and two columns of a 320 px phone are too narrow for "R$ 4.958,50"
   return (
-    <dl className="grid grid-cols-2 gap-3 md:grid-cols-3">
+    <dl className="grid grid-cols-1 gap-3 md:grid-cols-3 min-[360px]:grid-cols-2">
       <ResultCard
         label="Vendas líquidas"
         value={formatMoneyOrDash(cards.netSales)}
       />
       <ResultCard
         badge={incomplete ? <IncompleteBadge /> : null}
-        className="col-span-2 md:col-span-1"
+        className="md:col-span-1 min-[360px]:col-span-2"
         hint="Não é lucro líquido nem dinheiro já recebido."
         label="Resultado estimado"
         negative={negative}

@@ -19,6 +19,7 @@ import { StatusNav } from "../catalog/screen-parts";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   createOfflineCustomer,
@@ -135,10 +136,14 @@ export function CustomersPage() {
       setLoadError(null);
       setCustomers([]);
       try {
-        const result = await orpcClient.customer.list({
-          organizationId: targetOrganizationId,
-          status: targetStatus,
-        });
+        const result = await readWithRetry(
+          () =>
+            orpcClient.customer.list({
+              organizationId: targetOrganizationId,
+              status: targetStatus,
+            }),
+          { isCurrent: () => requestSequence === customerLoadSequence.current }
+        );
         if (requestSequence !== customerLoadSequence.current) {
           return;
         }

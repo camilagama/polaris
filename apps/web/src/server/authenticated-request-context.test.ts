@@ -2,12 +2,14 @@ import type {
   createDatabase as createHyperdriveDatabase,
   DatabaseOptions,
 } from "@polaris/db/client";
+import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
   type AuthenticatedRequestContextDependencies,
   createAuthenticatedRequestContext,
 } from "./authenticated-request-context";
-import type { WorkerBindings } from "./environment";
+import type { ServerEnv, WorkerBindings } from "./environment";
+import { requestIdMiddleware } from "./middleware/request-id";
 
 const baseBindings = {
   AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
@@ -124,6 +126,20 @@ describe("Better Auth once per isolate", () => {
     expect(
       () => (seen[0]?.database as { id: unknown } | undefined)?.id
     ).toThrow("request_database_unavailable");
+  });
+
+  it("reads the session with the identifier of the request, so its record of access points at it", async () => {
+    const { request, seen } = isolateWithTwoPools();
+    const app = new Hono<ServerEnv>();
+    app.use("*", requestIdMiddleware);
+    app.post("/rpc", async (context) => {
+      await request();
+      return context.body(null, 204);
+    });
+
+    const response = await app.request("/rpc", { method: "POST" });
+
+    expect(seen[0]?.requestId).toBe(response.headers.get("X-Request-Id"));
   });
 
   it("runs the real Better Auth through the forwarder: no cookie is a missing session, with no connection opened", async () => {

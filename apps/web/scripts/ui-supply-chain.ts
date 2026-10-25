@@ -17,6 +17,10 @@ import { dirname, resolve, sep } from "node:path";
  * generators that Bklit UI uses, adapted in `src/ui/charts/`, and the path builder `d3-shape` is made of. No
  * install script; `d3-path` has no dependencies and `d3-shape` only it. Only the charts chunk imports them (the
  * guard of `pwa/precache-budget.ts`).
+ * `react-day-picker` and `date-fns` came with the date pickers (t363): the month grid of `src/ui/calendar.tsx` (the
+ * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
+ * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
+ * of `pwa/precache-budget.ts`).
  */
 export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
@@ -27,7 +31,9 @@ export const UI_ALLOWED_PACKAGES = [
   "clsx",
   "d3-path",
   "d3-shape",
+  "date-fns",
   "lucide-react",
+  "react-day-picker",
   "tailwind-merge",
   "tailwindcss",
   "tw-animate-css",

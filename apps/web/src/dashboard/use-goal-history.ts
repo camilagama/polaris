@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { goalErrorMessage } from "./goal-errors";
 
 interface GoalTargetChange {
@@ -35,10 +36,10 @@ export function useGoalHistory(
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await orpcClient.goal.targetChanges({
-        id: goalId,
-        organizationId,
-      });
+      const result = await readWithRetry(
+        () => orpcClient.goal.targetChanges({ id: goalId, organizationId }),
+        { isCurrent: () => requestSequence === sequence.current }
+      );
       if (requestSequence === sequence.current) {
         setState({ changes: result.changes, error: null, isLoading: false });
       }

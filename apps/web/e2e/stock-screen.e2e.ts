@@ -147,7 +147,11 @@ async function useEveryControl(page: Page) {
   await expect(
     page.getByRole("listitem").getByText("Sem saldo", { exact: true })
   ).toBeVisible();
-  await page.getByLabel("Buscar").fill("camiseta");
+  await page.getByLabel("Buscar no estoque").fill("camiseta");
+  await page.getByRole("button", { name: "Limpar busca" }).click();
+  await expect(page.getByLabel("Buscar no estoque")).toHaveValue("");
+  await expect(page.getByLabel("Buscar no estoque")).toBeFocused();
+  await page.getByLabel("Buscar no estoque").fill("camiseta");
   await page.getByRole("button", { name: "Atualizar" }).click();
 
   // a receipt: the stepper, the review, the confirmation, the record

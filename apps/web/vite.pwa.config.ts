@@ -45,7 +45,7 @@ export default defineConfig({
     serviceWorkerPlugin({
       source: fileURLToPath(new URL("./src/pwa/sw.ts", import.meta.url)),
     }),
-    // Only the charts line and its placement guard: the other lines are those of the production build.
-    precacheBudgetPlugin({ only: "charts" }),
+    // Only the charts and calendar lines and their placement guards: the other lines are those of the production build.
+    precacheBudgetPlugin({ only: "chunks" }),
   ],
 });

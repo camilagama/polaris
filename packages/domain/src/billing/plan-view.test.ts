@@ -8,6 +8,7 @@ import {
   refundOfferOf,
   refundPendingOf,
   refundWindowClosesAt,
+  refundWindowEndedOnOf,
   refundWindowOf,
   resubscribeFromOf,
 } from "./plan-view";
@@ -243,6 +244,116 @@ describe("refundWindowClosesAt (T-5)", () => {
 
     expect(window?.until.getTime()).toBe(
       refundWindowClosesAt(sp("2026-10-10T15:00:00")).getTime() - 1000
+    );
+  });
+});
+
+describe("refundWindowEndedOnOf (AS-14, AS-30)", () => {
+  /** Paid on 10/10, renewed on 10/11: the renewal is a new period, never a new window. */
+  const renewed: PlanViewRecord = {
+    ...active,
+    accessEndsAt: sp("2026-12-11T00:00:00"),
+  };
+  const cancelled: PlanViewRecord = { ...active, cancelAtPeriodEnd: true };
+  const requestedAt = sp("2026-10-17T23:58:00");
+  const asked: PlanViewRecord = {
+    ...cancelled,
+    refundRequestedAt: requestedAt,
+  };
+  const after72h = new Date(requestedAt.getTime() + 72 * 3_600_000 + 1000);
+
+  it.each([
+    // state, record, now, expected
+    ["Free, never paid", free, "2026-10-25T12:00:00", null],
+    ["trial, before the first charge", trialing, "2026-10-16T12:00:00", null],
+    ["Pro on the 1st day", active, "2026-10-10T15:00:00", null],
+    ["Pro on the 6th day", active, "2026-10-16T12:00:00", null],
+    ["Pro at 23:59:59 of the 7th day", active, "2026-10-17T23:59:59", null],
+    [
+      "Pro at 00:00 of the 8th day",
+      active,
+      "2026-10-18T00:00:00",
+      "2026-10-17",
+    ],
+    ["Pro on the 8th day", active, "2026-10-18T09:00:00", "2026-10-17"],
+    ["Pro after the renewal", renewed, "2026-11-20T09:00:00", "2026-10-17"],
+    ["renewal cancelled, window open", cancelled, "2026-10-12T09:00:00", null],
+    [
+      "renewal cancelled, window gone",
+      cancelled,
+      "2026-10-20T09:00:00",
+      "2026-10-17",
+    ],
+    [
+      "refund asked in time, retried on the 8th day",
+      asked,
+      "2026-10-18T00:05:00",
+      null,
+    ],
+    [
+      "refund asked in time, after the 72 hours",
+      asked,
+      after72h.toISOString(),
+      "2026-10-17",
+    ],
+    [
+      "refund done",
+      {
+        ...active,
+        revoked: { reason: "refund" as const },
+        state: "free" as const,
+      },
+      "2026-10-25T12:00:00",
+      null,
+    ],
+    [
+      "chargeback",
+      {
+        ...active,
+        revoked: { reason: "chargeback" as const },
+        state: "free" as const,
+      },
+      "2026-10-25T12:00:00",
+      null,
+    ],
+    [
+      "chargeback won",
+      { ...active, revoked: { reason: "won" as const } },
+      "2026-10-25T12:00:00",
+      "2026-10-17",
+    ],
+    [
+      "a link older than the recorded amount",
+      { ...active, firstChargeAmount: null },
+      "2026-10-25T12:00:00",
+      null,
+    ],
+  ])("%s", (_label, record, now, expected) => {
+    const at = now.endsWith("Z") ? new Date(now) : sp(now);
+    expect(refundWindowEndedOnOf(record, at)).toBe(expected);
+  });
+
+  it("is never there while refundWindowOf is, and is the day of its last second", () => {
+    for (const local of [
+      "2026-10-17T23:59:59",
+      "2026-10-17T23:59:59.999",
+      "2026-10-18T00:00:00",
+    ]) {
+      const window = refundWindowOf(active, sp(local));
+      const endedOn = refundWindowEndedOnOf(active, sp(local));
+      expect(window === null).toBe(endedOn !== null);
+    }
+    const until = refundWindowOf(active, sp("2026-10-12T09:00:00"))?.until;
+    expect(until).toEqual(sp("2026-10-17T23:59:59"));
+    expect(refundWindowEndedOnOf(active, sp("2026-10-18T00:00:00"))).toBe(
+      "2026-10-17"
+    );
+  });
+
+  it("counts the São Paulo day: a first charge at 22:00 of 10/10 (01:00Z of 11/10) ends on 17/10", () => {
+    const late = { ...active, firstChargeAt: sp("2026-10-10T22:00:00") };
+    expect(refundWindowEndedOnOf(late, sp("2026-10-18T00:00:00"))).toBe(
+      "2026-10-17"
     );
   });
 });

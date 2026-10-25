@@ -17,10 +17,12 @@ import {
 } from "./goal-model";
 import type { GoalDraft } from "./goal-model";
 import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
-import { type GoalsState, useGoals } from "./use-goals";
+import type { GoalsState } from "./use-goals";
 
 interface GoalsPanelProps {
-  /** The month on screen (YYYY-MM): a new goal starts as that whole month. */
+  /** The read of the goals, owned by the screen so that the tab can say how many are in progress (AC-13, AC-15). */
+  goals: { reload: () => Promise<void>; state: GoalsState };
+  /** The store's current month (YYYY-MM): a new goal starts as that whole month. The tab does not follow the period of the Resultado (AC-15). */
   month: string;
   organizationId: string;
   /** The organization's IANA time zone, for the dates of what happened. */
@@ -147,12 +149,12 @@ function GoalList({
 
 /** Goals of the organization: what to reach in a period, and how far along it is. Always open: hiding them saves nothing. */
 export function GoalsPanel({
+  goals: { reload, state },
   month,
   organizationId,
   timezone,
   today,
 }: GoalsPanelProps) {
-  const { reload, state } = useGoals(organizationId);
   const { busy, cancel, clearFeedback, create, feedback, update } =
     useGoalCommands(organizationId, reload);
   // the address the Início links to, read once: `?meta=nova` opens the form, `?meta=lista` goes to the goals

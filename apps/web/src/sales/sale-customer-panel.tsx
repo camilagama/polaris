@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   type ActionState,
@@ -448,10 +449,10 @@ export function SaleCustomerPanel({
     const token = nextRequestToken(linkSequence.current);
     setState(linkLoading);
     try {
-      const link = await orpcClient.sale.getCustomerLink({
-        organizationId,
-        saleId,
-      });
+      const link = await readWithRetry(
+        () => orpcClient.sale.getCustomerLink({ organizationId, saleId }),
+        { isCurrent: () => isLatestRequest(linkSequence.current, token) }
+      );
       if (isLatestRequest(linkSequence.current, token)) {
         setState((current) => linkLoaded(current, link));
       }
@@ -466,10 +467,10 @@ export function SaleCustomerPanel({
     const token = nextRequestToken(customersSequence.current);
     setState(customersLoading);
     try {
-      const result = await orpcClient.customer.list({
-        organizationId,
-        status: "all",
-      });
+      const result = await readWithRetry(
+        () => orpcClient.customer.list({ organizationId, status: "all" }),
+        { isCurrent: () => isLatestRequest(customersSequence.current, token) }
+      );
       if (isLatestRequest(customersSequence.current, token)) {
         setState((current) => customersLoaded(current, result.customers));
       }

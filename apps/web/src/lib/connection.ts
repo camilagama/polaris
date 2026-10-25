@@ -320,8 +320,11 @@ export function createConnection(
         signal: controller.signal,
       });
       const healthy = await isHealthy(response);
-      mark(healthy ? "connection:probe:ok" : "connection:probe:fail");
-      return healthy ? "online" : "offline";
+      // Cloudflare answered for a Worker the runtime killed (the CPU limit, "code had hung"): the way is
+      // there, the server failed. It is no timeout and no offline: the screens read again by themselves
+      const reached = healthy || classifyResponse(response) === "server_failed";
+      mark(reached ? "connection:probe:ok" : "connection:probe:fail");
+      return reached ? "online" : "offline";
     } catch {
       mark("connection:probe:fail");
       return controller.signal.aborted ? "timeout" : "offline";

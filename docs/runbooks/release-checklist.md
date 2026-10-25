@@ -50,6 +50,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Comando de produção só entra no plano depois de testado em branch descartável ou staging, como pede o [README de runbooks](./README.md).
 - Staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): a conferência de dono e a aplicação das migrations rodam primeiro no staging (`staging:verify-database before-migrate`, depois `db:migrate`), e isso serve de **ensaio**. A prova deste item vale de novo no go-live e a cada promoção, contra o banco de produção. A cada migrate no staging, a parte só de leitura do gate `definer-hardening` roda contra o banco de staging (`after-migrate`), como descreve o [runbook do staging](./staging.md#9-itens-do-release-checklist-no-staging).
 - A 0100 reescreve `tenant_audit_event` sob ACCESS EXCLUSIVE: contar e medir antes, e aplicar em janela de pouco uso se passar de ~5 s ([deploy da 0100](./billing-providers.md#deploy-e-rollback-da-migration-0100-autosserviço-de-cobrança)). O Worker de antes da 0100, depois de um rollback, faz `attachProvider` sem zerar os campos novos de preço, primeira cobrança, reembolso e tentativas da rede (mesmo link).
+- A 0103 (tentativa do aviso de cobrança, `first_attempted_at` e `last_attempted_at`) vai ao banco antes do Worker novo, com as flags ligadas ou não: o Worker novo sobre banco sem ela falha ao ler e ao gravar a tentativa (SQLSTATE 42703) em todo `billing.notice` e no handover horário. Migration 0103 aplicada e Worker anterior fora do ar antes de ligar `BILLING_SELF_SERVICE_ENABLED` e `WELCOME_EMAIL_ENABLED` (o Worker anterior envia sem gravar a tentativa).
 - Evidência: lista das migrations pendentes (nome e hash), a classificação de cada uma (compatível, contract ou janela), saída da leitura do banco e o plano escrito.
 
 ### 4. Gates de banco em Neon descartável (BLOCK)
@@ -203,8 +204,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 24. Teto firme do precache de volta (BLOCK)
 
-- Critério: `REST_GROWTH_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, o crescimento do resto só avisa (`"warn"`, trava dura de +80 000 B); sem essa etapa, não há go-live.
-- Evidência: o valor de `REST_GROWTH_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
+- Critério: `BUDGET_MODE` é `"block"` e o teto firme foi fixado em emenda ao [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Até a etapa de corte, as linhas de tamanho (resto em +44 000 B e a marca de +80 000 B, fontes, primitivos, gráficos e calendário) só avisam (`"warn"`, emendas de 24/10/2026 e de 25/10/2026); só os guardas de lugar dos gráficos e do calendário e o de chunks só de teste reprovam em qualquer modo, e voltar o modo a `"block"` fora da etapa de corte é decisão do usuário; sem essa etapa, não há go-live.
+- Evidência: o valor de `BUDGET_MODE` em `apps/web/pwa/precache-budget.ts` no SHA candidato; a emenda do ADR 0103 que fixa o teto firme (data e número); a linha `PRECACHE-GROWTH` do build do SHA candidato, sem aviso de excedente.
 - Severidade BLOCK: decidida pelo Arrascaeta (t278).
 
 ## Veredito

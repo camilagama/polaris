@@ -8,6 +8,7 @@ import {
   labelIndexes,
   nearestIndex,
   niceStep,
+  seriesMax,
   wantedLabels,
 } from "./chart-geometry";
 
@@ -335,5 +336,71 @@ describe("nearestIndex", () => {
   it("is 0 with fewer than two points", () => {
     expect(nearestIndex(chartLayout([], BOX), 100)).toBe(0);
     expect(nearestIndex(chartLayout(days([3]), BOX), 100)).toBe(0);
+  });
+});
+
+describe("the ceiling that two series share", () => {
+  const options = {
+    height: 200,
+    maxLines: 4,
+    margin: { bottom: 24, left: 8, right: 8, top: 8 },
+    width: 328,
+  };
+
+  it("makes a series reach the maximum of another one: the scale is the same", () => {
+    const small = [
+      { label: "a", value: 10 },
+      { label: "b", value: 40 },
+    ];
+    const large = [
+      { label: "a", value: 100 },
+      { label: "b", value: 2050 },
+    ];
+    const alone = chartLayout(small, options);
+    const together = chartLayout(small, {
+      ...options,
+      ceiling: seriesMax(large),
+    });
+    const other = chartLayout(large, { ...options, ceiling: seriesMax(small) });
+    expect(together.top).toBeGreaterThan(alone.top);
+    expect(together.top).toBe(other.top);
+    expect(together.ticks.map((tick) => tick.value)).toEqual(
+      other.ticks.map((tick) => tick.value)
+    );
+    // the same value sits at the same height in both
+    const smallest = together.points[1]?.y as number;
+    expect(smallest).toBeGreaterThan(
+      together.margin.top + 0.8 * (together.floor - together.margin.top)
+    );
+  });
+
+  it("changes nothing without a ceiling or with a lower one", () => {
+    const data = [
+      { label: "a", value: 10 },
+      { label: "b", value: 40 },
+    ];
+    const alone = chartLayout(data, options);
+    expect(chartLayout(data, { ...options, ceiling: 0 })).toEqual(alone);
+    expect(chartLayout(data, { ...options, ceiling: 25 })).toEqual(alone);
+  });
+
+  it("ignores a ceiling that is not a finite number, like the values of a series", () => {
+    const data = [{ label: "a", value: 10 }];
+    const alone = chartLayout(data, options);
+    expect(chartLayout(data, { ...options, ceiling: Number.NaN })).toEqual(
+      alone
+    );
+    expect(chartLayout(data, { ...options, ceiling: -5 })).toEqual(alone);
+  });
+
+  it("gives the maximum of a series, counting unknown and negative values as zero", () => {
+    expect(seriesMax([])).toBe(0);
+    expect(
+      seriesMax([
+        { label: "a", value: -3 },
+        { label: "b", value: Number.NaN },
+        { label: "c", value: 7 },
+      ])
+    ).toBe(7);
   });
 });

@@ -13,11 +13,25 @@ describe("periodSummaryErrorMessage", () => {
       "não tem acesso"
     );
     expect(periodSummaryErrorMessage({ code: "BAD_REQUEST" })).toContain(
-      "Escolha outro mês"
+      "Escolha outro período"
     );
     expect(
       periodSummaryErrorMessage({ code: "SERVICE_UNAVAILABLE" })
     ).toContain("temporariamente indisponível");
+  });
+
+  it("says there is no internet, and for a period with no copy that it opens only online (AC-16)", () => {
+    const offline = new TypeError("Failed to fetch");
+    expect(periodSummaryErrorMessage(offline)).toBe(
+      "Sem internet e sem números guardados neste aparelho."
+    );
+    expect(periodSummaryErrorMessage(offline, false)).toBe(
+      "Este período só abre com internet."
+    );
+    // an answer of the server is never "sem internet", with or without a copy
+    expect(
+      periodSummaryErrorMessage({ code: "INTERNAL_SERVER_ERROR" }, false)
+    ).toBe("Não foi possível carregar o resultado. Tente novamente.");
   });
 
   it("falls back to a generic message for anything else", () => {
