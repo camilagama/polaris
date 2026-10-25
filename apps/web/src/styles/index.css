@@ -18,7 +18,7 @@
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
 @source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
-@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-list,product-media-crop}.tsx";
+@source "../catalog/{products-page,products-page-parts,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-list,product-media-crop,product-limit-help}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
    strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";
@@ -36,7 +36,7 @@
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
    and of the connection, the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
 @source "../pwa/update-banner.tsx";
 @source "../offline/logout-dialog.tsx";
 @source "../offline/runtime/{offline-access-expired,attention-page}.tsx";
@@ -54,6 +54,8 @@
 @source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
 @source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart}.tsx";
+/* the Assinatura (t268, PR E) */
+@source "../subscription/{subscription-page,subscription-parts,subscription-offer,subscription-waiting}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */
 @source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 @source "../sales/{sale-return-panel,sale-return-table,sale-cancel-panel,sale-operation-actions,sale-reason-fields,operation-failure-notice,sale-customer-panel,sale-customer-page,sale-id-missing}.tsx";

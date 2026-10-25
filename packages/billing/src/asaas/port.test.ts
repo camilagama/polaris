@@ -134,15 +134,15 @@ describe("checkoutReturnUrls", () => {
     expect(
       checkoutReturnUrls("https://app.example.test/qualquer/caminho?x=1")
     ).toEqual({
-      cancelUrl: "https://app.example.test/?assinatura=cancelada",
-      returnUrl: "https://app.example.test/?assinatura=expirada",
-      successUrl: "https://app.example.test/?assinatura=concluida",
+      cancelUrl: "https://app.example.test/subscription?retorno=cancelada",
+      returnUrl: "https://app.example.test/subscription?retorno=expirada",
+      successUrl: "https://app.example.test/subscription?retorno=concluida",
     });
   });
 
   it("allows http on localhost", () => {
     expect(checkoutReturnUrls("http://localhost:5173").successUrl).toBe(
-      "http://localhost:5173/?assinatura=concluida"
+      "http://localhost:5173/subscription?retorno=concluida"
     );
   });
 
@@ -198,9 +198,9 @@ describe("prepareSubscription", () => {
     const { calls, fetch } = fakeAsaas(checkoutCreated);
     await portWith(fetch).prepareSubscription(input());
     expect(JSON.parse(calls[0]?.body ?? "").callback).toEqual({
-      cancelUrl: "https://app.example.test/?assinatura=cancelada",
-      expiredUrl: "https://app.example.test/?assinatura=expirada",
-      successUrl: "https://app.example.test/?assinatura=concluida",
+      cancelUrl: "https://app.example.test/subscription?retorno=cancelada",
+      expiredUrl: "https://app.example.test/subscription?retorno=expirada",
+      successUrl: "https://app.example.test/subscription?retorno=concluida",
     });
   });
 

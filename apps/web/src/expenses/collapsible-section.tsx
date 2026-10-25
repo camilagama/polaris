@@ -17,8 +17,8 @@ interface CollapsibleSectionProps {
 /**
  * A secondary section of the screen, closed until asked for: a card whose title is the button (a heading with the
  * button inside, so the outline of the page lists it). The panel stays mounted while closed (`keepMounted`, only
- * `hidden`): what was typed in it survives closing and opening, as it did with `<details>`. No height animation and
- * no turning chevron (movement is opacity only): the arrow swaps.
+ * `hidden`): what was typed in it survives closing and opening, as it did with `<details>`. The panel opens by height (the
+ * `Collapsible` primitive); the arrow swaps, it does not turn.
  */
 export function CollapsibleSection({
   children,

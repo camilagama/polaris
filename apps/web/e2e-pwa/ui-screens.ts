@@ -23,6 +23,7 @@ import { resultStates } from "./ui-result-states";
 import { saleDetailStates } from "./ui-sale-detail-states";
 import { saleStates } from "./ui-sale-states";
 import { stockStates } from "./ui-stock-states";
+import { subscriptionStates } from "./ui-subscription-states";
 
 /**
  * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
@@ -92,7 +93,7 @@ export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
   touch: [light("320", true), light("360", true), light("1280", true)],
 };
 
-/** The context of the motion checks (5): once per state with `exercise`, and once more with `reduce`. */
+/** The context of the motion check (5): once per state, with `reduce`. */
 export const MOTION_CONTEXT: UiContext = light("360", true);
 
 /** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
@@ -144,6 +145,15 @@ async function exerciseGallery(page: Page) {
   await page.mouse.move(0, 0);
   await page
     .getByText("Saldo confirmado pelo servidor")
+    .waitFor({ state: "detached" });
+  // the height of the collapsible panel (200 ms): open and close it, waiting for the panel to settle
+  const recurring = page.getByRole("button", { name: "Despesas recorrentes" });
+  await recurring.click();
+  await page.getByText("Aluguel e internet, todo dia 5.").waitFor();
+  await page.waitForTimeout(300);
+  await recurring.click();
+  await page
+    .getByText("Aluguel e internet, todo dia 5.")
     .waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Mostrar aviso" }).click();
   await page.getByText("Venda registrada").waitFor();
@@ -368,12 +378,30 @@ const HOME_SOURCES = ["src/home"];
 /** One state of the Início, at `/` in the real shell. */
 const homeScreen = (
   name: string,
-  open: (page: Page) => Promise<void>
+  open: (page: Page) => Promise<void>,
+  exercise?: UiScreen["exercise"]
 ): UiScreen => ({
   name: `início ${name}`,
+  ...(exercise ? { exercise } : {}),
   open,
   sourceDirs: HOME_SOURCES,
 });
+
+/** The "Mais" panel of the phone and the numbers under the chart: open each and close it, waiting for the exit. */
+async function exerciseHomePanels(page: Page) {
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  const sheet = page.getByRole("dialog", { name: "Mais" });
+  await more.click();
+  await sheet.waitFor();
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Escape");
+  await sheet.waitFor({ state: "hidden" });
+  const numbers = page.getByRole("button", { name: "Ver os números" });
+  await numbers.click();
+  await page.waitForTimeout(300);
+  await numbers.click();
+  await page.waitForTimeout(300);
+}
 
 /** The files of the sales history on the new interface. */
 const HISTORY_SOURCES = [
@@ -615,6 +643,21 @@ const ACCOUNT_SOURCES = [
   "src/sign-in/entry-ui.tsx",
 ];
 
+/** The files of the Assinatura (t328), with the notice of grace of the shell. */
+const SUBSCRIPTION_SOURCES = [
+  "src/subscription",
+  "src/app-shell/grace-notice.tsx",
+];
+
+const subscriptionScreen = (
+  name: string,
+  open: UiScreen["open"]
+): UiScreen => ({
+  name: `assinatura ${name}`,
+  open,
+  sourceDirs: SUBSCRIPTION_SOURCES,
+});
+
 /** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
 const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
@@ -776,11 +819,15 @@ export const SCREENS: UiScreen[] = [
   resultScreen("gráfico de vendas e custos e a tabela", resultStates.chart),
   resultScreen("metas", resultStates.goals, exerciseGoalOverlays),
   resultScreen("sem dados", resultStates.empty),
-  homeScreen("com vendas", homeStates.sold),
+  homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
   homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),
   homeScreen("sem rede, sem cópia", homeStates.offlineNoCopy),
+  subscriptionScreen("oferta com Pix", subscriptionStates.offer),
+  subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
+  subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),
