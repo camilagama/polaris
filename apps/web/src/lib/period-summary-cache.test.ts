@@ -492,6 +492,60 @@ describe("the daily series and the ranking in a kept summary", () => {
   });
 });
 
+describe("the costs of the day in the kept series", () => {
+  const dayOf = (index: number) => ({
+    date: `2026-10-${String(index + 1).padStart(2, "0")}`,
+    netSales: "0.00",
+    salesCount: 0,
+  });
+  const withDay = (day: Record<string, unknown>): unknown => ({
+    ...summaryOf("2026-10"),
+    daily: Array.from({ length: 28 }, (_, index) =>
+      index === 3 ? { ...dayOf(index), ...day } : dayOf(index)
+    ),
+  });
+
+  it.each([
+    ["a copy written before the costs of the day", {}],
+    [
+      "costs and result as money",
+      { costs: "1850.50", operatingResult: "-12.5" },
+    ],
+    ["costs and result unknown", { costs: null, operatingResult: null }],
+    ["costs only", { costs: "0.00" }],
+  ])("accepts %s", (_label, day) => {
+    expect(isPeriodSummary(withDay(day))).toBe(true);
+  });
+
+  it.each([
+    ["costs that are a number", { costs: 0 }],
+    ["costs that are not money", { costs: "abc" }],
+    ["costs of three decimals", { costs: "1.234" }],
+    ["costs that are empty text", { costs: "" }],
+    ["a result that is a boolean", { operatingResult: false }],
+    ["a result that is not money", { operatingResult: "1,50" }],
+  ])("refuses %s", (_label, day) => {
+    expect(isPeriodSummary(withDay(day))).toBe(false);
+  });
+
+  it("keeps an unknown day as null, never as zero, through the device storage", () => {
+    const summary = withDay({ costs: null, operatingResult: null });
+    const { storage } = memoryStorage();
+    writePeriodSummaryCache(
+      storage,
+      ORG,
+      "2026-10",
+      summary as StoredPeriodSummary,
+      ALLOWED
+    );
+    const read = readPeriodSummaryCache(storage, ORG, "2026-10");
+    expect(read?.daily?.[3]).toMatchObject({
+      costs: null,
+      operatingResult: null,
+    });
+  });
+});
+
 describe("a day's amount in the kept series", () => {
   it.each(["-12.5", "320.10", "0", "-0.01"])("accepts %s", (netSales) => {
     const summary: StoredPeriodSummary = {

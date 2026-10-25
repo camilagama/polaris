@@ -93,8 +93,20 @@ const reads = {
   sales: 1,
 };
 const daily = [
-  { date: "2026-10-01", netSales: "200.00", salesCount: 1 },
-  { date: "2026-10-02", netSales: "0.00", salesCount: 0 },
+  {
+    costs: "95.00",
+    date: "2026-10-01",
+    netSales: "200.00",
+    operatingResult: "115.00",
+    salesCount: 1,
+  },
+  {
+    costs: null,
+    date: "2026-10-02",
+    netSales: "0.00",
+    operatingResult: null,
+    salesCount: 0,
+  },
 ];
 const PRODUCT = "0192a000-0000-7000-8000-0000000000aa";
 
@@ -195,6 +207,77 @@ describe("report.periodSummary", () => {
       })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["2026-01-01", "2026-12-31", 365],
+    ["2026-01-01", "2027-01-01", 366],
+    ["2028-01-01", "2028-12-31", 366],
+  ])(
+    "reads a period of %s to %s (%s days, the longest allowed is 366)",
+    async (from, to) => {
+      const read = vi.fn(async () => ({
+        daily,
+        reads: { ...reads, products: 0 },
+        result,
+      }));
+      await client(
+        createRpcRouter({
+          readPeriodSummary: read,
+          withTenantRequestContext: tenantStub(),
+        })
+      ).report.periodSummary({ from, organizationId, to });
+      expect(read).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([
+    ["2026-01-01", "2027-01-02"],
+    ["2028-01-01", "2029-01-01"],
+    ["2020-01-01", "2026-10-31"],
+  ])(
+    "refuses a period of %s to %s (367 days or more) before opening a tenant context",
+    async (from, to) => {
+      const withTenantRequestContext = vi.fn(tenantStub());
+      await expect(
+        client(
+          createRpcRouter({
+            withTenantRequestContext:
+              withTenantRequestContext as unknown as NonNullable<
+                NonNullable<
+                  Parameters<typeof createRpcRouter>[0]
+                >["withTenantRequestContext"]
+              >,
+          })
+        ).report.periodSummary({ from, organizationId, to })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(withTenantRequestContext).not.toHaveBeenCalled();
+    }
+  );
+
+  it("returns the costs and the result of each day as the read gave them, null staying null", async () => {
+    const summary = await client(
+      createRpcRouter({
+        readPeriodSummary: async () => ({
+          daily,
+          reads: { ...reads, products: 0 },
+          result,
+        }),
+        withTenantRequestContext: tenantStub(),
+      })
+    ).report.periodSummary({
+      from: "2026-10-01",
+      organizationId,
+      to: "2026-10-02",
+    });
+    expect(summary.daily[0]).toMatchObject({
+      costs: "95.00",
+      operatingResult: "115.00",
+    });
+    expect(summary.daily[1]).toMatchObject({
+      costs: null,
+      operatingResult: null,
+    });
   });
 
   it("asks for the ranking only when the input does, and returns the products with their current name", async () => {

@@ -36,6 +36,17 @@ Registro datado; a decisão acima continua valendo, menos o item "Metas continua
 - **A meta mostrada no Início é guardada como foi lida**, com o mesmo "Último resultado confirmado". Ela só aparece "em andamento" enquanto hoje, no fuso da loja, está dentro do período guardado; passado o fim, a tela diz "Esta meta terminou. O resultado sai com conexão.", sem percentual, porque a liquidação é do servidor. A meta pausada pelo plano aparece como foi lida. A tela de metas do Resultado continua só com conexão.
 - **Idade:** passadas 24 h do horário do servidor da leitura, a tela diz que os números podem estar desatualizados, sem escondê-los; o "Hoje" da cópia só vale no mesmo dia da loja da leitura. Um relógio do aparelho anterior à leitura conta como errado: a cópia não é de hoje e leva o aviso de idade.
 
+## Emenda (24/10/2026): custo e resultado por dia no resumo (Resultado v2)
+
+Registro datado; a decisão acima e a emenda D2 continuam valendo. Pedida pelo corte resultado-v2 (Q-4, AC-8 a AC-10) e respondida na rodada de 24/10 (Filipe e Petković).
+
+- **Cada item de `daily` ganha `costs` e `operatingResult`**, em BRL exato, ou `null`. O custo do dia é a soma das partes: custo das mercadorias, taxa de processamento, taxa de antecipação, despesas ligadas às vendas da data e despesas sem venda cuja `competence_on` é o dia (uma data, sem rateio). Acréscimo, frete e acréscimo de pagamento não reduzem o custo (ficam no resultado), então ele nunca é negativo. `operatingResult` é o resultado estimado do dia, calculado no servidor.
+- **`null` nos dois campos quando alguma venda da data tem custo, taxa de processamento ou taxa de antecipação desconhecidos.** Sem `costsComplete`: um número parcial ao lado de uma flag deixaria quem a esquece somar um parcial como total, o zero fabricado que o ADR 0053 proíbe.
+- **O servidor devolve todas as datas de `from` a `to`**, também as depois de hoje: a despesa com competência futura fica no dia dela. Quem corta no "hoje" é o cliente.
+- **A soma fecha com a cadeia:** quando nenhum dia é `null`, Σ `costs` é igual a custo das mercadorias, taxas, despesas ligadas e despesas sem venda do mesmo resumo, e Σ `operatingResult` é igual a `estimatedOperatingResult`. O dia é igual ao resumo de `from = to = dia`.
+- **O contrato recusa período acima de 366 dias** (o repositório já recusava).
+- **A cópia guardada** aceita `costs` e `operatingResult` ausentes (cópia antiga: a tela não desenha custos), `null` ou dinheiro, e descarta a cópia com qualquer outro valor. O contrato só cresce; o cliente antigo ignora os campos.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.

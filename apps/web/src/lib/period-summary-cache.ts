@@ -14,13 +14,22 @@ const KEY_PREFIX = "polaris.offline.periodSummary.";
 /** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
+type SummaryDay = PeriodSummaryReadModel["daily"][number];
+
+/** A day as kept: a copy written before the costs of the day existed has neither `costs` nor `operatingResult`. */
+type StoredDay = Omit<SummaryDay, "costs" | "operatingResult"> &
+  Partial<Pick<SummaryDay, "costs" | "operatingResult">>;
+
 /**
  * A summary as kept on the device: a copy written before the daily series
- * existed has no `daily` (the screen then draws no series for that month), and
- * the most sold products are there only when the read asked for them.
+ * existed has no `daily` (the screen then draws no series for that month), one
+ * written before the costs of the day has days without `costs` (no series of
+ * costs is drawn), and the most sold products are there only when the read
+ * asked for them.
  */
-export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> &
-  Partial<Pick<PeriodSummaryReadModel, "daily">>;
+export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> & {
+  daily?: StoredDay[];
+};
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 /** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
@@ -145,6 +154,11 @@ function dateAfter(date: string, days: number): string {
     .slice(0, 10);
 }
 
+/** Absent (an older copy), null (unknown, never zero) or money. */
+function isOptionalMoney(value: unknown): boolean {
+  return value === undefined || value === null || isMoney(value);
+}
+
 /** Absent (an older copy), or one entry per date of the period, in order. */
 function isDaily(value: unknown, period: unknown): boolean {
   if (value === undefined) {
@@ -161,7 +175,9 @@ function isDaily(value: unknown, period: unknown): boolean {
         isDictionary(day) &&
         day.date === dateAfter(from, index) &&
         isMoney(day.netSales) &&
-        isCount(day.salesCount)
+        isCount(day.salesCount) &&
+        isOptionalMoney(day.costs) &&
+        isOptionalMoney(day.operatingResult)
     ) &&
     (value.at(-1) as Dictionary).date === period.to
   );

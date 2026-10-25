@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  dailySales,
+  dailyEconomics,
   topProducts,
 } from "@polaris/domain/economics/period-series";
 import {
@@ -199,7 +199,13 @@ async function measureStore(
       );
       dashboardCards(result);
       resultQuality(result);
-      dailySales(facts.sales, period.from, period.to, economics);
+      dailyEconomics(
+        facts.sales,
+        facts.operatingExpenseDays,
+        period.from,
+        period.to,
+        economics
+      );
       if (limit) {
         topProducts(facts.sales, limit);
       }
