@@ -1,6 +1,12 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -461,6 +467,62 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Clientes a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    let creates = 0;
+    await openScreen(page, "/customers", "Clientes", {
+      "customer/create": (route) => {
+        creates += 1;
+        return route.fulfill(rpc(customer(2, "Bia Souza")));
+      },
+      "customer/findPossibleDuplicates": reply({ matches: [] }),
+      "customer/list": reply({ customers: [] }),
+    });
+    const openForm = page.getByRole("button", { name: "Novo cliente" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Novo cliente" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    // preenche, e no celular o teclado aberto não esconde o botão principal
+    await dialog.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+    await dialog.getByLabel("Telefone").fill("11900000002");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Cadastrar cliente" })
+      );
+    }
+
+    // cancelar: nada é enviado, o formulário fecha e o foco volta ao botão que o abriu
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(creates).toBe(0);
+
+    // o que foi digitado não fica para a próxima vez
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue("");
+    await dialog.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+    await dialog.getByLabel("Telefone").fill("11900000002");
+    await dialog.getByRole("button", { name: "Cadastrar cliente" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Cliente cadastrado." })
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(creates).toBe(1);
+  });
+}
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
   page,

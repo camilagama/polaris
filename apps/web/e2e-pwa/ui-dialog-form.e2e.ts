@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  * The form layout of the Dialog (DESIGN.md, "Diálogo de formulário"), in the gallery: what the primitive promises to
  * every form that uses it. Below 760 px it is the whole screen with the header and the footer fixed and only the body
  * scrolling; from 760 px it is the centred dialog. Focus is trapped, Esc closes, the focus goes back to the trigger,
- * and the title is the name of the dialog. The class contract is in `src/ui/dialog.test.ts`.
+ * and the title is the name of the dialog. The class contract is in `scripts/ui-dialog-layout.test.ts`.
  */
 const TRIGGER = { name: "Abrir formulário" };
 const DIALOG = { name: "Novo cadastro" };
@@ -122,6 +122,15 @@ test("360 px com o teclado aberto (viewport baixo): o botão principal continua 
 
   const save = dialog.getByRole("button", { name: "Salvar" });
   await expect(save).toBeInViewport({ ratio: 1 });
+  // the dialog follows the visual viewport: its height is the one the browser reports, set as a custom property
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => ({
+        height: element.style.getPropertyValue("--dialog-height"),
+        top: element.style.getPropertyValue("--dialog-top"),
+      }))
+    )
+    .toEqual({ height: "380px", top: "0px" });
   // the box follows the visible part of the window once the browser says it shrank
   await expect
     .poll(async () => {

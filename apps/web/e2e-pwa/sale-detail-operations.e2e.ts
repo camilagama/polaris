@@ -1,6 +1,12 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "../e2e/form-dialog-checks";
 import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -125,7 +131,8 @@ async function openCustomer(
   page: Page,
   link: unknown = saleDetailAnswers({ withReturn: true })[
     "sale/getCustomerLink"
-  ]
+  ],
+  more: Readonly<Record<string, unknown>> = {}
 ) {
   const answers = saleDetailAnswers({ withReturn: true });
   const asked = await openInShell(
@@ -133,6 +140,7 @@ async function openCustomer(
     `/sales/customer?saleId=${DETAIL_SALE_ID}`,
     {
       ...answers,
+      ...more,
       "sale/getCustomerLink": link,
       "sale/unassignCustomer": {
         changed: true,
@@ -189,6 +197,64 @@ test.describe("the customer page opened without a sale", () => {
     expect(asked.filter((name) => name.startsWith("sale/"))).toEqual([]);
   });
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Trocar cliente at ${width} px: the dialog opens, cancels and saves, the whole screen on a phone`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "the width is the test's"
+    );
+    await page.setViewportSize(sizeFor(width));
+    const answers = saleDetailAnswers({ withReturn: true });
+    const link = answers["sale/getCustomerLink"] as object;
+    const [, other] = (
+      answers["customer/list"] as { customers: { id: string }[] }
+    ).customers;
+    const asked = await openCustomer(page, link, {
+      "sale/reassignCustomer": {
+        changed: true,
+        link: { ...link, current: { customerId: other?.id, version: 3 } },
+      },
+    });
+    const openForm = page.getByRole("button", {
+      exact: true,
+      name: "Trocar cliente",
+    });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Trocar cliente" });
+    await expect(dialog).toBeVisible();
+    await expectFormDialogLayout(dialog, width);
+
+    const send = dialog.getByRole("button", { name: "Trocar cliente" });
+    await dialog
+      .getByRole("combobox", { exact: true, name: "Cliente" })
+      .click();
+    await page.getByRole("option", { exact: true, name: "Bruno Lima" }).click();
+    await expect(send).not.toHaveAttribute("aria-disabled", "true");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(page, dialog, send);
+    }
+
+    // cancelar: nothing is sent, the form closes and the focus goes back to the button that opened it
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(count(asked, "sale/reassignCustomer")).toBe(0);
+
+    // the choice does not stay for the next time; sending closes the form
+    await openForm.click();
+    await expect(send).toHaveAttribute("aria-disabled", "true");
+    await dialog
+      .getByRole("combobox", { exact: true, name: "Cliente" })
+      .click();
+    await page.getByRole("option", { exact: true, name: "Bruno Lima" }).click();
+    await send.click();
+    await expect.poll(() => count(asked, "sale/reassignCustomer")).toBe(1);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+}
 
 test.describe("the customer of the sale", () => {
   test("removing asks first: Cancelar sends nothing, Sim sends once", async ({

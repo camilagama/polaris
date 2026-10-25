@@ -7,7 +7,7 @@ import {
   FORM_FOOTER_CLASS,
   FORM_HEADER_CLASS,
   FORM_POPUP_CLASS,
-} from "@/ui/dialog-layout";
+} from "../src/ui/dialog-layout";
 
 /**
  * The form layout of the Dialog, read as classes: a Base UI dialog renders in a portal, which the server renderer of
@@ -17,7 +17,7 @@ import {
  */
 const classes = (value: string) => value.split(" ");
 const dialogSource = readFileSync(
-  new URL("dialog.tsx", import.meta.url),
+  new URL("../src/ui/dialog.tsx", import.meta.url),
   "utf8"
 );
 

@@ -1,6 +1,12 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
@@ -627,6 +633,67 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   await expect(rule).toContainText("Começa em 14/07/2026");
   await expect(rule).toContainText("Próxima: 14/11/2026");
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Despesa recorrente a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+    await openRulesPanel(page);
+    const openForm = rulesPanel(page).getByRole("button", {
+      name: "Nova despesa recorrente",
+    });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", {
+      name: "Nova despesa recorrente",
+    });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Criar despesa recorrente" })
+      );
+    }
+
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(server.rules).toHaveLength(0);
+
+    // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("");
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    await choose(page, dialog, "Categoria", "Aluguel");
+    await choose(page, dialog, "Frequência", "Todo mês");
+    await dialog.getByLabel("Começa em").fill("2026-07-14");
+    await dialog.getByLabel("Descrição").fill("Assinatura do sistema");
+    await dialog
+      .getByRole("button", { name: "Criar despesa recorrente" })
+      .click();
+    await expect(
+      rulesPanel(page).getByText("Despesa recorrente criada.")
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.rules).toHaveLength(1);
+  });
+}
 
 test("pausar uma despesa recorrente a esconde, e retomar não lança os períodos da pausa", async ({
   page,

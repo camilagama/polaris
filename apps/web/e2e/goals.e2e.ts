@@ -1,6 +1,12 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
 import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
 /**
@@ -451,6 +457,51 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   // the form closed
   await expect(page.locator("#goal-create-target")).toHaveCount(0);
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Nova meta a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    const server = new FakeGoalServer();
+    await openGoals(page, server);
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Nova meta" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("combobox", { name: "Indicador" })
+    ).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    await dialog.locator("#goal-create-target").fill("1.000,00");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Criar meta" })
+      );
+    }
+
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(server.created).toHaveLength(0);
+
+    // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
+    await openForm.click();
+    await expect(dialog.locator("#goal-create-target")).toHaveValue("");
+    await dialog.locator("#goal-create-target").fill("1.000,00");
+    await dialog.getByRole("button", { name: "Criar meta" }).click();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.created).toHaveLength(1);
+  });
+}
 
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
   page,

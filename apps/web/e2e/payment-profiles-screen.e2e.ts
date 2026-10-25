@@ -2,6 +2,12 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
+import {
   productionPolicy,
   serveUnderProductionCsp,
   watchCspViolations,
@@ -414,6 +420,55 @@ test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lis
   await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(page.getByLabel("Nome do perfil")).toHaveValue("");
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Perfis a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    onlyDesktop(testInfo.project.name);
+    await page.setViewportSize(sizeFor(width));
+    let creates = 0;
+    await openServerScreen(page, {
+      lists: [answer([])],
+      others: {
+        "paymentProfile/create": (route) => {
+          creates += 1;
+          return route.fulfill(rpc(MACHINE));
+        },
+      },
+    });
+    const openForm = page.getByRole("button", { name: "Novo perfil" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Novo perfil" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Nome do perfil")).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    await dialog.getByLabel("Nome do perfil").fill("Maquininha da loja");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Criar perfil" })
+      );
+    }
+
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(creates).toBe(0);
+
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome do perfil")).toHaveValue("");
+    await dialog.getByLabel("Nome do perfil").fill("Maquininha da loja");
+    await dialog.getByRole("button", { name: "Criar perfil" }).click();
+    await expect(
+      page.getByText("Perfil “Maquininha da loja” criado.")
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(creates).toBe(1);
+  });
+}
 
 test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
   page,
