@@ -33,7 +33,9 @@ import {
  *      and with the organization of another tenant, a sync transaction with two organizations and a SAVEPOINT rolled back.
  *   9. (0101) the owners of the two functions of the billing notices: `billing_notice_recipient` of the recipient's
  *      owner (EXECUTE: the authentication role) and `welcome_notice_candidates` of the billing owner (EXECUTE: the billing
- *      role), each with the exact functions, privileges and policies its owner holds after 0101.
+ *      role), each with the exact functions, privileges and policies its owner holds after 0101; (0102) the two functions
+ *      the billing owner gains (`billing_notice_store` and `billing_notice_sweep_zones`, EXECUTE: the billing role) with
+ *      the columns and policies they need.
  * Everything a probe writes is rolled back; the fixtures of step 7 stay, as in the other gates.
  */
 const expectedDatabase =
@@ -1317,7 +1319,9 @@ async function run() {
                      WHERE x.privilege_type = 'EXECUTE' AND x.grantee <> p.proowner ORDER BY 1) AS executors
          FROM pg_proc p
         WHERE p.oid IN ('public.billing_notice_recipient(text, uuid)'::regprocedure,
-                        'public.welcome_notice_candidates(integer)'::regprocedure)
+                        'public.welcome_notice_candidates(integer)'::regprocedure,
+                        'public.billing_notice_store(text, uuid)'::regprocedure,
+                        'public.billing_notice_sweep_zones()'::regprocedure)
         ORDER BY 1`
     );
     assert.deepEqual(
@@ -1328,6 +1332,20 @@ async function run() {
           executors: ["polaris_auth_runtime"],
           name: "billing_notice_recipient(text,uuid)",
           owner: "polaris_notice_recipient_owner",
+          secdef: true,
+        },
+        {
+          config: ["search_path=pg_catalog, public, pg_temp"],
+          executors: ["polaris_billing_runtime"],
+          name: "billing_notice_store(text,uuid)",
+          owner: "polaris_billing_owner",
+          secdef: true,
+        },
+        {
+          config: ["search_path=pg_catalog, public, pg_temp"],
+          executors: ["polaris_billing_runtime"],
+          name: "billing_notice_sweep_zones()",
+          owner: "polaris_billing_owner",
           secdef: true,
         },
         {
@@ -1382,14 +1400,20 @@ async function run() {
     });
     assert.deepEqual(await ownedBy("polaris_billing_owner"), {
       functions: [
+        "billing_notice_store(text,uuid)",
+        "billing_notice_sweep_zones()",
         "organization_exceeds_free_limits(text)",
         "organization_free_limit_excess(text)",
         "welcome_notice_candidates(integer)",
       ],
       policies: [
+        "billing_notices.billing_notices_billing_owner_select_owed",
         "billing_notices.billing_notices_billing_owner_select_welcome",
         "goals.goals_billing_owner_select",
         "memberships.memberships_billing_owner_select_owner",
+        "organization_billing.organization_billing_billing_owner_select_sweep",
+        "organizations.organizations_billing_owner_select_billed",
+        "organizations.organizations_billing_owner_select_notice",
         "organizations.organizations_billing_owner_select_recent",
         "plan_entitlements.plan_entitlements_billing_owner_read",
         "product_media.product_media_billing_owner_select",
@@ -1397,7 +1421,12 @@ async function run() {
         "products.products_billing_owner_select",
       ],
       privileges: [
+        "billing_notices.failed_at:SELECT",
+        "billing_notices.id:SELECT",
         "billing_notices.kind:SELECT",
+        "billing_notices.organization_id:SELECT",
+        "billing_notices.sent_at:SELECT",
+        "billing_notices.skipped_reason:SELECT",
         "billing_notices.user_id:SELECT",
         "goals.organization_id:SELECT",
         "goals.status:SELECT",
@@ -1406,9 +1435,14 @@ async function run() {
         "memberships.role:SELECT",
         "memberships.status:SELECT",
         "memberships.user_id:SELECT",
+        "organization_billing.cycle_months:SELECT",
+        "organization_billing.organization_id:SELECT",
+        "organization_billing.state:SELECT",
         "organizations.created_at:SELECT",
         "organizations.id:SELECT",
+        "organizations.name:SELECT",
         "organizations.status:SELECT",
+        "organizations.timezone:SELECT",
         "plan_entitlements.key:SELECT",
         "plan_entitlements.limit_value:SELECT",
         "plan_entitlements.plan_id:SELECT",
@@ -1467,7 +1501,7 @@ async function run() {
       await client.query("ROLLBACK");
     }
     tests.push(
-      "the two functions of the billing notices (0101) are SECURITY DEFINER with a fixed search_path: billing_notice_recipient of polaris_notice_recipient_owner (EXECUTE: the authentication role) and welcome_notice_candidates of polaris_billing_owner (EXECUTE: the billing role); each owner holds exactly its functions, privileges and policies, and the billing owner sees only the active stores of the last 24 hours, the owners and who has a welcome"
+      "the functions of the billing notices (0101 and 0102) are SECURITY DEFINER with a fixed search_path: billing_notice_recipient of polaris_notice_recipient_owner (EXECUTE: the authentication role) and welcome_notice_candidates, billing_notice_store and billing_notice_sweep_zones of polaris_billing_owner (EXECUTE: the billing role); each owner holds exactly its functions, privileges and policies, and, outside the scope of their functions, the billing owner sees only the active stores of the last 24 hours, the owners and who has a welcome (the scopes of 0102 are proved in the billing-notices gate)"
     );
   } finally {
     await client.end();

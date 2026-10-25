@@ -38,6 +38,10 @@ import {
  *   5. `welcome_notice_candidates` and the welcome's sweep of the billing store: the stores of the last 24 hours,
  *      active, the oldest owner, the first store only, one welcome per person, each with its outbox event in the same
  *      transaction; the person deleted takes the welcome (cascade).
+ *   4b. (0102) `billing_notice_store` and `billing_notice_sweep_zones`: only the billing role executes them; the store's
+ *      name, zone, closure, active owner, variants and Free limit for a notice owed of that store (else null, with a store
+ *      purged), the zones of the stores in a trial, in grace or on the yearly cycle, and the billing owner's policies
+ *      that see only that notice and that store, or the stores with such a record.
  * The sweep reads every store of the last 24 hours, so this gate drains what the other gates left before its own
  * fixtures and runs last in the suite (`run-gates.ts`): the welcomes it records for them name no one outside the
  * disposable database. The fixtures stay, as in the other gates; the logins are dropped at the end.
@@ -209,6 +213,7 @@ async function run() {
     assert.deepEqual(
       policies.rows.map((row) => row.policy),
       [
+        `billing_notices_billing_owner_select_owed:SELECT:${BILLING_OWNER}`,
         `billing_notices_billing_owner_select_welcome:SELECT:${BILLING_OWNER}`,
         `billing_notices_billing_runtime_insert:INSERT:${BILLING_RUNTIME}`,
         `billing_notices_billing_runtime_select:SELECT:${BILLING_RUNTIME}`,
@@ -232,7 +237,12 @@ async function run() {
     assert.deepEqual(
       grants.rows.map((row) => row.grant),
       [
+        `${BILLING_OWNER} SELECT (failed_at)`,
+        `${BILLING_OWNER} SELECT (id)`,
         `${BILLING_OWNER} SELECT (kind)`,
+        `${BILLING_OWNER} SELECT (organization_id)`,
+        `${BILLING_OWNER} SELECT (sent_at)`,
+        `${BILLING_OWNER} SELECT (skipped_reason)`,
         `${BILLING_OWNER} SELECT (user_id)`,
         `${BILLING_RUNTIME} INSERT (dedupe_key)`,
         `${BILLING_RUNTIME} INSERT (due_at)`,
@@ -254,7 +264,7 @@ async function run() {
         `${PURGE_OWNER} DELETE`,
         `${PURGE_OWNER} SELECT`,
       ],
-      "the billing role records, reads and marks; the purge removes; the two owners read their columns; nothing else"
+      "the billing role records, reads and marks; the purge removes; the three owners read their columns; nothing else"
     );
     for (const role of [...OTHER_RUNTIMES, "public"]) {
       const any = await owner.pool.query<{ any: boolean }>(
@@ -799,6 +809,492 @@ async function run() {
     }
     tests.push(
       "billing_notice_recipient is SECURITY DEFINER and volatile with a fixed search_path, owned by the recipient's owner and executed only by the authentication role (not PUBLIC, not the billing role); a notice of the cycle goes to the oldest active owner of its store, read at the call, and to the next one when that owner leaves; an address not verified answers {verified: false}; another store, a store with no owner, a notice sent and a welcome whose person is no longer an owner answer null; never the name; the owner's policy on \"user\" shows nothing without the scope, with a malformed one or for a notice sent, failed or skipped, the active owners of the store for a notice of the cycle and the person alone for a welcome"
+    );
+
+    // ------------------------------------------------------------------ 4b. the store of a notice and the sweep's zones
+    const STORE_SCOPE_NOTICE = "app.owner_scope.billing_notice_store_notice_id";
+    const STORE_SCOPE_ORGANIZATION =
+      "app.owner_scope.billing_notice_store_organization_id";
+    const SWEEP_SCOPE = "app.owner_scope.billing_notice_sweep_zones";
+    // the billing role reads no column of the store's table: the functions are what it has
+    const runtimeReadsStores = await owner.pool.query<{ any: boolean }>(
+      "SELECT has_any_column_privilege($1, 'public.organizations', 'SELECT') AS any",
+      [BILLING_RUNTIME]
+    );
+    assert.equal(
+      runtimeReadsStores.rows[0]?.any,
+      false,
+      "no grant of the billing role on organizations"
+    );
+    for (const [signature, volatility] of [
+      ["public.billing_notice_store(text, uuid)", "v"],
+      ["public.billing_notice_sweep_zones()", "v"],
+    ] as const) {
+      assert.deepEqual(await fnInfo(signature), {
+        config: ["search_path=pg_catalog, public, pg_temp"],
+        executors: [BILLING_RUNTIME],
+        owner: BILLING_OWNER,
+        secdef: true,
+        volatility,
+      });
+      const open = await owner.pool.query<{ ok: boolean }>(
+        "SELECT has_function_privilege('public', $1::regprocedure, 'EXECUTE') AS ok",
+        [signature]
+      );
+      assert.equal(
+        open.rows[0]?.ok,
+        false,
+        `${signature} is not open to PUBLIC`
+      );
+    }
+    const storeOf = (organizationId: string, noticeId: string) =>
+      as(billingUrl, async (client) => {
+        const answer = await client.query<{ result: unknown }>(
+          "SELECT public.billing_notice_store($1, $2::uuid) AS result",
+          [organizationId, noticeId]
+        );
+        return answer.rows[0]?.result ?? null;
+      });
+    const freeVariantLimit = Number(
+      (
+        await owner.pool.query<{ limit_value: string }>(
+          "SELECT limit_value::text FROM public.plan_entitlements WHERE plan_id = 'free' AND key = 'variants.active.max'"
+        )
+      ).rows[0]?.limit_value
+    );
+    assert.ok(freeVariantLimit > 0, "the live catalog has the Free limit");
+
+    const shop = await newTenant("store-of-notice");
+    // two products with a variant each, and a product deleted with a variant that no longer counts
+    await owner.pool.query(
+      `WITH created AS (
+         INSERT INTO public.products (organization_id, name, deleted_at)
+         SELECT $1, 'P' || g, CASE WHEN g = 3 THEN now() END FROM generate_series(1, 3) AS g
+         RETURNING id, organization_id
+       )
+       INSERT INTO public.product_variants (organization_id, product_id, is_default)
+       SELECT organization_id, id, true FROM created`,
+      [shop.organizationId]
+    );
+    const shopNotice = await seedNotice(
+      shop,
+      "renewal_failed",
+      `2026-10-10T15:00:00.000Z:d0-store-${suffix}`
+    );
+    const shopName = `PR43 sales gate notices store-of-notice ${suffix}`;
+    assert.deepEqual(await storeOf(shop.organizationId, shopNotice), {
+      closed: false,
+      name: shopName,
+      ownerActive: true,
+      variantLimit: freeVariantLimit,
+      variants: 2,
+      timezone: "America/Sao_Paulo",
+    });
+    const stranger = await newTenant("store-of-notice-other");
+    assert.equal(
+      await storeOf(stranger.organizationId, shopNotice),
+      null,
+      "the notice of another store"
+    );
+    assert.equal(
+      await storeOf(shop.organizationId, randomUUID()),
+      null,
+      "a notice that does not exist"
+    );
+    for (const outcome of [
+      "sent_at = now()",
+      "failed_at = now(), failure_code = 'bounced'",
+      "skipped_reason = 'refunded'",
+    ]) {
+      const settled = await seedNotice(
+        shop,
+        "charge_receipt",
+        `store-settled-${randomUUID()}`
+      );
+      assert.ok(await storeOf(shop.organizationId, settled), "owed: answers");
+      await owner.pool.query(
+        `UPDATE public.billing_notices SET ${outcome} WHERE id = $1`,
+        [settled]
+      );
+      assert.equal(
+        await storeOf(shop.organizationId, settled),
+        null,
+        `${outcome}: not owed`
+      );
+    }
+    // closed is the store in closure, closed or waiting for the purge (EM-7); a suspended store is not
+    for (const [status, closed] of [
+      ["closing", true],
+      ["closed", true],
+      ["purge_pending", true],
+      ["suspended", false],
+      ["active", false],
+    ] as const) {
+      await owner.pool.query(
+        "UPDATE public.organizations SET status = $2 WHERE id = $1",
+        [shop.organizationId, status]
+      );
+      const facts = (await storeOf(shop.organizationId, shopNotice)) as {
+        closed: boolean;
+      } | null;
+      assert.equal(facts?.closed, closed, status);
+    }
+    // the welcome's person is an owner of any store; a notice of the cycle needs an owner of its store
+    const welcomeOwner = await addOwner(stranger, "welcome-owner");
+    const shopWelcome = await seedNotice(
+      shop,
+      "welcome",
+      welcomeOwner,
+      welcomeOwner
+    );
+    const ownerActiveOf = async (noticeId: string) =>
+      (
+        (await storeOf(shop.organizationId, noticeId)) as {
+          ownerActive: boolean;
+        } | null
+      )?.ownerActive;
+    assert.equal(
+      await ownerActiveOf(shopWelcome),
+      true,
+      "the person owns a store"
+    );
+    await owner.pool.query(
+      "DELETE FROM public.memberships WHERE user_id = $1",
+      [welcomeOwner]
+    );
+    assert.equal(
+      await ownerActiveOf(shopWelcome),
+      false,
+      "the person is no longer an active owner"
+    );
+    assert.equal(
+      await ownerActiveOf(shopNotice),
+      true,
+      "the store has its owner"
+    );
+    await owner.pool.query(
+      "DELETE FROM public.memberships WHERE organization_id = $1",
+      [shop.organizationId]
+    );
+    assert.equal(
+      await ownerActiveOf(shopNotice),
+      false,
+      "a store with no owner"
+    );
+    // a store purged answers null whatever the notice
+    await owner.pool.query(
+      "UPDATE public.organizations SET status = 'purged' WHERE id = $1",
+      [shop.organizationId]
+    );
+    assert.equal(
+      await storeOf(shop.organizationId, shopNotice),
+      null,
+      "a store purged"
+    );
+    // nobody else executes either function, and the billing role is the only one that does
+    for (const [label, url] of [
+      ["the tenant role", tenantUrl],
+      ["the authentication role", authUrl],
+    ] as const) {
+      await as(url, async (client) => {
+        await expectSqlState(
+          () =>
+            client.query("SELECT public.billing_notice_store($1, $2::uuid)", [
+              shop.organizationId,
+              shopNotice,
+            ]),
+          "42501",
+          `${label} does not read the store of a notice`
+        );
+        await expectSqlState(
+          () =>
+            client.query("SELECT * FROM public.billing_notice_sweep_zones()"),
+          "42501",
+          `${label} does not read the zones`
+        );
+      });
+    }
+    for (const role of OTHER_RUNTIMES) {
+      const executes = await owner.pool.query<{ one: boolean; two: boolean }>(
+        `SELECT has_function_privilege($1, 'public.billing_notice_store(text, uuid)', 'EXECUTE') AS one,
+                has_function_privilege($1, 'public.billing_notice_sweep_zones()', 'EXECUTE') AS two`,
+        [role]
+      );
+      assert.deepEqual(executes.rows[0], { one: false, two: false }, role);
+    }
+    // the owner's policies: no scope, no notice and no store; the scope is that notice and that store alone
+    const farBack = await newTenant("store-scope");
+    // both stores are older than the window of the welcome's sweep, so only the scope can show them
+    await owner.pool.query(
+      `UPDATE public.organizations SET created_at = now() - interval '3 days' WHERE id = ANY ($1)`,
+      [[farBack.organizationId, stranger.organizationId]]
+    );
+    const farNotice = await seedNotice(
+      farBack,
+      "charge_receipt",
+      `scope-${suffix}`
+    );
+    const visibleToOwner = async (scope: [string, string][]) =>
+      asOwnerRole(BILLING_OWNER, async (client) => {
+        for (const [name, value] of scope) {
+          await client.query("SELECT set_config($1, $2, true)", [name, value]);
+        }
+        return {
+          notices: (
+            await client.query<{ id: string }>(
+              "SELECT id FROM public.billing_notices WHERE organization_id = $1 AND kind <> 'welcome'",
+              [farBack.organizationId]
+            )
+          ).rows.map((row) => row.id),
+          stores: (
+            await client.query<{ id: string }>(
+              "SELECT id FROM public.organizations WHERE id = ANY ($1)",
+              [[farBack.organizationId, stranger.organizationId]]
+            )
+          ).rows.map((row) => row.id),
+        };
+      });
+    assert.deepEqual(await visibleToOwner([]), { notices: [], stores: [] });
+    assert.deepEqual(
+      await visibleToOwner([
+        [STORE_SCOPE_NOTICE, "not-a-uuid"],
+        [STORE_SCOPE_ORGANIZATION, ""],
+      ]),
+      { notices: [], stores: [] },
+      "a malformed scope is no row, never an error"
+    );
+    assert.deepEqual(
+      await visibleToOwner([
+        [STORE_SCOPE_NOTICE, farNotice],
+        [STORE_SCOPE_ORGANIZATION, farBack.organizationId],
+      ]),
+      { notices: [farNotice], stores: [farBack.organizationId] },
+      "that notice and that store, not the other store"
+    );
+    await owner.pool.query(
+      "UPDATE public.billing_notices SET sent_at = now() WHERE id = $1",
+      [farNotice]
+    );
+    assert.deepEqual(
+      await visibleToOwner([[STORE_SCOPE_NOTICE, farNotice]]),
+      { notices: [], stores: [] },
+      "a notice sent is no longer visible"
+    );
+    tests.push(
+      "billing_notice_store is SECURITY DEFINER and volatile with a fixed search_path, owned by the billing owner and executed only by the billing role (not PUBLIC, not the tenant, authentication, catalog, admin, privacy or outbox roles); it answers the name, the time zone, the closure (closing, closed and purge_pending are closed; suspended is not), whether the person of the notice is still an active owner (the welcome's person in any store, an owner of the store for the cycle), the variants of the products not deleted and the live Free limit; another store, an unknown notice, a notice sent, failed or skipped and a store purged answer null; the owner's policies show nothing without the scope or with a malformed one, and only that notice (still owed) and that store with it"
+    );
+
+    const zones = async (url: string) =>
+      as(
+        url,
+        async (client) =>
+          (
+            await client.query<{ organization_id: string; timezone: string }>(
+              "SELECT organization_id, timezone FROM public.billing_notice_sweep_zones()"
+            )
+          ).rows
+      );
+    const sweepFixture = async (
+      label: string,
+      timezone: string,
+      record: string | null,
+      status = "active"
+    ) => {
+      const tenant = await createTenantFixture(
+        owner.pool,
+        `notices zones ${label} ${suffix}`,
+        timezone,
+        "free"
+      );
+      if (record !== null) {
+        await owner.pool.query(
+          `INSERT INTO public.organization_billing (organization_id, state, access_ends_at, cycle_months, trial_started_at)
+           VALUES ($1, ${record})`,
+          [tenant.organizationId]
+        );
+      }
+      await owner.pool.query(
+        "UPDATE public.organizations SET status = $2, created_at = now() - interval '3 days' WHERE id = $1",
+        [tenant.organizationId, status]
+      );
+      return tenant.organizationId;
+    };
+    const inScope = {
+      annual: await sweepFixture(
+        "annual",
+        "America/Manaus",
+        "'active', now() + interval '300 days', 12, NULL"
+      ),
+      closing: await sweepFixture(
+        "closing",
+        "America/Recife",
+        "'grace', now() + interval '2 days', 1, NULL",
+        "closing"
+      ),
+      grace: await sweepFixture(
+        "grace",
+        "America/Bahia",
+        "'grace', now() + interval '2 days', 1, NULL"
+      ),
+      trial: await sweepFixture(
+        "trial",
+        "America/Sao_Paulo",
+        "'trialing', now() + interval '5 days', NULL, now()"
+      ),
+    };
+    const outOfScope = [
+      await sweepFixture(
+        "monthly",
+        "America/Sao_Paulo",
+        "'active', now() + interval '20 days', 1, NULL"
+      ),
+      await sweepFixture(
+        "semiannual",
+        "America/Sao_Paulo",
+        "'active', now() + interval '100 days', 6, NULL"
+      ),
+      await sweepFixture(
+        "over-limit",
+        "America/Sao_Paulo",
+        "'free_over_limit', NULL, NULL, NULL"
+      ),
+      await sweepFixture("no-record", "America/Sao_Paulo", null),
+      await sweepFixture(
+        "purged",
+        "America/Sao_Paulo",
+        "'grace', now() + interval '2 days', 1, NULL",
+        "purged"
+      ),
+    ];
+    const everyone = new Set([...Object.values(inScope), ...outOfScope]);
+    assert.deepEqual(
+      (await zones(billingUrl))
+        .filter((row) => everyone.has(row.organization_id))
+        .map((row) => ({ ...row }))
+        .sort((a, b) => a.organization_id.localeCompare(b.organization_id)),
+      [
+        { organization_id: inScope.annual, timezone: "America/Manaus" },
+        { organization_id: inScope.closing, timezone: "America/Recife" },
+        { organization_id: inScope.grace, timezone: "America/Bahia" },
+        { organization_id: inScope.trial, timezone: "America/Sao_Paulo" },
+      ].sort((a, b) => a.organization_id.localeCompare(b.organization_id)),
+      "the trial, the grace and the yearly cycle, with their zones"
+    );
+    // the owner sees an organization only for a store with such a record, and only those billing states, and only inside
+    // the call of the function: without its scope it sees none
+    const billedToOwner = async (scope: string | null) =>
+      asOwnerRole(BILLING_OWNER, async (client) => {
+        if (scope !== null) {
+          await client.query("SELECT set_config($1, $2, true)", [
+            SWEEP_SCOPE,
+            scope,
+          ]);
+        }
+        return {
+          billing: (
+            await client.query<{ organization_id: string }>(
+              "SELECT organization_id FROM public.organization_billing WHERE organization_id = ANY ($1) ORDER BY 1",
+              [[...everyone]]
+            )
+          ).rows.map((row) => row.organization_id),
+          stores: (
+            await client.query<{ id: string }>(
+              "SELECT id FROM public.organizations WHERE id = ANY ($1) ORDER BY 1",
+              [[...everyone]]
+            )
+          ).rows.map((row) => row.id),
+        };
+      });
+    const expected = Object.values(inScope)
+      .concat(outOfScope[4] as string)
+      .sort();
+    assert.deepEqual(await billedToOwner("on"), {
+      billing: expected,
+      stores: expected,
+    });
+    for (const scope of [null, "", "off", "ON"]) {
+      assert.deepEqual(
+        await billedToOwner(scope),
+        { billing: [], stores: [] },
+        `scope ${JSON.stringify(scope)}: no row`
+      );
+    }
+    // the scope of each call ends with it: the same connection, in autocommit, sees nothing afterwards, and a notice of
+    // another store is no row after one of this store
+    await as(billingUrl, async (client) => {
+      const setting = async (name: string) =>
+        (
+          await client.query<{ value: string | null }>(
+            "SELECT current_setting($1, true) AS value",
+            [name]
+          )
+        ).rows[0]?.value;
+      const aliveNotice = await seedNotice(
+        farBack,
+        "charge_receipt",
+        `reuse-${suffix}`
+      );
+      const otherNotice = await seedNotice(
+        stranger,
+        "charge_receipt",
+        `reuse-${suffix}`
+      );
+      assert.ok(
+        (
+          await client.query(
+            "SELECT public.billing_notice_store($1, $2::uuid) AS result",
+            [farBack.organizationId, aliveNotice]
+          )
+        ).rows[0]?.result,
+        "the first call answers"
+      );
+      assert.ok(
+        [
+          await setting(STORE_SCOPE_NOTICE),
+          await setting(STORE_SCOPE_ORGANIZATION),
+        ].every((value) => !value),
+        "the store's scope is cleared with the call"
+      );
+      assert.equal(
+        (
+          await client.query(
+            "SELECT public.billing_notice_store($1, $2::uuid) AS result",
+            [farBack.organizationId, otherNotice]
+          )
+        ).rows[0]?.result,
+        null,
+        "a notice of another store on the same connection"
+      );
+      await client.query("SELECT * FROM public.billing_notice_sweep_zones()");
+      assert.ok(!(await setting(SWEEP_SCOPE)), "the sweep's scope is cleared");
+    });
+    // the Free limit missing from the catalog fails the call instead of answering a made-up one
+    await as(adminUrl, async (client) => {
+      await client.query("BEGIN");
+      try {
+        await client.query(
+          "DELETE FROM public.plan_entitlements WHERE plan_id = 'free' AND key = 'variants.active.max'"
+        );
+        await client.query(`SET LOCAL ROLE ${BILLING_RUNTIME}`);
+        const pending = await client.query(
+          "SELECT id FROM public.billing_notices WHERE organization_id = $1 AND sent_at IS NULL LIMIT 1",
+          [farBack.organizationId]
+        );
+        await expectSqlState(
+          () =>
+            client.query("SELECT public.billing_notice_store($1, $2::uuid)", [
+              farBack.organizationId,
+              pending.rows[0]?.id,
+            ]),
+          "22023",
+          "the Free limit is missing"
+        );
+      } finally {
+        await client.query("ROLLBACK");
+      }
+    });
+    tests.push(
+      "billing_notice_sweep_zones is SECURITY DEFINER and volatile with a fixed search_path, owned by the billing owner and executed only by the billing role; it answers the id and time zone of the stores in a trial, in grace or active on the yearly cycle and no other (monthly, semiannual, free over limit, no record, purged); the billing owner sees an organization only with such a record, and its billing record only in those states, and only inside the call (no row without the scope, with another value or with the scope in capitals); the scope of each function is cleared when the call ends, also on a connection that is reused, and a notice of another store is no row on it; the billing role has no grant on organizations; a catalog without the Free limit fails the call with 22023"
     );
 
     // ------------------------------------------------------------------ 5. the welcome's candidates and sweep
