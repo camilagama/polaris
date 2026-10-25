@@ -36,7 +36,14 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         codeSplitting: {
-          groups: [{ name: "motion", priority: 30, test: MOTION_MODULE }],
+          groups: [
+            {
+              includeDependenciesRecursively: false,
+              name: "motion",
+              priority: 30,
+              test: MOTION_MODULE,
+            },
+          ],
         },
       },
     },

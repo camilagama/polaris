@@ -114,6 +114,26 @@ describe("adicionar, editar e tirar", () => {
     expect(next[1]).toEqual({ fieldId: "situacao", value: "cancelada" });
   });
 
+  it("um campo repetido na lista é substituído, não duplicado: fica uma regra só, no primeiro lugar, com o valor novo", () => {
+    const rules = [
+      PERIOD,
+      { fieldId: "cliente", value: "Ana" },
+      PAID,
+      { fieldId: "cliente", value: "Beto" },
+    ];
+    expect(setRule(FIELDS, rules, "cliente", "Caio")).toEqual([
+      PERIOD,
+      { fieldId: "cliente", value: "Caio" },
+      PAID,
+    ]);
+    // um valor que não serve tira as duas
+    expect(ids(setRule(FIELDS, rules, "cliente", null))).toEqual([
+      "periodo",
+      "situacao",
+    ]);
+    expect(rules).toHaveLength(4);
+  });
+
   it("o texto guardado vai sem as pontas", () => {
     expect(setRule(FIELDS, [], "cliente", "  Ana  ")).toEqual([
       { fieldId: "cliente", value: "Ana" },

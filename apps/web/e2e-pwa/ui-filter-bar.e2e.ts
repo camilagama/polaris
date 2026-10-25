@@ -526,6 +526,56 @@ test.describe("a 360 px, com toque", () => {
   });
 });
 
+for (const width of [360, 320]) {
+  test.describe(`pílula bloqueada a ${width} px, com toque`, () => {
+    test.use({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { height: 740, width },
+    });
+
+    test("tocar na pílula sem conexão leva a pílula à janela: o motivo e o X ficam dentro da largura, e o valor é o que encurta", async ({
+      page,
+    }) => {
+      await openGallery(page);
+      const blocked = offlineBar(page).getByRole("button", {
+        name: "Produto vendido: Camiseta",
+      });
+      const reason = offlineBar(page).getByText(REASON);
+      const inWindow = async (locator: Locator) => {
+        const found = await box(locator);
+        return found.x >= 0 && found.x + found.width <= width;
+      };
+      // "Filtrar" comes first, so the end of the pill starts off the edge: the reason is not in sight until the row scrolls
+      expect(await inWindow(reason)).toBe(false);
+      // The touch is what the row answers to. `aria-disabled` is not `disabled`, but Playwright waits for "enabled" and
+      // scrolls the element into view on its own, which would hide whether the pill did it: the click is dispatched.
+      await blocked.dispatchEvent("click");
+      await expect.poll(() => inWindow(reason)).toBe(true);
+      const remove = offlineBar(page).getByRole("button", {
+        name: "Tirar o filtro Produto vendido",
+      });
+      expect(await inWindow(remove)).toBe(true);
+      // the label and the value gave way to the reason, not the other way round: the pill is not wider than the screen
+      const pillBox = await box(
+        offlineBar(page).locator('[data-slot="filter-pill"]')
+      );
+      expect(pillBox.width).toBeLessThanOrEqual(width);
+      // the value is cut short but not gone (the name of the button holds all of it)
+      const value = blocked.locator("span.truncate").last();
+      expect((await box(value)).width).toBeGreaterThan(0);
+      // and the page does not scroll sideways
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        )
+      ).toBeLessThanOrEqual(0);
+    });
+  });
+}
+
 /** The animations of the page have ended (a menu or an editor still fading in has a color between two): axe reads it then. */
 const settled = (page: Page) =>
   page.evaluate(() =>

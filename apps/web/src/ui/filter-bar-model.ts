@@ -111,8 +111,9 @@ export function visibleRules(
 }
 
 /**
- * The list after `fieldId` gets `value`: the filter is replaced where it is, or added at the end. A value that does not
- * fit the field (an empty text, a range that is not one) takes the filter out, so "empty" is never a filter.
+ * The list after `fieldId` gets `value`: the filter is replaced where it is (once, even if the list had the field twice),
+ * or added at the end. A value that does not fit the field (an empty text, a range that is not one) takes the filter
+ * out, so "empty" is never a filter.
  */
 export function setRule(
   fields: readonly FilterField[],
@@ -126,12 +127,13 @@ export function setRule(
     return kept;
   }
   const normalized = typeof value === "string" ? value.trim() : value;
-  const index = rules.findIndex((rule) => rule.fieldId === fieldId);
   const next: FilterRule = { fieldId, value: normalized };
+  const index = rules.findIndex((rule) => rule.fieldId === fieldId);
   if (index === -1) {
     return [...kept, next];
   }
-  return rules.map((rule) => (rule.fieldId === fieldId ? next : rule));
+  // a list that already has the field twice keeps one: the first place, with the new value
+  return [...kept.slice(0, index), next, ...kept.slice(index)];
 }
 
 /** The list without the filter of `fieldId`. */

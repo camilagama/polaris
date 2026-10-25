@@ -260,19 +260,42 @@ function FilterPill({
     [field, onEditingChange]
   );
   const remove = useCallback(() => onRemove(field), [field, onRemove]);
+  // touching a pill that cannot open an editor still brings it, with its reason, into the row's window
+  const reveal = useCallback(() => {
+    pillRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, []);
   const name = blocked ? lockedLabel(field, text) : editLabel(field, text);
   // the space keeps "Período 01/10 a 24/10" as the text of the button (the name holds it: WCAG 2.5.3)
   const content = (
     <>
-      <span className="shrink-0 text-muted-foreground">{field.label}</span>{" "}
-      <span className="truncate font-medium">{text}</span>
+      <span
+        className={cn(
+          "text-muted-foreground",
+          blocked ? "min-w-0 truncate" : "shrink-0"
+        )}
+      >
+        {field.label}
+      </span>{" "}
+      <span
+        className={cn(
+          "min-w-0 truncate font-medium",
+          blocked && "min-w-[3ch] shrink-[6]"
+        )}
+      >
+        {text}
+      </span>
     </>
   );
 
   return (
     <motion.div
       {...pillMotion(reduced)}
-      className="inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10"
+      className={cn(
+        "inline-flex h-9 touch:h-11 max-w-full shrink-0 scroll-ms-1.5 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10",
+        // the row is as wide as its pills (`w-max`), so `max-w-full` caps nothing: a pill with a reason is never wider than the
+        // screen, and it is the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
+        blocked && "max-w-[calc(100vw-4rem)] md:max-w-full"
+      )}
       data-slot="filter-pill"
       ref={pillRef}
     >
@@ -283,6 +306,7 @@ function FilterPill({
             aria-disabled="true"
             aria-label={name}
             className={PILL_BUTTON}
+            onClick={reveal}
             type="button"
           >
             {content}
