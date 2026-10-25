@@ -292,13 +292,44 @@ const USE = /\breadWithRetry\b/g;
 const FORM =
   /readWithRetry\(\s*\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/y;
 const SOURCE_FILE = /\.tsx?$/;
+const WHITESPACE = /\s/;
 const THE_FORM =
   "escreva como `readWithRetry(() => orpcClient.<rota>.<leitura>(...))`";
 
-/** The text of the call that opens at `start` (the `(` after the name): up to its closing parenthesis. */
+/**
+ * The index just past the string or comment that opens at `i`, or `i` itself when none opens there. It does not read
+ * regex literals or `${}` inside a template: a quote that opens a false string leaves the body unclosed, so the use fails closed.
+ */
+function skipLiteral(text: string, i: number): number {
+  const char = text[i];
+  if (char === '"' || char === "'" || char === "`") {
+    let j = i + 1;
+    while (j < text.length && text[j] !== char) {
+      j += text[j] === "\\" ? 2 : 1;
+    }
+    return j + 1;
+  }
+  if (char === "/" && text[i + 1] === "/") {
+    const end = text.indexOf("\n", i);
+    return end === -1 ? text.length : end + 1;
+  }
+  if (char === "/" && text[i + 1] === "*") {
+    const end = text.indexOf("*/", i + 2);
+    return end === -1 ? text.length : end + 2;
+  }
+  return i;
+}
+
+/** The text of the call that opens at `start` (a `(`): up to its closing parenthesis, ignoring parentheses in strings and comments. */
 function callBody(text: string, start: number): string {
   let depth = 0;
-  for (let i = start; i < text.length; i += 1) {
+  let i = start;
+  while (i < text.length) {
+    const next = skipLiteral(text, i);
+    if (next !== i) {
+      i = next;
+      continue;
+    }
     if (text[i] === "(") {
       depth += 1;
     } else if (text[i] === ")") {
@@ -307,8 +338,35 @@ function callBody(text: string, start: number): string {
         return text.slice(start, i + 1);
       }
     }
+    i += 1;
   }
   return text.slice(start);
+}
+
+/** The index of the first character from `from` that is neither a space nor part of a comment. */
+function skipSpaces(text: string, from: number): number {
+  let i = from;
+  while (i < text.length) {
+    if (WHITESPACE.test(text[i] ?? "")) {
+      i += 1;
+    } else if (text[i] === "/" && skipLiteral(text, i) !== i) {
+      i = skipLiteral(text, i);
+    } else {
+      break;
+    }
+  }
+  return i;
+}
+
+/** Whether the procedure call that the form matched closes the body: after its `)`, only the `)` or `,` of `readWithRetry` follows. */
+function closesTheBody(text: string, formEnd: number): boolean {
+  const open = skipSpaces(text, formEnd);
+  if (text[open] !== "(") {
+    return false;
+  }
+  const body = callBody(text, open);
+  const after = text[skipSpaces(text, open + body.length)];
+  return body.endsWith(")") && (after === ")" || after === ",");
 }
 
 /**
@@ -327,7 +385,11 @@ function scan(text: string) {
     FORM.lastIndex = use.index;
     const form = FORM.exec(rest);
     const body = callBody(rest, use.index + "readWithRetry".length);
-    if (form && body.split("orpcClient").length === 2) {
+    if (
+      form &&
+      body.split("orpcClient").length === 2 &&
+      closesTheBody(rest, FORM.lastIndex)
+    ) {
       recognized.push(`${form[1]}.${form[2]}`);
     } else {
       outside += 1;
@@ -404,11 +466,35 @@ describe("where readWithRetry is used", () => {
       "readWithRetry.call(null, read)",
       "const r = readWithRetry; r(read)",
       "readWithRetry(() => orpcClient.sale.list(a).then(() => orpcClient.sale.confirm(b)))",
+      "readWithRetry(() => orpcClient.sale.list(a).then(() => save(b)))",
+      "readWithRetry(() => orpcClient.sale.list(a).then(confirmar))",
+      "readWithRetry(() => orpcClient.sale.list(a).finally(() => save(b)))",
       'import { readWithRetry as rwr } from "./read-with-retry";\nrwr(() => orpcClient.sale.confirm(i))',
       'import * as retry from "./read-with-retry";\nretry.readWithRetry(read)',
     ]) {
       expect(check([`${own}${outside}`]).outside, outside).toBeGreaterThan(0);
     }
+    // a parenthesis inside a string or a comment does not close the body early
+    for (const read of [
+      'readWithRetry(() => orpcClient.sale.list({ note: ")" }))',
+      "readWithRetry(() => orpcClient.sale.list({ note: ')' }), o)",
+      "readWithRetry(() => orpcClient.sale.list({ note: `)` }))",
+      "readWithRetry(() => orpcClient.sale.list({ a } /* ) */))",
+      "readWithRetry(() => orpcClient.sale.list({ a }) // )\n)",
+      "readWithRetry(() => orpcClient.sale.list({ a }) // x\n, o)",
+      'readWithRetry(() => orpcClient.sale.list({ note: "\\")" }))',
+    ]) {
+      expect(check([`${own}${read}`]), read).toEqual({
+        notReads: [],
+        outside: 0,
+        recognized: ["sale.list"],
+      });
+    }
+    expect(
+      check([
+        `${own}readWithRetry(() => orpcClient.sale.list({ note: ")" }).then(() => save(b)))`,
+      ]).outside
+    ).toBe(1);
     // a write in the right form is read, and the closed list refuses it
     const write = check([
       `${own}readWithRetry(() => orpcClient.sale.confirm(input))`,
