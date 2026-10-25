@@ -156,6 +156,32 @@ export function refundWindowOf(
 }
 
 /**
+ * The day the window of the right of withdrawal ended (AS-14, AS-30): the São Paulo day of the last second of the
+ * window of `refundWindowOf`, once that window is gone because the 7th day passed. None without a first charge paid,
+ * while the window is open (also for a request asked in time and still within its 72 hours), and after a refund or a
+ * chargeback (the screen then says nothing of a deadline that no longer applies); a chargeback won keeps it.
+ */
+export function refundWindowEndedOnOf(
+  record: PlanViewRecord,
+  now: Date
+): string | null {
+  if (record.firstChargeAt === null || record.firstChargeAmount === null) {
+    return null;
+  }
+  if (record.revoked !== null && record.revoked.reason !== "won") {
+    return null;
+  }
+  const closesAt = refundWindowClosesAt(record.firstChargeAt);
+  if (
+    now.getTime() < closesAt.getTime() ||
+    refundWindowOf(record, now) !== null
+  ) {
+    return null;
+  }
+  return saoPauloDateOf(new Date(closesAt.getTime() - 1000));
+}
+
+/**
  * The refund the owner may ask for now: the window of `refundWindowOf`, the same for both ways, asked in the app
  * when the provider's port refunds (`refundsEnabled`), by writing to support otherwise (R-1).
  */

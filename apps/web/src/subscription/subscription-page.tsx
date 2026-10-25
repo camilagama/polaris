@@ -447,7 +447,7 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
             refusal={refusal}
           />
         ) : null}
-        {plan ? <SubscriptionFooter /> : null}
+        {plan ? <SubscriptionFooter plan={plan} /> : null}
       </div>
     </div>
   );
