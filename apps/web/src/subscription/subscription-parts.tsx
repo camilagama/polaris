@@ -68,17 +68,23 @@ function UsageBox({ row }: { row: UsageRow }) {
 export function PlanCard({
   children,
   headline,
+  pendingAction,
   plan,
+  refundAwaited = false,
 }: {
   /** What only some states have (the waiting for the provider), under the plan. */
   children?: ReactNode;
   headline: PlanHeadline;
+  /** What the notice of a refund not done offers (AS-42: "Tentar o reembolso de novo"). */
+  pendingAction?: ReactNode;
   plan: BillingPlanView;
+  /** The refund the provider took and whose fact has not come: not said as a refund not done. */
+  refundAwaited?: boolean;
 }) {
   const payment = paymentLines(plan);
   const resubscribe = resubscribeLine(plan);
   const kept = keptLine(plan.kept);
-  const pending = refundPendingNotice(plan);
+  const pending = refundAwaited ? null : refundPendingNotice(plan);
   const showUsage = plan.state !== "trial_setup";
   return (
     <Card aria-labelledby="subscription-plan-title" role="region">
@@ -108,7 +114,10 @@ export function PlanCard({
         <CardContent>
           <Alert variant="warning">
             <AlertTitle>{pending.title}</AlertTitle>
-            <AlertDescription>{pending.description}</AlertDescription>
+            <AlertDescription className="grid justify-items-start gap-2">
+              {pending.description}
+              {pendingAction}
+            </AlertDescription>
           </Alert>
         </CardContent>
       ) : null}
