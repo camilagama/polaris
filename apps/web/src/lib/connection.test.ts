@@ -466,6 +466,39 @@ describe("the probe", () => {
     });
   }
 
+  it("a response of the runtime with no mark (cf-ray, a Worker killed for CPU) is not offline and not a timeout", async () => {
+    const t = setup();
+    t.routes.health = () => reply(503, { "cf-ray": "abc-GRU" }, "Error 1102");
+    expect(await t.connection.probeNow()).toBe("online");
+    expect(t.connection.isOnline()).toBe(true);
+    expect(t.changes).not.toHaveBeenCalled();
+  });
+
+  it("a response of the runtime between two timeouts starts the count again", async () => {
+    const t = setup();
+    t.routes.health = (_input, init) => hang(init?.signal);
+    const first = t.connection.probeNow();
+    await t.advance(4000);
+    await first; // one timeout
+
+    t.routes.health = () => reply(503, { "cf-ray": "abc-GRU" });
+    await t.advance(2000); // the second look is killed by the runtime: it does not count as the second timeout
+    expect(t.connection.isOnline()).toBe(true);
+
+    t.routes.health = (_input, init) => hang(init?.signal);
+    const third = t.connection.probeNow();
+    await t.advance(4000);
+    await third;
+    expect(t.connection.isOnline()).toBe(true); // one timeout again, not two
+  });
+
+  it("a response of the runtime from an offline tab proves the way: it goes online", async () => {
+    const t = setup({ browserOnline: false });
+    t.state.browserOnline = true;
+    t.routes.health = () => reply(500, { "cf-ray": "abc-GRU" });
+    expect(await t.connection.probeNow()).toBe("online");
+  });
+
   it("is offline when /health cannot be fetched", async () => {
     const t = setup();
     t.routes.health = () => Promise.reject(new TypeError("Failed to fetch"));

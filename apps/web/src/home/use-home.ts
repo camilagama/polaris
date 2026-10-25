@@ -9,6 +9,7 @@ import { browserStorage } from "../lib/current-organization-model";
 import { isNoAnswer } from "../lib/connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   clearOrganizationResultCopies,
   isPeriodSummary,
@@ -142,12 +143,14 @@ async function readSummary(
   to: string,
   topProducts?: number
 ): Promise<StoredPeriodSummary> {
-  const summary = await orpcClient.report.periodSummary({
-    from,
-    organizationId,
-    to,
-    ...(topProducts ? { topProducts } : {}),
-  });
+  const summary = await readWithRetry(() =>
+    orpcClient.report.periodSummary({
+      from,
+      organizationId,
+      to,
+      ...(topProducts ? { topProducts } : {}),
+    })
+  );
   if (!isPeriodSummary(summary) || summary.daily === undefined) {
     // not what the server sends (a captive portal page, a proxy): as if it had not answered
     throw new Error("period_summary_malformed");
@@ -175,7 +178,9 @@ async function readChecklist(
   organizationId: string,
   readsStock: boolean
 ): Promise<HomeChecklist | "sold" | null> {
-  const sold = await orpcClient.sale.list({ limit: 1, organizationId });
+  const sold = await readWithRetry(() =>
+    orpcClient.sale.list({ limit: 1, organizationId })
+  );
   if (sold.sales.length > 0) {
     return "sold";
   }
@@ -183,20 +188,24 @@ async function readChecklist(
     return null;
   }
   const [product] = (
-    await orpcClient.inventory.listBalances({
-      limit: 1,
-      organizationId,
-      productStatus: "all",
-    })
+    await readWithRetry(() =>
+      orpcClient.inventory.listBalances({
+        limit: 1,
+        organizationId,
+        productStatus: "all",
+      })
+    )
   ).entries;
   if (product === undefined) {
     return { firstProductId: null, hasStock: false };
   }
-  const stocked = await orpcClient.inventory.listBalances({
-    limit: 1,
-    organizationId,
-    stock: "with_stock",
-  });
+  const stocked = await readWithRetry(() =>
+    orpcClient.inventory.listBalances({
+      limit: 1,
+      organizationId,
+      stock: "with_stock",
+    })
+  );
   return {
     firstProductId: product.productId,
     hasStock: stocked.entries.length > 0,
@@ -212,21 +221,25 @@ async function readStock(
     count: list.entries.length,
     more: list.nextCursor !== null,
   });
-  const withoutStock = orpcClient.inventory.listBalances({
-    limit: PAGE,
-    organizationId,
-    productStatus: "active",
-    stock: "without_stock",
-  });
+  const withoutStock = readWithRetry(() =>
+    orpcClient.inventory.listBalances({
+      limit: PAGE,
+      organizationId,
+      productStatus: "active",
+      stock: "without_stock",
+    })
+  );
   // awaited below, after C: a failure of S meanwhile is not an unhandled rejection
   withoutStock.catch(() => undefined);
   const unknownCost = (await withUnknownCost)
-    ? await orpcClient.inventory.listBalances({
-        cost: "unknown",
-        limit: PAGE,
-        organizationId,
-        productStatus: "active",
-      })
+    ? await readWithRetry(() =>
+        orpcClient.inventory.listBalances({
+          cost: "unknown",
+          limit: PAGE,
+          organizationId,
+          productStatus: "active",
+        })
+      )
     : null;
   return {
     unknownCost: unknownCost && page(unknownCost),
@@ -390,10 +403,9 @@ export function useHome(
       }
       try {
         // every status: reading settles the goals, and a goal that just settled leaves the active ones (§ 5.3)
-        const { goals } = await orpcClient.goal.list({
-          organizationId,
-          status: "all",
-        });
+        const { goals } = await readWithRetry(() =>
+          orpcClient.goal.list({ organizationId, status: "all" })
+        );
         if (ticket === sequence.current.goals) {
           // the goal the card shows, as it shows it now, and when (§ 7.3)
           const at = new Date(Date.now() + skew.current);

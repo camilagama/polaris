@@ -1,6 +1,7 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   type PendingProduct,
   pendingProducts,
@@ -40,8 +41,10 @@ export function useProductsData(
     // a new try shows the loading again instead of the old message
     setLoadError(null);
     Promise.all([
-      orpcClient.product.list({ organizationId, status }),
-      orpcClient.category.list({ organizationId, status: "all" }),
+      readWithRetry(() => orpcClient.product.list({ organizationId, status })),
+      readWithRetry(() =>
+        orpcClient.category.list({ organizationId, status: "all" })
+      ),
     ])
       .then(([productResult, categoryResult]) => {
         if (current) {

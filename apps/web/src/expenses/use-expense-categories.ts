@@ -1,6 +1,7 @@
 import type { ExpenseCategoryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { expenseErrorMessage } from "./expense-errors";
 
 export interface ExpenseCategoriesState {
@@ -27,10 +28,9 @@ export function useExpenseCategories(organizationId: string) {
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await orpcClient.expense.listCategories({
-        organizationId,
-        status: "all",
-      });
+      const result = await readWithRetry(() =>
+        orpcClient.expense.listCategories({ organizationId, status: "all" })
+      );
       if (requestSequence === sequence.current) {
         setState({
           categories: result.categories,

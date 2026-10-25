@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
@@ -87,7 +88,9 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
       current.status === "ready" ? current : { status: "loading" }
     );
     try {
-      const value = await orpcClient.sale.get({ organizationId, saleId });
+      const value = await readWithRetry(() =>
+        orpcClient.sale.get({ organizationId, saleId })
+      );
       if (isLatestRequest(sequence.current, token)) {
         setLoad({ status: "ready", value });
       }

@@ -1,6 +1,7 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import { goalErrorMessage } from "./goal-errors";
 
 export interface GoalsState {
@@ -28,10 +29,9 @@ export function useGoals(organizationId: string) {
     const requestSequence = sequence.current;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      const result = await orpcClient.goal.list({
-        organizationId,
-        status: "all",
-      });
+      const result = await readWithRetry(() =>
+        orpcClient.goal.list({ organizationId, status: "all" })
+      );
       if (requestSequence === sequence.current) {
         setState({ error: null, goals: result.goals, isLoading: false });
       }

@@ -501,7 +501,8 @@ test("Clientes: a lista que não carrega diz o motivo e 'Tentar novamente' lê d
   await openScreen(page, "/customers", "Clientes", {
     "customer/list": (route) => {
       reads += 1;
-      return reads === 1
+      // the read tries once more by itself: only the second 503 reaches the screen
+      return reads <= 2
         ? route.fulfill(unavailable)
         : route.fulfill(rpc({ customers: [customer(1, "Ana Lima")] }));
     },

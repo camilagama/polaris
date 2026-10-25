@@ -15,6 +15,7 @@ import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   CHANGE_OUTCOME_UNKNOWN,
   isConnectionFailure,
@@ -168,10 +169,9 @@ export function PaymentProfilesPage() {
     }
     setLoadError(null);
     try {
-      const result = await orpcClient.paymentProfile.list({
-        organizationId,
-        status: "all",
-      });
+      const result = await readWithRetry(() =>
+        orpcClient.paymentProfile.list({ organizationId, status: "all" })
+      );
       setProfiles(result.profiles);
       setNotLoaded(false);
       readOnce.current = true;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { monthBounds } from "../expenses/expense-model";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
+import { readWithRetry } from "../lib/read-with-retry";
 import {
   clearPeriodSummaryCaches,
   isPeriodSummary,
@@ -82,13 +83,15 @@ export function usePeriodSummary(organizationId: string, month: string) {
         isLoading: true,
       }));
       try {
-        const summary = await orpcClient.report.periodSummary({
-          from: bounds.from,
-          organizationId,
-          to: bounds.to,
-          // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
-          topProducts: 3,
-        });
+        const summary = await readWithRetry(() =>
+          orpcClient.report.periodSummary({
+            from: bounds.from,
+            organizationId,
+            to: bounds.to,
+            // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
+            topProducts: 3,
+          })
+        );
         if (!isPeriodSummary(summary)) {
           // not what the server sends (a captive portal page, a proxy): as if it had not answered
           throw new Error("period_summary_malformed");
