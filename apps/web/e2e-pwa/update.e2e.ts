@@ -105,3 +105,55 @@ test("um documento antigo pede o pedaço do gráfico de um build já limpo: os n
   await expect(chart).toContainText("Melhor dia");
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$");
 });
+
+test("o mesmo conteúdo publicado de novo (outra hora, mesmo id) não gera aviso de nova versão", async ({
+  buildVersion,
+  page,
+}) => {
+  buildVersion("1");
+  await openControlled(page);
+  const before = await page.evaluate(() => caches.keys());
+  // the same files again, a moment later: nothing in the worker depends on when the build was made
+  await page.waitForTimeout(1100);
+  buildVersion("1");
+  await checkForUpdate(page);
+  await page.waitForTimeout(2500);
+  await expect(
+    page.getByRole("status", { name: "Atualização do aplicativo" })
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      return [registration?.waiting, registration?.installing];
+    })
+  ).toEqual([null, null]);
+  expect(await page.evaluate(() => caches.keys())).toEqual(before);
+});
+
+test("com duas abas abertas, Atualizar agora numa troca a versão nas duas", async ({
+  buildVersion,
+  context,
+  page,
+}) => {
+  buildVersion("1");
+  await openControlled(page);
+  const other = await context.newPage();
+  await openControlled(other);
+
+  buildVersion("2");
+  await checkForUpdate(page);
+  const banner = page.getByRole("status", {
+    name: "Atualização do aplicativo",
+  });
+  await expect(banner).toContainText("Há uma nova versão do Polaris", {
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: "Atualizar agora" }).click();
+
+  await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
+  await expect.poll(() => runningVersion(other), { timeout: 20_000 }).toBe("2");
+  await expect(banner).toHaveCount(0);
+  await expect(
+    other.getByRole("status", { name: "Atualização do aplicativo" })
+  ).toHaveCount(0);
+});

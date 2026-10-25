@@ -2098,6 +2098,18 @@ Decisões antes do código da Assinatura: leitura do plano, cancelar, desistir e
 | PR G0: migration 0102 (t334) | Em revisão | `billing_notice_store` (nome, fuso, loja encerrada, dono ativo, variantes e limite do Free, só para aviso ainda devido da loja; `null` com a loja purgada) e `billing_notice_sweep_zones` (loja e fuso de quem está em teste, em carência ou no anual), ambas SECURITY DEFINER de `polaris_billing_owner` e executadas só pelo papel de cobrança, sem grant dele em `organizations`; políticas do dono por escopo. Gates `definer-hardening`, `definer-owners` e `billing-notices` (4b) no PostgreSQL 18 local; o PR G (t335) usa as funções. A frase "o PR G não precisa de migration" foi corrigida na emenda do ADR 0104. O número 0102 é provisório. |
 | PR E, E2, G, H, Gate 7 | Não iniciado | Sequência no ADR 0104, decisão 10. |
 
+### Telas que só voltam recarregando (t344; sem migration)
+
+Achados do QA de 24/10/2026 no staging. Emendas dos [ADR 0040](../docs/adr/0040-service-worker-do-app-shell.md) e [ADR 0041](../docs/adr/0041-ciclo-de-atualizacao-do-app.md).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| "Tentar novamente" | Em revisão | `app-shell/error-boundary.tsx`: erro de baixar o pedaço da tela recarrega a página (uma vez por janela de 10 s, marca em `sessionStorage`); outro erro recria o componente lazy (`app-shell/lazy-screen.ts`). Todas as telas lazy de `app.tsx` usam `lazyScreen`. |
+| `/assets/*` ausente | Em revisão | `src/server/built-assets.ts`, `run_worker_first` e binding `ASSETS`: 404 `no-store` em vez do HTML do SPA. Prova no Worker real (`vite preview`) em `e2e-real/pilha/fumaca.e2e.ts`. |
+| Service worker | Em revisão | Instalação e cache-first só com 200 e o `content-type` do arquivo; sem `builtAt` no `sw.js` (mesmo conteúdo, mesmo worker, sem aviso); cache por id, ordem pela criação; cópia servida em `clone()` (aviso de console "cross-world service worker resource mismatch" some). |
+| Atualizar com várias abas | Em revisão | Espera de 5 s e recarga própria, reabilita o botão, abas seguem o `controllerchange` com a fila vazia. |
+| Provas | Em revisão | Unitários (`chunk-load-error`, `lazy-screen`, `error-boundary`, `sw`, `update`, `built-assets`, `worker/index`); `e2e-pwa/lazy-retry.e2e.ts`, `e2e-pwa/update.e2e.ts` (mesmo conteúdo sem aviso; duas abas). |
+
 ### Início (F2), PR 2: filtro "sem custo" e endereços diretos (t286; sem migration)
 
 Desenho t269 v2, seção 2.3.

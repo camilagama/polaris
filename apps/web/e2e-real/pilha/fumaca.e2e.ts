@@ -3,6 +3,7 @@ import { makeSignature } from "better-auth/crypto";
 import { createJourneyUser, expect, test } from "../fixtures";
 import { journeyName } from "../journey-names";
 
+const FIRST_SCRIPT = /<script[^>]*src="(\/assets\/[^"]+\.js)"/;
 const SESSION_COOKIE = /([\w.-]*session_token)=([^.;]+)\./;
 
 /**
@@ -49,4 +50,21 @@ test("o preview serve o bundle de produção: sem laboratório offline", async (
   await expect(
     page.getByRole("heading", { name: "Página não encontrada" })
   ).toBeVisible();
+});
+
+test("o preview responde 404, nunca a página, para um pedaço de /assets/ que não existe, e serve o que existe", async ({
+  request,
+}) => {
+  const missing = await request.get("/assets/dashboard-page-ZZZZZZZZ.js");
+  expect(missing.status()).toBe(404);
+  expect(missing.headers()["content-type"]).not.toContain("text/html");
+  expect(missing.headers()["cache-control"]).toBe("no-store");
+
+  // a chunk of the build is still served as itself: the first script the shell asks for
+  const shell = await (await request.get("/")).text();
+  const [, script] = FIRST_SCRIPT.exec(shell) ?? [];
+  expect(script, "the shell names its first script").toBeTruthy();
+  const present = await request.get(script as string);
+  expect(present.status()).toBe(200);
+  expect(present.headers()["content-type"]).toContain("javascript");
 });

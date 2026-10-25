@@ -2,6 +2,7 @@ import {
   type ContainerLike,
   type RegistrationLike,
   takeOver,
+  watchForTakeOver,
   watchForUpdate,
 } from "./update-controller";
 import {
@@ -87,6 +88,33 @@ export function createUpdateStore({
     }
   }
 
+  let followed = false;
+  /**
+   * Another tab applied the update. This one follows (reloads) when it has nothing queued: the outbox is
+   * durable, but a tab with work waiting keeps the page it has (the files it asks for are still in the
+   * previous build's cache) until its own queue is empty and the person updates, as the model says.
+   */
+  async function followOtherTab() {
+    if (snapshot.applying) {
+      return; // this tab asked for it: `takeOver` reloads
+    }
+    try {
+      const { pending, rejected, sending } = await source.read();
+      if (pending + sending + rejected > 0) {
+        return;
+      }
+    } catch {
+      return; // the queue could not be read: never claim it is empty
+    }
+    if (!followed) {
+      followed = true;
+      reload();
+    }
+  }
+  watchForTakeOver(container, () => {
+    followOtherTab().catch(() => undefined);
+  });
+
   return {
     attach(next) {
       registration = next;
@@ -104,7 +132,14 @@ export function createUpdateStore({
       }
       set({ applying: true, message: null });
       const outcome = await applyWhenSafe(source, () => {
-        takeOver(current, container, reload);
+        const asked = takeOver(current, container, reload, () =>
+          set({ applying: false })
+        );
+        if (!asked) {
+          // nothing waits any more: another tab already activated it
+          reload();
+          set({ applying: false });
+        }
       });
       if (outcome.status === "deferred") {
         set({ applying: false, message: DEFERRED_MESSAGES[outcome.reason] });

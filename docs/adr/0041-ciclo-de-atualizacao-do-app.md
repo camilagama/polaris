@@ -28,3 +28,10 @@ O service worker (ADR 0040) instala uma build nova ao lado da que está em uso e
 - **Recarregar sozinho quando a fila está vazia:** perderia formulários em edição e surpreenderia a pessoa no meio de uma venda.
 - **Atualizar com a fila cheia depois de um "tem certeza":** troca a versão sob comandos que ela não leu; o adiamento é barato e o erro, não.
 - **Atualização silenciosa na próxima abertura:** é o comportamento natural do navegador quando todas as abas fecham, e já acontece sem código nosso.
+
+## Emenda (25/10/2026): várias abas e "Tentar novamente" de um chunk que não baixou
+
+Achados do staging em 24/10/2026 (t344):
+
+- **"Atualizar agora" com várias abas.** O worker novo podia ficar em `waiting` sem `controllerchange`, e o botão ficava cinza para sempre. Agora a aba que pediu manda `SKIP_WAITING` ao `registration.waiting`; se em 5 s nada acontecer, ela mesma recarrega (a navegação busca a build nova na rede) e o botão volta a ficar habilitado; se o worker em espera já foi ativado por outra aba (não há mais `waiting` no clique), recarrega na hora. As outras abas, que já tinham um controlador, seguem a troca: no `controllerchange` que elas não pediram, recarregam, **desde que a fila delas esteja vazia**. Com operação na fila (ou fila ilegível) a aba mantém a página que tem (os chunks dela continuam no cache da build anterior), pela regra de nunca trocar com trabalho na fila.
+- **"Tentar novamente" da tela de erro.** O `React.lazy` guarda a promessa do `import()` que falhou, e o navegador guarda o módulo que falhou: pedir `import()` de novo não recupera. Quando o erro vem de baixar um pedaço da tela (`Failed to fetch dynamically imported module`, `error loading dynamically imported module`, `Importing a module script failed`, `ChunkLoadError`), o botão recarrega a página, uma vez por janela de 10 s (marca em `sessionStorage`; sem armazenamento disponível, não recarrega). Nos outros erros o botão recria o componente lazy (`lazyScreen`, nova chamada de `import()`) e renderiza de novo.

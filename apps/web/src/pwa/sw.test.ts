@@ -3,10 +3,15 @@ import { runInNewContext } from "node:vm";
 import { AUTH_ENTRY_PATHS as HEADERS_AUTH_ENTRY_PATHS } from "@polaris/http-security";
 import { transformWithEsbuild } from "vite";
 import { describe, expect, it, vi } from "vitest";
-import { buildId, precacheList } from "../../pwa/service-worker-plugin";
+import {
+  buildId,
+  buildManifest,
+  precacheList,
+} from "../../pwa/service-worker-plugin";
 import {
   AUTH_ENTRY_PATHS,
   cachesToDelete,
+  isExpectedResponse,
   isSkipWaitingMessage,
   routeFor,
   SHELL_CACHE_PREFIX,
@@ -81,39 +86,94 @@ describe("what the worker touches", () => {
 });
 
 describe("the shell caches", () => {
-  const build = { builtAt: 1_700_000_000_000, id: "abc123def456" };
-
   it("are named after the build so two builds never share files", () => {
-    expect(shellCacheName(build)).toBe(
-      `${SHELL_CACHE_PREFIX}001700000000000-abc123def456`
+    expect(shellCacheName({ id: "abc123def456" })).toBe(
+      `${SHELL_CACHE_PREFIX}abc123def456`
     );
   });
 
-  it("keep the current build and the newest other, and drop the rest, and only ours", () => {
-    const current = shellCacheName({ builtAt: 300, id: "c" });
+  it("keep the current build and the newest other (the last created), and drop the rest, and only ours", () => {
+    const current = shellCacheName({ id: "c" });
+    // in the order of creation, as `caches.keys()` lists them
     const names = [
-      shellCacheName({ builtAt: 100, id: "a" }),
-      shellCacheName({ builtAt: 200, id: "b" }),
-      current,
-      shellCacheName({ builtAt: 50, id: "z" }),
+      shellCacheName({ id: "z" }),
+      shellCacheName({ id: "a" }),
       "someone-elses-cache",
+      shellCacheName({ id: "b" }),
+      current,
     ];
     expect(cachesToDelete(names, current).sort()).toEqual(
-      [
-        shellCacheName({ builtAt: 100, id: "a" }),
-        shellCacheName({ builtAt: 50, id: "z" }),
-      ].sort()
+      [shellCacheName({ id: "z" }), shellCacheName({ id: "a" })].sort()
     );
   });
 
   it("keep everything when there is nothing older than one previous build", () => {
-    const current = shellCacheName({ builtAt: 2, id: "b" });
+    const current = shellCacheName({ id: "b" });
     expect(
-      cachesToDelete(
-        [shellCacheName({ builtAt: 1, id: "a" }), current],
-        current
-      )
+      cachesToDelete([shellCacheName({ id: "a" }), current], current)
     ).toEqual([]);
+  });
+});
+
+describe("what counts as the file that was asked for", () => {
+  const answer = (status: number, type: string | null) => ({
+    headers: { get: () => type },
+    status,
+  });
+
+  it("takes a script as a script and a style sheet as a style sheet, with a 200", () => {
+    expect(
+      isExpectedResponse(
+        "/assets/a-1.js",
+        answer(200, "text/javascript; charset=utf-8")
+      )
+    ).toBe(true);
+    expect(
+      isExpectedResponse(
+        "/assets/a-1.js",
+        answer(200, "application/javascript")
+      )
+    ).toBe(true);
+    expect(isExpectedResponse("/assets/a-1.css", answer(200, "text/css"))).toBe(
+      true
+    );
+  });
+
+  it("refuses the page the host answers for a file that is not there, and anything that is not a 200", () => {
+    expect(isExpectedResponse("/assets/a-1.js", answer(200, "text/html"))).toBe(
+      false
+    );
+    expect(
+      isExpectedResponse(
+        "/assets/a-1.css",
+        answer(200, "text/html; charset=utf-8")
+      )
+    ).toBe(false);
+    expect(isExpectedResponse("/assets/a-1.js", answer(200, null))).toBe(false);
+    expect(
+      isExpectedResponse("/assets/a-1.js", answer(404, "text/javascript"))
+    ).toBe(false);
+    expect(
+      isExpectedResponse("/assets/a-1.js", answer(304, "text/javascript"))
+    ).toBe(false);
+  });
+
+  it("wants a page for the shell and anything but a page for the other files", () => {
+    expect(isExpectedResponse("/", answer(200, "text/html"))).toBe(true);
+    expect(isExpectedResponse("/entrar", answer(200, "text/html"))).toBe(true);
+    expect(isExpectedResponse("/", answer(200, "text/javascript"))).toBe(false);
+    expect(
+      isExpectedResponse(
+        "/manifest.webmanifest",
+        answer(200, "application/manifest+json")
+      )
+    ).toBe(true);
+    expect(isExpectedResponse("/icons/a.png", answer(200, "image/png"))).toBe(
+      true
+    );
+    expect(isExpectedResponse("/icons/a.png", answer(200, "text/html"))).toBe(
+      false
+    );
   });
 });
 
@@ -167,14 +227,67 @@ describe("the build manifest", () => {
     contents["index.html"] = "<html>v1</html>";
     expect(buildId([...files, "assets/b-2.js"], read)).not.toBe(first);
   });
+
+  it("is the same for the same content, whenever the build is made: no time in the worker", () => {
+    const files = ["index.html", "assets/a-1.js", "manifest.webmanifest"];
+    const read = (file: string) => Buffer.from(`content of ${file}`);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-24T19:55:00Z"));
+      const first = JSON.stringify(buildManifest(files, read));
+      vi.setSystemTime(new Date("2026-10-24T21:20:00Z"));
+      const second = JSON.stringify(buildManifest(files, read));
+      expect(second).toBe(first);
+      expect(first).not.toContain("builtAt");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
+interface FakeResponse {
+  body: string;
+  clone: () => FakeResponse;
+  headers: { get: (name: string) => string | null };
+  status: number;
+}
+
+const EXTENSION_TYPES: Record<string, string> = {
+  css: "text/css",
+  js: "text/javascript; charset=utf-8",
+  webmanifest: "application/manifest+json",
+};
+
+function withClone(response: Omit<FakeResponse, "clone">): FakeResponse {
+  const copy: FakeResponse = {
+    ...response,
+    clone: () => withClone(response),
+  };
+  return copy;
+}
+
+/** The file as the host serves it: 200 with the type of its extension (a page for a path with none). */
+function fileOf(path: string): FakeResponse {
+  const type =
+    EXTENSION_TYPES[path.split(".").pop() ?? ""] ?? "text/html; charset=utf-8";
+  return withClone({
+    body: `net:${path}`,
+    headers: { get: () => type },
+    status: 200,
+  });
+}
+
+/** What the host answers for a path it does not have: the shell, 200, `text/html`. */
+function htmlOf(path: string): FakeResponse {
+  return withClone({
+    body: `<html>shell instead of ${path}</html>`,
+    headers: { get: () => "text/html; charset=utf-8" },
+    status: 200,
+  });
+}
+
 /** Runs the compiled worker in a sandbox with a fake service worker scope. */
-async function runWorker(build: {
-  builtAt: number;
-  id: string;
-  precache: string[];
-}) {
+async function runWorker(build: { id: string; precache: string[] }) {
   const source = readFileSync(new URL("./sw.ts", import.meta.url), "utf8");
   const { code } = await transformWithEsbuild(source, "sw.ts", {
     format: "iife",
@@ -182,9 +295,14 @@ async function runWorker(build: {
     target: "es2020",
   });
   const listeners: Record<string, (event: never) => void> = {};
-  const stores = new Map<string, Map<string, string>>();
+  const stores = new Map<string, Map<string, FakeResponse>>();
   const fetched: string[] = [];
-  const network: { failPath?: string; online: boolean } = { online: true };
+  const network: {
+    failPath?: string;
+    /** Paths the host answers with its page, 200 `text/html`, as it does for a file that is not there. */
+    htmlPaths: Set<string>;
+    online: boolean;
+  } = { htmlPaths: new Set(), online: true };
   const skipWaiting = vi.fn(() => Promise.resolve());
   const scope = {
     addEventListener: (type: string, listener: (event: never) => void) => {
@@ -207,44 +325,33 @@ async function runWorker(build: {
       for (const store of stores.values()) {
         const hit = store.get(keyOf(request));
         if (hit !== undefined) {
-          return Promise.resolve({ body: hit });
+          return Promise.resolve(hit);
         }
       }
       return Promise.resolve(undefined);
     },
     open: (name: string) => {
-      const store = stores.get(name) ?? new Map<string, string>();
+      const store = stores.get(name) ?? new Map<string, FakeResponse>();
       stores.set(name, store);
       return Promise.resolve({
-        add: async (request: { url: string }) => {
-          const response = (await fakeFetch(request)) as { body: string };
-          store.set(keyOf(request), response.body);
-        },
-        addAll: async (requests: { url: string }[]) => {
-          const responses = await Promise.all(
-            requests.map((request) => fakeFetch(request))
-          );
-          requests.forEach((request, index) => {
-            store.set(
-              keyOf(request),
-              (responses[index] as { body: string }).body
-            );
-          });
-        },
         match: (request: { url?: string } | string) =>
-          Promise.resolve(
-            store.has(keyOf(request))
-              ? { body: store.get(keyOf(request)) }
-              : undefined
-          ),
+          Promise.resolve(store.get(keyOf(request))),
+        put: (request: { url: string }, response: FakeResponse) => {
+          store.set(keyOf(request), response);
+          return Promise.resolve();
+        },
       });
     },
   };
   const fakeFetch = (request: { url: string }) => {
-    fetched.push(keyOf(request));
-    return network.online && keyOf(request) !== network.failPath
-      ? Promise.resolve({ body: `net:${keyOf(request)}` })
-      : Promise.reject(new TypeError("offline"));
+    const path = keyOf(request);
+    fetched.push(path);
+    if (!network.online || path === network.failPath) {
+      return Promise.reject(new TypeError("offline"));
+    }
+    return Promise.resolve(
+      network.htmlPaths.has(path) ? htmlOf(path) : fileOf(path)
+    );
   };
   runInNewContext(`const POLARIS_BUILD=${JSON.stringify(build)};\n${code}`, {
     caches: cacheApi,
@@ -277,7 +384,6 @@ async function runWorker(build: {
 
 describe("the worker as the browser runs it", () => {
   const build = {
-    builtAt: 200,
     id: "bbb",
     precache: ["/", "/assets/index-BBB.js"],
   };
@@ -300,11 +406,11 @@ describe("the worker as the browser runs it", () => {
       mode: "navigate",
       url: `${origin}/sales`,
     };
-    expect(await worker.run("fetch", { request: navigate })).toEqual({
+    expect(await worker.run("fetch", { request: navigate })).toMatchObject({
       body: "net:/sales",
     });
     worker.network.online = false;
-    expect(await worker.run("fetch", { request: navigate })).toEqual({
+    expect(await worker.run("fetch", { request: navigate })).toMatchObject({
       body: "net:/",
     });
   });
@@ -327,10 +433,12 @@ describe("the worker as the browser runs it", () => {
       );
     expect(
       await answers(["/entrar", "/redefinir-senha", "/confirmar-email/"])
-    ).toEqual(new Array(3).fill({ body: "net:/entrar" }));
+    ).toEqual(
+      new Array(3).fill(expect.objectContaining({ body: "net:/entrar" }))
+    );
     // the unlock page and the rest of the app keep the shell of /
     expect(await answers(["/desbloquear", "/conta/seguranca"])).toEqual(
-      new Array(2).fill({ body: "net:/" })
+      new Array(2).fill(expect.objectContaining({ body: "net:/" }))
     );
   });
 
@@ -357,10 +465,15 @@ describe("the worker as the browser runs it", () => {
       mode: "cors",
       url: `${origin}/assets/index-BBB.js`,
     };
-    expect(await worker.run("fetch", { request: asset })).toEqual({
+    expect(await worker.run("fetch", { request: asset })).toMatchObject({
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual([]); // came from the cache, not the network
+    // a clone, not the object `cache.match` returned (Chrome refuses the page's preload of the latter, t344)
+    const kept = worker.stores
+      .get(shellCacheName(build))
+      ?.get("/assets/index-BBB.js");
+    expect(await worker.run("fetch", { request: asset })).not.toBe(kept);
     for (const path of ["/rpc/sale/confirm", "/api/auth/get-session"]) {
       // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
       const answer = await worker.run("fetch", {
@@ -388,8 +501,9 @@ describe("the worker as the browser runs it", () => {
 
   it("activating a build removes old shell caches but keeps the previous one and other caches", async () => {
     const worker = await runWorker(build);
-    const old = shellCacheName({ builtAt: 10, id: "old" });
-    const previous = shellCacheName({ builtAt: 100, id: "prev" });
+    // created in this order: the previous build is the one created last
+    const old = shellCacheName({ id: "old" });
+    const previous = shellCacheName({ id: "prev" });
     worker.stores.set(old, new Map());
     worker.stores.set(previous, new Map());
     worker.stores.set("unrelated", new Map());
@@ -398,5 +512,49 @@ describe("the worker as the browser runs it", () => {
     expect([...worker.stores.keys()].sort()).toEqual(
       [previous, shellCacheName(build), "unrelated"].sort()
     );
+  });
+
+  it("does not install when a chunk comes back as the host's page: nothing is cached", async () => {
+    const worker = await runWorker(build);
+    worker.network.htmlPaths.add("/assets/index-BBB.js");
+    await expect(worker.run("install", {})).rejects.toThrow(
+      "unexpected response for /assets/index-BBB.js"
+    );
+    const cached = [...worker.stores.values()].flatMap((store) => [
+      ...store.keys(),
+    ]);
+    expect(cached).toEqual([]);
+  });
+
+  it("does not keep the sign-in copy when it comes back as something else, and installs anyway", async () => {
+    const worker = await runWorker(build);
+    worker.network.htmlPaths.add("/entrar"); // a page for a page: kept
+    await worker.run("install", {});
+    expect(
+      [...(worker.stores.get(shellCacheName(build))?.keys() ?? [])].sort()
+    ).toEqual(["/", "/assets/index-BBB.js", "/entrar"].sort());
+  });
+
+  it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    worker.stores
+      .get(shellCacheName(build))
+      ?.set("/assets/index-BBB.js", htmlOf("/assets/index-BBB.js"));
+    worker.fetched.length = 0;
+    const asset = {
+      method: "GET",
+      mode: "cors",
+      url: `${origin}/assets/index-BBB.js`,
+    };
+    expect(await worker.run("fetch", { request: asset })).toMatchObject({
+      body: "net:/assets/index-BBB.js",
+    });
+    expect(worker.fetched).toEqual(["/assets/index-BBB.js"]);
+    // and what the network answers is not stored either
+    expect(
+      worker.stores.get(shellCacheName(build))?.get("/assets/index-BBB.js")
+        ?.body
+    ).toContain("shell instead of");
   });
 });
