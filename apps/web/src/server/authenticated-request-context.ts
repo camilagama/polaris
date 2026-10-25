@@ -5,6 +5,7 @@ import {
   AuthDatabaseNotConfiguredError,
   resolveAuthConnectionString,
 } from "./auth/auth-database";
+import { startFailed } from "./auth/handler";
 import {
   type AuthRequestState,
   currentAuthRequestState,
@@ -56,6 +57,8 @@ interface AuthenticatedRequestSession {
 }
 
 interface SessionAuth {
+  /** Better Auth's start: it rejects for good when the assembling failed. */
+  $context?: Promise<unknown>;
   api: {
     getSession: (input: {
       headers: Headers;
@@ -176,8 +179,10 @@ export function createAuthenticatedRequestContext(
         () => entry.auth.api.getSession({ headers: request.headers })
       );
     } catch (error) {
-      // a failed start of the instance would otherwise be kept for the whole life of the isolate
-      if (sessionAuth === entry) {
+      // a failed start of the instance would otherwise be kept for the whole life of the isolate; any other failure
+      // (the database, the query, the session) keeps it, so an outage does not cost a new instance per request
+      const failedToStart = await startFailed(entry.auth);
+      if (failedToStart && sessionAuth === entry) {
         sessionAuth = undefined;
       }
       throw error;
