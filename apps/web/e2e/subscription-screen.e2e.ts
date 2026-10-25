@@ -818,7 +818,7 @@ test("sem conexão a tela diz 'Sem internet' e não mostra o plano de antes; com
   const before = calls.reads;
   await page.context().setOffline(false);
   await expect(planTitle(page)).toHaveText("Plano Pro");
-  expect(calls.reads).toBeGreaterThan(before);
+  await expect.poll(() => calls.reads).toBeGreaterThan(before);
 
   // in grace, the notice at the top goes with the plan: nothing of before on the Assinatura
   await page.unrouteAll({ behavior: "ignoreErrors" });
