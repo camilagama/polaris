@@ -2159,3 +2159,16 @@ Decisão do usuário de 24/10/2026; emenda do [ADR 0103](../docs/adr/0103-base-d
 | `Dialog` e Toast | Fora | Ficam como estão; o Dialog é da t331 e entra numa tarefa própria depois dela. Gráficos (t336) e barra de filtros também ficam de fora. |
 | `prefers-reduced-motion` | Sem mudança | A regra global de `theme.css` leva animação e transição a 0,01 ms; o e2e `com prefers-reduced-motion: reduce nada anima` roda em cada tela e abre popover, menu, seletor, dica, diálogo e aviso. |
 | Testes | Em revisão | Saíram a regra de fonte contra `zoom-*`, `slide-*`, `translate`/`scale`/`rotate` e `animate-*` que não desvanece, e a medida de pose das sobreposições. Entrou um teste que exige as classes do shadcn nos quatro primitivos e um e2e que prova que, sem `reduce`, o popover e os outros animam em 100 ms. |
+
+### Resultado v2, PR do servidor: custo e resultado por dia no `periodSummary` (t332; emenda de 24/10 do ADR 0056; sem migration)
+
+Corte resultado-v2 (AC-8 a AC-10 e AC-21, com a emenda de 24/10) e desenho de 24/10 20:22 (Q-4).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Domínio | Em revisão | `economics/period-series.ts`: `dailyEconomics` (série diária com `costs`, `operatingExpenses` e `operatingResult`; custo = soma das partes, `null` com custo ou taxa desconhecidos, despesa sem venda no dia da competência; `operatingExpenses` é o `totals.operating` do dia: dinheiro sempre presente, `"0.00"` no dia sem despesa, preenchido mesmo com `costs: null`). Propriedades: os dias somam a cadeia quando nenhum é `null` e Σ `operatingExpenses` é `chain.operatingExpenses` também com dia `null`; dia sem venda tem `costs` igual a `operatingExpenses`; cada dia é o período daquele dia sozinho; um dia `null` é `null` nos dois campos. |
+| Repositório, contrato e RPC | Em revisão | `readPeriodFacts` devolve as despesas sem venda com a data de competência; `daily[].costs` e `daily[].operatingResult` (`string \| null`) e `daily[].operatingExpenses` (`string`, nunca `null`); o contrato recusa período acima de 366 dias. |
+| Cópia local | Em revisão | `isDaily` aceita `costs` e `operatingResult` ausentes, `null` ou dinheiro, e `operatingExpenses` ausente (cópia antiga) ou dinheiro (nunca `null`). |
+| Gate `economics` | Em revisão | Seção 7: dia com frete (custo 72,85, resultado 117,15), despesa com competência depois de hoje no dia dela, dias `null`, cada dia contra `from = to`, soma dos dias contra a cadeia, `operatingExpenses` de cada dia contra uma soma SQL independente por data de competência, outra loja zerada. Só roda no PostgreSQL 18 do CI (esta tarefa é da área app). |
+| Medida de CPU | Pendente | Local, só o motor (Node 24, sem banco): ver o PR. A medida oficial é o AC-23, no staging, antes de ligar "Este ano". |
+
