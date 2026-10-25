@@ -204,7 +204,9 @@ export function DateRangePicker({
             ))}
           </fieldset>
           {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
-              and the line that asks for the last day stay in view; the 4 px around keep the focus ring of a day */}
+              and the line that asks for the last day stay in view (the popover itself does not scroll, so with less
+              room than the shortcuts and the footer, as a phone on its side, the month is what gives way); the 4 px
+              around keep the focus ring of a day */}
           <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
             <OnDemandCalendar
               autoFocus

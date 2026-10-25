@@ -843,6 +843,38 @@ test("a 360 px o período da meta abre no mês do período, e com pouco espaço 
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(740);
 });
 
+test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado ao lado, atalhos e rodapé à vista", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 340, width: 1280 });
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  await datePickerButton(page, "Período da meta").evaluate((button) =>
+    button.scrollIntoView({ block: "center" })
+  );
+  const popup = await openDatePicker(page, "Período da meta");
+  await expect(popup.getByRole("grid")).toHaveCount(2);
+  const months = popup.locator("[data-range-month]");
+  const { clientHeight, clientWidth, scrollHeight, scrollWidth } =
+    await months.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight,
+      scrollWidth: element.scrollWidth,
+    }));
+  // the room is short: the months scroll, and only up and down
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  const whole = { ratio: 1 };
+  await expect(
+    popup.getByRole("group", { name: "Atalhos do período" })
+  ).toBeInViewport(whole);
+  await expect(popup.getByRole("button", { name: "Limpar" })).toBeInViewport(
+    whole
+  );
+});
+
 test("o calendário do período da meta se usa só com o teclado: setas andam pelos dias, Enter marca e Escape fecha", async ({
   page,
 }) => {
