@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DeadLetterProducer,
   handleQueueBatch,
+  DeferredHandlerError,
   PermanentHandlerError,
   type QueueHandler,
   type QueueMessage,
@@ -164,6 +165,20 @@ describe("handleQueueBatch", () => {
 
     await run([message(envelope())]);
     expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for a deferred message again after the delay the handler gave, without logging a failure, and runs it then", async () => {
+    handler.mockRejectedValueOnce(new DeferredHandlerError(605));
+    const deferred = message(envelope(), 1);
+    await run([deferred]);
+    expect(deferred.retry).toHaveBeenCalledWith({ delaySeconds: 605 });
+    expect(deferred.ack).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+
+    const due = message(envelope(), 2);
+    await run([due]);
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(due.ack).toHaveBeenCalledOnce();
   });
 
   it("does not stop the batch at a failure", async () => {
