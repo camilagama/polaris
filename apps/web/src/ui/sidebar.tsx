@@ -2,12 +2,14 @@
 
 import XIcon from "lucide-react/dist/esm/icons/x";
 import {
+  type AnimationEvent,
   type ComponentProps,
   type CSSProperties,
   createContext,
   type MouseEvent,
   type ReactNode,
   type RefObject,
+  type SyntheticEvent,
   useCallback,
   useContext,
   useEffect,
@@ -81,10 +83,23 @@ function SidebarProvider({
   );
 }
 
+/* The entrance and the exit of the panel are the `Sheet` of the registry: 200 ms, `ease-in-out`, fade and a slide of
+   2.5 rem to the side. The exit has a class set of its own (swapped in while it runs) so the two `animation`s never
+   compete, and the veil (`::backdrop`) fades with the panel. */
+const SHEET_ENTER =
+  "open:fade-in-0 data-[side=left]:open:slide-in-from-left-10 data-[side=right]:open:slide-in-from-right-10 open:animate-in open:duration-200 open:ease-in-out";
+const SHEET_EXIT =
+  "animate-out fade-out-0 fill-mode-forwards data-[side=left]:slide-out-to-left-10 data-[side=right]:slide-out-to-right-10 duration-200 ease-in-out backdrop:animate-out backdrop:fade-out-0 backdrop:fill-mode-forwards backdrop:duration-200 backdrop:ease-in-out";
+/** The time to wait for `animationend` before closing anyway (the exit takes 200 ms). */
+const EXIT_GUARD_MS = 300;
+
 /**
  * Below 760 px the sidebar is a modal panel on the native `<dialog>` (the shadcn Sidebar opens a Sheet there; the
  * native element gives the same: the page behind is inert, Escape closes, the focus stays inside, and it costs no
- * script of a primitive). Closing hands the focus back to what opened it. Only opacity moves (DESIGN.md).
+ * script of a primitive). Every way out (Escape, the veil, "Fechar", the state going to closed) asks for the close
+ * through one path: the exit animation runs (`data-closing`) and the dialog closes at `animationend`, or after a guard
+ * if the event never comes, or at once with `prefers-reduced-motion: reduce`. Closing hands the focus back to what
+ * opened it.
  */
 function MobileSheet({
   children,
@@ -100,7 +115,39 @@ function MobileSheet({
   title: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const guard = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [closing, setClosing] = useState(false);
   const { mobileTrigger } = useSidebar();
+  const clearClosing = useCallback(() => {
+    clearTimeout(guard.current);
+    ref.current?.removeAttribute("data-closing");
+    setClosing(false);
+  }, []);
+  const finishClose = useCallback(() => {
+    const dialog = ref.current;
+    if (dialog?.open) {
+      dialog.close();
+    } else {
+      // already closed: no `close` event will come to undo the closing state
+      clearClosing();
+    }
+  }, [clearClosing]);
+  const requestClose = useCallback(() => {
+    const dialog = ref.current;
+    if (!dialog?.open || dialog.hasAttribute("data-closing")) {
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finishClose();
+      return;
+    }
+    // set on the node at once: a second request in the same frame (before the render) is ignored
+    dialog.setAttribute("data-closing", "");
+    setClosing(true);
+    guard.current = setTimeout(finishClose, EXIT_GUARD_MS);
+    // the state says closed while the exit runs, so that opening it again (the "Sair" warning) is a real change
+    onOpenChange(false);
+  }, [finishClose, onOpenChange]);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) {
@@ -108,31 +155,61 @@ function MobileSheet({
     }
     if (open && !dialog.open) {
       dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
+    } else if (open && dialog.hasAttribute("data-closing")) {
+      // asked to open again while it was leaving: stay
+      clearClosing();
+    } else if (!open) {
+      requestClose();
     }
-  }, [open]);
+  }, [clearClosing, open, requestClose]);
+  useEffect(() => () => clearTimeout(guard.current), []);
   const handleClose = useCallback(() => {
+    clearClosing();
     onOpenChange(false);
     // the trigger, not the element focused before: Safari does not focus a button on a click
     mobileTrigger.current?.focus();
-  }, [mobileTrigger, onOpenChange]);
+  }, [clearClosing, mobileTrigger, onOpenChange]);
+  // Escape cancels the native close: the exit animation runs first
+  const handleCancel = useCallback(
+    (event: SyntheticEvent<HTMLDialogElement>) => {
+      event.preventDefault();
+      requestClose();
+    },
+    [requestClose]
+  );
   // a click on the veil (the dialog box itself, outside the panel) closes it
-  const handleClick = useCallback((event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) {
-      event.currentTarget.close();
-    }
-  }, []);
-  const close = useCallback(() => ref.current?.close(), []);
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLDialogElement>) => {
+      if (event.target === event.currentTarget) {
+        requestClose();
+      }
+    },
+    [requestClose]
+  );
+  // the panel and the veil animate together: the first end of the closing animation closes
+  const handleAnimationEnd = useCallback(
+    (event: AnimationEvent<HTMLDialogElement>) => {
+      if (
+        event.target === event.currentTarget &&
+        event.animationName === "exit" &&
+        event.currentTarget.hasAttribute("data-closing")
+      ) {
+        finishClose();
+      }
+    },
+    [finishClose]
+  );
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the keyboard closes it with Escape, which the native dialog handles
     <dialog
       aria-label={title}
-      className="motion-safe:open:fade-in-0 fixed inset-y-0 m-0 h-dvh max-h-none w-(--sidebar-width) max-w-[85vw] border-0 bg-sidebar p-0 text-sidebar-foreground text-sm shadow-lg ring-1 ring-foreground/[0.06] backdrop:bg-overlay open:flex open:flex-col data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:left-auto motion-safe:open:animate-in motion-safe:open:duration-[220ms]"
+      className={`${closing ? SHEET_EXIT : SHEET_ENTER} fixed inset-y-0 m-0 h-dvh max-h-none w-(--sidebar-width) max-w-[85vw] border-0 bg-sidebar p-0 text-sidebar-foreground text-sm shadow-lg ring-1 ring-foreground/[0.06] backdrop:bg-overlay open:flex open:flex-col data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:left-auto`}
       data-mobile="true"
       data-side={side}
       data-sidebar="sidebar"
       data-slot="sidebar"
+      onAnimationEnd={handleAnimationEnd}
+      onCancel={handleCancel}
       onClick={handleClick}
       onClose={handleClose}
       ref={ref}
@@ -141,7 +218,7 @@ function MobileSheet({
       {/* first in the order: the focus lands on it when the panel opens */}
       <button
         className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent [&_svg]:size-3.5"
-        onClick={close}
+        onClick={requestClose}
         type="button"
       >
         <XIcon aria-hidden="true" />
