@@ -799,7 +799,9 @@ async function run() {
     assert.equal(dayOf(s5Date)?.costs, null);
     assert.equal(dayOf(s5Date)?.operatingResult, null);
     // the expenses with no sale never depend on a sale: a day with unknown costs still carries them
-    assert.equal(dayOf(s2Date)?.operatingExpenses, "0.00");
+    // S2's day (yesterday) is also the competence date of the 200.00 rent with no sale
+    assert.equal(s2Date, dateFrom(today, -1));
+    assert.equal(dayOf(s2Date)?.operatingExpenses, "200.00");
     assert.equal(dayOf(s5Date)?.operatingExpenses, "12.34");
     // a day with only an expense with no sale (3 days ago) is a known cost and a negative result
     assert.deepEqual(dayOf(dateFrom(today, -3)), {
@@ -852,7 +854,7 @@ async function run() {
       );
     }
     tests.push(
-      "each day of the series carries its costs and result: the cost of goods, fees, linked and operating expenses (the 72.85 of the day of S6 with a 30.00 freight that stays in the result, 117.15), an expense with no sale on a day without sales (75.00, result -75.00), the rent of a competence date after today on its own day (300.00, result -300.00) while every date to the end of the period is returned, null in both fields (never 0.00) for the days with an unknown cost or fee, and each day equals the summary of from = to = that day. The operating expenses of each day are also returned alone, never null: 50.00 on the day of S6, 12.34 on the day of S5 whose costs are null, 0.00 on the other days, and each equals an independent SQL sum per competence date"
+      "each day of the series carries its costs and result: the cost of goods, fees, linked and operating expenses (the 72.85 of the day of S6 with a 30.00 freight that stays in the result, 117.15), an expense with no sale on a day without sales (75.00, result -75.00), the rent of a competence date after today on its own day (300.00, result -300.00) while every date to the end of the period is returned, null in both fields (never 0.00) for the days with an unknown cost or fee, and each day equals the summary of from = to = that day. The operating expenses of each day are also returned alone, never null: 50.00 on the day of S6, 200.00 and 12.34 on the days of S2 and S5, whose costs are null, 0.00 on the other days, and each equals an independent SQL sum per competence date"
     );
 
     // a period with no unknown input: the days add up to the chain of the same summary
