@@ -1,5 +1,4 @@
 import type { BillingPlanView } from "@polaris/contracts";
-import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -37,20 +36,22 @@ export function SectionTitle({
 }
 
 function UsageBox({ row }: { row: UsageRow }) {
-  const summary =
-    row.limit === null
-      ? `${row.label}: ${row.used}, sem limite`
-      : `${row.label}: ${row.used} de ${row.limit}`;
+  const used =
+    row.limit === null ? `${row.used}` : `${row.used} de ${row.limit}`;
+  const summary = `${row.label}: ${used}${row.over ? ", acima do limite" : ""}`;
   return (
     <div className="grid gap-1.5 rounded-lg border px-3 py-2.5">
       <p className="m-0 font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {row.label}
       </p>
-      <p className="m-0 text-muted-foreground text-sm">
-        <span className="font-semibold text-foreground tabular-nums">
-          {row.used}
-        </span>{" "}
-        {row.limit === null ? "sem limite" : `de ${row.limit}`}
+      <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-sm">
+        <span>
+          <span className="font-semibold text-foreground tabular-nums">
+            {row.used}
+          </span>
+          {row.limit === null ? "" : ` de ${row.limit}`}
+        </span>
+        {row.over ? <Badge variant="warning">acima do limite</Badge> : null}
       </p>
       {row.limit === null ? null : (
         <Progress
@@ -187,33 +188,12 @@ export function PlanLoadError({
   );
 }
 
-/** The rule of the refund, the supplier, and the Terms and the Privacy Policy (AS-14). */
+/** The rule of the refund and the supplier; the Terms and the Privacy Policy are the shell's (AS-14). */
 export function SubscriptionFooter() {
-  const link =
-    "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
-    <footer className="grid gap-1 text-muted-foreground text-support">
+    <footer className="text-muted-foreground text-support">
       <p className="m-0">
         {REFUND_RULE} {SUPPLIER_LINE}
-      </p>
-      <p className="m-0">
-        <a
-          className={link}
-          href={LEGAL_PATHS.terms}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          Termos de Uso
-        </a>{" "}
-        ·{" "}
-        <a
-          className={link}
-          href={LEGAL_PATHS.privacy}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          Política de Privacidade
-        </a>
       </p>
     </footer>
   );

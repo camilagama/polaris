@@ -11,6 +11,7 @@ import {
   graceNotice,
   type PlanNoticeFacts,
   planNoticeIsOld,
+  planNoticeRetryDelayMs,
   type RememberedNotice,
   rememberedPlanNotice,
   rememberPlanNotice,
@@ -20,7 +21,7 @@ import {
 /**
  * The plan's state for the notice: what this tab read (shown at once, also while it is read again), and a read of the
  * plan when there is none or it is a few minutes old and the tab is online. A failed read shows nothing new and is
- * tried again a minute later; the notice never guesses.
+ * tried again later, the wait doubling from 1 to 10 min; the notice never guesses.
  */
 function usePlanNoticeFacts(
   organizationId: string,
@@ -38,19 +39,34 @@ function usePlanNoticeFacts(
   const remembered = JSON.parse(text) as RememberedNotice | null;
   const old = planNoticeIsOld(remembered, now.getTime());
   const reading = useRef(false);
+  // the reads that failed in a row, and the first instant the next one may start
+  const failed = useRef({ failures: 0, retryAt: 0 });
   useEffect(() => {
-    if (!(enabled && online && readsItself && old) || reading.current) {
+    if (
+      !(enabled && online && readsItself && old) ||
+      reading.current ||
+      now.getTime() < failed.current.retryAt
+    ) {
       return;
     }
     reading.current = true;
     orpcClient.billing
       .readPlan({ organizationId })
-      .then((plan) => rememberPlanNotice(organizationId, plan))
-      .catch(() => undefined)
+      .then((plan) => {
+        failed.current = { failures: 0, retryAt: 0 };
+        rememberPlanNotice(organizationId, plan);
+      })
+      .catch(() => {
+        const failures = failed.current.failures + 1;
+        failed.current = {
+          failures,
+          retryAt: Date.now() + planNoticeRetryDelayMs(failures),
+        };
+      })
       .finally(() => {
         reading.current = false;
       });
-    // `now` too: an old copy, or a read that failed, is read again on the next minute
+    // `now` too: an old copy is read again on the next minute, and a failed read once its wait is over
   }, [enabled, now, old, online, organizationId, readsItself]);
   return enabled ? remembered : null;
 }

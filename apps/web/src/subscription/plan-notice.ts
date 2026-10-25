@@ -192,6 +192,11 @@ export function rememberedPlanNotice(
   }
 }
 
+/** The wait before the notice tries a failed read again: 1 min, doubling up to 10 min. */
+export function planNoticeRetryDelayMs(failures: number): number {
+  return Math.min(60_000 * 2 ** Math.max(failures - 1, 0), 600_000);
+}
+
 /** Read again: never read, older than the few minutes, or read "in the future" (the device's clock went back). */
 export function planNoticeIsOld(
   remembered: Pick<RememberedNotice, "readAt"> | null,

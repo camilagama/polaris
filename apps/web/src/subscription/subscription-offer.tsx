@@ -110,7 +110,7 @@ function PayerFields({
 }) {
   const id = PAYER_ID;
   const field = (name: PayerField) => ({
-    "aria-describedby": `${id}-${name}-hint ${id}-${name}-error`,
+    "aria-describedby": `${id}-${name}-error ${id}-${name}-hint`,
     "aria-invalid": problems.includes(name) || undefined,
     disabled,
     id: `${id}-${name}`,
@@ -129,19 +129,19 @@ function PayerFields({
       <Field data-invalid={problems.includes("name") || undefined}>
         <FieldLabel htmlFor={`${id}-name`}>Nome</FieldLabel>
         <Input autoComplete="name" {...field("name")} />
+        {error("name")}
         <FieldDescription id={`${id}-name-hint`}>
           Como aparece no banco.
         </FieldDescription>
-        {error("name")}
       </Field>
       <Field data-invalid={problems.includes("taxId") || undefined}>
         <FieldLabel htmlFor={`${id}-taxId`}>CPF ou CNPJ</FieldLabel>
         <Input autoComplete="off" inputMode="numeric" {...field("taxId")} />
+        {error("taxId")}
         <FieldDescription id={`${id}-taxId-hint`}>
           O banco pede o documento de quem autoriza o Pix Automático. O Polaris
           não guarda o número do documento.
         </FieldDescription>
-        {error("taxId")}
       </Field>
       <Field data-invalid={problems.includes("email") || undefined}>
         <FieldLabel htmlFor={`${id}-email`}>E-mail</FieldLabel>
@@ -151,11 +151,15 @@ function PayerFields({
           type="email"
           {...field("email")}
         />
+        {error("email")}
         <FieldDescription id={`${id}-email-hint`}>
           Para os avisos da cobrança.
         </FieldDescription>
-        {error("email")}
       </Field>
+      <p className="m-0 text-muted-foreground text-support">
+        Esses dados vão para o serviço de pagamento do Pix só para criar a
+        cobrança.
+      </p>
     </fieldset>
   );
 }

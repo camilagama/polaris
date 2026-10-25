@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button, buttonVariants } from "@/ui/button";
-import { CardContent } from "@/ui/card";
+import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 
@@ -157,7 +157,10 @@ export function WaitingLine({
   );
 }
 
-/** Back from the card's page with success: the fact of the provider is on its way (AS-15). */
+/**
+ * Back from the card's page with success: the fact of the provider is on its way (AS-15). It comes above the plan's
+ * card, which stays under it with its title; "Atualizar" only after the 2 min of reading by itself.
+ */
 export function CardConfirming({
   onReread,
   waitedOut,
@@ -166,22 +169,18 @@ export function CardConfirming({
   waitedOut: boolean;
 }) {
   return (
-    <CardContent className="grid gap-2 border-t pt-(--card-spacing)">
-      <p className="m-0 font-medium" role="status">
-        Confirmando o pagamento…
-      </p>
-      <p className="m-0 text-muted-foreground text-support">
-        Se demorar, pode fechar: avisamos por e-mail quando confirmar.
-      </p>
-      {waitedOut ? (
-        <WaitingLine onReread={onReread} text="" waitedOut />
-      ) : (
-        <div>
-          <Button onClick={onReread} size="sm" type="button" variant="outline">
-            Atualizar
-          </Button>
-        </div>
-      )}
-    </CardContent>
+    <Card>
+      <CardContent className="grid gap-2">
+        <p className="m-0 font-medium" role="status">
+          Confirmando o pagamento…
+        </p>
+        <p className="m-0 text-muted-foreground text-support">
+          Se demorar, pode fechar: avisamos por e-mail quando confirmar.
+        </p>
+        {waitedOut ? (
+          <WaitingLine onReread={onReread} text="" waitedOut />
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

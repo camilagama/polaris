@@ -23,6 +23,7 @@ import {
   type Refusal,
   readRefusal,
   safeProviderUrl,
+  UNCONFIRMED_RETURN_TEXT,
   waitsForProvider,
 } from "./subscription-model";
 import { type CheckoutRequest, OfferCard } from "./subscription-offer";
@@ -193,6 +194,13 @@ function screenParts(input: {
     waiting &&
     pix === null &&
     !(waitedOut && stillFree);
+  // the offer is back with the notice: the person may have paid already, and must not pay twice
+  const unconfirmed =
+    plan !== null &&
+    returned === "concluida" &&
+    waitedOut &&
+    stillFree &&
+    pix === null;
   const showOffer =
     plan !== null &&
     !confirming &&
@@ -200,7 +208,7 @@ function screenParts(input: {
     (plan.state === "free" ||
       plan.state === "free_over_limit" ||
       (plan.state === "trial_setup" && choosing));
-  return { choosing, confirming, showOffer };
+  return { choosing, confirming, showOffer, unconfirmed };
 }
 
 function grantsPro(plan: BillingPlanView | null): boolean {
@@ -212,16 +220,14 @@ function grantsPro(plan: BillingPlanView | null): boolean {
   );
 }
 
-/** The part of the plan's card that waits for the provider: Pix to approve, the card to confirm, or the method. */
+/** The part of the plan's card that waits for the provider: Pix to approve, or the method. */
 function WaitingPart({
-  confirming,
   onChooseAgain,
   onReread,
   pix,
   waitingForMethod,
   waitedOut,
 }: {
-  confirming: boolean;
   onChooseAgain: () => void;
   onReread: () => void;
   pix: PixHandoff | null;
@@ -237,9 +243,6 @@ function WaitingPart({
         waitedOut={waitedOut}
       />
     );
-  }
-  if (confirming) {
-    return <CardConfirming onReread={onReread} waitedOut={waitedOut} />;
   }
   if (!waitingForMethod) {
     return null;
@@ -385,7 +388,7 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
     setChoosingAgain(true);
   }, []);
 
-  const { choosing, confirming, showOffer } = screenParts({
+  const { choosing, confirming, showOffer, unconfirmed } = screenParts({
     choosingAgain,
     pix,
     plan,
@@ -408,17 +411,26 @@ function SubscriptionScreen({ organizationId }: { organizationId: string }) {
           <PlanLoading />
         ) : null}
         <AbandonedNotice plan={plan} returned={returned} />
+        {confirming ? (
+          <CardConfirming onReread={reread} waitedOut={waitedOut} />
+        ) : null}
         {plan ? (
           <PlanCard headline={planHeadline(plan, now)} plan={plan}>
             <WaitingPart
-              confirming={confirming}
               onChooseAgain={chooseAgain}
               onReread={reread}
               pix={pix}
               waitedOut={waitedOut}
-              waitingForMethod={plan.state === "trial_setup" && !choosing}
+              waitingForMethod={
+                plan.state === "trial_setup" && !choosing && !confirming
+              }
             />
           </PlanCard>
+        ) : null}
+        {unconfirmed ? (
+          <Alert variant="warning">
+            <AlertDescription>{UNCONFIRMED_RETURN_TEXT}</AlertDescription>
+          </Alert>
         ) : null}
         {showOffer && plan ? (
           <OfferCard

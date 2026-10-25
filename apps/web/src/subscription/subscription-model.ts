@@ -200,30 +200,27 @@ export interface UsageRow {
   id: "goals" | "images" | "variants";
   label: string;
   limit: number | null;
+  /** The use is above the limit, on any plan (the badge and the full bar); never without a limit. */
+  over: boolean;
   used: number;
+}
+
+function usageRow(
+  id: UsageRow["id"],
+  label: string,
+  limit: number | null,
+  used: number
+): UsageRow {
+  return { id, label, limit, over: limit !== null && used > limit, used };
 }
 
 /** The three limits of the plan and what the store uses of each (the server's counts, AS-4). */
 export function usageRows(plan: BillingPlanView): UsageRow[] {
+  const { limits, usage } = plan;
   return [
-    {
-      id: "variants",
-      label: "Variantes",
-      limit: plan.limits.variants,
-      used: plan.usage.variants,
-    },
-    {
-      id: "images",
-      label: "Imagens",
-      limit: plan.limits.images,
-      used: plan.usage.images,
-    },
-    {
-      id: "goals",
-      label: "Metas em andamento",
-      limit: plan.limits.goals,
-      used: plan.usage.goals,
-    },
+    usageRow("variants", "Variantes", limits.variants, usage.variants),
+    usageRow("images", "Imagens", limits.images, usage.images),
+    usageRow("goals", "Metas em andamento", limits.goals, usage.goals),
   ];
 }
 
@@ -418,7 +415,15 @@ export function offerTerms(input: {
 export const PRO_PITCH =
   "Catálogo público no ar, vendas sem internet e mais variantes, imagens e metas.";
 
-/** Only an https address of the provider's page is opened (the contract only says it is a URL). */
+/** The hosts of the provider's pages the server hands out: Asaas's (and its subdomains) and Woovi's. */
+const PROVIDER_DOMAINS = [
+  "asaas.com",
+  "woovi.com",
+  "woovi-sandbox.com",
+  "openpix.com.br",
+];
+
+/** Only an https address on a host of the provider's is opened (the contract only says it is a URL). */
 export function safeProviderUrl(value: string | null): string | null {
   if (value === null) {
     return null;
@@ -426,7 +431,16 @@ export function safeProviderUrl(value: string | null): string | null {
   // `new URL`, not `URL.parse`, which Safari 16.4 (the floor) lacks
   try {
     const url = new URL(value);
-    return url.protocol === "https:" ? url.href : null;
+    const onProvider = PROVIDER_DOMAINS.some(
+      (domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)
+    );
+    return url.protocol === "https:" &&
+      onProvider &&
+      url.username === "" &&
+      url.password === "" &&
+      url.port === ""
+      ? url.href
+      : null;
   } catch {
     return null;
   }
@@ -501,6 +515,10 @@ export function abandonedCheckoutText(
     ? "O pagamento não foi feito e nada foi cobrado. Seu teste grátis continua disponível."
     : "O pagamento não foi feito e nada foi cobrado.";
 }
+
+/** A Free store still, 2 min after the return of a payment done: the fact did not come, and the offer is back. */
+export const UNCONFIRMED_RETURN_TEXT =
+  "Ainda não recebemos a confirmação do pagamento. Se você concluiu na página do Asaas, não assine de novo: avisamos por e-mail quando confirmar. Se desistiu lá, pode começar de novo aqui.";
 
 // ---- the refusals -----------------------------------------------------------------------------------------------
 
@@ -587,14 +605,14 @@ export function checkoutRefusal(error: unknown): Refusal {
       return {
         reread: false,
         retry: true,
-        text: "O pagamento está fora do ar agora. Nada foi cobrado. Tente de novo em alguns minutos.",
+        text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
       };
     case "billing_not_configured":
     case "billing_self_service_off":
       return {
         reread: false,
         retry: false,
-        text: "A assinatura não está disponível agora.",
+        text: "A assinatura pelo app não está disponível agora. Nada foi cobrado. Tente mais tarde.",
       };
     case "billing_manage_required":
       return {
@@ -606,13 +624,13 @@ export function checkoutRefusal(error: unknown): Refusal {
       return {
         reread: false,
         retry: true,
-        text: "Outro pedido da loja está em andamento. Aguarde um instante e tente de novo.",
+        text: "Já tem um pedido desta loja em andamento. Espere alguns segundos e tente de novo.",
       };
     case "billing_command_rate_limited":
       return {
         reread: false,
         retry: true,
-        text: "Foram muitos pedidos seguidos. Aguarde um minuto e tente de novo.",
+        text: "Muitas tentativas seguidas. Espere um minuto e tente de novo.",
       };
     default:
       break;
@@ -621,7 +639,7 @@ export function checkoutRefusal(error: unknown): Refusal {
     return {
       reread: false,
       retry: true,
-      text: "O pagamento está fora do ar agora. Nada foi cobrado. Tente de novo em alguns minutos.",
+      text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
     };
   }
   return {

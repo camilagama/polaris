@@ -9,6 +9,7 @@ import {
   PLAN_NOTICE_FOR_MS,
   PLAN_NOTICE_KEY,
   planNoticeIsOld,
+  planNoticeRetryDelayMs,
   rememberedPlanNotice,
   rememberPlanNotice,
   untilText,
@@ -26,6 +27,8 @@ import {
   planHeadline,
   readRefusal,
   refundPendingNotice,
+  safeProviderUrl,
+  usageRows,
   waitsForProvider,
 } from "./subscription-model";
 
@@ -630,28 +633,28 @@ describe("checkoutRefusal", () => {
       "billing_provider_unavailable",
       false,
       true,
-      "O pagamento está fora do ar agora. Nada foi cobrado. Tente de novo em alguns minutos.",
+      "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
     ],
     [
       "SERVICE_UNAVAILABLE",
       "billing_not_configured",
       false,
       false,
-      "A assinatura não está disponível agora.",
+      "A assinatura pelo app não está disponível agora. Nada foi cobrado. Tente mais tarde.",
     ],
     [
       "CONFLICT",
       "command_in_progress",
       false,
       true,
-      "Outro pedido da loja está em andamento. Aguarde um instante e tente de novo.",
+      "Já tem um pedido desta loja em andamento. Espere alguns segundos e tente de novo.",
     ],
     [
       "TOO_MANY_REQUESTS",
       "billing_command_rate_limited",
       false,
       true,
-      "Foram muitos pedidos seguidos. Aguarde um minuto e tente de novo.",
+      "Muitas tentativas seguidas. Espere um minuto e tente de novo.",
     ],
   ];
 
@@ -661,6 +664,14 @@ describe("checkoutRefusal", () => {
       retry,
       text,
     });
+  });
+
+  it("says the same for billing_self_service_off as for billing_not_configured", () => {
+    expect(
+      checkoutRefusal(rpcError("NOT_FOUND", "billing_self_service_off"))
+    ).toEqual(
+      checkoutRefusal(rpcError("SERVICE_UNAVAILABLE", "billing_not_configured"))
+    );
   });
 
   it("gives each reason its own text, except the shared ones", () => {
@@ -842,5 +853,83 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
     clearPlanNotice(store);
     expect(store.values.has(PLAN_NOTICE_KEY)).toBe(false);
     expect(rememberedPlanNotice("loja-a", store)).toBeNull();
+  });
+});
+
+describe("usageRows", () => {
+  const overOf = (view: BillingPlanView) =>
+    Object.fromEntries(usageRows(view).map((row) => [row.id, row.over]));
+
+  it("flags a use above the limit on any plan, the Pro included", () => {
+    const pro = plan({
+      limits: { goals: 3, images: 5000, variants: 2000 },
+      state: "active",
+      usage: { goals: 4, images: 5000, variants: 12 },
+    });
+    // at the limit is not above it
+    expect(overOf(pro)).toEqual({
+      goals: true,
+      images: false,
+      variants: false,
+    });
+    expect(
+      overOf(plan({ usage: { goals: 2, images: 12, variants: 62 } }))
+    ).toEqual({ goals: true, images: false, variants: true });
+  });
+
+  it("never flags a measure without a limit, and keeps its number", () => {
+    const view = plan({
+      limits: { goals: null, images: 30, variants: null },
+      usage: { goals: 9, images: 12, variants: 700 },
+    });
+    expect(overOf(view)).toEqual({
+      goals: false,
+      images: false,
+      variants: false,
+    });
+    expect(usageRows(view).find((row) => row.id === "goals")).toMatchObject({
+      limit: null,
+      used: 9,
+    });
+  });
+});
+
+describe("safeProviderUrl", () => {
+  it.each([
+    "https://asaas.com/i/abc",
+    "https://www.asaas.com/c/abc",
+    "https://sandbox.asaas.com/i/abc",
+    "https://app.woovi-sandbox.com/pay/e2e",
+    "https://woovi.com/pay/x",
+    "https://openpix.com.br/pay/x",
+  ])("opens %s", (url) => {
+    expect(safeProviderUrl(url)).toBe(url);
+  });
+
+  it.each([
+    "http://asaas.com/i/abc",
+    "https://evil.example/i/abc",
+    "https://asaas.com.evil.example/i/abc",
+    "https://evilasaas.com/i/abc",
+    "https://asaas.com@evil.example/i",
+    "https://user:pass@asaas.com/i",
+    "https://asaas.com:8443/i",
+    "javascript:alert(1)",
+    "not a url",
+    "",
+  ])("refuses %s", (url) => {
+    expect(safeProviderUrl(url)).toBeNull();
+  });
+
+  it("refuses no address", () => {
+    expect(safeProviderUrl(null)).toBeNull();
+  });
+});
+
+describe("planNoticeRetryDelayMs", () => {
+  it("doubles from 1 min and stops at 10 min", () => {
+    expect(
+      [1, 2, 3, 4, 5, 6, 20].map((failures) => planNoticeRetryDelayMs(failures))
+    ).toEqual([60_000, 120_000, 240_000, 480_000, 600_000, 600_000, 600_000]);
   });
 });

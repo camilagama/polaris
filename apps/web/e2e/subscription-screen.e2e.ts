@@ -78,6 +78,8 @@ const plan = (overrides: Plan = {}): Plan => ({
 const ACTIVE = plan({
   accessEndsAt: "2026-11-24T03:00:00.000Z",
   cycleMonths: 1,
+  // the Pro's limits, as the catalog gives them (not the Free's, which would put 2 of 1 on a Pro store)
+  limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
   nextCharge: { amount: "24.90", on: "2026-11-23" },
   state: "active",
@@ -219,9 +221,11 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   await expect(page.locator("main footer")).toContainText(
     "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta. Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00."
   );
-  await expect(
-    page.locator("main footer").getByRole("link", { name: "Termos de Uso" })
-  ).toBeVisible();
+  // the Terms and the Privacy Policy are the shell's, once on the screen
+  await expect(page.locator("main footer").getByRole("link")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
+    1
+  );
 });
 
 test("Pix Automático: 'Começar o teste grátis' sem número de dias, nome e e-mail da conta, CPF com teclado numérico e sem telefone (AS-12 emenda, AS-13)", async ({
@@ -248,6 +252,11 @@ test("Pix Automático: 'Começar o teste grátis' sem número de dias, nome e e-
     "numeric"
   );
   await expect(page.getByLabel(PHONE)).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "Esses dados vão para o serviço de pagamento do Pix só para criar a cobrança."
+    )
+  ).toBeVisible();
 });
 
 test("sem o teste disponível, 'Assinar o Pro' e 'Seu teste grátis já foi usado.' (AS-12)", async ({
@@ -353,6 +362,29 @@ test("Pro ativo e renovação cancelada: como paga, o ciclo, a próxima cobranç
   ).toBeVisible();
 });
 
+test("uso acima do limite, também no Pro: selo e barra cheia; sem limite, só o número", async ({
+  page,
+}) => {
+  await openScreen(page, {
+    plans: [
+      {
+        ...ACTIVE,
+        limits: { goals: 3, images: null, variants: 2000 },
+        usage: { goals: 4, images: 700, variants: 38 },
+      },
+    ],
+  });
+  await expect(planTitle(page)).toHaveText("Plano Pro");
+  await expect(
+    page.getByRole("progressbar", {
+      name: "Metas em andamento: 4 de 3, acima do limite",
+    })
+  ).toBeVisible();
+  await expect(page.getByText("acima do limite")).toHaveCount(1);
+  await expect(page.getByText("sem limite")).toHaveCount(0);
+  await expect(page.getByRole("progressbar")).toHaveCount(2);
+});
+
 test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; depois, o suporte, sem tentar de novo (E-RP)", async ({
   page,
 }) => {
@@ -450,6 +482,14 @@ test("volta do cartão: 'Confirmando o pagamento…', relê a cada 5 s e mostra 
   });
   await expect(page.getByText("Confirmando o pagamento…")).toBeVisible();
   await expect(page.getByRole("radiogroup")).toHaveCount(0);
+  // the confirmation comes above the plan's card, which keeps its title; no "Atualizar" while it reads by itself
+  const confirming = await page
+    .getByText("Confirmando o pagamento…")
+    .boundingBox();
+  const planCard = await planTitle(page).boundingBox();
+  expect(confirming?.y).toBeLessThan(planCard?.y ?? 0);
+  await expect(planTitle(page)).toHaveText("Falta autorizar o pagamento");
+  await expect(page.getByRole("button", { name: "Atualizar" })).toHaveCount(0);
   await expect(planTitle(page)).toHaveText("Pro, em teste", {
     timeout: 12_000,
   });
@@ -495,6 +535,16 @@ test("a volta 'concluida' numa loja que segue Free: depois dos 2 minutos a ofert
     page.getByRole("button", { name: "Começar os 7 dias grátis" })
   ).toBeVisible();
   await expect(page.getByText("Confirmando o pagamento…")).toHaveCount(0);
+  // the offer is not alone: the person may have paid, and is told not to pay twice
+  const unconfirmed = page.getByText(
+    "Ainda não recebemos a confirmação do pagamento. Se você concluiu na página do Asaas, não assine de novo: avisamos por e-mail quando confirmar. Se desistiu lá, pode começar de novo aqui."
+  );
+  await expect(unconfirmed).toBeVisible();
+  const notice = await unconfirmed.boundingBox();
+  const offer = await page
+    .getByRole("radiogroup", { name: "Ciclo" })
+    .boundingBox();
+  expect(notice?.y).toBeLessThan(offer?.y ?? 0);
   const { reads } = calls;
   await page.clock.runFor(30_000);
   expect(calls.reads).toBe(reads);
@@ -563,6 +613,14 @@ test("Pix: documento inválido não sai; válido manda só os dígitos, mostra o
   await page.getByRole("button", { name: "Começar o teste grátis" }).click();
   await expect(page.getByText("Informe um CPF ou CNPJ válido.")).toBeVisible();
   await expect(page.getByLabel("CPF ou CNPJ")).toBeFocused();
+  // the error right under the field, the help after it
+  const taxError = await page
+    .getByText("Informe um CPF ou CNPJ válido.")
+    .boundingBox();
+  const taxHelp = await page
+    .getByText("O banco pede o documento")
+    .boundingBox();
+  expect(taxError?.y).toBeLessThan(taxHelp?.y ?? 0);
   expect(calls.checkouts).toHaveLength(0);
 
   await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
@@ -653,25 +711,25 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "billing_provider_unavailable" },
-      "O pagamento está fora do ar agora. Nada foi cobrado.",
+      "O serviço de pagamento não respondeu. Nada foi cobrado.",
     ],
     [
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "billing_not_configured" },
-      "A assinatura não está disponível agora.",
+      "A assinatura pelo app não está disponível agora. Nada foi cobrado. Tente mais tarde.",
     ],
     [
       "CONFLICT",
       409,
       { reason: "command_in_progress" },
-      "Outro pedido da loja está em andamento.",
+      "Já tem um pedido desta loja em andamento. Espere alguns segundos e tente de novo.",
     ],
     [
       "CONFLICT",
       409,
       { reason: "billing_command_rate_limited" },
-      "Foram muitos pedidos seguidos.",
+      "Muitas tentativas seguidas. Espere um minuto e tente de novo.",
     ],
   ];
   let index = 0;
@@ -864,6 +922,27 @@ test("carência: o aviso do topo em toda tela do dono, com os dias contados e o 
   await expect(
     page.getByRole("link", { name: "Abrir Assinatura" })
   ).toHaveCount(0);
+});
+
+test("carência: a leitura que falha é tentada de novo cada vez mais devagar, não a cada minuto", async ({
+  page,
+}) => {
+  await page.clock.install({ time: NOW });
+  const calls = await openScreen(page, {
+    path: "/expenses",
+    plans: [
+      (route) => route.fulfill(refusal("INTERNAL_SERVER_ERROR", 500, {})),
+    ],
+  });
+  await expect.poll(() => calls.reads).toBe(1);
+  for (let minute = 0; minute < 12; minute += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: the minutes pass one after the other
+    await page.clock.runFor(60_000);
+  }
+  // each wait doubles (1, 2, 4, 8 min): a read per minute would be 13
+  expect(calls.reads).toBeGreaterThan(2);
+  expect(calls.reads).toBeLessThanOrEqual(6);
+  await expect(page.locator("[data-grace-notice]")).toHaveCount(0);
 });
 
 test("o aviso de carência não aparece para quem não é dono nem com a flag desligada", async ({
