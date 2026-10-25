@@ -1439,14 +1439,39 @@ test.describe("conexão com prova", () => {
     expect(server.creates).toBe(1); // read again, never sent again
   });
 
-  test("Perfis: a leitura cortada uma vez, com /health respondendo, mostra o erro com Tentar novamente", async ({
+  test("Perfis: a leitura cortada uma vez repete sozinha e abre sem o erro", async ({
     page,
   }) => {
     const server = await serveProfiles(page);
-    let cut = true;
+    let cuts = 0;
     await page.route("**/rpc/paymentProfile/list", async (route) => {
-      if (cut) {
-        cut = false;
+      if (cuts < 1) {
+        cuts += 1;
+        await route.abort("connectionreset");
+        return;
+      }
+      await route.fallback();
+    });
+    await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
+    await start(page, "Perfis de pagamento");
+    await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente" })
+    ).toHaveCount(0);
+    expect(cuts).toBe(1);
+    expect(server.lists).toBeGreaterThanOrEqual(1);
+  });
+
+  test("Perfis: a leitura cortada duas vezes, com /health respondendo, mostra o erro com Tentar novamente", async ({
+    page,
+  }) => {
+    const server = await serveProfiles(page);
+    let cuts = 0;
+    await page.route("**/rpc/paymentProfile/list", async (route) => {
+      if (cuts < 2) {
+        cuts += 1;
         await route.abort("connectionreset");
         return;
       }
