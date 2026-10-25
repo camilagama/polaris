@@ -3,7 +3,7 @@
 import {
   type MotionValue,
   motion,
-  useReducedMotion,
+  useReducedMotionConfig as useReducedMotion,
   useSpring,
 } from "motion/react";
 import { memo, type RefObject, useLayoutEffect, useMemo, useRef } from "react";

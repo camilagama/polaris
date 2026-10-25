@@ -5,7 +5,7 @@ import {
   animate as animateValue,
   type MotionValue,
   motion,
-  useReducedMotion,
+  useReducedMotionConfig as useReducedMotion,
   useSpring,
 } from "motion/react";
 import {

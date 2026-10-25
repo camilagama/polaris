@@ -489,13 +489,17 @@ for (const theme of THEMES) {
   });
 }
 
-test("o gráfico entra com a animação do bloco e para quando a página pede sem movimento", async ({
+test("o gráfico entra com a animação do bloco no nível full e para quando a página pede sem movimento", async ({
   page,
 }) => {
-  // without a preference the block reveals the series behind a moving clip: the group that holds the clip is there
+  // without a preference, at the full level, the block reveals the series behind a moving clip: the group that holds
+  // the clip is there; on a phone (the Pixel 5 project, `essential`) the chart is drawn finished (motion-level.e2e.ts)
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
-  await expect(week.locator("svg g[clip-path]")).toHaveCount(1);
+  const full =
+    (await page.evaluate(() => document.documentElement.dataset.motion)) ===
+    "full";
+  await expect(week.locator("svg g[clip-path]")).toHaveCount(full ? 1 : 0);
 
   // with `reduce` the chart appears finished: no reveal, the y axis does not tween, the tooltip jumps
   const quiet = await page.context().browser()?.newContext({

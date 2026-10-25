@@ -4,7 +4,7 @@ import {
   AnimatePresence,
   type MotionValue,
   motion,
-  useReducedMotion,
+  useReducedMotionConfig as useReducedMotion,
   useSpring,
 } from "motion/react";
 import type { ComponentProps, RefObject } from "react";

@@ -49,7 +49,7 @@ Roda o roteiro do Gate 5 em um iPhone e um Android **físicos** do BrowserStack 
 
     scripts/gate5-real-devices.sh              # iPhone e Android, em sequência
     GATE5_PLATFORMS=android scripts/gate5-real-devices.sh   # só um aparelho (ios ou android)
-    GATE5_FLOWS=2 scripts/gate5-real-devices.sh             # só um fluxo (1, 2 ou 3)
+    GATE5_FLOWS=2 scripts/gate5-real-devices.sh             # só um fluxo (1 a 4)
 
 Pré-requisitos: `bun install --frozen-lockfile`, `openssl` no PATH e as credenciais `BROWSERSTACK_USERNAME` e `BROWSERSTACK_ACCESS_KEY` no ambiente ou em `~/.secrets/browserstack.env` (o script exige modo 600 ou 400 e lê só essas duas variáveis, sem executar o arquivo; outro caminho em `BROWSERSTACK_ENV_FILE`). As credenciais nunca vão para o repositório, o relatório ou o log. Aparelhos padrão: iPhone 18 Pro Max (iOS 27, Safari) e Google Pixel 11 Pro (Android 17, Chrome); troque com `GATE5_IOS_DEVICE`, `GATE5_IOS_VERSION`, `GATE5_ANDROID_DEVICE` e `GATE5_ANDROID_VERSION` (nomes como na lista da API do BrowserStack, `GET https://api.browserstack.com/automate/browsers.json`, filtrando `device` e navegador `iphone` ou `android`). Use só dados sintéticos: os laboratórios têm servidor simulado dentro da página e não alcançam API, Neon nem pagamentos.
 
@@ -58,7 +58,7 @@ Pré-requisitos: `bun install --frozen-lockfile`, `openssl` no PATH e as credenc
 1. Constrói o laboratório offline (`build:offline-poc`) e o shell com service worker (`vite.pwa.config.ts`, modo `pwa-e2e`).
 2. Serve os dois em **HTTPS** com certificado autoassinado e descartável (diretório temporário, apagado ao final), em `https://bs-local.com:4443` (laboratório) e `:4444` (shell).
 3. Abre o BrowserStack Local (identificador aleatório por execução, `onlyAutomate` e `only` restrito às duas portas da suíte, para o aparelho remoto não alcançar o resto do `localhost`; o binário exige a chave na linha de comando, então ela fica visível em `ps` enquanto o túnel está de pé: rode numa máquina sem outros usuários). O script só roda com o binário em `~/.browserstack/BrowserStackLocal` (ou `BROWSERSTACK_LOCAL_BINARY`) cujo sha256 bata com o fixado no próprio script (versão 8.9, linux-arm64) e o repassa à biblioteca (`binarypath`), que então não baixa outro. O hash fixado é o do binário que a biblioteca baixou na primeira vez; em outra plataforma ou versão, baixe do site oficial do BrowserStack e atualize o hash no mesmo commit.
-4. Abre uma sessão WebDriver no aparelho (iPhone com Safari, Android com Chrome) e roda os três fluxos abaixo (o fluxo 1 apaga os dados do site no começo, como num aparelho recém-instalado, esperando o `deleteDatabase` terminar; o fluxo 2 não apaga) e um passo final que devolve a rede do aparelho ao normal.
+4. Abre uma sessão WebDriver no aparelho (iPhone com Safari, Android com Chrome) e roda os quatro fluxos abaixo (o fluxo 1 apaga os dados do site no começo, como num aparelho recém-instalado, esperando o `deleteDatabase` terminar; o fluxo 2 não apaga) e um passo final que devolve a rede do aparelho ao normal.
 5. Grava `apps/web/test-results/real-devices/<instante>/report.json` e `report.md`, marca a sessão no BrowserStack como passou ou falhou, encerra a sessão, o servidor e o túnel e sai com código diferente de zero se algum passo falhar. Em Ctrl+C ou SIGTERM a sessão do aparelho (com a rede religada), o servidor e o túnel também são encerrados, mas nenhum relatório é gravado. Valores inválidos em `GATE5_PLATFORMS` ou `GATE5_FLOWS` abortam antes de construir o app.
 
 Fluxos (cada passo falho pula os seguintes do mesmo fluxo):
@@ -68,6 +68,7 @@ Fluxos (cada passo falho pula os seguintes do mesmo fluxo):
 | 1. Clientes | abrir o app em contexto seguro com OPFS, IndexedDB e service worker e pedir `storage.persist()`; iniciar o runtime e carregar dados (cliente cadastrado com rede é confirmado); **derrubar a rede do aparelho** (perfil `no-network`) e conferir de dentro da página que ela caiu; registrar um cliente sem rede (fica "Aguardando envio"); religar a rede e recarregar a página (a fila sobrevive ao reinício); voltar online, sincronizar e conferir o selo e a edição liberada |
 | 2. Venda | iniciar a tela de venda e esperar o carregamento; sem rede, guardar uma venda de 2 itens no aparelho; conferir que o estoque do aparelho desce de 5 para 3; religar a rede, sincronizar e ver o servidor simulado confirmar uma venda; conferir que o botão volta a ser "Confirmar venda" |
 | 3. Shell | instalar o service worker e deixá-lo controlar a página; sem rede, recarregar e abrir uma rota interna a partir do shell em cache; religar a rede |
+| 4. Movimento no celular (t386) | abrir a galeria do shell e conferir `pointer: coarse` e `data-motion="essential"` ([ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md), Níveis de movimento); o gráfico de área aparece pronto (sem o clip da revelação e com o mesmo desenho 1,5 s depois); a barra de filtros não pediu a camada animada (`filter-bar-motion`) |
 
 ### Como ler o relatório
 

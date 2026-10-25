@@ -49,7 +49,7 @@ const PRESET_ITEMS = PRESETS.map((item) => ({
 
 /* The segmented strip of the tabs (`ui/tabs.tsx`): the one that is chosen has the card background. */
 const STRIP_BUTTON =
-  "touch-hit focus-ring relative inline-flex h-full flex-1 items-center justify-center whitespace-nowrap rounded-md border border-transparent px-2.5 font-medium text-muted-foreground text-sm transition-[background-color,color,box-shadow] hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:bg-secondary";
+  "touch-hit focus-ring relative inline-flex h-full flex-1 items-center justify-center whitespace-nowrap rounded-md border border-transparent px-2.5 font-medium text-muted-foreground text-sm motion-full:transition-[background-color,color,box-shadow] hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:bg-secondary";
 
 interface StripButtonProps {
   onChoose: (preset: PeriodPreset) => void;

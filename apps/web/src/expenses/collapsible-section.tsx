@@ -33,7 +33,7 @@ export function CollapsibleSection({
       <Collapsible onOpenChange={setOpen} open={open}>
         {/* 6 px around the button: its 3 px outline (2 px away) stays inside the card, which clips what overflows */}
         <h2 className="p-1.5 text-section" id={titleId}>
-          <CollapsibleTrigger className="focus-ring flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-[calc(var(--card-spacing)-0.375rem)] py-1.5 text-left transition-colors hover:bg-accent/60">
+          <CollapsibleTrigger className="focus-ring flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-[calc(var(--card-spacing)-0.375rem)] py-1.5 text-left motion-full:transition-colors hover:bg-accent/60">
             {title}
             <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
           </CollapsibleTrigger>

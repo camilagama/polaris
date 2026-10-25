@@ -522,7 +522,7 @@ for (const viewport of VIEWPORTS) {
     });
 
     for (const reducedMotion of ["no-preference", "reduce"] as const) {
-      test(`o popover se move como o do Base UI e para com prefers-reduced-motion (${reducedMotion})`, async ({
+      test(`o popover se move como o do Base UI no nível full e para no celular e com prefers-reduced-motion (${reducedMotion})`, async ({
         page,
       }) => {
         await page.emulateMedia({ reducedMotion });
@@ -532,7 +532,12 @@ for (const viewport of VIEWPORTS) {
           (element) => getComputedStyle(element).animationDuration
         );
         const seconds = Number.parseFloat(duration);
-        if (reducedMotion === "reduce") {
+        // on a phone (the Pixel 5 project at 360 px, `essential`) the popover has no animation at all
+        const full =
+          (await page.evaluate(
+            () => document.documentElement.dataset.motion
+          )) === "full";
+        if (reducedMotion === "reduce" || !full) {
           expect(seconds).toBeLessThan(0.001);
         } else {
           expect(seconds).toBeCloseTo(0.1, 3);

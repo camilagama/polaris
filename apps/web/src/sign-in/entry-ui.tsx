@@ -173,7 +173,7 @@ export function EntryScreen({
         id="conteudo"
       >
         <div className={cn("mx-auto w-full min-w-0", ENTRY_WIDTH[width])}>
-          <Card className="animate-rise">
+          <Card className="motion-full:animate-rise">
             <CardContent className="flex flex-col gap-4 py-1">
               {brandHref ? (
                 <a
@@ -233,7 +233,7 @@ export function EntryAlert({
   }, [focus]);
   return (
     <Alert
-      className="focus-ring animate-rise"
+      className="focus-ring motion-full:animate-rise"
       id={id}
       ref={ref}
       tabIndex={-1}
@@ -253,7 +253,7 @@ export function EntryNotice({ children }: { children: ReactNode }) {
   }, []);
   return (
     <Alert
-      className="focus-ring animate-rise bg-muted/60 text-foreground"
+      className="focus-ring motion-full:animate-rise bg-muted/60 text-foreground"
       ref={ref}
       tabIndex={-1}
     >
@@ -273,7 +273,7 @@ export function EntrySuccess({ children }: { children: ReactNode }) {
   }, []);
   return (
     <Alert
-      className="focus-ring animate-rise border-foreground/15 bg-card text-foreground"
+      className="focus-ring motion-full:animate-rise border-foreground/15 bg-card text-foreground"
       ref={ref}
       tabIndex={-1}
     >
@@ -596,12 +596,12 @@ export function Progressive({
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)] duration-[220ms] ease-(--ease-soft) motion-reduce:transition-none",
+        "grid grid-cols-[minmax(0,1fr)] motion-full:duration-[220ms] ease-(--ease-soft) motion-reduce:transition-none",
         // visible at once when it opens (so Enter can put the focus on the password in the same task); hidden
         // only at the end of the closing
         open
-          ? "visible grid-rows-[1fr] opacity-100 transition-[grid-template-rows,opacity,margin]"
-          : "invisible -mb-4 grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility,margin]"
+          ? "visible grid-rows-[1fr] opacity-100 motion-full:transition-[grid-template-rows,opacity,margin]"
+          : "invisible -mb-4 grid-rows-[0fr] opacity-0 motion-full:transition-[grid-template-rows,opacity,visibility,margin]"
       )}
       data-open={open || undefined}
       data-slot="progressive"

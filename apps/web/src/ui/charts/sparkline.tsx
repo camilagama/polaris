@@ -1,6 +1,7 @@
 /* Polaris adaptation of the Bklit UI sparkline (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
-import { useReducedMotion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import { useMemo } from "react";
+import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { AreaSparkline } from "../bklit/charts/sparkline";
 import { type ChartColor, drawn } from "./chart-data";
@@ -21,7 +22,8 @@ export interface SparklineProps {
  * The miniature of a series inside a card with a number: Bklit UI's `AreaSparkline` (its entrance, a fill that fades to
  * nothing, a dot on the last value), with no axis, no grid, no focus and no pointer reading. It is `aria-hidden`: the
  * number beside it is the information, and a screen reader hears that, not a drawing it cannot read.
- * `prefers-reduced-motion: reduce` turns the entrance and the morph off.
+ * Below the `full` level of motion (a phone, `prefers-reduced-motion`) the entrance and the morph are off: it is drawn
+ * finished on the first frame.
  */
 export function Sparkline({
   className,
@@ -30,7 +32,7 @@ export function Sparkline({
   values,
   width,
 }: SparklineProps) {
-  const reduced = useReducedMotion() === true;
+  const still = useMotionLevel() !== "full";
   // the data follow the content of the values, not the identity of the array a screen builds on each render
   const signature = values.join();
   const data = useMemo(
@@ -46,17 +48,19 @@ export function Sparkline({
       className={cn("block w-full", className)}
       style={{ height }}
     >
-      <AreaSparkline
-        animate={!reduced}
-        {...(reduced ? { dataTransitionDuration: 0 } : {})}
-        {...(color ? { color } : {})}
-        data={data}
-        dataKey="value"
-        endDot
-        height={height}
-        interactive={false}
-        width={width}
-      />
+      <MotionConfig reducedMotion={still ? "always" : "user"}>
+        <AreaSparkline
+          animate={!still}
+          {...(still ? { dataTransitionDuration: 0 } : {})}
+          {...(color ? { color } : {})}
+          data={data}
+          dataKey="value"
+          endDot
+          height={height}
+          interactive={false}
+          width={width}
+        />
+      </MotionConfig>
     </span>
   );
 }

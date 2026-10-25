@@ -1,5 +1,5 @@
 /* Polaris adaptation of the Bklit UI area chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
-import { useReducedMotion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import {
   type ChangeEvent,
   type MutableRefObject,
@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { Area, AreaChart as BklitAreaChart } from "../bklit/charts/area-chart";
 import { Grid } from "../bklit/charts/grid";
@@ -85,23 +86,28 @@ export interface AreaChartProps {
 }
 
 /**
- * What `prefers-reduced-motion: reduce` asks of the blocks: the reveal, the tween of the y domain, the morph of the
- * path and the spring of the tooltip off (the chart appears finished and the cursor jumps); without it, the blocks'
- * own defaults.
+ * What a phone (`essential`) and `prefers-reduced-motion` (`none`) ask of the blocks (src/lib/motion-level.ts): the
+ * reveal, the tween of the y domain, the morph of the path and the spring of the tooltip off (the chart appears
+ * finished and the cursor jumps from point to point with the finger); at the `full` level, the blocks' own defaults.
+ * The props turn off what does not read the `MotionConfig` (the clip of the reveal animates a width, which
+ * `reducedMotion="always"` leaves running); the `MotionConfig` of `Plot` reaches what the blocks decide inside
+ * (adaptation 9 of BKLIT-UI.md).
  */
 function useMotion() {
-  const reduced = useReducedMotion() === true;
-  return reduced
+  const still = useMotionLevel() !== "full";
+  return still
     ? ({
         animate: false,
         animationDuration: 0,
         damping: 0,
+        reducedMotion: "always",
         yDomainTween: false,
       } as const)
     : ({
         animate: true,
         animationDuration: 1100,
         damping: 20,
+        reducedMotion: "user",
         yDomainTween: true,
       } as const);
 }
@@ -183,43 +189,45 @@ function Plot({
     [color, formatValue, name, points, readingNote, secondary, secondaryColor]
   );
   return (
-    <BklitAreaChart
-      animationDuration={motion.animationDuration}
-      aspectRatio="auto"
-      data={points}
-      loadingLabel={loadingLabel}
-      margin={margin}
-      status={loading ? "loading" : "ready"}
-      style={style}
-      yDomainTween={motion.yDomainTween}
-    >
-      <Grid numTicksRows={Y_LINES} />
-      <DateAxis labels={labels} />
-      <YAxis formatValue={axisText} numTicks={Y_LINES} />
-      <Area
-        animate={motion.animate}
-        dataKey="drawn"
-        showMarkers={points.length === 1}
-        {...(color ? { fill: color, stroke: color } : {})}
-      />
-      {secondary ? (
+    <MotionConfig reducedMotion={motion.reducedMotion}>
+      <BklitAreaChart
+        animationDuration={motion.animationDuration}
+        aspectRatio="auto"
+        data={points}
+        loadingLabel={loadingLabel}
+        margin={margin}
+        status={loading ? "loading" : "ready"}
+        style={style}
+        yDomainTween={motion.yDomainTween}
+      >
+        <Grid numTicksRows={Y_LINES} />
+        <DateAxis labels={labels} />
+        <YAxis formatValue={axisText} numTicks={Y_LINES} />
         <Area
           animate={motion.animate}
-          dashArray={DASH}
-          dashFromIndex={0}
-          dataKey="drawnSecondary"
-          fill={secondaryColor}
-          fillOpacity={0}
-          stroke={secondaryColor}
+          dataKey="drawn"
+          showMarkers={points.length === 1}
+          {...(color ? { fill: color, stroke: color } : {})}
         />
-      ) : null}
-      <ChartTooltip
-        content={content}
-        damping={motion.damping}
-        dateLabels={labels}
-      />
-      <ChartBridge bestIndex={best} handle={handle} />
-    </BklitAreaChart>
+        {secondary ? (
+          <Area
+            animate={motion.animate}
+            dashArray={DASH}
+            dashFromIndex={0}
+            dataKey="drawnSecondary"
+            fill={secondaryColor}
+            fillOpacity={0}
+            stroke={secondaryColor}
+          />
+        ) : null}
+        <ChartTooltip
+          content={content}
+          damping={motion.damping}
+          dateLabels={labels}
+        />
+        <ChartBridge bestIndex={best} handle={handle} />
+      </BklitAreaChart>
+    </MotionConfig>
   );
 }
 
@@ -228,7 +236,7 @@ function Plot({
  * their own animation (reveal, y-domain tween, morph of the path when the data changes, spring of the cursor and of the
  * tooltip), and what the blocks do not bring: the colors by the tokens (`theme.css`), the dates and the money in pt-BR, a
  * name and a summary for a screen reader (`role="img"`), a native range input that walks through the points with the
- * arrows, the reading line above the drawing and `prefers-reduced-motion`.
+ * arrows, the reading line above the drawing and the levels of motion (none of it on a phone).
  *
  * The day in focus is read in a line of text above the drawing (the last one, until the arrows move it); the pointer
  * and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.

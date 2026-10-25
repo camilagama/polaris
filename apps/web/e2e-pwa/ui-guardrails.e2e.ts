@@ -146,6 +146,14 @@ for (const screen of SCREENS) {
   });
 }
 
+/** A desktop window of 360 px with a mouse: the panel of the phone and the `full` level of motion (t386). */
+const NARROW_MOUSE = {
+  colorScheme: "light",
+  hasTouch: false,
+  isMobile: false,
+  viewport: { height: 740, width: 360 },
+} as const;
+
 // ---- control cases: each check fails on the fault it is for -----------------------------------------------
 
 test.describe("controle: cada verificação pega a falha", () => {
@@ -395,10 +403,16 @@ test.describe("controle: cada verificação pega a falha", () => {
     ]);
   });
 
-  test("5. sem reduce, o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({
-    page,
+  test("5. sem reduce e no nível full (janela de 360 px com mouse), o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({
+    browser,
   }) => {
+    // with touch at 360 px the level is `essential` and these do not animate (motion-level.e2e.ts)
+    const context = await browser.newContext(NARROW_MOUSE);
+    const page = await context.newPage();
     await openScreen(gallery, page);
+    expect(
+      await page.evaluate(() => document.documentElement.dataset.motion)
+    ).toBe("full");
     // a panel that mounts open does not animate on the first paint: the recorder, installed before the page, saw none
     await expect(page.getByText("Condomínio, todo dia 10.")).toBeVisible();
     expect(
@@ -456,12 +470,20 @@ test.describe("controle: cada verificação pega a falha", () => {
           record.name === "collapsible-down" && record.duration === 200
       )
     ).toBe(true);
+    await context.close();
   });
 
-  test("5. sem reduce, o painel do celular sai animado (200 ms) por Esc, véu e Fechar, reabrir na saída fica aberto e a guarda o fecha se o animationend não vem", async ({
-    page,
+  test("5. sem reduce e no nível full (janela de 360 px com mouse), o painel do celular sai animado (200 ms) por Esc, véu e Fechar, reabrir na saída fica aberto e a guarda o fecha se o animationend não vem", async ({
+    browser,
   }) => {
+    // with touch at 360 px the level is `essential` and the panel closes at once (motion-level.e2e.ts): the animated
+    // exit is the narrow desktop window's, the same panel with a mouse
+    const context = await browser.newContext(NARROW_MOUSE);
+    const page = await context.newPage();
     await openScreen(homeSold, page);
+    expect(
+      await page.evaluate(() => document.documentElement.dataset.motion)
+    ).toBe("full");
     const more = page.getByRole("button", { exact: true, name: "Mais" });
     const panel = page.getByRole("dialog", { name: "Mais" });
     const close = () => page.keyboard.press("Escape");
@@ -525,6 +547,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     await close();
     await expect(panel).toBeHidden({ timeout: 1500 });
     await expect(more).toBeFocused();
+    await context.close();
   });
 
   test("5. com reduce, o painel do celular fecha de uma vez, sem animação de saída", async ({

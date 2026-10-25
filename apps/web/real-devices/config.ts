@@ -42,7 +42,7 @@ export const HUB = {
 } as const;
 export const REST = "https://api.browserstack.com/automate";
 
-const FLOW_COUNT = 3;
+const FLOW_COUNT = 4;
 
 function listOf(name: string) {
   const raw = process.env[name]?.trim();

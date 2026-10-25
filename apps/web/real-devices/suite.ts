@@ -574,11 +574,85 @@ async function shellFlow(
   });
 }
 
+/**
+ * O celular de verdade é o nível de movimento `essential` (t386, ADR 0103 "Níveis de movimento"): a emulação do
+ * Playwright prova o resto (`e2e-pwa/motion-level.e2e.ts`), mas não que um aparelho real dê `pointer: coarse`.
+ */
+async function motionFlow(recorder: Recorder, browser: Browser) {
+  recorder.startFlow("4. Movimento no celular: só o essencial");
+
+  await recorder.step(
+    'Abrir a galeria: o aparelho tem ponteiro grosso e a página está em data-motion="essential"',
+    async () => {
+      await browser.url(shellUrl("/ui-galeria"));
+      await waitForText(browser, "Galeria da interface");
+      const found = await browser.execute(() => ({
+        coarse: matchMedia("(pointer: coarse)").matches,
+        level: document.documentElement.dataset.motion ?? "",
+        size: `${window.innerWidth}×${window.innerHeight}`,
+      }));
+      if (!(found.coarse && found.level === "essential")) {
+        throw new Error(`nível de movimento errado: ${JSON.stringify(found)}`);
+      }
+      return `pointer: coarse; data-motion=${found.level}; janela ${found.size}`;
+    }
+  );
+
+  await recorder.step(
+    "O gráfico aparece pronto: sem o clip da revelação e o mesmo desenho 1,5 s depois",
+    async () => {
+      const drawing = () =>
+        browser.execute(() => {
+          const charts = [...document.querySelectorAll("[data-chart-area]")];
+          return {
+            clips: charts.filter((chart) =>
+              chart.querySelector("svg g[clip-path]")
+            ).length,
+            count: charts.length,
+            path:
+              charts[0]?.querySelector("svg path[stroke]")?.getAttribute("d") ??
+              "",
+          };
+        });
+      await browser.waitUntil(async () => (await drawing()).path !== "", {
+        timeout: WAIT_MS,
+        timeoutMsg: "o gráfico da galeria não foi desenhado",
+      });
+      const first = await drawing();
+      await browser.pause(1500);
+      const later = await drawing();
+      if (first.clips > 0 || later.clips > 0 || later.path !== first.path) {
+        throw new Error(
+          `o gráfico animou: ${first.clips} e ${later.clips} clips, desenho ${later.path === first.path ? "igual" : "mudou"}`
+        );
+      }
+      return `${first.count} gráficos de área, nenhum com o clip da revelação`;
+    }
+  );
+
+  await recorder.step(
+    "A barra de filtros não pediu a camada animada (filter-bar-motion)",
+    async () => {
+      const layer = await browser.execute(
+        () =>
+          performance
+            .getEntriesByType("resource")
+            .filter((entry) =>
+              entry.name.includes("/assets/filter-bar-motion-")
+            ).length
+      );
+      if (layer > 0) {
+        throw new Error("o celular pediu a camada animada da barra");
+      }
+    }
+  );
+}
+
 /** Roda os fluxos escolhidos e sempre tenta devolver a rede do aparelho ao normal ao final. */
 export async function runGate5Suite(browser: Browser, sessionId: string) {
   const recorder = new Recorder();
-  const flows = [customersFlow, saleFlow, shellFlow].filter((_, index) =>
-    SELECTED_FLOWS.includes(index + 1)
+  const flows = [customersFlow, saleFlow, shellFlow, motionFlow].filter(
+    (_, index) => SELECTED_FLOWS.includes(index + 1)
   );
   try {
     for (const flow of flows) {

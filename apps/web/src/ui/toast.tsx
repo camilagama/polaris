@@ -75,8 +75,8 @@ function ToastList() {
         {toasts.map((toast) => (
           <ToastPrimitive.Root
             className={cn(
-              "group/toast relative grid w-full grid-cols-[auto_1fr_auto] gap-x-2.5 rounded-lg bg-popover px-3 py-2.5 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06] transition-[opacity,translate] duration-[220ms] ease-(--ease-soft)",
-              "data-[ending-style]:data-[swipe-direction=right]:translate-x-6 data-[ending-style]:data-[swipe-direction=up]:-translate-y-6 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-[ending-style]:duration-[140ms]",
+              "group/toast relative grid w-full grid-cols-[auto_1fr_auto] gap-x-2.5 rounded-lg bg-popover px-3 py-2.5 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06] motion-full:transition-[opacity,translate] motion-full:duration-[220ms] ease-(--ease-soft)",
+              "data-[ending-style]:data-[swipe-direction=right]:translate-x-6 data-[ending-style]:data-[swipe-direction=up]:-translate-y-6 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-full:data-[ending-style]:duration-[140ms]",
               "motion-reduce:transition-none"
             )}
             data-slot="toast"
