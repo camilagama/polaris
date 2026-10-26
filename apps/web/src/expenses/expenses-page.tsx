@@ -4,9 +4,9 @@ import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
-import { Tabs, TabsContent } from "@/ui/tabs";
+import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
 import { ScreenTitle } from "../app-shell/screen-title";
-import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";
+import { ScreenTabList } from "../app-shell/screen-tabs";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
@@ -208,10 +208,16 @@ export function ExpensesPage() {
           label="Lançamentos, recorrentes e categorias"
           value={view}
         >
+          {/* below 360 px a narrower padding keeps the three parts on screen, with no sideways scroll */}
           {EXPENSE_VIEWS.map((item) => (
-            <ScreenTabTrigger key={item.value} value={item.value}>
+            <TabsTrigger
+              className="flex-none max-[22.5rem]:px-1.5"
+              data-value={item.value}
+              key={item.value}
+              value={item.value}
+            >
               {item.label}
-            </ScreenTabTrigger>
+            </TabsTrigger>
           ))}
         </ScreenTabList>
 
