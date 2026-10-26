@@ -871,7 +871,7 @@ export const SCREENS: UiScreen[] = [
   historyScreen("lista", historyStates.list),
   historyScreen("carregando", historyStates.loading),
   historyScreen("sem conexão", historyStates.offline),
-  historyScreen("período escolhido", historyStates.period),
+  historyScreen("filtros ativos", historyStates.filters),
   saleDetailScreen("aberto", saleDetailStates.detail),
   saleDetailScreen("carregando", saleDetailStates.loading),
   saleDetailScreen("devolução com erro", saleDetailStates.returnError),

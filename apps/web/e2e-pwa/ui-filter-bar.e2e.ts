@@ -9,7 +9,7 @@ import { axeFaults, touchFaults } from "./ui-guardrails";
  * The filter bar of src/ui/ in the gallery (t383), at 360 and 1280 px and with the bar open (the menu and the
  * editors), as the review asks: the pills with their names, the menu with the fields used and the one that needs the
  * connection, adding, editing and taking out a filter, "Limpar tudo", the keyboard (Tab, Enter, Escape gives the focus
- * back to the pill), the sizes with a mouse and with touch, the row that scrolls under 760 px and wraps above it, the
+ * back to the pill), the sizes with a mouse and with touch, the row of pills that wraps into lines at every width (320, 360 and 1280 px), the
  * motion and its absence under `prefers-reduced-motion`, and axe with each part open in both themes. "Hoje" is
  * 24/10/2026 in the gallery and the bar starts with Período 01/10 a 24/10, Situação Paga and Cliente Maria Souza.
  */
@@ -415,8 +415,63 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+/** Everything of the bar that is a control, with what "in the window" needs: none of it off the edge, at any width. */
+async function insideWindow(page: Page, width: number) {
+  const boxes = await bar(page)
+    .locator(
+      '[data-slot="filter-pill"], [data-slot="filter-add"], button:has-text("Limpar tudo")'
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const { left, right, top } = element.getBoundingClientRect();
+        return { left, right, top: Math.round(top) };
+      })
+    );
+  for (const found of boxes) {
+    expect(found.left).toBeGreaterThanOrEqual(0);
+    expect(found.right).toBeLessThanOrEqual(width);
+  }
+  return boxes;
+}
+
 test.describe("a linha de pílulas", () => {
-  test("a 360 px rola de lado numa linha só e a página não rola; a 1280 px quebra em linhas sem rolar", async ({
+  for (const width of [360, 320]) {
+    test(`a ${width} px as três pílulas e "Limpar tudo" quebram em linhas, todas à vista, sem rolar de lado`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await openGallery(page);
+      await Promise.all(
+        ["Período", "Situação", "Cliente"].map((field) =>
+          expect(pill(page, field)).toBeVisible()
+        )
+      );
+      const clearing = bar(page).getByRole("button", { name: "Limpar tudo" });
+      await expect(clearing).toBeVisible();
+      // nothing scrolls inside the bar and every control is inside the window, with no gesture
+      await expect(
+        bar(page).locator('[data-slot="scroll-area-viewport"]')
+      ).toHaveCount(0);
+      const boxes = await insideWindow(page, width);
+      expect(boxes).toHaveLength(5);
+      // the row wrapped: more than one line, and "Limpar tudo" is the last thing in it
+      expect(new Set(boxes.map((found) => found.top)).size).toBeGreaterThan(1);
+      // "Limpar tudo" is in the last line: no pill is below it
+      const clearingTop = Math.round((await box(clearing)).y);
+      expect(clearingTop).toBeGreaterThanOrEqual(
+        Math.max(...boxes.map((found) => found.top))
+      );
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        )
+      ).toBeLessThanOrEqual(0);
+    });
+  }
+
+  test("um valor comprido encurta a pílula em vez de sair da janela, e o editor abre dentro dela", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -427,14 +482,13 @@ test.describe("a linha de pílulas", () => {
     const open = editor(page, "Cliente");
     await open
       .getByRole("textbox", { name: "Cliente" })
-      .fill("Maria Aparecida da Conceição Souza");
-    // the new pill is at the far end of a row that is wider than the window: it came into view, and the editor with it
+      .fill("Maria Aparecida da Conceição Souza de Albuquerque");
     const editorBox = await box(open);
     expect(editorBox.x).toBeGreaterThanOrEqual(0);
     expect(editorBox.x + editorBox.width).toBeLessThanOrEqual(360);
-    const pillBox = await box(pill(page, "Cliente"));
-    expect(pillBox.x).toBeGreaterThanOrEqual(0);
-    expect(pillBox.x).toBeLessThan(360);
+    await page.keyboard.press("Enter");
+    await expect(open).toBeHidden();
+    await insideWindow(page, 360);
     expect(
       await page.evaluate(
         () =>
@@ -442,36 +496,15 @@ test.describe("a linha de pílulas", () => {
           document.documentElement.clientWidth
       )
     ).toBeLessThanOrEqual(0);
-    await page.keyboard.press("Enter");
-    await expect(open).toBeHidden();
-    const viewportOf = bar(page).locator('[data-slot="scroll-area-viewport"]');
-    const narrow = await viewportOf.evaluate((element) => ({
-      client: element.clientWidth,
-      scroll: element.scrollWidth,
-    }));
-    expect(narrow.scroll).toBeGreaterThan(narrow.client);
-    const tops = await bar(page)
-      .locator('[data-slot="filter-pill"], [data-slot="filter-add"]')
-      .evaluateAll((elements) =>
-        elements.map((element) =>
-          Math.round(element.getBoundingClientRect().top)
-        )
-      );
-    // one line: the button and the pills start at the same height (the 8 px of the heights apart at most)
-    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(8);
-    const sideways = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth
-    );
-    expect(sideways).toBeLessThanOrEqual(0);
+  });
 
+  test("a 1280 px as pílulas ficam à vista e nada rola", async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
-    const wide = await viewportOf.evaluate((element) => ({
-      client: element.clientWidth,
-      scroll: element.scrollWidth,
-    }));
-    expect(wide.scroll).toBeLessThanOrEqual(wide.client + 1);
+    await openGallery(page);
+    await insideWindow(page, 1280);
+    await expect(
+      bar(page).locator('[data-slot="scroll-area-viewport"]')
+    ).toHaveCount(0);
   });
 });
 
@@ -549,7 +582,7 @@ for (const width of [360, 320]) {
       viewport: { height: 740, width },
     });
 
-    test("tocar na pílula sem conexão leva a pílula à janela: o motivo e o X ficam dentro da largura, e o valor é o que encurta", async ({
+    test("a pílula sem conexão já está à vista: o motivo e o X ficam dentro da largura, e o valor é o que encurta", async ({
       page,
     }) => {
       await openGallery(page);
@@ -557,19 +590,15 @@ for (const width of [360, 320]) {
         name: "Produto vendido: Camiseta",
       });
       const reason = offlineBar(page).getByText(REASON);
+      const remove = offlineBar(page).getByRole("button", {
+        name: "Tirar o filtro Produto vendido",
+      });
       const inWindow = async (locator: Locator) => {
         const found = await box(locator);
         return found.x >= 0 && found.x + found.width <= width;
       };
-      // "Filtrar" comes first, so the end of the pill starts off the edge: the reason is not in sight until the row scrolls
-      expect(await inWindow(reason)).toBe(false);
-      // The touch is what the row answers to. `aria-disabled` is not `disabled`, but Playwright waits for "enabled" and
-      // scrolls the element into view on its own, which would hide whether the pill did it: the click is dispatched.
-      await blocked.dispatchEvent("click");
-      await expect.poll(() => inWindow(reason)).toBe(true);
-      const remove = offlineBar(page).getByRole("button", {
-        name: "Tirar o filtro Produto vendido",
-      });
+      // no touch, no scroll: the row wraps, so the pill, its reason and its X are in the window from the start
+      expect(await inWindow(reason)).toBe(true);
       expect(await inWindow(remove)).toBe(true);
       // the label and the value gave way to the reason, not the other way round: the pill is not wider than the screen
       const pillBox = await box(

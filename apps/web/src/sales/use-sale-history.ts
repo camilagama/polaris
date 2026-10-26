@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
-import { useDebouncedValue } from "../lib/use-debounced-value";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { filterLocalSales } from "./local-history";
 import {
@@ -20,22 +19,19 @@ import {
   nextOffset,
 } from "./sale-history-model";
 
-const SEARCH_DELAY_MS = 300;
-
 interface SaleHistory {
-  /** What the inputs show now; the list follows after the search pauses. */
+  /** What the bar shows now: the list is read for exactly these. */
   filters: HistoryFilters;
   loadMore: () => void;
   reload: () => void;
-  reset: () => void;
   setFilters: (changes: Partial<HistoryFilters>) => void;
   state: HistoryState;
 }
 
 /**
  * The sale list for an organization: filtered on the server, one read per
- * page, text filters debounced, and answers that arrive late for an older
- * filter are ignored. No customer list is loaded: names come with the rows.
+ * page, and answers that arrive late for an older filter are ignored. A text
+ * filter comes from the bar already applied (Enter or "Pronto"), so there is nothing to debounce. No customer list is loaded: names come with the rows.
  *
  * With a local workspace (no connection) the list is the device's window of
  * recent sales, filtered here, read again whenever the local rows change.
@@ -48,22 +44,6 @@ export function useSaleHistory(
   const [state, setState] = useState(initialHistoryState);
   const [reloadVersion, setReloadVersion] = useState(0);
   const latest = useRef(0);
-  const debouncedCustomer = useDebouncedValue(
-    filters.customer,
-    SEARCH_DELAY_MS
-  );
-  const debouncedQuery = useDebouncedValue(filters.query, SEARCH_DELAY_MS);
-  const { from, status, to } = filters;
-  const effective = useMemo<HistoryFilters>(
-    () => ({
-      customer: debouncedCustomer,
-      from,
-      query: debouncedQuery,
-      status,
-      to,
-    }),
-    [debouncedCustomer, debouncedQuery, from, status, to]
-  );
   const localWriter = local?.stores.writer;
   const localVersion = local?.dataVersion ?? -1;
 
@@ -77,7 +57,7 @@ export function useSaleHistory(
         .then((rows) => {
           if (request === latest.current) {
             setState((current) =>
-              historyLoaded(current, filterLocalSales(rows, effective))
+              historyLoaded(current, filterLocalSales(rows, filters))
             );
           }
         })
@@ -92,7 +72,7 @@ export function useSaleHistory(
     }
     readWithRetry(
       () =>
-        orpcClient.sale.list(historyListRequest(organizationId, effective, 0)),
+        orpcClient.sale.list(historyListRequest(organizationId, filters, 0)),
       { isCurrent: () => request === latest.current }
     )
       .then((page) => {
@@ -108,7 +88,7 @@ export function useSaleHistory(
     return () => {
       latest.current += 1;
     };
-  }, [effective, localVersion, localWriter, organizationId, reloadVersion]);
+  }, [filters, localVersion, localWriter, organizationId, reloadVersion]);
 
   const loadMore = useCallback(() => {
     if (!canLoadMore(state)) {
@@ -120,7 +100,7 @@ export function useSaleHistory(
     readWithRetry(
       () =>
         orpcClient.sale.list(
-          historyListRequest(organizationId, effective, nextOffset(state))
+          historyListRequest(organizationId, filters, nextOffset(state))
         ),
       { isCurrent: () => request === latest.current }
     )
@@ -134,18 +114,17 @@ export function useSaleHistory(
           setState((current) => moreLoadFailed(current, error));
         }
       });
-  }, [effective, organizationId, state]);
+  }, [filters, organizationId, state]);
 
   const reload = useCallback(
     () => setReloadVersion((version) => version + 1),
     []
   );
-  const reset = useCallback(() => setFiltersState(emptyHistoryFilters), []);
   const setFilters = useCallback(
     (changes: Partial<HistoryFilters>) =>
       setFiltersState((current) => ({ ...current, ...changes })),
     []
   );
 
-  return { filters, loadMore, reload, reset, setFilters, state };
+  return { filters, loadMore, reload, setFilters, state };
 }
