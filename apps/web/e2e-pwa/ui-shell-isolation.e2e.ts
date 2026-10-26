@@ -713,6 +713,10 @@ const openExpenses = (
       await then(page);
     },
     {
+      // Despesas is a tab of the Resultado: the page behind it reads the goals and the summary too, and an unanswered
+      // read would put the whole shell "offline" and turn off the button of the form
+      "goal/list": { goals: [] },
+      "report/periodSummary": {},
       "expense/list": {
         count: 1,
         expenses: [EXPENSE],

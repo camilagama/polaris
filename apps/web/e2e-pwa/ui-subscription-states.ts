@@ -103,8 +103,9 @@ async function openSubscription(
   ready: (page: Page) => Promise<void>
 ) {
   await serveSubscription(page, plans);
-  await page.goto("/subscription");
-  await page.getByRole("heading", { level: 1, name: "Assinatura" }).waitFor();
+  // Assinatura is a tab of Configurações (map of navigation, § 1): its title is the h2 of the tab
+  await page.goto("/configuracoes?aba=assinatura");
+  await page.getByRole("heading", { level: 2, name: "Assinatura" }).waitFor();
   await ready(page);
   await page.evaluate(() => {
     (document.activeElement as HTMLElement | null)?.blur();
