@@ -1183,6 +1183,46 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(region(page, "Meta")).not.toContainText("%");
   });
 
+  test("o anel da meta: Esconder valores mascara os reais (no texto, na estimativa e no nome do anel) e deixa o percentual; sem meta, o anel tracejado e Definir meta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openHome(page, server);
+    const meta = region(page, "Meta");
+    const ring = meta.getByRole("img");
+    await expect(
+      ring.locator("[data-ring-chart] svg path").first()
+    ).toBeAttached();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(meta).not.toContainText("2.670,60");
+    await expect(meta).not.toContainText("5.000,00");
+    await expect(meta).not.toContainText("5.254,03");
+    await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
+    await expect(ring).toHaveAttribute(
+      "aria-label",
+      "53,4% da meta: valor escondido de valor escondido"
+    );
+    await expect(ring).toContainText("53,4%");
+
+    server.scenario = { ...SOLD, goals: [] };
+    await page.reload();
+    const empty = region(page, "Meta");
+    await expect(empty.locator('[data-goal-ring="vazio"]')).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    await expect(empty).toContainText(
+      "Defina quanto quer vender no mês e acompanhe aqui."
+    );
+    await expect(
+      empty.getByRole("link", { name: "Definir meta" })
+    ).toHaveAttribute("href", "/dashboard?meta=nova");
+  });
+
   test("'Definir meta' abre o formulário de meta no Resultado", async ({
     page,
   }) => {

@@ -207,9 +207,9 @@ test.describe("desktop (1280 px)", () => {
     await storeMenu(page).click();
     const menu = page.getByRole("menu");
     await expect(menu.getByRole("menuitemradio")).toHaveText([
+      "Automático",
       "Claro",
       "Escuro",
-      "Automático",
     ]);
     // "Sair" is the last item, with its own separator before it; one store: nothing to switch to
     await expect(menu.getByRole("menuitem")).toHaveText(["Sair"]);
