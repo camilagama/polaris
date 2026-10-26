@@ -83,11 +83,13 @@ describe("a device row", () => {
     expect(on).not.toContain("aria-describedby");
   });
 
-  it("says where Sair is: under Mais on a phone, or at the foot of the sidebar on a big screen", () => {
+  it("says where Sair is: under Mais on a phone, or in the menu of the store card on a big screen", () => {
     const html = render({ row: row({ isCurrent: true }) });
-    expect(html).toContain("use o botão <strong>Sair</strong>");
+    expect(html).toContain("use <strong>Sair</strong>");
     expect(html).toContain("no celular ele está em Mais");
-    expect(html).toContain("em tela grande, no pé da barra lateral");
+    expect(html).toContain(
+      "em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral"
+    );
   });
 
   it("this device, without a connection: says Sair will not take it off the list until it leaves online", () => {
@@ -97,7 +99,7 @@ describe("a device row", () => {
     );
     expect(html).not.toContain("Para tirar este aparelho");
     const connected = render({ online: true, row: row({ isCurrent: true }) });
-    expect(connected).toContain("Para tirar este aparelho, use o botão");
+    expect(connected).toContain("Para tirar este aparelho, use <strong>Sair</strong>");
     expect(connected).not.toContain("Sem conexão");
   });
 
