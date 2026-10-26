@@ -89,8 +89,8 @@ export function historyFields(offline: boolean): FilterField[] {
     {
       disabledReason: offline ? "Só com conexão" : undefined,
       id: FIELD_QUERY,
-      label: "Busca",
-      placeholder: "Produto vendido",
+      label: "Produto vendido",
+      placeholder: "Nome do produto",
       type: "text",
     },
   ];

@@ -7,7 +7,6 @@ import {
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
-  type Ref,
   useCallback,
   useEffect,
   useId,
@@ -44,7 +43,6 @@ import {
 } from "@/ui/filter-bar-model";
 import { Input } from "@/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { ScrollArea } from "@/ui/scroll-area";
 
 export type {
   FilterField,
@@ -123,15 +121,13 @@ function useMotionLayer(level: MotionLevel, busy: boolean): MotionLayer | null {
 function StillPillFrame({
   children,
   className,
-  ref,
 }: {
   children: ReactNode;
   className: string;
   motion: PillMotion;
-  ref: Ref<HTMLDivElement>;
 }) {
   return (
-    <div className={className} data-slot="filter-pill" ref={ref}>
+    <div className={className} data-slot="filter-pill">
       {children}
     </div>
   );
@@ -297,12 +293,12 @@ interface PillProps {
   field: FilterField;
   /** Whether the editor of this pill is open. */
   isEditing: boolean;
-  onCommit: (field: FilterField, value: FilterRuleValue | null) => void;
-  onEditingChange: (field: FilterField, open: boolean, reason: string) => void;
-  onRemove: (field: FilterField) => void;
   /** The animated layer, at the `full` level once loaded; null draws the pill still. */
   layer: MotionLayer | null;
   level: MotionLevel;
+  onCommit: (field: FilterField, value: FilterRuleValue | null) => void;
+  onEditingChange: (field: FilterField, open: boolean, reason: string) => void;
+  onRemove: (field: FilterField) => void;
   /** Absent on the pill of a field just chosen in the menu, which has no value yet. */
   rule: FilterRule | undefined;
   text: string;
@@ -320,13 +316,6 @@ function FilterPill({
   text,
 }: PillProps) {
   const reasonId = useId();
-  const pillRef = useRef<HTMLDivElement>(null);
-  // the row scrolls under 760 px: a pill that is off the edge comes into view before its editor opens beside it
-  useEffect(() => {
-    if (isEditing) {
-      pillRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-  }, [isEditing]);
   // a filter that exists cannot be edited while its field cannot be used; a new one never gets here (the menu blocks it)
   const blocked = field.disabledReason !== undefined && rule !== undefined;
   const commit = useCallback<Commit>(
@@ -339,10 +328,6 @@ function FilterPill({
     [field, onEditingChange]
   );
   const remove = useCallback(() => onRemove(field), [field, onRemove]);
-  // touching a pill that cannot open an editor still brings it, with its reason, into the row's window
-  const reveal = useCallback(() => {
-    pillRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, []);
   const name = blocked ? lockedLabel(field, text) : editLabel(field, text);
   // the space keeps "Período 01/10 a 24/10" as the text of the button (the name holds it: WCAG 2.5.3)
   const content = (
@@ -366,17 +351,15 @@ function FilterPill({
     </>
   );
 
+  // the row wraps, so `max-w-full` is the width of the screen: a pill with a reason is never wider than it, and it is
+  // the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
   const Frame = layer?.PillFrame ?? StillPillFrame;
   return (
     <Frame
       className={cn(
-        "inline-flex h-9 touch:h-11 max-w-full shrink-0 scroll-ms-1.5 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10",
-        // the row is as wide as its pills (`w-max`), so `max-w-full` caps nothing: a pill with a reason is never wider than the
-        // screen, and it is the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
-        blocked && "max-w-[calc(100vw-4rem)] md:max-w-full"
+        "inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10"
       )}
       motion={pillMotion(level)}
-      ref={pillRef}
     >
       {blocked ? (
         <>
@@ -385,7 +368,6 @@ function FilterPill({
             aria-disabled="true"
             aria-label={name}
             className={PILL_BUTTON}
-            onClick={reveal}
             type="button"
           >
             {content}
@@ -483,8 +465,8 @@ function FieldItem({
  *
  * At the `full` level of motion the pills come in and go out with opacity and scale and the neighbours slide (`motion`,
  * as the Araute has it, in `filter-bar-motion.tsx`, loaded by `import()`); on a phone and with `prefers-reduced-motion`
- * nothing of it runs and the `motion` chunk is not asked for (src/lib/motion-level.ts, ADR 0103). Under 760 px the row
- * scrolls sideways in one line (`ScrollArea`), above it the pills wrap. Focus: closing an editor gives it back to the
+ * nothing of it runs and the `motion` chunk is not asked for (src/lib/motion-level.ts, ADR 0103). The pills wrap into
+ * lines at every width (nothing scrolls sideways: a pill off the edge would hide the filters), "Limpar tudo" at the end. Focus: closing an editor gives it back to the
  * pill; a pill that disappears gives it to "Filtrar". The count of results is the screen's, in a `role="status"` it
  * passes as `children`.
  */
@@ -612,10 +594,10 @@ export function FilterBar({
     : shown;
 
   const pillProps = {
-    onCommit: commit,
-    onEditingChange: editingChange,
     layer,
     level,
+    onCommit: commit,
+    onEditingChange: editingChange,
     onRemove: remove,
   };
 
@@ -625,72 +607,62 @@ export function FilterBar({
       className={cn("grid grid-cols-[minmax(0,1fr)] gap-2", className)}
       ref={searchRef}
     >
-      {/* The 6 px the focus ring needs: up and down as a negative margin (the bar keeps its height); sideways as padding
-          of the row, because a box wider than its parent is a layout fault. Above 760 px nothing scrolls, so the viewport
-          stops clipping and the padding goes. */}
-      <ScrollArea
-        className="md:[&>[data-slot=scroll-area-viewport]]:overflow-visible! -my-1.5 min-w-0"
-        horizontal
-      >
-        <div className="flex w-max items-center gap-2 px-1.5 py-1.5 md:w-full md:flex-wrap md:px-0">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  className="shrink-0"
-                  data-slot="filter-add"
-                  variant="outline"
-                />
-              }
-            >
-              <FunnelIcon aria-hidden="true" data-icon="inline-start" />
-              Filtrar
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              aria-label="Filtrar por"
-              className="w-64"
-              finalFocus={menuClosed}
-            >
-              {fields.map((field) => (
-                <FieldItem
-                  field={field}
-                  key={field.id}
-                  onChoose={choose}
-                  used={
-                    shown.find((entry) => entry.field.id === field.id)?.text
-                  }
-                />
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* one keyed list: the pill of a field just chosen and the same pill once it has a value are one element,
-              so the editor's trigger (where the focus goes back) is not remounted; `AnimatePresence` does the same */}
-          <PillList>
-            {pills.map(({ field, rule, text }) => (
-              <FilterPill
-                {...pillProps}
+      <div className="flex flex-wrap items-center gap-2 touch:gap-y-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                className="shrink-0"
+                data-slot="filter-add"
+                variant="outline"
+              />
+            }
+          >
+            <FunnelIcon aria-hidden="true" data-icon="inline-start" />
+            Filtrar
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            aria-label="Filtrar por"
+            className="w-64"
+            finalFocus={menuClosed}
+          >
+            {fields.map((field) => (
+              <FieldItem
                 field={field}
-                isEditing={editing === field.id}
                 key={field.id}
-                rule={rule}
-                text={text}
+                onChoose={choose}
+                used={shown.find((entry) => entry.field.id === field.id)?.text}
               />
             ))}
-          </PillList>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-          {showClearAll(shown.length) ? (
-            <Button
-              className="shrink-0 text-muted-foreground"
-              onClick={clearAll}
-              size="sm"
-              variant="ghost"
-            >
-              Limpar tudo
-            </Button>
-          ) : null}
-        </div>
-      </ScrollArea>
+        {/* one keyed list: the pill of a field just chosen and the same pill once it has a value are one element,
+              so the editor's trigger (where the focus goes back) is not remounted; `AnimatePresence` does the same */}
+        <PillList>
+          {pills.map(({ field, rule, text }) => (
+            <FilterPill
+              {...pillProps}
+              field={field}
+              isEditing={editing === field.id}
+              key={field.id}
+              rule={rule}
+              text={text}
+            />
+          ))}
+        </PillList>
+
+        {showClearAll(shown.length) ? (
+          <Button
+            className="shrink-0 text-muted-foreground"
+            onClick={clearAll}
+            size="sm"
+            variant="ghost"
+          >
+            Limpar tudo
+          </Button>
+        ) : null}
+      </div>
       {children}
     </search>
   );

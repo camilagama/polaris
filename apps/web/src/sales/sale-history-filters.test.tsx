@@ -70,12 +70,20 @@ describe("a barra de filtros do Histórico", () => {
     expect(three).toContain("Limpar tudo");
   });
 
-  it("sem conexão a Busca fica na lista com o motivo, e a pílula dela só sai", () => {
+  it('o campo da consulta por item se chama Produto vendido, com "Nome do produto" no editor', () => {
+    const field = historyFields(false).find((entry) => entry.id === "query");
+    expect(field).toMatchObject({
+      label: "Produto vendido",
+      placeholder: "Nome do produto",
+    });
+  });
+
+  it("sem conexão o Produto vendido fica na lista com o motivo, e a pílula dela só sai", () => {
     const html = render({ ...emptyHistoryFilters, query: "camiseta" }, true);
     expect(html).toContain("Só com conexão");
-    expect(html).toContain("Busca: camiseta");
-    expect(html).not.toContain("Busca: camiseta, editar");
-    expect(html).toContain("Tirar o filtro Busca");
+    expect(html).toContain("Produto vendido: camiseta");
+    expect(html).not.toContain("Produto vendido: camiseta, editar");
+    expect(html).toContain("Tirar o filtro Produto vendido");
   });
 });
 
@@ -162,7 +170,7 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     });
   });
 
-  it("sem conexão a Busca já aplicada continua nos filtros quando outro muda", () => {
+  it("sem conexão o Produto vendido já aplicado continua nos filtros quando outro muda", () => {
     const filters = apply(
       { ...emptyHistoryFilters, query: "camiseta" },
       "status",

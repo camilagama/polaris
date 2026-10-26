@@ -875,17 +875,20 @@ test.describe("histórico de vendas", () => {
     });
     const menu = page.getByRole("menu", { name: "Filtrar por" });
     await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-    await expect(menu.getByRole("menuitem", { name: "Busca" })).toHaveAttribute(
-      "aria-disabled",
-      "true"
-    );
-    await expect(menu.getByRole("menuitem", { name: "Busca" })).toContainText(
-      "Só com conexão"
-    );
+    await expect(
+      menu.getByRole("menuitem", { name: "Produto vendido" })
+    ).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      menu.getByRole("menuitem", { name: "Produto vendido" })
+    ).toContainText("Só com conexão");
     // touching it neither chooses it nor closes the menu
-    await menu.getByRole("menuitem", { name: "Busca" }).click({ force: true });
+    await menu
+      .getByRole("menuitem", { name: "Produto vendido" })
+      .click({ force: true });
     await expect(menu).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Busca" })).toHaveCount(0);
+    await expect(
+      page.getByRole("dialog", { name: "Produto vendido" })
+    ).toHaveCount(0);
     await menu.getByRole("menuitem", { name: "Situação" }).click();
     const status = page.getByRole("dialog", { name: "Situação" });
     await status
@@ -906,7 +909,7 @@ test.describe("histórico de vendas", () => {
     await page.getByLabel("Rede disponível").check();
     await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
     await expect(
-      menu.getByRole("menuitem", { name: "Busca" })
+      menu.getByRole("menuitem", { name: "Produto vendido" })
     ).not.toHaveAttribute("aria-disabled", "true");
   });
 });

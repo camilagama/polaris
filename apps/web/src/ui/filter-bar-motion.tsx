@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import type { ReactNode, Ref } from "react";
+import type { ReactNode } from "react";
 import type { PillMotion } from "@/ui/filter-bar-model";
 
 /**
@@ -18,22 +18,15 @@ export interface PillFrameProps {
   children: ReactNode;
   className: string;
   motion: PillMotion;
-  ref: Ref<HTMLDivElement>;
 }
 
 export function PillFrame({
   children,
   className,
   motion: moves,
-  ref,
 }: PillFrameProps) {
   return (
-    <motion.div
-      {...moves}
-      className={className}
-      data-slot="filter-pill"
-      ref={ref}
-    >
+    <motion.div {...moves} className={className} data-slot="filter-pill">
       {children}
     </motion.div>
   );
