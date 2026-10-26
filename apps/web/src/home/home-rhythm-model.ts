@@ -334,7 +334,7 @@ function soldDaysText(count: number): string {
  * The days before the month are read once a day (the daily cache): a return made today of an old sale shows tomorrow.
  * The map does not promise them exact to the minute.
  */
-const PAST_UNTIL_YESTERDAY = "Meses anteriores atualizados até ontem.";
+export const PAST_UNTIL_YESTERDAY = "Meses anteriores atualizados até ontem.";
 
 /** The name of the map for a screen reader: what it shows, in words; the numbers are in the table. */
 export function rhythmSummary(view: RhythmView): string {

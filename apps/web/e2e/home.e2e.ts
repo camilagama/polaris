@@ -170,6 +170,9 @@ class FakeServer {
     "401" | "403" | "429" | "500" | "slow" | "unmarked"
   >();
 
+  /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
+  readonly held = new Map<string, Promise<void>>();
+
   constructor(scenario: Scenario) {
     this.scenario = scenario;
   }
@@ -345,6 +348,7 @@ async function serve(page: Page, server: FakeServer) {
     }
     const input = inputOf(route);
     server.calls.push({ input, procedure });
+    await server.held.get(procedure);
     const broken = server.broken.get(procedure);
     if (broken === "slow") {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
@@ -1827,6 +1831,81 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.getByRole("button", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
     // the page leaves while this is asked: a question cut by the navigation is asked again
+    await expect
+      .poll(() => copyKeys(page).catch(() => ["navegando"]))
+      .toEqual([]);
+  });
+
+  test("Sair com a leitura do mapa em voo: a resposta que chega depois não grava a série de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    let answerSeries: () => void = () => undefined;
+    server.held.set(
+      "report/dailySales",
+      new Promise((resolve) => {
+        answerSeries = resolve;
+      })
+    );
+    // what the page does to the device's storage and when the series reaches it, told from inside the page: while the
+    // page that "Sair" opens waits, the Início cannot be asked anything, but it still runs
+    const seen: string[] = [];
+    await page.exposeFunction("seenByTest", (what: string) => {
+      seen.push(what);
+    });
+    await page.addInitScript(() => {
+      const tell = (what: string) =>
+        (
+          window as unknown as { seenByTest: (what: string) => void }
+        ).seenByTest(what);
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key.startsWith("polaris.offline.dailySales.")) {
+          tell("kept");
+        }
+        setItem.call(this, key, value);
+      };
+      const read = window.fetch;
+      window.fetch = async (...args) => {
+        const answer = await read(...args);
+        const url = args[0] instanceof Request ? args[0].url : String(args[0]);
+        if (url.includes("/rpc/report/dailySales")) {
+          tell("answered");
+        }
+        return answer;
+      };
+    });
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() =>
+        server.calls.some((call) => call.procedure === "report/dailySales")
+      )
+      .toBe(true);
+    // the page that "Sair" opens waits: the Início stays alive, already leaving, while the series comes
+    let leave: () => void = () => undefined;
+    const left = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      if (route.request().isNavigationRequest()) {
+        await left;
+      }
+      await route.fallback();
+    });
+    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await expect.poll(() => server.signOutCalls).toBe(1);
+
+    answerSeries();
+    await expect.poll(() => seen).toContain("answered");
+    // the answer is read in the same turn; a real second more, and the copy was still not kept
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(seen).toEqual(["answered"]);
+    leave();
     await expect
       .poll(() => copyKeys(page).catch(() => ["navegando"]))
       .toEqual([]);

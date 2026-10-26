@@ -41,6 +41,7 @@ import { chartValue, salesCountText } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import {
   type DailySeries,
+  PAST_UNTIL_YESTERDAY,
   RHYTHM_WEEKS,
   RHYTHM_WEEKS_PHONE,
   type RhythmDay,
@@ -218,7 +219,10 @@ function NumbersTable({ view }: { view: RhythmView }) {
           data-icon="inline-end"
         />
       </CollapsibleTrigger>
-      <CollapsiblePanel className="pt-1">
+      <CollapsiblePanel className="grid gap-2 pt-1">
+        <p className="text-muted-foreground text-support">
+          {PAST_UNTIL_YESTERDAY}
+        </p>
         <Table>
           <TableHeader>
             <TableRow>
@@ -280,6 +284,13 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     setHovered(index);
   }, []);
   const [keyed, setKeyed] = useState<number | null>(null);
+  // the days are indices of the grid: when it changes (the phone turned, the window resized) the day read is forgotten,
+  // not left on whatever day now sits at its index
+  useEffect(() => {
+    touched.current = null;
+    setHovered(null);
+    setKeyed(null);
+  }, [weeks]);
   const rest = view.best ?? view.today;
   const read = hovered ?? keyed ?? rest;
   const reading = rhythmReading(view, read) ?? rhythmReading(view, view.today);
