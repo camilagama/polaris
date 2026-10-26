@@ -211,19 +211,26 @@ describe("route timing middleware", () => {
       ["false", { ROUTE_TIMING_ALL: "false" }],
       ["TRUE", { ROUTE_TIMING_ALL: "TRUE" }],
       ["1", { ROUTE_TIMING_ALL: "1" }],
-    ])("with the variable %s, logs the critical routes only, as before", async (_label, env) => {
-      const logs = spyLogs();
-      const app = createWideApp();
+    ])(
+      "with the variable %s, logs the critical routes only, as before",
+      async (_label, env) => {
+        const logs = spyLogs();
+        const app = createWideApp();
 
-      for (const [method, path] of nonCritical) {
-        await app.request(path, { method }, env);
+        await Promise.all(
+          nonCritical.map(([method, path]) =>
+            app.request(path, { method }, env)
+          )
+        );
+        await app.request("/health", {}, env);
+        await app.request("/rpc/sale/confirm", { method: "POST" }, env);
+
+        const events = timedEvents(logs);
+        expect(events.map((event) => event.route)).toEqual([
+          "/rpc/sale/confirm",
+        ]);
       }
-      await app.request("/health", {}, env);
-      await app.request("/rpc/sale/confirm", { method: "POST" }, env);
-
-      const events = timedEvents(logs);
-      expect(events.map((event) => event.route)).toEqual(["/rpc/sale/confirm"]);
-    });
+    );
 
     it("with true, logs every matched procedure and named /api route by its pattern, with the isolate, and still not /health", async () => {
       const logs = spyLogs();
@@ -279,15 +286,17 @@ describe("route timing middleware", () => {
       const app = createWideApp();
       const env = { ROUTE_TIMING_ALL: "true" };
 
-      for (const path of [
-        "/rpc/report/AbC123xyzToken",
-        "/rpc/report/pessoa@example.test",
-        "/rpc/a/b/c/d/e",
-        "/rpc/",
-      ]) {
-        const response = await app.request(path, { method: "POST" }, env);
-        expect(response.status).toBe(404);
-      }
+      const responses = await Promise.all(
+        [
+          "/rpc/report/AbC123xyzToken",
+          "/rpc/report/pessoa@example.test",
+          "/rpc/a/b/c/d/e",
+          "/rpc/",
+        ].map((path) => app.request(path, { method: "POST" }, env))
+      );
+      expect(responses.map((response) => response.status)).toEqual([
+        404, 404, 404, 404,
+      ]);
       await app.request("/api/nao-existe/0199c2d0", {}, env);
       await app.request("/api/", {}, env);
 
