@@ -2,10 +2,8 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import {
-  formatLastConfirmed,
-  formatUpdatedUntil,
-} from "../dashboard/dashboard-model";
+import { HideValuesButton } from "@/ui/hidden-values";
+import { formatLastConfirmed } from "../dashboard/dashboard-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -19,16 +17,13 @@ import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { AttentionBlock } from "./home-attention";
 import { ChartBlock, type ChartDays } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
-import {
-  ChecklistBlock,
-  MonthBlock,
-  TodayBlock,
-  TopProductsBlock,
-} from "./home-figures";
+import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
+import { KpiCards } from "./home-kpi-cards";
 import {
   copyLine,
   type GoalView,
+  homeUpdatedLine,
   monthTitle,
   newSaleOfflineText,
   pickGoal,
@@ -43,6 +38,13 @@ import { type HomeFigures, type HomeState, useHome } from "./use-home";
  * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
  * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
  */
+
+/** The places of the blocks beside the chart from 1024 px: the right column, one row each. */
+const SIDE = [
+  "lg:col-start-2 lg:row-start-1",
+  "lg:col-start-2 lg:row-start-2",
+  "lg:col-start-2 lg:row-start-3",
+] as const;
 
 const NO_COPY_TEXT = "Sem internet e sem números guardados neste aparelho";
 
@@ -74,10 +76,9 @@ interface Blocks {
   chart: React.ReactNode;
   main: React.ReactNode;
   ranking: React.ReactNode;
-  wide: boolean;
 }
 
-/** Hoje, the month, the ranking and the chart of figures that were read (from the server or from the copy). */
+/** The KPI cards, the ranking and the chart of figures that were read (from the server or from the copy). */
 function readBlocks(
   figures: HomeFigures,
   chart: { days: ChartDays; onDays: (days: ChartDays) => void },
@@ -91,14 +92,8 @@ function readBlocks(
     chart: series ? (
       <ChartBlock days={chart.days} figures={figures} onDays={chart.onDays} />
     ) : null,
-    main: (
-      <>
-        <TodayBlock figures={figures} shown={todayShown && series} />
-        <MonthBlock figures={figures} />
-      </>
-    ),
+    main: <KpiCards figures={figures} todayShown={todayShown && series} />,
     ranking: top.length > 0 ? <TopProductsBlock products={top} /> : null,
-    wide: false,
   };
 }
 
@@ -110,39 +105,44 @@ function figureBlocks(
 ): Blocks {
   const { checklist, figures } = state;
   if (figures.status === "hidden") {
-    return { chart: null, main: null, ranking: null, wide: true };
+    return { chart: null, main: null, ranking: null };
   }
   if (figures.status === "error") {
     return {
       chart: null,
       main: (
         <BlockError
-          className="lg:col-span-2"
           message="Não foi possível carregar os números da loja."
           onRetry={figures.retryable ? onRetry : null}
         />
       ),
       ranking: null,
-      wide: true,
     };
   }
   if (figures.status === "loading" || checklist.status === "loading") {
     return {
       chart: (
         <BlockSkeleton
-          className="h-72 lg:col-start-1 lg:row-start-2"
+          className="h-72"
           label="Carregando o gráfico…"
           lines={0}
         />
       ),
       main: (
-        <>
-          <BlockSkeleton label="Carregando os números de hoje…" />
-          <BlockSkeleton label="Carregando os números do mês…" lines={3} />
-        </>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <BlockSkeleton
+            className="col-span-2 lg:col-span-1"
+            label="Carregando os números de hoje…"
+          />
+          <BlockSkeleton
+            className="col-span-2 lg:col-span-1"
+            label="Carregando os números do mês…"
+          />
+          <BlockSkeleton label="Carregando o resultado estimado…" />
+          <BlockSkeleton label="Carregando o ticket médio…" />
+        </div>
       ),
       ranking: null,
-      wide: false,
     };
   }
   if (checklist.status === "ready" && checklist.data) {
@@ -150,7 +150,6 @@ function figureBlocks(
       chart: null,
       main: <ChecklistBlock checklist={checklist.data} />,
       ranking: null,
-      wide: true,
     };
   }
   return readBlocks(figures.data, chart);
@@ -160,7 +159,6 @@ const NO_BLOCKS: Blocks = {
   chart: null,
   main: null,
   ranking: null,
-  wide: true,
 };
 
 /** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
@@ -186,7 +184,7 @@ function pageBlocks({
       blocks: figureBlocks(state, retryFigures, chart),
       updated:
         state.figures.status === "ready"
-          ? formatUpdatedUntil(state.figures.data.month.generatedAt, timezone)
+          ? homeUpdatedLine(state.figures.data.month.generatedAt, timezone)
           : null,
     };
   }
@@ -213,21 +211,31 @@ function noFigures(today: string): Blocks {
   return {
     chart: null,
     main: (
-      <>
-        <HomeBlock id="home-today" title="Hoje">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <HomeBlock
+          className="col-span-2 lg:col-span-1"
+          id="home-today"
+          title="Vendas hoje"
+        >
           <p className="text-muted-foreground">{NO_COPY_TEXT}</p>
         </HomeBlock>
-        <HomeBlock id="home-month" title={monthTitle(today)}>
+        <HomeBlock
+          className="col-span-2 lg:col-span-1"
+          id="home-month"
+          title={`Vendas em ${monthTitle(today).toLowerCase()}`}
+        >
           <p className="text-muted-foreground">{NO_COPY_TEXT}</p>
         </HomeBlock>
-      </>
+      </div>
     ),
     ranking: null,
-    wide: true,
   };
 }
 
-/** The title and "Nova venda": the part of the page that depends on no read (and on no connection). */
+/**
+ * The title, "Esconder valores" and "Nova venda": the part of the page that depends on no read (and on no connection).
+ * On a phone the eye is an icon button in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
+ */
 function HomeHeader({
   offlineText,
   updated,
@@ -237,16 +245,22 @@ function HomeHeader({
 }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-      <div className="grid gap-1">
-        <h1 className="text-title">Início</h1>
-        <p
-          className="min-h-5 text-muted-foreground text-support"
-          id="home-updated"
-        >
-          {updated}
-        </p>
+      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+        <div className="grid min-w-0 gap-1">
+          <h1 className="text-title">Início</h1>
+          <p
+            className="min-h-5 text-muted-foreground text-support"
+            id="home-updated"
+          >
+            {updated}
+          </p>
+        </div>
+        <HideValuesButton className="md:hidden" />
       </div>
-      <NewSale offlineText={offlineText} />
+      <div className="flex w-full items-start gap-2 sm:w-auto">
+        <HideValuesButton className="max-md:hidden" />
+        <NewSale offlineText={offlineText} />
+      </div>
     </header>
   );
 }
@@ -364,6 +378,50 @@ function pickGoalBlock({
 }
 
 /**
+ * The blocks under the KPI cards. The source has the order of a phone (Atenção, Meta, the chart, Mais vendidos, v7
+ * § 3); from 1024 px the chart takes the left 2/3 and the other blocks stack on the right, the last row taking what is
+ * left over, so no gap opens between them.
+ */
+function LowerBlocks({
+  attention,
+  chart,
+  goal,
+  ranking,
+}: {
+  attention: React.ReactNode;
+  chart: React.ReactNode;
+  goal: React.ReactNode;
+  ranking: React.ReactNode;
+}) {
+  const placed = chart !== null;
+  return (
+    <div
+      className={cn(
+        "grid min-w-0 gap-4 lg:items-start",
+        placed
+          ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:grid-rows-[auto_auto_1fr]"
+          : "lg:grid-cols-2"
+      )}
+    >
+      {attention ? (
+        <div className={cn("grid min-w-0", placed && SIDE[0])}>{attention}</div>
+      ) : null}
+      {goal ? (
+        <div className={cn("grid min-w-0", placed && SIDE[1])}>{goal}</div>
+      ) : null}
+      {placed ? (
+        <div className="grid min-w-0 lg:col-start-1 lg:row-span-3 lg:row-start-1">
+          {chart}
+        </div>
+      ) : null}
+      {ranking ? (
+        <div className={cn("grid min-w-0", placed && SIDE[2])}>{ranking}</div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The Início. With a connection, the reads of `useHome`; without one, the matrix of § 7.4: the device's copy (only
  * with the runtime on, for a role that reads the results, with the user's lease in force and no refusal of the
  * session), or "sem números" without it; the goal by the rule of § 7.3; the device's own line in "Precisa de
@@ -419,6 +477,21 @@ export function HomePage() {
     view,
   });
 
+  // with the session refused nothing about the stock is known: only this device's own line can be said
+  const attention =
+    state.sessionRefused && refused === 0 ? null : (
+      <AttentionBlock
+        offline={offline !== null && reads.inventory}
+        refused={refused}
+        soldWithoutCost={
+          figures ? figures.month.quality.itemLinesWithUnknownCost : null
+        }
+        stock={
+          state.sessionRefused || offline ? { status: "hidden" } : state.stock
+        }
+      />
+    );
+
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <HomeHeader
@@ -427,37 +500,15 @@ export function HomePage() {
       />
       <div
         aria-busy={view === null && state.figures.status === "loading"}
-        className="grid gap-4 lg:grid-cols-2 lg:items-start"
+        className="grid gap-4"
       >
         {blocks.main}
-        <div
-          className={cn(
-            "grid min-w-0 gap-4",
-            // the chart sits in the left column from 1024 px; in the source it comes last, as at 360 px
-            blocks.wide
-              ? "lg:col-span-2 lg:grid-cols-2 lg:items-start"
-              : "lg:col-start-2 lg:row-start-2"
-          )}
-        >
-          {goalBlock}
-          {/* with the session refused nothing about the stock is known: only this device's own line can be said */}
-          {state.sessionRefused && refused === 0 ? null : (
-            <AttentionBlock
-              offline={offline !== null && reads.inventory}
-              refused={refused}
-              soldWithoutCost={
-                figures ? figures.month.quality.itemLinesWithUnknownCost : null
-              }
-              stock={
-                state.sessionRefused || offline
-                  ? { status: "hidden" }
-                  : state.stock
-              }
-            />
-          )}
-          {blocks.ranking}
-        </div>
-        {blocks.chart}
+        <LowerBlocks
+          attention={attention}
+          chart={blocks.chart}
+          goal={goalBlock}
+          ranking={blocks.ranking}
+        />
       </div>
     </div>
   );

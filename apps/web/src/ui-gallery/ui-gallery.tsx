@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/ui/card";
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
+import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
@@ -52,6 +53,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
+import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
 import {
   Field,
   FieldContent,
@@ -185,6 +188,11 @@ function showToast() {
     type: "success",
   });
 }
+
+/** The accumulated sales of a month, sample data for the KPI card of the gallery. */
+const GALLERY_KPI_SERIES = [
+  120, 180, 180, 260, 410, 410, 520, 690, 760, 760, 880, 1010, 1200, 1340,
+] as const;
 
 function Section({
   children,
@@ -913,6 +921,53 @@ export function UiGallery() {
                 Os últimos 30 dias, dados de exemplo.
               </TabsContent>
             </Tabs>
+          </Section>
+
+          <Section title="Cartão de KPI e Esconder valores">
+            <div className="flex flex-wrap items-center gap-3">
+              <HideValuesButton />
+              <span className="text-support">
+                <MoneyText text="Melhor dia: 18/10, R$ 1.840,00" />
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <KpiCard
+                chip={
+                  <DeltaChip
+                    delta={{ money: false, text: "+19,1%", trend: "up" }}
+                  />
+                }
+                date="1 a 25/10"
+                entity="sales"
+                footer="41 vendas no mês"
+                id="galeria-kpi-vendas"
+                note="vs. 1 a 25/09"
+                spark={
+                  <OnDemandSparkline
+                    color="var(--chart-sales)"
+                    domain="zero"
+                    height={64}
+                    values={GALLERY_KPI_SERIES}
+                  />
+                }
+                title="Vendas em outubro"
+                value={<HeroValue amount="2660.60" />}
+              />
+              <KpiCard
+                chip={
+                  <DeltaChip
+                    delta={{ money: true, text: "-R$ 12,00", trend: "down" }}
+                  />
+                }
+                date="1 a 25/10"
+                entity="result"
+                footer="Não é lucro líquido nem dinheiro já recebido."
+                id="galeria-kpi-resultado"
+                note="vs. 1 a 25/09"
+                title="Resultado estimado"
+                value={<HeroValue amount="-48.30" size="md" />}
+              />
+            </div>
           </Section>
 
           <ChartStates />

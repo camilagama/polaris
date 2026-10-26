@@ -10,9 +10,7 @@ import {
   homePeriods,
   homeReads,
   lastDays,
-  monthComparison,
   monthTitle,
-  monthUntilToday,
   msUntilNextMidnight,
   newSaleOfflineText,
   offlineGoal,
@@ -20,7 +18,6 @@ import {
   shouldRefreshOnReturn,
   storeToday,
   sumNetSales,
-  todayFigures,
 } from "./home-model";
 
 type Daily = { date: string; netSales: string; salesCount: number }[];
@@ -140,7 +137,7 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
   });
 });
 
-describe("Hoje, the miniatures and the chart come from the same series (AC-5, AC-8, AC-17)", () => {
+describe("the chart comes from the series of A and B (AC-17)", () => {
   const before = series("2026-09-01", "2026-09-30", (date) =>
     date >= "2026-09-25" ? ["10.00", 1] : undefined
   );
@@ -149,15 +146,6 @@ describe("Hoje, the miniatures and the chart come from the same series (AC-5, AC
       return ["25.50", 2];
     }
     return date === "2026-10-23" ? ["100.10", 3] : undefined;
-  });
-
-  it("Hoje is the day of today in the month's series, a day with nothing is zero", () => {
-    expect(todayFigures(month, "2026-10-23")).toEqual({
-      date: "2026-10-23",
-      netSales: "100.10",
-      salesCount: 3,
-    });
-    expect(todayFigures(month, "2026-10-22").netSales).toBe("0.00");
   });
 
   it("the last 7 or 30 days end today and cross into B at the start of the month", () => {
@@ -178,8 +166,7 @@ describe("Hoje, the miniatures and the chart come from the same series (AC-5, AC
     expect(sumNetSales(thirty)).toBe("185.60");
   });
 
-  it("the miniature of the Mês stops today, and the series adds up to the month's figure", () => {
-    expect(monthUntilToday(month, "2026-10-23")).toHaveLength(23);
+  it("the series adds up to the month's figure", () => {
     expect(sumNetSales(month)).toBe("125.60");
   });
 
@@ -188,87 +175,6 @@ describe("Hoje, the miniatures and the chart come from the same series (AC-5, AC
       "Melhor dia: 23/10, R$ 100,10"
     );
     expect(bestDayText(series("2026-10-01", "2026-10-07"))).toBeNull();
-  });
-});
-
-describe("monthComparison (AC-7)", () => {
-  const sold =
-    (amount: string, until: string) =>
-    (date: string): [string, number] | undefined =>
-      date <= until ? [amount, 1] : undefined;
-
-  it("compares the net sales with the same days of the previous month", () => {
-    const before = series(
-      "2026-09-01",
-      "2026-09-30",
-      sold("10.00", "2026-09-30")
-    );
-    const month = series(
-      "2026-10-01",
-      "2026-10-31",
-      sold("30.00", "2026-10-31")
-    );
-    // 23 days: 690,00 against 230,00
-    expect(monthComparison(before, month, "2026-10-23")).toBe(
-      "R$ 460,00 a mais que no mesmo período de setembro"
-    );
-  });
-
-  it("says less, and the same", () => {
-    const before = series(
-      "2026-09-01",
-      "2026-09-30",
-      sold("30.00", "2026-09-30")
-    );
-    const less = series(
-      "2026-10-01",
-      "2026-10-31",
-      sold("10.00", "2026-10-31")
-    );
-    expect(monthComparison(before, less, "2026-10-02")).toBe(
-      "R$ 40,00 a menos que no mesmo período de setembro"
-    );
-    const same = series(
-      "2026-10-01",
-      "2026-10-31",
-      sold("30.00", "2026-10-31")
-    );
-    expect(monthComparison(before, same, "2026-10-02")).toBe(
-      "Igual ao mesmo período de setembro"
-    );
-  });
-
-  it.each([
-    // on 31 March, 1 to 28 February (2027) or 29 (2028)
-    ["2027-03-31", "2027-02-01", "2027-02-28", "R$ 3,00 a mais"],
-    ["2028-03-31", "2028-02-01", "2028-02-29", "R$ 2,00 a mais"],
-    // 31 October against 30 days of September
-    ["2026-10-31", "2026-09-01", "2026-09-30", "R$ 1,00 a mais"],
-    // 30 November against 30 days of October
-    ["2026-11-30", "2026-10-01", "2026-10-31", "Igual ao"],
-  ])(
-    "on %s compares with the previous month cut to its length",
-    (today, from, to, start) => {
-      const before = series(from, to, () => ["1.00", 1]);
-      const first = `${today.slice(0, 7)}-01`;
-      const month = series(first, today, () => ["1.00", 1]);
-      expect(monthComparison(before, month, today)?.startsWith(start)).toBe(
-        true
-      );
-    }
-  );
-
-  it("says nothing when either period has no sale: never a percent over zero", () => {
-    const empty = series("2026-09-01", "2026-09-30");
-    const month = series(
-      "2026-10-01",
-      "2026-10-31",
-      sold("30.00", "2026-10-31")
-    );
-    expect(monthComparison(empty, month, "2026-10-23")).toBeNull();
-    expect(
-      monthComparison(month, series("2026-10-01", "2026-10-31"), "2026-10-23")
-    ).toBeNull();
   });
 });
 
@@ -379,16 +285,19 @@ describe("attentionLines (AC-12 to AC-14)", () => {
       {
         href: "/attention",
         id: "device",
+        next: "Corrija e envie de novo.",
         text: "2 operações deste aparelho precisam de atenção",
       },
       {
         href: "/inventory?filtro=sem-custo",
         id: "unknown-cost",
-        text: "1 variante sem custo. Informe para as próximas vendas.",
+        next: "Informe para as próximas vendas.",
+        text: "1 variante sem custo",
       },
       {
         href: "/inventory?filtro=sem-saldo",
         id: "without-stock",
+        next: "Dê entrada no estoque.",
         text: "3 variantes sem saldo",
       },
     ]);

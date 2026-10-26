@@ -30,7 +30,8 @@ const PALETTE_COLOR =
   /\b(?:bg|text|border|ring|outline|fill|stroke)-(?:white|black|(?:slate|gray|zinc|neutral|red|orange|amber|yellow|green|emerald|blue|indigo|violet|purple|pink)-\d+)/;
 const MOVEMENT = /\b(?:translate|scale|rotate|zoom|slide)-/;
 const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\(/;
-const TOKEN_ONLY = /^var\(--(?:chart-[1-5]|card|foreground|border)\)$/;
+const TOKEN_ONLY =
+  /^var\(--(?:chart-(?:[1-5]|sales|result|ticket|context)|card|foreground|border|destructive)\)$/;
 const SVG_COLOR_ATTRIBUTE = /\b(?:fill|stroke|stopColor)="([^"]+)"/g;
 const CHART_IMPORT =
   /from\s+["'][^"']*\/(?:charts\/(?!on-demand)|bklit\/)[^"']*["']/;
@@ -160,15 +161,33 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     );
   });
 
-  it("the series is drawn in the ink and the best day is the one use of the emerald", () => {
+  it("a series is the ink unless its entity has a color; the best day is marked by its shape, not by the emerald (v7)", () => {
     expect(read("src/ui/charts/area-chart.tsx")).toContain(
       'const INK: ChartColor = "var(--chart-5)"'
     );
-    expect(read("src/ui/charts/area-chart.tsx")).not.toContain("--chart-1");
+    for (const file of [
+      "src/ui/charts/area-chart.tsx",
+      "src/ui/charts/chart-bridge.tsx",
+      "src/ui/charts/sparkline.tsx",
+    ]) {
+      expect(read(file), file).not.toContain("--chart-1");
+    }
+    // the ring of the best day is larger than the others, in the color of the series
     expect(read("src/ui/charts/chart-bridge.tsx")).toContain(
-      'fill="var(--chart-1)"'
+      "r={mark.index === best ? 5.5 : 3.5}"
     );
-    expect(read("src/ui/charts/sparkline.tsx")).not.toContain("--chart-1");
+    const theme = read("src/styles/theme.css");
+    for (const token of [
+      "--chart-sales",
+      "--chart-result",
+      "--chart-ticket",
+      "--chart-context",
+      "--chart-heat-1",
+      "--chart-heat-4",
+    ]) {
+      // once in the light theme and once in the dark one
+      expect(theme.split(`${token}: oklch(`).length - 1, token).toBe(2);
+    }
   });
 
   it("keeps the animation of the blocks at the full level and turns all of it off on a phone and under prefers-reduced-motion (t386)", () => {

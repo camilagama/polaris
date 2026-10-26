@@ -17,6 +17,8 @@ const COPY_NOTICE =
   "Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 const rpcPrefix = /^\/rpc\//;
+/** An amount written on the screen: "R$ 130,00". */
+const AN_AMOUNT = /R\$ \d/;
 
 /** Money in cents, so the fixture arithmetic is exact. */
 interface FixtureSale {
@@ -538,6 +540,33 @@ test("mostra os seis cartões e o passo a passo do mês atual", async ({
 
   // the time of the last successful load is visible
   await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
+});
+
+test("Esconder valores (v7 § 6): o mesmo botão do Início esconde os reais dos cartões, da cadeia, das partes e do gráfico, e as porcentagens ficam", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  const main = page.locator("main");
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  const toggle = main.getByRole("button", { name: "Esconder valores" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(card(page, CARD.netSales)).toContainText("R$ ••••");
+  await expect(card(page, CARD.result)).not.toContainText("R$ 38,50");
+  await expect(card(page, CARD.margin)).toContainText("52,69%");
+  await expect(chainRow(page, "Vendas brutas")).not.toContainText("R$ 150,00");
+  await expect(main).not.toContainText(AN_AMOUNT);
+  await expect(main.getByText("valor escondido").first()).toBeAttached();
+  // the choice is the device's, the same key the Início reads
+  expect(
+    await page.evaluate(() => localStorage.getItem("polaris-valores"))
+  ).toBe("escondidos");
+
+  await toggle.click();
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
 test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa incompleta", async ({

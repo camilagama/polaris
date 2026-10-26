@@ -1,3 +1,4 @@
+import { HideValuesButton } from "@/ui/hidden-values";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,8 @@ function Toolbar({
           <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
           Atualizar
         </Button>
+        {/* v7 § 6: the same choice as on the Início, kept on the device */}
+        <HideValuesButton size="sm" />
         <p
           aria-live="polite"
           className="basis-full self-center text-muted-foreground text-support md:basis-auto"
