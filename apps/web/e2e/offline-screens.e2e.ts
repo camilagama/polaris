@@ -899,6 +899,13 @@ test.describe("histórico de vendas", () => {
     await status
       .getByRole("button", { exact: true, name: "Canceladas" })
       .click();
+    // below 760 px the editor is the form Dialog: nothing applies before "Aplicar"
+    const onPhone = (page.viewportSize()?.width ?? 1280) < 760;
+    if (onPhone) {
+      await status
+        .getByRole("button", { exact: true, name: "Aplicar" })
+        .click();
+    }
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await bar.getByRole("button", { name: "Tirar o filtro Situação" }).click();
     await expect(list.getByRole("listitem")).toHaveCount(3);
@@ -906,7 +913,9 @@ test.describe("histórico de vendas", () => {
     await menu.getByRole("menuitem", { name: "Cliente" }).click();
     const customer = page.getByRole("dialog", { name: "Cliente" });
     await customer.getByRole("textbox", { name: "Cliente" }).fill("angela");
-    await customer.getByRole("button", { name: "Pronto" }).click();
+    await customer
+      .getByRole("button", { name: onPhone ? "Aplicar" : "Pronto" })
+      .click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("Ângela Souza");
 

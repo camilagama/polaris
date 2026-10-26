@@ -12,11 +12,24 @@ import {
   useId,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { type MotionLevel, useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { DateRangePanel } from "@/ui/date-range-picker";
+import {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/ui/dialog";
+import { PHONE_QUERY } from "@/ui/dialog-history";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -279,6 +292,133 @@ function EditorContent({
   }
 }
 
+function subscribePhone(onChange: () => void): () => void {
+  const query = window.matchMedia(PHONE_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+const readPhone = () => window.matchMedia(PHONE_QUERY).matches;
+const noPhone = () => false;
+
+/** Below 760 px, the line the form Dialog is the whole screen at: there the editor of a pill is that Dialog, not a Popover. */
+function usePhone(): boolean {
+  return useSyncExternalStore(subscribePhone, readPhone, noPhone);
+}
+
+/** Why the Dialog of an editor closed with no value applied (Cancelar, ×, Esc, the step back of the phone). */
+const DIALOG_CLOSE = "dialog-close";
+
+/** A text in the Dialog: what is typed is a draft, "Aplicar" (or Enter) applies it, "Limpar" empties the draft. */
+function TextDraftEditor({
+  field,
+  onDraft,
+  value,
+}: {
+  field: TextFilterField;
+  onDraft: (value: string) => void;
+  value: string;
+}) {
+  const type = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onDraft(event.target.value),
+    [onDraft]
+  );
+  const clear = useCallback(() => onDraft(""), [onDraft]);
+  return (
+    <>
+      <Input
+        aria-label={field.label}
+        autoComplete="off"
+        enterKeyHint="done"
+        onChange={type}
+        placeholder={field.placeholder}
+        value={value}
+      />
+      {value === "" ? null : (
+        <Button
+          className="justify-self-end"
+          onClick={clear}
+          type="button"
+          variant="ghost"
+        >
+          Limpar
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** The body of the Dialog by the kind of the field: the same editors as the Popover, writing a draft instead of the filter. */
+function DraftContent({
+  draft,
+  field,
+  onDraft,
+}: {
+  draft: FilterRuleValue | null;
+  field: FilterField;
+  onDraft: Commit;
+}) {
+  const text = typeof draft === "string" ? draft : "";
+  switch (field.type) {
+    case "text":
+      return <TextDraftEditor field={field} onDraft={onDraft} value={text} />;
+    case "select":
+      return <SelectEditor field={field} onCommit={onDraft} value={text} />;
+    case "date-range":
+      return (
+        <DateRangePanel
+          onCommit={onDraft}
+          today={field.today}
+          value={draft && typeof draft !== "string" ? draft : null}
+        />
+      );
+    default:
+      return field satisfies never;
+  }
+}
+
+/**
+ * The editor of a pill on a phone, inside the form Dialog (the whole screen): the title is the name of the filter, the
+ * body is the editor of the Popover and the footer, fixed, has "Aplicar" and "Cancelar". Nothing is applied until
+ * "Aplicar": a choice, a text, a day or a shortcut only change the draft, which lives with the content, so closing
+ * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
+ * taking the filter out, as in the Popover.
+ */
+function PhoneEditorContent({
+  field,
+  onApply,
+  value,
+}: {
+  field: FilterField;
+  onApply: Commit;
+  value: FilterRuleValue | undefined;
+}) {
+  const [draft, setDraft] = useState<FilterRuleValue | null>(value ?? null);
+  const apply = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      onApply(draft);
+    },
+    [draft, onApply]
+  );
+  return (
+    <DialogForm onSubmit={apply}>
+      <DialogHeader>
+        <DialogTitle>{field.label}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <DraftContent draft={draft} field={field} onDraft={setDraft} />
+      </DialogBody>
+      <DialogFooter>
+        <DialogClose render={<Button type="button" variant="outline" />}>
+          Cancelar
+        </DialogClose>
+        <Button type="submit">Aplicar</Button>
+      </DialogFooter>
+    </DialogForm>
+  );
+}
+
 /** What each kind of editor needs of its Popover: the period takes the width of its month, a choice is a short list. */
 const POPUP_CLASS = {
   "date-range": "w-auto max-w-[calc(100vw-1rem)] gap-3 p-2",
@@ -288,6 +428,72 @@ const POPUP_CLASS = {
 
 const PILL_BUTTON =
   "touch-hit focus-ring flex min-w-0 max-w-[16rem] items-center gap-1.5 rounded-s-full ps-3 pe-2 text-start hover:bg-accent aria-expanded:bg-accent aria-disabled:cursor-default aria-disabled:opacity-70 aria-disabled:hover:bg-transparent";
+
+interface PillEditorProps {
+  commit: Commit;
+  /** What the pill's button shows: the field and the value. */
+  content: ReactNode;
+  field: FilterField;
+  isEditing: boolean;
+  /** The accessible name of the pill's button. */
+  name: string;
+  onEditingChange: (field: FilterField, open: boolean, reason: string) => void;
+  phone: boolean;
+  value: FilterRuleValue | undefined;
+}
+
+/** The button of a pill and the editor it opens: the form Dialog of the whole screen on a phone, a Popover from 760 px. */
+function PillEditor({
+  commit,
+  content,
+  field,
+  isEditing,
+  name,
+  onEditingChange,
+  phone,
+  value,
+}: PillEditorProps) {
+  const popoverChange = useCallback(
+    (open: boolean, details: { reason: string }) =>
+      onEditingChange(field, open, details.reason),
+    [field, onEditingChange]
+  );
+  const dialogChange = useCallback(
+    (open: boolean) =>
+      onEditingChange(field, open, open ? "trigger-press" : DIALOG_CLOSE),
+    [field, onEditingChange]
+  );
+  const button = (
+    <button aria-label={name} className={PILL_BUTTON} type="button" />
+  );
+  if (phone) {
+    return (
+      <Dialog
+        disablePointerDismissal
+        onOpenChange={dialogChange}
+        open={isEditing}
+      >
+        <DialogTrigger render={button}>{content}</DialogTrigger>
+        <DialogContent layout="form">
+          <PhoneEditorContent field={field} onApply={commit} value={value} />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <Popover onOpenChange={popoverChange} open={isEditing}>
+      <PopoverTrigger render={button}>{content}</PopoverTrigger>
+      <PopoverContent
+        align="start"
+        aria-label={field.label}
+        className={POPUP_CLASS[field.type]}
+        initialFocus={field.type === "date-range" ? false : undefined}
+      >
+        <EditorContent field={field} onCommit={commit} value={value} />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface PillProps {
   field: FilterField;
@@ -299,6 +505,8 @@ interface PillProps {
   onCommit: (field: FilterField, value: FilterRuleValue | null) => void;
   onEditingChange: (field: FilterField, open: boolean, reason: string) => void;
   onRemove: (field: FilterField) => void;
+  /** A phone: the editor is the Dialog of the whole screen, not the Popover. */
+  phone: boolean;
   /** Absent on the pill of a field just chosen in the menu, which has no value yet. */
   rule: FilterRule | undefined;
   text: string;
@@ -312,6 +520,7 @@ function FilterPill({
   onRemove,
   layer,
   level,
+  phone,
   rule,
   text,
 }: PillProps) {
@@ -321,11 +530,6 @@ function FilterPill({
   const commit = useCallback<Commit>(
     (value) => onCommit(field, value),
     [field, onCommit]
-  );
-  const openChange = useCallback(
-    (open: boolean, details: { reason: string }) =>
-      onEditingChange(field, open, details.reason),
-    [field, onEditingChange]
   );
   const remove = useCallback(() => onRemove(field), [field, onRemove]);
   const name = blocked ? lockedLabel(field, text) : editLabel(field, text);
@@ -381,27 +585,16 @@ function FilterPill({
           </span>
         </>
       ) : (
-        <Popover onOpenChange={openChange} open={isEditing}>
-          <PopoverTrigger
-            render={
-              <button aria-label={name} className={PILL_BUTTON} type="button" />
-            }
-          >
-            {content}
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            aria-label={field.label}
-            className={POPUP_CLASS[field.type]}
-            initialFocus={field.type === "date-range" ? false : undefined}
-          >
-            <EditorContent
-              field={field}
-              onCommit={commit}
-              value={rule?.value}
-            />
-          </PopoverContent>
-        </Popover>
+        <PillEditor
+          commit={commit}
+          content={content}
+          field={field}
+          isEditing={isEditing}
+          name={name}
+          onEditingChange={onEditingChange}
+          phone={phone}
+          value={rule?.value}
+        />
       )}
       <button
         aria-label={removeLabel(field)}
@@ -466,7 +659,9 @@ function FieldItem({
  * At the `full` level of motion the pills come in and go out with opacity and scale and the neighbours slide (`motion`,
  * as the Araute has it, in `filter-bar-motion.tsx`, loaded by `import()`); on a phone and with `prefers-reduced-motion`
  * nothing of it runs and the `motion` chunk is not asked for (src/lib/motion-level.ts, ADR 0103). The pills wrap into
- * lines at every width (nothing scrolls sideways: a pill off the edge would hide the filters), "Limpar tudo" at the end. Focus: closing an editor gives it back to the
+ * lines at every width (nothing scrolls sideways: a pill off the edge would hide the filters), "Limpar tudo" at the end.
+ * Below 760 px the editor is not a Popover but the form Dialog of the whole screen (title = the field, footer "Aplicar"
+ * and "Cancelar", nothing applied before "Aplicar"; `PhoneEditorContent`). Focus: closing an editor gives it back to the
  * pill; a pill that disappears gives it to "Filtrar". The count of results is the screen's, in a `role="status"` it
  * passes as `children`.
  */
@@ -479,6 +674,7 @@ export function FilterBar({
   value,
 }: FilterBarProps) {
   const level = useMotionLevel();
+  const phone = usePhone();
   const searchRef = useRef<HTMLElement>(null);
   /** The field chosen in the menu, whose pill waits for a value. */
   const [adding, setAdding] = useState<string | null>(null);
@@ -560,7 +756,11 @@ export function FilterBar({
       }
       closeEditor();
       // Escape on the pill of a field with no value takes it back, and with it the button the focus would return to
-      if (reason === "escape-key" && adding === field.id) {
+      // (so does any close of the Dialog: Cancelar, ×, the step back)
+      if (
+        (reason === "escape-key" || reason === DIALOG_CLOSE) &&
+        adding === field.id
+      ) {
         focusFilter();
       }
     },
@@ -599,6 +799,7 @@ export function FilterBar({
     onCommit: commit,
     onEditingChange: editingChange,
     onRemove: remove,
+    phone,
   };
 
   return (

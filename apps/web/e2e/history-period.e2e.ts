@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { FORM_VIEWPORTS, touchDay } from "./date-pickers";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -27,12 +27,27 @@ interface ListRequest {
 
 const bar = (page: Page) =>
   page.getByRole("search", { exact: true, name: "Filtrar vendas" });
+// by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`, and a hidden element is not found by role and has no name
 const pill = (page: Page, field: string) =>
-  bar(page).getByRole("button", { name: new RegExp(`^${field}: .*, editar$`) });
+  page.locator(
+    `search[aria-label="Filtrar vendas"] button[aria-label^="${field}: "][aria-label$=", editar"]`
+  );
 const remover = (page: Page, field: string) =>
-  bar(page).getByRole("button", { name: `Tirar o filtro ${field}` });
+  bar(page).getByRole("button", {
+    includeHidden: true,
+    name: `Tirar o filtro ${field}`,
+  });
 const editor = (page: Page, field: string) =>
   page.getByRole("dialog", { name: field });
+
+/** Below 760 px the editor is the form Dialog of the whole screen: nothing applies before "Aplicar". */
+const onPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
+
+async function apply(page: Page, popup: Locator) {
+  if (onPhone(page)) {
+    await popup.getByRole("button", { exact: true, name: "Aplicar" }).click();
+  }
+}
 
 /** Chooses a field in the "Filtrar" menu: its pill is added and its editor opens. */
 async function addFilter(page: Page, field: string) {
@@ -103,6 +118,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await touchDay(popup, "2026-10-12");
       await expect(popup).toBeVisible();
       await touchDay(popup, "2026-10-05");
+      await apply(page, popup);
       await expect(popup).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 05/10 a 12/10, editar"
@@ -121,6 +137,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
+      await apply(page, shortcuts);
       await expect(shortcuts).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
@@ -135,6 +152,7 @@ for (const viewport of FORM_VIEWPORTS) {
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
+      await apply(page, clearing);
       await expect(clearing).toBeHidden();
       await expect(pill(page, "Período")).toHaveCount(0);
       await expect.poll(() => askedWithout(asked, "occurredFrom")).toBe(true);
@@ -150,6 +168,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await status
         .getByRole("button", { exact: true, name: "Canceladas" })
         .click();
+      await apply(page, status);
       await expect(status).toBeHidden();
       await expect(pill(page, "Situação")).toHaveAccessibleName(
         "Situação: Canceladas, editar"
@@ -162,7 +181,9 @@ for (const viewport of FORM_VIEWPORTS) {
 
       const customer = await addFilter(page, "Cliente");
       await customer.getByRole("textbox", { name: "Cliente" }).fill("angela");
-      await customer.getByRole("button", { name: "Pronto" }).click();
+      await customer
+        .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
+        .click();
       await expect(customer).toBeHidden();
       await expect(pill(page, "Cliente")).toHaveAccessibleName(
         "Cliente: angela, editar"
@@ -181,10 +202,11 @@ for (const viewport of FORM_VIEWPORTS) {
 
       // with two pills again, "Limpar tudo" takes them all and the list is asked for with no filter
       await addFilter(page, "Situação");
-      await page
-        .getByRole("dialog", { name: "Situação" })
+      const confirmed = page.getByRole("dialog", { name: "Situação" });
+      await confirmed
         .getByRole("button", { exact: true, name: "Confirmadas" })
         .click();
+      await apply(page, confirmed);
       await expect(clearAll).toBeVisible();
       await clearAll.click();
       await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(

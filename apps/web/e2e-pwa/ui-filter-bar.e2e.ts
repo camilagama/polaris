@@ -41,10 +41,16 @@ const offlineBar = (page: Page) =>
 const count = (page: Page) => page.getByTestId("filtros-contagem");
 const addButton = (page: Page) =>
   bar(page).getByRole("button", { exact: true, name: "Filtrar" });
+// by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`, and a hidden element is not found by role and has no name
 const pill = (page: Page, label: string) =>
-  bar(page).getByRole("button", { name: new RegExp(`^${label}: .*, editar$`) });
+  page.locator(
+    `search[aria-label="Filtrar vendas"] button[aria-label^="${label}: "][aria-label$=", editar"]`
+  );
 const remover = (page: Page, label: string) =>
-  bar(page).getByRole("button", { name: `Tirar o filtro ${label}` });
+  bar(page).getByRole("button", {
+    includeHidden: true,
+    name: `Tirar o filtro ${label}`,
+  });
 const clearAll = (page: Page) =>
   bar(page).getByRole("button", { name: "Limpar tudo" });
 const menu = (page: Page) => page.getByRole("menu", { name: "Filtrar por" });
@@ -52,6 +58,16 @@ const item = (page: Page, name: string) =>
   menu(page).getByRole("menuitem", { name: new RegExp(`^${name}`) });
 const editor = (page: Page, label: string) =>
   page.getByRole("dialog", { name: label });
+
+/** Below 760 px the editor of a pill is the form Dialog of the whole screen ("Aplicar" and "Cancelar"), above it a Popover. */
+const onPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
+
+/** Applies the draft of the Dialog of a phone; the Popover applied by the touch itself, so there is nothing to do. */
+async function apply(page: Page, open: Locator) {
+  if (onPhone(page)) {
+    await open.getByRole("button", { exact: true, name: "Aplicar" }).click();
+  }
+}
 
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
@@ -181,7 +197,8 @@ for (const viewport of VIEWPORTS) {
       await openMenu(page);
       await item(page, "Cliente").click();
       await expect(menu(page)).toBeHidden();
-      await expect(pill(page, "Cliente")).toHaveAccessibleName(
+      await expect(pill(page, "Cliente")).toHaveAttribute(
+        "aria-label",
         "Cliente: Escolher, editar"
       );
       const open = editor(page, "Cliente");
@@ -230,6 +247,7 @@ for (const viewport of VIEWPORTS) {
         "true"
       );
       await open.getByRole("button", { name: "Cancelada" }).click();
+      await apply(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Situação")).toHaveAccessibleName(
         "Situação: Cancelada, editar"
@@ -292,6 +310,7 @@ for (const viewport of VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { name: "7 dias" })
         .click();
+      await apply(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 18/10 a 24/10, editar"
@@ -304,6 +323,7 @@ for (const viewport of VIEWPORTS) {
       await again.locator('button[data-day="2026-10-05"]').click();
       await expect(again).toBeVisible();
       await again.locator('button[data-day="2026-10-09"]').click();
+      await apply(page, again);
       await expect(again).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 05/10 a 09/10, editar"
@@ -311,9 +331,9 @@ for (const viewport of VIEWPORTS) {
 
       // Limpar takes the filter out
       await pill(page, "Período").click();
-      await editor(page, "Período")
-        .getByRole("button", { name: "Limpar" })
-        .click();
+      const clearing = editor(page, "Período");
+      await clearing.getByRole("button", { name: "Limpar" }).click();
+      await apply(page, clearing);
       await expect(pill(page, "Período")).toHaveCount(0);
       await expect(count(page)).toHaveText("2 filtros ativos");
     });
@@ -337,9 +357,9 @@ for (const viewport of VIEWPORTS) {
 
       await openMenu(page);
       await item(page, "Situação").click();
-      await editor(page, "Situação")
-        .getByRole("button", { name: "Paga" })
-        .click();
+      const choosing = editor(page, "Situação");
+      await choosing.getByRole("button", { name: "Paga" }).click();
+      await apply(page, choosing);
       await expect(clearAll(page)).toBeVisible();
       await clearAll(page).click();
       await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
@@ -641,7 +661,14 @@ async function axeWithEditor(page: Page, label: string) {
   const open = editor(page, label);
   await expect(open).toBeVisible();
   await settled(page);
-  expect(await axeFaults(page, '[data-slot="popover-content"]')).toEqual([]);
+  expect(
+    await axeFaults(
+      page,
+      onPhone(page)
+        ? '[data-slot="dialog-content"]'
+        : '[data-slot="popover-content"]'
+    )
+  ).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(open).toBeHidden();
 }

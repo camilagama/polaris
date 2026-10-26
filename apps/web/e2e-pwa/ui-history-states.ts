@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -91,6 +91,15 @@ async function openHistoryLab(page: Page, answers: boolean, hold = false) {
 const bar = (page: Page) =>
   page.getByRole("search", { exact: true, name: "Filtrar vendas" });
 
+/** Below 760 px the editor is the form Dialog of the whole screen: what was touched applies with "Aplicar". */
+const onPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
+
+async function apply(page: Page, popup: Locator) {
+  if (onPhone(page)) {
+    await popup.getByRole("button", { exact: true, name: "Aplicar" }).click();
+  }
+}
+
 /** Chooses a field in the "Filtrar" menu: its pill is added and its editor opens. */
 async function addFilter(page: Page, field: string) {
   await bar(page).getByRole("button", { exact: true, name: "Filtrar" }).click();
@@ -151,15 +160,19 @@ export const historyStates = {
     const period = await addFilter(page, "Período");
     await period.locator('button[data-day="2026-10-12"]').click();
     await period.locator('button[data-day="2026-10-05"]').click();
+    await apply(page, period);
     await period.waitFor({ state: "hidden" });
     const status = await addFilter(page, "Situação");
     await status
       .getByRole("button", { exact: true, name: "Canceladas" })
       .click();
+    await apply(page, status);
     await status.waitFor({ state: "hidden" });
     const customer = await addFilter(page, "Cliente");
     await customer.getByRole("textbox", { name: "Cliente" }).fill("Ângela");
-    await customer.getByRole("button", { name: "Pronto" }).click();
+    await customer
+      .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
+      .click();
     await customer.waitFor({ state: "hidden" });
     await bar(page).getByRole("button", { name: "Limpar tudo" }).waitFor();
     await showScreenAlone(page);
