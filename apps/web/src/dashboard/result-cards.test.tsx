@@ -82,11 +82,21 @@ function card(markup: string, id: string): string {
   return markup.slice(start, next === -1 ? undefined : next);
 }
 
-const words = (markup: string) =>
-  markup
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+/** The text of a piece of markup, read tag by tag (not by a regular expression that strips them: it can leave a `<script`). */
+function words(markup: string): string {
+  let out = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") {
+      inTag = true;
+    } else if (char === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      out += char;
+    }
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
 
 const ALL = Array.from({ length: 25 }, (_, index) => index + 1);
 
