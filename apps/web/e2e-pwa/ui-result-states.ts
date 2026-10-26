@@ -6,7 +6,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 /**
  * The states of Resultado and Metas the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=dashboard`), with the summary of the month and the goals answered by the test
- * (`page.route`), synthetic data only. Four states: each one starts the runtime of the lab in every context of the
+ * (`page.route`), synthetic data only. Few states: each one starts the runtime of the lab in every context of the
  * map, and the CI job has a limit of 30 minutes. The complete month, the loading, the saves and the cancellation
  * are proved in `e2e/dashboard.e2e.ts` and `e2e/goals.e2e.ts` and in the captures of the pull request. The lab's own
  * controls are hidden at the end of each state, so what is measured is the screen alone.
@@ -115,6 +115,35 @@ const COMPLETE_SUMMARY = (from: string, to: string) => ({
     salesCount: 3,
   },
 });
+
+/**
+ * The month with no cost of the goods known (T399-3): every item line sold has an unknown cost, so the server's CMV is
+ * zero for lack of data. The cards of the result and the margin and the CMV say "—", and the bar of the parts goes.
+ */
+const NO_COST_SUMMARY = (from: string, to: string) => {
+  const partial = PARTIAL_SUMMARY(from, to);
+  return {
+    ...partial,
+    cards: {
+      ...partial.cards,
+      marginPercent: "91.73",
+      operatingResult: "89.65",
+    },
+    chain: {
+      ...partial.chain,
+      cogs: "0.00",
+      contributionMargin: "224.75",
+      estimatedOperatingResult: "89.65",
+      grossProfit: "245.00",
+    },
+    quality: {
+      ...partial.quality,
+      itemLinesWithUnknownCost: 4,
+      missing: ["unknown_cost"],
+      processingFeesUnknown: 0,
+    },
+  };
+};
 
 const EMPTY_SUMMARY = (from: string, to: string) => ({
   cards: {
@@ -227,8 +256,23 @@ interface Served {
   /** Every cost known: the chart has two lines. */
   complete?: boolean;
   empty?: boolean;
+  /** No cost of the goods known: the dash on the CMV and on the cards, no bar of the parts. */
+  noCost?: boolean;
   /** The network is down: nothing is answered. */
   offline?: boolean;
+}
+
+/** The summary of the period for what is served: the partial month unless another state is asked for. */
+function summaryFor(served: Served, from: string, to: string): unknown {
+  if (served.empty) {
+    return EMPTY_SUMMARY(from, to);
+  }
+  if (served.noCost) {
+    return NO_COST_SUMMARY(from, to);
+  }
+  return served.complete
+    ? COMPLETE_SUMMARY(from, to)
+    : PARTIAL_SUMMARY(from, to);
 }
 
 async function serveResult(page: Page, served: Served) {
@@ -246,13 +290,7 @@ async function serveResult(page: Page, served: Served) {
     if (procedure === "report/periodSummary") {
       const from = String(input.from);
       const to = String(input.to);
-      let summary = PARTIAL_SUMMARY(from, to);
-      if (served.empty) {
-        summary = EMPTY_SUMMARY(from, to) as unknown as typeof summary;
-      } else if (served.complete) {
-        summary = COMPLETE_SUMMARY(from, to) as unknown as typeof summary;
-      }
-      return route.fulfill(rpc(summary));
+      return route.fulfill(rpc(summaryFor(served, from, to)));
     }
     if (procedure === "report/dailySales") {
       // the chips of Vendas and Ticket médio read the period before here (a SQL `GROUP BY`: sales and counts only)
@@ -322,6 +360,20 @@ export const resultStates = {
     await openResultLab(page, { empty: true });
     await page
       .getByText("Sem vendas nem despesas em 1 a 31 de outubro")
+      .waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** No cost of the goods known (T399-3): the cards and the CMV with the dash, the parts without their bar. */
+  async noCost(page: Page) {
+    await openResultLab(page, { noCost: true });
+    await page
+      .getByText("Nenhum dos 4 itens vendidos tem custo conhecido.")
+      .waitFor();
+    await page
+      .getByText(
+        "Sem o custo das mercadorias, a divisão dos custos não aparece."
+      )
       .waitFor();
     await showScreenAlone(page);
   },

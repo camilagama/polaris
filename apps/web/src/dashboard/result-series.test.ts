@@ -695,6 +695,31 @@ describe("the parts of the cost (AC-12)", () => {
       costParts(chain, completeQuality).parts.every((part) => !part.incomplete)
     ).toBe(true);
   });
+
+  it("with no cost of the goods known has no goods and no total, and keeps the fees and the expenses", () => {
+    // the server's CMV is zero for lack of data: the other parts are not the whole cost
+    const none = costParts(
+      { ...chain, cogs: "0.00" },
+      { ...completeQuality, itemLinesWithUnknownCost: 4, level: "partial" }
+    );
+    expect(none.total).toBeNull();
+    expect(
+      none.parts.map((part) => [part.id, part.value, part.incomplete])
+    ).toEqual([
+      ["goods", null, true],
+      ["fees", "108.20", false],
+      ["expenses", "1796.95", false],
+    ]);
+  });
+
+  it("with a partial cost of the goods keeps the goods and the total", () => {
+    const partial = costParts(chain, {
+      ...completeQuality,
+      itemLinesWithUnknownCost: 3,
+    });
+    expect(partial.total).toBe("3617.55");
+    expect(partial.parts[0]?.value).toBe("1712.40");
+  });
 });
 
 describe("the text of a value in the drawing", () => {

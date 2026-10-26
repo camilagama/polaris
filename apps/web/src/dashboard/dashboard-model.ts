@@ -177,12 +177,23 @@ export interface ChainRow {
 /** What the subtotals from the CMV on say when no cost of the period is known: the dash, and why. */
 export const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
 
+/** What a card of the estimated result says when no cost of the goods is known (the Resultado and the Início). */
+export const NO_KNOWN_COST_RESULT =
+  "Sem custo conhecido: o resultado não dá para estimar.";
+
 /** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
 const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
   "grossProfit",
   "contributionMargin",
   "estimatedOperatingResult",
 ]);
+
+/** What the CMV says when no cost of the goods is known: the dash, and that none of the items sold has a cost. */
+function noKnownCostCogsNote(itemLines: number): string {
+  return itemLines === 1
+    ? "O item vendido não tem custo conhecido."
+    : `Nenhum dos ${itemLines} itens vendidos tem custo conhecido.`;
+}
 
 interface ChainLine {
   id: keyof PeriodChain;
@@ -259,8 +270,8 @@ function lineNote(
 
 /**
  * The rows of "Como chegamos a este resultado", with the unknowns that were left out marked on their line. With no cost
- * of the goods known in the period (`cogsCoverageOf` is "none") the subtotals from the CMV on are a dash with their
- * note: the server's figures there are the sales, and a partial cost stays as it is.
+ * of the goods known in the period (`cogsCoverageOf` is "none") the CMV and the subtotals from it on are a dash with
+ * their note: the server's zero there is a lack of data and its subtotals are the sales; a partial cost stays as it is.
  */
 export function chainRows(
   chain: PeriodChain,
@@ -269,6 +280,16 @@ export function chainRows(
   const noKnownCost = cogsCoverageOf(quality) === "none";
   return CHAIN_LINES.map((line) => {
     const amount = chain[line.id];
+    if (noKnownCost && line.id === "cogs") {
+      return {
+        id: line.id,
+        kind: line.kind,
+        label: line.label,
+        negative: false,
+        note: noKnownCostCogsNote(quality.itemLines),
+        value: EMPTY_VALUE,
+      };
+    }
     if (noKnownCost && COST_SUBTOTALS.has(line.id)) {
       return {
         id: line.id,
