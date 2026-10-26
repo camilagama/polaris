@@ -329,6 +329,8 @@ export class OfflineRuntime {
   private lastOutcome: SyncOutcome = "not_run";
   /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
   private failingSince: number | null = null;
+  /** The last of those failures (ms): a gap longer than the quiet minute starts a new run of failures. */
+  private failedAt = 0;
   /** When the server last confirmed the session user of the open namespace; null forces a new look. */
   private sessionConfirmedAt: number | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
@@ -1578,6 +1580,7 @@ export class OfflineRuntime {
     this.mark("sync:phase:sessao");
     if (await this.sessionChangedHands(run)) {
       this.lastOutcome = "answered";
+      this.failingSince = null;
       return;
     }
     try {
@@ -1644,13 +1647,21 @@ export class OfflineRuntime {
       return false;
     }
     const now = this.now().getTime();
-    this.failingSince ??= now;
+    if (this.failingSince === null || now - this.failedAt > QUIET_FAILURE_MS) {
+      this.failingSince = now;
+    }
+    this.failedAt = now;
     return now - this.failingSince < QUIET_FAILURE_MS;
   }
 
   /** The last sync failed in a transient way and says nothing yet: the scheduler tries again in 2, 4 and 8 s. */
   retriesQuietly(): boolean {
-    return this.failingSince !== null && this.snapshot.reason === null;
+    // only after a try the server answered: with no answer (or no try at all) the return of the connection syncs
+    return (
+      this.failingSince !== null &&
+      this.lastOutcome === "answered" &&
+      this.snapshot.reason === null
+    );
   }
 
   /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
@@ -1679,6 +1690,9 @@ export class OfflineRuntime {
     }
     const noAnswer = isConnectionFailure(error);
     this.lastOutcome = noAnswer ? "no_answer" : "answered";
+    if (noAnswer) {
+      this.failingSince = null;
+    }
     const quiet = !noAnswer && this.failsQuietly(error);
     // a partial sync may still have changed rows (accepted commands, pulled pages). No answer is not
     // "Envio falhou": the connection state says offline (its probe decides) and the queue waits for it

@@ -2159,6 +2159,22 @@ describe("conexão com prova (F7)", () => {
       expect(runtime.retriesQuietly()).toBe(true);
     });
 
+    it("a death for CPU long after the last one starts a quiet minute of its own, and no answer is never retried quietly", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      w.failures.pushError = died;
+      await runtime.syncNow();
+      w.advance(10 / 60); // 10 min with no sync at all (the page hidden)
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+      expect(runtime.retriesQuietly()).toBe(true);
+
+      w.failures.pushError = new TypeError("Failed to fetch");
+      await runtime.syncNow();
+      expect(runtime.retriesQuietly()).toBe(false);
+    });
+
     it("a server failure (5xx) is 'sync_failed'", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);

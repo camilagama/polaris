@@ -165,7 +165,12 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
   if (summary === null) {
     return state.isLoading ? (
       <CardNote
-        description={<SlowReadNote className="block min-h-5" />}
+        description={
+          <SlowReadNote
+            className="block min-h-5"
+            key={`${period.from}/${period.to}`}
+          />
+        }
         loading
       >
         Carregando o resultado…
