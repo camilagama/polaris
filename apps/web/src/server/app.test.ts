@@ -395,3 +395,78 @@ describe("the Worker's mark on every response", () => {
     ).toEqual([true, true, true, true, true]);
   });
 });
+
+describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function timedRoutes(spies: ReturnType<typeof vi.spyOn>[]) {
+    return spies
+      .flatMap((spy) => spy.mock.calls.map(([entry]) => entry))
+      .filter((entry) => entry?.event === "http_request_timed")
+      .map((entry) => [entry.route, entry.httpStatus]);
+  }
+
+  async function callAll(bindings: WorkerBindings) {
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        createProduct: (() =>
+          Promise.reject(
+            new EntitlementLimitReachedError("variants.active.max", 50)
+          )) as never,
+        withTenantRequestContext: ((input: {
+          operation: (transaction: unknown, identity: unknown) => unknown;
+        }) =>
+          Promise.resolve(
+            input.operation({}, { organizationId: "org", role: "owner" })
+          )) as never,
+      }),
+    });
+    const post = (path: string) =>
+      app.request(
+        `${baseURL}${path}`,
+        {
+          body: JSON.stringify({ json: { name: "x", organizationId: "o" } }),
+          headers: { "content-type": "application/json", origin: baseURL },
+          method: "POST",
+        },
+        bindings
+      );
+    const statuses = [
+      (await post("/rpc/product/create")).status,
+      (await post("/rpc/product/AbC123xyzToken")).status,
+      (await app.request(`${baseURL}/api/nao-existe/0199c2d0`, {}, bindings))
+        .status,
+    ];
+    return statuses;
+  }
+
+  it("logs a matched procedure by its name and nothing for a path no procedure or route matched", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(
+      createBindings({ ROUTE_TIMING_ALL: "true" })
+    );
+
+    expect(statuses).toEqual([409, 404, 404]);
+    expect(timedRoutes(spies)).toEqual([["/rpc/product/create", 409]]);
+  });
+
+  it("logs none of them without the variable, as in production", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(createBindings());
+
+    expect(statuses).toEqual([409, 404, 404]);
+    expect(timedRoutes(spies)).toEqual([]);
+  });
+});

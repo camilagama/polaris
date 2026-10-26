@@ -16,11 +16,6 @@ import { countIsolateInvocation } from "../observability/isolate";
  * counts in `seq`, logged or not. Other routes emit nothing, so the volume in the Workers Logs stays small
  * (ADR 0094). The route is a pattern, never the URL: an oRPC call is `/rpc/<procedure>` (the arguments travel in
  * the body); anything that is not a critical route is not logged.
- *
- * `ROUTE_TIMING_ALL` = `"true"` (staging only, CPU-1e, ADR 0094 amended on 26/10/2026) widens the event to every
- * `/rpc/*` and `/api/*` request, so a route can be measured by `isolate.seq` against another one in the same deploy.
- * The label stays a pattern there too: a `/rpc` path that is not made of procedure names (a typo, a probe) is
- * `/rpc/*`, and an `/api` path Hono cannot name is `/api/*`. Any other value, or none, keeps the critical routes only.
  */
 function routeLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
   const { path } = context.req;
@@ -34,21 +29,42 @@ function routeLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
   }
 }
 
-const PROCEDURE_PATH = /^\/rpc(?:\/[A-Za-z][A-Za-z0-9]{0,63}){1,4}$/;
+/**
+ * Called by the `/rpc` handler when oRPC matched a procedure: under `ROUTE_TIMING_ALL` only such a path is logged,
+ * so a path the client made up never reaches the log.
+ */
+export function markMatchedProcedure(
+  context: Parameters<MiddlewareHandler<ServerEnv>>[0]
+) {
+  context.set("timedProcedure", context.req.path);
+}
 
-/** The label of a non-critical `/rpc` or `/api` request under `ROUTE_TIMING_ALL`, or null for any other path. */
-function wideRouteLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
-  const { path } = context.req;
-  if (path.startsWith("/rpc/")) {
-    return PROCEDURE_PATH.test(path) ? path : "/rpc/*";
+/**
+ * `ROUTE_TIMING_ALL` = `"true"` (staging only, CPU-1e, ADR 0094 amended on 26/10/2026) widens the event to every
+ * `/rpc` procedure and every named `/api` route, so a route can be measured by `isolate.seq` against another one in
+ * the same deploy. The label is still a pattern: a `/rpc` path is logged only when oRPC matched a procedure
+ * (`markMatchedProcedure`), and an `/api` path only when a route of the app named it (not the `/api/*` of a
+ * middleware). A request refused before the handler (origin, rate limit) or that matched nothing emits nothing.
+ * Any other value of the variable, or none, keeps the critical routes only.
+ */
+function wideRouteLabel(
+  context: Parameters<MiddlewareHandler<ServerEnv>>[0],
+  label: string
+) {
+  if (context.env?.ROUTE_TIMING_ALL !== "true") {
+    return null;
   }
-  if (!path.startsWith("/api/")) {
+  if (context.req.path.startsWith("/rpc/")) {
+    return context.get("timedProcedure") === label ? label : null;
+  }
+  if (!context.req.path.startsWith("/api/")) {
     return null;
   }
   try {
-    return routePath(context, -1);
+    const pattern = routePath(context, -1);
+    return pattern.startsWith("/api/") && pattern !== "/api/*" ? pattern : null;
   } catch {
-    return "/api/*";
+    return null;
   }
 }
 
@@ -75,9 +91,7 @@ export const routeTimingMiddleware: MiddlewareHandler<ServerEnv> = async (
       const label = routeLabel(context);
       const route = isCriticalRoute(label)
         ? label
-        : context.env?.ROUTE_TIMING_ALL === "true"
-          ? wideRouteLabel(context)
-          : null;
+        : wideRouteLabel(context, label);
       if (route !== null) {
         const httpStatus = context.res.status;
         wide.set({

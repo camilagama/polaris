@@ -1,8 +1,8 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEnv } from "../environment";
 import { requestIdMiddleware } from "./request-id";
-import { routeTimingMiddleware } from "./route-timing";
+import { markMatchedProcedure, routeTimingMiddleware } from "./route-timing";
 
 const requestId = "5f0f3a0e-9d63-4d7b-8a93-6f9a1f0f3a0e";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -176,14 +176,33 @@ describe("route timing middleware", () => {
       ["POST", "/rpc/category/create"],
       ["POST", "/rpc/report/dailySales"],
       ["GET", "/api/products/0199c2d0-0000-7000-8000-000000000001/stats"],
+      ["GET", "/api/export"],
     ];
 
+    /** The routes of `createApp` plus some non-critical ones; a `/rpc` route marks itself as oRPC does when it matches. */
     function createWideApp() {
-      const app = createApp();
-      app.post("/rpc/report/dailySales", (context) => context.json({ ok: true }));
+      const app = new Hono<ServerEnv>();
+      app.use("*", requestIdMiddleware);
+      app.use("*", routeTimingMiddleware);
+      app.use("/api/*", async (_context, next) => {
+        await next();
+      });
+      const procedure = (context: Context<ServerEnv>) => {
+        markMatchedProcedure(context);
+        return context.json({ ok: true });
+      };
+      app.post("/rpc/sale/confirm", procedure);
+      app.post("/rpc/category/create", procedure);
+      app.post("/rpc/report/dailySales", procedure);
+      app.post("/rpc/report/periodSummary", (context) => {
+        markMatchedProcedure(context);
+        return context.json({ error: "denied" }, 403);
+      });
+      app.get("/health", (context) => context.json({ ok: true }));
       app.get("/api/products/:productId/stats", (context) =>
         context.json({ ok: true })
       );
+      app.get("/api/export", (context) => context.json({ ok: true }));
       return app;
     }
 
@@ -206,7 +225,7 @@ describe("route timing middleware", () => {
       expect(events.map((event) => event.route)).toEqual(["/rpc/sale/confirm"]);
     });
 
-    it("with true, logs every /rpc and /api request by its pattern, with the isolate, and still not /health", async () => {
+    it("with true, logs every matched procedure and named /api route by its pattern, with the isolate, and still not /health", async () => {
       const logs = spyLogs();
       const app = createWideApp();
       const env = { ROUTE_TIMING_ALL: "true" };
@@ -219,21 +238,30 @@ describe("route timing middleware", () => {
         {},
         env
       );
+      await app.request("/api/export", {}, env);
+      await app.request("/rpc/report/periodSummary", { method: "POST" }, env);
       await app.request("/rpc/sale/confirm", { method: "POST" }, env);
 
       const events = timedEvents(logs) as {
+        httpStatus: number;
         isolate: { id: string; seq: number };
         route: string;
       }[];
-      expect(events.map((event) => event.route)).toEqual([
-        "/rpc/report/dailySales",
-        "/rpc/category/create",
-        "/api/products/:productId/stats",
-        "/rpc/sale/confirm",
-      ]);
+      // the spies group the events by level (a 4xx is a warning), so compare without the order
+      expect(
+        events.map((event) => [event.route, event.httpStatus]).sort()
+      ).toEqual(
+        [
+          ["/rpc/report/dailySales", 200],
+          ["/rpc/category/create", 200],
+          ["/api/products/:productId/stats", 200],
+          ["/api/export", 200],
+          ["/rpc/report/periodSummary", 403],
+          ["/rpc/sale/confirm", 200],
+        ].sort()
+      );
       expect(events[0]).toMatchObject({
         event: "http_request_timed",
-        httpStatus: 200,
         method: "POST",
         outcome: "success",
       });
@@ -246,24 +274,24 @@ describe("route timing middleware", () => {
       expect(serialized).not.toContain("abc123");
     });
 
-    it("with true, labels a /rpc path that is not a procedure name, or an unknown /api path, without the URL", async () => {
+    it("with true, logs nothing for a /rpc path no procedure matched or an /api path no route named, whatever its text", async () => {
       const logs = spyLogs();
       const app = createWideApp();
       const env = { ROUTE_TIMING_ALL: "true" };
 
-      await app.request("/rpc/report/pessoa@example.test", { method: "POST" }, env);
-      await app.request("/rpc/a/b/c/d/e", { method: "POST" }, env);
+      for (const path of [
+        "/rpc/report/AbC123xyzToken",
+        "/rpc/report/pessoa@example.test",
+        "/rpc/a/b/c/d/e",
+        "/rpc/",
+      ]) {
+        const response = await app.request(path, { method: "POST" }, env);
+        expect(response.status).toBe(404);
+      }
       await app.request("/api/nao-existe/0199c2d0", {}, env);
+      await app.request("/api/", {}, env);
 
-      const events = timedEvents(logs);
-      expect(events.map((event) => [event.route, event.httpStatus])).toEqual([
-        ["/rpc/*", 404],
-        ["/rpc/*", 404],
-        [expect.not.stringContaining("0199c2d0"), 404],
-      ]);
-      const serialized = JSON.stringify(events);
-      expect(serialized).not.toContain("pessoa@");
-      expect(serialized).not.toContain("nao-existe");
+      expect(timedEvents(logs)).toEqual([]);
     });
   });
 });

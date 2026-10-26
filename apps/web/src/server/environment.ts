@@ -153,8 +153,8 @@ export interface WorkerBindings {
   QUEUE_MEDIA?: QueueProducerBinding;
   RESEND_API_KEY?: string;
   /**
-   * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every `/rpc/*` and `/api/*` request instead of the
-   * critical routes only (CPU-1e, ADR 0094 amended). Set only in `env.staging`; production keeps `false`, which the
+   * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every matched `/rpc` procedure and named `/api` route, not
+   * only the critical routes (CPU-1e, ADR 0094 amended). Set only in `env.staging`; production keeps `false`, which the
    * staging isolation check enforces.
    */
   ROUTE_TIMING_ALL?: string;
@@ -191,5 +191,8 @@ export interface WorkerBindings {
 
 export interface ServerEnv {
   Bindings: WorkerBindings;
-  Variables: RequestIdVariables;
+  Variables: RequestIdVariables & {
+    /** The `/rpc` path oRPC matched to a procedure (`markMatchedProcedure`), for the route timing. */
+    timedProcedure?: string;
+  };
 }
