@@ -309,6 +309,49 @@ test("a repetição de um envio sem resposta nomeia o mesmo produto, a mesma var
   expect(bodies[2]?.productId).not.toBe(first.productId);
 });
 
+test("o rascunho guardado por Esc depois de um envio sem resposta repete o mesmo produto; Cancelar começa outro", async ({
+  page,
+}) => {
+  const bodies = await openScreen(page, {
+    creates: [
+      lost,
+      (route, body) =>
+        route.fulfill(rpc(createdProduct(body.name, body.productId ?? "p"))),
+    ],
+  });
+  await openForm(page);
+  await page.getByLabel("Nome do produto").fill("Camiseta básica");
+  await page.getByLabel("Quantos você tem agora").fill("10");
+  await submit(page).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  // Esc closes and keeps the draft, with the names of its first try
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openForm(page);
+  await expect(page.getByLabel("Nome do produto")).toHaveValue(
+    "Camiseta básica"
+  );
+  await submit(page).click();
+  await expect(
+    page.getByText("Produto “Camiseta básica” cadastrado com 10 unidades.")
+  ).toBeVisible();
+  expect(bodies).toHaveLength(2);
+  const [first, second] = bodies as [CreateBody, CreateBody];
+  expect(second.productId).toBe(first.productId);
+  expect(second.initialStock?.commandId).toBe(first.initialStock?.commandId);
+
+  // "Cancelar" throws the draft and its names away: the next one is another product
+  await openForm(page);
+  await page.getByLabel("Nome do produto").fill("Caneca");
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await openForm(page);
+  await expect(page.getByLabel("Nome do produto")).toHaveValue("");
+  await page.getByLabel("Nome do produto").fill("Caneca");
+  await submit(page).click();
+  await expect(page.getByText("Produto “Caneca” cadastrado.")).toBeVisible();
+  expect(bodies[2]?.productId).not.toBe(first.productId);
+});
+
 test("o produto já cadastrado com outros dados diz isso e não culpa a categoria; o envio seguinte é um produto novo", async ({
   page,
 }) => {

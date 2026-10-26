@@ -54,11 +54,22 @@ function draftOf(product: ProductReadModel): ProductDraft {
   };
 }
 
-/** The tabs still holding work, as the notice says them: "Variantes", "Variantes e Imagens". */
+/** The tabs still holding work, in the order of the dialog, as the notice says them: "Variantes e Imagens". */
 function tabsText(tabs: ProductTab[]): string {
-  return tabs
+  return (["variantes", "imagens"] as const)
+    .filter((tab) => tabs.includes(tab))
     .map((tab) => (tab === "variantes" ? "Variantes" : "Imagens"))
     .join(" e ");
+}
+
+/** The version an edit is sent with: the list's, or the newer one a save that kept the dialog open answered with. */
+function versionToSend(
+  product: ProductReadModel,
+  saved: { id: string; version: number } | null
+): number {
+  return saved?.id === product.id
+    ? Math.max(product.version, saved.version)
+    : product.version;
 }
 
 /** What a saved edit says; with work left in another tab (the dialog stays open), it says that too. */
@@ -73,7 +84,7 @@ function editNotice(
   if (unsent.length === 0) {
     return saved;
   }
-  return `${saved} ${tabsText(unsent)} ainda ${unsent.length > 1 ? "têm" : "tem"} alterações sem salvar.`;
+  return `${saved} ${tabsText(unsent)} ainda têm alterações sem salvar.`;
 }
 
 /**
@@ -153,6 +164,8 @@ export function ProductsPage() {
   const originRef = useRef<() => HTMLElement | null>(() => null);
   // the tabs of the dialog with work not saved yet: a save of the data does not close the dialog over it
   const unsentTabsRef = useRef<ProductTab[]>([]);
+  // the version a save that kept the dialog open answered with, until the list read again brings it
+  const savedVersionRef = useRef<{ id: string; version: number } | null>(null);
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [notice, setNotice] = useState<string | null>(null);
   // the product the last action archived: the notice offers to restore it
@@ -257,7 +270,10 @@ export function ProductsPage() {
           const result = await orpcClient.product.update({
             categoryId: draft.categoryId || null,
             description: draft.description.trim() || null,
-            expectedVersion: editingProduct.version,
+            expectedVersion: versionToSend(
+              editingProduct,
+              savedVersionRef.current
+            ),
             id: editingProduct.id,
             name: draft.name,
             organizationId,
@@ -267,6 +283,10 @@ export function ProductsPage() {
           setNotice(editNotice(result.product, result.changed, unsent));
           if (unsent.length > 0) {
             // the variants or the images typed in another tab are not sent by this button: the dialog stays
+            savedVersionRef.current = {
+              id: result.product.id,
+              version: result.product.version,
+            };
             setDraft(draftOf(result.product));
             refresh();
             return;
@@ -363,13 +383,21 @@ export function ProductsPage() {
     setNotice(null);
   }, []);
 
-  /** Esc, "Fechar" and the step back: the dialog closes and the draft stays, in memory, for its next opening. */
+  /**
+   * Esc, "Fechar" and the step back: the dialog closes and a draft that changed stays, in memory, for its next opening
+   * (one that did not change is not kept: the next opening starts from the product as the list has it then).
+   */
   const handleDismissDialog = useCallback(() => {
-    keptRef.current = dialogProductId ?? "new";
+    const product = products.find((item) => item.id === dialogProductId);
+    const changed = isDraftChanged(
+      draft,
+      product ? draftOf(product) : emptyDraft
+    );
+    keptRef.current = changed ? (dialogProductId ?? "new") : null;
     setDialogOpen(false);
     setError(null);
     setNotice(null);
-  }, [dialogProductId]);
+  }, [dialogProductId, draft, products]);
 
   /** The draft is empty again only once the dialog has finished closing (and only when nothing was kept). */
   const handleDialogClosed = useCallback(() => {
@@ -463,6 +491,12 @@ export function ProductsPage() {
     (value: ProductListStatus) => {
       setStatus(value);
       clearMessages();
+      // the draft kept for a product of the other list goes with it (a new product's draft stays)
+      if (keptRef.current !== null && keptRef.current !== "new") {
+        keptRef.current = null;
+        setDialogProductId(null);
+        setDraft(emptyDraft);
+      }
     },
     [clearMessages]
   );
@@ -471,6 +505,20 @@ export function ProductsPage() {
     products.find((product) => product.id === dialogProductId) ?? null;
   const dialogShown =
     dialogOpen && (dialogProductId === null || dialogProduct !== null);
+  // the product left the list while its dialog was open (archived on another device and synced): the dialog closes and
+  // keeps the draft, instead of turning into a new product; an address waiting for its product is not this
+  const dialogWasShown = useRef(false);
+  useEffect(() => {
+    if (dialogShown) {
+      dialogWasShown.current = true;
+      return;
+    }
+    if (dialogOpen && dialogWasShown.current) {
+      keptRef.current = dialogProductId;
+      setDialogOpen(false);
+    }
+    dialogWasShown.current = false;
+  }, [dialogOpen, dialogProductId, dialogShown]);
   // typed and not sent: the form against an empty one, or against the product being edited
   useReportUnsentWork(
     isDraftChanged(draft, dialogProduct ? draftOf(dialogProduct) : emptyDraft)

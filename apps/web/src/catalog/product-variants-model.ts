@@ -160,7 +160,7 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
     return "O produto não existe mais nesta loja.";
   }
   if (code === "CONFLICT") {
-    return "O produto mudou ou as variantes já foram configuradas. Atualize a lista.";
+    return "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O catálogo está temporariamente indisponível. Tente novamente.";

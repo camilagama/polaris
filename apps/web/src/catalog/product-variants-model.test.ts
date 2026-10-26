@@ -228,7 +228,7 @@ describe("mensagens de erro das variantes", () => {
       "O produto não existe mais nesta loja."
     );
     expect(variantErrorMessage(refusal("CONFLICT"))).toContain(
-      "Atualize a lista"
+      "Confira as variantes"
     );
     expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
       "temporariamente indisponível"

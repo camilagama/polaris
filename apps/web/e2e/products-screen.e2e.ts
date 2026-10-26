@@ -1274,7 +1274,7 @@ test("salvar os dados com variantes por salvar na outra aba não fecha o diálog
   await page.getByLabel("Nome do produto").fill("Camiseta nova");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
   const notice = page.getByText(
-    "Produto “Camiseta nova” atualizado. Variantes ainda tem alterações sem salvar."
+    "Produto “Camiseta nova” atualizado. Variantes ainda têm alterações sem salvar."
   );
   await expect(notice).toBeVisible();
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
@@ -1390,4 +1390,45 @@ test("sem internet, o produto novo continua num passo só e cadastrar funciona n
   await expect(
     page.locator("[data-product-id]").filter({ hasText: "Boné de lona" })
   ).toContainText("Aguardando envio");
+});
+
+test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem virar um produto novo", async ({
+  page,
+}) => {
+  const shirt = product(1, "Camiseta do teste");
+  const catalog = { products: [shirt] as unknown[] };
+  await openServerScreen(page, {
+    lists: [(route) => answer(catalog.products)(route)],
+    others: {
+      ...variantsOf,
+      "product/setVariantSku": (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: undefined,
+              defined: false,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta mudada");
+  // archived elsewhere: the next read of the list no longer has it ("Atualizar variantes" reads the list again)
+  catalog.products = [];
+  await page.getByRole("tab", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  await skuSection.getByRole("textbox").fill("CAM-1");
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  await skuSection.getByRole("button", { name: "Atualizar variantes" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Novo produto" })).toHaveCount(
+    0
+  );
 });

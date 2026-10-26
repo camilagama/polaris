@@ -163,7 +163,7 @@ function dialogTexts(
   if (isPending) {
     submitLabel = "Salvando…";
   }
-  let description = "Um passo só: o produto já nasce com o estoque.";
+  let description = "Um passo só: o produto pode nascer com o estoque.";
   if (editing) {
     description = offlineEdit
       ? "Produto · sem internet, nada é enviado agora"

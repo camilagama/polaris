@@ -4,9 +4,12 @@ import {
   rpcErrorReason,
 } from "../lib/rpc-error";
 
-/** The same product named again with other data than the first try, which was saved: the list shows the saved one. */
+/**
+ * The same product named again with other data than the first try, which was saved: the list (under the veil of the
+ * dialog, read again) shows the saved one.
+ */
 const PRODUCT_ALREADY_CREATED =
-  "Este produto já foi cadastrado, com outros dados. Veja a lista e confira antes de cadastrar de novo.";
+  "Este produto já foi cadastrado, com outros dados. Feche e confira na lista antes de cadastrar de novo.";
 
 export function isProductAlreadyCreated(error: unknown): boolean {
   return (
@@ -21,7 +24,7 @@ export const PRODUCT_LIMIT_REACHED =
 
 /** A refusal of the registration that the server could not name: it does not blame the category. */
 const PRODUCT_CREATE_UNKNOWN_CONFLICT =
-  "Não foi possível cadastrar o produto agora. Atualize a lista e tente novamente.";
+  "Não foi possível cadastrar o produto agora. Tente novamente.";
 
 /** The reasons that say the chosen category cannot take a product. */
 const CATEGORY_REASONS: ReadonlySet<string> = new Set([
@@ -103,11 +106,11 @@ export function productErrorMessage(
   if (code === "CONFLICT" && action === "create") {
     const reason = rpcErrorReason(error);
     return reason !== undefined && CATEGORY_REASONS.has(reason)
-      ? "A categoria selecionada não está mais disponível. Atualize a lista e tente novamente."
+      ? "A categoria selecionada não está mais disponível. Escolha outra em Mais detalhes e tente novamente."
       : PRODUCT_CREATE_UNKNOWN_CONFLICT;
   }
   if (code === "CONFLICT" && action === "update") {
-    return "A categoria pode ter sido arquivada ou o produto mudou. Atualize a lista e tente novamente.";
+    return "A categoria pode ter sido arquivada ou o produto mudou. Confira os dados e tente novamente.";
   }
   if (code === "CONFLICT") {
     return "O produto mudou em outra solicitação. Atualize a lista e tente novamente.";
