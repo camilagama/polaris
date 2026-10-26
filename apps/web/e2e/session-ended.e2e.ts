@@ -74,7 +74,7 @@ async function openCategories(page: Page) {
     }
     return route.abort("internetdisconnected");
   });
-  await page.goto("/categories");
+  await page.goto("/products?aba=categorias");
   await expect(page.getByLabel("Nova categoria")).toBeVisible();
   return calls;
 }
@@ -100,7 +100,7 @@ test("401 numa ação da tela não navega sozinho: avisa, mantém o digitado e o
   await expect(page.getByText(SENTENCE)).toHaveCount(1);
   // the notice is brought to the person: it has the focus
   await expect(notice).toBeFocused();
-  expect(new URL(page.url()).pathname).toBe("/categories");
+  expect(new URL(page.url()).pathname).toBe("/products");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
   await expect(page.locator("body")).not.toContainText("sessão não está ativa");
 });
@@ -116,7 +116,9 @@ test("'Entrar de novo' com a sessão morta não chama o Sair, limpa as cópias e
     .getByRole("button", { name: "Entrar de novo" })
     .click();
 
-  await page.waitForURL("**/entrar?motivo=sessao&voltar=/categories");
+  await page.waitForURL(
+    "**/entrar?motivo=sessao&voltar=/products%3Faba%3Dcategorias"
+  );
   await expect(
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();

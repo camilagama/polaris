@@ -372,7 +372,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   await expect(list.getByRole("listitem")).toHaveCount(2);
   const section = page.getByRole("region", { name: "Segurança" });
   const link = section.getByRole("link", { name: "Trocar senha" });
-  await expect(link).toHaveAttribute("href", "/conta/seguranca");
+  await expect(link).toHaveAttribute("href", "/configuracoes?aba=senha");
   const box = await link.boundingBox();
   // the outline button of the interface: 32 px with a mouse (36 with touch), and the 48 px touch area is the
   // guardrails' (check 2); it is still a button, not a link in a paragraph
@@ -384,7 +384,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   );
   await expect(
     page
-      .getByRole("heading", { level: 1, name: "Aparelhos" })
+      .getByRole("heading", { level: 2, name: "Aparelhos" })
       .locator("..")
       .getByRole("link")
   ).toHaveCount(0);
@@ -812,7 +812,9 @@ test("login antigo sem fila: Entrar de novo sai pela proteção do Sair e vai à
   await askRevoke(page, "Celular da Ana").click();
   await confirmButton(page).click();
   await page.getByRole("button", { name: "Entrar de novo" }).click();
-  await page.waitForURL("**/entrar?motivo=recente&voltar=/devices");
+  await page.waitForURL(
+    "**/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
+  );
   expect(state.signOutCalls).toBe(1);
 });
 
@@ -889,7 +891,9 @@ test("sessão que acabou durante a ação: painel próprio, sem passar pelo Sair
   ).toBeVisible();
 
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
-  await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
+  await page.waitForURL(
+    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+  );
   expect(state.signOutCalls).toBe(0);
   // leaving drops the lease and the collections too; the queue stays
   expect(await leaseKeys(page)).toEqual([]);
@@ -1001,7 +1005,9 @@ for (const lookup of ["answers", "unreachable"] as const) {
     expect(printed.filter((line) => SECRET_IN_CONSOLE.test(line))).toEqual([]);
 
     await panel.getByRole("button", { name: "Entrar de novo" }).click();
-    await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
+    await page.waitForURL(
+      "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+    );
     expect(state.signOutCalls).toBe(0);
     expect(await queuedOperations(page)).toBe(queuedBefore);
   });
@@ -1066,7 +1072,9 @@ test("este navegador saiu e a pessoa clica em Entrar de novo antes de qualquer e
   await expect(panel).toBeVisible();
   expect(await leaseKeys(page)).not.toEqual([]); // nothing dropped it yet
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
-  await page.waitForURL("**/entrar?motivo=sessao&voltar=/devices");
+  await page.waitForURL(
+    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+  );
   expect(await leaseKeys(page)).toEqual([]);
   expect(await queuedOperations(page)).toBe(queuedBefore);
   expect(state.signOutCalls).toBe(0);
@@ -1279,7 +1287,9 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
-  await page.goto("/entrar?motivo=recente&voltar=/devices");
+  await page.goto(
+    "/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
+  );
   await expect(
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
@@ -1352,7 +1362,7 @@ test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 
   }
 });
 
-test("o menu oferece Aparelhos quando o runtime offline está ligado", async ({
+test("Configurações oferece a aba Aparelhos quando o runtime offline está ligado", async ({
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
@@ -1362,7 +1372,9 @@ test("o menu oferece Aparelhos quando o runtime offline está ligado", async ({
   if (await more.isVisible()) {
     await more.click();
   }
-  await expect(page.getByRole("link", { name: "Aparelhos" })).toBeVisible();
+  await page.getByRole("link", { exact: true, name: "Configurações" }).click();
+  await page.getByRole("tab", { exact: true, name: "Aparelhos" }).click();
+  await expect(page.getByRole("list", { name: "Aparelhos" })).toBeVisible();
 });
 
 test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desktop a frase fica no title", async ({

@@ -18,11 +18,14 @@ import {
 import { PageLoading } from "./page-loading";
 import { TabPanelScope } from "./screen-title";
 
+/** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout. */
+const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno"];
+
 /**
  * The tab on screen and the way to change it. The address names it (`?aba=`); a tab this person does not have (Aparelhos
  * without the offline runtime, Assinatura without `billing:manage`...) opens the first one, and the address says so.
- * Changing tabs rewrites the address in place (no step in the history: "voltar" leaves the screen) and drops the rest
- * of its query, which belonged to the tab that was open (`?novo=1`, `?retorno=`).
+ * Changing tabs rewrites the address in place (no step in the history: "voltar" leaves the screen) and drops the links
+ * that opened something inside the tab that was open (`?novo=1`, `?retorno=`...), so coming back does not open it again.
  */
 export function useScreenTab(
   screen: TabScreenId,
@@ -42,8 +45,12 @@ export function useScreenTab(
   }, [asked, screen, value]);
   const select = useCallback(
     (next: unknown) => {
+      const url = new URL(window.location.href);
+      for (const name of TAB_LINK_PARAMETERS) {
+        url.searchParams.delete(name);
+      }
       replaceAddress(
-        addressWithTab(window.location.pathname, screen, String(next))
+        addressWithTab(`${url.pathname}${url.search}`, screen, String(next))
       );
     },
     [screen]

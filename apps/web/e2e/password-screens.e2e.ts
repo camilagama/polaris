@@ -31,7 +31,8 @@ const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const AT_SIGN_IN = /\/entrar$/;
 const LOGIN_TOKEN = /^tt-login-\d+$/;
 const VERIFICATION_TOKEN = /^tt-verification_email-/;
-const AT_DEVICES = /\/devices$/;
+// `/devices` is the tab Aparelhos of Configurações now (map of navigation, § 6)
+const AT_DEVICES = /\/configuracoes\?aba=aparelhos$/;
 const TERMS = /Termos de Uso/;
 const NOOPENER = /noopener/;
 const SIGNUP_TOKEN = /^tt-signup-/;
@@ -1047,7 +1048,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     const server = newServer();
     await openAccount(page, server);
     await expect(
-      page.getByRole("heading", { level: 1, name: "Trocar senha" })
+      page.getByRole("heading", { level: 2, name: "Trocar senha" })
     ).toBeVisible();
     await expect(
       page.getByText("os outros aparelhos saem da sua conta", { exact: false })
@@ -1136,7 +1137,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     ).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: "Cancelar e voltar para Aparelhos" })
-    ).toHaveAttribute("href", "/devices");
+    ).toHaveAttribute("href", "/configuracoes?aba=aparelhos");
     await shot(page, "trocar-senha-conta-google");
   });
 

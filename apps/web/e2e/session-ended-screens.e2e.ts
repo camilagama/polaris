@@ -211,7 +211,14 @@ test("aviso com um campo ativo não rola a página nem tira o foco do campo (V-3
   const field = page.getByLabel("Nova categoria");
   await field.fill("Acessórios");
   await field.focus();
-  await page.evaluate(() => window.scrollTo(0, 200));
+  // the field just under the header of the phone, as when the person types in it: what is above it (the title, the
+  // tabs and the place of the screen's own alerts) is out of view
+  await field.evaluate((element) =>
+    window.scrollTo(
+      0,
+      element.getBoundingClientRect().top + window.scrollY - 64
+    )
+  );
   const before = await field.boundingBox();
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   // Enter submits with the field still active: the person is typing

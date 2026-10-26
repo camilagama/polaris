@@ -124,7 +124,10 @@ test("dono: na loja Free, 'Conhecer o Pro' leva à Assinatura; no Pro e no teste
     role: "owner",
     state: "free",
   });
-  await expect(upgrade(page)).toHaveAttribute("href", "/subscription");
+  await expect(upgrade(page)).toHaveAttribute(
+    "href",
+    "/configuracoes?aba=assinatura"
+  );
   await expect(page.getByRole("alert")).not.toContainText(ASK_OWNER);
   // the plan is the server's: read for the refusal
   expect(reads.plan).toBe(1);

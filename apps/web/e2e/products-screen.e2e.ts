@@ -368,8 +368,9 @@ async function openServerScreen(
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
   await page.goto(path);
+  // the h1 of the screen; the tab Produtos has its own h2 under it
   await expect(
-    page.getByRole("heading", { exact: true, name: "Produtos" })
+    page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
   ).toBeVisible();
 }
 

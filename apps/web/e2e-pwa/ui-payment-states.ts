@@ -104,7 +104,7 @@ async function openProfilesLab(page: Page) {
     .getByRole("heading", {
       exact: true,
       level: 1,
-      name: "Perfis de pagamento",
+      name: "Formas de receber",
     })
     .waitFor();
   await page.getByText("Maquininha da loja").first().waitFor();

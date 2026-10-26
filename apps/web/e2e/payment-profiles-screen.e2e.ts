@@ -92,12 +92,11 @@ const profile = (n: number, name: string, status = "active") => ({
 const MACHINE = profile(1, "Maquininha da loja");
 const OLD_LINK = profile(2, "Link antigo", "archived");
 
-/** The title of the screen and the list: the two ends of every state below. */
+/** The title of the screen (the h1 of the lab, the h2 of the tab of Configurações in the shell). */
 const title = (page: Page) =>
   page.getByRole("heading", {
     exact: true,
-    level: 1,
-    name: "Perfis de pagamento",
+    name: "Formas de receber",
   });
 
 // ---- the lab: the same screen without the shell ---------------------------------------------------------------
@@ -194,7 +193,7 @@ const onlyDesktop = (projectName: string) =>
   );
 
 for (const theme of THEMES) {
-  test(`tema ${theme.name}: Perfis de pagamento abre e cada controle muda de estado sob a CSP de produção sem nenhuma violação`, async ({
+  test(`tema ${theme.name}: Formas de receber abre e cada controle muda de estado sob a CSP de produção sem nenhuma violação`, async ({
     page,
   }, testInfo) => {
     onlyDesktop(testInfo.project.name);
@@ -214,8 +213,8 @@ for (const theme of THEMES) {
 /** No box of the screen ends beyond the right edge of the window (the page may hide it, so boxes are measured). */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
-    const root = [...document.querySelectorAll("h1")]
-      .find((heading) => heading.textContent === "Perfis de pagamento")
+    const root = [...document.querySelectorAll("h1, h2")]
+      .find((heading) => heading.textContent === "Formas de receber")
       // the root of the screen: the header with the title is its first child
       ?.closest("header")?.parentElement;
     const limit = window.innerWidth + 0.5;

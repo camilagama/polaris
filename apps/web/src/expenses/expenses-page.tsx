@@ -187,7 +187,7 @@ export function ExpensesPage() {
         />
       ) : null}
 
-      {/* from 900 px, the form beside the list (as Perfis de pagamento); below, one column, the form first */}
+      {/* from 900 px, the form beside the list (as Formas de receber); below, one column, the form first */}
       <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
         <ExpenseForm
           categories={categories.state.categories}

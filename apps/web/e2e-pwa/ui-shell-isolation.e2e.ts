@@ -157,7 +157,7 @@ const openProducts = (
     "/products",
     async () => {
       await expect(
-        page.getByRole("heading", { exact: true, name: "Produtos" })
+        page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
       ).toBeVisible();
       await then(page);
     },
@@ -289,7 +289,7 @@ const openMediaPanel = (
     "/products",
     async () => {
       await expect(
-        page.getByRole("heading", { exact: true, name: "Produtos" })
+        page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
       ).toBeVisible();
       await openMenu(page).click();
       await page.getByRole("menuitem", { name: "Imagens" }).click();
@@ -622,7 +622,7 @@ const openPaymentProfiles = (
 
 const PAYMENT_SCREENS = [
   {
-    name: "Perfis de pagamento no shell: lista e formulário novo",
+    name: "Formas de receber no shell: lista e formulário novo",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page.getByRole("button", { name: "Novo perfil" }).click();
@@ -631,7 +631,7 @@ const PAYMENT_SCREENS = [
   },
   {
     // the form filled by an edit: selects, a fee with a percentage, and the hint of the unknown fee
-    name: "Perfis de pagamento no shell: edição",
+    name: "Formas de receber no shell: edição",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page
@@ -641,7 +641,7 @@ const PAYMENT_SCREENS = [
       }),
   },
   {
-    name: "Perfis de pagamento no shell: percentual inválido",
+    name: "Formas de receber no shell: percentual inválido",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page
@@ -897,7 +897,7 @@ const SCREENS = [
         "/devices",
         async () => {
           await expect(
-            page.getByRole("heading", { level: 1, name: "Aparelhos" })
+            page.getByRole("heading", { level: 2, name: "Aparelhos" })
           ).toBeVisible();
           await expect(page.getByText("Celular da Ana")).toBeVisible();
         },

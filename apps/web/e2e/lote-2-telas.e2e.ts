@@ -69,8 +69,9 @@ async function openScreen(
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
   await page.goto(path);
+  // Categorias and Catálogo público are tabs now (of Produtos and of Configurações): their title is an h2 there
   await expect(
-    page.getByRole("heading", { exact: true, level: 1, name: heading })
+    page.getByRole("heading", { exact: true, name: heading })
   ).toBeVisible();
 }
 
@@ -353,11 +354,12 @@ test("Categorias: as abas de estado têm setas, Tab sai do grupo e o leitor de t
     "Ativas",
     "Arquivadas",
   ]);
-  await expect(page.getByRole("tab")).toHaveText([
-    "Ativas",
-    "Arquivadas",
-    "Removidas",
-  ]);
+  // the tabs of the state, inside the tab Categorias of Produtos
+  await expect(
+    page
+      .getByRole("tablist", { name: "Estado das categorias" })
+      .getByRole("tab")
+  ).toHaveText(["Ativas", "Arquivadas", "Removidas"]);
 });
 
 test("Categorias a 320 px: nada transborda na lista, na confirmação de remover e no nome longo", async ({

@@ -602,7 +602,12 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     }
   });
 
-  for (const screen of [
+  const tabScreens: {
+    label: string;
+    path: string;
+    tabs: [name: string, address: string][];
+    title: string;
+  }[] = [
     {
       label: "Produtos e categorias",
       path: "/products",
@@ -633,7 +638,8 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       ],
       title: "Configurações",
     },
-  ]) {
+  ];
+  for (const screen of tabScreens) {
     test(`${screen.title}: cada aba abre a sua tela, fica no endereço e volta marcada ao recarregar`, async ({
       page,
     }) => {
@@ -644,7 +650,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       ).toBeVisible();
       const list = tabList(page, screen.label);
       await expect(list.getByRole("tab")).toHaveText(
-        screen.tabs.map(([name]) => name as string)
+        screen.tabs.map(([name]) => name)
       );
       for (const [name, address] of screen.tabs) {
         const tab = list.getByRole("tab", { exact: true, name });
@@ -660,7 +666,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       }
       // a reload opens the tab of the address, and the tab changes leave no step in the history
       await page.reload();
-      const last = screen.tabs.at(-1)?.[0] as string;
+      const last = screen.tabs.at(-1)?.[0] ?? "";
       await expect(
         tabList(page, screen.label).getByRole("tab", {
           exact: true,
