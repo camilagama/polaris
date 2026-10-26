@@ -16,7 +16,11 @@ import { tabHref } from "../app-shell/navigation-model";
 import { NotFoundPage } from "../app-shell/not-found-page";
 import { ScreenTitle, useInTab } from "../app-shell/screen-title";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
+import { canManageBilling } from "../lib/billing-access";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { signInPath } from "../lib/sign-in-path";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
+import { firstSettingsTab } from "../settings/settings-tabs";
 import { LogoutDialog } from "../offline/logout-dialog";
 import { useLogout } from "../offline/runtime/logout-control";
 import { useEntryMethods } from "./entry-methods";
@@ -34,7 +38,6 @@ import {
   CHANGE_BUTTON,
   CHANGE_BUTTON_PENDING,
   CHANGE_CANCEL,
-  CHANGE_CANCEL_LABEL,
   CHANGE_CARD_TITLE,
   CHANGE_DONE,
   CHANGE_NO_PASSWORD,
@@ -44,6 +47,7 @@ import {
   CHANGE_TITLE,
   CURRENT_PASSWORD_LABEL,
   CURRENT_PASSWORD_WRONG,
+  changeCancelLabel,
   changePausedText,
   failureText,
   NEW_PASSWORD_LABEL,
@@ -55,9 +59,7 @@ import {
 } from "./password-texts";
 
 const ACCOUNT_SECURITY_PATH = tabHref("settings", "senha");
-/** "Cancelar" goes back to where the page is reached from, without saving. */
-const DEVICES_PATH = tabHref("settings", "aparelhos");
-/** A live but old login: "Sair" (the queue protected first), then back here, as in Aparelhos. */
+/** A live but old login: "Sair" (the queue protected first), then back here, as the Aparelhos tab does. */
 const SIGN_IN_AGAIN = signInPath({
   reason: "recente",
   returnTo: ACCOUNT_SECURITY_PATH,
@@ -85,16 +87,27 @@ function UiBlock({ children }: { children: ReactNode }) {
   );
 }
 
-/** "Cancelar": back to Aparelhos without saving, a link in the look of an outline button. */
-function CancelLink() {
+/**
+ * "Cancelar": back to the first tab of Configurações this person has (the same list the screen draws, so never to one
+ * the menu does not offer, Aparelhos, which exists only with the offline runtime), without saving. A link in the look of an
+ * outline button.
+ */
+export function CancelLink() {
+  const { billingSelfService, organization } = useCurrentOrganization();
+  const tab = firstSettingsTab({
+    billing: canManageBilling(billingSelfService, organization.role),
+    offline: OFFLINE_RUNTIME_ENABLED,
+    // this page is the Senha tab: it exists only with the password on
+    passwordOn: true,
+  });
   return (
     <a
-      aria-label={CHANGE_CANCEL_LABEL}
+      aria-label={changeCancelLabel(tab.label)}
       className={cn(
         buttonVariants({ size: "lg", variant: "outline" }),
         "w-full sm:w-fit"
       )}
-      href={DEVICES_PATH}
+      href={tabHref("settings", tab.value)}
     >
       {CHANGE_CANCEL}
     </a>

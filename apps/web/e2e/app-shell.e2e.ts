@@ -718,14 +718,17 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     await page.goBack();
     await expect.poll(() => pathOf(page)).toBe("/");
 
-    // a tab that does not exist opens the first one of the screen
+    // a tab that does not exist opens the first one of the screen, and the address says so (no step in the history)
     await page.goto("/configuracoes?aba=nenhuma");
+    const stepsBefore = await page.evaluate(() => history.length);
     await expect(
       tabList(page, "Configurações").getByRole("tab", {
         exact: true,
         name: "Formas de receber",
       })
     ).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => pathOf(page)).toBe("/configuracoes");
+    expect(await page.evaluate(() => history.length)).toBe(stepsBefore);
   });
 
   test("sem conexão, o chip e a faixa seguem a aba aberta: Produtos funciona do aparelho, Categorias precisa de internet", async ({

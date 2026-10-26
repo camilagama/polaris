@@ -7,6 +7,7 @@ import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { loadAuthMethods } from "../sign-in/sign-in-model";
+import { settingsTabsShown } from "./settings-tabs";
 
 /** Each tab is its own chunk, as each screen was. */
 const PANELS: Readonly<Record<string, TabPanel>> = {
@@ -83,13 +84,11 @@ export function SettingsScreen() {
   const passwordOn = usePasswordOn();
   const { search } = useAddress();
   const asked = requestedTab("settings", search).value;
-  const shows: Record<string, boolean> = {
-    aparelhos: OFFLINE_RUNTIME_ENABLED,
-    assinatura: canManageBilling(billingSelfService, organization.role),
-    "catalogo-publico": true,
-    "formas-de-receber": true,
-    senha: passwordOn === true,
-  };
+  const shows = settingsTabsShown({
+    billing: canManageBilling(billingSelfService, organization.role),
+    offline: OFFLINE_RUNTIME_ENABLED,
+    passwordOn: passwordOn === true,
+  });
   const panels = Object.entries(PANELS)
     .filter(
       ([value]) =>

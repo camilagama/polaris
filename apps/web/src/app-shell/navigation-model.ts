@@ -205,6 +205,28 @@ export function requestedTab(screen: TabScreenId, search: string): ScreenTab {
   return tabs.find((tab) => tab.value === value) ?? (tabs[0] as ScreenTab);
 }
 
+/**
+ * The tab to draw among the ones this person has (`available`), and whether the address must be rewritten to say it:
+ * the address asks for one this person does not have (Aparelhos without the offline runtime...) or names no tab of
+ * the screen at all (`?aba=xyz`).
+ */
+export function openedTab(
+  screen: TabScreenId,
+  search: string,
+  available: readonly string[]
+): { rewrite: boolean; value: string } {
+  const asked = requestedTab(screen, search).value;
+  const named = new URLSearchParams(search).get(TAB_PARAMETER);
+  // the first tab of the screen that this person has, in the order of the screen
+  const first = SCREEN_TABS[screen].find((tab) =>
+    available.includes(tab.value)
+  )?.value;
+  const value = available.includes(asked) ? asked : (first ?? asked);
+  const unknown =
+    named !== null && !SCREEN_TABS[screen].some((tab) => tab.value === named);
+  return { rewrite: value !== asked || unknown, value };
+}
+
 /** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
 export function addressWithTab(
   href: string,

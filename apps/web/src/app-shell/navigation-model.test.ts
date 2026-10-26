@@ -10,6 +10,7 @@ import {
   menuItemsOf,
   NAV_ITEMS,
   navGroups,
+  openedTab,
   requestedTab,
   resolveRoute,
   SCREEN_TABS,
@@ -145,6 +146,46 @@ describe("tabs", () => {
     expect(requestedTab("products", "?aba=metas").value).toBe("produtos");
     expect(requestedTab("settings", "?aba=senha&x=1").value).toBe("senha");
     expect(requestedTab("dashboard", "?aba=despesas").value).toBe("despesas");
+  });
+
+  it("rewrites the address for a value that is no tab, and for a tab this person does not have", () => {
+    const has = ["formas-de-receber", "catalogo-publico", "senha"];
+    // none, or a tab that is there: the address already says it
+    expect(openedTab("settings", "", has)).toEqual({
+      rewrite: false,
+      value: "formas-de-receber",
+    });
+    expect(openedTab("settings", "?aba=senha", has)).toEqual({
+      rewrite: false,
+      value: "senha",
+    });
+    // `?aba=xyz` names no tab: the first one opens and the address says so
+    expect(openedTab("settings", "?aba=xyz", has)).toEqual({
+      rewrite: true,
+      value: "formas-de-receber",
+    });
+    expect(openedTab("settings", "?aba=", has).rewrite).toBe(true);
+    // a tab of the screen that this person does not have (Aparelhos without the offline runtime)
+    expect(openedTab("settings", "?aba=aparelhos", has)).toEqual({
+      rewrite: true,
+      value: "formas-de-receber",
+    });
+    // the goals link of the Início wins over `aba`; the Resultado rewrites that one itself
+    const result = ["resultado", "metas", "despesas"];
+    expect(openedTab("dashboard", "?meta=nova", result)).toEqual({
+      rewrite: false,
+      value: "metas",
+    });
+    expect(openedTab("dashboard", "?meta=nova&aba=xyz", result).rewrite).toBe(
+      true
+    );
+    expect(
+      openedTab("dashboard", "?meta=nova&aba=despesas", result).rewrite
+    ).toBe(false);
+    // a tab of another screen is no tab here
+    expect(openedTab("products", "?aba=metas", ["produtos"]).rewrite).toBe(
+      true
+    );
   });
 
   it("opens Metas for the two links of the Início, over any `aba` (AC-13)", () => {

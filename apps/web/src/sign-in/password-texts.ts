@@ -155,7 +155,8 @@ export const CHANGE_RECENT_REQUIRED =
   "Por segurança, entre de novo para trocar a senha.";
 export const CHANGE_NO_PASSWORD = "Conta do Google: não há senha para trocar.";
 export const CHANGE_CANCEL = "Cancelar";
-export const CHANGE_CANCEL_LABEL = "Cancelar e voltar para Aparelhos";
+export const changeCancelLabel = (destination: string) =>
+  `Cancelar e voltar para ${destination}`;
 export const CHANGE_CARD_TITLE = "Nova senha";
 export const CHANGE_RECENT_BUTTON = "Entrar de novo";
 

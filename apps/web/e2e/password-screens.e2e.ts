@@ -1136,8 +1136,10 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
       page.getByRole("button", { exact: true, name: "Trocar senha" })
     ).toHaveCount(0);
     await expect(
-      page.getByRole("link", { name: "Cancelar e voltar para Aparelhos" })
-    ).toHaveAttribute("href", "/configuracoes?aba=aparelhos");
+      page.getByRole("link", {
+        name: "Cancelar e voltar para Formas de receber",
+      })
+    ).toHaveAttribute("href", "/configuracoes");
     await shot(page, "trocar-senha-conta-google");
   });
 

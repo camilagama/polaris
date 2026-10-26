@@ -11,7 +11,7 @@ import { ErrorBoundary } from "./error-boundary";
 import type { LazyScreen } from "./lazy-screen";
 import {
   addressWithTab,
-  requestedTab,
+  openedTab,
   SCREEN_TABS,
   type TabScreenId,
 } from "./navigation-model";
@@ -23,7 +23,8 @@ const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno"];
 
 /**
  * The tab on screen and the way to change it. The address names it (`?aba=`); a tab this person does not have (Aparelhos
- * without the offline runtime, Assinatura without `billing:manage`...) opens the first one, and the address says so.
+ * without the offline runtime, Assinatura without `billing:manage`...) or a value that is no tab (`?aba=xyz`) opens the
+ * first one, and the address says so (`replaceAddress`: no step in the history).
  * Changing tabs rewrites the address in place (no step in the history: "voltar" leaves the screen) and drops the links
  * that opened something inside the tab that was open (`?novo=1`, `?retorno=`...), so coming back does not open it again.
  */
@@ -32,17 +33,12 @@ export function useScreenTab(
   available: readonly string[]
 ): [string, (value: unknown) => void] {
   const { search } = useAddress();
-  const asked = requestedTab(screen, search).value;
-  // the first tab of the screen that this person has, in the order of the screen
-  const first = SCREEN_TABS[screen].find((tab) =>
-    available.includes(tab.value)
-  )?.value;
-  const value = available.includes(asked) ? asked : (first ?? asked);
+  const { rewrite, value } = openedTab(screen, search, available);
   useEffect(() => {
-    if (value !== asked) {
+    if (rewrite) {
       replaceAddress(addressWithTab(window.location.href, screen, value));
     }
-  }, [asked, screen, value]);
+  }, [rewrite, screen, value]);
   const select = useCallback(
     (next: unknown) => {
       const url = new URL(window.location.href);
