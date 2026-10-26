@@ -125,12 +125,15 @@ export const OFFLINE_NAV_ITEMS: readonly NavItem[] = [
   },
 ];
 
-/** The destinations of the bottom bar of the phone, in order; every other item is under "Mais". */
+/**
+ * The destinations of the bottom bar of the phone, in order, before "Mais": Vender in the middle of the five (v7 § 3
+ * item 12); every other item is under "Mais".
+ */
 export type BottomBarId = "history" | "home" | "inventory" | "sale";
 export const BOTTOM_BAR_IDS: readonly BottomBarId[] = [
   "home",
-  "sale",
   "history",
+  "sale",
   "inventory",
 ];
 

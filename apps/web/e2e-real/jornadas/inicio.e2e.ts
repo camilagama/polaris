@@ -86,7 +86,7 @@ test("início: a venda de hoje aparece em Hoje e abrir a tela não grava nada no
   await expect(today).toContainText("R$ 90,00");
   await expect(today).toContainText("1 venda");
   await expect(page.getByRole("region", { name: "Meta" })).toContainText(
-    "Nenhuma meta em andamento."
+    "Defina quanto quer vender no mês e acompanhe aqui."
   );
   await expect(
     page.getByRole("region", { name: "Precisa de atenção" })

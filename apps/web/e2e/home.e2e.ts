@@ -443,6 +443,17 @@ async function openHome(page: Page, server: FakeServer, at = NOON) {
   });
 }
 
+/**
+ * The estimate of the goal of 23/10 (v7 § 3 item 9): R$ 2.670,60 measured, plus the 7 whole days before today (16 to
+ * 22/10: R$ 1.840,00 + R$ 420,50 = R$ 2.260,50) × 8 days left ÷ 7 = R$ 2.583,428… → R$ 2.583,43 (half-up, once), so
+ * R$ 5.254,03 on the 31st. Over the target of R$ 5.000,00 the phrase says the day the rhythm crosses it (the 7th day
+ * would give R$ 4.931,10: the 31st, the last one, is the first above), and under a target of R$ 6.000,00 where it gets.
+ */
+const GOAL_PROJECTION =
+  "No ritmo dos últimos 7 dias, a meta é batida até 31/10. Estimativa.";
+const GOAL_PROJECTION_SHORT =
+  "No ritmo dos últimos 7 dias, chega a R$ 5.254,03 em 31/10. Estimativa.";
+const GOAL_PROJECTION_NO_SALES = "Sem vendas nos últimos 7 dias para estimar.";
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
 const newSale = (page: Page) =>
@@ -559,9 +570,23 @@ test.describe("loja com venda", () => {
 
     const meta = region(page, "Meta");
     await expect(meta).toContainText("Meta de outubro");
-    await expect(meta).toContainText("de 01/10 a 31/10");
-    await expect(meta).toContainText("R$ 2.670,60 de R$ 5.000,00");
-    await expect(meta).toContainText("53,4%");
+    // the store's today is 23/10: 8 days after it up to the 31st
+    await expect(meta).toContainText("de 01/10 a 31/10 · faltam 8 dias");
+    // the ring (v7 § 3 item 9): an image that says it in words, the drawing of Bklit UI hidden inside it
+    const ring = meta.getByRole("img");
+    await expect(ring).toHaveAttribute(
+      "aria-label",
+      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00"
+    );
+    await expect(ring).toContainText("53,4%da meta");
+    await expect(ring.locator("[data-ring-chart] svg")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    await expect(meta).toContainText("R$ 2.670,60de R$ 5.000,00");
+    await expect(meta.locator("[data-goal-projection]")).toHaveText(
+      GOAL_PROJECTION
+    );
     await expect(
       meta.getByRole("link", { name: "Ver as outras" })
     ).toHaveAttribute("href", "/dashboard?meta=lista");
@@ -1163,6 +1188,83 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(region(page, "Meta")).not.toContainText("%");
   });
 
+  test("o anel da meta: Esconder valores mascara os reais (no texto, na estimativa e no nome do anel) e deixa o percentual; sem meta, o anel tracejado e Definir meta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openHome(page, server);
+    const meta = region(page, "Meta");
+    const ring = meta.getByRole("img");
+    await expect(
+      ring.locator("[data-ring-chart] svg path").first()
+    ).toBeAttached();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(meta).not.toContainText("2.670,60");
+    await expect(meta).not.toContainText("5.000,00");
+    await expect(meta).not.toContainText("5.254,03");
+    // the phrase of "batida" has no amount: only the measured and the target are masked
+    await expect(meta.locator("[data-goal-projection]")).toHaveText(
+      GOAL_PROJECTION
+    );
+    await expect(meta.locator("[data-masked-money]")).toHaveCount(2);
+    await expect(ring).toHaveAttribute(
+      "aria-label",
+      "53,4% da meta: valor escondido de valor escondido"
+    );
+    await expect(ring).toContainText("53,4%");
+
+    server.scenario = { ...SOLD, goals: [] };
+    await page.reload();
+    const empty = region(page, "Meta");
+    await expect(empty.locator('[data-goal-ring="vazio"]')).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    await expect(empty).toContainText(
+      "Defina quanto quer vender no mês e acompanhe aqui."
+    );
+    await expect(
+      empty.getByRole("link", { name: "Definir meta" })
+    ).toHaveAttribute("href", "/dashboard?meta=nova");
+  });
+
+  test("a frase da estimativa: abaixo do alvo diz onde chega (e Esconder valores a mascara); sem venda nos 7 dias diz que não há o que estimar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const short = new FakeServer({
+      ...SOLD,
+      goals: [goal({ target: "6000.00" })],
+    });
+    await openHome(page, short);
+    const meta = region(page, "Meta");
+    await expect(meta.locator("[data-goal-projection]")).toHaveText(
+      GOAL_PROJECTION_SHORT
+    );
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(meta).not.toContainText("5.254,03");
+    await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
+
+    // nothing sold from 16 to 22/10: a "chega a" equal to what was reached would be no estimate
+    const { "2026-10-18": _, "2026-10-20": __, ...quiet } = SOLD.days;
+    short.scenario = {
+      ...SOLD,
+      days: quiet,
+      goals: [goal({ target: "6000.00" })],
+    };
+    await page.reload();
+    const none = region(page, "Meta").locator("[data-goal-projection]");
+    await expect(none).toHaveText(GOAL_PROJECTION_NO_SALES);
+    await expect(none).toHaveAttribute("data-goal-projection", "sem-venda");
+  });
+
   test("'Definir meta' abre o formulário de meta no Resultado", async ({
     page,
   }) => {
@@ -1218,7 +1320,7 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       .getByRole("button", { name: "Tentar novamente" })
       .click();
     await expect(region(page, "Meta")).toContainText(
-      "Nenhuma meta em andamento."
+      "Defina quanto quer vender no mês e acompanhe aqui."
     );
   });
 
@@ -1804,11 +1906,14 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("Sair apaga a cópia do Início antes de sair (A e B do aparelho)", async ({
     page,
   }) => {
-    // "Sair" in the sidebar (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
+    // "Sair" in the menu of the store card (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
     await page.setViewportSize({ height: 800, width: 1280 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
-    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Loja, tema e Sair" })
+      .click();
+    await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
     // the page leaves while this is asked: a question cut by the navigation is asked again
     await expect

@@ -23,6 +23,7 @@ import { KpiCards } from "./home-kpi-cards";
 import {
   copyLine,
   type GoalView,
+  goalProjection,
   homeUpdatedLine,
   monthTitle,
   newSaleOfflineText,
@@ -374,7 +375,25 @@ function pickGoalBlock({
   if (offline || state.sessionRefused) {
     return null;
   }
-  return <GoalBlock block={state.goals} onRetry={retryGoals} view={goal} />;
+  // the estimate only from the server's series of this read, measured on its today (never from the copy)
+  const figures = state.figures.status === "ready" ? state.figures.data : null;
+  const projection =
+    goal?.kind === "active" && figures
+      ? goalProjection(
+          goal.goal,
+          { before: figures.before.daily, month: figures.month.daily },
+          figures.today
+        )
+      : null;
+  return (
+    <GoalBlock
+      block={state.goals}
+      onRetry={retryGoals}
+      projection={projection}
+      today={figures?.today ?? null}
+      view={goal}
+    />
+  );
 }
 
 /**
