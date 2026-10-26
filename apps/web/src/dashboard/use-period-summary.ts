@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isDailySeries } from "../home/home-rhythm-model";
 import { isNoAnswer } from "../lib/connection";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
@@ -19,8 +20,7 @@ import {
   periodSummaryErrorMessage,
   periodSummaryMayUseCopy,
 } from "./dashboard-errors";
-import { isDailySeries } from "../home/home-rhythm-model";
-import { type Period, addDays, samePeriod } from "./result-period";
+import { addDays, type Period, samePeriod } from "./result-period";
 
 export interface PeriodSummaryState {
   error: string | null;
@@ -244,14 +244,14 @@ export type ComparisonSales = ComparisonDays<
 /**
  * A read of the period before that the cards compare with, asked only once the screen's read of the period answered
  * (the caller passes null before), in one try and with no copy on the device: when it fails, or with no connection,
- * the cards have no chip and say nothing about it. `fetch` gives the days of the period, or null when what came back is
+ * the cards have no chip and say nothing about it. `read` gives the days of the period, or null when what came back is
  * not what the server sends. A late answer never stands for another period; the last one read is kept, so going back
  * to a period does not ask again.
  */
 function useComparisonRead<Day>(
   organizationId: string,
   period: Period | null,
-  fetch: (
+  read: (
     organizationId: string,
     period: Period,
     signal: AbortSignal
@@ -276,7 +276,7 @@ function useComparisonRead<Day>(
     sequence.current += 1;
     const requestSequence = sequence.current;
     const isCurrent = () => requestSequence === sequence.current;
-    readWithRetry((signal) => fetch(organizationId, { from, to }, signal), {
+    readWithRetry((signal) => read(organizationId, { from, to }, signal), {
       isCurrent,
       // one try: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
       mayRetry: () => false,
@@ -292,7 +292,7 @@ function useComparisonRead<Day>(
     return () => {
       sequence.current += 1;
     };
-  }, [fetch, from, organizationId, to, wanted]);
+  }, [from, organizationId, read, to, wanted]);
 
   return wanted ? { days: kept.days, period: kept.period } : null;
 }
@@ -323,7 +323,7 @@ const readSalesDays = async (
     ? series.net.map((netSales, index) => ({
         date: addDays(period.from, index),
         netSales,
-        salesCount: series.count[index] ?? 0,
+        salesCount: series.count[index] as number,
       }))
     : null;
 };

@@ -18,7 +18,11 @@ import {
   isIncompleteEstimate,
   NO_KNOWN_COST_NOTE,
 } from "./dashboard-model";
-import { noKnownCost, type ResultKpis, resultKpis } from "./result-kpis";
+import {
+  type ResultKpis,
+  resultKpis,
+  summaryHasNoKnownCost,
+} from "./result-kpis";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -175,7 +179,7 @@ export function ResultCards({
   // a period with no sale draws nothing; a copy kept before the series existed has the totals only
   const drawn = cards.salesCount > 0 && kpis.days.length > 0;
   // no cost known at all: the server's margin and result are the sales, so the two cards say so and show no number
-  const noCost = noKnownCost(kpis.days, quality);
+  const noCost = summaryHasNoKnownCost(summary, today);
   const incomplete =
     noCost ||
     isIncompleteEstimate(quality) ||

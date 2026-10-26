@@ -330,6 +330,8 @@ class FakeReportServer {
   readonly answered: string[] = [];
   /** When set, every answer is this ORPC error instead of a summary. */
   failure: { code: string; status: number } | null = null;
+  /** When true only `report.dailySales` fails: the chips of Vendas and Ticket médio go, the rest stays. */
+  salesFailure = false as boolean;
   /** When true the network is down: the request never gets an answer. */
   networkDown = false as boolean;
   private readonly holds = new Map<string, Promise<void>>();
@@ -385,6 +387,9 @@ class FakeReportServer {
   /** The sales and count of each day of the period, as the SQL `GROUP BY` of `dailySales` gives them. */
   private dailySales(from: string, to: string) {
     this.salesComparisons.push({ from, to });
+    if (this.salesFailure) {
+      return this.fail("INTERNAL_SERVER_ERROR", 500);
+    }
     if (this.failure) {
       return this.fail(this.failure.code, this.failure.status);
     }
@@ -595,6 +600,25 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
 
   // the time of the last successful load is visible
   await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
+});
+
+test("sem a leitura do dailySales, somem só os chips de Vendas e Ticket médio; o resto da tela fica", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.salesFailure = true;
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await expect.poll(() => server.salesComparisons.length).toBe(1);
+  await expect(
+    card(page, CARD.netSales).locator("[data-kpi-delta]")
+  ).toHaveCount(0);
+  await expect(card(page, CARD.ticket).locator("[data-kpi-delta]")).toHaveCount(
+    0
+  );
+  await expect(card(page, CARD.netSales)).not.toContainText("vs. ");
+  await expect(card(page, CARD.margin)).toContainText("52,69%");
+  await expect(chartRegion(page)).toBeVisible();
 });
 
 test("Esconder valores (v7 § 6): o mesmo botão do Início esconde os reais dos cartões, da cadeia, das partes e do gráfico, e as porcentagens ficam", async ({
