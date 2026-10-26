@@ -53,6 +53,20 @@ const json = (body: unknown) => ({
 const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
 
+/** What the server says of the ways to sign in (the latest route wins over the one `serve` set). */
+const authMethods = (page: Page, emailPassword: boolean) =>
+  page.route("**/api/auth-methods", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        emailPassword,
+        google: true,
+        turnstileSiteKey: null,
+      }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+
 /** The server of a test: a signed-in person with one store, and nothing queued. */
 async function serve(page: Page, organizations = ORGANIZATIONS) {
   const state = { signOutCalls: 0 };
@@ -62,6 +76,8 @@ async function serve(page: Page, organizations = ORGANIZATIONS) {
   await page.route("**/rpc/organization/listMine", (route) =>
     route.fulfill(json({ organizations }))
   );
+  // the password is off unless a test says otherwise: Senha is not a tab of Configurações then
+  await authMethods(page, false);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify(
@@ -768,6 +784,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     page,
   }) => {
     await serve(page);
+    await authMethods(page, true);
     for (const [old, address, list, tab] of [
       [
         "/categories",
