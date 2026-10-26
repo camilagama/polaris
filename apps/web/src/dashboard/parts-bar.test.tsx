@@ -41,10 +41,18 @@ function quality(itemLinesWithUnknownCost: number): PeriodQuality {
 
 /** The words of a piece of markup, read tag by tag. */
 function words(markup: string): string {
-  return markup
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  let out = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") {
+      inTag = true;
+    } else if (char === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      out += char;
+    }
+  }
+  return out.replace(/\s+/g, " ").trim();
 }
 
 const LINE = "Sem o custo das mercadorias, a divisão dos custos não aparece.";
