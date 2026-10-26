@@ -5,6 +5,7 @@ import type {
 import {
   type ChangeEvent,
   type FormEvent,
+  type Ref,
   useCallback,
   useEffect,
   useRef,
@@ -12,7 +13,15 @@ import {
 } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import {
   Field,
   FieldDescription,
@@ -22,10 +31,12 @@ import {
   FieldSet,
 } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import {
   ProductTextAreaField,
   ProductTextField,
 } from "../catalog/product-fields";
+import { ActionFeedback } from "../catalog/products-page-parts";
 import { focusLater } from "../lib/focus";
 import type { CustomerDraft } from "./customer-draft";
 import { NAME_REQUIRED_TEXT } from "./customers-model";
@@ -158,7 +169,7 @@ function PossibleDuplicates({
   return (
     <section
       aria-labelledby="customer-duplicate-heading"
-      className="grid gap-1 rounded-lg border border-border p-3 min-[48rem]:col-span-2"
+      className="grid gap-1 rounded-lg border border-border p-3"
     >
       <h3 className="text-section" id="customer-duplicate-heading">
         Encontramos possíveis clientes existentes
@@ -198,12 +209,24 @@ interface CustomerFormProps {
   draft: CustomerDraft;
   duplicateMatches: CustomerDuplicateMatchReadModel[];
   editingCustomer: CustomerReadModel | null;
+  /** What the last action said: the dialog covers the top of the screen, so it is said here while it is open. */
+  error: string | null;
+  /** The focus goes here when an action ends while the form is open: the alert at the top of the form. */
+  feedbackRef: Ref<HTMLDivElement>;
+  /** Where the focus goes when the form closes: the notice, or the control that opened it. */
+  finalFocus: () => HTMLElement | boolean;
   isPending: boolean;
+  notice: string | null;
   onCancel: () => void;
   onChange: (field: keyof CustomerDraft, value: string) => void;
+  /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
+  onClosed: () => void;
   onCreateAnyway: () => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUseExisting: (customer: CustomerReadModel) => void;
+  open: boolean;
 }
 
 function submitLabelFor(
@@ -216,18 +239,30 @@ function submitLabelFor(
   return editingCustomer ? "Salvar alterações" : "Cadastrar cliente";
 }
 
-/** The form of a new customer, or of the edit of one: the name, a phone or an e-mail, and notes. */
+/**
+ * The form of a new customer, or of the edit of one, in a dialog (the whole screen on a phone): the name, a phone or
+ * an e-mail, and notes. Esc and "Fechar" close it and keep what was typed (in memory only: the next opening of the
+ * same form brings it back); only "Cancelar" and a saved customer throw it away. Nothing closes while a save is on
+ * its way, and a tap on the veil does nothing.
+ */
 export function CustomerForm({
   contactError,
   draft,
   duplicateMatches,
   editingCustomer,
+  error,
+  feedbackRef,
+  finalFocus,
   isPending,
+  notice,
   onCancel,
   onChange,
+  onClosed,
   onCreateAnyway,
+  onDismiss,
   onSubmit,
   onUseExisting,
+  open,
 }: CustomerFormProps) {
   const [showRequired, setShowRequired] = useState(false);
   const nameRef = useRef<HTMLDivElement>(null);
@@ -235,15 +270,29 @@ export function CustomerForm({
   const nameError =
     showRequired && nameMissing ? NAME_REQUIRED_TEXT : undefined;
 
-  // opening the edit of a customer takes the person to the name; a new form is opened already where the focus is
-  const formKey = editingCustomer?.id ?? "new";
+  // opening the form starts without the "required" mark
   useEffect(() => {
-    setShowRequired(false);
-    if (formKey !== "new") {
-      focusLater(() => nameRef.current?.querySelector("input")?.focus());
+    if (open) {
+      setShowRequired(false);
     }
-  }, [formKey]);
+  }, [open]);
 
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!(next || isPending)) {
+        onDismiss();
+      }
+    },
+    [isPending, onDismiss]
+  );
+  const handleOpenChangeComplete = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        onClosed();
+      }
+    },
+    [onClosed]
+  );
   const handleName = useCallback(
     (value: string) => onChange("name", value),
     [onChange]
@@ -262,8 +311,8 @@ export function CustomerForm({
   );
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
       if (nameMissing) {
-        event.preventDefault();
         setShowRequired(true);
         focusLater(() => nameRef.current?.querySelector("input")?.focus());
         return;
@@ -274,107 +323,110 @@ export function CustomerForm({
   );
 
   return (
-    <Card aria-labelledby="customer-form-heading" role="region">
-      <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle aria-level={2} id="customer-form-heading" role="heading">
-            {editingCustomer ? "Editar cliente" : "Novo cliente"}
-          </CardTitle>
-          {editingCustomer ? (
+    <Dialog
+      disablePointerDismissal
+      onOpenChange={handleOpenChange}
+      onOpenChangeComplete={handleOpenChangeComplete}
+      open={open}
+    >
+      <DialogContent finalFocus={finalFocus} layout="form">
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>
+              {editingCustomer ? "Editar cliente" : "Novo cliente"}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <ActionFeedback
+              error={error}
+              notice={notice}
+              regionRef={feedbackRef}
+            />
+            <div className="min-w-0" ref={nameRef}>
+              <ProductTextField
+                autoComplete="name"
+                error={nameError}
+                id="customer-name"
+                label="Nome"
+                onChange={handleName}
+                value={draft.name}
+              />
+            </div>
+            <FieldSet aria-describedby="customer-contact-help">
+              <FieldLegend className="mb-3" variant="label">
+                Contato{" "}
+                <span className="font-normal text-muted-foreground">
+                  Informe telefone ou email
+                </span>
+              </FieldLegend>
+              <div className="grid gap-4 md:grid-cols-2">
+                <ContactField
+                  autoComplete="tel"
+                  id="customer-phone"
+                  invalid={contactError !== null}
+                  label="Telefone"
+                  onChange={handlePhone}
+                  type="tel"
+                  value={draft.phone}
+                />
+                <ContactField
+                  autoComplete="email"
+                  id="customer-email"
+                  invalid={contactError !== null}
+                  label="Email"
+                  onChange={handleEmail}
+                  type="email"
+                  value={draft.email}
+                />
+              </div>
+              <FieldDescription id="customer-contact-help">
+                Email e telefone podem se repetir entre clientes.
+              </FieldDescription>
+            </FieldSet>
+            {/* always in the tree, so the panel that appears after the check is announced (U-25) */}
+            <p className="sr-only" role="status">
+              {duplicateMatches.length > 0
+                ? "Encontramos possíveis clientes existentes. Revise antes de criar um novo."
+                : ""}
+            </p>
+            {duplicateMatches.length > 0 ? (
+              <PossibleDuplicates
+                disabled={isPending}
+                matches={duplicateMatches}
+                onCreateAnyway={onCreateAnyway}
+                onUseExisting={onUseExisting}
+              />
+            ) : null}
+            <ProductTextAreaField
+              id="customer-notes"
+              label="Observações"
+              onChange={handleNotes}
+              optional
+              value={draft.notes}
+            />
+          </DialogBody>
+          {contactError ? (
+            <div className={FORM_NOTICE_CLASS}>
+              <FieldError id="customer-contact-error">
+                {contactError}
+              </FieldError>
+            </div>
+          ) : null}
+          <DialogFooter>
             <Button
               disabled={isPending}
               onClick={onCancel}
-              size="sm"
               type="button"
               variant="outline"
             >
-              Cancelar edição
+              {editingCustomer ? "Cancelar edição" : "Cancelar"}
             </Button>
-          ) : null}
-        </CardHeader>
-        <CardContent className="grid gap-4 min-[48rem]:grid-cols-2">
-          <div className="min-w-0 min-[48rem]:col-span-2" ref={nameRef}>
-            <ProductTextField
-              autoComplete="name"
-              error={nameError}
-              id="customer-name"
-              label="Nome"
-              onChange={handleName}
-              value={draft.name}
-            />
-          </div>
-          <FieldSet
-            aria-describedby="customer-contact-help"
-            className="min-[48rem]:col-span-2"
-          >
-            <FieldLegend className="mb-3" variant="label">
-              Contato{" "}
-              <span className="font-normal text-muted-foreground">
-                Informe telefone ou email
-              </span>
-            </FieldLegend>
-            <div className="grid gap-4 min-[48rem]:grid-cols-2">
-              <ContactField
-                autoComplete="tel"
-                id="customer-phone"
-                invalid={contactError !== null}
-                label="Telefone"
-                onChange={handlePhone}
-                type="tel"
-                value={draft.phone}
-              />
-              <ContactField
-                autoComplete="email"
-                id="customer-email"
-                invalid={contactError !== null}
-                label="Email"
-                onChange={handleEmail}
-                type="email"
-                value={draft.email}
-              />
-            </div>
-            <FieldDescription id="customer-contact-help">
-              Email e telefone podem se repetir entre clientes.
-            </FieldDescription>
-          </FieldSet>
-          {/* always in the tree, so the panel that appears after the check is announced (U-25) */}
-          <p className="sr-only" role="status">
-            {duplicateMatches.length > 0
-              ? "Encontramos possíveis clientes existentes. Revise antes de criar um novo."
-              : ""}
-          </p>
-          {duplicateMatches.length > 0 ? (
-            <PossibleDuplicates
-              disabled={isPending}
-              matches={duplicateMatches}
-              onCreateAnyway={onCreateAnyway}
-              onUseExisting={onUseExisting}
-            />
-          ) : null}
-          <ProductTextAreaField
-            className="min-[48rem]:col-span-2"
-            id="customer-notes"
-            label="Observações"
-            onChange={handleNotes}
-            optional
-            value={draft.notes}
-          />
-        </CardContent>
-        <CardContent className="grid gap-3">
-          {contactError ? (
-            <FieldError id="customer-contact-error">{contactError}</FieldError>
-          ) : null}
-          <div className="flex justify-end">
-            <Button
-              className="max-[30rem]:w-full"
-              disabled={isPending}
-              type="submit"
-            >
+            <Button disabled={isPending} type="submit">
               {submitLabelFor(isPending, editingCustomer)}
             </Button>
-          </div>
-        </CardContent>
-      </form>
-    </Card>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -127,12 +127,14 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
     await rules
       .getByRole("button", { name: "Nova despesa recorrente" })
       .click();
-    await rules.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
-    await choose(page, rules, "Categoria", categoryName);
-    await choose(page, rules, "Frequência", "Todo mês");
-    await pickDate(rules, "Começa em", startsOn);
-    await rules.getByLabel("Descrição").fill(description);
-    await rules
+    // the form is a dialog, outside the region of the panel
+    const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
+    await form.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
+    await choose(page, form, "Categoria", categoryName);
+    await choose(page, form, "Frequência", "Todo mês");
+    await pickDate(form, "Começa em", startsOn);
+    await form.getByLabel("Descrição").fill(description);
+    await form
       .getByRole("button", { name: "Criar despesa recorrente" })
       .click();
     await expect(

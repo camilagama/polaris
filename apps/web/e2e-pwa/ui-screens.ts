@@ -102,6 +102,8 @@ async function openAndClose(
   trigger: { name: string; role: "button" | "combobox" },
   popup: { name?: string; role: "dialog" | "listbox" | "menu" }
 ) {
+  // a form dialog can be open already (its own backdrop stays): what must go is the one of this overlay
+  const backdrops = await page.locator("[data-base-ui-inert]").count();
   await page
     .getByRole(trigger.role, { exact: true, name: trigger.name })
     .first()
@@ -113,9 +115,10 @@ async function openAndClose(
   await surface.first().waitFor();
   await escapeUntilGone(page, surface);
   // no backdrop of a menu or a select (the Base UI marks it `data-base-ui-inert`) is left over the page
-  await page.locator("[data-base-ui-inert]").first().waitFor({
-    state: "detached",
-  });
+  await page.waitForFunction(
+    (most) => document.querySelectorAll("[data-base-ui-inert]").length <= most,
+    backdrops
+  );
 }
 
 /**
@@ -145,6 +148,11 @@ async function exerciseGallery(page: Page) {
     page,
     { name: "Abrir diálogo", role: "button" },
     { role: "dialog" }
+  );
+  await openAndClose(
+    page,
+    { name: "Abrir formulário", role: "button" },
+    { name: "Novo cadastro", role: "dialog" }
   );
   await page.getByRole("button", { name: "Abrir popover" }).click();
   await page.getByText("Informe o custo do item para ver a margem.").waitFor();
@@ -494,11 +502,19 @@ async function exerciseCancelReason(page: Page) {
 }
 
 async function exerciseSaleCustomer(page: Page) {
+  // the customer is chosen in a form dialog: opened, the list of customers opened and closed inside it, then closed
+  await page
+    .getByRole("button", { exact: true, name: "Trocar cliente" })
+    .click();
+  const choose = page.getByRole("dialog", { name: "Trocar cliente" });
+  await choose.waitFor();
   await openAndClose(
     page,
     { name: "Cliente", role: "combobox" },
     { role: "listbox" }
   );
+  await page.keyboard.press("Escape");
+  await choose.waitFor({ state: "detached" });
   await openAndClose(
     page,
     { name: "Remover cliente", role: "button" },
@@ -890,6 +906,7 @@ export const SCREENS: UiScreen[] = [
     saleDetailStates.customer,
     exerciseSaleCustomer
   ),
+  saleDetailScreen("trocar o cliente", saleDetailStates.customerChoose),
   shellPieceScreen("404", "nao-encontrada", headingOf("Página não encontrada")),
   shellPieceScreen(
     "falha da tela",

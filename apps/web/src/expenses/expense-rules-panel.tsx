@@ -3,21 +3,25 @@ import type {
   ExpenseRuleReadModel,
 } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
+import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
-import { focusLater } from "../lib/focus";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
 import { CollapsibleSection } from "./collapsible-section";
 import { ActionNotice, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel } from "./expense-model";
 import { ExpenseRuleForm } from "./expense-rule-form";
-import { type RuleCreateInput, ruleFrequencyLabel } from "./expense-rule-model";
+import {
+  type RuleCreateInput,
+  type RuleDraft,
+  ruleFrequencyLabel,
+} from "./expense-rule-model";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import { type ExpenseRulesState, useExpenseRules } from "./use-expense-rules";
 
@@ -73,7 +77,10 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
   const toggleBusyLabel = paused ? "Retomando…" : "Pausando…";
 
   return (
-    <article className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center">
+    <article
+      className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center"
+      data-rule-id={rule.id}
+    >
       <div className="grid min-w-0 gap-0.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h3 className="font-medium [overflow-wrap:anywhere]">
@@ -100,6 +107,7 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
         <div className="flex gap-2">
           <Button
             aria-label={`Editar despesa recorrente ${rule.description}`}
+            data-rule-edit=""
             disabled={isBusy}
             onClick={handleEdit}
             size="sm"
@@ -298,21 +306,48 @@ export function ExpenseRulesPanel({
     upsert,
   });
   const [showPaused, setShowPaused] = useState(false);
+  // the form is a dialog: `target` says what it holds and stays until it has closed, so it does not turn into
+  // another form while it fades
   const [target, setTarget] = useState<FormTarget>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [formCount, setFormCount] = useState(0);
+  // where the focus goes back to when the form closes: what opened it
+  const originRef = useRef<() => HTMLElement | null>(() => null);
 
+  // what was typed when the form was closed by Esc or "Fechar", for the next opening of the same form; in memory only
+  const draftStore = useRef<{ draft: RuleDraft; key: string } | null>(null);
+  const draftKey = useRef("");
+  const handleDraftChange = useCallback((draft: RuleDraft | null) => {
+    draftStore.current = draft && { draft, key: draftKey.current };
+  }, []);
+  /** "Cancelar", a saved rule: the form closes and what was typed is thrown away. */
   const closeForm = useCallback(() => {
+    draftStore.current = null;
+    setFormOpen(false);
+  }, []);
+  /** Esc and "Fechar": the form closes and the draft stays. */
+  const dismissForm = useCallback(() => setFormOpen(false), []);
+  /** The form is gone: the next one starts from nothing. */
+  const handleFormClosed = useCallback(() => {
     setTarget(null);
     setFormCount((count) => count + 1);
   }, []);
   const openForm = useCallback(
     (next: ExpenseRuleReadModel | "new") => {
       clearFeedback();
+      originRef.current =
+        next === "new"
+          ? () => document.querySelector<HTMLElement>("[data-rule-new]")
+          : () =>
+              document.querySelector<HTMLElement>(
+                `[data-rule-id="${next.id}"] [data-rule-edit]`
+              );
       setTarget(next);
-      focusLater(() => document.getElementById("expense-rule-amount")?.focus());
+      setFormOpen(true);
     },
     [clearFeedback]
   );
+  const finalFocus = useCallback(() => originRef.current() ?? true, []);
   const handleNew = useCallback(() => openForm("new"), [openForm]);
   const handleRetry = useCallback(() => {
     reload();
@@ -339,6 +374,22 @@ export function ExpenseRulesPanel({
     [closeForm, editing?.id, toggle]
   );
 
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && busy === null) {
+        dismissForm();
+      }
+    },
+    [busy, dismissForm]
+  );
+  const handleOpenChangeComplete = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        handleFormClosed();
+      }
+    },
+    [handleFormClosed]
+  );
   const isSaving =
     busy === "rule-create" || (busy?.startsWith("rule-save:") ?? false);
   const formKey = useMemo(() => {
@@ -349,11 +400,17 @@ export function ExpenseRulesPanel({
       ? `new:${formCount}`
       : `${target.id}:${target.version}`;
   }, [formCount, target]);
+  // the kept draft is the one of the same rule (or of a new one): another rule starts from its own data
+  const keptKey = target === "new" ? "new" : (target?.id ?? "");
+  draftKey.current = keptKey;
+  const keptDraft =
+    draftStore.current?.key === keptKey ? draftStore.current.draft : undefined;
 
   return (
     <CollapsibleSection id="expense-rules" title="Despesas recorrentes">
       <RulesIntro />
-      <ActionNotice feedback={feedback} />
+      {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
+      <ActionNotice feedback={formOpen ? null : feedback} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Field className="min-h-ctl-md w-auto" orientation="horizontal">
           <Checkbox
@@ -365,40 +422,39 @@ export function ExpenseRulesPanel({
             Mostrar pausadas
           </FieldLabel>
         </Field>
-        {target === "new" ? null : (
-          <Button
-            disabled={busy !== null}
-            onClick={handleNew}
-            type="button"
-            variant="outline"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova despesa recorrente
-          </Button>
-        )}
-      </div>
-      {target === null ? null : (
-        <section
-          aria-labelledby="expense-rule-form-title"
-          className="grid gap-3 rounded-lg border p-3"
+        <Button
+          data-rule-new=""
+          disabled={busy !== null}
+          onClick={handleNew}
+          type="button"
+          variant="outline"
         >
-          <h3 className="text-section" id="expense-rule-form-title">
-            {target === "new"
-              ? "Nova despesa recorrente"
-              : "Editar despesa recorrente"}
-          </h3>
+          <PlusIcon aria-hidden="true" data-icon="inline-start" />
+          Nova despesa recorrente
+        </Button>
+      </div>
+      <Dialog
+        disablePointerDismissal
+        onOpenChange={handleOpenChange}
+        onOpenChangeComplete={handleOpenChangeComplete}
+        open={formOpen}
+      >
+        <DialogContent finalFocus={finalFocus} layout="form">
           <ExpenseRuleForm
             categories={categories}
             disabled={busy !== null}
             editing={editing}
+            feedback={feedback?.kind === "error" ? feedback : null}
             key={formKey}
+            keptDraft={keptDraft}
             onCancel={closeForm}
+            onDraftChange={handleDraftChange}
             onSave={handleSave}
             saving={isSaving}
             today={today}
           />
-        </section>
-      )}
+        </DialogContent>
+      </Dialog>
       <RuleList
         busyKey={busy}
         onEdit={openForm}

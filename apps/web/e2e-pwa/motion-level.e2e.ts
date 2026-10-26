@@ -22,6 +22,8 @@ import { SCREENS } from "./ui-screens";
  * c) the essential motion still runs (the pulse of the skeleton, the press of a button) and nothing else does;
  * d) control: the desktop and the tablet are `full`, the bar loads its layer and the pill animates;
  * e) with `prefers-reduced-motion` the level is `none`;
+ * h) the form Dialog (t331) opens and closes at once on a phone, with no animation on the box or on the veil; on the
+ *    desktop the same dialog animates;
  * g) the sales history, the first screen on the filter bar (t391), asks for neither the `motion` chunk nor the layer on
  *    a phone, and its pills go at once; on the desktop the same page loads the layer.
  */
@@ -413,6 +415,40 @@ test("g) no celular o Histórico (a barra de filtros na tela) não pede o motion
       await historyStates.filters(page);
       expect(await level(page)).toBe("full");
       await expect.poll(() => layer.length).toBe(1);
+    }
+  );
+});
+
+/** The `animation-name` the box and the veil of the form Dialog compute, once it is open. */
+async function dialogAnimations(page: Page) {
+  await page.goto("/ui-galeria");
+  await page.getByRole("button", { name: "Abrir formulário" }).click();
+  const dialog = page.getByRole("dialog", { name: "Novo cadastro" });
+  await expect(dialog).toBeVisible();
+  return dialog.evaluate((box) => {
+    const veil = document.querySelector('[data-slot="dialog-overlay"]');
+    return {
+      box: getComputedStyle(box).animationName,
+      veil: veil ? getComputedStyle(veil).animationName : "",
+    };
+  });
+}
+
+test("h) no celular o diálogo de formulário abre sem animação, na caixa e no véu; no desktop o mesmo diálogo anima", async ({
+  browser,
+  page,
+}) => {
+  const phone = await dialogAnimations(page);
+  await expectPhone(page);
+  expect(phone).toEqual({ box: "none", veil: "none" });
+  await inContext(
+    browser,
+    { ...DESKTOP, serviceWorkers: "block" },
+    async (desktop) => {
+      const animations = await dialogAnimations(desktop);
+      expect(await level(desktop)).toBe("full");
+      expect(animations.box).not.toBe("none");
+      expect(animations.veil).not.toBe("none");
     }
   );
 });

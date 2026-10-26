@@ -40,6 +40,7 @@ const base: Props = {
   onAnonymize: noop,
   onArchive: noop,
   onEdit: noop,
+  onNew: noop,
   onRestore: noop,
   pendingAction: null,
   status: "active",
@@ -69,9 +70,12 @@ describe("the list of customers", () => {
   });
 
   it("tells the empty list what to do next, and the archived one that there is none", () => {
-    expect(render({ customers: [] })).toContain(
-      "Nenhum cliente cadastrado. Use o formulário para adicionar o primeiro."
+    const empty = render({ customers: [] });
+    expect(empty).toContain(
+      "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
     );
+    // the form is not on the page: the empty list carries the button that opens it
+    expect(empty).toContain("Novo cliente</button>");
     expect(render({ customers: [], status: "archived" })).toContain(
       "Nenhum cliente arquivado."
     );

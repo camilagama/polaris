@@ -1,6 +1,12 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -424,6 +430,7 @@ test("Clientes: sem nome o campo diz o que falta, com o cursor nele, e nada é e
     },
     "customer/list": reply({ customers: [] }),
   });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.getByLabel("Telefone").fill("11900000001");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   await expect(page.getByText("Informe o nome do cliente.")).toBeVisible();
@@ -435,7 +442,7 @@ test("Clientes: sem nome o campo diz o que falta, com o cursor nele, e nada é e
   expect(looked).toBe(0);
 });
 
-test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e deixa o cursor no nome para o próximo", async ({
+test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o próximo abre vazio", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {
@@ -444,14 +451,111 @@ test("Clientes: cadastrar um cliente diz o resultado, esvazia o formulário e de
     "customer/list": reply({ customers: [] }),
   });
   const name = page.getByLabel("Nome", { exact: true });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await name.fill("Bia Souza");
   await page.getByLabel("Telefone").fill("11900000002");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Cliente cadastrado." })
-  ).toBeVisible();
+  const done = page
+    .getByRole("status")
+    .filter({ hasText: "Cliente “Bia Souza” cadastrado." });
+  await expect(done).toBeVisible();
+  // the form closed, and the focus is on the notice the person has to read
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(done.locator("xpath=..")).toBeFocused();
+  // "Cadastrar outro" opens the next one, empty
+  await done.getByRole("button", { name: "Cadastrar outro" }).click();
   await expect(name).toHaveValue("");
   await expect(name).toBeFocused();
+});
+
+for (const width of FORM_WIDTHS) {
+  test(`Clientes a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    let creates = 0;
+    await openScreen(page, "/customers", "Clientes", {
+      "customer/create": (route) => {
+        creates += 1;
+        return route.fulfill(rpc(customer(2, "Bia Souza")));
+      },
+      "customer/findPossibleDuplicates": reply({ matches: [] }),
+      "customer/list": reply({ customers: [] }),
+    });
+    const openForm = page.getByRole("button", { name: "Novo cliente" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Novo cliente" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    // preenche, e no celular o teclado aberto não esconde o botão principal
+    await dialog.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+    await dialog.getByLabel("Telefone").fill("11900000002");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Cadastrar cliente" })
+      );
+    }
+
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue(
+      "Bia Souza"
+    );
+
+    // cancelar: nada é enviado, o formulário fecha, o foco volta ao botão que o abriu e o rascunho é descartado
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(creates).toBe(0);
+
+    // o que foi digitado não fica para a próxima vez
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue("");
+    await dialog.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+    await dialog.getByLabel("Telefone").fill("11900000002");
+    await dialog.getByRole("button", { name: "Cadastrar cliente" }).click();
+    // o aviso diz o nome e oferece cadastrar outro
+    const done = page
+      .getByRole("status")
+      .filter({ hasText: "Cliente “Bia Souza” cadastrado." });
+    await expect(done).toBeVisible();
+    await expect(
+      done.getByRole("button", { name: "Cadastrar outro" })
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(creates).toBe(1);
+  });
+}
+
+test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formulário, um só", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({ customers: [] }),
+  });
+  await expect(
+    page.getByText(
+      "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
+    )
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
+    1
+  );
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Novo cliente" })
+  ).toBeVisible();
 });
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
@@ -534,6 +638,14 @@ test("Clientes a 320 px: nada transborda com nome e e-mail longos, o formulário
     }),
   });
   await expectNoSidewaysScroll(page);
+  // the form is a dialog, the whole screen at this width
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Novo cliente" })
+  ).toBeVisible();
+  await expectNoSidewaysScroll(page);
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: BRUNO_MENU }).click();
   await page.getByRole("menuitem", { exact: true, name: "Anonimizar" }).click();
   await expect(
