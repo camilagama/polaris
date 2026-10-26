@@ -47,6 +47,7 @@ import {
   type RhythmDay,
   type RhythmView,
   rhythmDays,
+  rhythmBestText,
   rhythmInsight,
   rhythmRangesText,
   rhythmReading,
@@ -59,8 +60,8 @@ import type { Block, HomeFigures } from "./use-home";
 
 /**
  * "Ritmo de vendas" (revisão de UI v7, § 3 item 10): the map of the store's days, 26 weeks from 760 px and 13 on a
- * phone, Sunday on top; the reading of a day above it, which follows the pointer, the finger and the keyboard (the
- * best day at rest); under it the legend with the ranges in reais, the sentence of the best weekday and the mean by
+ * phone, Sunday on top; the reading of a day above it, which follows the pointer, the finger and the keyboard (today
+ * at rest); under it the legend with the ranges in reais, the best day, the sentence of the best weekday and the mean by
  * weekday. The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`), the reading, the
  * keyboard control (a transparent `input type="range"` over the map, as the charts have) and "Ver os números" are
  * ours. With the values hidden every amount is "R$ ••••"; the counts and the shape stay.
@@ -139,6 +140,7 @@ const SWATCHES = [
 
 function Legend({ view }: { view: RhythmView }) {
   const insight = rhythmInsight(view);
+  const bestText = rhythmBestText(view);
   return (
     <div className="grid min-w-0 flex-[1_1_16rem] content-start gap-1.5">
       <p className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -156,6 +158,11 @@ function Legend({ view }: { view: RhythmView }) {
       <p className="text-muted-foreground text-xs">
         <MoneyText text={rhythmRangesText(view)} />
       </p>
+      {bestText ? (
+        <p className="text-support" data-rhythm-best="">
+          <MoneyText text={bestText} />
+        </p>
+      ) : null}
       {insight.kind === "few" ? (
         <p className="text-support">
           {insight.text}{" "}
@@ -291,7 +298,8 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     setHovered(null);
     setKeyed(null);
   }, [weeks]);
-  const rest = view.best ?? view.today;
+  // at rest the map reads today; the best day is marked by its contour and said on a line of its own under the legend
+  const rest = view.today;
   const read = hovered ?? keyed ?? rest;
   const reading = rhythmReading(view, read) ?? rhythmReading(view, view.today);
   const readingText = reading ? rhythmReadingText(reading) : "";

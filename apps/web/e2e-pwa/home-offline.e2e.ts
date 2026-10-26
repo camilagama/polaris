@@ -55,7 +55,10 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
     timeout: 20_000,
   });
   await expect(map.locator("[data-rhythm-reading]")).toHaveText(
-    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia"
+    "Sexta, 23/10 · R$ 520,00 · 2 vendas · hoje"
+  );
+  await expect(map.locator("[data-rhythm-best]")).toHaveText(
+    "Melhor dia: 18/10, R$ 1.840,00"
   );
 });
 

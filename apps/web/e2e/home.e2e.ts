@@ -2002,7 +2002,10 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
       await route.fallback();
     });
-    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Loja, tema e Sair" })
+      .click();
+    await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
 
     answerSeries();
@@ -2019,15 +2022,19 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // Friday 23/10: the 26 weeks go from Sunday 26/04 to Saturday 24/10; the days that sold are those of SOLD
-  const READING = "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
+  // at rest the map reads today; the best day (Sunday 18/10) has a line of its own under the legend
+  const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
+  const BEST_DAY_READING =
+    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
   const rhythm = (page: Page) => region(page, "Ritmo de vendas");
   const reading = (page: Page) => rhythm(page).locator("[data-rhythm-reading]");
+  const bestLine = (page: Page) => rhythm(page).locator("[data-rhythm-best]");
   const dataCells = (page: Page) =>
     rhythm(page).locator(
       '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
     );
 
-  test("a 1280 px: 26 semanas ao lado de Mais vendidos, o melhor dia lido, os vazios com contorno e a camada acessível nossa", async ({
+  test("a 1280 px: 26 semanas ao lado de Mais vendidos, hoje lido e o melhor dia em linha própria, os vazios com contorno e a camada acessível nossa", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -2038,6 +2045,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       "Últimas 26 semanas · um quadrado por dia, mais escuro é mais venda"
     );
     await expect(reading(page)).toHaveText(READING);
+    await expect(bestLine(page)).toHaveText("Melhor dia: 18/10, R$ 1.840,00");
     // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
     expect(
       server.calls
@@ -2092,19 +2100,17 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
   });
 
-  test("o mouse lê o dia sob ele e, ao sair, volta para o melhor dia", async ({
+  test("o mouse lê o dia sob ele e, ao sair, volta para hoje", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     await expect(reading(page)).toHaveText(READING);
-    // the column of the week of 18/10 is the last, the 26th (index 25); Friday is its 6th row
+    // the column of the week of 18/10 is the last, the 26th (index 25); Sunday is its 1st row
     await dataCells(page)
-      .nth(25 * 7 + 5)
+      .nth(25 * 7)
       .hover();
-    await expect(reading(page)).toHaveText(
-      "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje"
-    );
+    await expect(reading(page)).toHaveText(BEST_DAY_READING);
     await dataCells(page)
       .nth(25 * 7 + 1)
       .hover();
@@ -2122,29 +2128,32 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       name: "Dia do mapa de vendas",
     });
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
+    await expect(slider).toHaveValue("180");
     await slider.focus();
+    // the keyboard starts on today: down is Saturday 24/10, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
-    await expect(reading(page)).toHaveText("Segunda, 19/10 · sem venda");
+    await expect(reading(page)).toHaveText(READING);
+    await page.keyboard.press("ArrowUp");
+    await expect(reading(page)).toHaveText("Quinta, 22/10 · sem venda");
     await expect(slider).toHaveAttribute(
       "aria-valuetext",
-      "Segunda, 19/10 · sem venda"
+      "Quinta, 22/10 · sem venda"
     );
     await page.keyboard.press("ArrowLeft");
-    await expect(reading(page)).toHaveText("Segunda, 12/10 · sem venda");
+    await expect(reading(page)).toHaveText("Quinta, 15/10 · sem venda");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
-    await expect(reading(page)).toHaveText("Sábado, 10/10 · sem venda");
+    await expect(reading(page)).toHaveText("Terça, 13/10 · sem venda");
+    await page.keyboard.press("ArrowRight");
+    await expect(reading(page)).toHaveText(
+      "Terça, 20/10 · R$ 420,50 · 3 vendas"
+    );
     // a week ahead stops at today: the days to come are not read
     await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
-    await expect(slider).toHaveAttribute(
-      "aria-valuetext",
-      "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje"
-    );
+    await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await page.keyboard.press("Home");
     await expect(reading(page)).toHaveText("Domingo, 26/04 · sem venda");
-    // leaving the map, the reading goes back to the best day
+    // leaving the map, the reading goes back to today
     await page.keyboard.press("Tab");
     await expect(reading(page)).toHaveText(READING);
   });
@@ -2173,7 +2182,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ).toBe(true);
   });
 
-  test("Esconder valores: a leitura, a legenda e a frase escondem os reais e deixam as contagens", async ({
+  test("Esconder valores: a leitura, a linha do melhor dia, a legenda e a frase escondem os reais e deixam as contagens", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -2184,7 +2193,10 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       .click();
     const map = rhythm(page);
     await expect(reading(page)).toHaveText(
-      "Domingo, 18/10 · R$ ••••valor escondido · 6 vendas · melhor dia"
+      "Sexta, 23/10 · R$ ••••valor escondido · 2 vendas · hoje"
+    );
+    await expect(bestLine(page)).toHaveText(
+      "Melhor dia: 18/10, R$ ••••valor escondido"
     );
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.getByRole("img")).toHaveAttribute(
@@ -2195,7 +2207,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       map.getByRole("slider", { name: "Dia do mapa de vendas" })
     ).toHaveAttribute(
       "aria-valuetext",
-      "Domingo, 18/10 · valor escondido · 6 vendas · melhor dia"
+      "Sexta, 23/10 · valor escondido · 2 vendas · hoje"
     );
     await map.getByRole("button", { name: "Ver os números" }).click();
     await expect(map).not.toContainText(AN_AMOUNT);

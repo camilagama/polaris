@@ -319,6 +319,14 @@ export function rhythmReading(
   };
 }
 
+/** "Melhor dia: 27/06, R$ 541,19", the line of its own under the legend (null when no day sold). */
+export function rhythmBestText(view: RhythmView): string | null {
+  const best = view.best === null ? null : view.cells[view.best];
+  return best?.netSales
+    ? `Melhor dia: ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}`
+    : null;
+}
+
 /** The reading in one line: what the keyboard control says. */
 export function rhythmReadingText(reading: RhythmReading): string {
   return [reading.day, reading.value, reading.note]

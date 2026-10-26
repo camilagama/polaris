@@ -239,7 +239,12 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect(files).not.toContain("chart-stat-flow.tsx");
     for (const file of bklitSources) {
       expect(read(`src/ui/bklit/${file}`), file).not.toContain("number-flow");
-      expect(read(`src/ui/bklit/${file}`), file).not.toContain("@visx/group");
+    }
+    // the ring draws its `<g>` itself; the map of the Início (t394) uses the `Group` of the package, now in the list
+    for (const file of ["ring-chart.tsx", "ring.tsx", "ring-context.tsx"]) {
+      expect(read(`src/ui/bklit/charts/${file}`), file).not.toContain(
+        "@visx/group"
+      );
     }
   });
 
