@@ -324,6 +324,8 @@ class FakeReportServer {
    * `topProducts`, and they are kept apart from `periods`, are never held and are not counted in `answered`.
    */
   readonly comparisons: Array<{ from: string; to: string }> = [];
+  /** The periods read by `report.dailySales` for the chips of Vendas and Ticket médio (the same period before), in order. */
+  readonly salesComparisons: Array<{ from: string; to: string }> = [];
   /** Months whose answer was sent, in order. */
   readonly answered: string[] = [];
   /** When set, every answer is this ORPC error instead of a summary. */
@@ -349,6 +351,9 @@ class FakeReportServer {
       // the goals panel below the chain reads on mount; goals.e2e.ts covers it
       return { body: { json: { goals: [] }, meta: [] }, status: 200 };
     }
+    if (procedure === "report/dailySales") {
+      return this.dailySales(String(input.from), String(input.to));
+    }
     if (procedure !== "report/periodSummary") {
       return this.fail("NOT_FOUND", 404);
     }
@@ -373,6 +378,26 @@ class FakeReportServer {
     }
     return {
       body: { json: summaryOf(month, from, to), meta: [] },
+      status: 200,
+    };
+  }
+
+  /** The sales and count of each day of the period, as the SQL `GROUP BY` of `dailySales` gives them. */
+  private dailySales(from: string, to: string) {
+    this.salesComparisons.push({ from, to });
+    if (this.failure) {
+      return this.fail(this.failure.code, this.failure.status);
+    }
+    const { daily } = summaryOf(from.slice(0, 7), from, to);
+    return {
+      body: {
+        json: {
+          count: daily.map((day) => day.salesCount),
+          from,
+          net: daily.map((day) => day.netSales),
+        },
+        meta: [],
+      },
       status: 200,
     };
   }
@@ -506,6 +531,11 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   // the chips compare with the same days of September (v7 § 8): R$ 130,00 against R$ 100,00
   await expect(card(page, CARD.netSales)).toContainText("+30,0%");
   await expect(card(page, CARD.netSales)).toContainText("vs. 1 a 14/09");
+  // the chips of sales and ticket read `dailySales`; the result's chip reads the summary of the same month
+  expect(server.salesComparisons).toContainEqual({
+    from: "2026-09-01",
+    to: "2026-09-30",
+  });
   expect(server.comparisons).toContainEqual({
     from: "2026-09-01",
     to: "2026-09-30",

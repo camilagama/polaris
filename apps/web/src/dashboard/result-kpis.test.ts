@@ -77,6 +77,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.days).toHaveLength(25);
@@ -99,12 +100,87 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(kpis.series.result).toHaveLength(25);
   });
 
+  it("takes the chips of sales and ticket from the sales read (dailySales) and the chip of the result from the summary", () => {
+    // the sales read is the weaker month (R$ 40, 2 sales a day: ticket R$ 20); the summary's days say R$ 30, 1 sale
+    const sales = {
+      days: days("2026-09-01", 30, () => ({
+        netSales: "40.00",
+        salesCount: 2,
+      })).map(({ date, netSales, salesCount }) => ({
+        date,
+        netSales,
+        salesCount,
+      })),
+      period: SEPTEMBER,
+    };
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous: {
+        days: days("2026-09-01", 30, () => ({
+          netSales: "10.00",
+          operatingResult: "30.00",
+          salesCount: 1,
+        })),
+        period: SEPTEMBER,
+      },
+      previousSales: sales,
+      today: "2026-10-25",
+    });
+    const rest = kpis.read(null);
+    // vendas: 25 x 50,00 = 1250,00 against 25 x 40,00 = 1000,00
+    expect(rest.sales.delta).toMatchObject({ text: "+25,0%", trend: "up" });
+    expect(rest.sales.note).toBe("vs. 1 a 25/09");
+    // ticket: 50,00 against 1000,00 / 50 sales = 20,00
+    expect(rest.ticket.delta).toMatchObject({ text: "+150,0%", trend: "up" });
+    // resultado: 1000,00 against 25 x 30,00 = 750,00, from the summary's days, not from the sales read
+    expect(rest.result.delta).toMatchObject({
+      money: true,
+      text: "+R$ 250,00",
+    });
+    // a day read compares the same days of the sales read: 10 x 50,00 against 10 x 40,00
+    expect(kpis.read(9).sales).toMatchObject({
+      delta: { text: "+25,0%" },
+      note: "vs. 1 a 10/09",
+    });
+  });
+
+  it("loses only the chips of sales and ticket when the sales read failed", () => {
+    const rest = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous,
+      previousSales: null,
+      today: "2026-10-25",
+    }).read(null);
+    expect([rest.sales.delta, rest.ticket.delta]).toEqual([null, null]);
+    expect([rest.sales.note, rest.ticket.note]).toEqual([null, null]);
+    expect(rest.result.delta).toMatchObject({ text: "+R$ 250,00" });
+  });
+
+  it("loses only the chip of the result when the summary's read failed", () => {
+    const rest = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous: null,
+      previousSales: previous,
+      today: "2026-10-25",
+    }).read(null);
+    expect(rest.result.delta).toBeNull();
+    expect(rest.sales.delta?.text).toBe("+25,0%");
+    expect(rest.ticket.delta?.text).toBe("+25,0%");
+  });
+
   it("reads a day of the sparkline, the three cards together", () => {
     const kpis = resultKpis({
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     const day = kpis.read(9);
@@ -128,6 +204,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.result).toEqual({ kind: "incomplete", total: 25, unknown: 3 });
@@ -160,6 +237,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.read(null).result).toMatchObject({
@@ -181,6 +259,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous: null,
+      previousSales: null,
       today: "2026-10-25",
     }).read(null);
     expect([alone.sales.delta, alone.result.delta, alone.ticket.delta]).toEqual(
@@ -197,6 +276,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
         ),
         period: SEPTEMBER,
       },
+      previousSales: previous,
       today: "2026-10-25",
     }).read(null);
     expect(unknownBefore.result.delta).toBeNull();
@@ -208,7 +288,8 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
-      previous: {
+      previous: null,
+      previousSales: {
         days: days("2026-09-01", 30, () => ({
           netSales: "0.00",
           salesCount: 0,
@@ -229,6 +310,9 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-09-26", 30),
       period,
       previous: before ? { days: days(before.from, 30), period: before } : null,
+      previousSales: before
+        ? { days: days(before.from, 30), period: before }
+        : null,
       today: "2026-10-25",
     });
     expect(kpis.month).toBeNull();
@@ -248,6 +332,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       })),
       period: { from: "2026-11-01", to: "2026-11-30" },
       previous: null,
+      previousSales: null,
       today: "2026-10-25",
     });
     expect(kpis.days).toEqual([]);
@@ -262,6 +347,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-05",
     });
     expect(kpis.read(20).sales).toMatchObject({
@@ -280,6 +366,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       })),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.result.kind).toBe("unsent");

@@ -6,7 +6,10 @@ import {
   percentDelta,
 } from "../home/home-kpis";
 import { salesCountText, shortDate } from "../home/home-model";
-import type { StoredDay } from "../lib/period-summary-cache";
+import type {
+  StoredDay,
+  StoredPeriodSummary,
+} from "../lib/period-summary-cache";
 import { addDays, dayCount, monthName, type Period } from "./result-period";
 
 /**
@@ -122,6 +125,29 @@ export function noKnownCost(
   );
 }
 
+/** The days of the period from its first to today (or to its last, when that is before today): what the cards read. */
+function daysUpToToday(
+  daily: readonly Day[],
+  period: Period,
+  today: string
+): Day[] {
+  return consecutive(daily, {
+    from: period.from,
+    to: period.to < today ? period.to : today,
+  });
+}
+
+/** `noKnownCost` of a summary on screen: the one answer the cards and the chain of the Resultado both give. */
+export function summaryHasNoKnownCost(
+  summary: Pick<StoredPeriodSummary, "daily" | "period" | "quality">,
+  today: string
+): boolean {
+  return noKnownCost(
+    daysUpToToday(summary.daily ?? [], summary.period, today),
+    summary.quality
+  );
+}
+
 export interface ResultKpiCards {
   marginPercent: string | null;
   netSales: string;
@@ -150,14 +176,21 @@ export interface ResultKpis {
   series: { result: number[] | null; sales: number[]; ticket: number[] };
 }
 
+/** The same days of the period before, as far as the day read: their sums and their dates, none when not read. */
+interface Prior {
+  range: string;
+  sum: Cumulative | undefined;
+}
+
 interface ReadContext {
   /** At rest: the period up to today, with the server's cards as the numbers. */
   atRest: boolean;
   cards: ResultKpiCards;
   date: string;
-  /** The sums of the same days of the period before, or undefined when they were not read (or not all of them). */
-  prior: Cumulative | undefined;
-  priorRange: string;
+  /** The period before as the `periodSummary` read it (it has the result of each day): what the result chip compares. */
+  prior: Prior;
+  /** The period before as `dailySales` read it (sales and counts only): what the chips of sales and ticket compare. */
+  priorSales: Prior;
   range: string;
   result: ResultKind;
   /** "no mês" or "no período". */
@@ -171,16 +204,16 @@ function salesReading({
   atRest,
   cards,
   date,
-  prior,
-  priorRange,
+  priorSales,
   range,
   scope,
   sum,
 }: ReadContext): KpiReading {
-  const delta = prior ? percentDelta(sum.net, prior.net) : null;
-  let note: string | null = delta ? `vs. ${priorRange}` : null;
-  if (!delta && prior && prior.count === 0) {
-    note = `Sem vendas de ${priorRange} para comparar`;
+  const before = priorSales.sum;
+  const delta = before ? percentDelta(sum.net, before.net) : null;
+  let note: string | null = delta ? `vs. ${priorSales.range}` : null;
+  if (!delta && before && before.count === 0) {
+    note = `Sem vendas de ${priorSales.range} para comparar`;
   }
   return {
     count: atRest
@@ -197,7 +230,6 @@ function resultReading({
   atRest,
   cards,
   prior,
-  priorRange,
   range,
   result,
   sum,
@@ -212,8 +244,8 @@ function resultReading({
   const card =
     atRest && (known === null || known !== cents(cards.operatingResult));
   const delta =
-    !card && known !== null && prior && prior.result !== null
-      ? moneyDelta(known, prior.result)
+    !card && known !== null && prior.sum && prior.sum.result !== null
+      ? moneyDelta(known, prior.sum.result)
       : null;
   let value: string | null =
     known === null ? null : Money.fromMinorUnits(known).toString();
@@ -224,7 +256,7 @@ function resultReading({
     count: "Não é lucro líquido nem dinheiro já recebido.",
     date: card ? whole : range,
     delta,
-    note: delta ? `vs. ${priorRange}` : null,
+    note: delta ? `vs. ${prior.range}` : null,
     value,
   };
 }
@@ -235,14 +267,13 @@ const ticketOf = (sum: Cumulative | undefined): bigint | null =>
 function ticketReading({
   atRest,
   cards,
-  prior,
-  priorRange,
+  priorSales,
   range,
   scope,
   sum,
 }: ReadContext): KpiReading {
   const ticket = ticketOf(sum);
-  const priorTicket = ticketOf(prior);
+  const priorTicket = ticketOf(priorSales.sum);
   const delta =
     ticket !== null && priorTicket !== null
       ? percentDelta(ticket, priorTicket)
@@ -266,36 +297,65 @@ function ticketReading({
     ...count,
     date: range,
     delta,
-    note: delta ? `vs. ${priorRange}` : null,
+    note: delta ? `vs. ${priorSales.range}` : null,
     value,
   };
 }
 
+/** The days of the period before, with its period: the shape both reads of it (`periodSummary`, `dailySales`) take. */
+export interface PriorSeries {
+  days: readonly Day[];
+  period: Period;
+}
+
 /**
- * The cards of the period. `previous` is the daily series of `comparisonPeriod` (null when it was not read: no chip,
- * nothing said about it); a previous series with a gap compares only as far as it goes.
+ * The period before, as many days of it as from the first to the day read (at most all of it); a series with a gap
+ * compares only as far as it goes.
+ */
+function priorReader(series: PriorSeries | null): (at: number) => Prior {
+  const sums = series ? cumulate(consecutive(series.days, series.period)) : [];
+  const length = series ? dayCount(series.period) : 0;
+  return (at) => {
+    const compared = Math.min(at + 1, length);
+    return {
+      range: series
+        ? rangeText(
+            series.period.from,
+            addDays(series.period.from, compared - 1)
+          )
+        : "",
+      sum:
+        series && compared > 0 && sums.length >= compared
+          ? sums[compared - 1]
+          : undefined,
+    };
+  };
+}
+
+/**
+ * The cards of the period. `previous` is the daily series of `comparisonPeriod` as `periodSummary` read it (it has the
+ * result of each day: the chip of the result) and `previousSales` the same days as `dailySales` read them (sales and
+ * counts: the chips of sales and ticket). Each is null when it was not read: no chip, nothing said about it.
  */
 export function resultKpis({
   cards,
   daily,
   period,
   previous,
+  previousSales,
   today,
 }: {
   cards: ResultKpiCards;
   daily: readonly Day[];
   period: Period;
-  previous: { days: readonly Day[]; period: Period } | null;
+  previous: PriorSeries | null;
+  previousSales: PriorSeries | null;
   today: string;
 }): ResultKpis {
-  const days = consecutive(daily, {
-    from: period.from,
-    to: period.to < today ? period.to : today,
-  });
+  const days = daysUpToToday(daily, period, today);
   const sums = cumulate(days);
-  const before = previous ? consecutive(previous.days, previous.period) : [];
-  const beforeSums = cumulate(before);
-  const beforeLength = previous ? dayCount(previous.period) : 0;
+  const priorResult = priorReader(previous);
+  const priorSales = priorReader(previousSales);
   const month = isWholeMonth(period) ? monthName(period.from) : null;
   const scope = month ? "no mês" : "no período";
 
@@ -316,22 +376,12 @@ export function resultKpis({
     // an index of another series (the period changed under the pointer) reads the last day of this one
     const at = Math.min(index ?? sums.length - 1, sums.length - 1);
     const date = days[at]?.date ?? today;
-    // the same days of the period before, as many as from the first to the day read, at most all of it
-    const compared = Math.min(at + 1, beforeLength);
     const context: ReadContext = {
       atRest: index === null,
       cards,
       date,
-      prior:
-        previous && compared > 0 && beforeSums.length >= compared
-          ? beforeSums[compared - 1]
-          : undefined,
-      priorRange: previous
-        ? rangeText(
-            previous.period.from,
-            addDays(previous.period.from, compared - 1)
-          )
-        : "",
+      prior: priorResult(at),
+      priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period
       range: days.length > 0 ? rangeText(period.from, date) : whole,
       result,

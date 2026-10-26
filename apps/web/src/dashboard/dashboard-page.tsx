@@ -43,8 +43,10 @@ import { type ResultTab, readResultTab, writeResultTab } from "./result-tab";
 import { useGoals } from "./use-goals";
 import {
   type ComparisonDays,
+  type ComparisonSales,
   type PeriodSummaryState,
   useComparisonDays,
+  useComparisonSales,
   usePeriodSummary,
 } from "./use-period-summary";
 
@@ -159,6 +161,8 @@ function CardNote({
 interface ContentProps {
   /** The days of the period before the one asked for, for the chips of the cards (null while not read). */
   comparison: ComparisonDays | null;
+  /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
+  salesComparison: ComparisonSales | null;
   /** What the person asked for: the figures on screen may still be those of the period before it (AC-3). */
   period: Period;
   state: PeriodSummaryState;
@@ -166,8 +170,20 @@ interface ContentProps {
   timezone: string;
 }
 
+/** Only the comparison of the figures on screen: never the one of a period still loading. */
+function onScreen<T extends { period: Period }>(
+  comparison: T | null,
+  shown: Period,
+  today: string
+): T | null {
+  return samePeriod(comparison?.period ?? null, comparisonPeriod(shown, today))
+    ? comparison
+    : null;
+}
+
 function Content({
   comparison,
+  salesComparison,
   period,
   state,
   thisYear,
@@ -218,15 +234,8 @@ function Content({
       ) : null}
       <QualityBanner quality={summary.quality} />
       <ResultCards
-        comparison={
-          // only the comparison of the figures on screen: never the one of a period still loading
-          samePeriod(
-            comparison?.period ?? null,
-            comparisonPeriod(summary.period, today)
-          )
-            ? comparison
-            : null
-        }
+        comparison={onScreen(comparison, summary.period, today)}
+        salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
       />
@@ -235,7 +244,7 @@ function Content({
         summary={summary}
         timezone={timezone}
       />
-      <ResultChain summary={summary} />
+      <ResultChain summary={summary} today={today} />
     </div>
   );
 }
@@ -280,10 +289,9 @@ export function DashboardPage() {
     state.summary !== null &&
     samePeriod(state.summary.period, period) &&
     state.summary.quality.level !== "no_data";
-  const comparison = useComparisonDays(
-    organizationId,
-    answered ? comparisonPeriod(period, today) : null
-  );
+  const compared = answered ? comparisonPeriod(period, today) : null;
+  const comparison = useComparisonDays(organizationId, compared);
+  const salesComparison = useComparisonSales(organizationId, compared);
   // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
   // disagrees, the periods are computed again once, from the server's day, and read again
   const serverToday =
@@ -374,6 +382,7 @@ export function DashboardPage() {
           <div aria-busy={state.isLoading} className="grid gap-5">
             <Content
               comparison={comparison}
+              salesComparison={salesComparison}
               period={period}
               state={state}
               thisYear={today.slice(0, 4)}
