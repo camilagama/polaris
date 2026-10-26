@@ -401,9 +401,14 @@ describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
     vi.restoreAllMocks();
   });
 
-  function timedRoutes(spies: ReturnType<typeof vi.spyOn>[]) {
+  function timedRoutes(spies: { mock: { calls: unknown[][] } }[]) {
     return spies
-      .flatMap((spy) => spy.mock.calls.map(([entry]) => entry))
+      .flatMap((spy) =>
+        spy.mock.calls.map(
+          ([entry]) =>
+            entry as { event?: string; httpStatus?: number; route?: string }
+        )
+      )
       .filter((entry) => entry?.event === "http_request_timed")
       .map((entry) => [entry.route, entry.httpStatus]);
   }
