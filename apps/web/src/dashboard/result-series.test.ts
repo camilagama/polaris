@@ -7,7 +7,9 @@ import {
   bestRow,
   bestRowText,
   costParts,
+  costSeries,
   costsKnown,
+  costsSent,
   costText,
   hasAnyValue,
   hasSurcharges,
@@ -61,12 +63,12 @@ const sum = (values: ReadonlyArray<string | null | undefined>) =>
     )
     .toString();
 
-describe("the cost line only exists when every day has its cost (AC-9)", () => {
-  it("is drawn when every day carries costs and the result of the day as money", () => {
+describe("the total of the costs only exists when every day has its cost (AC-9)", () => {
+  it("is known when every day carries costs and the result of the day as money", () => {
     expect(costsKnown(days("2026-10-01", "2026-10-07"))).toBe(true);
   });
 
-  it("is not drawn when one day is unknown (null), in either field", () => {
+  it("is not known when one day is unknown (null), in either field", () => {
     expect(
       costsKnown(
         days("2026-10-01", "2026-10-07", (date) =>
@@ -83,16 +85,26 @@ describe("the cost line only exists when every day has its cost (AC-9)", () => {
     ).toBe(false);
   });
 
-  it("is not drawn for an older server or copy, with no costs at all (undefined)", () => {
+  it("is not known for an older server or copy, with no costs at all (undefined)", () => {
     const old = withoutCosts(days("2026-10-01", "2026-10-07"));
     expect(costsKnown(old)).toBe(false);
+    expect(costsSent(old)).toBe(false);
     expect(hasUnknownCostDay(old)).toBe(false);
   });
 
-  it("is not drawn when only some days have the field", () => {
+  it("is not known nor sent when only some days have the field", () => {
     const [first, ...rest] = days("2026-10-01", "2026-10-07");
     const mixed = [...withoutCosts([first as StoredDay]), ...rest];
     expect(costsKnown(mixed)).toBe(false);
+    expect(costsSent(mixed)).toBe(false);
+  });
+
+  it("is sent, though not known, when a day is unknown (null)", () => {
+    const daily = days("2026-10-01", "2026-10-03", (date) =>
+      date === "2026-10-02" ? { costs: null, operatingResult: null } : {}
+    );
+    expect(costsSent(daily)).toBe(true);
+    expect(costsKnown(daily)).toBe(false);
   });
 
   it("tells an unknown day from a field that was never sent", () => {
@@ -109,11 +121,102 @@ describe("the cost line only exists when every day has its cost (AC-9)", () => {
     expect(costsKnown([])).toBe(false);
   });
 
-  it("says 'sem custo' for an unknown day and never 0,00", () => {
+  it("says 'sem custo informado' for an unknown day and never 0,00", () => {
+    expect(NO_COST_TEXT).toBe("sem custo informado");
     expect(costText(null)).toBe(NO_COST_TEXT);
     expect(costText(undefined)).toBe(NO_COST_TEXT);
     expect(costText("0.00")).toBe("R$ 0,00");
     expect(costText("2050.00")).toBe("R$ 2.050,00");
+  });
+});
+
+/** The days of October up to the 25th with the costs of `unknown` (day numbers) unknown, as the server sends them. */
+function october(unknown: readonly number[], to = "2026-10-25") {
+  return days("2026-10-01", to, (_date, index) =>
+    unknown.includes(index + 1)
+      ? {
+          costs: null,
+          netSales: "40.00",
+          operatingResult: null,
+          salesCount: 1,
+        }
+      : {
+          costs: `${10 + index}.00`,
+          netSales: "50.00",
+          operatingResult: `${40 - index}.00`,
+          salesCount: 1,
+        }
+  );
+}
+
+describe("a day with an unknown cost is hatched and breaks the cost line only on itself (AC-9, emenda de 25/10)", () => {
+  it("draws the cost line with the unknown days in the middle, at the start and at the end, and counts them", () => {
+    for (const unknown of [[12], [1], [25], [1, 12, 25]]) {
+      const series = resultSeries(october(unknown), "2026-10-25");
+      expect(series.costsDrawn).toBe(true);
+      expect(series.costsSent).toBe(true);
+      expect(series.days).toEqual({ total: 25, unknown: unknown.length });
+    }
+  });
+
+  it("never turns an unknown cost into a number in what the drawing gets: the day is null, the others are their cost", () => {
+    const series = resultSeries(october([1, 12, 13, 25]), "2026-10-25");
+    const costs = costSeries(series.rows);
+    expect(costs).toHaveLength(25);
+    for (const [index, value] of costs.entries()) {
+      if ([0, 11, 12, 24].includes(index)) {
+        expect(value, `day ${index + 1}`).toBeNull();
+      } else {
+        expect(value, `day ${index + 1}`).toBe(10 + index);
+      }
+    }
+    // no zero in place of an unknown day, anywhere
+    expect(costs.filter((value) => value === 0)).toEqual([]);
+  });
+
+  it("keeps the unknown days null across a change of period (the series a new period hands to the drawing)", () => {
+    // the drawing is given the new series as a whole: what a day was in the period before never leaks into it
+    const before = costSeries(resultSeries(october([]), "2026-10-25").rows);
+    const after = costSeries(resultSeries(october([3, 4]), "2026-10-25").rows);
+    expect(before.every((value) => typeof value === "number")).toBe(true);
+    expect(after[2]).toBeNull();
+    expect(after[3]).toBeNull();
+    const month = costSeries(
+      resultSeries(
+        [...october([3], "2026-10-31"), ...days("2026-11-01", "2027-01-05")],
+        "2027-01-05"
+      ).rows
+    );
+    // grouped by month, a month with an unknown day is unknown as a whole
+    expect(month[0]).toBeNull();
+    expect(month.slice(1).every((value) => typeof value === "number")).toBe(
+      true
+    );
+  });
+
+  it("draws no cost line when no day is known, and still counts the days", () => {
+    const series = resultSeries(
+      october(Array.from({ length: 25 }, (_, index) => index + 1)),
+      "2026-10-25"
+    );
+    expect(series.costsDrawn).toBe(false);
+    expect(series.costsSent).toBe(true);
+    expect(series.days).toEqual({ total: 25, unknown: 25 });
+    expect(costSeries(series.rows).every((value) => value === null)).toBe(true);
+    expect(hasAnyValue(series.rows, false)).toBe(true);
+  });
+
+  it("draws no cost line and counts no unknown day for a copy that never sent the costs", () => {
+    const series = resultSeries(withoutCosts(october([])), "2026-10-25");
+    expect(series.costsDrawn).toBe(false);
+    expect(series.costsSent).toBe(false);
+    expect(series.days.unknown).toBe(0);
+    expect(costSeries(series.rows).every((value) => value === null)).toBe(true);
+  });
+
+  it("counts only the days up to today", () => {
+    const series = resultSeries(october([28], "2026-10-31"), "2026-10-25");
+    expect(series.days).toEqual({ total: 25, unknown: 0 });
   });
 });
 
@@ -176,7 +279,7 @@ describe("the series ends at today and keeps what comes after (AC-6, AC-10)", ()
       return date === "2026-10-31" ? { costs: "1800.00" } : {};
     });
     const series = resultSeries(daily, "2026-10-23");
-    expect(series.costsDrawn).toBe(false);
+    expect(series.days.unknown).toBe(1);
     expect(series.afterToday).toBeNull();
   });
 
@@ -265,7 +368,9 @@ describe("the expenses of the day come from the server when it sends them (opera
       "2026-10-31"
     );
     expect(series.rows.at(-1)?.expenses).toBe("90.00");
-    expect(series.costsDrawn).toBe(false);
+    // the line is drawn on the known day and broken on this one (AC-9, emenda de 25/10)
+    expect(series.costsDrawn).toBe(true);
+    expect(costSeries(series.rows)).toEqual([0, null]);
   });
 
   it("trusts the server's zero over the cost of a day with no sale", () => {
@@ -450,26 +555,75 @@ const completeQuality: PeriodQuality = {
   salesCount: 3,
 };
 
-describe("the sentence that supports the chart (AC-11)", () => {
-  it("says the difference is the result of the day when both lines are drawn and there is no surcharge", () => {
-    expect(supportText(true, chain)).toBe(
+const drawnAll = {
+  costsDrawn: true,
+  costsSent: true,
+  days: { total: 25, unknown: 0 },
+};
+const drawnSome = {
+  costsDrawn: true,
+  costsSent: true,
+  days: { total: 25, unknown: 3 },
+};
+const drawnNone = {
+  costsDrawn: false,
+  costsSent: true,
+  days: { total: 25, unknown: 25 },
+};
+const notSent = {
+  costsDrawn: false,
+  costsSent: false,
+  days: { total: 25, unknown: 0 },
+};
+const withFreight = { ...chain, commercialSurcharges: "12.00" };
+
+describe("the sentence that supports the chart (AC-11, texto do Petković de 26/10 00:41)", () => {
+  it("1. no unknown day, no surcharge: the difference between the lines is the result of the day", () => {
+    expect(supportText(drawnAll, chain)).toBe(
       "A diferença entre as duas linhas é o resultado estimado do dia. Despesas do período entram no dia da competência."
     );
   });
 
-  it("sends the reader to the table when the period has a surcharge: the equality would not hold", () => {
-    const withFreight = { ...chain, commercialSurcharges: "12.00" };
+  it("2. no unknown day, a surcharge: sends the reader to the table, the equality would not hold", () => {
     expect(hasSurcharges(withFreight)).toBe(true);
-    expect(supportText(true, withFreight)).toBe(
+    expect(supportText(drawnAll, withFreight)).toBe(
       "O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
     );
   });
 
-  it("says nothing when the cost line is not drawn", () => {
-    expect(supportText(false, chain)).toBeNull();
+  it("3. unknown days, no surcharge: the count first, the equality only on the days without the hatch", () => {
+    expect(supportText(drawnSome, chain)).toBe(
+      "3 de 25 dias sem custo informado. A diferença entre as duas linhas é o resultado estimado do dia nos dias sem hachura. Despesas do período entram no dia da competência."
+    );
+  });
+
+  it("4. unknown days, a surcharge: the count first, then the table", () => {
+    expect(supportText(drawnSome, withFreight)).toBe(
+      "3 de 25 dias sem custo informado. O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+    );
+  });
+
+  it("5. no known day: the count and the competence only, with no equality (there are no two lines)", () => {
+    const text =
+      "25 de 25 dias sem custo informado. Despesas do período entram no dia da competência.";
+    expect(supportText(drawnNone, chain)).toBe(text);
+    expect(supportText(drawnNone, withFreight)).toBe(text);
+  });
+
+  it("says one day in the singular", () => {
     expect(
-      supportText(false, { ...chain, commercialSurcharges: "5.00" })
-    ).toBeNull();
+      supportText(
+        { costsDrawn: false, costsSent: true, days: { total: 1, unknown: 1 } },
+        chain
+      )
+    ).toBe(
+      "1 de 1 dia sem custo informado. Despesas do período entram no dia da competência."
+    );
+  });
+
+  it("says nothing when the costs of the days were not sent", () => {
+    expect(supportText(notSent, chain)).toBeNull();
+    expect(supportText(notSent, withFreight)).toBeNull();
   });
 
   it("counts a negative surcharge as one too", () => {

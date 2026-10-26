@@ -15,6 +15,7 @@ import { Area, AreaChart as BklitAreaChart } from "../bklit/charts/area-chart";
 import { Grid } from "../bklit/charts/grid";
 import { ChartTooltip } from "../bklit/charts/tooltip";
 import { YAxis } from "../bklit/charts/y-axis";
+import { GapSeries } from "./chart-gaps";
 import {
   ChartBridge,
   type ChartHandle,
@@ -28,8 +29,11 @@ import {
   type ChartPoint,
   chartPoints,
   EXTRA_HEIGHT,
+  hasUnknown,
+  knownRuns,
   LEFT_MARGIN_MIN,
   MARGIN,
+  type SecondaryDatum,
   seriesMax,
   yAxisMargin,
 } from "./chart-data";
@@ -51,12 +55,17 @@ const GRAY: ChartColor = "var(--chart-3)";
 interface AreaChartSecondary {
   /** The color of the line: a token of the chart palette. `--chart-3` (the mid grey) when absent. */
   color?: ChartColor;
-  /** One datum per datum of the main series, in the same order (the labels are the main series'). */
-  data: readonly ChartDatum[];
+  /**
+   * One datum per datum of the main series, in the same order (the labels are the main series'). A `null` value is
+   * unknown: the day is hatched, the line breaks on it, and the reading says `unknown.text` (never a zero).
+   */
+  data: readonly SecondaryDatum[];
   /** The name in the legend ("Custos (CMV, taxas e despesas)"). */
   legend: string;
   /** The short name in the reading of the day ("Custos"). */
   name: string;
+  /** What an unknown value is called: in the reading and the tooltip ("sem custo informado") and in the legend of the hatch. */
+  unknown?: { legend: string; text: string };
 }
 
 export interface AreaChartProps {
@@ -196,6 +205,11 @@ function Plot({
 }: PlotProps) {
   const motion = useMotion(still);
   const labels = useMemo(() => points.map((item) => item.label), [points]);
+  const gaps = hasUnknown(secondary?.data);
+  const runs = useMemo(
+    () => (secondary && gaps ? knownRuns(secondary.data) : []),
+    [gaps, secondary]
+  );
   const style = useMemo(() => ({ height }), [height]);
   const secondaryColor = secondary?.color ?? GRAY;
   const content = useCallback(
@@ -233,7 +247,7 @@ function Plot({
           showMarkers={points.length === 1}
           {...(color ? { fill: color, stroke: color } : {})}
         />
-        {secondary ? (
+        {secondary && !gaps ? (
           <Area
             animate={motion.animate}
             dashArray={DASH}
@@ -244,10 +258,30 @@ function Plot({
             stroke={secondaryColor}
           />
         ) : null}
+        {/* with an unknown day the block only lends its scale to the known values (it would draw an unknown one as a
+            zero): nothing of it is painted, and the runs, the hatch and the point read are drawn by `GapSeries` */}
+        {secondary && gaps ? (
+          <Area
+            animate={false}
+            dataKey="drawnSecondary"
+            fillOpacity={0}
+            showHighlight={false}
+            showLine={false}
+          />
+        ) : null}
+        {secondary && gaps ? (
+          <GapSeries
+            color={secondaryColor}
+            dash={DASH}
+            mainColor={color ?? INK}
+            runs={runs}
+          />
+        ) : null}
         <ChartTooltip
           content={content}
           damping={motion.damping}
           dateLabels={labels}
+          showDots={!gaps}
         />
         <ChartBridge
           bestIndex={best}
@@ -376,8 +410,10 @@ export function AreaChart({
           color={color ?? INK}
           dash={DASH}
           legend={legend ?? name}
+          hatched={hasUnknown(secondary.data)}
           secondary={secondary}
           secondaryColor={secondary.color ?? GRAY}
+          secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
         />
       ) : null}
       <div className="relative rounded-md" style={{ height: boxHeight }}>

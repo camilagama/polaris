@@ -18,7 +18,6 @@ const uuid = (n: number) =>
 
 const RPC_PREFIX = /^\/rpc\//;
 const GOALS_TAB = /^Metas/;
-const SALES_CHART = /Vendas líquidas por dia/;
 const TWO_LINES_CHART = /Vendas líquidas e custos por dia/;
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
@@ -323,11 +322,15 @@ export const resultStates = {
     await showScreenAlone(page);
   },
 
-  /** The period read with an incomplete estimate: the warning, the badges, the sales alone in the chart and the chain. */
+  /**
+   * The period read with an incomplete estimate: the warning, the badges, the chart with the first day hatched and the
+   * cost line from the second day on (AC-9, emenda de 25/10), and the chain.
+   */
   async list(page: Page) {
     await openResultLab(page);
     await page.getByText("Estimativa incompleta").first().waitFor();
-    await page.getByRole("img", { name: SALES_CHART }).waitFor();
+    await page.getByRole("img", { name: TWO_LINES_CHART }).waitFor();
+    await page.locator("[data-chart-unknown-day]").first().waitFor();
     await showScreenAlone(page);
   },
 

@@ -317,8 +317,13 @@ function summaryOf(month: string, from: string, to: string) {
 }
 
 class FakeReportServer {
-  /** The periods asked for, in order. */
+  /** The periods asked for by the screen, in order. */
   readonly periods: Array<{ from: string; to: string }> = [];
+  /**
+   * The periods read for the chips of the cards (the period before, v7 § 8), in order: the screen asks for them with no
+   * `topProducts`, and they are kept apart from `periods`, are never held and are not counted in `answered`.
+   */
+  readonly comparisons: Array<{ from: string; to: string }> = [];
   /** Months whose answer was sent, in order. */
   readonly answered: string[] = [];
   /** When set, every answer is this ORPC error instead of a summary. */
@@ -349,6 +354,16 @@ class FakeReportServer {
     }
     const from = String(input.from);
     const to = String(input.to);
+    if (input.topProducts === undefined) {
+      this.comparisons.push({ from, to });
+      if (this.failure) {
+        return this.fail(this.failure.code, this.failure.status);
+      }
+      return {
+        body: { json: summaryOf(from.slice(0, 7), from, to), meta: [] },
+        status: 200,
+      };
+    }
     this.periods.push({ from, to });
     const month = from.slice(0, 7);
     await this.holds.get(month);
@@ -419,18 +434,16 @@ async function openDashboard(page: Page, server: FakeReportServer, extra = "") {
   return user;
 }
 
-/** The six cards, in the order the screen shows them. */
+/** The four KPI cards (v7 § 8), in the order the screen shows them. */
 const CARD = {
-  items: 5,
-  margin: 2,
-  netSales: 0,
-  result: 1,
-  sales: 3,
-  ticket: 4,
+  margin: 3,
+  netSales: 1,
+  result: 0,
+  ticket: 2,
 } as const;
 
-const card = (page: Page, index: number) =>
-  page.locator("dl > [data-slot=card]").nth(index);
+const kpiCards = (page: Page) => page.locator("[data-kpi-row] > [data-kpi]");
+const card = (page: Page, index: number) => kpiCards(page).nth(index);
 const quality = (page: Page) =>
   page.getByRole("region", { name: "Qualidade dos dados" });
 const chain = (page: Page) =>
@@ -472,24 +485,31 @@ const rangeFields = async (page: Page, from: string, to: string) => {
   await page.getByRole("button", { name: "Ver período" }).click();
 };
 
-test("mostra os seis cartões e o passo a passo do mês atual", async ({
+test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   page,
 }) => {
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(6);
-  await expect(card(page, CARD.netSales)).toContainText("Vendas líquidas");
-  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await expect(kpiCards(page)).toHaveCount(4);
   await expect(card(page, CARD.result)).toContainText("Resultado estimado");
+  // the expense of the 31st is after today: the card is the server's of the whole month, as the chain says
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
-  await expect(card(page, CARD.margin)).toContainText("Margem");
-  await expect(card(page, CARD.margin)).toContainText("52,69%");
-  await expect(card(page, CARD.sales)).toContainText("2");
+  await expect(card(page, CARD.result)).toContainText("outubro inteiro");
+  await expect(card(page, CARD.netSales)).toContainText("Vendas em outubro");
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await expect(card(page, CARD.netSales)).toContainText("2 vendas no mês");
   await expect(card(page, CARD.ticket)).toContainText("Ticket médio");
   await expect(card(page, CARD.ticket)).toContainText("R$ 65,00");
-  await expect(card(page, CARD.items)).toContainText("Itens vendidos");
-  await expect(card(page, CARD.items)).toContainText("3");
+  await expect(card(page, CARD.margin)).toContainText("Margem");
+  await expect(card(page, CARD.margin)).toContainText("52,69%");
+  // the chips compare with the same days of September (v7 § 8): R$ 130,00 against R$ 100,00
+  await expect(card(page, CARD.netSales)).toContainText("+30,0%");
+  await expect(card(page, CARD.netSales)).toContainText("vs. 1 a 14/09");
+  expect(server.comparisons).toContainEqual({
+    from: "2026-09-01",
+    to: "2026-09-30",
+  });
 
   // the period asked for is this month, the first to the last day, and it is the one pressed
   expect(server.periods[0]).toEqual({ from: "2026-10-01", to: "2026-10-31" });
@@ -646,7 +666,7 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
   await expect(
     page.getByText("Sem vendas nem despesas em 1 a 31 de março")
   ).toBeVisible();
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
   await expect(chain(page)).toHaveCount(0);
 });
 
@@ -687,7 +707,7 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
     "Não foi possível carregar o resultado. Tente novamente.",
     { timeout: 15_000 }
   );
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
 
   server.failure = null;
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
@@ -744,7 +764,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(notice).not.toContainText("operações guardadas");
   await expect(page.getByRole("alert")).toHaveCount(0);
   // the same figures the server confirmed, not recomputed
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(6);
+  await expect(kpiCards(page)).toHaveCount(4);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
   await expect(quality(page)).toContainText(
@@ -777,7 +797,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
     "Este período só abre com internet.",
     { timeout: 15_000 }
   );
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // a month that was read shows its own copy, never the one of another period
@@ -805,7 +825,7 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
     "Sem internet e sem números guardados neste aparelho.",
     { timeout: 15_000 }
   );
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
 
   // the last 30 days is a window that moves: no copy, and the screen says why
   await choosePreset(page, "Últimos 30 dias");
@@ -813,7 +833,7 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
     "Este período só abre com internet.",
     { timeout: 15_000 }
   );
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
 
   // this month was read: its copy is still there
   await choosePreset(page, "Este mês");
@@ -865,7 +885,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(page.getByRole("alert")).toContainText(
     "Não foi possível carregar o resultado."
   );
-  await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+  await expect(kpiCards(page)).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // and the session being over cleared every copy this browser held
@@ -900,6 +920,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
 const reading = (page: Page) =>
   chartRegion(page).locator("[data-chart-reading]");
 const METAS_TAB = /^Metas/;
+const ONE_UNKNOWN_DAY = /1 de 30 dias sem custo informado/;
 const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
 const metasTab = (page: Page) => page.getByRole("tab", { name: METAS_TAB });
 const resultTab = (page: Page) =>
@@ -979,7 +1000,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(region.locator("table").locator("tfoot")).toHaveCount(0);
   });
 
-  test("com um custo desconhecido, a linha de custos e o resultado do dia não são desenhados, e a tabela diz 'sem custo'", async ({
+  test("com um dia de custo desconhecido, o dia é hachurado e a linha quebra só nele; a leitura e a tabela dizem 'sem custo informado' (AC-9, emenda de 25/10)", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -991,21 +1012,53 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(region).toContainText(
       "Não é lucro líquido nem dinheiro já recebido."
     );
+    // September has no surcharge: the count first, the equality on the days without the hatch (AC-11)
     await expect(region).toContainText(
-      "A linha de custos não aparece enquanto houver custo desconhecido."
+      "1 de 30 dias sem custo informado. A diferença entre as duas linhas é o resultado estimado do dia nos dias sem hachura. Despesas do período entram no dia da competência."
     );
-    // only the sales: no legend, no sentence about the difference, no total of costs
-    await expect(region.locator("[data-chart-legend]")).toHaveCount(0);
-    await expect(region).not.toContainText("A diferença entre as duas linhas");
-    await expect(region).not.toContainText("O resultado de cada dia");
+    await expect(region).not.toContainText("A linha de custos não aparece");
+    // the legend names both lines and the hatch; no total of costs, never a partial sum
+    await expect(region.locator("[data-chart-legend]")).toContainText(
+      "Custos (CMV, taxas e despesas)"
+    );
+    await expect(region.locator("[data-chart-legend]")).toContainText(
+      "dia sem custo informado"
+    );
     await expect(region.locator("dt", { hasText: "Custos" })).toHaveCount(0);
-    await expect(region.getByRole("img")).toBeVisible();
+    // the card of the result: the badge and the count, no sparkline and no chip (AC-9)
+    const result = card(page, CARD.result);
+    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("1 de 30 dias sem custo informado");
+    await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
+    await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
+    await expect(
+      region.getByRole("img", { name: ONE_UNKNOWN_DAY })
+    ).toBeVisible();
+    // the hatch on the first day only, and the cost line drawn from the second day on, never through the first
+    await expect(region.locator("[data-chart-unknown-day]")).toHaveCount(1);
+    await expect(region.locator("[data-chart-unknown-day]")).toHaveAttribute(
+      "data-chart-unknown-day",
+      "0"
+    );
+    await expect(region.locator("[data-chart-run]")).toHaveAttribute(
+      "data-chart-run",
+      "1-29"
+    );
+
+    // the reading of the unknown day says so in words
+    const range = region.getByRole("slider");
+    await range.focus();
+    await range.press("Home");
+    await expect(reading(page)).toContainText(
+      "01/09 · Vendas R$ 100,00 · Custos: sem custo informado"
+    );
+    await expect(reading(page)).not.toContainText("R$ 0,00");
 
     await region.getByRole("button", { name: "Ver os números" }).click();
     const first = region.locator("table").locator("tbody tr").first();
     await expect(first).toContainText("01/09/2026");
-    await expect(first.locator("td").nth(1)).toHaveText("sem custo");
-    await expect(first.locator("td").nth(2)).toHaveText("sem custo");
+    await expect(first.locator("td").nth(1)).toHaveText("sem custo informado");
+    await expect(first.locator("td").nth(2)).toHaveText("sem custo informado");
   });
 
   test("com o pedaço do gráfico bloqueado, ficam os totais, o melhor dia e a tabela, e o texto do Início", async ({
@@ -1120,7 +1173,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "Não foi possível carregar o resultado. Tente novamente.",
       { timeout: 15_000 }
     );
-    await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
+    await expect(kpiCards(page)).toHaveCount(0);
     await expect(chartRegion(page)).toHaveCount(0);
   });
 });
@@ -1271,10 +1324,10 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
     await page.setViewportSize({ height: 740, width: 320 });
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    const value = card(page, CARD.netSales).locator("dd").first();
+    const value = card(page, CARD.netSales).locator("[data-kpi-value]");
     await expect(value).toHaveText("R$ 130,00");
     const box = await value.boundingBox();
-    // one line of the 26 px type
+    // one line of the display type
     expect(box?.height ?? 999).toBeLessThan(40);
     const overflow = await page.evaluate(
       () =>

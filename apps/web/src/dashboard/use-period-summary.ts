@@ -225,3 +225,68 @@ export function usePeriodSummary(
 
   return { refresh: load, state };
 }
+
+/** The days of the period the chips of the cards compare with, and which period they are of. */
+export interface ComparisonDays {
+  days: NonNullable<StoredPeriodSummary["daily"]>;
+  period: Period;
+}
+
+/**
+ * The daily series of the period before (`result-kpis.ts`, `comparisonPeriod`): what the chips of the cards compare
+ * with. A read of its own, asked only once the screen's read of the period answered (the caller passes null before),
+ * in one try and with no copy on the device: when it fails, or with no connection, the cards have no chip and say
+ * nothing about it. A late answer never stands for another period;
+ * the last one read is kept, so going back to a period does not ask again.
+ */
+export function useComparisonDays(
+  organizationId: string,
+  period: Period | null
+): ComparisonDays | null {
+  const from = period?.from ?? null;
+  const to = period?.to ?? null;
+  const [kept, setKept] = useState<
+    (ComparisonDays & { organizationId: string }) | null
+  >(null);
+  const sequence = useRef(0);
+  const wanted =
+    kept !== null &&
+    kept.organizationId === organizationId &&
+    kept.period.from === from &&
+    kept.period.to === to;
+
+  useEffect(() => {
+    if (from === null || to === null || wanted) {
+      return;
+    }
+    sequence.current += 1;
+    const requestSequence = sequence.current;
+    const isCurrent = () => requestSequence === sequence.current;
+    readWithRetry(
+      (signal) =>
+        orpcClient.report.periodSummary(
+          { from, organizationId, to },
+          { signal }
+        ),
+      // one try: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
+      { isCurrent, mayRetry: () => false }
+    )
+      .then((summary) => {
+        if (isCurrent() && isPeriodSummary(summary) && summary.daily) {
+          setKept({
+            days: summary.daily,
+            organizationId,
+            period: { from, to },
+          });
+        }
+      })
+      .catch(() => {
+        // no chip: the cards say their own numbers without a comparison
+      });
+    return () => {
+      sequence.current += 1;
+    };
+  }, [from, organizationId, to, wanted]);
+
+  return wanted ? { days: kept.days, period: kept.period } : null;
+}

@@ -6,6 +6,26 @@ interface Secondary {
   color?: ChartColor | undefined;
   legend: string;
   name: string;
+  /** What an unknown value is called ("sem custo informado") and the name of the hatch in the legend. */
+  unknown?: { legend: string; text: string } | undefined;
+}
+
+/**
+ * The value of the second series as text: the amount, or the words of an unknown value, never "R$ 0,00" (AC-9 of the
+ * Resultado). The words go after a colon ("Custos: sem custo informado"), the amount after a space ("Custos R$ 90,00").
+ */
+function secondaryText(
+  secondary: Secondary,
+  value: number | null,
+  formatValue: (value: number) => string
+): { separator: string; text: string; unknown: boolean } {
+  return value === null
+    ? {
+        separator: ":",
+        text: secondary.unknown?.text ?? "sem valor",
+        unknown: true,
+      }
+    : { separator: "", text: formatValue(value), unknown: false };
 }
 
 export interface DayReading {
@@ -43,10 +63,11 @@ export function Reading({
           <span className="font-medium text-foreground tabular-nums">
             {formatValue(point.raw)}
           </span>{" "}
-          <span>{`· ${secondary.name}`}</span>{" "}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatValue(point.rawSecondary)}
-          </span>
+          <SecondaryReading
+            formatValue={formatValue}
+            secondary={secondary}
+            value={point.rawSecondary}
+          />
           {note ? (
             <>
               {" "}
@@ -60,6 +81,33 @@ export function Reading({
         </span>
       )}
     </p>
+  );
+}
+
+function SecondaryReading({
+  formatValue,
+  secondary,
+  value,
+}: {
+  formatValue: (value: number) => string;
+  secondary: Secondary;
+  value: number | null;
+}) {
+  const reading = secondaryText(secondary, value, formatValue);
+  return (
+    <>
+      <span>{`· ${secondary.name}${reading.separator}`}</span>{" "}
+      <span
+        className={
+          reading.unknown
+            ? "font-medium text-warning italic"
+            : "font-medium text-foreground tabular-nums"
+        }
+        data-chart-unknown={reading.unknown ? "" : undefined}
+      >
+        {reading.text}
+      </span>
+    </>
   );
 }
 
@@ -77,7 +125,8 @@ export function spokenValue({
   if (!secondary || point.rawSecondary === undefined) {
     return `${point.label}: ${formatValue(point.raw)}`;
   }
-  const both = `${point.label}: ${name} ${formatValue(point.raw)}, ${secondary.name} ${formatValue(point.rawSecondary)}`;
+  const second = secondaryText(secondary, point.rawSecondary, formatValue);
+  const both = `${point.label}: ${name} ${formatValue(point.raw)}, ${secondary.name}${second.separator} ${second.text}`;
   return note ? `${both}, ${note}` : both;
 }
 
@@ -105,19 +154,52 @@ function LegendKey({
   );
 }
 
-/** The names of the two lines, each with its own trace: color is never the only sign. */
+/** A sample of the hatch of an unknown day: the same lines at 45° as the plot. */
+function HatchKey() {
+  return (
+    <svg aria-hidden="true" height={10} width={10}>
+      <rect
+        fill="var(--chart-unknown)"
+        fillOpacity={0.08}
+        height={10}
+        width={10}
+      />
+      {[2, 6, 10, 14].map((offset) => (
+        <line
+          key={offset}
+          stroke="var(--chart-unknown)"
+          strokeWidth={1.6}
+          x1={offset - 10}
+          x2={offset}
+          y1={10}
+          y2={0}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * The names of the two lines, each with its own trace: color is never the only sign. With an unknown day, the hatch
+ * has its own name (`hatched`); with no known value at all (`secondaryDrawn` false) the line is not named, as it is
+ * not drawn.
+ */
 export function Legend({
   color,
   dash,
+  hatched = false,
   legend,
   secondary,
   secondaryColor,
+  secondaryDrawn = true,
 }: {
   color: string;
   dash: string;
+  hatched?: boolean;
   legend: string;
   secondary: Secondary;
   secondaryColor: string;
+  secondaryDrawn?: boolean;
 }) {
   return (
     <ul
@@ -128,10 +210,18 @@ export function Legend({
         <LegendKey color={color} dash={undefined} />
         {legend}
       </li>
-      <li className="flex items-center gap-1.5">
-        <LegendKey color={secondaryColor} dash={dash} />
-        {secondary.legend}
-      </li>
+      {secondaryDrawn ? (
+        <li className="flex items-center gap-1.5">
+          <LegendKey color={secondaryColor} dash={dash} />
+          {secondary.legend}
+        </li>
+      ) : null}
+      {hatched && secondary.unknown ? (
+        <li className="flex items-center gap-1.5" data-chart-legend-unknown="">
+          <HatchKey />
+          {secondary.unknown.legend}
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -197,7 +287,7 @@ export function TooltipLines({
         <Line
           color={secondaryColor}
           name={secondary.name}
-          value={formatValue(point.rawSecondary)}
+          value={secondaryText(secondary, point.rawSecondary, formatValue).text}
         />
       ) : null}
       {note ? <p className="text-chart-tooltip-muted">{note}</p> : null}

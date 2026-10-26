@@ -26,6 +26,13 @@ Registro datado; a decisão acima continua valendo para o resumo do período. Pe
 - **O motor continua sendo a definição.** A conta em SQL é uma segunda escrita da mesma regra, e o gate `daily-sales` (PostgreSQL 18) prova que ela é igual a `periodSummary.daily` (`netSales` e `salesCount`) data a data, com descontos fixos e percentuais rateados com empate, devoluções parciais, repetidas e totais, cancelamentos, vendas um segundo antes e depois da meia-noite e lojas em fusos diferentes. Mudou a regra de vendas líquidas do motor, muda esta consulta no mesmo PR e o gate confere.
 - **Fica de fora:** custos, resultado e qualquer outro número do resumo (continuam só do motor), a cópia offline da série (vem com a tela do mapa) e o índice `(organization_id, occurred_on)` em `sales`. Ele entrou depois (migration 0104, t393, provisória): o gate `daily-sales` exige que o `dailySales` e o `readPeriodFacts` do resumo leiam `sales` por ele, com histórico antigo semeado e `ANALYZE`; sem ele as duas consultas liam por `sales_organization_confirmed_idx` todas as vendas da organização e filtravam as datas, e o custo crescia com o histórico da loja.
 
+## Emenda (26/10/2026): os cartões do Resultado v7 e a leitura do período anterior
+
+Registro datado; o procedimento e os cartões que ele devolve não mudam. A tela do Resultado (revisão de UI v7, § 8, aprovada pelo usuário em 25/10) passa a mostrar **quatro** cartões no molde do Início: Resultado estimado, Vendas (vendas líquidas, com o número de vendas embaixo), Ticket médio e Margem. "Itens vendidos" continua no contrato e sai da tela.
+
+- **O chip compara com o período anterior por uma segunda leitura do mesmo `periodSummary`.** Mês inteiro contra o mês anterior; outro intervalo contra o de mesmo tamanho que termina na véspera. Só depois de a leitura da tela responder, sem `topProducts`, numa tentativa só e sem cópia no aparelho: se falhar, o cartão fica sem chip e não diz nada. Nenhum número da tela vem dessa leitura, só a comparação.
+- **O resultado só tem curva e chip com todos os dias conhecidos** (AC-9 do corte do Resultado, emenda de 25/10). Com dia de custo desconhecido, o cartão mostra o número do servidor com "estimativa incompleta" e "N de M dias sem custo informado"; a soma dos dias conhecidos nunca aparece como total.
+
 ## Consequências
 
 - O painel e o resultado de um período sempre concordam, porque vêm do mesmo motor e da mesma leitura.
