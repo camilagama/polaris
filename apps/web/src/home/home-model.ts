@@ -395,7 +395,9 @@ export function goalProjection(
   let target: bigint;
   let sold: bigint;
   if (goal.kind === "sale_count") {
-    if (!WHOLE_NUMBER.test(progress.value) || !WHOLE_NUMBER.test(goal.target)) {
+    if (
+      !(WHOLE_NUMBER.test(progress.value) && WHOLE_NUMBER.test(goal.target))
+    ) {
       return null;
     }
     sold = rhythm.reduce((sum, day) => sum + BigInt(day.salesCount), 0n);

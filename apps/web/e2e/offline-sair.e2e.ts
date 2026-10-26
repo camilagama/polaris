@@ -472,6 +472,33 @@ test("no celular, fechar Mais antes da resposta do Sair não esconde o aviso da 
   expect(server.log).not.toContain("sign-out");
 });
 
+test("cruzar 760 px durante o envio da fila não perde o Saindo… nem o aviso da fila (Rodrigo 26/10, menor 1 e 2)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  const server = new Server();
+  await openApp(page, server);
+  server.pushReaches = false;
+  await queueCustomers(page, 2);
+  await page.route("**/rpc/sync/push", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await route.fallback();
+  });
+
+  await clickSair(page);
+  // with the menu closed, the card says it is leaving and the button of the menu is busy
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saindo…" })
+  ).toBeVisible();
+  await expect(storeMenuButton(page)).toHaveAttribute("aria-busy", "true");
+  // the width crosses 760 px before the answer: the sidebar becomes the sheet of "Mais"
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expect(page.getByRole("alertdialog")).toContainText("2 operações", {
+    timeout: 10_000,
+  });
+  expect(server.log).not.toContain("sign-out");
+});
+
 test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rodrigo 25/10)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });

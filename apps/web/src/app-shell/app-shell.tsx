@@ -62,7 +62,7 @@ import {
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
-import { LogoutControl } from "../offline/runtime/logout-control";
+import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
   useOfflineAccessExpired,
@@ -209,6 +209,9 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       setOpenMobile(true);
     }
   }, [isMobile, setOpenMobile]);
+  // the state of "Sair" lives above the switch between the sheet and the card, so a width that crosses 760 px in the
+  // middle of the flow keeps the dialog of the queue and the message of a failure (Rodrigo, 26/10, menor 1)
+  const logout = useLogout("/");
   const email = useSignedInEmail();
   const items = menuItemsOf({
     offline: OFFLINE_RUNTIME_ENABLED,
@@ -287,12 +290,16 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
                 ) : null}
               </div>
             ) : null}
-            <LogoutControl onAttention={showLogoutAttention} />
+            <LogoutControl logout={logout} onAttention={showLogoutAttention} />
           </div>
         ) : (
           // the desktop: the card of the store, with the theme, the other stores and "Sair" in its menu (v7 § 3 item 12)
           <div className="grid gap-3 p-1">
-            <StoreCard email={email} organization={organization} />
+            <StoreCard
+              email={email}
+              logout={logout}
+              organization={organization}
+            />
             {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them */}
             <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs" />
           </div>

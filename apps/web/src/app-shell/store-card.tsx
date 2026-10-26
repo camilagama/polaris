@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import type { CurrentOrganization } from "../lib/current-organization";
-import { LogoutNotices, useLogout } from "../offline/runtime/logout-control";
+import { type Logout, LogoutNotices } from "../offline/runtime/logout-control";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { storeInitials } from "./store-initials";
 
@@ -35,20 +35,22 @@ const STORE_MENU_LABEL_NO_LOGOUT = "Loja e tema";
  * button "⋯" ("Loja, tema e Sair") that opens the appearance, the other stores and, last and apart, "Sair". It shows with
  * the e-mail alone too (no store, or the read of the stores failed), so "Sair" is there in every state it was before.
  *
- * The protected logout (`useLogout`) and its notices live here, in the card, which is always on screen, and not in
- * the menu, which closes on the click: the item only calls `start`, and the dialog of the pending queue or the
+ * The protected logout (`useLogout`) lives in the sidebar, which outlives the card when the width crosses 760 px,
+ * and its notices here, in the card, which is always on screen, and not in the menu, which closes on the click: the item only calls `start`, and the dialog of the pending queue or the
  * message of a failed sign-out appears under the card after the menu has closed (Rodrigo, 25/10, vale corrigir 1).
  * When the flow fails, or the dialog is dismissed, the focus goes back to the button of the menu.
  */
 export function StoreCard({
   email,
+  logout,
   organization,
 }: {
   email: string | null;
+  /** The protected logout of the sidebar, which keeps its state when the width crosses 760 px. */
+  logout: Logout;
   organization: CurrentOrganization | null;
 }) {
   const runtime = useOfflineRuntime();
-  const logout = useLogout("/");
   const [theme, choose] = useTheme();
   const trigger = useRef<HTMLButtonElement>(null);
   const { blocked, message } = logout;
@@ -114,6 +116,7 @@ export function StoreCard({
             ref={trigger}
             render={
               <Button
+                aria-busy={logout.busy || undefined}
                 aria-label={
                   runtime ? STORE_MENU_LABEL : STORE_MENU_LABEL_NO_LOGOUT
                 }

@@ -129,7 +129,7 @@ export function useLogout(destination: LeavePath) {
 }
 
 /** The state of a protected logout and what it does: what `useLogout` returns. */
-type Logout = ReturnType<typeof useLogout>;
+export type Logout = ReturnType<typeof useLogout>;
 
 interface LogoutNoticesProps {
   logout: Logout;
@@ -163,6 +163,12 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
   }, [blocked]);
   return (
     <>
+      {/* the menu that held "Sair" is closed by now: the state is said here, not only by a disabled item */}
+      {busy ? (
+        <p className="m-0 text-muted-foreground text-support" role="status">
+          Saindo…
+        </p>
+      ) : null}
       {message ? (
         <p className="m-0 text-destructive text-support" role="alert">
           {message}
@@ -186,24 +192,56 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
 }
 
 interface LogoutControlProps {
+  /**
+   * The logout of the one that holds the state, when the control may be unmounted and mounted again with it kept (the
+   * sidebar, when the width crosses 760 px in the middle of the flow). Without it the control has its own.
+   */
+  logout?: Logout;
   /** See `LogoutNotices`. */
-  onAttention?: () => void;
+  onAttention?: (() => void) | undefined;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
-  reason?: SignInReason;
+  reason?: SignInReason | undefined;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
-  returnTo?: string;
+  returnTo?: string | undefined;
 }
 
 /** "Sair" as a button with its notices under it: the "Mais" sheet of the phone, the acceptance and Aparelhos. */
 export function LogoutControl({
+  logout,
   onAttention,
   reason,
   returnTo,
 }: LogoutControlProps = {}) {
-  const runtime = useOfflineRuntime();
+  return logout ? (
+    <LogoutButton logout={logout} onAttention={onAttention} />
+  ) : (
+    <OwnLogoutControl
+      onAttention={onAttention}
+      reason={reason}
+      returnTo={returnTo}
+    />
+  );
+}
+
+function OwnLogoutControl({
+  onAttention,
+  reason,
+  returnTo,
+}: Omit<LogoutControlProps, "logout">) {
   const logout = useLogout(
     reason ? logoutDestination({ reason, returnTo }) : "/"
   );
+  return <LogoutButton logout={logout} onAttention={onAttention} />;
+}
+
+function LogoutButton({
+  logout,
+  onAttention,
+}: {
+  logout: Logout;
+  onAttention?: (() => void) | undefined;
+}) {
+  const runtime = useOfflineRuntime();
   if (!runtime) {
     return null;
   }

@@ -445,10 +445,15 @@ async function openHome(page: Page, server: FakeServer, at = NOON) {
 
 /**
  * The estimate of the goal of 23/10 (v7 § 3 item 9): R$ 2.670,60 measured, plus the 7 whole days before today (16 to
- * 22/10: R$ 1.840,00 + R$ 420,50 = R$ 2.260,50) × 8 days left ÷ 7 = R$ 2.583,428… → R$ 2.583,43 (half-up, once).
+ * 22/10: R$ 1.840,00 + R$ 420,50 = R$ 2.260,50) × 8 days left ÷ 7 = R$ 2.583,428… → R$ 2.583,43 (half-up, once), so
+ * R$ 5.254,03 on the 31st. Over the target of R$ 5.000,00 the phrase says the day the rhythm crosses it (the 7th day
+ * would give R$ 4.931,10: the 31st, the last one, is the first above), and under a target of R$ 6.000,00 where it gets.
  */
 const GOAL_PROJECTION =
+  "No ritmo dos últimos 7 dias, a meta é batida até 31/10. Estimativa.";
+const GOAL_PROJECTION_SHORT =
   "No ritmo dos últimos 7 dias, chega a R$ 5.254,03 em 31/10. Estimativa.";
+const GOAL_PROJECTION_NO_SALES = "Sem vendas nos últimos 7 dias para estimar.";
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
 const newSale = (page: Page) =>
@@ -1201,7 +1206,11 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta).not.toContainText("2.670,60");
     await expect(meta).not.toContainText("5.000,00");
     await expect(meta).not.toContainText("5.254,03");
-    await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
+    // the phrase of "batida" has no amount: only the measured and the target are masked
+    await expect(meta.locator("[data-goal-projection]")).toHaveText(
+      GOAL_PROJECTION
+    );
+    await expect(meta.locator("[data-masked-money]")).toHaveCount(2);
     await expect(ring).toHaveAttribute(
       "aria-label",
       "53,4% da meta: valor escondido de valor escondido"
@@ -1221,6 +1230,39 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(
       empty.getByRole("link", { name: "Definir meta" })
     ).toHaveAttribute("href", "/dashboard?meta=nova");
+  });
+
+  test("a frase da estimativa: abaixo do alvo diz onde chega (e Esconder valores a mascara); sem venda nos 7 dias diz que não há o que estimar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const short = new FakeServer({
+      ...SOLD,
+      goals: [goal({ target: "6000.00" })],
+    });
+    await openHome(page, short);
+    const meta = region(page, "Meta");
+    await expect(meta.locator("[data-goal-projection]")).toHaveText(
+      GOAL_PROJECTION_SHORT
+    );
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(meta).not.toContainText("5.254,03");
+    await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
+
+    // nothing sold from 16 to 22/10: a "chega a" equal to what was reached would be no estimate
+    const { "2026-10-18": _, "2026-10-20": __, ...quiet } = SOLD.days;
+    short.scenario = {
+      ...SOLD,
+      days: quiet,
+      goals: [goal({ target: "6000.00" })],
+    };
+    await page.reload();
+    const none = region(page, "Meta").locator("[data-goal-projection]");
+    await expect(none).toHaveText(GOAL_PROJECTION_NO_SALES);
+    await expect(none).toHaveAttribute("data-goal-projection", "sem-venda");
   });
 
   test("'Definir meta' abre o formulário de meta no Resultado", async ({

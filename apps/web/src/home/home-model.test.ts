@@ -548,6 +548,11 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
   // R$ 1.500,00 by default: the rhythm (R$ 1.000,00 on the 31st) falls short of it
   const g = (overrides: Partial<GoalReadModel>) =>
     goal({ target: "1500.00", ...overrides });
+  // the figure of the estimate that falls short of the target
+  const shortValue = (
+    projection: ReturnType<typeof goalProjection>
+  ): string | undefined =>
+    projection?.kind === "short" ? projection.value : undefined;
 
   it("adds the mean of the 7 days before today for each day left, in exact cents", () => {
     // 6 days left: 400,00 + 700,00 × 6 ÷ 7 = 400,00 + 600,00
@@ -563,13 +568,18 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
       date === "2026-10-24" ? ["0.01", 1] : undefined
     );
     // 0,01 × 6 ÷ 7 = 0,00857… → 0,01
-    expect(goalProjection(g({}), { before, month: odd }, today)?.value).toBe(
-      "R$ 400,01"
-    );
+    expect(
+      shortValue(goalProjection(g({}), { before, month: odd }, today))
+    ).toBe("R$ 400,01");
     // 0,01 × 3 ÷ 7 = 0,00428… → 0,00
     expect(
-      goalProjection(g({ endsOn: "2026-10-28" }), { before, month: odd }, today)
-        ?.value
+      shortValue(
+        goalProjection(
+          g({ endsOn: "2026-10-28" }),
+          { before, month: odd },
+          today
+        )
+      )
     ).toBe("R$ 400,00");
   });
 
@@ -599,8 +609,13 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
     );
     // on 03/10 the 7 days are 26/09 to 02/10: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
     expect(
-      goalProjection(g({}), { before: september, month: early }, "2026-10-03")
-        ?.value
+      shortValue(
+        goalProjection(
+          g({ target: "2000.00" }),
+          { before: september, month: early },
+          "2026-10-03"
+        )
+      )
     ).toBe("R$ 1.520,00");
   });
 
@@ -716,7 +731,16 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
     });
     expect(
       goalProjection(
-        g({ kind: "sale_count", target: "40" }),
+        g({
+          kind: "sale_count",
+          progress: {
+            percent: "50.0",
+            periodEnded: false,
+            reached: false,
+            value: "20",
+          },
+          target: "40",
+        }),
         { before, month: quiet },
         today
       )
