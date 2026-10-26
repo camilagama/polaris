@@ -2,7 +2,13 @@ import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
@@ -184,7 +190,9 @@ export function GoalsPanel({
     () => newButtonRef.current ?? document.getElementById(HEADING_ID) ?? true,
     []
   );
-  useEffect(() => {
+  // before the dialog's own effects: on a phone the form opened by `?meta=nova` pushes its entry over this address, and
+  // that entry and the one under it are the screen without the link, so the step back closes the form and stays
+  useLayoutEffect(() => {
     if (link !== null) {
       // the link did its work: a reload or a step back is the screen as it is, not the form opening again
       const url = new URL(window.location.href);
