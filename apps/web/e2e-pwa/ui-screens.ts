@@ -220,6 +220,7 @@ const saleScreen = (
 
 /** The files of the products screen on the new interface, with the images panel. */
 const PRODUCT_SOURCES = [
+  "src/catalog/product-dialog.tsx",
   "src/catalog/product-fields.tsx",
   "src/catalog/product-form.tsx",
   "src/catalog/product-list.tsx",
@@ -942,7 +943,9 @@ export const SCREENS: UiScreen[] = [
     headingOf("O acesso sem internet venceu")
   ),
   productScreen("lista", productStates.list, exerciseProductMenu),
+  productScreen("novo produto num passo só", productStates.create),
   productScreen("edição com erro no nome", productStates.edit),
+  productScreen("produto aberto sem internet", productStates.offline),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
   productScreen("imagens, remoção pedindo confirmação", productStates.media),
   productScreen(

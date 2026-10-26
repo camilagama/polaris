@@ -142,10 +142,32 @@ export const productStates = {
     await openProductsLab(page);
     await menuOf(page, "Camiseta do teste").click();
     await page.getByRole("menuitem", { name: "Editar" }).click();
-    await page.getByRole("heading", { name: "Editar produto" }).waitFor();
+    await page.getByRole("dialog", { name: "Camiseta do teste" }).waitFor();
     await page.getByLabel("Nome do produto").fill("");
     await page.getByRole("button", { name: "Salvar alterações" }).click();
     await page.getByText("Informe o nome do produto.").waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** A new product in one step: name, price, stock and cost, with "Mais detalhes" closed (AC-24). */
+  async create(page: Page) {
+    await openProductsLab(page);
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await page.getByRole("dialog", { name: "Novo produto" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The product open with no connection: the strip with "Tentar agora" and the save button off with its reason. */
+  async offline(page: Page) {
+    await openProductsLab(page);
+    await menuOf(page, "Camiseta do teste").click();
+    await page.getByRole("menuitem", { name: "Editar" }).click();
+    await page.getByRole("dialog", { name: "Camiseta do teste" }).waitFor();
+    // the lab's network control is under the veil of the dialog: switched by the page
+    await page
+      .getByLabel("Rede disponível")
+      .evaluate((box) => (box as HTMLInputElement).click());
+    await page.getByRole("button", { name: "Tentar agora" }).waitFor();
     await showScreenAlone(page);
   },
 

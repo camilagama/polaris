@@ -550,9 +550,15 @@ test("AC-26: uma busca sem resultado não oferece o cadastro", async ({
 /** No box of the screen ends beyond the right edge of the window. */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
-    const root = document.querySelector(".products-page");
+    // the screen and the product dialog over it (a portal outside the screen)
+    const roots = document.querySelectorAll(
+      '.products-page, [data-slot="dialog-content"]'
+    );
     const limit = window.innerWidth + 0.5;
-    const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
+    const elements = [...roots].flatMap((root) => [
+      ...root.querySelectorAll("*"),
+    ]);
+    const boxes = elements.map((element) => ({
       right: element.getBoundingClientRect().right,
       text: (element.textContent ?? "").trim().slice(0, 40),
     }));
@@ -610,15 +616,17 @@ for (const width of [360, 320]) {
   });
 }
 
-/** Window width, and how many fields of the opening stock share a row (the columns follow the card, not the window). */
-const COLUMNS_BY_WIDTH = [
-  { columns: 1, width: 768 },
-  { columns: 2, width: 900 },
-  { columns: 2, width: 1000 },
-  { columns: 3, width: 1016 },
-  { columns: 3, width: 1024 },
-  { columns: 3, width: 1100 },
-  { columns: 3, width: 1280 },
+/**
+ * Window width, and in how many rows the three fields of the opening stock fall: one under the other on the whole screen
+ * of a phone; from 760 px, in the centred dialog, the price alone and then the quantity beside the cost (mockup
+ * `produto-dialog-novo`).
+ */
+const ROWS_BY_WIDTH = [
+  { rows: 3, width: 360 },
+  { rows: 3, width: 759 },
+  { rows: 2, width: 768 },
+  { rows: 2, width: 1024 },
+  { rows: 2, width: 1280 },
 ] as const;
 const FIELD_IDS = [
   "product-list-price",
@@ -628,8 +636,8 @@ const FIELD_IDS = [
 /** A label of one line is about 19 px tall; two lines are 39. */
 const ONE_LINE = 28;
 
-for (const { columns, width } of COLUMNS_BY_WIDTH) {
-  test(`a ${width} px os rótulos do cadastro ficam em uma linha, em ${columns} coluna(s) conforme a largura do cartão`, async ({
+for (const { rows: expectedRows, width } of ROWS_BY_WIDTH) {
+  test(`a ${width} px os rótulos do cadastro ficam em uma linha, e os três campos em ${expectedRows} linha(s)`, async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -660,7 +668,7 @@ for (const { columns, width } of COLUMNS_BY_WIDTH) {
       expect(box.labelHeight, box.id).toBeLessThan(ONE_LINE);
     }
     const rows = new Set(boxes.map((box) => box.top));
-    expect(rows.size).toBe(Math.ceil(FIELD_IDS.length / columns));
+    expect(rows.size).toBe(expectedRows);
     await expectNoSidewaysScroll(page);
   });
 }
