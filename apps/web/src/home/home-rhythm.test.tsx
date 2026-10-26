@@ -55,10 +55,26 @@ function render({ sold = true }: { sold?: boolean } = {}) {
   );
 }
 
-/** The text of the paragraph that carries `attribute`, tags and all taken out (null when there is none). */
+/** The text of a piece of markup: what is outside the tags (read one character at a time, no pattern to get wrong). */
+function textBetweenTags(markup: string) {
+  let text = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") {
+      inTag = true;
+    } else if (char === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      text += char;
+    }
+  }
+  return text;
+}
+
+/** The text of the paragraph that carries `attribute` (null when there is none). */
 function textOf(html: string, attribute: string) {
   const match = html.match(new RegExp(`<p[^>]*${attribute}[^>]*>(.*?)</p>`));
-  return match?.[1]?.replace(/<[^>]*>/g, "") ?? null;
+  return match?.[1] === undefined ? null : textBetweenTags(match[1]);
 }
 
 beforeEach(() => {
