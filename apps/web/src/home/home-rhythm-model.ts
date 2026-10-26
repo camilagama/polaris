@@ -156,7 +156,7 @@ export function rhythmDays(
 }
 
 /** A cell of the map: a day read, or a day of this week still to come (drawn as nothing). */
-export interface RhythmCell {
+interface RhythmCell {
   date: string;
   /** 0 is a day with nothing sold (an empty square with an outline), 1 to 4 the quartiles of the store's days. */
   level: 0 | 1 | 2 | 3 | 4;
