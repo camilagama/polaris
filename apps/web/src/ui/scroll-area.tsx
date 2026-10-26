@@ -9,7 +9,7 @@ function ScrollArea({
   horizontal = false,
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
-  /** Also draws the horizontal bar, for a row that scrolls sideways (the filter bar on a phone). */
+  /** Also draws the horizontal bar, for a row that scrolls sideways (no screen uses it now). */
   horizontal?: boolean;
 }) {
   return (
