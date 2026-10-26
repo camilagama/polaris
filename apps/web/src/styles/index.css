@@ -27,7 +27,7 @@
 @source "../payment-profiles/{payment-profiles-page,payment-profile-form,payment-profile-list}.tsx";
 /* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
-@source "../{main,app-shell/app,app-shell/app-shell}.tsx";
+@source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
 /* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
 @source "../organization/organization-setup.tsx";

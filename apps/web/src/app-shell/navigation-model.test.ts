@@ -46,12 +46,12 @@ describe("main menu", () => {
     ]);
   });
 
-  it("the bottom bar of the phone is Início, Vender, Histórico and Estoque; the rest is under Mais", () => {
+  it("the bottom bar of the phone is Início, Histórico, Vender (in the middle, with Mais the fifth) and Estoque; the rest is under Mais", () => {
     expect(
       BOTTOM_BAR_IDS.map(
         (id) => NAV_ITEMS.find((item) => item.id === id)?.label
       )
-    ).toEqual(["Início", "Vender", "Histórico", "Estoque"]);
+    ).toEqual(["Início", "Histórico", "Vender", "Estoque"]);
   });
 
   it("marks the destination of the area on the bottom bar, and Mais only for the screens of no destination", () => {

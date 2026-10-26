@@ -6,7 +6,9 @@ import {
   checklistLink,
   checklistNext,
   copyStanding,
+  goalDaysLeftText,
   goalPeriodShort,
+  goalProjection,
   homePeriods,
   homeReads,
   lastDays,
@@ -517,5 +519,231 @@ describe("newSaleOfflineText (AC-30)", () => {
     expect(newSaleOfflineText(false)).toBe(
       "Sem internet: para vender é preciso conexão."
     );
+  });
+});
+
+describe("goalDaysLeftText (v7 § 3 item 9)", () => {
+  const period = { endsOn: "2026-10-31", startsOn: "2026-10-01" };
+
+  it("counts the days after today up to the last one", () => {
+    expect(goalDaysLeftText(period, "2026-10-25")).toBe("faltam 6 dias");
+    expect(goalDaysLeftText(period, "2026-10-30")).toBe("falta 1 dia");
+    expect(goalDaysLeftText(period, "2026-10-31")).toBe("último dia");
+  });
+
+  it("says nothing before the goal begins or after it ends", () => {
+    expect(goalDaysLeftText(period, "2026-09-30")).toBeNull();
+    expect(goalDaysLeftText(period, "2026-11-01")).toBeNull();
+  });
+});
+
+describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
+  const today = "2026-10-25";
+  // 18/10 to 24/10, the 7 whole days before today: R$ 100,00 and 2 sales each, R$ 700,00 and 14 sales in all
+  const month = series("2026-10-01", "2026-10-31", (date) =>
+    date >= "2026-10-18" && date <= "2026-10-24" ? ["100.00", 2] : undefined
+  );
+  const before = series("2026-09-01", "2026-09-30");
+  const known = { before, month };
+  // R$ 1.500,00 by default: the rhythm (R$ 1.000,00 on the 31st) falls short of it
+  const g = (overrides: Partial<GoalReadModel>) =>
+    goal({ target: "1500.00", ...overrides });
+  // the figure of the estimate that falls short of the target
+  const shortValue = (
+    projection: ReturnType<typeof goalProjection>
+  ): string | undefined =>
+    projection?.kind === "short" ? projection.value : undefined;
+
+  it("adds the mean of the 7 days before today for each day left, in exact cents", () => {
+    // 6 days left: 400,00 + 700,00 × 6 ÷ 7 = 400,00 + 600,00
+    expect(goalProjection(g({}), known, today)).toEqual({
+      kind: "short",
+      on: "31/10",
+      value: "R$ 1.000,00",
+    });
+  });
+
+  it("rounds the share of the days left half-up, once, in cents", () => {
+    const odd = series("2026-10-01", "2026-10-31", (date) =>
+      date === "2026-10-24" ? ["0.01", 1] : undefined
+    );
+    // 0,01 × 6 ÷ 7 = 0,00857… → 0,01
+    expect(
+      shortValue(goalProjection(g({}), { before, month: odd }, today))
+    ).toBe("R$ 400,01");
+    // 0,01 × 3 ÷ 7 = 0,00428… → 0,00
+    expect(
+      shortValue(
+        goalProjection(
+          g({ endsOn: "2026-10-28" }),
+          { before, month: odd },
+          today
+        )
+      )
+    ).toBe("R$ 400,00");
+  });
+
+  it("projects a number of sales in sales", () => {
+    const count = g({
+      kind: "sale_count",
+      progress: {
+        percent: "50.0",
+        periodEnded: false,
+        reached: false,
+        value: "20",
+      },
+      target: "40",
+    });
+    // 20 + 14 × 6 ÷ 7 = 32
+    expect(goalProjection(count, known, today)).toEqual({
+      kind: "short",
+      on: "31/10",
+      value: "32 vendas",
+    });
+  });
+
+  it("takes the days before the month from the series before it", () => {
+    const early = series("2026-10-01", "2026-10-31");
+    const september = series("2026-09-01", "2026-09-30", (date) =>
+      date >= "2026-09-27" ? ["70.00", 1] : undefined
+    );
+    // on 03/10 the 7 days are 26/09 to 02/10: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
+    expect(
+      shortValue(
+        goalProjection(
+          g({ target: "2000.00" }),
+          { before: september, month: early },
+          "2026-10-03"
+        )
+      )
+    ).toBe("R$ 1.520,00");
+  });
+
+  it("says nothing when the 7 days returned more than they sold, or when a value is not the server's", () => {
+    const returns = series("2026-10-01", "2026-10-31", (date) =>
+      date === "2026-10-20" ? ["-50.00", 0] : undefined
+    );
+    expect(goalProjection(g({}), { before, month: returns }, today)).toBeNull();
+    const odd = {
+      percent: "40.0",
+      periodEnded: false,
+      reached: false,
+      value: "quatrocentos",
+    };
+    expect(goalProjection(g({ progress: odd }), known, today)).toBeNull();
+    expect(
+      goalProjection(g({ kind: "sale_count", progress: odd }), known, today)
+    ).toBeNull();
+  });
+
+  it("says nothing for the estimated result: its rhythm needs the cost of every day", () => {
+    expect(
+      goalProjection(g({ kind: "operating_result" }), known, today)
+    ).toBeNull();
+  });
+
+  it("says nothing without the daily series, or with a day of the 7 missing from it", () => {
+    expect(
+      goalProjection(g({}), { before: undefined, month }, today)
+    ).toBeNull();
+    expect(
+      goalProjection(g({}), { before, month: undefined }, today)
+    ).toBeNull();
+    const gap = month.filter((day) => day.date !== "2026-10-20");
+    expect(goalProjection(g({}), { before, month: gap }, today)).toBeNull();
+  });
+
+  it("says nothing for a goal paused, reached, not begun, on its last day or over", () => {
+    const progress = {
+      percent: "40.0",
+      periodEnded: false,
+      reached: false,
+      value: "400.00",
+    };
+    expect(goalProjection(g({ paused: true }), known, today)).toBeNull();
+    expect(
+      goalProjection(
+        g({ progress: { ...progress, reached: true } }),
+        known,
+        today
+      )
+    ).toBeNull();
+    expect(
+      goalProjection(
+        g({ progress: { ...progress, periodEnded: true } }),
+        known,
+        today
+      )
+    ).toBeNull();
+    expect(goalProjection(g({ progress: null }), known, today)).toBeNull();
+    expect(
+      goalProjection(g({ startsOn: "2026-10-26" }), known, today)
+    ).toBeNull();
+    expect(goalProjection(g({ endsOn: today }), known, today)).toBeNull();
+  });
+
+  it("says the day the rhythm crosses the target, from the daily total", () => {
+    // 400,00 + 100,00 a day: 1.000,00 is crossed on the 6th day after today, 31/10, the last one; 800,00 on the 4th
+    expect(goalProjection(g({ target: "800.00" }), known, today)).toEqual({
+      kind: "reaches",
+      on: "29/10",
+      onLastDay: false,
+    });
+  });
+
+  it("says 'até' when the crossing is exactly on the last day of the goal", () => {
+    expect(goalProjection(g({ target: "1000.00" }), known, today)).toEqual({
+      kind: "reaches",
+      on: "31/10",
+      onLastDay: true,
+    });
+    // one cent more is not reached: it falls short, by exactly one cent
+    expect(goalProjection(g({ target: "1000.01" }), known, today)).toEqual({
+      kind: "short",
+      on: "31/10",
+      value: "R$ 1.000,00",
+    });
+  });
+
+  it("crosses a number of sales target on the day the projected count gets there", () => {
+    const count = g({
+      kind: "sale_count",
+      progress: {
+        percent: "50.0",
+        periodEnded: false,
+        reached: false,
+        value: "20",
+      },
+      target: "26",
+    });
+    // 20 + 2 a day: 26 on the 3rd day after today
+    expect(goalProjection(count, known, today)).toEqual({
+      kind: "reaches",
+      on: "28/10",
+      onLastDay: false,
+    });
+  });
+
+  it("says there is nothing to estimate with no sale in the 7 days", () => {
+    const quiet = series("2026-10-01", "2026-10-31");
+    expect(goalProjection(g({}), { before, month: quiet }, today)).toEqual({
+      kind: "no_sales",
+    });
+    expect(
+      goalProjection(
+        g({
+          kind: "sale_count",
+          progress: {
+            percent: "50.0",
+            periodEnded: false,
+            reached: false,
+            value: "20",
+          },
+          target: "40",
+        }),
+        { before, month: quiet },
+        today
+      )
+    ).toEqual({ kind: "no_sales" });
   });
 });
