@@ -309,7 +309,7 @@ export function historyView(
           href: null,
           kind: "empty",
           message:
-            "Nenhuma venda encontrada com estes filtros. Ajuste ou limpe os filtros.",
+            "Nenhuma venda encontrada com estes filtros. Tire ou ajuste os filtros.",
         }
       : {
           href: "/sales",

@@ -882,6 +882,10 @@ test.describe("histórico de vendas", () => {
     await expect(menu.getByRole("menuitem", { name: "Busca" })).toContainText(
       "Só com conexão"
     );
+    // touching it neither chooses it nor closes the menu
+    await menu.getByRole("menuitem", { name: "Busca" }).click({ force: true });
+    await expect(menu).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Busca" })).toHaveCount(0);
     await menu.getByRole("menuitem", { name: "Situação" }).click();
     const status = page.getByRole("dialog", { name: "Situação" });
     await status

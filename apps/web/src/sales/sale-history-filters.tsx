@@ -27,7 +27,11 @@ interface FiltersProps {
   onChange: (changes: Partial<HistoryFilters>) => void;
 }
 
-/** The filters of the screen as the bar's list: one rule per filter in use, in the order the fields are listed. */
+/**
+ * The filters of the screen as the bar's list: one rule per filter in use, in the order the fields are listed. The
+ * period is a pill only with both ends, as the bar writes it (the editor makes a whole range); a state with one end
+ * alone cannot be reached from the bar.
+ */
 export function historyRules(filters: HistoryFilters): FilterRule[] {
   const rules: FilterRule[] = [];
   if (filters.from !== "" && filters.to !== "") {

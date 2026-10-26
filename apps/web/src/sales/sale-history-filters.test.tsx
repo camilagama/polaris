@@ -5,7 +5,6 @@ import {
   type FilterRule,
   removeRule,
   setRule,
-  showClearAll,
   visibleRules,
 } from "@/ui/filter-bar-model";
 import {
@@ -47,7 +46,7 @@ describe("a barra de filtros do Histórico", () => {
   it("sem filtro: só o 'Filtrar', sem pílula e sem 'Limpar tudo'", () => {
     const html = render(emptyHistoryFilters);
     expect(html).toContain('aria-label="Filtrar vendas"');
-    expect(html).toContain("Filtrar");
+    expect(html).toContain(">Filtrar</button>");
     expect(html).not.toContain("filter-pill");
     expect(html).not.toContain("Limpar tudo");
     expect(html).not.toContain("Limpar filtros");
@@ -102,7 +101,10 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     });
   });
 
-  it("um valor que não existe nas opções ou um texto vazio não vira filtro", () => {
+  it("um valor que a página não conhece ou um texto vazio não vira filtro", () => {
+    expect(
+      historyFilters([{ fieldId: "status", value: "nao-existe" }])
+    ).toEqual(emptyHistoryFilters);
     expect(apply(emptyHistoryFilters, "status", "nao-existe")).toEqual(
       emptyHistoryFilters
     );
@@ -126,17 +128,27 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     );
   });
 
-  it("limpar tudo volta ao estado vazio, e só aparece com duas pílulas", () => {
+  it("limpar tudo (a lista da barra vazia) volta ao estado vazio, e a consulta sai sem filtro", () => {
+    expect(historyFilters([])).toEqual(emptyHistoryFilters);
+    expect(historyListRequest("org", historyFilters([]), 0)).toEqual({
+      limit: 50,
+      offset: 0,
+      organizationId: "org",
+    });
+  });
+
+  it("a barra mostra uma pílula por filtro em uso e nenhuma para o que está vazio", () => {
     const filters: HistoryFilters = {
       ...emptyHistoryFilters,
       customer: "Maria",
       status: "cancelled",
     };
     const shown = visibleRules(FIELDS, historyRules(filters));
-    expect(shown).toHaveLength(2);
-    expect(showClearAll(shown.length)).toBe(true);
-    expect(showClearAll(1)).toBe(false);
-    expect(historyFilters([])).toEqual(emptyHistoryFilters);
+    expect(shown.map((entry) => entry.field.id)).toEqual([
+      "status",
+      "customer",
+    ]);
+    expect(historyRules(emptyHistoryFilters)).toEqual([]);
   });
 
   it("os atalhos do período chegam como as duas datas da consulta", () => {
