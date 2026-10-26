@@ -314,7 +314,39 @@ describe("chainRows", () => {
     }
     expect(byId.grossSales?.value).toBe("R$ 150,00");
     expect(byId.netSales?.value).toBe("R$ 130,00");
-    expect(byId.cogs?.value).toBe("R$ 60,00");
+    expect(byId.cogs).toMatchObject({
+      negative: false,
+      note: "Nenhum dos 4 itens vendidos tem custo conhecido.",
+      value: "—",
+    });
+  });
+
+  it("with one item sold and no cost known, the CMV says it in the singular", () => {
+    const rows = chainRows(chain, {
+      ...completeQuality,
+      itemLines: 1,
+      itemLinesWithUnknownCost: 1,
+    });
+    expect(rows.find((row) => row.id === "cogs")).toMatchObject({
+      note: "O item vendido não tem custo conhecido.",
+      value: "—",
+    });
+  });
+
+  it("with a partial or a full cost the CMV keeps its amount", () => {
+    const partial = chainRows(chain, {
+      ...completeQuality,
+      itemLines: 4,
+      itemLinesWithUnknownCost: 3,
+    }).find((row) => row.id === "cogs");
+    expect(partial).toMatchObject({
+      note: "Não inclui 3 itens sem custo conhecido.",
+      value: "R$ 60,00",
+    });
+    const full = chainRows(chain, completeQuality).find(
+      (row) => row.id === "cogs"
+    );
+    expect(full).toMatchObject({ note: null, value: "R$ 60,00" });
   });
 
   it("notes when no expense was recorded", () => {

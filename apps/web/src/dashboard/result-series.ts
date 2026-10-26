@@ -1,6 +1,6 @@
 import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
-import type { StoredDay } from "../lib/period-summary-cache";
+import { cogsCoverageOf, type StoredDay } from "../lib/period-summary-cache";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
 import { monthAbbreviation, monthName } from "./result-period";
 
@@ -346,25 +346,29 @@ export function supportText(
 
 export type CostPartId = "expenses" | "fees" | "goods";
 
-interface CostPart {
+export interface CostPart {
   id: CostPartId;
   /** True when something that belongs to the part was left out because it was unknown (AC-12): "incompleto". */
   incomplete: boolean;
   label: string;
-  /** The exact amount, BRL text. */
-  value: string;
+  /** The exact amount, BRL text; null for the cost of goods when none of it is known (`cogsCoverageOf` is "none"). */
+  value: string | null;
 }
 
 export interface CostParts {
   parts: CostPart[];
-  /** The cost of the period: the sum of the parts, which is the sum of the `costs` of the days (AC-8). */
-  total: string;
+  /**
+   * The cost of the period: the sum of the parts, which is the sum of the `costs` of the days (AC-8). Null when no cost
+   * of the goods is known: the server's zero there is a lack of data, and the other parts are not the whole cost.
+   */
+  total: string | null;
 }
 
 /**
  * The cost of the period in its three parts (AC-12): the cost of goods, the fees (processing and anticipation) and the
  * expenses (linked to a sale, and without a sale). The parts add up to `total`, which is what the days' `costs` add up
- * to; a part with an unknown input says so and the bar never pretends to be whole.
+ * to; a part with an unknown input says so and the bar never pretends to be whole. With no cost of the goods known the
+ * goods and the total are null: the fees and the expenses keep their values.
  */
 export function costParts(
   chain: PeriodChain,
@@ -375,13 +379,14 @@ export function costParts(
   const goods = add(chain.cogs);
   const fees = add(chain.processingFees, chain.anticipationFees);
   const expenses = add(chain.linkedExpenses, chain.operatingExpenses);
+  const noKnownCost = cogsCoverageOf(quality) === "none";
   return {
     parts: [
       {
         id: "goods",
         incomplete: quality.itemLinesWithUnknownCost > 0,
         label: "Mercadorias",
-        value: goods.toString(),
+        value: noKnownCost ? null : goods.toString(),
       },
       {
         id: "fees",
@@ -398,6 +403,6 @@ export function costParts(
         value: expenses.toString(),
       },
     ],
-    total: goods.add(fees).add(expenses).toString(),
+    total: noKnownCost ? null : goods.add(fees).add(expenses).toString(),
   };
 }

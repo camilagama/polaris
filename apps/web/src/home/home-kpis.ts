@@ -1,6 +1,11 @@
 import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount } from "../lib/format";
-import type { StoredDay } from "../lib/period-summary-cache";
+import { NO_KNOWN_COST_RESULT } from "../dashboard/dashboard-model";
+import {
+  cogsCoverageOf,
+  type StoredDay,
+  type StoredQuality,
+} from "../lib/period-summary-cache";
 import {
   addDays,
   firstOfMonth,
@@ -19,7 +24,8 @@ import {
  * - Vendas no mês: the net sales from the 1st to a day, against the same days of the previous month.
  * - Resultado estimado: the same, in reais, and only when every day of both sides has a known result (AC-9: a sum of
  *   the known days is never shown as the total). Without it, the number at rest is the server's card of the whole
- *   month, and its date says so ("outubro inteiro").
+ *   month, and its date says so ("outubro inteiro"). With no cost of the goods known (`cogsCoverageOf` is "none") it
+ *   is a dash, with no chip and no sparkline, as on the Resultado: the server's number there is the sales.
  * - Ticket médio: net sales over sales from the 1st to a day, against the same days of the previous month.
  */
 
@@ -237,6 +243,8 @@ function cumulate(days: readonly Day[]): Cumulative[] {
 /** Why the result's card draws no sparkline and no chip, and the sentence it says then (AC-9). */
 type ResultSeries =
   | { kind: "known" }
+  /** No cost of the goods of the month is known: the dash and "Sem custo conhecido: o resultado não dá para estimar." */
+  | { kind: "noCost" }
   /** Some day from the 1st to today has no known cost: "N de M dias sem custo informado". */
   | { kind: "incomplete"; total: number; unknown: number }
   /** A copy kept before the results of the day existed: nothing of the series is drawn, nothing is said. */
@@ -318,6 +326,15 @@ function resultReading({
   sum,
   wholeMonth,
 }: ReadContext): KpiReading {
+  if (result.kind === "noCost") {
+    return {
+      count: NO_KNOWN_COST_RESULT,
+      date: atRest ? wholeMonth : range,
+      delta: null,
+      note: null,
+      value: null,
+    };
+  }
   const delta =
     result.kind === "known" &&
     sum.result !== null &&
@@ -385,7 +402,8 @@ function ticketReading({
 /**
  * The three cards of the month (§ 3 items 3 to 5), read together on the same day. The previous month must be whole
  * in B up to the day compared (a short B, from an old copy, compares with nothing rather than with less), and the
- * same day of a shorter month is its last day (31 March against 1 to 28 February).
+ * same day of a shorter month is its last day (31 March against 1 to 28 February). `quality` is the month's: with
+ * no cost of the goods known the result is not estimated at all.
  */
 export function monthKpis(
   before: readonly Day[],
@@ -396,7 +414,8 @@ export function monthKpis(
     operatingResult: string;
     salesCount: number;
     ticket: string | null;
-  }
+  },
+  quality: Pick<StoredQuality, "itemLines" | "itemLinesWithUnknownCost">
 ): MonthKpis {
   const days = month.filter(
     (day) => day.date >= firstOfMonth(today) && day.date <= today
@@ -421,7 +440,10 @@ export function monthKpis(
 
   const unknown = days.filter((day) => day.operatingResult === null).length;
   let result: ResultSeries = { kind: "known" };
-  if (unknown > 0) {
+  if (cogsCoverageOf(quality) === "none") {
+    // before the days: every day with a sale has a null result then, and "N de N dias" would say less than the dash
+    result = { kind: "noCost" };
+  } else if (unknown > 0) {
     result = { kind: "incomplete", total: days.length, unknown };
   } else if (
     days.length === 0 ||

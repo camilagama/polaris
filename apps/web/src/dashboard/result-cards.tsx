@@ -20,6 +20,7 @@ import {
   formatPercentOrDash,
   isIncompleteEstimate,
   NO_KNOWN_COST_NOTE,
+  NO_KNOWN_COST_RESULT,
 } from "./dashboard-model";
 import { type ResultKpis, resultKpis } from "./result-kpis";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
@@ -38,7 +39,6 @@ export function IncompleteBadge() {
 
 /** The lines of the two cards when no cost of the period is known (never a margin or a result made of zero costs). */
 const NO_COST_MARGIN = NO_KNOWN_COST_NOTE;
-const NO_COST_RESULT = "Sem custo conhecido: o resultado não dá para estimar.";
 
 function IncompleteBadgeLine() {
   return (
@@ -63,7 +63,7 @@ function ResultFooter({
   return (
     <>
       {incomplete ? <IncompleteBadgeLine /> : null}
-      {noCost ? <span data-kpi-no-cost="">{NO_COST_RESULT}</span> : line}
+      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : line}
       {!noCost && kind.kind === "incomplete" ? (
         <span className="mt-1 block" data-kpi-unknown="">
           {unknownDaysText(kind.unknown, kind.total)}

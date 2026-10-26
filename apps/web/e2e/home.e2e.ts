@@ -1179,6 +1179,42 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toBe(true);
   });
 
+  test("nenhum custo de mercadoria conhecido no mês: o resultado é “—” com o selo e a frase, sem sparkline e sem chip, e os outros cartões ficam (T399-3)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    // the 12 item lines sold in October have no cost: every day with a sale has a null result
+    await openHome(
+      page,
+      new FakeServer({
+        ...SOLD,
+        results: {
+          ...KNOWN,
+          "2026-10-02": null,
+          "2026-10-18": null,
+          "2026-10-20": null,
+          "2026-10-23": null,
+        },
+        soldWithoutCost: 12,
+      })
+    );
+    const result = region(page, "Resultado estimado");
+    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText(
+      "Sem custo conhecido: o resultado não dá para estimar."
+    );
+    await expect(result).toContainText("—");
+    await expect(result).not.toContainText("R$");
+    await expect(result).not.toContainText("dias sem custo informado");
+    await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
+    await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
+    await expect(result.getByRole("slider")).toHaveCount(0);
+    await expect(
+      region(page, "Vendas em outubro").locator("[data-kpi-spark] svg")
+    ).toBeVisible();
+    await expect(region(page, "Vendas em outubro")).toContainText("R$");
+  });
+
   test("Vendas por dia: área verde com um anel em cada dia, cheio com venda e vazado no zero, e os 7 dias antes tracejados", async ({
     page,
   }) => {

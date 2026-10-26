@@ -123,6 +123,38 @@ const NO_SURCHARGE_MONTH: FixtureMonth = {
   ],
 };
 
+/** October with no cost of the goods known (T399-3): every item line sold has an unknown cost; fees and expenses known. */
+const NO_COST_MONTH: FixtureMonth = {
+  expenses: [
+    { amount: 3000, linked: false },
+    { amount: 200, linked: true },
+  ],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: null,
+      discount: 1000,
+      gross: 10_000,
+      itemLines: 2,
+      items: 2,
+      processingFee: 300,
+      returns: 0,
+      surcharge: 500,
+    },
+    {
+      anticipationFee: 0,
+      cogs: null,
+      discount: 0,
+      gross: 5000,
+      itemLines: 1,
+      items: 1,
+      processingFee: 150,
+      returns: 1000,
+      surcharge: 0,
+    },
+  ],
+};
+
 const FIXTURE: Readonly<Record<string, FixtureMonth>> = {
   "2026-07": NO_SURCHARGE_MONTH,
   "2026-09": PARTIAL_MONTH,
@@ -229,8 +261,13 @@ function dailyOf(data: FixtureMonth, from: string, to: string) {
 }
 
 /** The read model of a month, derived from its fixture. */
-function summaryOf(month: string, from: string, to: string) {
-  const data = FIXTURE[month] ?? { expenses: [], sales: [] };
+function summaryOf(
+  month: string,
+  from: string,
+  to: string,
+  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE
+) {
+  const data = fixture[month] ?? { expenses: [], sales: [] };
   const { sales } = data;
   const gross = sum(sales.map((sale) => sale.gross));
   const discounts = sum(sales.map((sale) => sale.discount));
@@ -334,6 +371,8 @@ class FakeReportServer {
   salesFailure = false as boolean;
   /** When true the network is down: the request never gets an answer. */
   networkDown = false as boolean;
+  /** The records of each month the answers are computed from. */
+  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE;
   private readonly holds = new Map<string, Promise<void>>();
 
   /** Holds the answer for a month until the returned function is called. */
@@ -367,7 +406,10 @@ class FakeReportServer {
         return this.fail(this.failure.code, this.failure.status);
       }
       return {
-        body: { json: summaryOf(from.slice(0, 7), from, to), meta: [] },
+        body: {
+          json: summaryOf(from.slice(0, 7), from, to, this.fixture),
+          meta: [],
+        },
         status: 200,
       };
     }
@@ -379,7 +421,7 @@ class FakeReportServer {
       return this.fail(this.failure.code, this.failure.status);
     }
     return {
-      body: { json: summaryOf(month, from, to), meta: [] },
+      body: { json: summaryOf(month, from, to, this.fixture), meta: [] },
       status: 200,
     };
   }
@@ -393,7 +435,7 @@ class FakeReportServer {
     if (this.failure) {
       return this.fail(this.failure.code, this.failure.status);
     }
-    const { daily } = summaryOf(from.slice(0, 7), from, to);
+    const { daily } = summaryOf(from.slice(0, 7), from, to, this.fixture);
     return {
       body: {
         json: {
@@ -685,8 +727,48 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   await expect(chainRow(page, "(CMV)")).toContainText(
     "Não inclui 2 itens sem custo conhecido."
   );
+  // a partial cost of the goods keeps its amount and the bar of the parts, marked "incompleto"
+  await expect(chainRow(page, "(CMV)")).toContainText("R$ 8,00");
+  await expect(chain(page).locator("[data-parts-bar]")).toHaveCount(1);
+  await expect(chain(page)).toContainText("incompleto");
   await expect(chainRow(page, "Taxas de processamento")).toContainText(
     "Não inclui 1 venda sem taxa conhecida."
+  );
+});
+
+test("nenhum custo de mercadoria conhecido: o CMV é “—” com a nota, a barra das partes não aparece e os cartões do resultado e da margem são “—” (T399-3)", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.fixture = { ...FIXTURE, "2026-10": NO_COST_MONTH };
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+  const result = card(page, CARD.result);
+  await expect(result).toContainText(
+    "Sem custo conhecido: o resultado não dá para estimar."
+  );
+  await expect(result).not.toContainText(AN_AMOUNT);
+  await expect(card(page, CARD.margin)).toContainText(
+    "Sem custo conhecido no período."
+  );
+  await expect(card(page, CARD.margin)).not.toContainText("%");
+
+  const cogs = chainRow(page, "(CMV)");
+  await expect(cogs).toContainText("—");
+  await expect(cogs).toContainText(
+    "Nenhum dos 3 itens vendidos tem custo conhecido."
+  );
+  await expect(cogs).not.toContainText(AN_AMOUNT);
+  await expect(chainRow(page, "Vendas brutas")).toContainText("R$ 150,00");
+
+  await expect(chain(page).locator("[data-parts-bar]")).toHaveCount(0);
+  await expect(chain(page)).toContainText("sem custo conhecido");
+  // the fees (3,00 + 1,50) and the expenses (2,00 + 30,00) keep their values
+  await expect(chain(page)).toContainText("TaxasR$ 4,50");
+  await expect(chain(page)).toContainText("DespesasR$ 32,00");
+  await expect(chain(page)).toContainText(
+    "Sem o custo das mercadorias, a divisão dos custos não aparece."
   );
 });
 
