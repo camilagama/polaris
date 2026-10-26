@@ -16,6 +16,29 @@ export function isLoopbackBaseURL(baseURL: string | undefined): boolean {
   }
 }
 
+function isSecureBaseURL(baseURL: string): boolean {
+  return new URL(baseURL).protocol === "https:";
+}
+
+/**
+ * The exact name of the session cookie Better Auth sets for this base URL: `better-auth.session_token`,
+ * with the `__Secure-` prefix when `useSecureCookies` is on (an HTTPS base URL). Undefined when the base
+ * URL is missing or not a URL. Anything that reads the cookie outside Better Auth (the rate limiter) takes
+ * the name from here, so the two never disagree.
+ */
+export function sessionCookieName(
+  baseURL: string | undefined
+): string | undefined {
+  if (!baseURL) {
+    return undefined;
+  }
+  try {
+    return `${isSecureBaseURL(baseURL) ? "__Secure-" : ""}better-auth.session_token`;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Pins the cookie, origin and client-IP settings that Better Auth would
  * otherwise infer from the environment or from untrusted headers.
@@ -35,8 +58,8 @@ export function betterAuthSecurityOptions(
   baseURL: string,
   runInBackground?: BackgroundTaskHandler
 ): Pick<BetterAuthOptions, "advanced" | "trustedOrigins"> {
-  const { origin, protocol } = new URL(baseURL);
-  const secure = protocol === "https:";
+  const { origin } = new URL(baseURL);
+  const secure = isSecureBaseURL(baseURL);
 
   if (!(secure || isLoopbackBaseURL(baseURL))) {
     throw new Error("auth_base_url_must_be_https");

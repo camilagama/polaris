@@ -2,7 +2,10 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBetterAuth } from "../auth";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
-import { betterAuthSecurityOptions } from "./security-options";
+import {
+  betterAuthSecurityOptions,
+  sessionCookieName as sessionCookieNameFor,
+} from "./security-options";
 
 const httpsBaseURL = "https://polaris.example.invalid";
 const testSecret = "test-only-better-auth-secret-32-bytes";
@@ -135,6 +138,17 @@ describe("Better Auth security options", () => {
     ).toThrow("auth_base_url_must_be_https");
   });
 
+  it("names the session cookie by the base URL, the way useSecureCookies does", () => {
+    expect(sessionCookieNameFor(httpsBaseURL)).toBe(
+      "__Secure-better-auth.session_token"
+    );
+    expect(sessionCookieNameFor("http://localhost:8787")).toBe(
+      "better-auth.session_token"
+    );
+    expect(sessionCookieNameFor(undefined)).toBeUndefined();
+    expect(sessionCookieNameFor("not a url")).toBeUndefined();
+  });
+
   it("registers a background task handler only when one is supplied", () => {
     const handler = () => undefined;
 
@@ -157,6 +171,10 @@ describe("Better Auth security options", () => {
 
     expect(login.status).toBe(200);
     expect(sessionCookie).toMatch(sessionCookieName);
+    // the name the rate limiter reads is the name Better Auth set
+    expect(sessionCookie?.split("=", 1)[0]).toBe(
+      sessionCookieNameFor(httpsBaseURL)
+    );
     expect(sessionCookie).toMatch(secureAttribute);
     expect(sessionCookie).toMatch(httpOnlyAttribute);
     expect(sessionCookie).toMatch(sameSiteLaxAttribute);

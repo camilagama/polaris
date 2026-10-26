@@ -8,7 +8,7 @@ import {
 
 const inCI = Boolean(process.env.CI);
 /** The checks that only make sense on a phone, run by the `chromium-celular` project alone. */
-const PHONE_ONLY = "**/motion-level.e2e.ts";
+const PHONE_ONLY = ["**/motion-level.e2e.ts", "**/dialog-voltar.e2e.ts"];
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -26,7 +26,7 @@ export default defineConfig({
     },
     // The levels of motion on a phone (t386): a touch screen of 360×740, the phone of the design. The file proves
     // `pointer: coarse` before anything else and fails loudly without it; its desktop and tablet controls open their own
-    // contexts.
+    // contexts. The step back that closes the form dialog (t408) is a phone's too.
     {
       name: "chromium-celular",
       testMatch: PHONE_ONLY,

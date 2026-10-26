@@ -33,6 +33,7 @@ const AN_AMOUNT = /R\$ \d/;
 const rpcPrefix = /^\/rpc\//;
 const goalActionName = /^(Editar|Cancelar) meta/;
 const fortyFivePercent = /45,0%/;
+const LAB_ADDRESS = /\/offline-screens-lab\?/;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -404,16 +405,26 @@ async function installServer(page: Page, server: FakeGoalServer) {
   });
 }
 
-async function openDashboard(page: Page, server: FakeGoalServer) {
+async function openDashboard(page: Page, server: FakeGoalServer, extra = "") {
   // the screen reads today's date from the browser: October 2026
   await page.clock.setFixedTime(new Date(NOW));
   await installServer(page, server);
   await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=dashboard");
+  await page.goto(`/offline-screens-lab?screen=dashboard${extra}`);
+  await startLab(page);
+}
+
+/** The lab's start, again after a reload. The form opened by `?meta=nova` hides the page from the reader. */
+async function startLab(page: Page) {
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(
-    page.getByRole("heading", { exact: true, level: 1, name: "Resultado" })
+    page.getByRole("heading", {
+      exact: true,
+      includeHidden: true,
+      level: 1,
+      name: "Resultado",
+    })
   ).toBeVisible({ timeout: 20_000 });
 }
 
@@ -557,6 +568,198 @@ for (const width of FORM_WIDTHS) {
     expect(server.created).toHaveLength(1);
   });
 }
+
+/**
+ * The step back of a phone closes the form dialog (DESIGN.md, "Diálogo de formulário"; t408): its entry in the history,
+ * at the same address, is the one the step back takes. The gallery proves two dialogs and each way of closing
+ * (`e2e-pwa/dialog-voltar.e2e.ts`); here, the screen with its draft, the fresh tab, the reload and the address.
+ */
+test.describe("no celular, o voltar fecha a Nova meta", () => {
+  test.skip(
+    ({ isMobile }) => !isMobile,
+    "o voltar só fecha o Dialog de tela inteira, abaixo de 760 px"
+  );
+
+  /** The page the screen was opened from: a step back that leaves the screen lands there. */
+  const BEFORE = "/offline-poc?release=1";
+  const dialogEntry = (page: Page) =>
+    page.evaluate(() => history.state?.polarisDialog ?? null);
+  const target = (page: Page) => page.locator("#goal-create-target");
+
+  test("guarda o rascunho, devolve o foco ao botão, e Salvar retira a entrada: o voltar seguinte sai", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await page.goto(BEFORE);
+    await openGoals(page, server);
+    const before = await page.evaluate(() => history.length);
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Nova meta" });
+    await expect(dialog).toBeVisible();
+    expect(await page.evaluate(() => history.length)).toBe(before + 1);
+    await target(page).fill("1.000,00");
+
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    await expect(openForm).toBeFocused();
+    expect(server.created).toHaveLength(0);
+
+    // the draft is there, and saving closes the form and takes its entry out
+    await openForm.click();
+    await expect(target(page)).toHaveValue("1.000,00");
+    await dialog.getByRole("button", { name: "Criar meta" }).click();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.created).toHaveLength(1);
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+
+    await page.goBack();
+    await expect(page).toHaveURL(BEFORE);
+  });
+
+  test("com o envio em andamento o voltar não fecha, a entrada volta, e o envio termina como sempre", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await page.goto(BEFORE);
+    await openGoals(page, server);
+    // the answer to the save waits for the test
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/rpc/goal/create", async (route) => {
+      await answered;
+      await route.fallback();
+    });
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Nova meta" });
+    await target(page).fill("1.000,00");
+    await dialog.getByRole("button", { name: "Criar meta" }).click();
+
+    await page.goBack();
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    // the entry is back on top: the next step back is the dialog's again
+    await expect.poll(() => dialogEntry(page)).not.toBeNull();
+
+    answer();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.created).toHaveLength(1);
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+    await page.goBack();
+    await expect(page).toHaveURL(BEFORE);
+  });
+
+  test("aba recém-aberta: a entrada do Dialog é a primeira, o voltar fecha e fica na tela", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await openGoals(page, server);
+    // a tab opened on the screen by a link: the screen is its first entry (Playwright's tab starts with about:blank)
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Page.resetNavigationHistory");
+    expect(await page.evaluate(() => history.length)).toBe(1);
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    await target(page).fill("1.000,00");
+    expect(await page.evaluate(() => history.length)).toBe(2);
+
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    await expect(openForm).toBeFocused();
+    // back on the first entry: nothing of the dialog is left, and the next step back leaves the tab
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+    expect(await page.evaluate(() => history.length)).toBe(2);
+    await openForm.click();
+    await expect(target(page)).toHaveValue("1.000,00");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+    // nothing behind the screen: the next step back leaves the tab
+    expect(await page.goBack()).toBeNull();
+    await expect(page).toHaveURL(LAB_ADDRESS);
+  });
+
+  test("recarregar com o Dialog aberto: a tela volta sem ele e o primeiro voltar sai", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await page.goto(BEFORE);
+    await openGoals(page, server);
+    await page.getByRole("button", { name: "Nova meta" }).click();
+    await target(page).fill("1.000,00");
+    await expect.poll(() => dialogEntry(page)).not.toBeNull();
+    // each document from here on counts itself: stepping over the entry must not load the page a second time
+    await page.addInitScript(() => {
+      const key = "t408-documents";
+      sessionStorage.setItem(
+        key,
+        String(Number(sessionStorage.getItem(key) ?? "0") + 1)
+      );
+    });
+
+    await page.reload();
+    // the entry left behind is stepped over as the screen loads, inside the same page: no second load
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("t408-documents"))
+    ).toBe("1");
+    await startLab(page);
+    await page.getByRole("tab", { name: "Metas" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // the draft lived in memory only: the form opens as it starts
+    await page.getByRole("button", { name: "Nova meta" }).click();
+    await expect(target(page)).toHaveValue("");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(BEFORE);
+  });
+
+  test("aberto pelo endereço (?meta=nova): o voltar fecha tirando o parâmetro, sem uma segunda entrada", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await page.goto(BEFORE);
+    const before = await page.evaluate(() => history.length);
+    await openDashboard(page, server, "&meta=nova");
+    const dialog = page.getByRole("dialog", { name: "Nova meta" });
+    await expect(dialog).toBeVisible();
+    // the address of the screen and one entry for the dialog, both without the link
+    expect(await page.evaluate(() => history.length)).toBe(before + 2);
+    expect(new URL(page.url()).searchParams.get("meta")).toBeNull();
+    await target(page).fill("1.000,00");
+
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("meta")).toBeNull();
+    // the address keeps the Metas tab, as the link left it
+    expect(url.searchParams.get("aba")).toBe("metas");
+    await expect(
+      page.getByRole("region", { exact: true, name: "Metas" })
+    ).toBeVisible();
+
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    await expect(target(page)).toHaveValue("1.000,00");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+
+    await page.goBack();
+    await expect(page).toHaveURL(BEFORE);
+  });
+});
 
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
   page,

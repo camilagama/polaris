@@ -46,6 +46,7 @@ function createApp(middleware = rpcRateLimitMiddleware, path = "/rpc/*") {
 
 function bindings(overrides: Partial<WorkerBindings> = {}): WorkerBindings {
   return {
+    BETTER_AUTH_BASE_URL: "http://localhost:8787",
     BETTER_AUTH_SECRET: secret,
     HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
     ...overrides,
@@ -214,7 +215,10 @@ describe("rate limit middleware", () => {
     await post(
       createApp(),
       "/rpc/sale/confirm",
-      bindings({ RPC_MUTATION_RATE_LIMIT: binding }),
+      bindings({
+        BETTER_AUTH_BASE_URL: "https://app.example.test",
+        RPC_MUTATION_RATE_LIMIT: binding,
+      }),
       {
         "cf-connecting-ip": clientAddress,
         cookie: `theme=dark; __Secure-better-auth.session_token=${sessionToken}`,
@@ -523,5 +527,259 @@ describe("rate limit middleware", () => {
     expect(mediaBinding.limit).toHaveBeenCalledOnce();
     expect(rpcBinding.limit).not.toHaveBeenCalled();
     expect(mediaBinding.limit.mock.calls[0]?.[0].key).toMatch(mediaKeyPattern);
+  });
+
+  describe("key hardening", () => {
+    const httpsBase = "https://app.example.test";
+
+    /** The keys one request produced, by kind of key. */
+    async function keysOf(
+      headers: Record<string, string>,
+      baseURL = "http://localhost:8787"
+    ) {
+      const binding = limiter(true);
+      await post(
+        createApp(),
+        "/rpc/sale/confirm",
+        bindings({
+          BETTER_AUTH_BASE_URL: baseURL,
+          RPC_MUTATION_RATE_LIMIT: binding,
+        }),
+        headers
+      );
+      const keys = binding.limit.mock.calls.map(([options]) => options.key);
+      return {
+        ip: keys.filter((key) => key.startsWith("rpc-mutation-ip:")),
+        session: keys.filter((key) => key.startsWith("rpc-mutation-session:")),
+      };
+    }
+
+    it("reads only the __Secure- cookie under an HTTPS base URL, whatever the order", async () => {
+      const real = await keysOf(
+        { cookie: `__Secure-better-auth.session_token=${sessionToken}` },
+        httpsBase
+      );
+      const plainFirst = await keysOf(
+        {
+          cookie: `better-auth.session_token=junk-1; __Secure-better-auth.session_token=${sessionToken}`,
+        },
+        httpsBase
+      );
+      const plainLast = await keysOf(
+        {
+          cookie: `__Secure-better-auth.session_token=${sessionToken}; better-auth.session_token=junk-2`,
+        },
+        httpsBase
+      );
+
+      expect(real.session).toHaveLength(1);
+      expect(plainFirst.session).toEqual(real.session);
+      expect(plainLast.session).toEqual(real.session);
+    });
+
+    it("reads only the unprefixed cookie under a loopback HTTP base URL, whatever the order", async () => {
+      const real = await keysOf({
+        cookie: `better-auth.session_token=${sessionToken}`,
+      });
+      const prefixedFirst = await keysOf({
+        cookie: `__Secure-better-auth.session_token=junk-1; better-auth.session_token=${sessionToken}`,
+      });
+      const prefixedLast = await keysOf({
+        cookie: `better-auth.session_token=${sessionToken}; __Secure-better-auth.session_token=junk-2`,
+      });
+
+      expect(real.session).toHaveLength(1);
+      expect(prefixedFirst.session).toEqual(real.session);
+      expect(prefixedLast.session).toEqual(real.session);
+    });
+
+    it("counts no session when the only cookie is the other environment's name", async () => {
+      expect(
+        (await keysOf({ cookie: "better-auth.session_token=value" }, httpsBase))
+          .session
+      ).toEqual([]);
+      expect(
+        (
+          await keysOf({
+            cookie: "__Secure-better-auth.session_token=value",
+          })
+        ).session
+      ).toEqual([]);
+    });
+
+    it("never opens a bucket for a cookie of another name, whatever its value", async () => {
+      const names = [
+        "x-better-auth.session_token",
+        "better-auth.session_token.x",
+        "__Host-better-auth.session_token",
+        "__Secure-__Secure-better-auth.session_token",
+        "Better-Auth.Session_Token",
+        "session",
+      ];
+      const sessions = await Promise.all(
+        ["https://app.example.test", "http://localhost:8787"].flatMap(
+          (baseURL) =>
+            names.map(async (name, index) => {
+              const { session } = await keysOf(
+                { cookie: `${name}=value-${index}` },
+                baseURL
+              );
+              return session;
+            })
+        )
+      );
+
+      expect(sessions.flat()).toEqual([]);
+    });
+
+    it("counts no session without a usable base URL", async () => {
+      const sessions = await Promise.all(
+        ["", "not a url"].map(
+          async (baseURL) =>
+            (
+              await keysOf(
+                { cookie: `better-auth.session_token=${sessionToken}` },
+                baseURL
+              )
+            ).session
+        )
+      );
+
+      expect(sessions.flat()).toEqual([]);
+    });
+
+    it("puts the addresses of one IPv6 /64 in one bucket and another /64 in another", async () => {
+      const ipOf = async (address: string) =>
+        (await keysOf({ "cf-connecting-ip": address })).ip;
+      const one = await ipOf("2001:db8:1:2:aaaa:bbbb:cccc:dddd");
+      const sameNet = [
+        "2001:db8:1:2::1",
+        "2001:0DB8:0001:0002:0000:0000:0000:0001",
+        "2001:db8:1:2:ffff:ffff:ffff:ffff",
+        "2001:db8:1:2::",
+        "2001:db8:1:2:1:2:1.2.3.4",
+      ];
+      const otherNets = [
+        "2001:db8:1:3::1",
+        "2001:db8:2:2::1",
+        "2001:db9:1:2::1",
+      ];
+
+      expect(one).toHaveLength(1);
+      for (const same of await Promise.all(sameNet.map(ipOf))) {
+        expect(same).toEqual(one);
+      }
+      for (const other of await Promise.all(otherNets.map(ipOf))) {
+        expect(other).toHaveLength(1);
+        expect(other).not.toEqual(one);
+      }
+    });
+
+    it("keeps IPv4 as it was, and reads every spelling of a mapped IPv4 as the IPv4 address", async () => {
+      const ipOf = async (address: string) =>
+        (await keysOf({ "cf-connecting-ip": address })).ip;
+      const plain = await ipOf(clientAddress);
+      const mapped = await Promise.all(
+        [
+          `::ffff:${clientAddress}`,
+          `::FFFF:${clientAddress}`,
+          "::ffff:cb00:7109",
+          `0:0:0:0:0:ffff:${clientAddress}`,
+        ].map(ipOf)
+      );
+
+      expect(plain).toHaveLength(1);
+      expect(await ipOf("203.0.113.10")).not.toEqual(plain);
+      for (const key of mapped) {
+        expect(key).toEqual(plain);
+      }
+    });
+
+    it("counts no address for text that is not an IPv4 or IPv6 address", async () => {
+      const values = [
+        "abc",
+        "999.1.1.1",
+        "1.2.3",
+        "1.2.3.4.5",
+        "1:2:3",
+        "2001:db8::1::2",
+        "2001:db8:zz::1",
+        "1:2:3:4:5:6:7:8:9",
+        "1::2:3:4:5:6:7:8",
+        "1:::2",
+        ":1:2:3:4:5:6:7",
+        "1:2:3:4:5:6:7:",
+        "1:2:1.2.3.4",
+        "1.2::3",
+        "::ffff:300.1.1.1",
+        "2001:db8::1 2",
+        `2001:db8::${"1".repeat(60)}`,
+      ];
+      const found = await Promise.all(
+        values.map(
+          async (value) => (await keysOf({ "cf-connecting-ip": value })).ip
+        )
+      );
+
+      expect(found.flat()).toEqual([]);
+    });
+
+    it("reads the shapes an IPv6 address can take", async () => {
+      const ipOf = async (address: string) =>
+        (await keysOf({ "cf-connecting-ip": address })).ip;
+      const [zeroNet, loopback, zoned, plain, sevenGroups, eightGroups] =
+        await Promise.all(
+          [
+            "::",
+            "::1",
+            "fe80::1%eth0",
+            "fe80::1",
+            "1:2:3:4:5:6:7::",
+            "1:2:3:4:5:6:7:8",
+          ].map(ipOf)
+        );
+
+      // both are in the all-zero /64, and the zone is no part of the address
+      expect(zeroNet).toHaveLength(1);
+      expect(loopback).toEqual(zeroNet);
+      expect(zoned).toEqual(plain);
+      expect(sevenGroups).toEqual(eightGroups);
+    });
+
+    it("keeps one IPv4 spelling per address", async () => {
+      expect((await keysOf({ "cf-connecting-ip": "01.2.3.4" })).ip).toEqual(
+        (await keysOf({ "cf-connecting-ip": "1.2.3.4" })).ip
+      );
+    });
+
+    it("gives one session one bucket in every spelling of its cookie", async () => {
+      const spellings = [
+        "tok.sig",
+        '"tok.sig"',
+        "tok%2Esig",
+        "%74ok.sig",
+        "tok.other-signature",
+        "tok",
+      ];
+      const real = await keysOf({
+        cookie: `better-auth.session_token=${spellings[0]}`,
+      });
+      const others = await Promise.all(
+        spellings.map(
+          async (value) =>
+            (await keysOf({ cookie: `better-auth.session_token=${value}` }))
+              .session
+        )
+      );
+      const another = await keysOf({
+        cookie: "better-auth.session_token=tok2.sig",
+      });
+
+      expect(real.session).toHaveLength(1);
+      for (const session of others) {
+        expect(session).toEqual(real.session);
+      }
+      expect(another.session).not.toEqual(real.session);
+    });
   });
 });
