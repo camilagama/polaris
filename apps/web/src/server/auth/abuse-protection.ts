@@ -1,10 +1,10 @@
+import { clientIp } from "../client-ip";
 import type { WorkerBindings } from "../environment";
 
 const siteverifyURL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const turnstileTokenHeader = "x-turnstile-token";
 const turnstileTokenMaxLength = 2048;
-const invalidClientIpPattern = /[\r\n,\s]/;
 const trailingSlashPattern = /\/+$/;
 
 type TurnstileAction =
@@ -108,21 +108,16 @@ async function checkRateLimit(
   requestId: string | undefined,
   secret: string
 ): Promise<Response | undefined> {
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const ip = clientIp(request);
   const ipLimiter = bindings.AUTH_RATE_LIMITER;
 
-  if (
-    !clientIp ||
-    clientIp.length > 64 ||
-    invalidClientIpPattern.test(clientIp) ||
-    !ipLimiter
-  ) {
+  if (!(ip && ipLimiter)) {
     return jsonError(503, "auth_rate_limit_unavailable", requestId);
   }
 
   try {
     const ipResult = await ipLimiter.limit({
-      key: await limiterKey(secret, "auth-ip", clientIp),
+      key: await limiterKey(secret, "auth-ip", ip),
     });
     if (typeof ipResult.success !== "boolean") {
       return jsonError(503, "auth_rate_limit_unavailable", requestId);
@@ -143,15 +138,15 @@ async function checkEmailSendRateLimit(
   requestId: string | undefined,
   secret: string
 ): Promise<Response | undefined> {
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const ip = clientIp(request);
   const limiter = bindings.AUTH_EMAIL_RATE_LIMITER;
-  if (!(clientIp && limiter)) {
+  if (!(ip && limiter)) {
     return jsonError(503, "auth_rate_limit_unavailable", requestId);
   }
 
   try {
     const result = await limiter.limit({
-      key: await limiterKey(secret, "auth-email-send-ip", clientIp),
+      key: await limiterKey(secret, "auth-email-send-ip", ip),
     });
     if (typeof result.success !== "boolean") {
       return jsonError(503, "auth_rate_limit_unavailable", requestId);
@@ -234,19 +229,15 @@ export async function protectSocialAuthRequest(
   };
 
   const secret = bindings.BETTER_AUTH_SECRET;
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const ip = clientIp(request);
   const limiter = bindings.AUTH_SOCIAL_RATE_LIMITER;
-  if (
-    !(secret && limiter && clientIp) ||
-    clientIp.length > 64 ||
-    invalidClientIpPattern.test(clientIp)
-  ) {
+  if (!(secret && limiter && ip)) {
     return unavailable();
   }
 
   try {
     const result = await limiter.limit({
-      key: await limiterKey(secret, "auth-social-ip", clientIp),
+      key: await limiterKey(secret, "auth-social-ip", ip),
     });
     if (typeof result.success !== "boolean") {
       return unavailable();
@@ -275,18 +266,14 @@ export async function protectAuthLinkRequest(
   requestId?: string
 ): Promise<Response | undefined> {
   const secret = bindings.BETTER_AUTH_SECRET;
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  const ip = clientIp(request);
   const limiter = bindings.AUTH_RATE_LIMITER;
-  if (
-    !(secret && limiter && clientIp) ||
-    clientIp.length > 64 ||
-    invalidClientIpPattern.test(clientIp)
-  ) {
+  if (!(secret && limiter && ip)) {
     return jsonError(503, "auth_rate_limit_unavailable", requestId);
   }
   try {
     const result = await limiter.limit({
-      key: await limiterKey(secret, "auth-link-ip", clientIp),
+      key: await limiterKey(secret, "auth-link-ip", ip),
     });
     if (typeof result.success !== "boolean") {
       return jsonError(503, "auth_rate_limit_unavailable", requestId);
