@@ -121,7 +121,7 @@ async function openProductsLab(page: Page, stored = "claro", search = "") {
  */
 const screenOrDialog = (page: Page) =>
   page
-    .getByRole("heading", { exact: true, name: "Produtos" })
+    .getByRole("heading", { exact: true, level: 1, name: "Produtos" })
     .or(page.getByRole("dialog"));
 
 /** The list's tab of a status, read from the markup: under an open dialog it is out of the accessibility tree. */

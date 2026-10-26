@@ -23,6 +23,7 @@ import { CategoryForm } from "./category-form";
 import { CategoryList } from "./category-list";
 import { ActionFeedback, LoadErrorNotice } from "./products-page-parts";
 import { StatusNav } from "./screen-parts";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 /**
  * Categorias on the interface v5.1 (components of `src/ui`, no sheet of its own). It works only with a connection:
@@ -239,7 +240,7 @@ export function CategoriesPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <div className="grid gap-1">
-        <h1 className="text-title">Categorias</h1>
+        <ScreenTitle>Categorias</ScreenTitle>
         <p className="text-muted-foreground text-support">
           Agrupam os produtos do catálogo. As categorias de despesa ficam em
           Despesas.

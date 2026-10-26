@@ -36,7 +36,6 @@ import {
 import { SyncStatus } from "../offline/runtime/sync-status";
 import { FakeCatalogServer, FakeCustomerServer } from "../offline/test-support";
 import { PaymentProfilesPage } from "../payment-profiles/payment-profiles-page";
-import { SaleCustomerPage } from "../sales/sale-customer-page";
 import { SaleDetailPage } from "../sales/sale-detail-page";
 import { SaleHistoryPage } from "../sales/sale-history-page";
 import { SalePage } from "../sales/sale-page";
@@ -84,7 +83,6 @@ type LabScreen =
   | "products"
   | "public-catalog"
   | "sale"
-  | "sale-customer"
   | "sale-detail"
   | "stock";
 
@@ -101,7 +99,6 @@ function labScreen(): LabScreen {
     screen === "payment-profiles" ||
     screen === "public-catalog" ||
     screen === "sale" ||
-    screen === "sale-customer" ||
     screen === "sale-detail" ||
     screen === "stock" ||
     screen === "history"
@@ -174,7 +171,6 @@ const LAB_PAGES: Readonly<Record<LabScreen, ComponentType>> = {
   products: ProductsPage,
   "public-catalog": PublicCatalogPage,
   sale: SalePage,
-  "sale-customer": SaleCustomerPage,
   "sale-detail": SaleDetailPage,
   stock: InventoryPage,
 };
@@ -191,7 +187,6 @@ export function ScreensLab() {
     screen === "expenses" ||
     screen === "payment-profiles" ||
     screen === "public-catalog" ||
-    screen === "sale-customer" ||
     screen === "sale-detail";
   const [userId, setUserId] = useState("user-a");
   const [online, setOnline] = useState(true);

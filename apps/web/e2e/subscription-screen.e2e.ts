@@ -113,7 +113,7 @@ async function openScreen(
   {
     billingSelfService = true,
     checkouts = [],
-    path = "/subscription",
+    path = "/configuracoes?aba=assinatura",
     plans = [plan()],
     role = "owner",
   }: ScreenOptions = {}
@@ -169,8 +169,9 @@ async function openScreen(
   return calls;
 }
 
+/** The Assinatura is a tab of Configurações (map of navigation, § 1): its title is under the h1 of the screen. */
 const title = (page: Page) =>
-  page.getByRole("heading", { exact: true, level: 1, name: "Assinatura" });
+  page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" });
 const planTitle = (page: Page) => page.locator("#subscription-plan-title");
 const terms = (page: Page) => page.getByTestId("subscription-terms");
 
@@ -685,7 +686,7 @@ test("a volta antiga na raiz (/?assinatura=) leva à Assinatura com o mesmo reto
   page,
 }) => {
   await openScreen(page, { path: "/?assinatura=concluida" });
-  await page.waitForURL("**/subscription?retorno=concluida");
+  await page.waitForURL("**/configuracoes?aba=assinatura&retorno=concluida");
   await expect(title(page)).toBeVisible();
 });
 
@@ -956,25 +957,31 @@ test("a leitura que falha diz o motivo e oferece 'Tentar novamente'; sem a capac
   expect(other.reads).toBe(0);
 });
 
-test("menu: 'Assinatura' abre Configurações no desktop e fica a 2 toques no celular; some sem a flag e para quem não é dono (AS-10, AS-19)", async ({
+test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; some sem a flag e para quem não é dono (AS-10, AS-19)", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 800, width: 1280 });
   await openScreen(page, { path: "/subscription", plans: [plan()] });
   const nav = page.getByRole("navigation", { name: "Principal" });
-  const settings = nav.getByText("Configurações").locator("..");
-  await expect(settings.getByRole("link").first()).toHaveText("Assinatura");
-  await expect(nav.getByRole("link", { name: "Assinatura" })).toHaveAttribute(
-    "aria-current",
-    "page"
-  );
+  // the old address opens the tab; the menu marks Configurações (map of navigation, § 1 and § 6)
+  await page.waitForURL("**/configuracoes?aba=assinatura");
+  await expect(
+    nav.getByRole("link", { exact: true, name: "Configurações" })
+  ).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link", { name: "Assinatura" })).toHaveCount(0);
+  const tabs = page.getByRole("tablist", { name: "Configurações" });
+  await expect(
+    tabs.getByRole("tab", { exact: true, name: "Assinatura" })
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(title(page)).toBeVisible();
 
   await page.setViewportSize({ height: 740, width: 360 });
   await page.goto("/");
-  // tap 1: "Mais"; tap 2: "Assinatura"
+  // "Mais", then Configurações, then the tab
   await page.getByRole("button", { name: "Mais" }).click();
-  await page.getByRole("link", { name: "Assinatura" }).click();
-  await page.waitForURL("**/subscription");
+  await page.getByRole("link", { name: "Configurações" }).click();
+  await page.waitForURL("**/configuracoes");
+  await tabs.getByRole("tab", { exact: true, name: "Assinatura" }).click();
   await expect(title(page)).toBeVisible();
 
   for (const options of [
@@ -984,12 +991,13 @@ test("menu: 'Assinatura' abre Configurações no desktop e fica a 2 toques no ce
     // biome-ignore lint/performance/noAwaitInLoops: one case after the other, on the same page
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.setViewportSize({ height: 800, width: 1280 });
-    await openScreen(page, { ...options, path: "/expenses" });
+    await openScreen(page, { ...options, path: "/configuracoes" });
     await expect(
-      page.getByRole("navigation", { name: "Principal" }).getByRole("link", {
-        name: "Catálogo público",
-      })
+      tabs.getByRole("tab", { exact: true, name: "Catálogo público" })
     ).toBeVisible();
+    await expect(
+      tabs.getByRole("tab", { exact: true, name: "Assinatura" })
+    ).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Assinatura" })).toHaveCount(0);
   }
 });
@@ -1017,7 +1025,7 @@ test("carência: o aviso do topo em toda tela do dono, com os dias contados e o 
     );
     await expect(
       notice.getByRole("link", { name: "Abrir Assinatura" })
-    ).toHaveAttribute("href", "/subscription");
+    ).toHaveAttribute("href", "/configuracoes?aba=assinatura");
   }
   // day 8: the server says Free, and there is no notice
   await page.unrouteAll({ behavior: "ignoreErrors" });

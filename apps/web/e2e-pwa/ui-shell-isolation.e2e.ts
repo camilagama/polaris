@@ -157,7 +157,7 @@ const openProducts = (
     "/products",
     async () => {
       await expect(
-        page.getByRole("heading", { exact: true, name: "Produtos" })
+        page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
       ).toBeVisible();
       await then(page);
     },
@@ -289,7 +289,7 @@ const openMediaPanel = (
     "/products",
     async () => {
       await expect(
-        page.getByRole("heading", { exact: true, name: "Produtos" })
+        page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
       ).toBeVisible();
       await openMenu(page).click();
       await page.getByRole("menuitem", { name: "Imagens" }).click();
@@ -562,20 +562,6 @@ const SALE_DETAIL_SCREENS = [
         ).toBeVisible();
       }),
   },
-  {
-    name: "Cliente da venda no shell",
-    open: (page: Page) =>
-      openInShell(
-        page,
-        `/sales/customer?saleId=${DETAIL_SALE_ID}`,
-        async () => {
-          await expect(
-            page.getByRole("button", { name: "Remover cliente" })
-          ).toBeVisible();
-        },
-        saleDetailAnswers({ withReturn: true })
-      ),
-  },
 ];
 
 const fee = (mode: string, percentage: string | null) => ({
@@ -622,7 +608,7 @@ const openPaymentProfiles = (
 
 const PAYMENT_SCREENS = [
   {
-    name: "Perfis de pagamento no shell: lista e formulário novo",
+    name: "Formas de receber no shell: lista e formulário novo",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page.getByRole("button", { name: "Novo perfil" }).click();
@@ -631,7 +617,7 @@ const PAYMENT_SCREENS = [
   },
   {
     // the form filled by an edit: selects, a fee with a percentage, and the hint of the unknown fee
-    name: "Perfis de pagamento no shell: edição",
+    name: "Formas de receber no shell: edição",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page
@@ -641,7 +627,7 @@ const PAYMENT_SCREENS = [
       }),
   },
   {
-    name: "Perfis de pagamento no shell: percentual inválido",
+    name: "Formas de receber no shell: percentual inválido",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
         await page
@@ -727,6 +713,10 @@ const openExpenses = (
       await then(page);
     },
     {
+      // Despesas is a tab of the Resultado: the page behind it reads the goals and the summary too, and an unanswered
+      // read would put the whole shell "offline" and turn off the button of the form
+      "goal/list": { goals: [] },
+      "report/periodSummary": {},
       "expense/list": {
         count: 1,
         expenses: [EXPENSE],
@@ -897,7 +887,7 @@ const SCREENS = [
         "/devices",
         async () => {
           await expect(
-            page.getByRole("heading", { level: 1, name: "Aparelhos" })
+            page.getByRole("heading", { level: 2, name: "Aparelhos" })
           ).toBeVisible();
           await expect(page.getByText("Celular da Ana")).toBeVisible();
         },

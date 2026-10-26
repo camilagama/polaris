@@ -38,7 +38,7 @@ async function serveSale(page: Page, withReturn: boolean, hold = false) {
 /** Starts the lab's runtime on one of the two screens and waits for its heading. */
 async function openSaleLab(
   page: Page,
-  screen: "sale-customer" | "sale-detail",
+  screen: "sale-detail",
   heading: string,
   withReturn = true,
   hold = false
@@ -91,16 +91,19 @@ export const saleDetailStates = {
     await showScreenAlone(page);
   },
 
-  /** The customer page: the current customer, "Trocar cliente", "Remover cliente" and the history. */
+  /** The customer of the sale, in the detail (its page of its own is gone): the current customer, "Trocar cliente", "Remover cliente" and the history. */
   async customer(page: Page) {
-    await openSaleLab(page, "sale-customer", "Cliente da venda");
+    await openDetail(page);
     await page.getByRole("button", { name: "Remover cliente" }).waitFor();
     await showScreenAlone(page);
+    await page
+      .getByRole("heading", { exact: true, name: "Cliente da venda" })
+      .scrollIntoViewIfNeeded();
   },
 
   /** The form dialog of "Trocar cliente", open: the list of customers and the button that sends the choice, off. */
   async customerChoose(page: Page) {
-    await openSaleLab(page, "sale-customer", "Cliente da venda");
+    await openDetail(page);
     await page
       .getByRole("button", { exact: true, name: "Trocar cliente" })
       .click();

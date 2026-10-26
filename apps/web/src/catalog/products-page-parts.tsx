@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
 import type { ProductListStatus } from "./product-list";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
 
@@ -27,7 +28,7 @@ interface HeaderProps {
 export function ProductsHeader({ buttonRef, onNew, showNew }: HeaderProps) {
   return (
     <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between">
-      <h1 className="text-title">Produtos</h1>
+      <ScreenTitle>Produtos</ScreenTitle>
       {showNew ? (
         <Button onClick={onNew} ref={buttonRef} type="button">
           <PlusIcon aria-hidden="true" data-icon="inline-start" />

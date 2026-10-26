@@ -17,6 +17,9 @@ import {
   rememberPlanNotice,
   subscribePlanNotice,
 } from "../subscription/plan-notice";
+import { tabHref } from "./navigation-model";
+
+const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /**
  * The plan's state for the notice: what this tab read (shown at once, also while it is read again), and a read of the
@@ -112,7 +115,7 @@ function GraceNotice({
         {onSubscription ? null : (
           <a
             className={buttonVariants({ size: "sm", variant: "outline" })}
-            href="/subscription"
+            href={SUBSCRIPTION_HREF}
           >
             Abrir Assinatura
           </a>

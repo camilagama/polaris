@@ -39,6 +39,7 @@ import {
   SwitchCard,
 } from "./public-catalog-panels";
 import { ListNotice } from "./screen-parts";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 interface LoadedState {
   products: ProductReadModel[];
@@ -299,7 +300,7 @@ export function PublicCatalogPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <div className="grid gap-1">
-        <h1 className="text-title">Catálogo público</h1>
+        <ScreenTitle>Catálogo público</ScreenTitle>
         <p className="text-muted-foreground text-support">
           Mostre produtos a quem não tem conta, num endereço só seu. Só o que
           você escolher aparece: nome, descrição, fotos e preço de tabela.

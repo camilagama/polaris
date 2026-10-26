@@ -43,11 +43,14 @@ const STORE_MENU_LABEL_NO_LOGOUT = "Loja e tema";
 export function StoreCard({
   email,
   logout,
+  onAttention,
   organization,
 }: {
   email: string | null;
   /** The protected logout of the sidebar, which keeps its state when the width crosses 760 px. */
   logout: Logout;
+  /** The answer of "Sair" needs room: the folded column opens to show it. */
+  onAttention?: () => void;
   organization: CurrentOrganization | null;
 }) {
   const runtime = useOfflineRuntime();
@@ -91,16 +94,17 @@ export function StoreCard({
   return (
     <div className="grid min-w-0 gap-2">
       <div
-        className="flex min-w-0 items-center gap-2.5 rounded-xl bg-card p-2 ring-1 ring-foreground/[0.07]"
+        className="flex min-w-0 items-center gap-2.5 rounded-xl bg-card p-2 ring-1 ring-foreground/[0.07] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:ring-0"
         data-store-card=""
       >
         <span
           aria-hidden="true"
-          className="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground font-semibold text-background text-xs"
+          className="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground font-semibold text-background text-xs group-data-[collapsible=icon]:hidden"
         >
           {storeInitials(name)}
         </span>
-        <span className="grid min-w-0 flex-1 leading-tight">
+        {/* folded, the column keeps only the button of the menu: the store stays for the screen reader, out of sight */}
+        <span className="grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:sr-only">
           <span className="truncate font-medium text-sm">
             {organization ? <span className="sr-only">Loja: </span> : null}
             {name}
@@ -172,7 +176,9 @@ export function StoreCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {runtime ? <LogoutNotices logout={logout} /> : null}
+      {runtime ? (
+        <LogoutNotices logout={logout} onAttention={onAttention} />
+      ) : null}
     </div>
   );
 }

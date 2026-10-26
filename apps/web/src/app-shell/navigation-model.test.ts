@@ -1,49 +1,79 @@
 import { describe, expect, it } from "vitest";
 import {
+  ATTENTION_NAV_ITEM,
+  addressWithTab,
   BOTTOM_BAR_IDS,
   bottomBarMark,
   documentTitle,
   entryPageFor,
-  NAV_ITEMS,
+  legacyAddress,
   menuItemsOf,
+  NAV_ITEMS,
   navGroups,
-  OFFLINE_NAV_ITEMS,
+  openedTab,
+  requestedTab,
   resolveRoute,
-  SUBSCRIPTION_NAV_ITEM,
+  SCREEN_TABS,
+  tabHref,
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the eleven areas in workflow order, each once, the Início first", () => {
+  it("lists the eight destinations in workflow order, each once, the Início first (map of navigation, § 1)", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Início",
       "Vender",
       "Histórico",
       "Estoque",
       "Produtos",
-      "Categorias",
       "Clientes",
-      "Despesas",
       "Resultado",
-      "Perfis de pagamento",
-      "Catálogo público",
+      "Configurações",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(11);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(11);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(8);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(8);
   });
 
-  it("groups the sidebar as in the v5.1 shell, Aparelhos last in Configurações", () => {
-    const groups = navGroups([...NAV_ITEMS, ...OFFLINE_NAV_ITEMS]).map(
-      (group) => [group.label, group.items.map((item) => item.label)]
-    );
+  it("groups the sidebar: Catálogo, Resultado and Configurações", () => {
+    const groups = navGroups(NAV_ITEMS).map((group) => [
+      group.label,
+      group.items.map((item) => item.label),
+    ]);
     expect(groups).toEqual([
       [null, ["Início", "Vender", "Histórico"]],
-      ["Catálogo", ["Estoque", "Produtos", "Categorias", "Clientes"]],
-      ["Resultado", ["Despesas", "Resultado"]],
-      [
-        "Configurações",
-        ["Perfis de pagamento", "Catálogo público", "Aparelhos"],
-      ],
+      ["Catálogo", ["Estoque", "Produtos", "Clientes"]],
+      ["Resultado", ["Resultado"]],
+      ["Configurações", ["Configurações"]],
     ]);
+  });
+
+  it("adds Pendências as the ninth, after Histórico, only while there is a refused record", () => {
+    expect(menuItemsOf({ attention: false })).toEqual(NAV_ITEMS);
+    const items = menuItemsOf({ attention: true });
+    expect(items.map((item) => item.label)).toEqual([
+      "Início",
+      "Vender",
+      "Histórico",
+      "Pendências",
+      "Estoque",
+      "Produtos",
+      "Clientes",
+      "Resultado",
+      "Configurações",
+    ]);
+    expect(ATTENTION_NAV_ITEM.href).toBe("/attention");
+    expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
+  });
+
+  it("uses the words of textos.md: Formas de receber, Pendências, never the old names", () => {
+    const labels = [
+      ...menuItemsOf({ attention: true }).map((item) => item.label),
+      ...Object.values(SCREEN_TABS).flatMap((tabs) =>
+        tabs.map((tab) => tab.label)
+      ),
+    ];
+    expect(labels).toContain("Formas de receber");
+    expect(labels).not.toContain("Perfis de pagamento");
+    expect(labels).not.toContain("Operações que precisam de atenção");
   });
 
   it("the bottom bar of the phone is Início, Histórico, Vender (in the middle, with Mais the fifth) and Estoque; the rest is under Mais", () => {
@@ -54,84 +84,189 @@ describe("main menu", () => {
     ).toEqual(["Início", "Histórico", "Vender", "Estoque"]);
   });
 
-  it("marks the destination of the area on the bottom bar, and Mais only for the screens of no destination", () => {
+  it("marks Estoque on Produtos and Clientes, and Mais on Pendências, Resultado and Configurações", () => {
     expect(
       Object.fromEntries(
-        [...NAV_ITEMS, ...OFFLINE_NAV_ITEMS].map((item) => [
+        menuItemsOf({ attention: true }).map((item) => [
           item.id,
           bottomBarMark(item.id),
         ])
       )
     ).toEqual({
-      categories: "inventory",
+      attention: "more",
       customers: "inventory",
       dashboard: "more",
-      devices: "more",
-      expenses: "more",
       history: "history",
       home: "home",
       inventory: "inventory",
-      "payment-profiles": "more",
       products: "inventory",
-      "public-catalog": "more",
       sale: "sale",
+      settings: "more",
     });
   });
 
-  it("marks Mais on Pendências, a screen of no item of the menu", () => {
-    const route = resolveRoute("/attention");
-    expect(route).toMatchObject({ id: "attention", navId: "attention" });
-    expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
-    expect(bottomBarMark("attention")).toBe("more");
-  });
-
-  it("puts the Assinatura first in Configurações, only when it may show (AS-10: Mais, then Assinatura)", () => {
-    const groupsOf = (subscription: boolean, offline: boolean) =>
-      navGroups(menuItemsOf({ offline, subscription })).map((group) => [
-        group.label,
-        group.items.map((item) => item.label),
-      ]);
-    expect(groupsOf(true, true).at(-1)).toEqual([
-      "Configurações",
-      ["Assinatura", "Perfis de pagamento", "Catálogo público", "Aparelhos"],
-    ]);
-    expect(groupsOf(false, true).at(-1)).toEqual([
-      "Configurações",
-      ["Perfis de pagamento", "Catálogo público", "Aparelhos"],
-    ]);
-    expect(
-      menuItemsOf({ offline: false, subscription: true }).filter(
-        (item) => item.id === "subscription"
-      )
-    ).toHaveLength(1);
-    expect(menuItemsOf({ offline: false, subscription: false })).toEqual(
-      NAV_ITEMS
-    );
-    expect(bottomBarMark("subscription")).toBe("more");
-    expect(resolveRoute(SUBSCRIPTION_NAV_ITEM.href)).toEqual({
-      // never a plan of before: offline it loads by itself on the return (AS-8)
-      connectionForm: false,
-      id: "subscription",
-      kind: "page",
-      navId: "subscription",
-      onlineOnly: true,
-      title: "Assinatura",
-    });
-  });
-
-  it("does not offer the customer-of-a-sale page, which opens from a sale of the history", () => {
-    expect(NAV_ITEMS.some((item) => item.href === "/sales/customer")).toBe(
-      false
-    );
-  });
-
-  it("points every menu item at a route that exists", () => {
-    for (const item of NAV_ITEMS) {
+  it("points every menu item at a route that exists, current on its own screen", () => {
+    for (const item of menuItemsOf({ attention: true })) {
       const route = resolveRoute(item.href);
       expect(route.kind).toBe("page");
       if (route.kind === "page") {
         expect(route.navId).toBe(item.id);
       }
+    }
+  });
+});
+
+describe("tabs", () => {
+  it("gives Produtos, Resultado and Configurações their tabs, in order", () => {
+    expect(
+      Object.fromEntries(
+        Object.entries(SCREEN_TABS).map(([screen, tabs]) => [
+          screen,
+          tabs.map((tab) => tab.label),
+        ])
+      )
+    ).toEqual({
+      dashboard: ["Resultado", "Metas", "Despesas"],
+      products: ["Produtos", "Categorias"],
+      settings: [
+        "Formas de receber",
+        "Catálogo público",
+        "Aparelhos",
+        "Assinatura",
+        "Senha",
+      ],
+    });
+  });
+
+  it("opens the tab of `aba`, or the first one for none or an unknown one", () => {
+    expect(requestedTab("products", "").value).toBe("produtos");
+    expect(requestedTab("products", "?aba=categorias").value).toBe(
+      "categorias"
+    );
+    expect(requestedTab("products", "?aba=metas").value).toBe("produtos");
+    expect(requestedTab("settings", "?aba=senha&x=1").value).toBe("senha");
+    expect(requestedTab("dashboard", "?aba=despesas").value).toBe("despesas");
+  });
+
+  it("rewrites the address for a value that is no tab, and for a tab this person does not have", () => {
+    const has = ["formas-de-receber", "catalogo-publico", "senha"];
+    // none, or a tab that is there: the address already says it
+    expect(openedTab("settings", "", has)).toEqual({
+      rewrite: false,
+      value: "formas-de-receber",
+    });
+    expect(openedTab("settings", "?aba=senha", has)).toEqual({
+      rewrite: false,
+      value: "senha",
+    });
+    // `?aba=xyz` names no tab: the first one opens and the address says so
+    expect(openedTab("settings", "?aba=xyz", has)).toEqual({
+      rewrite: true,
+      value: "formas-de-receber",
+    });
+    expect(openedTab("settings", "?aba=", has).rewrite).toBe(true);
+    // a tab of the screen that this person does not have (Aparelhos without the offline runtime)
+    expect(openedTab("settings", "?aba=aparelhos", has)).toEqual({
+      rewrite: true,
+      value: "formas-de-receber",
+    });
+    // the goals link of the Início wins over `aba`; the Resultado rewrites that one itself
+    const result = ["resultado", "metas", "despesas"];
+    expect(openedTab("dashboard", "?meta=nova", result)).toEqual({
+      rewrite: false,
+      value: "metas",
+    });
+    expect(openedTab("dashboard", "?meta=nova&aba=xyz", result).rewrite).toBe(
+      true
+    );
+    expect(
+      openedTab("dashboard", "?meta=nova&aba=despesas", result).rewrite
+    ).toBe(false);
+    // a tab of another screen is no tab here
+    expect(openedTab("products", "?aba=metas", ["produtos"]).rewrite).toBe(
+      true
+    );
+  });
+
+  it("opens Metas for the two links of the Início, over any `aba` (AC-13)", () => {
+    expect(requestedTab("dashboard", "?meta=nova").value).toBe("metas");
+    expect(requestedTab("dashboard", "?meta=lista&aba=despesas").value).toBe(
+      "metas"
+    );
+    expect(requestedTab("dashboard", "?meta=outra").value).toBe("resultado");
+    // the parameter is the Resultado's only
+    expect(requestedTab("products", "?meta=nova").value).toBe("produtos");
+  });
+
+  it("writes the tab into an address, the first one as no `aba`, keeping the rest", () => {
+    expect(addressWithTab("/dashboard?x=1#topo", "dashboard", "metas")).toBe(
+      "/dashboard?x=1&aba=metas#topo"
+    );
+    expect(
+      addressWithTab("/dashboard?aba=metas&x=1", "dashboard", "resultado")
+    ).toBe("/dashboard?x=1");
+    expect(tabHref("settings", "senha")).toBe("/configuracoes?aba=senha");
+    expect(tabHref("settings", "formas-de-receber")).toBe("/configuracoes");
+    expect(tabHref("products", "categorias")).toBe("/products?aba=categorias");
+  });
+});
+
+describe("the addresses of the screens that became tabs (map § 6)", () => {
+  it("open their tab", () => {
+    expect(
+      Object.fromEntries(
+        [
+          "/categories",
+          "/expenses",
+          "/payment-profiles",
+          "/public-catalog",
+          "/devices",
+          "/subscription",
+          "/conta/seguranca",
+        ].map((path) => [path, legacyAddress(path, "", "")])
+      )
+    ).toEqual({
+      "/categories": "/products?aba=categorias",
+      "/conta/seguranca": "/configuracoes?aba=senha",
+      "/devices": "/configuracoes?aba=aparelhos",
+      "/expenses": "/dashboard?aba=despesas",
+      "/payment-profiles": "/configuracoes",
+      "/public-catalog": "/configuracoes?aba=catalogo-publico",
+      "/subscription": "/configuracoes?aba=assinatura",
+    });
+  });
+
+  it("keep the rest of the query and the hash (the return of a checkout), with or without a trailing slash", () => {
+    expect(
+      legacyAddress("/subscription/", "?retorno=concluida", "#plano")
+    ).toBe("/configuracoes?retorno=concluida&aba=assinatura#plano");
+    expect(legacyAddress("/expenses", "?aba=outra", "")).toBe(
+      "/dashboard?aba=despesas"
+    );
+  });
+
+  it("leave every other address alone", () => {
+    for (const path of [
+      "/",
+      "/products",
+      "/sales/customer",
+      "/toString",
+      "/__proto__",
+    ]) {
+      expect(legacyAddress(path, "", "")).toBeNull();
+    }
+  });
+
+  it("are no route of their own any more, and `/sales/customer` is gone (the 404 of the shell)", () => {
+    for (const path of [
+      "/categories",
+      "/expenses",
+      "/devices",
+      "/subscription",
+      "/conta/seguranca",
+      "/sales/customer",
+    ]) {
+      expect(resolveRoute(path).kind).toBe("not-found");
     }
   });
 });
@@ -145,6 +280,7 @@ describe("resolveRoute", () => {
       navId: "home",
       // offline it shows the device's copy, or says per block what waits for the connection (§ 7.4)
       onlineOnly: false,
+      screen: "home",
       title: "Início",
     });
     expect(resolveRoute("/sales")).toMatchObject({
@@ -155,59 +291,95 @@ describe("resolveRoute", () => {
     });
   });
 
-  it("keeps the history current on the sale detail and customer link", () => {
+  it("keeps the history current on the sale detail", () => {
     expect(resolveRoute("/sales/detail")).toMatchObject({
       id: "sale-detail",
       navId: "history",
     });
-    expect(resolveRoute("/sales/customer")).toMatchObject({
-      id: "sale-customer",
-      navId: "history",
-    });
   });
 
-  it("opens the period result at /dashboard, titled Resultado", () => {
+  it("opens the period result at /dashboard, titled Resultado, and names a tab by its own name", () => {
     expect(resolveRoute("/dashboard")).toEqual({
       connectionForm: true,
       id: "dashboard",
       kind: "page",
       navId: "dashboard",
       onlineOnly: false,
+      screen: "dashboard",
       title: "Resultado",
+    });
+    expect(resolveRoute("/dashboard", "?aba=despesas")).toMatchObject({
+      id: "expenses",
+      navId: "dashboard",
+      onlineOnly: true,
+      screen: "dashboard",
+      title: "Despesas",
+    });
+    expect(resolveRoute("/configuracoes")).toMatchObject({
+      id: "payment-profiles",
+      navId: "settings",
+      screen: "settings",
+      title: "Configurações",
     });
   });
 
-  it("marks the screens that work only online, and not the ones that work from the device (U-54)", () => {
-    for (const path of [
-      "/public-catalog",
-      "/payment-profiles",
-      "/expenses",
-      "/categories",
-      "/sales/detail",
-      "/conta/seguranca",
-    ]) {
-      expect(resolveRoute(path)).toMatchObject({ onlineOnly: true });
+  it("gives the Assinatura its behavior offline: no form, loads by itself on the return (AS-8)", () => {
+    expect(resolveRoute("/configuracoes", "?aba=assinatura")).toEqual({
+      connectionForm: false,
+      id: "subscription",
+      kind: "page",
+      navId: "settings",
+      onlineOnly: true,
+      screen: "settings",
+      title: "Assinatura",
+    });
+  });
+
+  it("marks the screens and tabs that work only online, and not the ones that work from the device (U-54)", () => {
+    for (const [path, search] of [
+      ["/configuracoes", ""],
+      ["/configuracoes", "?aba=catalogo-publico"],
+      ["/configuracoes", "?aba=senha"],
+      ["/configuracoes", "?aba=assinatura"],
+      ["/dashboard", "?aba=despesas"],
+      ["/products", "?aba=categorias"],
+      ["/sales/detail", ""],
+    ] as const) {
+      expect(resolveRoute(path, search)).toMatchObject({ onlineOnly: true });
     }
-    for (const path of [
-      "/",
-      "/sales",
-      "/sales/history",
-      "/inventory",
-      "/products",
-      "/customers",
-      "/dashboard",
-    ]) {
-      expect(resolveRoute(path)).toMatchObject({ onlineOnly: false });
+    for (const [path, search] of [
+      ["/", ""],
+      ["/sales", ""],
+      ["/sales/history", ""],
+      ["/inventory", ""],
+      ["/products", ""],
+      ["/customers", ""],
+      ["/dashboard", ""],
+      ["/dashboard", "?aba=metas"],
+      ["/configuracoes", "?aba=aparelhos"],
+    ] as const) {
+      expect(resolveRoute(path, search)).toMatchObject({ onlineOnly: false });
     }
   });
 
   it("tells the connection notice which online-only screens hold a form to type in", () => {
-    for (const path of ["/payment-profiles", "/expenses", "/categories"]) {
-      expect(resolveRoute(path)).toMatchObject({ connectionForm: true });
+    for (const [path, search] of [
+      ["/configuracoes", ""],
+      ["/dashboard", "?aba=despesas"],
+      ["/products", "?aba=categorias"],
+    ] as const) {
+      expect(resolveRoute(path, search)).toMatchObject({
+        connectionForm: true,
+      });
     }
     // the catalog declares its form once it loaded; the sale detail is read first
-    for (const path of ["/public-catalog", "/sales/detail"]) {
-      expect(resolveRoute(path)).toMatchObject({ connectionForm: false });
+    for (const [path, search] of [
+      ["/configuracoes", "?aba=catalogo-publico"],
+      ["/sales/detail", ""],
+    ] as const) {
+      expect(resolveRoute(path, search)).toMatchObject({
+        connectionForm: false,
+      });
     }
   });
 
@@ -238,20 +410,6 @@ describe("documentTitle", () => {
   });
 });
 
-describe("menu items of the offline runtime", () => {
-  it("offers the devices screen outside the main menu, and the route exists", () => {
-    expect(OFFLINE_NAV_ITEMS.map((item) => item.label)).toEqual(["Aparelhos"]);
-    for (const item of OFFLINE_NAV_ITEMS) {
-      expect(NAV_ITEMS.some((main) => main.id === item.id)).toBe(false);
-      const route = resolveRoute(item.href);
-      expect(route.kind).toBe("page");
-      if (route.kind === "page") {
-        expect(route.navId).toBe(item.id);
-      }
-    }
-  });
-});
-
 describe("the sign-in route", () => {
   it("is recognised with or without a trailing slash, and only exactly", () => {
     expect(entryPageFor("/entrar")).toBe("sign-in");
@@ -270,7 +428,7 @@ describe("the sign-in route", () => {
     for (const path of ["/redefinir-senha/abc", "/toString", "/__proto__"]) {
       expect(entryPageFor(path)).toBeNull();
     }
-    expect(resolveRoute("/conta/seguranca")).toMatchObject({
+    expect(resolveRoute("/configuracoes", "?aba=senha")).toMatchObject({
       id: "account-security",
       kind: "page",
     });

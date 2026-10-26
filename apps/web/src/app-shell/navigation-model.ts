@@ -1,19 +1,29 @@
+/** The destinations of the menu (the map of navigation of 26/10, § 1): eight, and Pendências while it has something. */
 export type NavId =
   | "attention"
-  | "categories"
   | "customers"
   | "dashboard"
-  | "devices"
-  | "expenses"
   | "history"
   | "home"
   | "inventory"
-  | "payment-profiles"
   | "products"
-  | "public-catalog"
   | "sale"
-  | "subscription";
+  | "settings";
 
+/** A screen of the shell: the one component a path opens; a screen with tabs holds several routes. */
+export type ScreenId =
+  | "attention"
+  | "customers"
+  | "dashboard"
+  | "home"
+  | "inventory"
+  | "products"
+  | "sale"
+  | "sale-detail"
+  | "sale-history"
+  | "settings";
+
+/** What is on screen: a screen, or the tab of one (each with its own behavior offline). */
 export type RouteId =
   | "account-security"
   | "attention"
@@ -28,7 +38,6 @@ export type RouteId =
   | "products"
   | "public-catalog"
   | "sale"
-  | "sale-customer"
   | "sale-detail"
   | "sale-history"
   | "subscription";
@@ -43,21 +52,14 @@ export interface NavItem {
   label: string;
 }
 
-/** The main menu, in the order of the daily workflow, by group of the sidebar (DESIGN.md, shell v5.1). */
+/** The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1). */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
   { group: null, href: "/sales", id: "sale", label: "Vender" },
   { group: null, href: "/sales/history", id: "history", label: "Histórico" },
   { group: "Catálogo", href: "/inventory", id: "inventory", label: "Estoque" },
   { group: "Catálogo", href: "/products", id: "products", label: "Produtos" },
-  {
-    group: "Catálogo",
-    href: "/categories",
-    id: "categories",
-    label: "Categorias",
-  },
   { group: "Catálogo", href: "/customers", id: "customers", label: "Clientes" },
-  { group: "Resultado", href: "/expenses", id: "expenses", label: "Despesas" },
   {
     group: "Resultado",
     href: "/dashboard",
@@ -66,64 +68,33 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     group: "Configurações",
-    href: "/payment-profiles",
-    id: "payment-profiles",
-    label: "Perfis de pagamento",
-  },
-  {
-    group: "Configurações",
-    href: "/public-catalog",
-    id: "public-catalog",
-    label: "Catálogo público",
+    href: "/configuracoes",
+    id: "settings",
+    label: "Configurações",
   },
 ];
 
-/**
- * The plan of the store (ADR 0104): only for whom may manage it (`billing:manage`) and only with the billing
- * self-service on; the first item of Configurações, as in the wireframe of the Assinatura (2 taps on the phone:
- * "Mais", then "Assinatura").
- */
-export const SUBSCRIPTION_NAV_ITEM: NavItem = {
-  group: "Configurações",
-  href: "/subscription",
-  id: "subscription",
-  label: "Assinatura",
+/** The ninth destination, only while this device has a refused record: after Histórico, with the count. */
+export const ATTENTION_NAV_ITEM: NavItem = {
+  group: null,
+  href: "/attention",
+  id: "attention",
+  label: "Pendências",
 };
 
-/**
- * The menu in its order: the "Assinatura" heads Configurações when it shows, and the items of the offline runtime
- * close the list.
- */
-export function menuItemsOf(options: {
-  offline: boolean;
-  subscription: boolean;
-}): NavItem[] {
-  const items: NavItem[] = [];
-  for (const item of NAV_ITEMS) {
-    if (
-      options.subscription &&
-      item.group === "Configurações" &&
-      !items.includes(SUBSCRIPTION_NAV_ITEM)
-    ) {
-      items.push(SUBSCRIPTION_NAV_ITEM);
-    }
-    items.push(item);
+/** The menu in its order: Pendências only while there is a refused record, and gone when it is back to zero. */
+export function menuItemsOf(options: { attention: boolean }): NavItem[] {
+  if (!options.attention) {
+    return [...NAV_ITEMS];
   }
-  return options.offline ? [...items, ...OFFLINE_NAV_ITEMS] : items;
+  const items = [...NAV_ITEMS];
+  items.splice(
+    items.findIndex((item) => item.id === "history") + 1,
+    0,
+    ATTENTION_NAV_ITEM
+  );
+  return items;
 }
-
-/**
- * Menu items that only exist while the offline runtime is on (a device is
- * registered only then), so they are not part of the main menu above.
- */
-export const OFFLINE_NAV_ITEMS: readonly NavItem[] = [
-  {
-    group: "Configurações",
-    href: "/devices",
-    id: "devices",
-    label: "Aparelhos",
-  },
-];
 
 /**
  * The destinations of the bottom bar of the phone, in order, before "Mais": Vender in the middle of the five (v7 § 3
@@ -142,13 +113,11 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 }
 
 /**
- * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose
- * area it is in (Estoque for Produtos, Categorias and Clientes), as in the reference of the shell v5.1. "more"
- * for the items of no destination of the bar, which "Mais" marks: Resultado and Despesas since the Início took
- * their place on the bar (desenho t269 v2, § 4), and Pendências, whose count "Mais" carries.
+ * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose area it
+ * is in (Estoque for Produtos and Clientes, map § 2). "more" for the items of no destination of the bar, which "Mais"
+ * marks: Pendências, Resultado and Configurações.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
-  categories: "inventory",
   customers: "inventory",
   products: "inventory",
 };
@@ -176,70 +145,203 @@ export function navGroups(
   return groups;
 }
 
-interface RouteDefinition {
-  id: RouteId;
-  /** The menu item shown as current; null keeps the menu without one. */
-  navId: NavId | null;
-  title: string;
+/* -------------------------------------------------------------------------- */
+/* Tabs                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** The tab is in the address (`?aba=`): a reload, a saved link and the copy offline open the same tab. */
+const TAB_PARAMETER = "aba";
+
+export type TabScreenId = "dashboard" | "products" | "settings";
+
+export interface ScreenTab {
+  label: string;
+  route: RouteId;
+  /** The value of `aba`; the first tab of a screen is the address without it. */
+  value: string;
+}
+
+/** The tabs of each screen that has them, in order (map § 1). */
+export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
+  {
+    dashboard: [
+      { label: "Resultado", route: "dashboard", value: "resultado" },
+      { label: "Metas", route: "dashboard", value: "metas" },
+      { label: "Despesas", route: "expenses", value: "despesas" },
+    ],
+    products: [
+      { label: "Produtos", route: "products", value: "produtos" },
+      { label: "Categorias", route: "categories", value: "categorias" },
+    ],
+    settings: [
+      {
+        label: "Formas de receber",
+        route: "payment-profiles",
+        value: "formas-de-receber",
+      },
+      {
+        label: "Catálogo público",
+        route: "public-catalog",
+        value: "catalogo-publico",
+      },
+      { label: "Aparelhos", route: "devices", value: "aparelhos" },
+      { label: "Assinatura", route: "subscription", value: "assinatura" },
+      { label: "Senha", route: "account-security", value: "senha" },
+    ],
+  };
+
+/**
+ * The tab an address asks of a screen: its `aba` when it is one of the screen's tabs, else the first. On the
+ * Resultado, the two links of the Início to the goals (`meta=nova`, `meta=lista`) ask for Metas and win over `aba`.
+ */
+export function requestedTab(screen: TabScreenId, search: string): ScreenTab {
+  const tabs = SCREEN_TABS[screen];
+  const params = new URLSearchParams(search);
+  const meta = params.get("meta");
+  const value =
+    screen === "dashboard" && (meta === "nova" || meta === "lista")
+      ? "metas"
+      : params.get(TAB_PARAMETER);
+  return tabs.find((tab) => tab.value === value) ?? (tabs[0] as ScreenTab);
 }
 
 /**
- * Sale detail and the customer link of a sale are reached from the history,
- * not from the menu, so the history stays the current item there.
+ * The tab to draw among the ones this person has (`available`), and whether the address must be rewritten to say it:
+ * the address asks for one this person does not have (Aparelhos without the offline runtime...) or names no tab of
+ * the screen at all (`?aba=xyz`).
  */
+export function openedTab(
+  screen: TabScreenId,
+  search: string,
+  available: readonly string[]
+): { rewrite: boolean; value: string } {
+  const asked = requestedTab(screen, search).value;
+  const named = new URLSearchParams(search).get(TAB_PARAMETER);
+  // the first tab of the screen that this person has, in the order of the screen
+  const first = SCREEN_TABS[screen].find((tab) =>
+    available.includes(tab.value)
+  )?.value;
+  const value = available.includes(asked) ? asked : (first ?? asked);
+  const unknown =
+    named !== null && !SCREEN_TABS[screen].some((tab) => tab.value === named);
+  return { rewrite: value !== asked || unknown, value };
+}
+
+/** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
+export function addressWithTab(
+  href: string,
+  screen: TabScreenId,
+  value: string
+): string {
+  const url = new URL(href, "https://polaris.invalid");
+  if (SCREEN_TABS[screen][0]?.value === value) {
+    url.searchParams.delete(TAB_PARAMETER);
+  } else {
+    url.searchParams.set(TAB_PARAMETER, value);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Routes                                                                     */
+/* -------------------------------------------------------------------------- */
+
+interface RouteDefinition {
+  /** The menu item shown as current; null keeps the menu without one. */
+  navId: NavId | null;
+  screen: ScreenId;
+  title: string;
+}
+
+/** The sale detail is reached from the history, not from the menu, so the history stays the current item there. */
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
-  "/": { id: "home", navId: "home", title: "Início" },
-  // no item of the menu: the sidebar shows none as current, and the bottom bar marks "Mais"
+  "/": { navId: "home", screen: "home", title: "Início" },
   "/attention": {
-    id: "attention",
     navId: "attention",
+    screen: "attention",
     title: "Pendências",
   },
-  "/categories": { id: "categories", navId: "categories", title: "Categorias" },
-  // reached from Aparelhos, only with the password on (ADR 0100)
-  "/conta/seguranca": {
-    id: "account-security",
-    navId: "devices",
-    title: "Trocar senha",
+  "/configuracoes": {
+    navId: "settings",
+    screen: "settings",
+    title: "Configurações",
   },
-  "/customers": { id: "customers", navId: "customers", title: "Clientes" },
-  "/dashboard": { id: "dashboard", navId: "dashboard", title: "Resultado" },
-  "/devices": { id: "devices", navId: "devices", title: "Aparelhos" },
-  "/expenses": { id: "expenses", navId: "expenses", title: "Despesas" },
-  "/inventory": { id: "inventory", navId: "inventory", title: "Estoque" },
-  "/payment-profiles": {
-    id: "payment-profiles",
-    navId: "payment-profiles",
-    title: "Perfis de pagamento",
-  },
-  "/products": { id: "products", navId: "products", title: "Produtos" },
-  "/public-catalog": {
-    id: "public-catalog",
-    navId: "public-catalog",
-    title: "Catálogo público",
-  },
-  "/sales": { id: "sale", navId: "sale", title: "Nova venda" },
-  "/sales/customer": {
-    id: "sale-customer",
-    navId: "history",
-    title: "Cliente da venda",
-  },
+  "/customers": { navId: "customers", screen: "customers", title: "Clientes" },
+  "/dashboard": { navId: "dashboard", screen: "dashboard", title: "Resultado" },
+  "/inventory": { navId: "inventory", screen: "inventory", title: "Estoque" },
+  "/products": { navId: "products", screen: "products", title: "Produtos" },
+  "/sales": { navId: "sale", screen: "sale", title: "Nova venda" },
   "/sales/detail": {
-    id: "sale-detail",
     navId: "history",
+    screen: "sale-detail",
     title: "Detalhe da venda",
   },
   "/sales/history": {
-    id: "sale-history",
     navId: "history",
+    screen: "sale-history",
     title: "Histórico de vendas",
   },
+};
+
+/**
+ * The screens that became tabs (map § 6) keep their addresses for a saved link and for the copy on the device: each
+ * opens its tab, with the rest of its query and its hash (the return of a checkout, `?retorno=`, goes on).
+ */
+const LEGACY_ADDRESSES: Readonly<
+  Record<string, { path: string; screen: TabScreenId; tab: string }>
+> = {
+  "/categories": { path: "/products", screen: "products", tab: "categorias" },
+  "/conta/seguranca": {
+    path: "/configuracoes",
+    screen: "settings",
+    tab: "senha",
+  },
+  "/devices": { path: "/configuracoes", screen: "settings", tab: "aparelhos" },
+  "/expenses": { path: "/dashboard", screen: "dashboard", tab: "despesas" },
+  "/payment-profiles": {
+    path: "/configuracoes",
+    screen: "settings",
+    tab: "formas-de-receber",
+  },
+  "/public-catalog": {
+    path: "/configuracoes",
+    screen: "settings",
+    tab: "catalogo-publico",
+  },
   "/subscription": {
-    id: "subscription",
-    navId: "subscription",
-    title: "Assinatura",
+    path: "/configuracoes",
+    screen: "settings",
+    tab: "assinatura",
   },
 };
+
+/** The address of the tab an old address opens (map § 6), or null for any other address. */
+export function legacyAddress(
+  pathname: string,
+  search: string,
+  hash: string
+): string | null {
+  const normalized = pathname.replace(trailingSlashes, "") || "/";
+  const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
+    ? LEGACY_ADDRESSES[normalized]
+    : undefined;
+  if (!target) {
+    return null;
+  }
+  return addressWithTab(
+    `${target.path}${search}${hash}`,
+    target.screen,
+    target.tab
+  );
+}
+
+/** The address of a tab, for a link from another screen. */
+export function tabHref(screen: TabScreenId, value: string): string {
+  const path = Object.entries(ROUTES).find(
+    ([, route]) => route.screen === screen
+  )?.[0];
+  return addressWithTab(path ?? "/", screen, value);
+}
 
 /**
  * Screens that read and save on the server and have no copy on the device: offline they cannot work, so the
@@ -253,7 +355,6 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "expenses",
   "payment-profiles",
   "public-catalog",
-  "sale-customer",
   "sale-detail",
   "subscription",
 ];
@@ -275,31 +376,49 @@ export type ResolvedRoute =
   | {
       /** For the connection notice of an online-only screen: whether it holds a form to type in. */
       connectionForm: boolean;
+      /** The screen, or the tab of the screen, on screen. */
       id: RouteId;
       kind: "page";
       navId: NavId | null;
       onlineOnly: boolean;
+      screen: ScreenId;
       title: string;
     };
 
 const trailingSlashes = /\/+$/;
 
-/** Maps a location pathname to a page, or to the not-found page. */
-export function resolveRoute(pathname: string): ResolvedRoute {
+function isTabScreen(screen: ScreenId): screen is TabScreenId {
+  return Object.hasOwn(SCREEN_TABS, screen);
+}
+
+/** Maps a location (its pathname, and its query for the tab) to a page, or to the not-found page. */
+export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
     : undefined;
-  return route
-    ? {
-        connectionForm: !ONLINE_ONLY_WITHOUT_FORM.includes(route.id),
-        id: route.id,
-        kind: "page",
-        navId: route.navId,
-        onlineOnly: ONLINE_ONLY_ROUTES.includes(route.id),
-        title: route.title,
-      }
-    : { kind: "not-found", title: "Página não encontrada" };
+  if (!route) {
+    return { kind: "not-found", title: "Página não encontrada" };
+  }
+  let id = route.screen as RouteId;
+  let { title } = route;
+  if (isTabScreen(route.screen)) {
+    const tab = requestedTab(route.screen, search);
+    id = tab.route;
+    // the first tab is the screen itself; another one names the page by its own name
+    if (tab !== SCREEN_TABS[route.screen][0]) {
+      title = tab.label;
+    }
+  }
+  return {
+    connectionForm: !ONLINE_ONLY_WITHOUT_FORM.includes(id),
+    id,
+    kind: "page",
+    navId: route.navId,
+    onlineOnly: ONLINE_ONLY_ROUTES.includes(id),
+    screen: route.screen,
+    title,
+  };
 }
 
 /**
