@@ -1,3 +1,10 @@
+import { MoneyText } from "@/ui/hidden-values";
+import {
+  MASKED_MONEY,
+  MASKED_SPOKEN,
+  maskMoney,
+  useHiddenValues,
+} from "../lib/hidden-values";
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import { useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -131,12 +138,12 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
                 {row.tableLabel}
               </TableHead>
               <TableCell className={CARD_CELL} data-label="Vendas líquidas">
-                {formatBrlAmount(row.netSales)}
+                <MoneyText text={formatBrlAmount(row.netSales)} />
               </TableCell>
               {hasCosts ? (
                 <>
                   <TableCell className={CARD_CELL} data-label="Custos">
-                    {costText(row.costs)}
+                    <MoneyText text={costText(row.costs)} />
                   </TableCell>
                   <TableCell
                     className={cn(
@@ -145,13 +152,17 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
                     )}
                     data-label="Resultado do dia"
                   >
-                    {costText(row.operatingResult)}
+                    <MoneyText text={costText(row.operatingResult)} />
                   </TableCell>
                   <TableCell
                     className={CARD_CELL}
                     data-label="Despesas do período"
                   >
-                    {row.expenses ? formatBrlAmount(row.expenses) : EMPTY_CELL}
+                    {row.expenses ? (
+                      <MoneyText text={formatBrlAmount(row.expenses)} />
+                    ) : (
+                      EMPTY_CELL
+                    )}
                   </TableCell>
                 </>
               ) : null}
@@ -165,7 +176,9 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
                 className="@max-3xl:block @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
                 colSpan={columns}
               >
-                {`Depois de hoje: despesas ${formatBrlAmount(series.afterToday)}`}
+                <MoneyText
+                  text={`Depois de hoje: despesas ${formatBrlAmount(series.afterToday)}`}
+                />
               </TableCell>
             </TableRow>
           </TableFooter>
@@ -228,14 +241,14 @@ function Totals({
       <div className="grid gap-0.5">
         <dt className="text-muted-foreground text-support">Vendas líquidas</dt>
         <dd className="font-semibold text-lg tabular-nums">
-          {formatBrlAmount(salesTotal)}
+          <MoneyText text={formatBrlAmount(salesTotal)} />
         </dd>
       </div>
       {costsTotal ? (
         <div className="grid gap-0.5">
           <dt className="text-muted-foreground text-support">Custos</dt>
           <dd className="font-semibold text-lg tabular-nums">
-            {formatBrlAmount(costsTotal)}
+            <MoneyText text={formatBrlAmount(costsTotal)} />
           </dd>
         </div>
       ) : null}
@@ -267,26 +280,47 @@ function useDrawingData({ costsDrawn, rows }: ResultSeries) {
         : null,
     [costsDrawn, rows]
   );
-  const note = useCallback((index: number) => readingNote(rows[index]), [rows]);
-  return { data, note, secondary };
+  const [hidden] = useHiddenValues();
+  const note = useCallback(
+    (index: number) => {
+      const text = readingNote(rows[index]);
+      return text && hidden ? maskMoney(text) : text;
+    },
+    [hidden, rows]
+  );
+  const spoken = useCallback(
+    (index: number) => {
+      const text = readingNote(rows[index]);
+      return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
+    },
+    [hidden, rows]
+  );
+  return { data, note, secondary, spoken };
 }
+
+const maskedValue = () => MASKED_MONEY;
+const spokenMasked = () => MASKED_SPOKEN;
+const noAxis = () => "";
 
 /** The area chart of the charts chunk, with the sales and, when the cost of every day is known, the dashed cost line. */
 function Drawing({ label, series }: { label: string; series: ResultSeries }) {
-  const { data, note, secondary } = useDrawingData(series);
+  const { data, note, secondary, spoken } = useDrawingData(series);
+  const [hidden] = useHiddenValues();
   return (
     <OnDemandAreaChart
-      axisUnit="R$"
       data={data}
       failed={<ChartFailed />}
-      formatAxis={axisMoney}
-      formatValue={moneyText}
+      formatAxis={hidden ? noAxis : axisMoney}
+      formatSpoken={hidden ? spokenMasked : moneyText}
+      formatValue={hidden ? maskedValue : moneyText}
+      {...(hidden ? {} : { axisUnit: "R$" })}
       height={series.costsDrawn || series.rows.length > 7 ? 220 : 180}
-      label={label}
+      label={hidden ? maskMoney(label, MASKED_SPOKEN) : label}
       legend="Vendas líquidas"
       name="Vendas"
       rangeLabel={series.grouped ? "Mês" : "Dia"}
       readingNote={note}
+      spokenNote={spoken}
       {...(secondary ? { secondary } : {})}
     />
   );
@@ -384,7 +418,11 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             {costsNote(unknown, source === "cache")}
           </p>
         )}
-        {best ? <p className="text-support">{best}</p> : null}
+        {best ? (
+          <p className="text-support">
+            <MoneyText text={best} />
+          </p>
+        ) : null}
         <Body label={label} series={series} />
         {rows.length > 0 ? (
           <NumbersToggle

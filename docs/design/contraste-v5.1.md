@@ -44,7 +44,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **3.57** | 3 | ✓ |
 | `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.28** | 1.0 | ✓ |
 | `border` / `background` | divisória sobre o fundo | border-border | **1.23** | 1.0 | ✓ |
-| `chart-1` / `card` | barra em destaque (melhor dia) | Chart | **3.71** | 3 | ✓ |
+| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **3.71** | 3 | ✓ |
+| `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **3.70** | 3 | ✓ |
+| `chart-result` / `card` | série do resultado (v7) | Chart | **5.87** | 3 | ✓ |
+| `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.37** | 3 | ✓ |
+| `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.36** | 3 | ✓ |
+| `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **7.06** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.26** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **3.64** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.79** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **12.27** | 3 | ✓ |
@@ -107,7 +113,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **6.03** | 3 | ✓ |
 | `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.32** | 1.0 | ✓ |
 | `border` / `background` | divisória sobre o fundo | border-border | **1.43** | 1.0 | ✓ |
-| `chart-1` / `card` | barra em destaque (melhor dia) | Chart | **7.67** | 3 | ✓ |
+| `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **7.67** | 3 | ✓ |
+| `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **5.72** | 3 | ✓ |
+| `chart-result` / `card` | série do resultado (v7) | Chart | **4.38** | 3 | ✓ |
+| `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.89** | 3 | ✓ |
+| `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.44** | 3 | ✓ |
+| `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **8.62** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.05** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **4.22** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.69** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **9.85** | 3 | ✓ |
@@ -142,3 +154,4 @@ Notas:
 - `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
+- Rampa do mapa de calor (`--chart-heat-1` a `-4`, v7, ainda sem tela): monótona, um matiz, passos de 1,42 / 1,55 / 1,86 (claro) e 1,69 / 1,74 / 1,76 (escuro) entre níveis vizinhos. O nível 1 tem 1,39:1 sobre o cartão no claro: a escala é sequencial e o tom mais claro recua para o fundo de propósito; o dia sem venda não depende dele, porque é outra forma (quadrado vazio com contorno). Fica fora da tabela testada por isso.

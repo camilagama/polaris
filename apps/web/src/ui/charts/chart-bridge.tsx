@@ -27,39 +27,118 @@ export interface ChartHandle {
   show: (index: number) => void;
 }
 
-/** The ring of the best day: the emerald (`--chart-1`) is the one use of it, with the sentence under the chart. */
-function BestDay({ index }: { index: number }) {
-  const { data, isLoaded, xAccessor, xScale } = useChart();
+/** Which days carry a ring: every day (a week, v7 § 4), only the best one and today (30 days), or only the best one. */
+export type DayMarkers = "all" | "best" | "key";
+
+/**
+ * The rings of the days, in the color of the series (v7 § 4): a day that sold has a full ring and a day with no sale a
+ * hollow one on the floor, so the eye reads days and not a continuous hill; the best day is a larger ring (its shape,
+ * not a color, marks it, with the sentence under the chart). With `label`, the value of the best day and of today is
+ * written above its ring (a touch has no hover); the drawing is inside the image, the numbers are in the text too.
+ */
+function DayMarks({
+  best,
+  color,
+  label,
+  markers,
+}: {
+  best: number | null;
+  color: string;
+  label: ((value: number) => string) | null;
+  markers: DayMarkers;
+}) {
+  const { data, innerWidth, isLoaded, xAccessor, xScale } = useChart();
   const yScale = useYScale();
-  const point = data[index];
-  const value = point?.drawn;
-  if (!(isLoaded && point) || typeof value !== "number") {
+  if (!isLoaded) {
     return null;
   }
+  const last = data.length - 1;
+  const shown = data.flatMap((point, index) => {
+    const value = point.drawn;
+    const wanted =
+      markers === "all" ||
+      index === best ||
+      (markers === "key" && index === last);
+    return wanted && typeof value === "number"
+      ? [
+          {
+            index,
+            value,
+            x: xScale(xAccessor(point)) ?? 0,
+            y: yScale(value) ?? 0,
+          },
+        ]
+      : [];
+  });
+  const labelled = new Set(
+    label ? [best, last].filter((index) => index !== null) : []
+  );
   return (
-    <circle
-      className="stroke-card"
-      cx={xScale(xAccessor(point)) ?? 0}
-      cy={yScale(value) ?? 0}
-      data-chart-best=""
-      fill="var(--chart-1)"
-      r={4}
-      strokeWidth={2}
-    />
+    <g data-chart-marks="">
+      {shown.map((mark) => {
+        const sold = mark.value > 0;
+        return (
+          <circle
+            className={sold ? "stroke-card" : undefined}
+            cx={mark.x}
+            cy={mark.y}
+            data-chart-best={mark.index === best ? "" : undefined}
+            data-chart-mark={sold ? "sold" : "none"}
+            fill={sold ? color : "var(--card)"}
+            key={mark.index}
+            r={mark.index === best ? 5.5 : 3.5}
+            stroke={sold ? undefined : color}
+            strokeWidth={sold ? 2 : 1.5}
+          />
+        );
+      })}
+      {label
+        ? shown
+            .filter((mark) => labelled.has(mark.index))
+            .map((mark) => {
+              // the label of a ring near an edge is anchored inside the plot, so it is never cut
+              let anchor: "end" | "middle" | "start" = "middle";
+              if (mark.x > innerWidth - 32) {
+                anchor = "end";
+              } else if (mark.x < 32) {
+                anchor = "start";
+              }
+              return (
+                <text
+                  className="fill-foreground font-medium text-[11px] tabular-nums"
+                  data-chart-value-label=""
+                  key={`label-${mark.index}`}
+                  textAnchor={anchor}
+                  x={mark.x}
+                  y={Math.max(10, mark.y - 10)}
+                >
+                  {label(mark.value)}
+                </text>
+              );
+            })
+        : null}
+    </g>
   );
 }
 
 /**
  * The part of the chart that lives inside the blocks' context: it gives the keyboard control a handle on the tooltip
  * (the context has the scales and the setter of the point in focus, the control is outside it, a sibling of the image)
- * and draws the best day. It draws nothing else.
+ * and draws the rings of the days (and, when asked, the value of the best day and of today). It draws nothing else.
  */
 export function ChartBridge({
   bestIndex,
+  color,
   handle,
+  label = null,
+  markers = "best",
 }: {
   bestIndex: number | null;
+  /** The color of the series: the rings are drawn in it. */
+  color: string;
   handle: MutableRefObject<ChartHandle | null>;
+  label?: ((value: number) => string) | null;
+  markers?: DayMarkers;
 }) {
   const { data, isLoaded, lines, setTooltipData, xAccessor, xScale, yScale } =
     useChart();
@@ -110,5 +189,7 @@ export function ChartBridge({
     xScale,
     yScale,
   ]);
-  return bestIndex === null ? null : <BestDay index={bestIndex} />;
+  return (
+    <DayMarks best={bestIndex} color={color} label={label} markers={markers} />
+  );
 }

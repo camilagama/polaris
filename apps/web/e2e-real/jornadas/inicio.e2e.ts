@@ -82,9 +82,9 @@ test("início: a venda de hoje aparece em Hoje e abrir a tela não grava nada no
   await expect(
     page.getByRole("heading", { level: 1, name: "Início" })
   ).toBeVisible();
-  const today = page.getByRole("region", { name: "Hoje" });
+  const today = page.getByRole("region", { name: "Vendas hoje" });
   await expect(today).toContainText("R$ 90,00");
-  await expect(today).toContainText("Vendas líquidas · 1 venda");
+  await expect(today).toContainText("1 venda");
   await expect(page.getByRole("region", { name: "Meta" })).toContainText(
     "Nenhuma meta em andamento."
   );

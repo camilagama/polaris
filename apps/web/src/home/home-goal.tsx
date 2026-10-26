@@ -2,6 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { buttonVariants } from "@/ui/button";
+import { MoneyText } from "@/ui/hidden-values";
 import { Progress } from "@/ui/progress";
 import {
   formatGoalPercent,
@@ -9,6 +10,11 @@ import {
   goalProgressWidth,
   goalTitle,
 } from "../dashboard/goal-model";
+import {
+  MASKED_SPOKEN,
+  maskMoney,
+  useHiddenValues,
+} from "../lib/hidden-values";
 import { type GoalView, goalPeriodShort, type OfflineGoal } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import type { Block } from "./use-home";
@@ -23,6 +29,10 @@ const LINK =
 
 function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
   const { progress } = goal;
+  const [hidden] = useHiddenValues();
+  const spokenProgress = progress
+    ? `${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}, ${formatGoalPercent(progress.percent)}`
+    : "";
   let state: string | null = null;
   if (goal.paused) {
     state = "Pausada pelo plano: não é medida";
@@ -47,13 +57,17 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
       {progress && !goal.paused ? (
         <Progress
           aria-label={`Progresso de ${goalTitle(goal)}`}
-          aria-valuetext={`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}, ${formatGoalPercent(progress.percent)}`}
+          aria-valuetext={
+            hidden ? maskMoney(spokenProgress, MASKED_SPOKEN) : spokenProgress
+          }
           className="gap-1.5"
           value={goalProgressWidth(progress.percent)}
         >
           <span className="flex w-full flex-wrap items-baseline justify-between gap-x-3 text-sm">
             <span className="tabular-nums">
-              {`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+              <MoneyText
+                text={`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+              />
             </span>
             <span className="font-medium tabular-nums">
               {formatGoalPercent(progress.percent)}
@@ -111,7 +125,9 @@ function SettledGoal({
       </div>
       {goal.achievedValue === null ? null : (
         <p className="text-support tabular-nums">
-          {`Chegou a ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)}.`}
+          <MoneyText
+            text={`Chegou a ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)}.`}
+          />
         </p>
       )}
       {online ? (

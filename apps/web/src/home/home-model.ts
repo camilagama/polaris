@@ -2,13 +2,13 @@ import type { GoalReadModel, PeriodSummaryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { Money } from "@polaris/domain/money/money";
 import { groupGoals } from "../dashboard/goal-model";
-import { calendarDayInTimezone } from "../lib/dates";
+import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
 /**
- * Pure rules of the Início (desenho t269 v2, § 2.4 and § 5): which periods it reads, what "today" is, the series of
- * the miniatures and of the chart, the comparison with the previous month, which goal the card shows, the lines of
- * "Precisa de atenção" and the checklist of a store with no sale. Every figure is the server's; money is added in
+ * Pure rules of the Início (desenho t269 v2, § 2.4 and § 5): which periods it reads, what "today" is, the line under
+ * the title, the series of the chart, which goal the card shows, the lines of "Precisa de atenção" and the checklist
+ * of a store with no sale (the KPI cards are in home-kpis.ts). Every figure is the server's; money is added in
  * exact cents (`Money`), never as a float, and the numbers given to a drawing are only for the drawing.
  */
 
@@ -30,13 +30,13 @@ function utcDate(day: string): Date {
 }
 
 /** A calendar day `days` away from `day` (YYYY-MM-DD), with no time zone in the way. */
-function addDays(day: string, days: number): string {
+export function addDays(day: string, days: number): string {
   return new Date(utcDate(day).getTime() + days * DAY)
     .toISOString()
     .slice(0, 10);
 }
 
-function firstOfMonth(day: string): string {
+export function firstOfMonth(day: string): string {
   return `${day.slice(0, 7)}-01`;
 }
 
@@ -132,11 +132,6 @@ function dayOf(series: Daily, date: string) {
   );
 }
 
-/** Hoje: the item of today in the series of the month (AC-5: the same figures as a period of that day alone). */
-export function todayFigures(month: Daily, today: string) {
-  return dayOf(month, today);
-}
-
 /** The `days` days that end on `today`, from B and A together: the miniature of Hoje (7) and the chart (7 or 30). */
 export function lastDays(
   before: Daily,
@@ -150,11 +145,6 @@ export function lastDays(
   );
 }
 
-/** The days of the month up to today: the miniature of the Mês. */
-export function monthUntilToday(month: Daily, today: string): Daily {
-  return month.filter((entry) => entry.date <= today);
-}
-
 /** The exact sum of the net sales of some days, as BRL text. */
 export function sumNetSales(series: Daily): string {
   return series
@@ -163,10 +153,6 @@ export function sumNetSales(series: Daily): string {
       Money.fromMinorUnits(0n)
     )
     .toString();
-}
-
-function countSales(series: Daily): number {
-  return series.reduce((total, entry) => total + entry.salesCount, 0);
 }
 
 /** The number given to a drawing: cents to reais. Only for the drawing; what is written comes from the text. */
@@ -228,47 +214,32 @@ export function monthTitle(day: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+const WEEKDAY_NAMES = [
+  "Domingo",
+  "Segunda-feira",
+  "Terça-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sábado",
+] as const;
+
 /**
- * The line of meaning of the Mês (AC-7): the net sales from the 1st to today against the same days of the previous
- * month (on 31 March, 1 to 28 February), only when both have a sale; never a percent, never over a zero base.
+ * The line under the title (v7 § 3 item 1): the store's today written out and the time of the server's read, "Sexta-
+ * feira, 23 de outubro · atualizado às 12:00". The date is the store's day of the read, never the device's.
  */
-export function monthComparison(
-  before: Daily,
-  month: Daily,
-  today: string
-): string | null {
-  const day = Number(today.slice(8, 10));
-  const previousFirst = firstOfMonth(addDays(firstOfMonth(today), -1));
-  const previousLast = lastOfMonth(previousFirst);
-  const previousTo = addDays(
-    previousFirst,
-    Math.min(day, Number(previousLast.slice(8, 10))) - 1
-  );
-  const current = month.filter(
-    (entry) => entry.date >= firstOfMonth(today) && entry.date <= today
-  );
-  const previous = before.filter(
-    (entry) => entry.date >= previousFirst && entry.date <= previousTo
-  );
-  // the previous month must be whole in B: a short B (an old copy) says nothing instead of comparing with less
-  if (
-    previous.length !== Math.min(day, Number(previousLast.slice(8, 10))) ||
-    countSales(current) === 0 ||
-    countSales(previous) === 0
-  ) {
-    return null;
+export function homeUpdatedLine(
+  generatedAt: string,
+  timezone: string | null
+): string {
+  const instant = new Date(generatedAt);
+  if (Number.isNaN(instant.getTime())) {
+    return "";
   }
-  const difference = Money.from(sumNetSales(current)).subtract(
-    Money.from(sumNetSales(previous))
-  ).minorUnits;
-  const name = monthName(previousFirst);
-  if (difference === 0n) {
-    return `Igual ao mesmo período de ${name}`;
-  }
-  const amount = formatBrlAmount(
-    Money.fromMinorUnits(difference < 0n ? -difference : difference).toString()
-  );
-  return `${amount} a ${difference > 0n ? "mais" : "menos"} que no mesmo período de ${name}`;
+  const day = calendarDayInTimezone(instant, timezone);
+  const weekday = WEEKDAY_NAMES[utcDate(day).getUTCDay()] ?? "";
+  const { time } = clockPartsInTimezone(instant, timezone);
+  return `${weekday}, ${Number(day.slice(8, 10))} de ${monthName(day)} · atualizado às ${time}`;
 }
 
 /** "1 venda", "3 vendas". */
@@ -334,6 +305,9 @@ function variantsText(page: BalancesPage): string {
 export interface AttentionLine {
   href: string;
   id: "device" | "unknown-cost" | "without-stock";
+  /** The next step, written (v7 § 3 item 8): "Informe para as próximas vendas." */
+  next: string;
+  /** What needs attention, with its number: "1 variante sem custo". */
   text: string;
 }
 
@@ -363,6 +337,7 @@ export function attentionLines(input: AttentionInput): AttentionLine[] {
     lines.push({
       href: "/attention",
       id: "device",
+      next: "Corrija e envie de novo.",
       text:
         input.refused === 1
           ? "1 operação deste aparelho precisa de atenção"
@@ -378,13 +353,15 @@ export function attentionLines(input: AttentionInput): AttentionLine[] {
     lines.push({
       href: "/inventory?filtro=sem-custo",
       id: "unknown-cost",
-      text: `${variantsText(input.unknownCost)} sem custo. Informe para as próximas vendas.`,
+      next: "Informe para as próximas vendas.",
+      text: `${variantsText(input.unknownCost)} sem custo`,
     });
   }
   if (input.withoutStock !== null && input.withoutStock.count > 0) {
     lines.push({
       href: "/inventory?filtro=sem-saldo",
       id: "without-stock",
+      next: "Dê entrada no estoque.",
       text: `${variantsText(input.withoutStock)} sem saldo`,
     });
   }
