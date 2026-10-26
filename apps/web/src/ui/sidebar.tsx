@@ -114,6 +114,7 @@ function SidebarProvider({
       if (
         event.key.toLowerCase() === SIDEBAR_KEYBOARD_SHORTCUT &&
         (event.metaKey || event.ctrlKey) &&
+        !event.repeat &&
         !event.altKey &&
         !event.shiftKey
       ) {

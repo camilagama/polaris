@@ -103,8 +103,8 @@ export function StoreCard({
         >
           {storeInitials(name)}
         </span>
-        {/* folded, the column keeps only the button of the menu: the store is said in its name */}
-        <span className="grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
+        {/* folded, the column keeps only the button of the menu: the store stays for the screen reader, out of sight */}
+        <span className="grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:sr-only">
           <span className="truncate font-medium text-sm">
             {organization ? <span className="sr-only">Loja: </span> : null}
             {name}
