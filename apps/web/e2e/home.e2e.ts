@@ -19,6 +19,8 @@ const LEASE_KEY = {
   id: "teste",
   secret: "teste-secret-teste-secret-teste-secret-0123456789",
 };
+/** Any amount in reais, as the page or a slider would say it. */
+const AN_AMOUNT = /R\$ -?\d/;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const DEVICE = {
@@ -73,14 +75,14 @@ function signedMoney(cents: number): string {
 interface Scenario {
   /** Net sales in cents and the count of each day that sold. */
   days: Record<string, [number, number]>;
+  /** What `sale.list` finds: none, or a sale (cancelled, out of A and B). */
+  everSold: boolean;
+  goals: unknown[];
   /**
    * The result of each day in cents, null for a day with an unknown cost; with it, every day of the series carries its
    * costs and result (a day not listed has a result of zero). Without it, the series has no costs (an older server).
    */
   results?: Record<string, number | null>;
-  /** What `sale.list` finds: none, or a sale (cancelled, out of A and B). */
-  everSold: boolean;
-  goals: unknown[];
   /** Item lines of the month sold without a known cost. */
   soldWithoutCost: number;
   /** Variants (balances) the lists return, by filter. */
@@ -998,6 +1000,16 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(main).not.toContainText("R$ 2.660,60");
     await expect(main).not.toContainText("R$ 747,18");
     await expect(main).not.toContainText("R$ 1.840,00");
+    // no amount anywhere in the page, the chip in reais of the result included, nor in what a slider says
+    await expect(main).not.toContainText(AN_AMOUNT);
+    await expect(region(page, "Resultado estimado")).toContainText("R$ ••••");
+    const spoken = await main
+      .getByRole("slider")
+      .evaluateAll((sliders) =>
+        sliders.map((slider) => slider.getAttribute("aria-valuetext") ?? "")
+      );
+    expect(spoken.length).toBeGreaterThan(1);
+    expect(spoken.filter((text) => AN_AMOUNT.test(text))).toEqual([]);
     await expect(
       region(page, "Vendas hoje").locator("[data-kpi-value]")
     ).toHaveText("R$ ••••valor escondido");
