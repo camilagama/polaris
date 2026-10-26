@@ -1,3 +1,4 @@
+import { MoneyText } from "@/ui/hidden-values";
 import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount } from "../lib/format";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
@@ -55,7 +56,7 @@ export function PartsBar({
             />
             <span>{part.label}</span>
             <span className="font-medium tabular-nums">
-              {formatBrlAmount(part.value)}
+              <MoneyText text={formatBrlAmount(part.value)} />
             </span>
             {part.incomplete ? (
               <span className="text-warning text-xs italic">incompleto</span>

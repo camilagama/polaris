@@ -1,3 +1,9 @@
+import { MoneyText } from "@/ui/hidden-values";
+import {
+  MASKED_SPOKEN,
+  maskMoney,
+  useHiddenValues,
+} from "../lib/hidden-values";
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
@@ -81,38 +87,43 @@ function progressTargetText(goal: GoalReadModel): string {
 
 function GoalProgress({ goal }: { goal: GoalReadModel }) {
   const { progress } = goal;
+  const [hidden] = useHiddenValues();
   const targetText = progressTargetText(goal);
   if (goal.paused) {
     return (
       <p className={MUTED}>
-        Alvo: {targetText}. Seu plano permite menos metas em andamento do que
-        você tem, então esta meta está pausada: ela não é medida nem pode ser
-        editada, mas continua aqui. Você pode cancelá-la, ou ela volta quando o
-        plano permitir.
+        Alvo: <MoneyText text={targetText} />. Seu plano permite menos metas em
+        andamento do que você tem, então esta meta está pausada: ela não é
+        medida nem pode ser editada, mas continua aqui. Você pode cancelá-la, ou
+        ela volta quando o plano permitir.
       </p>
     );
   }
   if (progress === null) {
     return (
       <p className={MUTED}>
-        Alvo: {targetText}. O progresso não está disponível agora; atualize as
-        metas.
+        Alvo: <MoneyText text={targetText} />. O progresso não está disponível
+        agora; atualize as metas.
       </p>
     );
   }
   const width = goalProgressWidth(progress.percent);
+  const spoken = (text: string) =>
+    hidden ? maskMoney(text, MASKED_SPOKEN) : text;
   const valueText = formatGoalValue(goal.kind, progress.value);
   const percentText = formatGoalPercent(progress.percent);
   return (
     <Progress
       aria-label={`Progresso de ${goalTitle(goal)}`}
-      aria-valuetext={`${valueText} de ${targetText}, ${percentText}`}
+      aria-valuetext={spoken(`${valueText} de ${targetText}, ${percentText}`)}
       value={width}
     >
       <span className="font-medium text-sm tabular-nums">
-        <span className="font-semibold">{valueText}</span>{" "}
+        <span className="font-semibold">
+          <MoneyText text={valueText} />
+        </span>{" "}
         <span className="font-normal text-muted-foreground">
-          de {targetText}
+          de <MoneyText text={targetText} />
         </span>
       </span>
       <ProgressValue className="font-medium text-foreground">
@@ -138,23 +149,26 @@ function SettledResult({
   if (goal.status === "completed") {
     return (
       <p className="text-muted-foreground text-support">
-        Alvo de {targetText}
-        {achieved ? ` atingido com ${achieved}` : " atingido"} (conferido em{" "}
-        {date}).
+        Alvo de <MoneyText text={targetText} />
+        <MoneyText
+          text={achieved ? ` atingido com ${achieved}` : " atingido"}
+        />{" "}
+        (conferido em {date}).
       </p>
     );
   }
   if (goal.status === "missed") {
     return (
       <p className="text-muted-foreground text-support">
-        O período terminou sem atingir o alvo de {targetText}
-        {achieved ? `: o resultado foi ${achieved}` : ""}. Encerrada em {date}.
+        O período terminou sem atingir o alvo de <MoneyText text={targetText} />
+        <MoneyText text={achieved ? `: o resultado foi ${achieved}` : ""} />.
+        Encerrada em {date}.
       </p>
     );
   }
   return (
     <p className="text-muted-foreground text-support">
-      Alvo de {targetText}. Cancelada em {date}.
+      Alvo de <MoneyText text={targetText} />. Cancelada em {date}.
     </p>
   );
 }

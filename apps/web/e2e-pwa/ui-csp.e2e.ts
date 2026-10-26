@@ -236,7 +236,9 @@ test("o Início abre com o gráfico sob a CSP do _headers, sem nenhuma violaçã
   await chart.getByRole("tab", { name: "30 dias" }).click();
   await expect(chart.getByRole("img")).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Hoje" }).locator("svg")
+    page
+      .getByRole("region", { name: "Vendas hoje" })
+      .locator("[data-kpi-spark] svg")
   ).toBeVisible();
   expect(csp.violations()).toEqual([]);
 });
