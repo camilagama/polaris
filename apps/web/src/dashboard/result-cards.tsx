@@ -13,9 +13,17 @@ import {
 } from "../lib/hidden-values";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { useIsMobile } from "../lib/use-mobile";
-import { formatPercentOrDash, isIncompleteEstimate } from "./dashboard-model";
-import { noKnownCost, type ResultKpis, resultKpis } from "./result-kpis";
-import type { ComparisonDays } from "./use-period-summary";
+import {
+  formatPercentOrDash,
+  isIncompleteEstimate,
+  NO_KNOWN_COST_NOTE,
+} from "./dashboard-model";
+import {
+  type ResultKpis,
+  resultKpis,
+  summaryHasNoKnownCost,
+} from "./result-kpis";
+import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
   // two columns at 320 px leave less room than the words: the badge breaks its line inside its own box
@@ -30,7 +38,7 @@ export function IncompleteBadge() {
 }
 
 /** The lines of the two cards when no cost of the period is known (never a margin or a result made of zero costs). */
-const NO_COST_MARGIN = "Sem custo conhecido no período.";
+const NO_COST_MARGIN = NO_KNOWN_COST_NOTE;
 const NO_COST_RESULT = "Sem custo conhecido: o resultado não dá para estimar.";
 
 function IncompleteBadgeLine() {
@@ -99,6 +107,8 @@ type SparkColor =
 interface ResultCardsProps {
   /** The days of the period before, read for the chips; null while not read (or not readable): no chip. */
   comparison: ComparisonDays | null;
+  /** The same days as `dailySales` read them: the chips of sales and ticket; null while not read (or not readable). */
+  salesComparison: ComparisonSales | null;
   summary: StoredPeriodSummary;
   today: string;
 }
@@ -113,7 +123,12 @@ interface ResultCardsProps {
  * the server's, with no sparkline. On a phone the
  * sparklines are drawn finished; the reading by the finger stays (t386).
  */
-export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
+export function ResultCards({
+  comparison,
+  salesComparison,
+  summary,
+  today,
+}: ResultCardsProps) {
   const still = useIsMobile();
   const [hidden] = useHiddenValues();
   const { cards, quality } = summary;
@@ -125,9 +140,10 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
         daily,
         period: summary.period,
         previous: comparison,
+        previousSales: salesComparison,
         today,
       }),
-    [cards, comparison, daily, summary.period, today]
+    [cards, comparison, daily, salesComparison, summary.period, today]
   );
   const [index, setIndex] = useState<number | null>(null);
   const clear = useCallback(() => setIndex(null), []);
@@ -163,7 +179,7 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
   // a period with no sale draws nothing; a copy kept before the series existed has the totals only
   const drawn = cards.salesCount > 0 && kpis.days.length > 0;
   // no cost known at all: the server's margin and result are the sales, so the two cards say so and show no number
-  const noCost = noKnownCost(kpis.days, quality);
+  const noCost = summaryHasNoKnownCost(summary, today);
   const incomplete =
     noCost ||
     isIncompleteEstimate(quality) ||

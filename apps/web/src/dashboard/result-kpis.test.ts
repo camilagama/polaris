@@ -4,6 +4,7 @@ import {
   comparisonPeriod,
   noKnownCost,
   rangeText,
+  resultChipPeriod,
   resultKpis,
 } from "./result-kpis";
 import { addDays } from "./result-period";
@@ -77,6 +78,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.days).toHaveLength(25);
@@ -99,12 +101,87 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(kpis.series.result).toHaveLength(25);
   });
 
+  it("takes the chips of sales and ticket from the sales read (dailySales) and the chip of the result from the summary", () => {
+    // the sales read is the weaker month (R$ 40, 2 sales a day: ticket R$ 20); the summary's days say R$ 30, 1 sale
+    const sales = {
+      days: days("2026-09-01", 30, () => ({
+        netSales: "40.00",
+        salesCount: 2,
+      })).map(({ date, netSales, salesCount }) => ({
+        date,
+        netSales,
+        salesCount,
+      })),
+      period: SEPTEMBER,
+    };
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous: {
+        days: days("2026-09-01", 30, () => ({
+          netSales: "10.00",
+          operatingResult: "30.00",
+          salesCount: 1,
+        })),
+        period: SEPTEMBER,
+      },
+      previousSales: sales,
+      today: "2026-10-25",
+    });
+    const rest = kpis.read(null);
+    // vendas: 25 x 50,00 = 1250,00 against 25 x 40,00 = 1000,00
+    expect(rest.sales.delta).toMatchObject({ text: "+25,0%", trend: "up" });
+    expect(rest.sales.note).toBe("vs. 1 a 25/09");
+    // ticket: 50,00 against 1000,00 / 50 sales = 20,00
+    expect(rest.ticket.delta).toMatchObject({ text: "+150,0%", trend: "up" });
+    // resultado: 1000,00 against 25 x 30,00 = 750,00, from the summary's days, not from the sales read
+    expect(rest.result.delta).toMatchObject({
+      money: true,
+      text: "+R$ 250,00",
+    });
+    // a day read compares the same days of the sales read: 10 x 50,00 against 10 x 40,00
+    expect(kpis.read(9).sales).toMatchObject({
+      delta: { text: "+25,0%" },
+      note: "vs. 1 a 10/09",
+    });
+  });
+
+  it("loses only the chips of sales and ticket when the sales read failed", () => {
+    const rest = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous,
+      previousSales: null,
+      today: "2026-10-25",
+    }).read(null);
+    expect([rest.sales.delta, rest.ticket.delta]).toEqual([null, null]);
+    expect([rest.sales.note, rest.ticket.note]).toEqual([null, null]);
+    expect(rest.result.delta).toMatchObject({ text: "+R$ 250,00" });
+  });
+
+  it("loses only the chip of the result when the summary's read failed", () => {
+    const rest = resultKpis({
+      cards: CARDS,
+      daily: days("2026-10-01", 31),
+      period: OCTOBER,
+      previous: null,
+      previousSales: previous,
+      today: "2026-10-25",
+    }).read(null);
+    expect(rest.result.delta).toBeNull();
+    expect(rest.sales.delta?.text).toBe("+25,0%");
+    expect(rest.ticket.delta?.text).toBe("+25,0%");
+  });
+
   it("reads a day of the sparkline, the three cards together", () => {
     const kpis = resultKpis({
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     const day = kpis.read(9);
@@ -128,6 +205,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.result).toEqual({ kind: "incomplete", total: 25, unknown: 3 });
@@ -160,6 +238,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.read(null).result).toMatchObject({
@@ -181,6 +260,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous: null,
+      previousSales: null,
       today: "2026-10-25",
     }).read(null);
     expect([alone.sales.delta, alone.result.delta, alone.ticket.delta]).toEqual(
@@ -197,6 +277,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
         ),
         period: SEPTEMBER,
       },
+      previousSales: previous,
       today: "2026-10-25",
     }).read(null);
     expect(unknownBefore.result.delta).toBeNull();
@@ -208,7 +289,8 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
-      previous: {
+      previous: null,
+      previousSales: {
         days: days("2026-09-01", 30, () => ({
           netSales: "0.00",
           salesCount: 0,
@@ -229,6 +311,9 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-09-26", 30),
       period,
       previous: before ? { days: days(before.from, 30), period: before } : null,
+      previousSales: before
+        ? { days: days(before.from, 30), period: before }
+        : null,
       today: "2026-10-25",
     });
     expect(kpis.month).toBeNull();
@@ -248,6 +333,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       })),
       period: { from: "2026-11-01", to: "2026-11-30" },
       previous: null,
+      previousSales: null,
       today: "2026-10-25",
     });
     expect(kpis.days).toEqual([]);
@@ -262,6 +348,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       daily: days("2026-10-01", 31),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-05",
     });
     expect(kpis.read(20).sales).toMatchObject({
@@ -280,6 +367,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       })),
       period: OCTOBER,
       previous,
+      previousSales: previous,
       today: "2026-10-25",
     });
     expect(kpis.result.kind).toBe("unsent");
@@ -324,5 +412,76 @@ describe("no known cost in the period", () => {
       ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
     );
     expect(noKnownCost(unsent, lines)).toBe(false);
+  });
+});
+
+describe("the period before that the result's chip asks the engine for", () => {
+  const TODAY = "2026-10-25";
+  const lines = { itemLines: 25, itemLinesWithUnknownCost: 3 };
+  const summary = (
+    daily: StoredDay[],
+    quality = lines
+  ): Parameters<typeof resultChipPeriod>[0] => ({
+    daily,
+    period: OCTOBER,
+    quality: {
+      anticipationFeesUnknown: 0,
+      level: "complete",
+      linkedExpenses: 0,
+      missing: [],
+      operatingExpenses: 0,
+      processingFeesUnknown: 0,
+      salesCount: 25,
+      ...quality,
+    },
+  });
+
+  it("is the period before when the result is known and some cost is known", () => {
+    expect(resultChipPeriod(summary(days("2026-10-01", 25)), TODAY)).toEqual(
+      SEPTEMBER
+    );
+  });
+
+  it("is null when some day up to today has no known result (incomplete)", () => {
+    const partial = days("2026-10-01", 25, (index) =>
+      index === 3 ? { costs: null, operatingResult: null } : {}
+    );
+    expect(resultChipPeriod(summary(partial), TODAY)).toBeNull();
+  });
+
+  it("is null when every day has a null result (incomplete, and no cost known)", () => {
+    const unknown = days("2026-10-01", 25, () => ({ operatingResult: null }));
+    expect(resultChipPeriod(summary(unknown), TODAY)).toBeNull();
+  });
+
+  it("is null when every item line sold has an unknown cost, even with a result on every day", () => {
+    expect(
+      resultChipPeriod(
+        summary(days("2026-10-01", 25), {
+          itemLines: 25,
+          itemLinesWithUnknownCost: 25,
+        }),
+        TODAY
+      )
+    ).toBeNull();
+  });
+
+  it("ignores a day with no known result after today", () => {
+    const later = days("2026-10-01", 31, (index) =>
+      index === 27 ? { operatingResult: null } : {}
+    );
+    expect(resultChipPeriod(summary(later), TODAY)).toEqual(SEPTEMBER);
+  });
+
+  it("is null for a copy with no daily series at all", () => {
+    const { period, quality } = summary([]);
+    expect(resultChipPeriod({ period, quality }, TODAY)).toBeNull();
+  });
+
+  it("is null for a copy that never sent the results of the days", () => {
+    const unsent = days("2026-10-01", 25).map(
+      ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
+    );
+    expect(resultChipPeriod(summary(unsent as StoredDay[]), TODAY)).toBeNull();
   });
 });

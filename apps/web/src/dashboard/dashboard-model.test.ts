@@ -294,6 +294,25 @@ describe("chainRows", () => {
     expect(notes.grossSales).toBeNull();
   });
 
+  it("with no cost known, the subtotals from the CMV on are a dash with their note and the rest keeps its value", () => {
+    const rows = chainRows(chain, completeQuality, true);
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    for (const id of [
+      "grossProfit",
+      "contributionMargin",
+      "estimatedOperatingResult",
+    ] as const) {
+      expect(byId[id]).toMatchObject({
+        negative: false,
+        note: "Sem custo conhecido no período.",
+        value: "—",
+      });
+    }
+    expect(byId.grossSales?.value).toBe("R$ 150,00");
+    expect(byId.netSales?.value).toBe("R$ 130,00");
+    expect(byId.cogs?.value).toBe("R$ 60,00");
+  });
+
   it("notes when no expense was recorded", () => {
     const rows = chainRows(chain, { ...completeQuality, operatingExpenses: 0 });
     expect(rows.find((row) => row.id === "operatingExpenses")?.note).toBe(

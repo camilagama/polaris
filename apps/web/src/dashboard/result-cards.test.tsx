@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
@@ -69,9 +70,30 @@ const SEPTEMBER = {
   period: { from: "2026-09-01", to: "2026-09-30" },
 };
 
-const cards = (summary: StoredPeriodSummary) =>
+// the same month as `dailySales` reads it: sales and counts only
+const SEPTEMBER_SALES = {
+  days: SEPTEMBER.days.map(({ date, netSales, salesCount }) => ({
+    date,
+    netSales,
+    salesCount,
+  })),
+  period: SEPTEMBER.period,
+};
+
+const cards = (
+  summary: StoredPeriodSummary,
+  comparison: ComponentProps<typeof ResultCards>["comparison"] = SEPTEMBER,
+  salesComparison: ComponentProps<
+    typeof ResultCards
+  >["salesComparison"] = SEPTEMBER_SALES
+) =>
   renderToStaticMarkup(
-    <ResultCards comparison={SEPTEMBER} summary={summary} today={TODAY} />
+    <ResultCards
+      comparison={comparison}
+      salesComparison={salesComparison}
+      summary={summary}
+      today={TODAY}
+    />
   );
 
 /** The markup of one card, from its id to the next card. */
@@ -179,6 +201,40 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     );
     expect(words(card(markup, "result-kpi-margin"))).toContain(
       "Sem custo conhecido no período."
+    );
+  });
+});
+
+describe("the chips of the cards and where they come from", () => {
+  // October: R$ 50,00 and one sale a day for 25 days; September the same days at R$ 40,00 and one sale (the sales read)
+  it("Vendas and Ticket médio compare with the sales read: exact values, in the DOM", () => {
+    const markup = cards(october([]), null, SEPTEMBER_SALES);
+    // 1250,00 over 1000,00 is +25,0%; the ticket 50,00 over 40,00 too
+    const sales = card(markup, "result-kpi-sales");
+    expect(sales).toContain("data-kpi-delta=");
+    expect(words(sales)).toContain("+25,0%");
+    expect(words(sales)).toContain("vs. 1 a 25/09");
+    const ticket = card(markup, "result-kpi-ticket");
+    expect(words(ticket)).toContain("+25,0%");
+    // the summary's read is not there: no chip of the result
+    expect(card(markup, "result-kpi-result")).not.toContain("data-kpi-delta=");
+  });
+
+  it("with the sales read failed, only the chips of Vendas and Ticket médio are gone", () => {
+    const markup = cards(october([]), SEPTEMBER, null);
+    expect(card(markup, "result-kpi-sales")).not.toContain("data-kpi-delta=");
+    expect(card(markup, "result-kpi-ticket")).not.toContain("data-kpi-delta=");
+    const result = card(markup, "result-kpi-result");
+    expect(result).toContain("data-kpi-delta=");
+    // 1000,00 against 25 x 30,00
+    expect(words(result)).toContain("+R$ 250,00");
+  });
+
+  it("the chip of the Resultado stays as the summary's days give it, whatever the sales read says", () => {
+    const withSales = cards(october([]), SEPTEMBER, SEPTEMBER_SALES);
+    const without = cards(october([]), SEPTEMBER, null);
+    expect(card(withSales, "result-kpi-result")).toBe(
+      card(without, "result-kpi-result")
     );
   });
 });
