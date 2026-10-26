@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AreaChartProps } from "./area-chart";
+import type { SalesHeatmapProps } from "./sales-heatmap";
 import type { SparklineProps } from "./sparkline";
+import type { WeekdayBarsProps } from "./weekday-bars";
 
 /**
  * How a screen draws a chart: the charts chunk is downloaded when the first one is asked for (`import()` of
@@ -15,7 +17,9 @@ import type { SparklineProps } from "./sparkline";
  */
 export type { AreaChartProps } from "./area-chart";
 export type { ChartDatum } from "./chart-data";
+export type { HeatmapDay, SalesHeatmapProps } from "./sales-heatmap";
 export type { SparklineProps } from "./sparkline";
+export type { WeekdayBarsProps } from "./weekday-bars";
 
 /** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
 const EXTRA_HEIGHT = 40;
@@ -42,21 +46,43 @@ function loadCharts(): Promise<Charts> {
   return loading;
 }
 
-type State =
-  | { charts: Charts; status: "ready" }
+type Heatmap = typeof import("./heatmap");
+
+let loadingHeatmap: Promise<Heatmap> | null = null;
+let loadedHeatmap: Heatmap | null = null;
+
+/** The map of the Início has a chunk of its own (`heatmap-*.js`, t394), loaded the same way. */
+function loadHeatmap(): Promise<Heatmap> {
+  if (!loadingHeatmap) {
+    loadingHeatmap = import("./heatmap").then(
+      (heatmap) => {
+        loadedHeatmap = heatmap;
+        return heatmap;
+      },
+      (error: unknown) => {
+        loadingHeatmap = null;
+        throw error;
+      }
+    );
+  }
+  return loadingHeatmap;
+}
+
+type State<T> =
+  | { charts: T; status: "ready" }
   | { status: "failed" | "loading" };
 
-function useCharts(): State {
+function useChunk<T>(downloaded: T | null, load: () => Promise<T>): State<T> {
   // a chunk already downloaded draws on the first render: no box in its place, no jump
-  const [state, setState] = useState<State>(
-    loaded ? { charts: loaded, status: "ready" } : { status: "loading" }
+  const [state, setState] = useState<State<T>>(
+    downloaded ? { charts: downloaded, status: "ready" } : { status: "loading" }
   );
   useEffect(() => {
     if (state.status === "ready") {
       return;
     }
     let current = true;
-    loadCharts().then(
+    load().then(
       (charts) => current && setState({ charts, status: "ready" }),
       () => current && setState({ status: "failed" })
     );
@@ -66,6 +92,9 @@ function useCharts(): State {
   }, []);
   return state;
 }
+
+const useCharts = () => useChunk(loaded, loadCharts);
+const useHeatmapChunk = () => useChunk(loadedHeatmap, loadHeatmap);
 
 interface OnDemandProps {
   /** What stays when the chunk cannot be downloaded. Nothing when absent. */
@@ -142,4 +171,35 @@ export function OnDemandSparkline({
     return failed ?? null;
   }
   return <Reserved className={props.className} height={props.height ?? 32} />;
+}
+
+/** The map of the Início; while its chunk loads, a box of the height it will have. */
+export function OnDemandHeatmap({
+  failed,
+  height,
+  ...props
+}: OnDemandProps & SalesHeatmapProps & { height: number }) {
+  const state = useHeatmapChunk();
+  if (state.status === "ready") {
+    return <state.charts.SalesHeatmap {...props} />;
+  }
+  if (state.status === "failed") {
+    return failed ?? null;
+  }
+  return <Reserved className={props.className} height={height} />;
+}
+
+/** The bars of the mean by weekday, in the same chunk as the map. */
+export function OnDemandWeekdayBars({
+  failed,
+  ...props
+}: OnDemandProps & WeekdayBarsProps) {
+  const state = useHeatmapChunk();
+  if (state.status === "ready") {
+    return <state.charts.WeekdayBars {...props} />;
+  }
+  if (state.status === "failed") {
+    return failed ?? null;
+  }
+  return <Reserved className={props.className} height={props.height ?? 64} />;
 }

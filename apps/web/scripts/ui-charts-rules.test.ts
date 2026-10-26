@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   CHARTS_BUDGET_GZIP_BYTES,
   chartsPlacementProblems,
+  HEATMAP_BUDGET_GZIP_BYTES,
+  isSharedChartModule,
 } from "../pwa/precache-budget";
 
 /**
@@ -55,8 +57,11 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "chart-data.ts",
       "chart-text.tsx",
       "charts.ts",
+      "heatmap.ts",
       "on-demand.tsx",
+      "sales-heatmap.tsx",
       "sparkline.tsx",
+      "weekday-bars.tsx",
     ]);
   });
 
@@ -97,6 +102,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     const source = read("src/ui/charts/on-demand.tsx");
     expect(source.replace(COMMENT, "").match(DIRECT_IMPORT)).toBeNull();
     expect(source).toContain('import("./charts")');
+    expect(source).toContain('import("./heatmap")');
   });
 
   it("no chart module imports the loader, and nothing outside imports a chart module but the loader and the gallery", () => {
@@ -324,5 +330,73 @@ describe("the charts chunk of the build (t285)", () => {
 
   it("keeps 8 KB gzip as the reference of the line, which only warns (user's decision of 24/10/2026)", () => {
     expect(CHARTS_BUDGET_GZIP_BYTES).toBe(8000);
+  });
+});
+
+describe("the heat map chunk of the build (t394)", () => {
+  const ids = {
+    cells: "/repo/apps/web/src/ui/bklit/charts/heatmap/heatmap-cells.tsx",
+    entry: "/repo/apps/web/src/ui/charts/heatmap.ts",
+    map: "D:\\repo\\apps\\web\\src\\ui\\charts\\sales-heatmap.tsx",
+    pattern: "/repo/apps/web/src/ui/bklit/charts/patterns/lines.tsx",
+    sparkline: "/repo/apps/web/src/ui/bklit/charts/sparkline.tsx",
+    visxHeatmap:
+      "/repo/node_modules/.bun/@visx+heatmap@4.0.0+0ac650c021fb1b59/node_modules/@visx/heatmap/esm/heatmaps/HeatmapRect.js",
+    visxGroup:
+      "/repo/node_modules/.bun/@visx+group@4.0.0+0ac650c021fb1b59/node_modules/@visx/group/esm/Group.js",
+  };
+  const mapModules = {
+    [ids.cells]: { renderedLength: 1 },
+    [ids.entry]: { renderedLength: 1 },
+    [ids.map]: { renderedLength: 1 },
+    [ids.pattern]: { renderedLength: 1 },
+    [ids.visxHeatmap]: { renderedLength: 1 },
+  };
+
+  it("accepts the map in its chunk beside the charts chunk with what they share", () => {
+    expect(
+      chartsPlacementProblems([
+        { fileName: "assets/heatmap-a1.js", modules: mapModules },
+        {
+          fileName: "assets/charts-b2.js",
+          modules: {
+            [ids.sparkline]: { renderedLength: 1 },
+            [ids.visxGroup]: { renderedLength: 1 },
+          },
+        },
+      ])
+    ).toEqual([]);
+  });
+
+  it("fails a module of the map in the charts chunk or in a screen, and a shared one in the map's chunk", () => {
+    const problems = chartsPlacementProblems([
+      { fileName: "assets/charts-b2.js", modules: mapModules },
+      {
+        fileName: "assets/heatmap-a1.js",
+        modules: { [ids.sparkline]: { renderedLength: 1 } },
+      },
+    ]);
+    expect(problems).toHaveLength(6);
+    expect(problems.slice(0, 5).join("\n")).toContain(
+      "outside the heat map chunk"
+    );
+    expect(problems.join("\n")).toContain("@visx/heatmap");
+    expect(problems[5]).toContain("sparkline.tsx");
+    expect(problems[5]).toContain("outside the charts chunk");
+  });
+
+  it("the group of the charts chunk takes what the map shares, never the map", () => {
+    expect(isSharedChartModule(ids.sparkline)).toBe(true);
+    expect(isSharedChartModule(ids.visxGroup)).toBe(true);
+    for (const id of Object.keys(mapModules)) {
+      expect(isSharedChartModule(id), id).toBe(false);
+    }
+    expect(
+      isSharedChartModule("/repo/apps/web/src/ui/charts/on-demand.tsx")
+    ).toBe(false);
+  });
+
+  it("keeps the estimate of the v7 review, 16 KB gzip, as the reference of its line, which only warns", () => {
+    expect(HEATMAP_BUDGET_GZIP_BYTES).toBe(16_000);
   });
 });

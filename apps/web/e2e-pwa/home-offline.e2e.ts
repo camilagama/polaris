@@ -49,6 +49,14 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await expect(
     page.getByText("O gráfico abre quando a internet voltar.")
   ).toHaveCount(0);
+  // the map of the copy, from its own chunk in the precache (t394)
+  const map = page.getByRole("region", { name: "Ritmo de vendas" });
+  await expect(map.locator("[data-heatmap] svg")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(map.locator("[data-rhythm-reading]")).toHaveText(
+    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia"
+  );
 });
 
 test("sem o pedaço no Cache Storage e sem rede: os números ficam e o gráfico abre quando a internet voltar", async ({

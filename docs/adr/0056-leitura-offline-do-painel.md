@@ -47,6 +47,14 @@ Registro datado; a decisão acima e a emenda D2 continuam valendo. Pedida pelo c
 - **O contrato recusa período acima de 366 dias** (o repositório já recusava).
 - **A cópia guardada** aceita `costs` e `operatingResult` ausentes (cópia antiga: a tela não desenha custos), `null` ou dinheiro, e `operatingExpenses` ausente ou dinheiro (nunca `null`), e descarta a cópia com qualquer outro valor. O contrato só cresce; o cliente antigo ignora os campos.
 
+## Emenda (26/10/2026): a cópia do mapa do Início (t394)
+
+Registro datado; a emenda (ii) continua valendo. Pedida pelo desenho do `report.dailySales` (Filipe, 25/10, item 6) com a condição do Rodrigo na revisão do PR 335 (656-1).
+
+- **O mapa "Ritmo de vendas" guarda a sua série** sob `polaris.offline.dailySales.<org>`: o que o `report.dailySales` devolveu (a primeira data e os dois arrays, uns 3 KB), sem nada calculado no aparelho. Os dias do mês vêm da cópia do mês (A), como na tela com conexão; o mapa só é desenhado com todos os dias das 26 semanas conhecidos, nunca com zero no lugar do desconhecido.
+- **As mesmas regras de vida da cópia do Início:** só com o runtime offline ligado e para quem lê o resultado; gravada só depois da resposta, com a guarda perguntada nesse momento, então uma leitura em voo não grava depois de `isSigningOut` nem depois de a sessão acabar; apagada em "Sair", no "não autenticado" e na limpeza da saída (`clearPeriodSummaryCaches`) e na recusa da loja (`clearOrganizationResultCopies`).
+- **Sem a cópia**, sem conexão, o bloco diz "O mapa abre com internet."; com ela, o mapa vale com a mesma linha "Último resultado confirmado" do resto do Início.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.

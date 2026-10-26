@@ -7,6 +7,12 @@ import type { Outbox } from "../outbox/outbox";
 const ORG = "0199c2d0-0000-7000-8000-00000000a001";
 const OTHER = "0199c2d0-0000-7000-8000-00000000a002";
 const AT = "2026-10-14T12:00:00.000Z";
+/** The map's series of the Início (`report.dailySales`): three days are enough for the copy. */
+const SERIES = {
+  count: [0, 2, 1],
+  from: "2026-09-28",
+  net: ["0.00", "130.00", "12.50"],
+};
 
 /** A browser storage that lists its keys, with its window around it (`location.assign` is observed). */
 function fakeWindow() {
@@ -85,18 +91,38 @@ const profile: PaymentProfileReadModel = {
 /** Fresh modules for each case: `over` and `signingOut` are module state that never goes back. */
 async function modules() {
   vi.resetModules();
-  const [period, home, organizations, payments, leave, ended, signOut, flow] =
-    await Promise.all([
-      import("../../lib/period-summary-cache"),
-      import("../../home/home-copy"),
-      import("../../lib/current-organization-model"),
-      import("../../lib/payment-profile-cache"),
-      import("./leave-browser"),
-      import("./session-ended"),
-      import("../../lib/sign-out"),
-      import("./logout-flow"),
-    ]);
-  return { ended, flow, home, leave, organizations, payments, period, signOut };
+  const [
+    period,
+    home,
+    organizations,
+    payments,
+    leave,
+    ended,
+    signOut,
+    flow,
+    rhythm,
+  ] = await Promise.all([
+    import("../../lib/period-summary-cache"),
+    import("../../home/home-copy"),
+    import("../../lib/current-organization-model"),
+    import("../../lib/payment-profile-cache"),
+    import("./leave-browser"),
+    import("./session-ended"),
+    import("../../lib/sign-out"),
+    import("./logout-flow"),
+    import("../../home/rhythm-copy"),
+  ]);
+  return {
+    ended,
+    flow,
+    home,
+    leave,
+    organizations,
+    payments,
+    period,
+    rhythm,
+    signOut,
+  };
 }
 
 type Modules = Awaited<ReturnType<typeof modules>>;
@@ -126,6 +152,7 @@ function keepCopies(m: Modules, stored: Map<string, string>) {
       hadSale: true,
     });
     m.payments.writePaymentProfileCache(storage, organization, [profile]);
+    m.rhythm.writeRhythmCopy(storage, organization, SERIES, guard);
   }
   m.organizations.writeOrganizationsCache(storage, [
     { id: ORG, name: "Loja", role: "owner", timezone: "America/Sao_Paulo" },
@@ -141,7 +168,7 @@ const offlineKeys = (stored: Map<string, string>) =>
   [...stored.keys()].filter((key) => key.startsWith("polaris.offline.")).sort();
 
 const COPY_KEY =
-  /^polaris\.offline\.(periodSummary\.|home\.|organizations|paymentProfiles\.)/;
+  /^polaris\.offline\.(periodSummary\.|home\.|dailySales\.|organizations|paymentProfiles\.)/;
 
 const copyKeys = (keys: string[]) => keys.filter((key) => COPY_KEY.test(key));
 
@@ -192,6 +219,8 @@ describe("lists every polaris.offline.* key after each way out of the session", 
         "polaris.offline.organizations",
         `polaris.offline.home.${ORG}`,
         `polaris.offline.home.${OTHER}`,
+        `polaris.offline.dailySales.${ORG}`,
+        `polaris.offline.dailySales.${OTHER}`,
         `polaris.offline.paymentProfiles.${ORG}`,
         `polaris.offline.paymentProfiles.${OTHER}`,
         `polaris.offline.periodSummary.${ORG}.2026-09`,
@@ -267,6 +296,23 @@ describe("lists every polaris.offline.* key after each way out of the session", 
 
     expect(m.signOut.isSigningOut()).toBe(true);
     expect(offlineKeys(stored)).toEqual([]);
+  });
+
+  it("depois de 'Sair' marcado, a leitura do mapa que ainda volta não grava a série de novo", async () => {
+    const { stored } = fakeWindow();
+    const m = await modules();
+    // the read of `report.dailySales` left before "Sair"; its answer comes after the page started leaving
+    const answer = Promise.resolve(SERIES);
+    m.leave.leaveAfterSignOut("/");
+
+    m.rhythm.writeRhythmCopy(window.localStorage, ORG, await answer, {
+      offlineRuntimeEnabled: true,
+      signingOut: m.signOut.isSigningOut(),
+    });
+
+    expect(m.signOut.isSigningOut()).toBe(true);
+    expect(copyKeys(offlineKeys(stored))).toEqual([]);
+    expect(m.rhythm.readRhythmCopy(window.localStorage, ORG)).toBeNull();
   });
 
   it("depois de leaveAfterSignOut o aparelho sabe que está saindo", async () => {

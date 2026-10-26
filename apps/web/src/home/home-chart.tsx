@@ -76,7 +76,7 @@ function reloadPage() {
   window.location.reload();
 }
 
-function ChartFailed() {
+export function ChartFailed() {
   const online = useConnectionOnline();
   return online ? (
     <div className="grid justify-items-start gap-2">
