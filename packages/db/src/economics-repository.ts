@@ -15,6 +15,7 @@ import {
   saleEconomics,
 } from "@polaris/domain/economics/sale-economics";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
+import { Money } from "@polaris/domain/money/money";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { expenses } from "./schema/expense";
 import { products } from "./schema/product";
@@ -80,11 +81,14 @@ function daysBetween(from: string, to: string): number {
   );
 }
 
-function assertPeriod(period: EconomicsPeriod) {
+function assertPeriod(
+  period: EconomicsPeriod,
+  maxDays: number = MAX_ECONOMICS_PERIOD_DAYS
+) {
   if (
     !(isValidCalendarDate(period.from) && isValidCalendarDate(period.to)) ||
     period.to < period.from ||
-    daysBetween(period.from, period.to) + 1 > MAX_ECONOMICS_PERIOD_DAYS
+    daysBetween(period.from, period.to) + 1 > maxDays
   ) {
     throw new InvalidEconomicsPeriodError();
   }
@@ -511,5 +515,176 @@ export async function readPeriodSummary(
         name: product.name,
       };
     }),
+  };
+}
+
+/** The longest period of the daily sales series: 182 days, half a year of the Início's map. */
+export const MAX_DAILY_SALES_DAYS = 182;
+
+/**
+ * Net sales and the count of sales of each date of a period, aggregated by the
+ * database: one row per date, in order, a date without sales `0` and `0`. The
+ * rule is the engine's `netSales` (`saleEconomics`), written in SQL so that no
+ * sale goes through the engine in the Worker:
+ * - a cancelled sale is left out (zero and not counted);
+ * - net sales are the item values minus the discount adjustments minus what the
+ *   returns gave back, on the date of the sale;
+ * - a returned item gives back its charged price times the units returned
+ *   minus its share of the discounts, `round half up (allocation x returned /
+ *   quantity)`, where the allocation splits the discount among the items of the
+ *   sale by value in whole cents (largest remainder, ties by position).
+ * The amounts are in cents. The gate `daily-sales` proves this equals
+ * `readPeriodSummary(...).daily` date by date.
+ */
+export function dailySalesQuery(organization: string, period: EconomicsPeriod) {
+  return sql`
+    WITH counted AS (
+      SELECT sale.id, sale.occurred_on
+      FROM public.sales AS sale
+      WHERE sale.organization_id = ${organization}
+        AND sale.occurred_on >= ${period.from}::date
+        AND sale.occurred_on <= ${period.to}::date
+        AND NOT EXISTS (
+          SELECT 1 FROM public.sale_cancellations AS cancelled
+          WHERE cancelled.organization_id = sale.organization_id
+            AND cancelled.sale_id = sale.id
+        )
+    ),
+    line AS (
+      SELECT item.sale_id, item.position, item.quantity,
+        item.charged_unit_price * 100 AS unit_cents,
+        item.charged_unit_price * item.quantity * 100 AS value_cents
+      FROM public.sale_items AS item
+      JOIN counted ON counted.id = item.sale_id
+      WHERE item.organization_id = ${organization}
+    ),
+    gross AS (
+      SELECT line.sale_id, sum(line.value_cents) AS cents
+      FROM line
+      GROUP BY line.sale_id
+    ),
+    discount AS (
+      SELECT adjustment.sale_id, sum(adjustment.amount * 100) AS cents
+      FROM public.sale_adjustments AS adjustment
+      JOIN counted ON counted.id = adjustment.sale_id
+      WHERE adjustment.organization_id = ${organization}
+        AND adjustment.kind = 'discount'
+      GROUP BY adjustment.sale_id
+    ),
+    returned AS (
+      SELECT return_item.sale_id, return_item.item_position AS position,
+        sum(return_item.returned_quantity) AS quantity
+      FROM public.sale_return_items AS return_item
+      JOIN counted ON counted.id = return_item.sale_id
+      WHERE return_item.organization_id = ${organization}
+      GROUP BY return_item.sale_id, return_item.item_position
+    ),
+    allocation AS (
+      -- the discount split by value, only for the sales with a return
+      SELECT split.sale_id, split.position,
+        split.floor_cents
+          + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END AS cents
+      FROM (
+        SELECT line.sale_id, line.position,
+          div(discount.cents * line.value_cents, gross.cents) AS floor_cents,
+          discount.cents - sum(div(discount.cents * line.value_cents, gross.cents))
+            OVER (PARTITION BY line.sale_id) AS leftover,
+          row_number() OVER (
+            PARTITION BY line.sale_id
+            ORDER BY mod(discount.cents * line.value_cents, gross.cents) DESC,
+              line.position
+          ) AS rank
+        FROM line
+        JOIN discount ON discount.sale_id = line.sale_id
+        JOIN gross ON gross.sale_id = line.sale_id
+        WHERE gross.cents <> 0
+          AND discount.cents <> 0
+          AND EXISTS (SELECT 1 FROM returned WHERE returned.sale_id = line.sale_id)
+      ) AS split
+    ),
+    given_back AS (
+      SELECT returned.sale_id,
+        sum(
+          returned.quantity * line.unit_cents
+          - div(
+              coalesce(allocation.cents, 0) * returned.quantity * 2 + line.quantity,
+              line.quantity::numeric * 2
+            )
+        ) AS cents
+      FROM returned
+      JOIN line ON line.sale_id = returned.sale_id
+        AND line.position = returned.position
+      LEFT JOIN allocation ON allocation.sale_id = returned.sale_id
+        AND allocation.position = returned.position
+      GROUP BY returned.sale_id
+    ),
+    per_day AS (
+      SELECT counted.occurred_on, count(*) AS sales,
+        sum(
+          coalesce(gross.cents, 0)
+          - coalesce(discount.cents, 0)
+          - coalesce(given_back.cents, 0)
+        ) AS net_cents
+      FROM counted
+      LEFT JOIN gross ON gross.sale_id = counted.id
+      LEFT JOIN discount ON discount.sale_id = counted.id
+      LEFT JOIN given_back ON given_back.sale_id = counted.id
+      GROUP BY counted.occurred_on
+    )
+    SELECT to_char(series.day, 'YYYY-MM-DD') AS date,
+      coalesce(per_day.sales, 0)::integer AS count,
+      round(coalesce(per_day.net_cents, 0), 0)::text AS net_cents
+    FROM generate_series(
+      ${period.from}::date::timestamp,
+      ${period.to}::date::timestamp,
+      interval '1 day'
+    ) AS series (day)
+    LEFT JOIN per_day ON per_day.occurred_on = series.day::date
+    ORDER BY series.day`;
+}
+
+export interface DailySalesRead {
+  /** Sales counted (confirmed, not cancelled) of each date, from the first. */
+  count: number[];
+  /** The first date of the series, `YYYY-MM-DD`. */
+  from: string;
+  /** Net sales of each date, exact BRL text, in the same order. */
+  net: string[];
+}
+
+/**
+ * The daily series of a period of at most `MAX_DAILY_SALES_DAYS` dates, read
+ * in one statement (one snapshot) with the same permission as the period
+ * summary. Scoped by the organization of the server context and by RLS.
+ */
+export async function readDailySales(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  period: EconomicsPeriod
+): Promise<DailySalesRead> {
+  if (!REPORT_CAPABILITIES.includes(identity.capability)) {
+    throw new TenantAuthorizationError("capability_denied");
+  }
+  assertPeriod(period, MAX_DAILY_SALES_DAYS);
+  const result = await transaction.execute(
+    dailySalesQuery(identity.organizationId, period)
+  );
+  const rows = result.rows as {
+    count: number;
+    date: string;
+    net_cents: string;
+  }[];
+  if (
+    rows.length !== daysBetween(period.from, period.to) + 1 ||
+    rows[0]?.date !== period.from
+  ) {
+    throw new InvalidSaleFactError();
+  }
+  return {
+    count: rows.map((row) => Number(row.count)),
+    from: period.from,
+    net: rows.map((row) =>
+      Money.fromMinorUnits(BigInt(row.net_cents)).toString()
+    ),
   };
 }
