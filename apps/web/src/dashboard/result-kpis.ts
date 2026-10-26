@@ -148,6 +148,40 @@ export function summaryHasNoKnownCost(
   );
 }
 
+/** Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9). */
+function resultKindOf(days: readonly Day[]): ResultKind {
+  const unknown = days.filter((day) => day.operatingResult === null).length;
+  if (unknown > 0) {
+    return { kind: "incomplete", total: days.length, unknown };
+  }
+  if (
+    days.length === 0 ||
+    days.some((day) => day.operatingResult === undefined)
+  ) {
+    return { kind: "unsent" };
+  }
+  return { kind: "known" };
+}
+
+/**
+ * The period before whose `periodSummary` the chip of the result needs, or null when that chip cannot exist: the
+ * result is a sum of known days (`kind: "known"`) and the period has some known cost (`summaryHasNoKnownCost` is
+ * false). Only `periodSummary` runs the engine, so the Worker does not read the period before for a card with no chip.
+ */
+export function resultChipPeriod(
+  summary: Pick<StoredPeriodSummary, "daily" | "period" | "quality">,
+  today: string
+): Period | null {
+  const days = daysUpToToday(summary.daily ?? [], summary.period, today);
+  if (
+    resultKindOf(days).kind !== "known" ||
+    summaryHasNoKnownCost(summary, today)
+  ) {
+    return null;
+  }
+  return comparisonPeriod(summary.period, today);
+}
+
 export interface ResultKpiCards {
   marginPercent: string | null;
   netSales: string;
@@ -360,16 +394,7 @@ export function resultKpis({
   const scope = month ? "no mês" : "no período";
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
-  const unknown = days.filter((day) => day.operatingResult === null).length;
-  let result: ResultKind = { kind: "known" };
-  if (unknown > 0) {
-    result = { kind: "incomplete", total: days.length, unknown };
-  } else if (
-    days.length === 0 ||
-    days.some((day) => day.operatingResult === undefined)
-  ) {
-    result = { kind: "unsent" };
-  }
+  const result = resultKindOf(days);
   const whole = month ? `${month} inteiro` : rangeText(period.from, period.to);
 
   const read = (index: number | null) => {

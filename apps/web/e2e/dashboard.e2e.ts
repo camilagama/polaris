@@ -657,6 +657,12 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
 
   await choosePreset(page, "Mês passado");
 
+  // the result of September is incomplete, so its chip cannot exist: the engine is not asked for August, and
+  // `dailySales` still is (the chips of Vendas and Ticket)
+  const august = { from: "2026-08-01", to: "2026-08-31" };
+  await expect.poll(() => server.salesComparisons).toContainEqual(august);
+  expect(server.comparisons).not.toContainEqual(august);
+
   const banner = quality(page);
   await expect(banner).toContainText("Estimativa incompleta");
   await expect(banner).toContainText(

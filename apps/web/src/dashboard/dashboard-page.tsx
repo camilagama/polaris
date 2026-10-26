@@ -38,7 +38,7 @@ import {
   presetPeriod,
   samePeriod,
 } from "./result-period";
-import { comparisonPeriod } from "./result-kpis";
+import { comparisonPeriod, resultChipPeriod } from "./result-kpis";
 import { type ResultTab, readResultTab, writeResultTab } from "./result-tab";
 import { useGoals } from "./use-goals";
 import {
@@ -159,7 +159,7 @@ function CardNote({
 }
 
 interface ContentProps {
-  /** The days of the period before the one asked for, for the chips of the cards (null while not read). */
+  /** The days of the period before the one asked for, for the chips of the cards (null while not read, or when the result's chip cannot exist: `resultChipPeriod`). */
   comparison: ComparisonDays | null;
   /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
   salesComparison: ComparisonSales | null;
@@ -290,7 +290,12 @@ export function DashboardPage() {
     samePeriod(state.summary.period, period) &&
     state.summary.quality.level !== "no_data";
   const compared = answered ? comparisonPeriod(period, today) : null;
-  const comparison = useComparisonDays(organizationId, compared);
+  // the engine reads the period before only for a chip the result can have: known days and some known cost
+  const answeredSummary = answered ? state.summary : null;
+  const comparedResult = answeredSummary
+    ? resultChipPeriod(answeredSummary, today)
+    : null;
+  const comparison = useComparisonDays(organizationId, comparedResult);
   const salesComparison = useComparisonSales(organizationId, compared);
   // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
   // disagrees, the periods are computed again once, from the server's day, and read again

@@ -250,7 +250,7 @@ type ReadDays<Day> = (
 
 /**
  * A read of the period before that the cards compare with, asked only once the screen's read of the period answered
- * (the caller passes null before), in one try and with no copy on the device: when it fails, or with no connection,
+ * (the caller passes null before, and also when the card that reads it can have no chip), in one try and with no copy on the device: when it fails, or with no connection,
  * the cards have no chip and say nothing about it. `read` gives the days of the period, or null when what came back is
  * not what the server sends. A late answer never stands for another period; the last one read is kept, so going back
  * to a period does not ask again.

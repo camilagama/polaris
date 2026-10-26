@@ -4,6 +4,7 @@ import {
   comparisonPeriod,
   noKnownCost,
   rangeText,
+  resultChipPeriod,
   resultKpis,
 } from "./result-kpis";
 import { addDays } from "./result-period";
@@ -411,5 +412,76 @@ describe("no known cost in the period", () => {
       ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
     );
     expect(noKnownCost(unsent, lines)).toBe(false);
+  });
+});
+
+describe("the period before that the result's chip asks the engine for", () => {
+  const TODAY = "2026-10-25";
+  const lines = { itemLines: 25, itemLinesWithUnknownCost: 3 };
+  const summary = (
+    daily: StoredDay[],
+    quality = lines
+  ): Parameters<typeof resultChipPeriod>[0] => ({
+    daily,
+    period: OCTOBER,
+    quality: {
+      anticipationFeesUnknown: 0,
+      level: "complete",
+      linkedExpenses: 0,
+      missing: [],
+      operatingExpenses: 0,
+      processingFeesUnknown: 0,
+      salesCount: 25,
+      ...quality,
+    },
+  });
+
+  it("is the period before when the result is known and some cost is known", () => {
+    expect(resultChipPeriod(summary(days("2026-10-01", 25)), TODAY)).toEqual(
+      SEPTEMBER
+    );
+  });
+
+  it("is null when some day up to today has no known result (incomplete)", () => {
+    const partial = days("2026-10-01", 25, (index) =>
+      index === 3 ? { costs: null, operatingResult: null } : {}
+    );
+    expect(resultChipPeriod(summary(partial), TODAY)).toBeNull();
+  });
+
+  it("is null when every day has a null result (incomplete, and no cost known)", () => {
+    const unknown = days("2026-10-01", 25, () => ({ operatingResult: null }));
+    expect(resultChipPeriod(summary(unknown), TODAY)).toBeNull();
+  });
+
+  it("is null when every item line sold has an unknown cost, even with a result on every day", () => {
+    expect(
+      resultChipPeriod(
+        summary(days("2026-10-01", 25), {
+          itemLines: 25,
+          itemLinesWithUnknownCost: 25,
+        }),
+        TODAY
+      )
+    ).toBeNull();
+  });
+
+  it("ignores a day with no known result after today", () => {
+    const later = days("2026-10-01", 31, (index) =>
+      index === 27 ? { operatingResult: null } : {}
+    );
+    expect(resultChipPeriod(summary(later), TODAY)).toEqual(SEPTEMBER);
+  });
+
+  it("is null for a copy with no daily series at all", () => {
+    const { period, quality } = summary([]);
+    expect(resultChipPeriod({ period, quality }, TODAY)).toBeNull();
+  });
+
+  it("is null for a copy that never sent the results of the days", () => {
+    const unsent = days("2026-10-01", 25).map(
+      ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
+    );
+    expect(resultChipPeriod(summary(unsent as StoredDay[]), TODAY)).toBeNull();
   });
 });
