@@ -1,6 +1,7 @@
 import type { PaymentProfileReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
   type FormEvent,
@@ -11,6 +12,7 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Button } from "@/ui/button";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -27,7 +29,6 @@ import {
   blankRule,
   draftProblems,
   hasRepeatedRules,
-  NAME_ID,
   type ProfileDraft,
   profileDraft,
   profileDraftKey,
@@ -42,8 +43,11 @@ const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
 
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
-export const SAVE_OUTCOME_UNKNOWN =
-  "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo.";
+export const SAVE_NOT_CONFIRMED_TEXT =
+  "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve.";
+/** What the form and the page say once it was closed to check: the draft is kept, and so is the doubt. */
+const MAYBE_SAVED_TEXT = "Este perfil pode já ter sido salvo.";
+const CHECK_AND_CLOSE_LABEL = "Fechar e conferir";
 
 const GENERIC_ERROR_TEXT =
   "Não foi possível concluir a operação. Revise os dados e tente novamente.";
@@ -87,6 +91,10 @@ interface FeedbackProps {
   regionRef: Ref<HTMLDivElement>;
   /** The answer of a change the connection cut: not an error, not a success. */
   uncertain: string | null;
+  /** The button of the doubt ("Fechar e conferir"), inside the amber notice. */
+  uncertainAction?: { label: string; onClick: () => void } | undefined;
+  /** A profile with the name typed is already on the list: says so, before it is made again. */
+  warning?: string | null | undefined;
 }
 
 /** What the last action did, at the top of the screen; nothing is drawn (not even a gap) without a message. */
@@ -95,8 +103,10 @@ function ActionFeedback({
   notice,
   regionRef,
   uncertain,
+  uncertainAction,
+  warning,
 }: FeedbackProps) {
-  if (!(error || notice || uncertain)) {
+  if (!(error || notice || uncertain || warning)) {
     return null;
   }
   return (
@@ -110,7 +120,31 @@ function ActionFeedback({
       {uncertain ? (
         <Alert variant="warning">
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertDescription>{uncertain}</AlertDescription>
+          <AlertDescription
+            className={
+              uncertainAction
+                ? "flex flex-wrap items-center gap-x-3 gap-y-1"
+                : undefined
+            }
+          >
+            {uncertain}
+            {uncertainAction ? (
+              <Button
+                onClick={uncertainAction.onClick}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {uncertainAction.label}
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {warning ? (
+        <Alert variant="warning">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertDescription>{warning}</AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
@@ -140,8 +174,18 @@ export function PaymentProfilesPage() {
   const [notLoaded, setNotLoaded] = useState(false);
   // a change the connection cut: amber, the form stays, and it stays said after the list is read again
   const [uncertain, setUncertain] = useState<string | null>(null);
+  // a create the connection cut may have been saved: the draft stays, and before it is sent again the list is checked
+  const [maybeSaved, setMaybeSaved] = useState(false);
+  const [duplicateAsk, setDuplicateAsk] = useState(false);
+  // the draft kept when the form was closed by Esc or "Fechar": "new", or the id of the profile being edited
+  const keptRef = useRef<string | null>(null);
+  // the form is a dialog: it opens for a new profile or for an edit, and the draft is only cleared once it has closed
+  const [formOpen, setFormOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  // where the focus goes back to when the form closes without a message to read: what opened it
+  const originRef = useRef<() => HTMLElement | null>(() => null);
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
   const readOnce = useRef<boolean>(false);
   const profilesRequest = useRef(0);
@@ -239,6 +283,7 @@ export function PaymentProfilesPage() {
   const handleNameChange = useCallback(
     (name: string) => {
       clearStaleMessages();
+      setDuplicateAsk(false);
       setDraft((current) => ({ ...current, name }));
     },
     [clearStaleMessages]
@@ -260,23 +305,59 @@ export function PaymentProfilesPage() {
     focusLater(() => document.getElementById("payment-add-rule")?.focus());
   }, []);
 
-  /** Back to where the person was: the "Editar" of the profile that was open. */
-  const focusEditButton = useCallback((profileId: string | undefined) => {
-    focusLater(() =>
-      rootRef.current
-        ?.querySelector<HTMLElement>(
-          `[data-profile-id="${profileId}"] [data-profile-edit]`
-        )
-        ?.focus()
-    );
-  }, []);
-  const handleCancelEdit = useCallback(() => {
-    focusEditButton(editing?.id);
-    setEditing(null);
-    setDraft(blankDraft());
+  const handleNew = useCallback(() => {
+    originRef.current = () => newButtonRef.current;
+    if (keptRef.current !== "new") {
+      setEditing(null);
+      setDraft(blankDraft());
+      setMaybeSaved(false);
+    }
+    keptRef.current = null;
+    setDuplicateAsk(false);
     setFieldErrors({});
     setError(null);
-  }, [editing, focusEditButton]);
+    setNotice(null);
+    setFormOpen(true);
+  }, []);
+  /** "Cancelar": the form closes and what was typed is thrown away, and with it the doubt about a save. */
+  const handleCancelEdit = useCallback(() => {
+    keptRef.current = null;
+    if (maybeSaved) {
+      setMaybeSaved(false);
+      setUncertain(null);
+    }
+    setDuplicateAsk(false);
+    setFormOpen(false);
+    setFieldErrors({});
+    setError(null);
+  }, [maybeSaved]);
+  /** Esc, "Fechar" and "Fechar e conferir": the form closes and the draft stays, in memory, with the doubt. */
+  const handleDismiss = useCallback(() => {
+    keptRef.current = editing?.id ?? "new";
+    if (maybeSaved) {
+      setUncertain(MAYBE_SAVED_TEXT);
+    }
+    setDuplicateAsk(false);
+    setFormOpen(false);
+    setFieldErrors({});
+    setError(null);
+  }, [editing, maybeSaved]);
+  /** The form is empty again only once it has finished closing (and only when nothing was kept). */
+  const handleFormClosed = useCallback(() => {
+    if (keptRef.current === null) {
+      setEditing(null);
+      setDraft(blankDraft());
+      setFieldErrors({});
+    }
+  }, []);
+  /**
+   * What the save said takes the focus when the form closes; a cancel (the notice was cleared when it opened) goes
+   * back to what opened the form, even with the warning of a cut connection still on screen.
+   */
+  const finalFocus = useCallback(
+    () => (notice ? feedbackRef.current : null) ?? originRef.current() ?? true,
+    [notice]
+  );
 
   const saveProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -301,10 +382,25 @@ export function PaymentProfilesPage() {
         focusFeedback();
         return;
       }
+      // sent again after a cut answer: the profile may be on the list already (the name is not unique in the base)
+      const wanted = draft.name.trim().toLowerCase();
+      if (
+        maybeSaved &&
+        !editing &&
+        !duplicateAsk &&
+        profiles.some((profile) => profile.name.trim().toLowerCase() === wanted)
+      ) {
+        setDuplicateAsk(true);
+        setError(null);
+        setNotice(null);
+        focusFeedback();
+        return;
+      }
       setPending(true);
       setError(null);
       setNotice(null);
       setUncertain(null);
+      let saved = false;
       try {
         const rules = draft.rules.map(ruleInput);
         const name = draft.name.trim();
@@ -325,38 +421,59 @@ export function PaymentProfilesPage() {
           });
           setNotice(`Perfil “${name}” criado.`);
         }
-        setEditing(null);
-        setDraft(blankDraft());
+        keptRef.current = null;
+        setMaybeSaved(false);
+        setDuplicateAsk(false);
+        setFormOpen(false);
+        saved = true;
         await loadProfiles();
       } catch (cause) {
         if (isConnectionFailure(cause)) {
-          setUncertain(SAVE_OUTCOME_UNKNOWN);
+          setUncertain(SAVE_NOT_CONFIRMED_TEXT);
+          setMaybeSaved(true);
           readAgainIfAnswers();
         } else {
           setError(errorText(cause));
         }
       } finally {
         setPending(false);
-        focusFeedback();
+        // a save closes the form and the focus goes to the notice when it has closed (`finalFocus`); what failed is
+        // said inside the form, which is still open
+        if (!saved) {
+          focusFeedback();
+        }
       }
     },
     [
       draft,
+      duplicateAsk,
       editing,
       focusFeedback,
       loadProfiles,
+      maybeSaved,
       online,
       organizationId,
+      profiles,
       readAgainIfAnswers,
     ]
   );
   const editProfile = useCallback((profile: PaymentProfileReadModel) => {
-    setEditing(profile);
-    setDraft(profileDraft(profile));
+    // the "Editar" of the profile that opened the form
+    originRef.current = () =>
+      rootRef.current?.querySelector<HTMLElement>(
+        `[data-profile-id="${profile.id}"] [data-profile-edit]`
+      ) ?? null;
+    if (keptRef.current !== profile.id) {
+      setEditing(profile);
+      setDraft(profileDraft(profile));
+      setMaybeSaved(false);
+    }
+    keptRef.current = null;
+    setDuplicateAsk(false);
     setFieldErrors({});
     setError(null);
     setNotice(null);
-    focusLater(() => document.getElementById(NAME_ID)?.focus());
+    setFormOpen(true);
   }, []);
   const changeLifecycle = useCallback(
     async (profile: PaymentProfileReadModel) => {
@@ -408,33 +525,72 @@ export function PaymentProfilesPage() {
   return (
     <div ref={rootRef}>
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-        <header className="grid gap-1">
-          <h1 className="text-title">Perfis de pagamento</h1>
-          <p className="text-muted-foreground text-support">
-            Organize métodos, parcelamento, prazo de recebimento e taxas por
-            perfil.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="grid gap-1">
+            <h1 className="text-title">Perfis de pagamento</h1>
+            <p className="text-muted-foreground text-support">
+              Organize métodos, parcelamento, prazo de recebimento e taxas por
+              perfil.
+            </p>
+          </div>
+          <Button
+            disabled={pending}
+            onClick={handleNew}
+            ref={newButtonRef}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Novo perfil
+          </Button>
         </header>
-        <ActionFeedback
-          error={error}
-          notice={notice}
-          regionRef={feedbackRef}
-          uncertain={uncertain}
-        />
-        <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <PaymentProfileForm
-            draft={draft}
-            editingName={editing ? editing.name : null}
-            errors={fieldErrors}
-            onAddRule={handleAddRule}
-            onCancel={handleCancelEdit}
-            online={online}
-            onNameChange={handleNameChange}
-            onRemoveRule={handleRemoveRule}
-            onSubmit={saveProfile}
-            onUpdateRule={updateRule}
-            pending={pending}
+        {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
+        {formOpen ? null : (
+          <ActionFeedback
+            error={error}
+            notice={notice}
+            regionRef={feedbackRef}
+            uncertain={uncertain}
           />
+        )}
+        <PaymentProfileForm
+          draft={draft}
+          editingName={editing ? editing.name : null}
+          errors={fieldErrors}
+          feedback={
+            formOpen ? (
+              <ActionFeedback
+                error={error}
+                notice={null}
+                regionRef={feedbackRef}
+                uncertain={uncertain}
+                uncertainAction={
+                  uncertain === SAVE_NOT_CONFIRMED_TEXT
+                    ? { label: CHECK_AND_CLOSE_LABEL, onClick: handleDismiss }
+                    : undefined
+                }
+                warning={
+                  duplicateAsk
+                    ? `Já existe um perfil chamado “${draft.name.trim()}” na lista.`
+                    : null
+                }
+              />
+            ) : null
+          }
+          finalFocus={finalFocus}
+          onAddRule={handleAddRule}
+          onCancel={handleCancelEdit}
+          onClosed={handleFormClosed}
+          confirmDuplicate={duplicateAsk}
+          onDismiss={handleDismiss}
+          online={online}
+          onNameChange={handleNameChange}
+          onRemoveRule={handleRemoveRule}
+          onSubmit={saveProfile}
+          onUpdateRule={updateRule}
+          open={formOpen}
+          pending={pending}
+        />
+        <div className="grid items-start gap-4">
           <PaymentProfileList
             hasAnyProfile={profiles.length > 0}
             includeArchived={showArchived}

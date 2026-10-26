@@ -1,5 +1,6 @@
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
+  type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -12,9 +13,11 @@ import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogForm,
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
@@ -23,6 +26,7 @@ import { readWithRetry } from "../lib/read-with-retry";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import {
   type ActionState,
+  actionButtonLabels,
   availableActions,
   beginLinkSubmission,
   buildLinkCommand,
@@ -64,27 +68,125 @@ function sendCommand(command: LinkCommand): Promise<SaleCustomerLinkChange> {
   }
 }
 
-interface ActionButtonProps {
+/** Associate or change: the main action of the panel, which opens the dialog that picks the customer. */
+function ChooseButton({
+  action,
+  busy,
+  onChoose,
+}: {
   action: ActionState;
-  hintId: string;
-  onAction: (action: LinkAction) => void;
-}
-
-/** Associate or change: the main action of the panel. */
-function ActionButton({ action, hintId, onAction }: ActionButtonProps) {
-  const handleClick = useCallback(
-    () => onAction(action.action),
-    [action.action, onAction]
-  );
+  busy: boolean;
+  onChoose: () => void;
+}) {
   return (
     <Button
-      aria-describedby={!action.enabled && action.hint ? hintId : undefined}
-      aria-disabled={!action.enabled || undefined}
-      onClick={action.enabled ? handleClick : undefined}
+      aria-disabled={busy || undefined}
+      onClick={busy ? undefined : onChoose}
       type="button"
     >
       {action.label}
     </Button>
+  );
+}
+
+interface ChooseDialogProps {
+  action: ActionState;
+  /** What the dialog was opened for: it keeps its words while it fades after the sale got a customer. */
+  asking: LinkAction;
+  /** What the last attempt said, when it did not go through: said here, since the dialog covers the panel. */
+  error: string | null;
+  hintId: string;
+  onCancel: () => void;
+  onClosed: () => void;
+  /** Esc and "Fechar": the dialog closes and the customer picked is kept for the next opening. */
+  onDismiss: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  open: boolean;
+  picker: ReactNode;
+  submitting: boolean;
+}
+
+/**
+ * The customer to associate, or to change to, in a form dialog (the whole screen on a phone): the picker and the one
+ * button that sends it, off with its reason (`aria-disabled`) until a customer other than the current is chosen. Esc
+ * and "Fechar" are "Cancelar" (nothing closes while it is sending).
+ */
+function ChooseDialog({
+  action,
+  asking,
+  error,
+  hintId,
+  onCancel,
+  onClosed,
+  onDismiss,
+  onSubmit,
+  open,
+  picker,
+  submitting,
+}: ChooseDialogProps) {
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!(next || submitting)) {
+        onDismiss();
+      }
+    },
+    [onDismiss, submitting]
+  );
+  const handleOpenChangeComplete = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        onClosed();
+      }
+    },
+    [onClosed]
+  );
+  return (
+    <Dialog
+      disablePointerDismissal
+      onOpenChange={handleOpenChange}
+      onOpenChangeComplete={handleOpenChangeComplete}
+      open={open}
+    >
+      <DialogContent layout="form">
+        <DialogForm onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle>{actionButtonLabels[asking]}</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            {picker}
+            {!action.enabled && action.hint ? (
+              <p className="text-muted-foreground text-support" id={hintId}>
+                {action.hint}
+              </p>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              disabled={submitting}
+              onClick={onCancel}
+              type="button"
+              variant="outline"
+            >
+              Cancelar
+            </Button>
+            <Button
+              aria-describedby={
+                !action.enabled && action.hint ? hintId : undefined
+              }
+              aria-disabled={!action.enabled || undefined}
+              type="submit"
+            >
+              {submitting ? action.label : actionButtonLabels[asking]}
+            </Button>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -180,7 +282,7 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
       label="Cliente"
       onChange={onChange}
       options={view.options}
-      placeholder="Escolha um cliente ativo"
+      placeholder="Escolha"
       value={selectedId}
     />
   );
@@ -195,6 +297,126 @@ function Frame({ children, framed }: { children: ReactNode; framed: boolean }) {
     </Card>
   ) : (
     <div className="grid gap-4">{children}</div>
+  );
+}
+
+interface CustomerActionsProps {
+  actions: ActionState[];
+  hintId: string;
+  /** Sends the action; true when the link was saved. */
+  onAction: (action: LinkAction) => Promise<boolean>;
+  onSelect: (customerId: string) => void;
+  selectedId: string;
+  status: ReturnType<typeof submissionView>;
+  view: PickerView;
+}
+
+/**
+ * What can be done with the customer of the sale: associate or change (a form dialog that picks the customer and sends
+ * the choice) and remove (a question). A failure of the choice is said inside the dialog while it is open, and under
+ * the buttons once it is closed. The customer picked and not linked is dropped once the dialog has closed, not while
+ * it fades.
+ */
+function CustomerActions({
+  actions,
+  hintId,
+  onAction,
+  onSelect,
+  selectedId,
+  status,
+  view,
+}: CustomerActionsProps) {
+  const [choosing, setChoosing] = useState(false);
+  const [asking, setAsking] = useState<LinkAction>("assign");
+  const chooseAction = actions.find((action) => action.action !== "unassign");
+  const removeAction = actions.find((action) => action.action === "unassign");
+  const submitting = status.kind === "submitting";
+
+  const handleChoose = useCallback(() => {
+    if (chooseAction) {
+      setAsking(chooseAction.action);
+    }
+    setChoosing(true);
+  }, [chooseAction]);
+  // only "Cancelar" throws the customer picked away (once the dialog has closed); Esc and "Fechar" keep it
+  const discard = useRef<boolean>(false);
+  const handleCancel = useCallback(() => {
+    discard.current = true;
+    setChoosing(false);
+  }, []);
+  const handleDismiss = useCallback(() => setChoosing(false), []);
+  const handleClosed = useCallback(() => {
+    if (discard.current) {
+      discard.current = false;
+      onSelect("");
+    }
+  }, [onSelect]);
+  const handleRemove = useCallback(
+    (action: LinkAction) => {
+      onAction(action).catch(() => undefined);
+    },
+    [onAction]
+  );
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      // off until a customer is picked: the button says why, and Enter on it sends nothing
+      if (!chooseAction?.enabled) {
+        return;
+      }
+      if (await onAction(chooseAction.action)) {
+        setChoosing(false);
+      }
+    },
+    [chooseAction, onAction]
+  );
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-3">
+        {chooseAction ? (
+          <ChooseButton
+            action={chooseAction}
+            busy={submitting}
+            onChoose={handleChoose}
+          />
+        ) : null}
+        {removeAction ? (
+          <RemoveButton
+            action={removeAction}
+            hintId={hintId}
+            onAction={handleRemove}
+          />
+        ) : null}
+      </div>
+      {chooseAction ? (
+        <ChooseDialog
+          action={chooseAction}
+          asking={asking}
+          error={choosing && status.kind === "error" ? status.message : null}
+          hintId={hintId}
+          onCancel={handleCancel}
+          onClosed={handleClosed}
+          onDismiss={handleDismiss}
+          onSubmit={handleSubmit}
+          open={choosing}
+          picker={
+            <CustomerPicker
+              disabled={submitting}
+              onChange={onSelect}
+              selectedId={selectedId}
+              view={view}
+            />
+          }
+          submitting={submitting}
+        />
+      ) : null}
+      {status.kind === "error" && !choosing ? (
+        <Alert variant="destructive">
+          <AlertDescription>{status.message}</AlertDescription>
+        </Alert>
+      ) : null}
+    </>
   );
 }
 
@@ -264,10 +486,11 @@ export function SaleCustomerPanel({
     loadCustomers().catch(() => undefined);
   }, [loadCustomers, loadLink]);
 
+  /** Sends the action; true when the link was saved (the dialog that asked closes only then). */
   const handleAction = useCallback(
-    async (action: LinkAction) => {
+    async (action: LinkAction): Promise<boolean> => {
       if (inFlight.current) {
-        return;
+        return false;
       }
       const result = buildLinkCommand(state, action, {
         organizationId,
@@ -275,7 +498,7 @@ export function SaleCustomerPanel({
       });
       if (!result.ok) {
         setState((current) => rejectLinkCommand(current, result.message));
-        return;
+        return false;
       }
       inFlight.current = true;
       setState((current) => beginLinkSubmission(current, action));
@@ -283,6 +506,7 @@ export function SaleCustomerPanel({
         const change = await sendCommand(result.command);
         nextRequestToken(linkSequence.current);
         setState((current) => linkSubmitted(current, action, change));
+        return true;
       } catch (error) {
         const failure = mapLinkError(error);
         setState((current) => linkSubmitFailed(current, error));
@@ -292,17 +516,12 @@ export function SaleCustomerPanel({
         if (failure.reloadCustomers) {
           loadCustomers().catch(() => undefined);
         }
+        return false;
       } finally {
         inFlight.current = false;
       }
     },
     [loadCustomers, loadLink, organizationId, saleId, state]
-  );
-  const handleActionEvent = useCallback(
-    (action: LinkAction) => {
-      handleAction(action).catch(() => undefined);
-    },
-    [handleAction]
   );
   const handleSelect = useCallback(
     (customerId: string) =>
@@ -321,7 +540,6 @@ export function SaleCustomerPanel({
   const actions = availableActions(state);
   const status = submissionView(state);
   const history = historyRows(state);
-  const disabledHint = actions.find((action) => !action.enabled && action.hint);
   const ready = state.link.status === "ready";
   return (
     <section aria-labelledby="sale-customer-title">
@@ -368,38 +586,15 @@ export function SaleCustomerPanel({
           </dl>
         )}
         {ready ? (
-          <div className="grid gap-3">
-            <CustomerPicker
-              disabled={status.kind === "submitting"}
-              onChange={handleSelect}
-              selectedId={state.selectedCustomerId}
-              view={pickerView(state)}
-            />
-            <div className="flex flex-wrap gap-3">
-              {actions.map((action) =>
-                action.action === "unassign" ? (
-                  <RemoveButton
-                    action={action}
-                    hintId={hintId}
-                    key={action.action}
-                    onAction={handleActionEvent}
-                  />
-                ) : (
-                  <ActionButton
-                    action={action}
-                    hintId={hintId}
-                    key={action.action}
-                    onAction={handleActionEvent}
-                  />
-                )
-              )}
-            </div>
-            {disabledHint ? (
-              <p className="text-muted-foreground text-support" id={hintId}>
-                {disabledHint.hint}
-              </p>
-            ) : null}
-          </div>
+          <CustomerActions
+            actions={actions}
+            hintId={hintId}
+            onAction={handleAction}
+            onSelect={handleSelect}
+            selectedId={state.selectedCustomerId}
+            status={status}
+            view={pickerView(state)}
+          />
         ) : null}
         <div aria-live="polite" role="status">
           {status.kind === "success" || status.kind === "submitting" ? (
@@ -414,11 +609,6 @@ export function SaleCustomerPanel({
             </p>
           ) : null}
         </div>
-        {status.kind === "error" ? (
-          <Alert variant="destructive">
-            <AlertDescription>{status.message}</AlertDescription>
-          </Alert>
-        ) : null}
         {history.length > 0 ? (
           <div className="grid gap-2">
             <SubHeading className="font-medium">

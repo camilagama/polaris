@@ -8,6 +8,12 @@ import {
   pickDate,
   touchDay,
 } from "./date-pickers";
+import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
@@ -727,13 +733,16 @@ async function openRulesPanel(page: Page) {
 async function createMonthlyRule(page: Page, description: string) {
   const panel = rulesPanel(page);
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
-  await panel.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
-  await choose(page, panel, "Categoria", "Aluguel");
-  await choose(page, panel, "Frequência", "Todo mês");
-  await pickDate(panel, "Começa em", "2026-07-14");
-  await panel.getByLabel("Descrição").fill(description);
-  await panel.getByRole("button", { name: "Criar despesa recorrente" }).click();
+  // the form is a dialog, outside the region of the panel
+  const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
+  await form.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+  await choose(page, form, "Categoria", "Aluguel");
+  await choose(page, form, "Frequência", "Todo mês");
+  await pickDate(form, "Começa em", "2026-07-14");
+  await form.getByLabel("Descrição").fill(description);
+  await form.getByRole("button", { name: "Criar despesa recorrente" }).click();
   await expect(panel.getByText("Despesa recorrente criada.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 test("uma despesa recorrente criada no passado lança a ocorrência do mês e mostra a próxima", async ({
@@ -769,6 +778,92 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   await expect(rule).toContainText("Próxima: 14/11/2026");
 });
 
+for (const width of FORM_WIDTHS) {
+  test(`Despesa recorrente a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(sizeFor(width));
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+    await openRulesPanel(page);
+    const openForm = rulesPanel(page).getByRole("button", {
+      name: "Nova despesa recorrente",
+    });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", {
+      name: "Nova despesa recorrente",
+    });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    // Esc sem digitar não guarda nada, nem o que foi digitado e apagado: reabrir traz o formulário como começou
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("");
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("7");
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("");
+
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Criar despesa recorrente" })
+      );
+    }
+
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("1.200");
+
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(server.rules).toHaveLength(0);
+
+    // o que foi digitado não fica para a próxima vez, e salvar fecha o formulário e diz o resultado
+    await openForm.click();
+    await expect(
+      dialog.getByLabel("Valor de cada ocorrência (R$)")
+    ).toHaveValue("");
+    await dialog.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
+    await choose(page, dialog, "Categoria", "Aluguel");
+    await choose(page, dialog, "Frequência", "Todo mês");
+    await pickDate(dialog, "Começa em", "2026-07-14");
+    await dialog.getByLabel("Descrição").fill("Assinatura do sistema");
+    await dialog
+      .getByRole("button", { name: "Criar despesa recorrente" })
+      .click();
+    await expect(
+      rulesPanel(page).getByText("Despesa recorrente criada.")
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.rules).toHaveLength(1);
+  });
+}
+
 for (const viewport of FORM_VIEWPORTS) {
   test(`'Termina em' da despesa recorrente, a ${viewport.name} px: não aceita dia antes do início, é opcional e Limpar o esvazia`, async ({
     page,
@@ -778,12 +873,12 @@ for (const viewport of FORM_VIEWPORTS) {
     const server = new FakeExpenseServer();
     await openExpenses(page, server);
     await openRulesPanel(page);
-    const panel = rulesPanel(page);
-    await panel
+    await rulesPanel(page)
       .getByRole("button", { name: "Nova despesa recorrente" })
       .click();
+    const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
 
-    await pickDate(panel, "Começa em", "2026-10-10");
+    await pickDate(form, "Começa em", "2026-10-10");
     const ends = await openDatePicker(page, "Termina em");
     // the days before the start cannot be chosen: the "ends before it starts" error cannot be made
     await expect(ends.locator('button[data-day="2026-10-09"]')).toHaveAttribute(
@@ -792,22 +887,22 @@ for (const viewport of FORM_VIEWPORTS) {
     );
     await touchDay(ends, "2026-12-10");
     await expect(ends).toBeHidden();
-    await expect(datePickerButton(page, "Termina em")).toHaveAccessibleName(
+    await expect(datePickerButton(form, "Termina em")).toHaveAccessibleName(
       "Termina em, 10/12/2026"
     );
 
-    await panel.getByRole("button", { name: "Limpar data de término" }).click();
-    await expect(datePickerButton(page, "Termina em")).toHaveAccessibleName(
+    await form.getByRole("button", { name: "Limpar data de término" }).click();
+    await expect(datePickerButton(form, "Termina em")).toHaveAccessibleName(
       "Termina em, Escolher data"
     );
     // the button that was cleared is gone: the focus goes to the field, not to the page
-    await expect(datePickerButton(page, "Termina em")).toBeFocused();
+    await expect(datePickerButton(form, "Termina em")).toBeFocused();
     // the help of the field is read with it
     await expect(
-      datePickerButton(page, "Termina em")
+      datePickerButton(form, "Termina em")
     ).toHaveAccessibleDescription("Em branco, repete sem data de término.");
     await expect(
-      panel.getByRole("button", { name: "Limpar data de término" })
+      form.getByRole("button", { name: "Limpar data de término" })
     ).toHaveCount(0);
   });
 }

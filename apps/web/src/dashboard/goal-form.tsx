@@ -1,14 +1,23 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { MAX_GOAL_NAME_LENGTH } from "@polaris/domain/goals/goal";
-import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import type { DateRange } from "@/ui/date-values";
 import { Field, FieldLabel } from "@/ui/field";
 import {
@@ -18,7 +27,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/select";
-import { ExpenseTextField } from "../expenses/expense-fields";
+import { ActionNotice, ExpenseTextField } from "../expenses/expense-fields";
+import { formatMonthLabel } from "../expenses/expense-model";
+import type { Feedback } from "../expenses/use-command-runner";
 import { focusLater } from "../lib/focus";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { DateRangeField, describedBy, FieldTexts } from "../sales/sale-fields";
@@ -91,7 +102,7 @@ function GoalKindSelect({
   const hint = goalKindHint(value);
   const labelId = `${id}-label`;
   return (
-    <Field className="min-w-0 sm:col-span-2" data-invalid={Boolean(error)}>
+    <Field className="min-w-0 md:col-span-2" data-invalid={Boolean(error)}>
       <FieldLabel id={labelId}>Indicador</FieldLabel>
       <Select
         disabled={disabled}
@@ -156,11 +167,22 @@ function FormActions({
 
 interface GoalCreateFormProps {
   disabled: boolean;
+  /** What the last command said while the form is open: the dialog covers the top of the screen. */
+  feedback: Feedback | null;
+  /** Where the focus goes when the form closes: what opened it. */
+  finalFocus: () => HTMLElement | boolean;
+  /** What was typed and kept when the form was closed by Esc or "Fechar". */
+  keptDraft?: GoalDraft | undefined;
   /** The month on screen (YYYY-MM): the period starts as that whole month. */
   month: string;
   onCancel: () => void;
+  /** Every change of the draft, so the panel can keep it when the form closes; `null` while it is as it started. */
+  onDraftChange: (draft: GoalDraft | null) => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   /** Resolves true when the goal was created. */
   onSave: (input: GoalCreateInput) => Promise<boolean>;
+  open: boolean;
   saving: boolean;
   /** The organization's today, YYYY-MM-DD. */
   today: string;
@@ -174,6 +196,11 @@ function createId(field: GoalDraftField): string {
   return `goal-create-${field}`;
 }
 
+type GoalCreateContentProps = Omit<
+  GoalCreateFormProps,
+  "finalFocus" | "onDismiss" | "open"
+>;
+
 const PERIOD_ID = "goal-create-period";
 
 /** The two ends of the period are one control: the error of either one focuses it. */
@@ -183,22 +210,60 @@ function controlId(field: GoalDraftField): string {
     : createId(field);
 }
 
-const CREATE_TITLE_ID = "goal-create-title";
-
-/** Creates a goal, in a card above the list. The parent gives it a new `key` to start over. */
+/**
+ * Creates a goal, in a dialog (the whole screen on a phone). Esc and "Fechar" are "Cancelar" (nothing closes while a
+ * save is on its way), and a tap on the veil does nothing, so what was typed is not lost by a slip. The content lives
+ * only while the dialog does, so each opening starts from the month on screen.
+ */
 export function GoalCreateForm({
+  finalFocus,
+  onCancel,
+  onDismiss,
+  open,
+  ...content
+}: GoalCreateFormProps) {
+  const { saving } = content;
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!(next || saving)) {
+        onDismiss();
+      }
+    },
+    [onDismiss, saving]
+  );
+  return (
+    <Dialog disablePointerDismissal onOpenChange={handleOpenChange} open={open}>
+      <DialogContent finalFocus={finalFocus} layout="form">
+        <GoalCreateContent onCancel={onCancel} {...content} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GoalCreateContent({
   disabled,
+  feedback,
+  keptDraft,
   month,
   onCancel,
+  onDraftChange,
   onSave,
   saving,
   today,
-}: GoalCreateFormProps) {
-  const [draft, setDraft] = useState<GoalDraft>(() => newGoalDraft(month));
+}: GoalCreateContentProps) {
+  const [draft, setDraft] = useState<GoalDraft>(
+    () => keptDraft ?? newGoalDraft(month)
+  );
   const [errors, setErrors] = useState<GoalDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<GoalDraft>(() => newGoalDraft(month));
-  useReportUnsentWork(isDraftChanged(draft, initialDraft));
+  const changed = isDraftChanged(draft, initialDraft);
+  // an Esc without typing keeps nothing: only a draft that differs from the start is worth bringing back
+  useEffect(
+    () => onDraftChange(changed ? draft : null),
+    [changed, draft, onDraftChange]
+  );
+  useReportUnsentWork(changed);
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.currentTarget;
@@ -243,74 +308,79 @@ export function GoalCreateForm({
   );
 
   return (
-    <Card aria-labelledby={CREATE_TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={3} id={CREATE_TITLE_ID} role="heading">
-          Nova meta
-        </CardTitle>
-        <CardDescription>
-          Começa com o mês da tela. Mesmos números dos cartões acima.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid gap-4 sm:grid-cols-2"
-          noValidate
-          onSubmit={handleSubmit}
+    <DialogForm onSubmit={handleSubmit}>
+      <DialogHeader>
+        <DialogTitle>Nova meta</DialogTitle>
+        <DialogDescription>
+          Começa em {formatMonthLabel(month)} e mede os mesmos números do
+          Resultado.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogBody className="md:grid-cols-2">
+        {feedback ? (
+          <div className="md:col-span-2">
+            <ActionNotice feedback={feedback} />
+          </div>
+        ) : null}
+        <GoalKindSelect
+          disabled={disabled}
+          error={errors.kind}
+          id={createId("kind")}
+          onChange={handleKind}
+          value={draft.kind}
+        />
+        <ExpenseTextField
+          className="md:col-span-2"
+          disabled={disabled}
+          error={errors.name}
+          id={createId("name")}
+          label="Nome"
+          maxLength={MAX_GOAL_NAME_LENGTH}
+          name="name"
+          onChange={handleChange}
+          optional
+          value={draft.name}
+        />
+        <DateRangeField
+          className="md:col-span-2"
+          disabled={disabled}
+          error={errors.startsOn ?? errors.endsOn}
+          from={draft.startsOn}
+          hint={PERIOD_HELP}
+          id={PERIOD_ID}
+          label="Período da meta"
+          onChange={handlePeriod}
+          to={draft.endsOn}
+          today={today}
+        />
+        <ExpenseTextField
+          addon={targetAddon(draft.kind)}
+          className="md:col-span-2 md:max-w-56"
+          disabled={disabled}
+          error={errors.target}
+          id={createId("target")}
+          inputMode={targetInputMode(draft.kind)}
+          label={targetLabel(draft.kind)}
+          name="target"
+          onChange={handleChange}
+          placeholder={targetPlaceholder(draft.kind)}
+          value={draft.target}
+        />
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          disabled={disabled}
+          onClick={onCancel}
+          type="button"
+          variant="outline"
         >
-          <GoalKindSelect
-            disabled={disabled}
-            error={errors.kind}
-            id={createId("kind")}
-            onChange={handleKind}
-            value={draft.kind}
-          />
-          <ExpenseTextField
-            className="sm:col-span-2"
-            disabled={disabled}
-            error={errors.name}
-            id={createId("name")}
-            label="Nome"
-            maxLength={MAX_GOAL_NAME_LENGTH}
-            name="name"
-            onChange={handleChange}
-            optional
-            value={draft.name}
-          />
-          <DateRangeField
-            className="sm:col-span-2"
-            disabled={disabled}
-            error={errors.startsOn ?? errors.endsOn}
-            from={draft.startsOn}
-            hint={PERIOD_HELP}
-            id={PERIOD_ID}
-            label="Período da meta"
-            onChange={handlePeriod}
-            to={draft.endsOn}
-            today={today}
-          />
-          <ExpenseTextField
-            addon={targetAddon(draft.kind)}
-            className="sm:col-span-2 sm:max-w-56"
-            disabled={disabled}
-            error={errors.target}
-            id={createId("target")}
-            inputMode={targetInputMode(draft.kind)}
-            label={targetLabel(draft.kind)}
-            name="target"
-            onChange={handleChange}
-            placeholder={targetPlaceholder(draft.kind)}
-            value={draft.target}
-          />
-          <FormActions
-            cancelLabel="Cancelar"
-            disabled={disabled}
-            label={saving ? "Criando…" : "Criar meta"}
-            onCancel={onCancel}
-          />
-        </form>
-      </CardContent>
-    </Card>
+          Cancelar
+        </Button>
+        <Button disabled={disabled} type="submit">
+          {saving ? "Criando…" : "Criar meta"}
+        </Button>
+      </DialogFooter>
+    </DialogForm>
   );
 }
 

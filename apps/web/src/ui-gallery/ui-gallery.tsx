@@ -35,10 +35,12 @@ import {
 } from "@/ui/collapsible";
 import {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -506,6 +508,38 @@ export function UiGallery() {
                       Cancelar a venda
                     </DialogClose>
                   </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog disablePointerDismissal>
+                <DialogTrigger render={<Button variant="outline" />}>
+                  Abrir formulário
+                </DialogTrigger>
+                <DialogContent layout="form">
+                  <DialogForm>
+                    <DialogHeader>
+                      <DialogTitle>Novo cadastro</DialogTitle>
+                      <DialogDescription>
+                        No celular ocupa a tela inteira; só o meio rola.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogBody>
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map((number) => (
+                        <div className="grid gap-1.5" key={number}>
+                          <Label htmlFor={`galeria-form-${number}`}>
+                            Campo {number}
+                          </Label>
+                          <Input id={`galeria-form-${number}`} />
+                        </div>
+                      ))}
+                    </DialogBody>
+                    <DialogFooter>
+                      <DialogClose render={<Button variant="outline" />}>
+                        Cancelar
+                      </DialogClose>
+                      <Button type="submit">Salvar</Button>
+                    </DialogFooter>
+                  </DialogForm>
                 </DialogContent>
               </Dialog>
 
