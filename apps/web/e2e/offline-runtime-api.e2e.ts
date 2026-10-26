@@ -710,10 +710,10 @@ test.describe("paliativo dos 1102: a fila e o sync com o Worker morto por CPU", 
     await openSales(page, server);
     const before = server.pulls;
     server.pullAnswer = "cpu";
-    // the return to the page syncs at once
-    await page.evaluate(() =>
-      document.dispatchEvent(new Event("visibilitychange"))
-    );
+    // the return of the connection syncs even with a fresh copy (the return to the page does not: it skips a
+    // copy pulled less than a minute ago)
+    await goOffline(page);
+    await page.context().setOffline(false);
     // the first pull died, and the sync tried again by itself (~2 s and ~4 s later)
     await expect
       .poll(() => server.pulls - before, { timeout: 15_000 })
