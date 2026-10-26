@@ -17,6 +17,13 @@ export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 /** The copy of the Início's map (`home/rhythm-copy.ts`): the light daily series before the month, ~3 KB. */
 export const DAILY_SALES_COPY_KEY_PREFIX = "polaris.offline.dailySales.";
 
+/**
+ * The map's series of this page, by organization (`home/rhythm-copy.ts`): the daily cache that works with the offline
+ * runtime off too (nothing on the disk then), so going back to the Início after a sale does not read it again. It goes
+ * with the copies below; leaving the page (Sair) takes it anyway.
+ */
+export const dailySalesMemory = new Map<string, unknown>();
+
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
 /** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
@@ -361,6 +368,7 @@ export function clearOrganizationResultCopies(
   preference: PreferenceStorage | null,
   organizationId: string
 ): void {
+  dailySalesMemory.delete(organizationId);
   try {
     for (const key of [
       ...keysWithPrefix(preference, organizationPrefix(organizationId)),
@@ -381,6 +389,7 @@ export function clearOrganizationResultCopies(
 export function clearPeriodSummaryCaches(
   preference: PreferenceStorage | null
 ): void {
+  dailySalesMemory.clear();
   try {
     for (const key of [
       ...keysWithPrefix(preference, KEY_PREFIX),

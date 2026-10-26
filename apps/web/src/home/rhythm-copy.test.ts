@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
   clearOrganizationResultCopies,
@@ -40,6 +40,9 @@ function memoryStorage() {
 }
 
 describe("the copy of the Início's map (rhythm-copy)", () => {
+  // the page's memory is one per module: each test starts without it
+  beforeEach(() => clearPeriodSummaryCaches(null));
+
   it("reads back the series written for the organization, under its own key", () => {
     const { storage, values } = memoryStorage();
     writeRhythmCopy(storage, ORG, SERIES, TODAY, ALLOWED);
@@ -113,9 +116,37 @@ describe("the copy of the Início's map (rhythm-copy)", () => {
     ).toBeNull();
     expect(todaysRhythmCopy(storage, OTHER, PERIOD, TODAY)).toBeNull();
     // a copy kept before the day of the reading existed: offline it still draws, online it is read again
+    clearPeriodSummaryCaches(null);
     values.set(`polaris.offline.dailySales.${ORG}`, JSON.stringify(SERIES));
     expect(readRhythmCopy(storage, ORG)).toEqual(SERIES);
     expect(todaysRhythmCopy(storage, ORG, PERIOD, TODAY)).toBeNull();
+  });
+
+  it("with the runtime off, the day's series stays in the page's memory only, and goes with the copies", () => {
+    const { storage, values } = memoryStorage();
+    const off = { offlineRuntimeEnabled: false, signingOut: false };
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, off);
+    writeRhythmCopy(null, OTHER, SERIES, TODAY, off);
+
+    expect(values.size).toBe(0);
+    expect(readRhythmCopy(storage, ORG)).toBeNull();
+    expect(todaysRhythmCopy(null, ORG, PERIOD, TODAY)).toEqual(SERIES);
+    expect(todaysRhythmCopy(null, ORG, PERIOD, "2026-10-24")).toBeNull();
+
+    // the store refused this person: only its series goes; the session ended: every one
+    clearOrganizationResultCopies(null, ORG);
+    expect(todaysRhythmCopy(null, ORG, PERIOD, TODAY)).toBeNull();
+    expect(todaysRhythmCopy(null, OTHER, PERIOD, TODAY)).toEqual(SERIES);
+    clearPeriodSummaryCaches(null);
+    expect(todaysRhythmCopy(null, OTHER, PERIOD, TODAY)).toBeNull();
+  });
+
+  it("once sign-out started, not even the page's memory keeps the series", () => {
+    writeRhythmCopy(null, ORG, SERIES, TODAY, {
+      offlineRuntimeEnabled: false,
+      signingOut: true,
+    });
+    expect(todaysRhythmCopy(null, ORG, PERIOD, TODAY)).toBeNull();
   });
 
   it("does not throw without usable storage", () => {

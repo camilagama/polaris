@@ -1,6 +1,7 @@
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
   DAILY_SALES_COPY_KEY_PREFIX,
+  dailySalesMemory,
   type PeriodSummaryWriteGuard,
 } from "../lib/period-summary-cache";
 import type { Period } from "./home-model";
@@ -17,11 +18,16 @@ import { type DailySeries, isDailySeries } from "./home-rhythm-model";
  * It is also the map's daily cache (Filipe, CPU-1e item 3): the copy keeps the store's day it was read on, and the
  * Início asks `report.dailySales` again only when the copy is not of today (or of another period), or on an explicit
  * "Tentar novamente". The days before the month may then miss a return made today until tomorrow: "até ontem".
+ * With the runtime off (production today) nothing goes to the disk: the same day and series stay in the page's memory
+ * (`dailySalesMemory`, cleared with the copies), so a second opening in the same page still reads once a day.
  */
 const keyOf = (organizationId: string) =>
   `${DAILY_SALES_COPY_KEY_PREFIX}${organizationId}`;
 
-/** Keeps the series the server just returned; nothing when the runtime is off or sign-out has started. */
+/**
+ * Keeps the series the server just returned, in the page's memory and, with the runtime on, on the device; nothing
+ * once sign-out has started.
+ */
 export function writeRhythmCopy(
   storage: PreferenceStorage | null,
   organizationId: string,
@@ -29,10 +35,11 @@ export function writeRhythmCopy(
   readOn: string,
   guard: PeriodSummaryWriteGuard
 ): void {
-  if (!(guard.offlineRuntimeEnabled && storage) || guard.signingOut) {
+  if (guard.signingOut || !isDailySeries(series)) {
     return;
   }
-  if (!isDailySeries(series)) {
+  dailySalesMemory.set(organizationId, { readOn, series });
+  if (!(guard.offlineRuntimeEnabled && storage)) {
     return;
   }
   try {
@@ -80,8 +87,9 @@ export function readRhythmCopy(
 }
 
 /**
- * The series kept, only when it was read on the store's `today` for this `period`: what the Início shows instead of
- * reading `report.dailySales` again (one read a day per device). Null otherwise, a copy without its day included.
+ * The series kept (in the page's memory, or else on the device), only when it was read on the store's `today` for this
+ * `period`: what the Início shows instead of reading `report.dailySales` again (one read a day per device). Null
+ * otherwise, a copy without its day included.
  */
 export function todaysRhythmCopy(
   storage: PreferenceStorage | null,
@@ -89,7 +97,13 @@ export function todaysRhythmCopy(
   period: Period,
   today: string
 ): DailySeries | null {
-  const kept = readKept(storage, organizationId);
+  const remembered = dailySalesMemory.get(organizationId) as
+    | { readOn: string; series: DailySeries }
+    | undefined;
+  const kept =
+    remembered?.readOn === today
+      ? remembered
+      : readKept(storage, organizationId);
   return kept?.readOn === today && isDailySeries(kept.series, period)
     ? kept.series
     : null;

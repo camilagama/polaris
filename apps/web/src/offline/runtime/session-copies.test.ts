@@ -304,6 +304,28 @@ describe("lists every polaris.offline.* key after each way out of the session", 
     expect(offlineKeys(stored)).toEqual([]);
   });
 
+  it("a série do mapa guardada só na memória da página (runtime desligado) sai com o Sair e com a sessão encerrada", async () => {
+    fakeWindow();
+    const m = await modules();
+    const period = { from: "2026-09-28", to: "2026-09-30" };
+    const off = { offlineRuntimeEnabled: false, signingOut: false };
+    m.rhythm.writeRhythmCopy(null, ORG, SERIES, "2026-10-23", off);
+    expect(m.rhythm.todaysRhythmCopy(null, ORG, period, "2026-10-23")).toEqual(
+      SERIES
+    );
+
+    m.ended.endSessionHere();
+    expect(
+      m.rhythm.todaysRhythmCopy(null, ORG, period, "2026-10-23")
+    ).toBeNull();
+
+    m.rhythm.writeRhythmCopy(null, ORG, SERIES, "2026-10-23", off);
+    m.leave.leaveAfterSignOut("/");
+    expect(
+      m.rhythm.todaysRhythmCopy(null, ORG, period, "2026-10-23")
+    ).toBeNull();
+  });
+
   it("depois de 'Sair' marcado, a leitura do mapa que ainda volta não grava a série de novo", async () => {
     const { stored } = fakeWindow();
     const m = await modules();

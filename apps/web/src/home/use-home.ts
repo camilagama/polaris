@@ -137,16 +137,49 @@ function keepCopy(
   }
 }
 
-/** The copy of the map read on the store's today (the daily cache), unless the runtime is off or the store refused. */
+/**
+ * Keeps the series just read: in the page's memory, with the runtime off too (the daily cache, `rhythm-copy.ts`), and
+ * on the device with it on; nothing once the store refused this person its results, the session ended or "Sair" began.
+ */
+function keepRhythm(
+  organizationId: string,
+  series: DailySeries,
+  today: string,
+  copyRefused: { current: boolean }
+) {
+  if (copyRefused.current || isSessionOver()) {
+    return;
+  }
+  writeRhythmCopy(
+    OFFLINE_RUNTIME_ENABLED ? browserStorage() : null,
+    organizationId,
+    series,
+    today,
+    {
+      offlineRuntimeEnabled: OFFLINE_RUNTIME_ENABLED,
+      signingOut: isSigningOut(),
+    }
+  );
+}
+
+/**
+ * The series of the map read on the store's today (the daily cache): from the page's memory, or with the runtime on
+ * from the device; nothing once the store refused this person its results.
+ */
 function rhythmOfToday(
   organizationId: string,
   period: { from: string; to: string },
   today: string,
   copyRefused: { current: boolean }
 ): DailySeries | null {
-  return OFFLINE_RUNTIME_ENABLED && !copyRefused.current
-    ? todaysRhythmCopy(browserStorage(), organizationId, period, today)
-    : null;
+  return copyRefused.current
+    ? null
+    : todaysRhythmCopy(
+        OFFLINE_RUNTIME_ENABLED ? browserStorage() : null,
+        organizationId,
+        period,
+        today
+      );
 }
 
 /** Trying again only helps when the server did not answer or was out; a refusal stays a refusal. */
@@ -524,12 +557,7 @@ export function useHome(
           throw new Error("daily_sales_malformed");
         }
         if (ticket === sequence.current.numbers) {
-          keepCopy(reads.report && !copyRefused.current, (storage) =>
-            writeRhythmCopy(storage, organizationId, series, figures.today, {
-              offlineRuntimeEnabled: OFFLINE_RUNTIME_ENABLED,
-              signingOut: isSigningOut(),
-            })
-          );
+          keepRhythm(organizationId, series, figures.today, copyRefused);
         }
         settle(ticket, "rhythm", { block: { data: series, status: "ready" } });
       } catch (error) {
