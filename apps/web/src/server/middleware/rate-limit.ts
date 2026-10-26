@@ -8,13 +8,15 @@ import { logger } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
 import type { MiddlewareHandler } from "hono";
 import { limiterKey } from "../auth/abuse-protection";
+import { sessionCookieName } from "../auth/security-options";
 import type {
   RateLimitBinding,
   ServerEnv,
   WorkerBindings,
 } from "../environment";
 
-const sessionCookiePattern = /^(?:__Secure-)?better-auth\.session_token$/;
+const IPV4_ADDRESS = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+const IPV6_GROUP = /^[0-9a-f]{1,4}$/i;
 const MAX_IDENTITY_LENGTH = 512;
 const RPC_PREFIX = "/rpc/";
 
@@ -84,35 +86,140 @@ export function isMediaUploadRequest(request: Request): boolean {
   return request.method.toUpperCase() === "POST";
 }
 
-function sessionCookie(request: Request): string | undefined {
+/**
+ * The session a cookie value names, as Better Auth reads it (quotes off, percent-escapes decoded): the token
+ * before the signature's dot, so that no spelling of one session, and no signature, opens another bucket.
+ */
+function sessionIdentity(raw: string): string | undefined {
+  let value = raw.trim();
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    value = value.slice(1, -1);
+  }
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    // an escape that does not decode is kept as it came, as Better Auth keeps it
+  }
+  const token = value.split(".", 1)[0] ?? "";
+  return token.length > 0 && token.length <= MAX_IDENTITY_LENGTH
+    ? token
+    : undefined;
+}
+
+/** The value of the one cookie Better Auth uses for the session in this environment, by its exact name. */
+function sessionCookie(
+  request: Request,
+  baseURL: string | undefined
+): string | undefined {
+  const name = sessionCookieName(baseURL);
+  if (name === undefined) {
+    return undefined;
+  }
   for (const part of (request.headers.get("cookie") ?? "").split(";")) {
     const separator = part.indexOf("=");
-    if (
-      separator > 0 &&
-      sessionCookiePattern.test(part.slice(0, separator).trim())
-    ) {
-      const value = part.slice(separator + 1).trim();
-      return value.length > 0 && value.length <= MAX_IDENTITY_LENGTH
-        ? value
-        : undefined;
+    if (separator > 0 && part.slice(0, separator).trim() === name) {
+      return sessionIdentity(part.slice(separator + 1));
     }
   }
   return undefined;
 }
 
+/** The eight 16-bit groups of an IPv6 address, or undefined for text that is not one (a zone after `%` is dropped). */
+function ipv6Groups(address: string): number[] | undefined {
+  let text = address.split("%", 1)[0] ?? "";
+  const tailStart = text.lastIndexOf(":") + 1;
+  if (text.includes(".")) {
+    const octets = ipv4Octets(text.slice(tailStart));
+    if (octets === undefined) {
+      return undefined;
+    }
+    // a dotted tail stands for the last two groups
+    const [a = 0, b = 0, c = 0, d = 0] = octets;
+    text = `${text.slice(0, tailStart)}${(a * 256 + b).toString(16)}:${(c * 256 + d).toString(16)}`;
+  }
+  const halves = text.split("::");
+  const groupsOf = (half: string | undefined) => (half ? half.split(":") : []);
+  const before = groupsOf(halves[0]);
+  const after = groupsOf(halves[1]);
+  const missing = 8 - before.length - after.length;
+  if (
+    halves.length > 2 ||
+    (halves.length === 2 ? missing < 1 : missing !== 0)
+  ) {
+    return undefined;
+  }
+  const all = [
+    ...before,
+    ...Array.from({ length: Math.max(missing, 0) }, () => "0"),
+    ...after,
+  ];
+  return all.every((group) => IPV6_GROUP.test(group))
+    ? all.map((group) => Number.parseInt(group, 16))
+    : undefined;
+}
+
+function ipv4Octets(text: string): number[] | undefined {
+  if (!IPV4_ADDRESS.test(text)) {
+    return undefined;
+  }
+  const octets = text.split(".").map(Number);
+  return octets.every((octet) => octet <= 255) ? octets : undefined;
+}
+
+/**
+ * What an IPv6 address counts as: its /64 (the first four groups, lowercase, without leading zeros), or the
+ * IPv4 address itself for an IPv4-mapped one (`::ffff:a.b.c.d`, in any spelling). Undefined for text that is not
+ * an IPv6 address.
+ */
+function ipv6Identity(address: string): string | undefined {
+  const groups = ipv6Groups(address);
+  if (groups === undefined) {
+    return undefined;
+  }
+  const [g0, g1, g2, g3, g4, g5, g6 = 0, g7 = 0] = groups;
+  if (
+    g0 === 0 &&
+    g1 === 0 &&
+    g2 === 0 &&
+    g3 === 0 &&
+    g4 === 0 &&
+    g5 === 0xff_ff
+  ) {
+    return [
+      Math.floor(g6 / 256),
+      g6 % 256,
+      Math.floor(g7 / 256),
+      g7 % 256,
+    ].join(".");
+  }
+  return `${[g0, g1, g2, g3].map((group) => (group ?? 0).toString(16)).join(":")}::/64`;
+}
+
+/**
+ * The address the IP bucket counts: an IPv4 address whole, an IPv6 address by its /64 (one subscriber holds
+ * a whole /64, so its addresses are one client). Text that is neither counts as no address.
+ */
 function clientIp(request: Request): string | undefined {
   const value = request.headers.get("cf-connecting-ip")?.trim();
-  return value && value.length <= 64 ? value : undefined;
+  if (!value || value.length > 64) {
+    return undefined;
+  }
+  return value.includes(":")
+    ? ipv6Identity(value)
+    : ipv4Octets(value)?.join(".");
 }
 
 /** The keys this request is counted by: the address and the session, the ones it carries. */
-function identities(request: Request): [KeyType, string][] {
+function identities(
+  request: Request,
+  baseURL: string | undefined
+): [KeyType, string][] {
   const found: [KeyType, string][] = [];
   const ip = clientIp(request);
   if (ip !== undefined) {
     found.push(["ip", ip]);
   }
-  const session = sessionCookie(request);
+  const session = sessionCookie(request, baseURL);
   if (session !== undefined) {
     found.push(["session", session]);
   }
@@ -152,11 +259,12 @@ async function deniedKeyTypes(
  * Per-user (session) and per-IP quotas for authenticated endpoints; every bucket a request counts in can
  * refuse it.
  *
- * The user identity is the hashed session cookie: the middleware runs before
+ * The user identity is the hashed session cookie, read by the one name Better Auth gives it for the
+ * base URL (`sessionCookieName`): the middleware runs before
  * authentication so it cannot know the user id, but a valid session always
  * maps to the same bucket, and the additional IP bucket stops a client from
- * rotating junk cookies to dodge the limit. Keys are HMAC digests, so neither
- * cookies nor addresses reach the limiter or logs; nothing the client chooses
+ * rotating junk cookies to dodge the limit. The address is the IPv4 address, or the /64 of an IPv6 one.
+ * Keys are HMAC digests, so neither cookies nor addresses reach the limiter or logs; nothing the client chooses
  * (an organization, a forwarded address, a header of its own) is ever a key.
  *
  * When a binding is absent (local development, unit tests) its keys are not
@@ -191,7 +299,10 @@ export function createRateLimitMiddleware(
       return;
     }
     const counted: [KeyType, RateLimitBinding, string][] = [];
-    for (const [keyType, identity] of identities(context.req.raw)) {
+    for (const [keyType, identity] of identities(
+      context.req.raw,
+      context.env.BETTER_AUTH_BASE_URL
+    )) {
       const limiter = rule.bindings[keyType](context.env);
       if (limiter) {
         counted.push([keyType, limiter, identity]);
