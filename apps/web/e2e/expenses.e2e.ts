@@ -1185,6 +1185,11 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   ).toBeVisible();
 });
 
+const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
+const VER_CATEGORIES = /[?&]ver=categorias(&|$)/;
+const VER_ANY = /[?&]ver=/;
+const LAB_SCREEN = /screen=expenses/;
+
 const segmented = (page: Page) =>
   page.getByRole("tablist", { name: "Lançamentos, recorrentes e categorias" });
 
@@ -1211,32 +1216,35 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
   // the control writes the part in the address, in place: "voltar" leaves the screen, it does not walk the parts
   const steps = await page.evaluate(() => history.length);
   await page.getByRole("tab", { name: "Recorrentes" }).click();
-  await expect(page).toHaveURL(/[?&]ver=recorrentes(&|$)/);
+  await expect(page).toHaveURL(VER_RECURRING);
   await expect(rulesPanel(page)).toBeVisible();
   await expect(
     rulesPanel(page).getByRole("button", { name: "Nova despesa recorrente" })
   ).toBeVisible();
   await page.getByRole("tab", { name: "Categorias" }).click();
-  await expect(page).toHaveURL(/[?&]ver=categorias(&|$)/);
+  await expect(page).toHaveURL(VER_CATEGORIES);
   await expect(
     page
       .getByRole("tabpanel", { name: "Categorias" })
       .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
   ).toBeVisible();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
-  await expect(page).not.toHaveURL(/[?&]ver=/);
+  await expect(page).not.toHaveURL(VER_ANY);
   expect(await page.evaluate(() => history.length)).toBe(steps);
 
   // the arrows walk the parts, as the other tabs of the app
   await page.getByRole("tab", { name: "Lançamentos" }).focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("tab", { name: "Recorrentes" })
-  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Recorrentes" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
 
   // the address opens a part: what was ticked in another survives (the three stay mounted)
-  await rulesPanel(page).getByRole("checkbox", { name: "Mostrar pausadas" }).check();
+  await rulesPanel(page)
+    .getByRole("checkbox", { name: "Mostrar pausadas" })
+    .check();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await expect(
@@ -1273,11 +1281,12 @@ test("o endereço abre o segmento, e um ?ver= inválido cai em Lançamentos sem 
     history.replaceState(history.state, "", url);
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
-  await expect(
-    page.getByRole("tab", { name: "Lançamentos" })
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(page).not.toHaveURL(/[?&]ver=/);
-  await expect(page).toHaveURL(/screen=expenses/);
+  await expect(page.getByRole("tab", { name: "Lançamentos" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(page).not.toHaveURL(VER_ANY);
+  await expect(page).toHaveURL(LAB_SCREEN);
   expect(await page.evaluate(() => history.length)).toBe(steps);
 });
 
@@ -1369,9 +1378,7 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
   const renameForm = page.getByRole("dialog", { name: "Renomear categoria" });
   // only the name: the group of a category does not change
   await expect(renameForm.getByRole("combobox")).toHaveCount(0);
-  await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue(
-    "Frete"
-  );
+  await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue("Frete");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(rename).toBeFocused();

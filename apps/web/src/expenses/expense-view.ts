@@ -13,9 +13,9 @@ export const EXPENSE_VIEWS = [
 
 export type ExpenseView = (typeof EXPENSE_VIEWS)[number]["value"];
 
-export const VIEW_PARAMETER = "ver";
+const VIEW_PARAMETER = "ver";
 
-export function isExpenseView(value: unknown): value is ExpenseView {
+function isExpenseView(value: unknown): value is ExpenseView {
   return EXPENSE_VIEWS.some((view) => view.value === value);
 }
 

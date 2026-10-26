@@ -874,16 +874,16 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
 
     await page.goto("/dashboard?aba=despesas&ver=xyz");
     const steps = await page.evaluate(() => history.length);
-    await expect
-      .poll(() => pathOf(page))
-      .toBe("/dashboard?aba=despesas");
+    await expect.poll(() => pathOf(page)).toBe("/dashboard?aba=despesas");
     await expect(
       segments.getByRole("tab", { exact: true, name: "Lançamentos" })
     ).toHaveAttribute("aria-selected", "true");
     expect(await page.evaluate(() => history.length)).toBe(steps);
 
     // the part belongs to the Despesas tab: another tab of the Resultado drops it from the address
-    await segments.getByRole("tab", { exact: true, name: "Recorrentes" }).click();
+    await segments
+      .getByRole("tab", { exact: true, name: "Recorrentes" })
+      .click();
     await expect
       .poll(() => pathOf(page))
       .toBe("/dashboard?aba=despesas&ver=recorrentes");

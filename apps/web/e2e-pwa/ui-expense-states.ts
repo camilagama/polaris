@@ -204,7 +204,9 @@ export const expenseStates = {
   /** A new expense sent empty, in its dialog: the amount, the category and the description say what is missing. */
   async errors(page: Page) {
     await openExpensesLab(page);
-    await page.getByRole("button", { exact: true, name: "Nova despesa" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Nova despesa" })
+      .click();
     await page.getByRole("button", { name: "Registrar despesa" }).click();
     await page.locator("#expense-description-error").waitFor();
     await showScreenAlone(page);
@@ -260,7 +262,9 @@ export const expenseStates = {
       .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
       .check();
     await page.getByText("Material de escritório").waitFor();
-    await page.getByRole("button", { exact: true, name: "Nova categoria" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Nova categoria" })
+      .click();
     await page.getByLabel("Nome da categoria").waitFor();
     await showScreenAlone(page);
   },

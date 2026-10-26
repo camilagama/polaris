@@ -872,7 +872,10 @@ export const SCREENS: UiScreen[] = [
   expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e o diálogo da regra", expenseStates.rules),
-  expenseScreen("categorias e o diálogo da categoria", expenseStates.categories),
+  expenseScreen(
+    "categorias e o diálogo da categoria",
+    expenseStates.categories
+  ),
   resultScreen("mês incompleto e gráfico de vendas", resultStates.list),
   resultScreen("gráfico de vendas e custos e a tabela", resultStates.chart),
   resultScreen("metas", resultStates.goals, exerciseGoalOverlays),
