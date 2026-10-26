@@ -7,6 +7,7 @@ import { formatLastConfirmed } from "../dashboard/dashboard-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
+import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
   useOfflineRuntime,
@@ -30,6 +31,7 @@ import {
   newSaleOfflineText,
   pickGoal,
 } from "./home-model";
+import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
 
@@ -192,9 +194,49 @@ const NO_BLOCKS: Blocks = {
   rhythm: null,
 };
 
+/**
+ * Every try of the figures failed with a connection, and the device has the copy (paliativo dos 1102): the copy's
+ * figures, under the notice that they could not be updated now, with what they show and "Tentar novamente".
+ */
+function staleCopyBlocks(
+  failed: OfflineHome & { figures: NonNullable<OfflineHome["figures"]> },
+  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  retry: { figures: () => void; rhythm: () => void },
+  timezone: string | null,
+  now: Date
+): { blocks: Blocks; updated: string } {
+  const { figures } = failed;
+  const blocks = readBlocks(
+    figures,
+    chart,
+    { onRetry: retry.rhythm, source: { data: failed.rhythm, status: "copy" } },
+    figures.todayShown
+  );
+  return {
+    blocks: {
+      ...blocks,
+      main: (
+        <div className="grid gap-4">
+          <StaleCopyNotice
+            onRetry={retry.figures}
+            shown={copyShownText(figures.confirmedAt, timezone, now)}
+          />
+          {blocks.main}
+        </div>
+      ),
+    },
+    updated: copyLine(
+      formatLastConfirmed(figures.confirmedAt, timezone),
+      figures.stale
+    ),
+  };
+}
+
 /** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
 function pageBlocks({
   chart,
+  failed,
+  now,
   offline,
   readsReport,
   retryFigures,
@@ -204,6 +246,9 @@ function pageBlocks({
   today,
 }: {
   chart: { days: ChartDays; onDays: (days: ChartDays) => void };
+  /** The copy, when every try of the figures failed with a connection (null when there is none). */
+  failed: OfflineHome | null;
+  now: Date;
   offline: OfflineHome | null;
   readsReport: boolean;
   retryFigures: () => void;
@@ -211,14 +256,20 @@ function pageBlocks({
   state: HomeState;
   timezone: string | null;
   today: string;
-}): { blocks: Blocks; updated: string | null } {
+}): { blocks: Blocks; updated: React.ReactNode } {
   if (offline === null) {
+    if (failed?.figures) {
+      return staleCopyBlocks(
+        { ...failed, figures: failed.figures },
+        chart,
+        { figures: retryFigures, rhythm: retryRhythm },
+        timezone,
+        now
+      );
+    }
     return {
       blocks: figureBlocks(state, retryFigures, chart, retryRhythm),
-      updated:
-        state.figures.status === "ready"
-          ? homeUpdatedLine(state.figures.data.month.generatedAt, timezone)
-          : null,
+      updated: figuresLine(state, timezone),
     };
   }
   if (!readsReport) {
@@ -242,6 +293,17 @@ function pageBlocks({
       offline.figures.stale
     ),
   };
+}
+
+/** The line under the title with a connection: when the figures were read, or, after ~3 s of reading, that it takes long. */
+function figuresLine(
+  state: HomeState,
+  timezone: string | null
+): React.ReactNode {
+  if (state.figures.status === "ready") {
+    return homeUpdatedLine(state.figures.data.month.generatedAt, timezone);
+  }
+  return state.figures.status === "loading" ? <SlowReadNote /> : null;
 }
 
 /**
@@ -281,7 +343,7 @@ function HomeHeader({
   updated,
 }: {
   offlineText: string | null;
-  updated: string | null;
+  updated: React.ReactNode;
 }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
@@ -348,6 +410,7 @@ function useOfflineClock(online: boolean, serverNow: () => number): number {
  * screen until the first read answers: no skeletons and no jump of the page.
  */
 function useOfflineView({
+  figuresFailed,
   figuresLoading,
   online,
   organizationId,
@@ -356,6 +419,8 @@ function useOfflineView({
   serverNow,
   timezone,
 }: {
+  /** Every try of the figures failed, and trying again may help (not a refusal). */
+  figuresFailed: boolean;
   figuresLoading: boolean;
   online: boolean;
   organizationId: string;
@@ -363,7 +428,11 @@ function useOfflineView({
   refused: boolean;
   serverNow: () => number;
   timezone: string | null;
-}): { offline: OfflineHome | null; view: OfflineHome | null } {
+}): {
+  failed: OfflineHome | null;
+  offline: OfflineHome | null;
+  view: OfflineHome | null;
+} {
   const copyAllowed = useCopyAllowed(organizationId, readsReport, refused);
   const clock = useOfflineClock(online, serverNow);
   const offline = useMemo(
@@ -389,7 +458,21 @@ function useOfflineView({
     keptCopy.current = null;
   }
   const view = offline ?? keptCopy.current;
-  return { offline, view };
+  // with a connection, after every try failed: the same copy, if the device has it (paliativo dos 1102)
+  const failed = useMemo(
+    () =>
+      online && figuresFailed
+        ? offlineHome(
+            browserStorage(),
+            organizationId,
+            timezone,
+            serverNow(),
+            copyAllowed
+          )
+        : null,
+    [copyAllowed, figuresFailed, online, organizationId, serverNow, timezone]
+  );
+  return { failed: failed?.figures ? failed : null, offline, view };
 }
 
 /** The goal's card: the copy's without a connection (and until the first read after it), the server's otherwise. */
@@ -522,7 +605,8 @@ export function HomePage() {
     state,
   } = useHome(organizationId, organization.role, timezone);
   const snapshot = useRuntimeSnapshot();
-  const { offline, view } = useOfflineView({
+  const { failed, offline, view } = useOfflineView({
+    figuresFailed: state.figures.status === "error" && state.figures.retryable,
     figuresLoading: state.figures.status === "loading",
     online,
     organizationId,
@@ -546,6 +630,8 @@ export function HomePage() {
     ? { blocks: NO_BLOCKS, updated: null }
     : pageBlocks({
         chart,
+        failed,
+        now: new Date(serverNow()),
         offline: view,
         readsReport: reads.report,
         retryFigures,

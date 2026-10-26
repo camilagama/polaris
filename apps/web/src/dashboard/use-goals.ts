@@ -30,7 +30,8 @@ export function useGoals(organizationId: string) {
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
       const result = await readWithRetry(
-        () => orpcClient.goal.list({ organizationId, status: "all" }),
+        (signal) =>
+          orpcClient.goal.list({ organizationId, status: "all" }, { signal }),
         { isCurrent: () => requestSequence === sequence.current }
       );
       if (requestSequence === sequence.current) {

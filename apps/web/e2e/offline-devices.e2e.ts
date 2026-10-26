@@ -260,8 +260,9 @@ async function serve(page: Page, state: Scenario) {
       state.pushRefused += 1;
       return route.fulfill(refused());
     }
-    // the Worker answers that it cannot take the push now: the connection is proven, the queue waits
-    return route.fulfill(rpcError(503, "SERVICE_UNAVAILABLE"));
+    // the Worker answers that it cannot take the push now (its rate limit): the connection is proven, the queue
+    // waits, and the chip says so at once (a 503 with no reason would keep quiet for a minute: paliativo dos 1102)
+    return route.fulfill(rpcError(429, "TOO_MANY_REQUESTS"));
   });
 }
 

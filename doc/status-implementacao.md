@@ -2282,6 +2282,18 @@ Desenho do Filipe de 25/10 (item 6). A tela do mapa e a cópia offline são outr
 | Índice `(organization_id, occurred_on)` | Em revisão (t393) | Migration 0104 (provisória), só `CREATE INDEX sales_organization_occurred_on_idx ON sales (organization_id, occurred_on)` com `lock_timeout` de 10 s (expand-only; a construção segura as escritas em `sales`, curta antes do go-live). O gate `daily-sales` semeia 4 000 vendas antigas por loja, roda `ANALYZE` e exige, com o planejador livre, que o `dailySales` e o `readPeriodFacts` (a consulta real, vinda de `periodSalesSelect`) leiam `sales` por esse índice. O CI já roda o gate em todo PR (`gates:ci`, job `PostgreSQL 18 gates`). |
 | Medida de CPU | Pendente | Local (`wrangler dev`, banco falso): ver o PR. A medida oficial é a do Juan no staging (mediana ≤ 8 ms, p95 ≤ 12 ms, 0 `exceededCpu`). |
 
+### Paliativo dos 1102 no cliente: leituras em fila, três tentativas com freio e o sync quieto por 60 s (t396; emenda de 26/10 do ADR 0043; sem servidor nem migration)
+
+Desenho do Filipe de 26/10. Isto esconde o sintoma e não resolve a CPU: os Workers continuam morrendo por CPU na mesma taxa (`exceededCpu`). A decisão do plano continua pendente.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Fila de leituras por aba | Em revisão | `lib/read-gate.ts` no `fetch` do `/rpc` (`lib/connection.ts`): até 4 leituras de uma lista fechada em voo, por ordem de chegada; escritas fora. O primeiro `get-session` da aba sai antes delas (espera de no máximo 5 s). Leitura abandonada pela tela é cancelada e libera a vaga; leitura pendurada libera a vaga em 15 s. Um 429 do Worker com `Retry-After` pausa as leituras e o `sync/pull` da aba (no máximo 60 s). |
+| Novas tentativas | Em revisão | `readWithRetry`: até 3 tentativas, esperando cerca de 1,5 s e 4 s (±20%); repetem a morte na plataforma (`server_failed`), o 503 sem motivo ou `server_busy` e a falta de resposta com conexão; o 429, os 4xx e o 503 com motivo próprio não repetem. Freios por aba: 8 repetições em 10 s e disjuntor de 15 s quando mais da metade das últimas 20 chamadas morreu na plataforma. |
+| Sync offline | Em revisão | O `sync/pull` e a fila de saída não usam `readWithRetry`. Uma falha transitória (1102) não vira "Envio falhou" antes de 60 s seguidos sem sync bom e não marca o aparelho como offline; o agendador tenta em 2, 4, 8, 20, 40 e 60 s. A fila reenvia o mesmo comando, com a mesma chave, e o servidor grava uma vez. "Sair" e o ciclo de atualização só enviam a fila (rodada só de push, sem o porteiro): o pull da rodada em andamento é cortado, e a pausa do 429 não os segura. |
+| Telas | Em revisão | Início e Resultado: depois de cerca de 3 s, "Demorando mais que o normal…"; esgotadas as tentativas, com cópia, a cópia com "Não foi possível atualizar agora", "Mostrando os números de HH:MM. Vendas feitas depois não estão aqui." (noutro dia, "de DD/MM às HH:MM") e "Tentar novamente". Textos provisórios. |
+| Medida | Pendente | Depois do merge: Diego repete a rajada de 25 abas três vezes no staging, e Juan mede o `exceededCpu` e as invocações. Meta: "Tentar novamente" em até 2% das aberturas, com no máximo +40% de invocações. |
+
 ### Início v7, pacote D: "Ritmo de vendas" e a cópia da série (t394; sem migration)
 
 Revisão de UI v7 (Petković, 25/10), § 3 item 10 e § 7 linha D; desenho do `dailySales` (Filipe, 25/10, item 6); condição do Rodrigo no PR 335 (656-1). Emendas de 26/10 do ADR 0103 (o chunk do mapa) e do ADR 0056 (a cópia).

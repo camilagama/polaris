@@ -84,23 +84,30 @@ export function createRpcRuntimeApi(
       const id = session?.user?.id;
       return typeof id === "string" && id !== "" ? id : null;
     },
-    source: (organizationId): BootstrapSource => ({
-      getCursor: async () =>
-        (await client.sync.getCursor({ organizationId })).cursor,
-      page: async (collection, request) => {
-        const page = await client.sync.bootstrapPage({
-          afterId: request.afterId ?? null,
-          collection,
-          ids: request.ids ?? null,
-          limit: request.limit ?? 200,
-          organizationId,
-        });
-        return { nextAfterId: page.nextAfterId, rows: page.rows } as never;
-      },
-      pull: (cursor, limit) =>
-        client.sync.pull({ cursor, limit, organizationId }),
-      recentSales: async () =>
-        (await client.sale.list({ limit: 100, organizationId })).sales,
-    }),
+    source: (organizationId, signal): BootstrapSource => {
+      const options = signal ? { signal } : undefined;
+      return {
+        getCursor: async () =>
+          (await client.sync.getCursor({ organizationId }, options)).cursor,
+        page: async (collection, request) => {
+          const page = await client.sync.bootstrapPage(
+            {
+              afterId: request.afterId ?? null,
+              collection,
+              ids: request.ids ?? null,
+              limit: request.limit ?? 200,
+              organizationId,
+            },
+            options
+          );
+          return { nextAfterId: page.nextAfterId, rows: page.rows } as never;
+        },
+        pull: (cursor, limit) =>
+          client.sync.pull({ cursor, limit, organizationId }, options),
+        recentSales: async () =>
+          (await client.sale.list({ limit: 100, organizationId }, options))
+            .sales,
+      };
+    },
   };
 }

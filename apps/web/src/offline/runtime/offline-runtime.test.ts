@@ -1,6 +1,8 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
+import { ORPCError } from "@orpc/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "../../lib/connection";
+import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { attemptLogout } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
@@ -90,6 +92,8 @@ function world(options: { leaseHours?: number } = {}) {
     openStoresFailures?: number;
     /** Makes every pull wait for this promise. */
     pull?: Promise<void> | undefined;
+    /** Makes every pull go through the tab's read gate, as the real `fetch` does (the signal frees it). */
+    readGate?: ReadGate | undefined;
     /** Makes every push wait for this promise. */
     push?: Promise<void> | undefined;
   } = {};
@@ -150,10 +154,16 @@ function world(options: { leaseHours?: number } = {}) {
   };
   // the server as a source of pulls, counting them and able to make them wait
   const countedSource = Object.create(server) as FakeCatalogServer;
+  let pullSignal: AbortSignal | undefined;
   countedSource.pull = async (cursor, limit) => {
     calls.pull += 1;
     await gates.pull;
-    return server.pull(cursor, limit);
+    const release = await gates.readGate?.acquire(pullSignal);
+    try {
+      return await server.pull(cursor, limit);
+    } finally {
+      release?.();
+    }
   };
   const api: RuntimeApi = {
     deviceIsMine: (deviceId) => {
@@ -217,7 +227,10 @@ function world(options: { leaseHours?: number } = {}) {
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
-    source: () => countedSource,
+    source: (_organizationId, signal) => {
+      pullSignal = signal;
+      return countedSource;
+    },
   };
   const make = (
     deviceLabel: string | null = null,
@@ -735,6 +748,91 @@ describe("starting", () => {
     runtime.forgetDevice();
     expect(w.keyValues.data.size).toBe(0);
     expect(runtime.currentDeviceId()).toBeNull();
+  });
+
+  describe('"Sair" with the reads of the tab held (the pause of a 429, the line full)', () => {
+    /** Four reads in flight and a 60 s pause: nothing goes through this gate until the (never firing) clock moves. */
+    function heldGate(): ReadGate {
+      const gate = createReadGate({
+        now: () => 0,
+        schedule: () => () => undefined,
+      });
+      for (let read = 0; read < 4; read += 1) {
+        gate.acquire().catch(() => undefined);
+      }
+      gate.pause(60_000);
+      return gate;
+    }
+
+    it("sends the queue and goes on, without a pull that would wait for the gate", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      w.gates.readGate = heldGate();
+      const pulls = w.calls.pull;
+
+      const outcome = await attemptLogout(await runtime.logoutWorkspaces());
+
+      expect(outcome).toEqual({ status: "ready" });
+      expect(w.calls.push).toBeGreaterThan(0);
+      expect(w.calls.pull).toBe(pulls);
+      expect(w.purged).toEqual([{ discardPending: false }]);
+    });
+
+    it("cuts the pull of a sync already waiting for the gate, and sends what was queued after its push", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      w.gates.readGate = heldGate();
+      const pulls = w.calls.pull;
+      const held = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.pull).toBe(pulls + 1));
+      await queueProduct(runtime, "Camiseta", 1);
+      const pushes = w.calls.push;
+
+      const outcome = await attemptLogout(await runtime.logoutWorkspaces());
+
+      expect(outcome).toEqual({ status: "ready" });
+      expect(w.calls.push).toBeGreaterThan(pushes);
+      expect(w.calls.pull).toBe(pulls + 1);
+      await held; // the cut run ended by itself, not as a failure
+      expect(runtime.getSnapshot().reason).toBeNull();
+    });
+  });
+
+  describe('the send of "Sair" and the full sync meeting each other', () => {
+    it("a Sair that arrives while the sync is still pushing cuts the pull that would come next", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      let release: () => void = () => undefined;
+      w.gates.push = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const pulls = w.calls.pull;
+      const full = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.push).toBeGreaterThan(0));
+      const sent = runtime.workSource().sync();
+      release();
+      await sent;
+      await full;
+      expect(w.calls.pull).toBe(pulls);
+    });
+
+    it("a full sync asked for while a send-only run is on its way follows it, with the pull", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      const pulls = w.calls.pull;
+      const sent = runtime.workSource().sync();
+      const full = runtime.syncNow();
+      await sent;
+      await full;
+      expect(w.calls.pull).toBe(pulls + 1);
+    });
   });
 
   it("logging out with no store open and work queued is blocked, deletes the collections and the lease, and keeps the queue", async () => {
@@ -2215,6 +2313,69 @@ describe("conexão com prova (F7)", () => {
         online: true,
         reason: null,
       });
+    });
+
+    it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'sync_failed'", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark)
+      w.failures.pushError = new ORPCError("SERVICE_UNAVAILABLE", {
+        status: 503,
+      });
+
+      await runtime.syncNow();
+      expect(runtime.getSnapshot()).toMatchObject({
+        online: true,
+        reason: null,
+        syncing: false,
+      });
+      expect(runtime.retriesQuietly()).toBe(true);
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+
+      w.advance(59 / 3600);
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+
+      w.advance(1 / 3600); // 60 s in a row with no good sync
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBe("sync_failed");
+      expect(runtime.retriesQuietly()).toBe(false);
+      expect(runtime.getSnapshot().counts.pending).toBe(1);
+    });
+
+    it("a good sync between two deaths for CPU starts the 60 s again", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      w.failures.pushError = died;
+      await runtime.syncNow();
+      w.advance(50 / 3600);
+      w.failures.pushError = undefined;
+      await runtime.syncNow();
+      expect(runtime.retriesQuietly()).toBe(false);
+
+      await queueProduct(runtime, "Boné", 1);
+      w.failures.pushError = died;
+      w.advance(20 / 3600);
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+      expect(runtime.retriesQuietly()).toBe(true);
+    });
+
+    it("a death for CPU long after the last one starts a quiet minute of its own, and no answer is never retried quietly", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      w.failures.pushError = died;
+      await runtime.syncNow();
+      w.advance(10 / 60); // 10 min with no sync at all (the page hidden)
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+      expect(runtime.retriesQuietly()).toBe(true);
+
+      w.failures.pushError = new TypeError("Failed to fetch");
+      await runtime.syncNow();
+      expect(runtime.retriesQuietly()).toBe(false);
     });
 
     it("a server failure (5xx) is 'sync_failed'", async () => {

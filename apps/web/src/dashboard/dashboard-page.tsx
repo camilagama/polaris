@@ -1,13 +1,21 @@
 import { HideValuesButton } from "@/ui/hidden-values";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { SlowReadNote } from "../app-shell/read-wait";
 import { LoadError } from "../expenses/expense-fields";
 import { monthOfDay } from "../expenses/expense-model";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
@@ -124,7 +132,7 @@ function CardNote({
   loading,
 }: {
   children: string;
-  description?: string;
+  description?: ReactNode;
   loading?: boolean;
 }) {
   return (
@@ -156,7 +164,17 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
   const { summary } = state;
   if (summary === null) {
     return state.isLoading ? (
-      <CardNote loading>Carregando o resultado…</CardNote>
+      <CardNote
+        description={
+          <SlowReadNote
+            className="block min-h-5"
+            key={`${period.from}/${period.to}`}
+          />
+        }
+        loading
+      >
+        Carregando o resultado…
+      </CardNote>
     ) : null;
   }
   // the label is always the period of the figures, never the one asked for while they are still the older ones
@@ -245,6 +263,7 @@ export function DashboardPage() {
     }
   }, [serverToday, today]);
   const snapshot = useRuntimeSnapshot();
+  const online = useConnectionOnline();
   const goals = useGoals(organizationId);
   const [initialTab] = useState(() => readResultTab(window.location.search));
   const [tab, setTab] = useState<ResultTab>(initialTab);
@@ -301,6 +320,9 @@ export function DashboardPage() {
           {state.summary && state.source === "cache" ? (
             <OfflineCopyNotice
               generatedAt={state.summary.generatedAt}
+              online={
+                online && state.serverFailed ? { onRetry: refresh } : undefined
+              }
               timezone={organization.timezone}
               waitingOperations={snapshot ? waitingOperations(snapshot) : 0}
             />

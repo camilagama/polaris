@@ -1637,13 +1637,14 @@ test.describe("conexão com prova", () => {
     expect(server.lists).toBeGreaterThanOrEqual(1);
   });
 
-  test("Perfis: a leitura cortada duas vezes, com /health respondendo, mostra o erro com Tentar novamente", async ({
+  test("Perfis: a leitura cortada três vezes, com /health respondendo, mostra o erro com Tentar novamente", async ({
     page,
   }) => {
     const server = await serveProfiles(page);
     let cuts = 0;
     await page.route("**/rpc/paymentProfile/list", async (route) => {
-      if (cuts < 2) {
+      // three tries (~1.5 s and ~4 s between them): only the third cut reaches the screen
+      if (cuts < 3) {
         cuts += 1;
         await route.abort("connectionreset");
         return;
