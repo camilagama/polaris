@@ -143,6 +143,8 @@ const bottomBar = (page: Page) =>
 const more = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Mais" });
 const chip = (page: Page) => page.locator(".sync-status");
+const storeMenu = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Loja, tema e Sair" });
 
 test.describe("desktop (1280 px)", () => {
   test.beforeEach(async ({ page }) => {
@@ -190,17 +192,31 @@ test.describe("desktop (1280 px)", () => {
       page.getByRole("link", { exact: true, name: "Polaris" })
     ).toHaveCSS("text-decoration-line", "none");
 
-    // the top of the sidebar: the mark and "Polaris"; the foot: the theme, the store, the e-mail and "Sair"
+    // the top of the sidebar: the mark and "Polaris"; the foot: the card of the store, with the e-mail and the menu
+    // of the theme and "Sair" (v7 § 3 item 12)
     await expect(
       page.getByRole("link", { exact: true, name: "Polaris" })
     ).toBeVisible();
-    await expect(
-      page.getByText("Loja do teste", { exact: true })
-    ).toBeVisible();
-    await expect(page.getByText(EMAIL, { exact: true })).toBeVisible();
+    const card = page.locator("[data-store-card]");
+    await expect(card).toContainText("Loja do teste");
+    await expect(card.getByText(EMAIL, { exact: true })).toBeVisible();
+    await expect(card).toContainText("LT");
     await expect(
       page.getByRole("button", { exact: true, name: "Sair" })
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await storeMenu(page).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitemradio")).toHaveText([
+      "Automático",
+      "Claro",
+      "Escuro",
+    ]);
+    // "Sair" is the last item, with its own separator before it; one store: nothing to switch to
+    await expect(menu.getByRole("menuitem")).toHaveText(["Sair"]);
+    await expect(menu.getByRole("separator")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(storeMenu(page)).toBeFocused();
 
     // the chip is in the top right corner of the content, right of the sidebar
     await expect(chip(page)).toContainText("Tudo sincronizado", {
@@ -220,49 +236,71 @@ test.describe("desktop (1280 px)", () => {
     );
   });
 
-  test("com duas lojas, o seletor da lateral é o Select do tema, tem o rótulo Loja e troca a loja", async ({
+  test("com duas lojas, o menu do cartão troca a loja, separado do tema e do Sair", async ({
     page,
   }) => {
     await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION]);
     await page.goto("/products");
-    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
-    await expect(store).toContainText("Loja do teste");
-    // clicking the visible label "Loja" takes the focus to the trigger, which keeps its name
-    await page.locator("#app-organization-label").click();
-    await expect(store).toBeFocused();
-    await expect(page.getByRole("option")).toHaveCount(0);
-    await store.click();
-    // the menu is the themed one (a listbox of options), not the one of the system
-    await expect(page.getByRole("option")).toHaveText([
+    const card = page.locator("[data-store-card]");
+    await expect(card).toContainText("Loja do teste");
+    await storeMenu(page).click();
+    const menu = page.getByRole("menu");
+    const stores = menu.getByRole("group", { name: "Trocar de loja" });
+    await expect(stores.getByRole("menuitemradio")).toHaveText([
       "Loja do teste",
       "Loja da filial",
     ]);
-    await page
-      .getByRole("option", { exact: true, name: "Loja da filial" })
-      .click();
-    await expect(store).toContainText("Loja da filial");
+    await expect(
+      stores.getByRole("menuitemradio", { name: "Loja do teste" })
+    ).toHaveAttribute("aria-checked", "true");
+    // the theme, the stores and "Sair": two separators, "Sair" last
+    await expect(menu.getByRole("separator")).toHaveCount(2);
+    await expect(menu.getByRole("menuitem").last()).toHaveText("Sair");
+    await stores.getByRole("menuitemradio", { name: "Loja da filial" }).click();
+    await expect(card).toContainText("Loja da filial");
     // the choice is the one kept for the next visit
     await page.reload();
-    await expect(
-      page.getByRole("combobox", { exact: true, name: "Loja" })
-    ).toContainText("Loja da filial");
+    await expect(page.locator("[data-store-card]")).toContainText(
+      "Loja da filial"
+    );
   });
 
-  test("o tema escolhido na lateral troca a classe do <html> e a cor da barra do navegador", async ({
+  test("só com o e-mail (a leitura das lojas falhou), o cartão e o Sair continuam lá", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.route("**/rpc/organization/listMine", (route) =>
+      route.fulfill({
+        body: JSON.stringify({
+          json: { code: "INTERNAL_SERVER_ERROR", defined: false, status: 500 },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+    await page.goto("/products");
+    const card = page.locator("[data-store-card]");
+    await expect(card).toContainText(EMAIL);
+    await storeMenu(page).click();
+    await expect(
+      page.getByRole("menuitem", { exact: true, name: "Sair" })
+    ).toBeVisible();
+  });
+
+  test("o tema escolhido no menu do cartão troca a classe do <html> e a cor da barra do navegador", async ({
     page,
   }) => {
     await serve(page);
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/");
-    const appearance = page.getByRole("group", { name: "Aparência" });
-    await expect(
-      appearance.getByRole("button", { name: "Automático" })
-    ).toHaveAttribute("aria-pressed", "true");
-    await appearance.getByRole("button", { name: "Escuro" }).click();
+    await storeMenu(page).click();
+    const option = (name: string) =>
+      page.getByRole("menuitemradio", { exact: true, name });
+    await expect(option("Automático")).toHaveAttribute("aria-checked", "true");
+    await option("Escuro").click();
     await expect(page.locator("html")).toHaveClass(DARK);
-    await expect(
-      appearance.getByRole("button", { name: "Escuro" })
-    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.locator('meta[name="theme-color"][data-tema="escuro"]')
     ).toHaveAttribute("media", "all");
@@ -273,17 +311,16 @@ test.describe("desktop (1280 px)", () => {
     // the choice survives the next page
     await page.goto("/products");
     await expect(page.locator("html")).toHaveClass(DARK);
-    await page
-      .getByRole("group", { name: "Aparência" })
-      .getByRole("button", { name: "Automático" })
-      .click();
+    await storeMenu(page).click();
+    await expect(option("Escuro")).toHaveAttribute("aria-checked", "true");
+    await option("Automático").click();
     await expect(page.locator("html")).not.toHaveClass(DARK);
     await expect(
       page.locator('meta[name="theme-color"][data-tema="claro"]')
     ).toHaveAttribute("media", "(prefers-color-scheme: light)");
   });
 
-  test("Sair na lateral encerra a sessão e vai para o início", async ({
+  test("Sair no menu do cartão encerra a sessão e vai para o início", async ({
     page,
   }) => {
     const state = await serve(page);
@@ -291,7 +328,8 @@ test.describe("desktop (1280 px)", () => {
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
-    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await storeMenu(page).click();
+    await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => state.signOutCalls).toBe(1);
     await expect(page).toHaveURL(LEFT_TO_START);
   });
@@ -310,13 +348,24 @@ test.describe("celular (360 px)", () => {
     const bar = bottomBar(page);
     await expect(bar).toBeVisible();
     await expect(sidebar(page)).toBeHidden();
-    // Início, Vender, Histórico, Estoque and Mais (desenho t269 v2, § 4): the Início at one touch, Vender too
+    // Início, Histórico, Vender in the middle (a pill of ink), Estoque and Mais (v7 § 3 item 12)
     await expect(bar.getByRole("link")).toHaveText([
       "Início",
-      "Vender",
       "Histórico",
+      "Vender",
       "Estoque",
     ]);
+    const sell = bar.locator("[data-bottom-sell]");
+    await expect(sell).toHaveText("Vender");
+    const barBox = await bar.boundingBox();
+    const sellBox = await sell.boundingBox();
+    expect(
+      Math.abs(
+        (sellBox?.x ?? 0) +
+          (sellBox?.width ?? 0) / 2 -
+          ((barBox?.x ?? 0) + (barBox?.width ?? 0) / 2)
+      )
+    ).toBeLessThan(2);
     await expect(more(page)).toBeVisible();
     await expect(bar.locator('[aria-current="page"]')).toHaveText("Início");
     await bar.getByRole("link", { name: "Vender" }).click();

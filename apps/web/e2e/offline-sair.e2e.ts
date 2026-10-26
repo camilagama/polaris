@@ -303,13 +303,23 @@ async function openApp(page: Page, server: Server, path = "/customers") {
   });
 }
 
-/** "Sair": at the foot of the sidebar on a wide screen, under "Mais" on a narrow one. */
+const STORE_MENU = "Loja, tema e Sair";
+const storeMenuButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: STORE_MENU });
+
+/**
+ * "Sair": on a wide screen, the last item of the menu of the store card (v7 § 3 item 12); under "Mais" on a narrow
+ * one, as a button straight in the sheet (Rodrigo, 25/10).
+ */
 async function clickSair(page: Page) {
   const more = page.getByRole("button", { exact: true, name: "Mais" });
   if (await more.isVisible()) {
     await more.click();
+    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    return;
   }
-  await page.getByRole("button", { exact: true, name: "Sair" }).click();
+  await storeMenuButton(page).click();
+  await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
 }
 
 async function queueCustomers(page: Page, count: number) {
@@ -460,6 +470,123 @@ test("no celular, fechar Mais antes da resposta do Sair não esconde o aviso da 
   await expect(sheet).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("alertdialog")).toContainText("2 operações");
   expect(server.log).not.toContain("sign-out");
+});
+
+test("cruzar 760 px durante o envio da fila não perde o Saindo… nem o aviso da fila (Rodrigo 26/10, menor 1 e 2)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  const server = new Server();
+  await openApp(page, server);
+  server.pushReaches = false;
+  await queueCustomers(page, 2);
+  await page.route("**/rpc/sync/push", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await route.fallback();
+  });
+
+  await clickSair(page);
+  // with the menu closed, the card says it is leaving and the button of the menu is busy
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saindo…" })
+  ).toBeVisible();
+  await expect(storeMenuButton(page)).toHaveAttribute("aria-busy", "true");
+  // the width crosses 760 px before the answer: the sidebar becomes the sheet of "Mais"
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expect(page.getByRole("alertdialog")).toContainText("2 operações", {
+    timeout: 10_000,
+  });
+  expect(server.log).not.toContain("sign-out");
+});
+
+test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rodrigo 25/10)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+  });
+
+  test("com a fila pendente, o diálogo aparece depois de o menu fechar, sob o cartão, e a sessão continua", async ({
+    page,
+  }) => {
+    const server = new Server();
+    await openApp(page, server);
+    server.pushReaches = false;
+    await queueCustomers(page, 2);
+    // the send answers late: the menu is closed well before the flow has its answer
+    let sendAsked = false;
+    await page.route("**/rpc/sync/push", async (route) => {
+      sendAsked = true;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.fallback();
+    });
+
+    await storeMenuButton(page).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    // "Sair" is the last item, apart from the theme and the stores
+    await expect(menu.getByRole("menuitem").last()).toHaveText("Sair");
+    await menu.getByRole("menuitem", { exact: true, name: "Sair" }).click();
+    await expect(menu).toBeHidden();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect.poll(() => sendAsked).toBe(true);
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("2 operações", { timeout: 10_000 });
+    await expect(menu).toBeHidden();
+    // the dialog is under the card, in the foot of the sidebar, and has the focus
+    const card = page.locator("[data-store-card]");
+    const cardBox = await card.boundingBox();
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (cardBox?.y ?? 0) + (cardBox?.height ?? 0)
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          document.activeElement?.closest('[role="alertdialog"]') !== null ||
+          document.activeElement?.querySelector('[role="alertdialog"]') !== null
+      )
+    ).toBe(true);
+    expect(server.log).not.toContain("sign-out");
+    expect(server.log.some((line) => line.startsWith("revokeCurrent"))).toBe(
+      false
+    );
+
+    // dismissing it keeps the session, and the focus goes back to the button of the menu
+    await dialog.getByRole("button", { name: "Ficar conectado" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(storeMenuButton(page)).toBeFocused();
+    expect(server.log).not.toContain("sign-out");
+  });
+
+  test("com a falha do sign-out, o aviso aparece sob o cartão depois de o menu fechar e o foco volta ao botão do menu", async ({
+    page,
+  }) => {
+    const server = new Server();
+    await openApp(page, server);
+    // neither the revocation (which would end the session with the device) nor the sign-out reaches the end
+    server.revokeAnswer = { code: "INTERNAL_SERVER_ERROR", status: 500 };
+    await page.route("**/api/auth/sign-out", (route) =>
+      route.fulfill({
+        body: "{}",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+
+    await clickSair(page);
+    await expect(page.getByRole("menu")).toBeHidden();
+    const alert = page.getByRole("alert").filter({
+      hasText: "não foi possível encerrar a sessão",
+    });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    await expect(alert).toContainText(
+      "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+    );
+    await expect(storeMenuButton(page)).toBeFocused();
+    // nothing left the page: the person is told, not taken to a screen that says they left
+    expect(new URL(page.url()).pathname).toBe("/customers");
+  });
 });
 
 for (const [name, answer] of [
