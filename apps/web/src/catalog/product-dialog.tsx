@@ -128,7 +128,7 @@ function TabLabel({ invalid, label }: TabLabelProps) {
       {invalid ? (
         <>
           <CircleAlertIcon aria-hidden="true" className="text-destructive" />
-          <span className="sr-only">, com erro</span>
+          <span className="sr-only">(com erro)</span>
         </>
       ) : null}
     </>
@@ -214,7 +214,11 @@ function ProductTabs({
       : ["dados", "variantes"];
   return (
     <Tabs className="gap-4" onValueChange={handleTab} value={tab}>
-      <TabsList aria-label="Partes do produto" className="w-full">
+      <TabsList
+        activateOnFocus
+        aria-label="Partes do produto"
+        className="w-full"
+      >
         {tabs.map((value) => (
           <TabsTrigger key={value} value={value}>
             <TabLabel
