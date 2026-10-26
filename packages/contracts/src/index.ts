@@ -1477,9 +1477,10 @@ const legalAcceptanceStatus = z.object({
  * Whether a procedure only reads (`read`) or changes state (`write`), declared on each one. The Worker's
  * rate limit picks its bucket by it, never by the name: a write with a name like a read still counts as a
  * write. A command (a sale, a stock movement, a send of the queue, a lease, a billing step) is always a
- * write. Two reads write, and only what follows from facts already recorded, the same however often they
- * run: `device.check` (the device's last seen and its link to the session, at every page load) and
- * `goal.list` (it settles the goals whose period ended).
+ * write, and so is `device.check`: it promotes the session's link to the device (ADR 0048), and once per
+ * page load fits the write bucket. `read` = no effect asked for by the user; it may do idempotent, bounded
+ * maintenance, proven by a gate (today only `goal.list`, which settles the goals whose period ended;
+ * `verify-home-writes-gate`).
  */
 export type ProcedureKind = "read" | "write";
 
@@ -1836,7 +1837,9 @@ export const polarisContract = {
         })
       )
       .output(publicCatalogProfile),
-    setup: writeProcedure
+    // Only reads the profile, the plan's entitlement and the published products: a read, which the public
+    // catalog screen repeats once on a transient failure (`readWithRetry`, which the contract's kind guards).
+    setup: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(publicCatalogSetup),
     // Taking products out is always allowed.
@@ -2024,9 +2027,9 @@ export const polarisContract = {
     // Confirms a live device of the user and links this session to it; the
     // offline runtime calls it at every online start. A revoked device is a
     // CONFLICT, an unknown one NOT_FOUND.
-    // A read for the rate limit: every page load makes it (each screen is one), and what it writes is only
-    // bookkeeping (the device's last seen and its link to this session), the same however often it runs.
-    check: readProcedure
+    // A write for the rate limit: it promotes the link of this session to the device (ADR 0048, under a
+    // lock) and records the device's last seen. Once per page load fits the write bucket.
+    check: writeProcedure
       .input(z.object({ deviceId: z.string().uuid() }))
       .output(z.object({ device: deviceReadModel })),
     register: writeProcedure

@@ -81,7 +81,6 @@ const READ_PROCEDURES = [
   "customer/list",
   "dataExport/list",
   "dataExport/listClosed",
-  "device/check",
   "device/list",
   "expense/list",
   "expense/listCategories",
@@ -98,6 +97,7 @@ const READ_PROCEDURES = [
   "plan/operationalSelection",
   "product/getVariants",
   "product/list",
+  "publicCatalog/setup",
   "report/dailySales",
   "report/periodSummary",
   "sale/get",
@@ -138,8 +138,8 @@ describe("request classification", () => {
     ["POST", "/rpc/category/create", "write"],
     ["POST", "/rpc/inventory/receiveStock", "write"],
     ["POST", "/rpc/sync/push", "write"],
-    // every page load confirms the device: its only write is the "last seen" and the session's link
-    ["POST", "/rpc/device/check", "read"],
+    // every page load confirms the device and promotes the session's link to it: a write, once per load
+    ["POST", "/rpc/device/check", "write"],
     ["POST", "/rpc/offline/issueLease", "write"],
     ["POST", "/rpc/sale/list", "read"],
     ["POST", "/rpc/sale/get", "read"],
