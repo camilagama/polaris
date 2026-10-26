@@ -546,7 +546,8 @@ function SidebarMenuButton({
   tooltip,
   ...props
 }: ComponentProps<"a"> & { isActive?: boolean; tooltip?: string }) {
-  const { state } = useSidebar();
+  // outside a provider (the parts shown alone in the gallery) the column is never folded
+  const state = useContext(SidebarContext)?.state;
   const button = (
     <a
       className={cx(
