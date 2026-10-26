@@ -23,13 +23,15 @@ import { createRpcRuntimeApi } from "./runtime-api";
 import { RuntimeContext } from "./runtime-context";
 import { openRuntimeStores } from "./runtime-stores";
 import { isSessionOver } from "./session-ended";
+import { holdSyncLeadership } from "./sync-leader";
 import { startSyncScheduler } from "./sync-scheduler";
 
 /**
  * Starts the offline runtime for the organization the person is working in and
- * keeps it syncing (`startSyncScheduler`: at start, when the connection comes
- * back, when the person returns to the app, every minute while it is in front,
- * and again after a failed send). Behind a build flag
+ * keeps it syncing (`startSyncScheduler`: at start and when the person returns
+ * to the app unless a tab pulled less than a minute ago, when the connection
+ * comes back, every minute while it is in front in one tab of the browser, and
+ * again after a failed send). Behind a build flag
  * (VITE_OFFLINE_RUNTIME_ENABLED) that stays off in production until the physical
  * device checklist of Gate 5 is done: with it off nothing here runs, registers a
  * device or touches the disk. The connection state of the tab listens to the
@@ -80,6 +82,14 @@ function createBrowserRuntime(): OfflineRuntime {
   });
 }
 
+/** The phases whose sync does something: the open copy, or the expired one that a sync renews. */
+const LEADING_PHASES: ReadonlySet<string> = new Set(["expired", "ready"]);
+
+function onVisibilityChange(listener: () => void): () => void {
+  document.addEventListener("visibilitychange", listener);
+  return () => document.removeEventListener("visibilitychange", listener);
+}
+
 function onPageVisible(listener: () => void): () => void {
   const onVisibility = () => {
     if (document.visibilityState === "visible") {
@@ -107,6 +117,23 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
     }
     let scheduler: ReturnType<typeof startSyncScheduler> | null = null;
     let stopped = false;
+    const isVisible = () => document.visibilityState === "visible";
+    // one tab of the browser pulls on the tick, and only a visible one whose runtime opened (a tab that could
+    // not open the store must not hold the others back); one session per browser, so the organization names it
+    const leadership = holdSyncLeadership({
+      canLead: () =>
+        isVisible() && LEADING_PHASES.has(runtime.getSnapshot().phase),
+      locks: typeof navigator === "undefined" ? undefined : navigator.locks,
+      name: `polaris-sync-leader:${organizationId}`,
+      onChange: (listener) => {
+        const stopVisibility = onVisibilityChange(listener);
+        const stopRuntime = runtime.subscribe(listener);
+        return () => {
+          stopVisibility();
+          stopRuntime();
+        };
+      },
+    });
     const schedule = () => {
       if (stopped) {
         return;
@@ -114,13 +141,14 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
       getUpdateStore()?.setWorkSource(runtime.workSource());
       scheduler = startSyncScheduler({
         connection: browserConnection,
-        isVisible: () => document.visibilityState === "visible",
+        isLeader: leadership.isLeader,
+        isVisible,
         onVisible: onPageVisible,
         random: Math.random,
         runtime,
         schedule: timerSchedule,
       });
-      return scheduler.syncNow();
+      return scheduler.refresh();
     };
     runtime
       .start(organizationId)
@@ -134,6 +162,7 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
       stopped = true;
       removeTry();
       scheduler?.stop();
+      leadership.stop();
       runtime.stop().catch(() => undefined);
     };
   }, [organizationId, runtime]);

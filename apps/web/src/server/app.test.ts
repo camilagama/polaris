@@ -309,7 +309,7 @@ describe("rate limit wiring", () => {
     vi.restoreAllMocks();
   });
 
-  it("limits RPC mutations per client but not RPC reads", async () => {
+  it("counts RPC writes in the write bucket and reads apart from it", async () => {
     const limiter: RateLimitBinding = {
       limit: vi.fn(() => Promise.resolve({ success: false })),
     };

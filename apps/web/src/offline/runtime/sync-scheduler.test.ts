@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeSnapshot } from "./offline-runtime";
-import { startSyncScheduler } from "./sync-scheduler";
+import { startSyncScheduler, TICK_MS } from "./sync-scheduler";
 
 async function flush() {
   for (let i = 0; i < 30; i += 1) {
@@ -29,6 +29,9 @@ function setup(options: Options = {}) {
     { at: number; callback: () => void; delay: number }
   >();
   const state = {
+    /** What `isFresh` answers: a tab pulled less than a tick ago and nothing is queued. */
+    fresh: false,
+    leader: true,
     online: true,
     reason: null as string | null,
     retryAfterMs: null as number | null,
@@ -54,9 +57,11 @@ function setup(options: Options = {}) {
     });
   });
   const connectionChanged = vi.fn();
+  const isFresh = vi.fn((_maxAgeMs: number) => Promise.resolve(state.fresh));
   const runtime = {
     connectionChanged,
     getSnapshot: () => ({ reason: state.reason }) as RuntimeSnapshot,
+    isFresh,
     syncNow,
   };
   // connection
@@ -79,6 +84,7 @@ function setup(options: Options = {}) {
   const visibleListeners = new Set<() => void>();
   const scheduler = startSyncScheduler({
     connection,
+    isLeader: () => state.leader,
     isVisible: () => state.visible,
     onVisible: (listener) => {
       visibleListeners.add(listener);
@@ -118,6 +124,7 @@ function setup(options: Options = {}) {
   return {
     advance,
     connectionChanged,
+    isFresh,
     listeners,
     liveDelays: () => [...timers.values()].map((timer) => timer.delay),
     now: () => now,
@@ -183,6 +190,90 @@ describe("the 60 s tick and the return to the page", () => {
     const t = setup();
     await t.scheduler.syncNow();
     expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("one pull per tick per browser", () => {
+  it("a tab that is not the leader does not pull on the tick, and pulls once it is", async () => {
+    const t = setup();
+    t.state.leader = false;
+
+    await t.advance(5 * TICK_MS);
+    expect(t.syncNow).not.toHaveBeenCalled();
+
+    t.state.leader = true;
+    await t.advance(TICK_MS);
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("an idle tab pulls at most once per tick, the start and the returns to the page included", async () => {
+    const t = setup();
+    await t.scheduler.refresh();
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+
+    // the pull just ran: every later return to the page finds the copy fresh
+    t.state.fresh = true;
+    for (let minute = 0; minute < 10; minute += 1) {
+      for (let i = 0; i < 20; i += 1) {
+        t.returnToFront();
+        // biome-ignore lint/performance/noAwaitInLoops: each return is one event, in order
+        await t.advance(TICK_MS / 20);
+      }
+    }
+
+    expect(t.syncNow).toHaveBeenCalledTimes(11);
+    expect(t.isFresh).toHaveBeenCalledWith(TICK_MS);
+  });
+});
+
+describe("the start and the return to the page (refresh)", () => {
+  it("syncs when the copy is not fresh", async () => {
+    const t = setup();
+    await t.scheduler.refresh();
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the sync when a tab pulled less than a tick ago and nothing is queued", async () => {
+    const t = setup();
+    t.state.fresh = true;
+
+    await t.scheduler.refresh();
+    t.returnToFront();
+    await flush();
+
+    expect(t.syncNow).not.toHaveBeenCalled();
+  });
+
+  it("syncs when the freshness cannot be read", async () => {
+    const t = setup();
+    t.isFresh.mockRejectedValueOnce(new Error("opfs_busy"));
+
+    await t.scheduler.refresh();
+
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins a sync on its way instead of asking", async () => {
+    const t = setup({ manual: true });
+    fire(t.scheduler.syncNow());
+    const refresh = t.scheduler.refresh();
+    await t.settleAll();
+    await refresh;
+
+    expect(t.syncNow).toHaveBeenCalledTimes(1);
+    expect(t.isFresh).not.toHaveBeenCalled();
+  });
+
+  it("the connection coming back and the explicit try still sync with a fresh copy", async () => {
+    const t = setup();
+    t.state.fresh = true;
+
+    await t.scheduler.syncNow();
+    t.setOnline(false);
+    t.setOnline(true);
+    await t.advance(2000);
+
+    expect(t.syncNow).toHaveBeenCalledTimes(2);
   });
 });
 
