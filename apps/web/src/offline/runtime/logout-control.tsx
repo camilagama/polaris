@@ -128,27 +128,24 @@ export function useLogout(destination: LeavePath) {
   };
 }
 
-interface LogoutControlProps {
+/** The state of a protected logout and what it does: what `useLogout` returns. */
+export type Logout = ReturnType<typeof useLogout>;
+
+interface LogoutNoticesProps {
+  logout: Logout;
   /**
    * Called when the warning of the pending queue or a message appears, so a closed "Mais" sheet of the phone opens
    * again: the answer may arrive after the person closed it.
    */
-  onAttention?: () => void;
-  /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
-  reason?: SignInReason;
-  /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
-  returnTo?: string;
+  onAttention?: (() => void) | undefined;
 }
 
-export function LogoutControl({
-  onAttention,
-  reason,
-  returnTo,
-}: LogoutControlProps = {}) {
-  const runtime = useOfflineRuntime();
-  const logout = useLogout(
-    reason ? logoutDestination({ reason, returnTo }) : "/"
-  );
+/**
+ * What a logout has to say after "Sair": the message of a failure and the dialog of the work this device would lose.
+ * It lives with the hook, never inside a menu that closes on the click (Rodrigo, 25/10, vale corrigir 1): the answer
+ * may come after the menu has closed, and a logout that failed must never be silent.
+ */
+export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
   const needsAttention = blocked !== null || message !== null;
@@ -164,20 +161,8 @@ export function LogoutControl({
       blockedRef.current?.focus();
     }
   }, [blocked]);
-  if (!runtime) {
-    return null;
-  }
   return (
-    <div className="grid gap-2">
-      <button
-        className="touch-hit focus-ring inline-flex h-ctl-md w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs motion-full:transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:bg-secondary/60 dark:hover:bg-accent [&_svg]:size-4"
-        disabled={busy}
-        onClick={logout.start}
-        type="button"
-      >
-        <LogOutIcon aria-hidden="true" />
-        Sair
-      </button>
+    <>
       {message ? (
         <p className="m-0 text-destructive text-support" role="alert">
           {message}
@@ -196,6 +181,44 @@ export function LogoutControl({
           />
         </div>
       ) : null}
+    </>
+  );
+}
+
+interface LogoutControlProps {
+  /** See `LogoutNotices`. */
+  onAttention?: () => void;
+  /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
+  reason?: SignInReason;
+  /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
+  returnTo?: string;
+}
+
+/** "Sair" as a button with its notices under it: the "Mais" sheet of the phone, the acceptance and Aparelhos. */
+export function LogoutControl({
+  onAttention,
+  reason,
+  returnTo,
+}: LogoutControlProps = {}) {
+  const runtime = useOfflineRuntime();
+  const logout = useLogout(
+    reason ? logoutDestination({ reason, returnTo }) : "/"
+  );
+  if (!runtime) {
+    return null;
+  }
+  return (
+    <div className="grid gap-2">
+      <button
+        className="touch-hit focus-ring inline-flex h-ctl-md w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 font-medium text-foreground text-sm shadow-xs motion-full:transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:bg-secondary/60 dark:hover:bg-accent [&_svg]:size-4"
+        disabled={logout.busy}
+        onClick={logout.start}
+        type="button"
+      >
+        <LogOutIcon aria-hidden="true" />
+        Sair
+      </button>
+      <LogoutNotices logout={logout} onAttention={onAttention} />
     </div>
   );
 }

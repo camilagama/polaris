@@ -288,6 +288,112 @@ export function goalPeriodShort(
   return `de ${shortDate(goal.startsOn)} a ${shortDate(goal.endsOn)}`;
 }
 
+/** Whole days from `from` to `to` (YYYY-MM-DD), negative when `to` is before. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((utcDate(to).getTime() - utcDate(from).getTime()) / DAY);
+}
+
+/**
+ * What is left of an active goal on the store's today (v7 § 3 item 9): "faltam 6 dias" counts the days after today up
+ * to the last one; on the last day, "último dia". Null for a goal that has not begun or whose period is over.
+ */
+export function goalDaysLeftText(
+  goal: Pick<GoalReadModel, "endsOn" | "startsOn">,
+  today: string
+): string | null {
+  if (goal.startsOn > today || goal.endsOn < today) {
+    return null;
+  }
+  const left = daysBetween(today, goal.endsOn);
+  if (left === 0) {
+    return "último dia";
+  }
+  return left === 1 ? "falta 1 dia" : `faltam ${formatQuantity(left)} dias`;
+}
+
+/** A count of sales as the server writes it. */
+const WHOLE_NUMBER = /^\d+$/;
+
+/** The days the rhythm of a projection is taken from: the 7 whole days before today (today is not over). */
+const RHYTHM_DAYS = 7;
+
+/** `numerator / denominator` rounded half-up (away from zero), in whole units: cents, or sales. */
+function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
+  const magnitude = numerator < 0n ? -numerator : numerator;
+  const rounded = (2n * magnitude + denominator) / (2n * denominator);
+  return numerator < 0n ? -rounded : rounded;
+}
+
+export interface GoalProjection {
+  /** The last day of the goal, "31/10". */
+  on: string;
+  /** "R$ 3.380,00" or "45 vendas". */
+  value: string;
+}
+
+/**
+ * "No ritmo dos últimos 7 dias, chega a R$ 3.380,00 em 31/10. Estimativa." (v7 § 3 item 9), only from what is known:
+ * the goal's own measure today (the server's `progress.value`) plus, for each day after today up to its last one, the
+ * mean of the 7 whole days before today, from the daily series the server sent (`month.daily` and `before.daily`):
+ *
+ *   projection = value + round_half_up(sum of the 7 days × days left ÷ 7)
+ *
+ * in exact cents (net sales) or in sales (number of sales). Only for those two measures: the estimated result needs
+ * the costs of each day, and a day with no known cost would turn the rhythm into a guess. None when the goal is
+ * paused, reached, not begun, on its last day or over, when the series does not cover the 7 days (a copy kept before
+ * the series existed), or when it is measured by another day than the series' (`today` of the figures): never a zero in
+ * place of what is not known.
+ */
+export function goalProjection(
+  goal: GoalReadModel,
+  series: { before: Daily | undefined; month: Daily | undefined },
+  today: string
+): GoalProjection | null {
+  const { progress } = goal;
+  if (
+    goal.paused ||
+    progress === null ||
+    progress.reached ||
+    progress.periodEnded ||
+    goal.kind === "operating_result" ||
+    goal.startsOn > today ||
+    goal.endsOn <= today ||
+    series.before === undefined ||
+    series.month === undefined
+  ) {
+    return null;
+  }
+  const all = [...series.before, ...series.month];
+  const rhythm: Daily = [];
+  for (let back = RHYTHM_DAYS; back >= 1; back -= 1) {
+    const date = addDays(today, -back);
+    const day = all.find((entry) => entry.date === date);
+    if (!day) {
+      return null;
+    }
+    rhythm.push(day);
+  }
+  const left = BigInt(daysBetween(today, goal.endsOn));
+  const on = shortDate(goal.endsOn);
+  if (goal.kind === "sale_count") {
+    if (!WHOLE_NUMBER.test(progress.value)) {
+      return null;
+    }
+    const sold = rhythm.reduce(
+      (total, day) => total + BigInt(day.salesCount),
+      0n
+    );
+    const count =
+      BigInt(progress.value) + divideHalfUp(sold * left, BigInt(RHYTHM_DAYS));
+    return { on, value: salesCountText(Number(count)) };
+  }
+  const sum = Money.from(sumNetSales(rhythm)).minorUnits;
+  const cents =
+    Money.from(progress.value).minorUnits +
+    divideHalfUp(sum * left, BigInt(RHYTHM_DAYS));
+  return { on, value: formatBrlAmount(Money.fromMinorUnits(cents).toString()) };
+}
+
 /** A page of a list of balances: as many as came, and whether there are more than a page. */
 export interface BalancesPage {
   count: number;

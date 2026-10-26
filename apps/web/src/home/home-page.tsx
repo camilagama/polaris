@@ -23,6 +23,7 @@ import { KpiCards } from "./home-kpi-cards";
 import {
   copyLine,
   type GoalView,
+  goalProjection,
   homeUpdatedLine,
   monthTitle,
   newSaleOfflineText,
@@ -359,6 +360,7 @@ function pickGoalBlock({
   readsGoals,
   retryGoals,
   state,
+  today,
   view,
 }: {
   goal: GoalView | null;
@@ -366,6 +368,7 @@ function pickGoalBlock({
   readsGoals: boolean;
   retryGoals: () => void;
   state: HomeState;
+  today: string;
   view: OfflineHome | null;
 }): React.ReactNode {
   if (view && readsGoals && (offline || state.goals.status === "loading")) {
@@ -374,7 +377,25 @@ function pickGoalBlock({
   if (offline || state.sessionRefused) {
     return null;
   }
-  return <GoalBlock block={state.goals} onRetry={retryGoals} view={goal} />;
+  // the estimate only from the server's series of this read, measured on its today (never from the copy)
+  const figures = state.figures.status === "ready" ? state.figures.data : null;
+  const projection =
+    goal?.kind === "active" && figures
+      ? goalProjection(
+          goal.goal,
+          { before: figures.before.daily, month: figures.month.daily },
+          figures.today
+        )
+      : null;
+  return (
+    <GoalBlock
+      block={state.goals}
+      onRetry={retryGoals}
+      projection={projection}
+      today={today}
+      view={goal}
+    />
+  );
 }
 
 /**
@@ -474,6 +495,7 @@ export function HomePage() {
     readsGoals: reads.goals,
     retryGoals,
     state,
+    today,
     view,
   });
 
