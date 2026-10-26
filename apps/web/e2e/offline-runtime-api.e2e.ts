@@ -42,7 +42,18 @@ const leaseKey = (userId: string) =>
 
 type SessionAnswer = "ok" | "slow" | "throttled" | "unauthorized";
 type DeviceCheckAnswer = "error" | "not-found" | "ok";
-type PushAnswer = "accept" | "session_changed" | "unauthorized";
+type PushAnswer = "accept" | "cpu_once" | "session_changed" | "unauthorized";
+
+/**
+ * What the platform answers for a Worker it killed for CPU (1102): an HTML 503 with `cf-ray` and without the
+ * Worker's mark. The server may or may not have done the work before it died.
+ */
+const KILLED_FOR_CPU = {
+  body: "<!DOCTYPE html><title>Worker exceeded resource limits</title><h1>Error 1102</h1>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d2f0c1e9a7b-GRU" },
+  status: 503,
+};
 
 interface PushedCommand {
   commandId: string;
@@ -55,6 +66,9 @@ class RpcServer {
   sessionAnswer: SessionAnswer = "ok";
   deviceCheckAnswer: DeviceCheckAnswer = "ok";
   pushAnswer: PushAnswer = "accept";
+  /** `cpu`: every `sync.pull` dies for CPU (1102). */
+  pullAnswer: "cpu" | "ok" = "ok";
+  pulls = 0;
   readonly devices = new Map<string, string>();
   readonly stock = new SaleLabServer();
   registered = 0;
@@ -202,6 +216,11 @@ class RpcServer {
         return;
       }
       case "sync/pull":
+        this.pulls += 1;
+        if (this.pullAnswer === "cpu") {
+          await route.fulfill(KILLED_FOR_CPU);
+          return;
+        }
         await RpcServer.ok(
           route,
           await this.stock.pull(String(input.cursor), Number(input.limit))
@@ -244,6 +263,12 @@ class RpcServer {
       commandId: string;
     }[];
     this.pushed.push(commands.map(({ commandId }) => ({ commandId })));
+    if (this.pushAnswer === "cpu_once") {
+      // the Worker died before it wrote anything; the next push goes through
+      this.pushAnswer = "accept";
+      await route.fulfill(KILLED_FOR_CPU);
+      return;
+    }
     if (this.pushAnswer === "unauthorized") {
       // the session ended between the lookup and the push: from now on every call is refused
       this.sessionUser = null;
@@ -646,6 +671,63 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     ]);
     // nothing reached the server's stock
     expect(server.stock.executions).toBe(0);
+  });
+});
+
+/** What the chip says when the sync failed or the device went offline: never for a Worker killed for CPU. */
+const SYNC_ERROR = /Envio falhou|Não foi possível|Sem conexão/;
+
+test.describe("paliativo dos 1102: a fila e o sync com o Worker morto por CPU", () => {
+  test("(d) a escrita da fila com 1102 na primeira tentativa é gravada uma vez, com a mesma chave", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    await queueSales(page, 1);
+    const [queued] = await outboxCommands(page);
+
+    server.pushAnswer = "cpu_once";
+    await page.context().setOffline(false);
+
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 30_000,
+    });
+    // the same command twice (the one that died and the one that went through), written once
+    expect(server.pushed.flat()).toEqual([
+      { commandId: queued?.commandId },
+      { commandId: queued?.commandId },
+    ]);
+    expect(server.stock.executions).toBe(1);
+    expect(await outboxCommands(page)).toEqual([]);
+  });
+
+  test("(e) o sync/pull com 1102 não mostra erro nem tira o aparelho da conexão, e tenta de novo sozinho", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    const before = server.pulls;
+    server.pullAnswer = "cpu";
+    // the return of the connection syncs even with a fresh copy (the return to the page does not: it skips a
+    // copy pulled less than a minute ago)
+    await goOffline(page);
+    await page.context().setOffline(false);
+    // the first pull died, and the sync tried again by itself (~2 s and ~4 s later)
+    await expect
+      .poll(() => server.pulls - before, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(3);
+    await expect(chip(page)).not.toContainText(SYNC_ERROR);
+    await expect(
+      page.getByRole("heading", { exact: true, name: "Nova venda" })
+    ).toBeVisible();
+
+    server.pullAnswer = "ok";
+    await expect
+      .poll(() => server.pulls - before, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(4);
+    await expect(chip(page)).toContainText("Tudo sincronizado");
   });
 });
 

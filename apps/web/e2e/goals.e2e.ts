@@ -1023,8 +1023,10 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await openGoals(page, server);
 
   const alert = page.getByRole("alert");
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toContainText(
-    "Não foi possível carregar as metas. Tente novamente."
+    "Não foi possível carregar as metas. Tente novamente.",
+    { timeout: 15_000 }
   );
   await expect(
     page
@@ -1073,15 +1075,16 @@ test("a primeira leitura das metas com 503 repete sozinha e abre sem o aviso", a
   expect(server.listCalls).toBe(2);
 });
 
-test("dois 503 seguidos nas metas mostram o erro, depois de uma única repetição", async ({
+test("três 503 seguidos nas metas mostram o erro, depois de duas repetições", async ({
   page,
 }) => {
   const server = new FakeGoalServer();
-  server.listUnavailable = 2;
+  server.listUnavailable = 3;
   await openGoals(page, server);
 
   await expect(page.getByRole("alert")).toContainText(
-    "As metas estão temporariamente indisponíveis. Tente novamente."
+    "As metas estão temporariamente indisponíveis. Tente novamente.",
+    { timeout: 15_000 }
   );
-  expect(server.listCalls).toBe(2);
+  expect(server.listCalls).toBe(3);
 });

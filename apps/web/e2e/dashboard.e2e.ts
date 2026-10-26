@@ -682,8 +682,10 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
   await openDashboard(page, server);
 
   const alert = page.getByRole("alert");
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toContainText(
-    "Não foi possível carregar o resultado. Tente novamente."
+    "Não foi possível carregar o resultado. Tente novamente.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
@@ -737,7 +739,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
 
   const notice = copyNotice(page);
-  await expect(notice).toContainText(COPY_NOTICE);
+  await expect(notice).toContainText(COPY_NOTICE, { timeout: 15_000 });
   // nothing is waiting on the device, so no line about operations kept
   await expect(notice).not.toContainText("operações guardadas");
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -772,14 +774,17 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
   // a range never read has no copy at all: it opens only with a connection (AC-16)
   await rangeFields(page, "2026-08-01", "2026-08-31");
   await expect(page.getByRole("alert")).toContainText(
-    "Este período só abre com internet."
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // a month that was read shows its own copy, never the one of another period
   await choosePreset(page, "Mês passado");
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
   await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
@@ -797,20 +802,24 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   server.networkDown = true;
   await choosePreset(page, "Mês passado");
   await expect(page.getByRole("alert")).toContainText(
-    "Sem internet e sem números guardados neste aparelho."
+    "Sem internet e sem números guardados neste aparelho.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // the last 30 days is a window that moves: no copy, and the screen says why
   await choosePreset(page, "Últimos 30 dias");
   await expect(page.getByRole("alert")).toContainText(
-    "Este período só abre com internet."
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // this month was read: its copy is still there
   await choosePreset(page, "Este mês");
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
@@ -823,7 +832,9 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
 
   server.networkDown = true;
   await signIn(page, user);
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   // the goals are never copied: their tab shows its own load error
   await page.getByRole("tab", { name: "Metas" }).click();
@@ -866,11 +877,23 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
-  // an outage of the server is not a refusal
+  // an outage of the server is not a refusal: with the connection there, after the three tries, the copy stays
+  // under "Não foi possível atualizar agora", with what it shows and "Tentar novamente" (paliativo dos 1102)
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  const stale = page
+    .getByRole("status")
+    .filter({ hasText: "Não foi possível atualizar agora" });
+  await expect(stale).toContainText(
+    "Mostrando os números de 09:00. Vendas feitas depois não estão aqui.",
+    { timeout: 15_000 }
+  );
+  await expect(copyNotice(page)).toHaveCount(0);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  server.failure = null;
+  await stale.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(stale).toHaveCount(0);
 });
 
 /** The text of the line that reads the day in focus of the chart (the last one until the pointer moves it). */
@@ -1094,7 +1117,8 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
     await choosePreset(page, "Últimos 30 dias");
     await expect(page.getByRole("alert")).toContainText(
-      "Não foi possível carregar o resultado. Tente novamente."
+      "Não foi possível carregar o resultado. Tente novamente.",
+      { timeout: 15_000 }
     );
     await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
     await expect(chartRegion(page)).toHaveCount(0);

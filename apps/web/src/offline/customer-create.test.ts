@@ -1,7 +1,10 @@
 import { InvalidCustomerProfileError } from "@polaris/domain/customers/customer";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import { describe, expect, it } from "vitest";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { isTransientReadFailure } from "../lib/rpc-error";
 import {
   createOfflineCustomer,
   pendingCustomers,
@@ -237,6 +240,71 @@ describe("syncOutbox", () => {
     const summary = await sync();
     expect(summary.accepted).toBe(1);
     expect(server.executions).toBe(1);
+  });
+
+  /** What the real oRPC client throws when the platform killed the Worker for CPU (1102): HTML, cf-ray, no mark. */
+  const killedForCpu = () =>
+    createORPCClient<{ sync: { push: () => Promise<unknown> } }>(
+      new RPCLink({
+        fetch: () =>
+          Promise.resolve(
+            new Response("<html>Error 1102</html>", {
+              headers: { "cf-ray": "abc-GRU", "content-type": "text/html" },
+              status: 503,
+            })
+          ),
+        url: "http://localhost/rpc",
+      })
+    )
+      .sync.push()
+      .catch((caught: unknown) => caught as Error);
+
+  it("a push killed for CPU (1102) is transient: the command waits and is written once, with the same key", async () => {
+    const { create, outbox, server, sync } = await setup();
+    await create({ name: "Ana", phone: "1" });
+    const died = await killedForCpu();
+    expect(isTransientReadFailure(died)).toBe(true);
+    const sent: string[][] = [];
+    let first = true;
+    const push: typeof server.push = (input) => {
+      sent.push(input.commands.map((command) => command.commandId));
+      if (first) {
+        first = false;
+        return Promise.reject(died);
+      }
+      return server.push(input);
+    };
+
+    await expect(sync({ push })).rejects.toBe(died);
+    expect((await outbox.snapshot()).commands).toMatchObject([
+      { commandId: uuid(101), status: "pending" },
+    ]);
+    expect(server.executions).toBe(0);
+
+    expect(await sync({ push })).toMatchObject({ accepted: 1 });
+    expect(sent).toEqual([[uuid(101)], [uuid(101)]]);
+    expect(server.executions).toBe(1);
+    expect([...server.customers.keys()]).toEqual([uuid(201)]);
+  });
+
+  it("killed for CPU after the server wrote it: the second push with the same key does not write it again", async () => {
+    const { create, server, sync } = await setup();
+    await create({ name: "Ana", phone: "1" });
+    const died = await killedForCpu();
+    let first = true;
+    const push: typeof server.push = async (input) => {
+      const result = await server.push(input);
+      if (first) {
+        first = false;
+        throw died; // the answer never came back
+      }
+      return result;
+    };
+
+    await expect(sync({ push })).rejects.toBe(died);
+    expect(await sync({ push })).toMatchObject({ accepted: 1 });
+    expect(server.executions).toBe(1);
+    expect(server.customers.size).toBe(1);
   });
 
   it("does nothing, and sends nothing, with an empty outbox", async () => {

@@ -8,69 +8,127 @@ import type { ProcedureMeta } from "@polaris/contracts";
 import { polarisContract } from "@polaris/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
-import { isTransientReadFailure, readWithRetry } from "./read-with-retry";
+import { readWithRetry } from "./read-with-retry";
+import { isTransientReadFailure } from "./rpc-error";
 
 const unavailable = () => new ORPCError("SERVICE_UNAVAILABLE");
 
 function setup() {
   const waits: number[] = [];
+  const retries = { allowed: Number.POSITIVE_INFINITY, asked: 0 };
   return {
     options: {
       isOnline: () => true,
+      mayRetry: () => {
+        retries.asked += 1;
+        return retries.asked <= retries.allowed;
+      },
       random: () => 0.5,
       wait: (ms: number) => {
         waits.push(ms);
         return Promise.resolve();
       },
     },
+    retries,
     waits,
   };
+}
+
+/** A read that fails with each error given, in order, and then answers "ok". */
+function failing(...errors: unknown[]) {
+  const read = vi.fn<(signal: AbortSignal) => Promise<string>>();
+  for (const error of errors) {
+    read.mockRejectedValueOnce(error);
+  }
+  return read.mockResolvedValue("ok");
+}
+
+/** The page the platform answers for a Worker it killed for CPU (1102): HTML, `cf-ray`, no mark of the Worker. */
+const platformPage = (status = 503) =>
+  new Response("<html>Error 1102 Worker exceeded resource limits</html>", {
+    headers: { "cf-ray": "abc-GRU", "content-type": "text/html" },
+    status,
+  });
+
+/** What the real oRPC client throws for a response. */
+function thrownFor(response: () => Response): Promise<unknown> {
+  return createORPCClient<{ goal: { list: () => Promise<unknown> } }>(
+    new RPCLink({
+      fetch: () => Promise.resolve(response()),
+      url: "http://localhost/rpc",
+    })
+  )
+    .goal.list()
+    .catch((caught: unknown) => caught);
 }
 
 describe("readWithRetry", () => {
   it("a 503 followed by a success hands back the data, and the caller never sees an error", async () => {
     const t = setup();
-    const read = vi
-      .fn<() => Promise<string>>()
-      .mockRejectedValueOnce(unavailable())
-      .mockResolvedValueOnce("metas");
+    const read = failing(unavailable());
 
-    await expect(readWithRetry(read, t.options)).resolves.toBe("metas");
+    await expect(readWithRetry(read, t.options)).resolves.toBe("ok");
 
     expect(read).toHaveBeenCalledTimes(2);
     expect(t.waits).toEqual([1500]); // ~1.5 s, jittered ±20% (the middle of the range here)
   });
 
-  it("two 503 in a row reach the caller as the error, after exactly two tries", async () => {
+  it("two failures and then the answer: three tries, waiting ~1.5 s and then ~4 s", async () => {
     const t = setup();
-    const second = unavailable();
-    const read = vi
-      .fn<() => Promise<string>>()
-      .mockRejectedValueOnce(unavailable())
-      .mockRejectedValueOnce(second);
+    const read = failing(unavailable(), unavailable());
 
-    await expect(readWithRetry(read, t.options)).rejects.toBe(second);
-    expect(read).toHaveBeenCalledTimes(2);
+    await expect(readWithRetry(read, t.options)).resolves.toBe("ok");
+
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(t.waits).toEqual([1500, 4000]);
   });
 
-  it("waits between 1.2 s and 1.8 s", async () => {
-    for (const random of [0, 1]) {
-      const waits: number[] = [];
-      const read = vi
-        .fn<() => Promise<string>>()
-        .mockRejectedValueOnce(unavailable())
-        .mockResolvedValueOnce("ok");
+  it("three failures in a row reach the caller as the last error, after exactly three tries", async () => {
+    const t = setup();
+    const last = unavailable();
+    const read = failing(unavailable(), unavailable(), last);
+
+    await expect(readWithRetry(read, t.options)).rejects.toBe(last);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(t.waits).toEqual([1500, 4000]);
+  });
+
+  it("each wait is spread by 20% either way: 1.2 to 1.8 s, then 3.2 to 4.8 s", async () => {
+    for (const [random, expected] of [
+      [0, [1200, 3200]],
+      [1, [1800, 4800]],
+    ] as const) {
+      const t = setup();
       // biome-ignore lint/performance/noAwaitInLoops: one range end at a time
-      await readWithRetry(read, {
-        isOnline: () => true,
+      await readWithRetry(failing(unavailable(), unavailable()), {
+        ...t.options,
         random: () => random,
-        wait: (ms) => {
-          waits.push(ms);
-          return Promise.resolve();
-        },
       });
-      expect(waits[0]).toBe(random === 0 ? 1200 : 1800);
+      expect(t.waits).toEqual(expected);
     }
+  });
+
+  it("the platform's page for a Worker killed for CPU (1102, cf-ray, no mark) is tried again", async () => {
+    const t = setup();
+    const died = await thrownFor(() => platformPage(503));
+    const read = failing(died, died);
+
+    await expect(readWithRetry(read, t.options)).resolves.toBe("ok");
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["no reason", undefined],
+    ["server_busy", "server_busy"],
+  ])("our own 503 with %s is tried again", async (_label, reason) => {
+    const t = setup();
+    const busy = new ORPCError("SERVICE_UNAVAILABLE", {
+      data: reason ? { reason } : {},
+    });
+    const read = failing(busy);
+
+    await expect(readWithRetry(read, t.options)).resolves.toBe("ok");
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -79,6 +137,7 @@ describe("readWithRetry", () => {
     "FORBIDDEN",
     "NOT_FOUND",
     "CONFLICT",
+    "TOO_MANY_REQUESTS",
   ])("a %s is the server's answer: it never tries again", async (code) => {
     const t = setup();
     const refusal = new ORPCError(code);
@@ -87,6 +146,38 @@ describe("readWithRetry", () => {
     await expect(readWithRetry(read, t.options)).rejects.toBe(refusal);
     expect(read).toHaveBeenCalledTimes(1);
     expect(t.waits).toEqual([]);
+  });
+
+  it("a 429 of the Worker (rate_limited) is shown at once: one call, no wait", async () => {
+    const t = setup();
+    const limited = await thrownFor(
+      () =>
+        new Response(
+          JSON.stringify({
+            json: {
+              code: "TOO_MANY_REQUESTS",
+              data: { reason: "rate_limited" },
+              defined: false,
+              message: "x",
+              status: 429,
+            },
+            meta: [],
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "30",
+            },
+            status: 429,
+          }
+        )
+    );
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(limited);
+
+    await expect(readWithRetry(read, t.options)).rejects.toBe(limited);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(t.waits).toEqual([]);
+    expect(t.retries.asked).toBe(0);
   });
 
   it("a SERVICE_UNAVAILABLE with a deterministic reason is shown at once: one try, no wait", async () => {
@@ -101,7 +192,7 @@ describe("readWithRetry", () => {
     expect(t.waits).toEqual([]);
   });
 
-  it("with no answer at all it tries once more, and only once", async () => {
+  it("with no answer at all (online) it tries three times", async () => {
     const t = setup();
     const read = vi
       .fn<() => Promise<string>>()
@@ -110,7 +201,30 @@ describe("readWithRetry", () => {
     await expect(readWithRetry(read, t.options)).rejects.toBeInstanceOf(
       NoWorkerAnswerError
     );
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not wait while the tab is known offline: the return to the network reads again", async () => {
+    const t = setup();
+    const failure = new NoWorkerAnswerError("unproven");
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+
+    await expect(
+      readWithRetry(read, { ...t.options, isOnline: () => false })
+    ).rejects.toBe(failure);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the brakes of the tab before each retry, and fails at once when they say no", async () => {
+    const t = setup();
+    t.retries.allowed = 1;
+    const last = unavailable();
+    const read = failing(unavailable(), last);
+
+    await expect(readWithRetry(read, t.options)).rejects.toBe(last);
     expect(read).toHaveBeenCalledTimes(2);
+    expect(t.retries.asked).toBe(2);
+    expect(t.waits).toEqual([1500]);
   });
 
   it("does not wait nor try again when the screen no longer wants the answer", async () => {
@@ -125,7 +239,7 @@ describe("readWithRetry", () => {
     expect(t.waits).toEqual([]);
   });
 
-  it("drops the second try when the screen moved on during the wait", async () => {
+  it("drops the next try when the screen moved on during the wait", async () => {
     let current = true;
     const failure = unavailable();
     const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
@@ -134,6 +248,7 @@ describe("readWithRetry", () => {
       readWithRetry(read, {
         isCurrent: () => current,
         isOnline: () => true,
+        mayRetry: () => true,
         random: () => 0.5,
         wait: () => {
           current = false;
@@ -144,15 +259,36 @@ describe("readWithRetry", () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it("does not wait while the tab is known offline: the return to the network reads again", async () => {
-    const t = setup();
-    const failure = new NoWorkerAnswerError("unproven");
-    const read = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+  it("leaving the screen cancels the read in flight (its signal aborts) and it is never tried again", async () => {
+    vi.useFakeTimers();
+    try {
+      let current = true;
+      const signals: AbortSignal[] = [];
+      const read = vi.fn(
+        (signal: AbortSignal) =>
+          new Promise<string>((_resolve, reject) => {
+            signals.push(signal);
+            signal.addEventListener("abort", () => reject(signal.reason));
+          })
+      );
+      const t = setup();
+      const reading = readWithRetry(read, {
+        ...t.options,
+        isCurrent: () => current,
+      });
+      reading.catch(() => undefined);
 
-    await expect(
-      readWithRetry(read, { ...t.options, isOnline: () => false })
-    ).rejects.toBe(failure);
-    expect(read).toHaveBeenCalledTimes(1);
+      current = false;
+      await vi.advanceTimersByTimeAsync(300);
+
+      await expect(reading).rejects.toMatchObject({ name: "AbortError" });
+      expect(signals[0]?.aborted).toBe(true);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(t.waits).toEqual([]);
+      expect(t.retries.asked).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -309,11 +445,11 @@ const PLAIN_SPECIFIERS =
   /^\{\s*(?:type\s+\w+,\s*)*readWithRetry(?:,\s*type\s+\w+)*\s*\}$/;
 const USE = /\breadWithRetry\b/g;
 const FORM =
-  /readWithRetry\(\s*\(\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/y;
+  /readWithRetry\(\s*\((?:signal)?\) =>\s*orpcClient\s*\.\s*(\w+)\s*\.\s*(\w+)/y;
 const SOURCE_FILE = /\.tsx?$/;
 const WHITESPACE = /\s/;
 const THE_FORM =
-  "escreva como `readWithRetry(() => orpcClient.<rota>.<leitura>(...))`";
+  "escreva como `readWithRetry(() => orpcClient.<rota>.<leitura>(...))` ou `readWithRetry((signal) => orpcClient.<rota>.<leitura>(..., { signal }))`";
 
 /**
  * The index just past the string or comment that opens at `i`, or `i` itself when none opens there. It does not read
