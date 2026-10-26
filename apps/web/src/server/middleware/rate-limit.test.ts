@@ -756,6 +756,8 @@ describe("rate limit middleware", () => {
       const spellings = [
         "tok.sig",
         '"tok.sig"',
+        '"tok.sigX',
+        '"tok.sig',
         "tok%2Esig",
         "%74ok.sig",
         "tok.other-signature",
@@ -781,5 +783,61 @@ describe("rate limit middleware", () => {
       }
       expect(another.session).not.toEqual(real.session);
     });
+
+    it("reads a leading quote as better-call does: the first character off, and always the last", async () => {
+      const bucketOf = async (value: string) =>
+        (await keysOf({ cookie: `better-auth.session_token=${value}` }))
+          .session;
+
+      expect(await bucketOf('"tok')).toEqual(await bucketOf("to"));
+      expect(await bucketOf('"tok')).not.toEqual(await bucketOf("tok"));
+      expect(await bucketOf('"tok"')).toEqual(await bucketOf("tok"));
+    });
+  });
+
+  it("warns once per limiter when there is no base URL to name the session cookie by", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const app = createApp(
+      createRateLimitMiddleware({
+        route: () => "/rpc/x",
+        rule: () => RPC_WRITE_RULE,
+      })
+    );
+    const binding = limiter(true);
+    const env = bindings({
+      BETTER_AUTH_BASE_URL: "",
+      RPC_MUTATION_RATE_LIMIT: binding,
+    });
+    const headers = {
+      "cf-connecting-ip": clientAddress,
+      cookie: `better-auth.session_token=${sessionToken}`,
+    };
+
+    await post(app, "/rpc/sale/confirm", env, headers);
+    await post(app, "/rpc/sale/confirm", env, headers);
+
+    const events = warn.mock.calls.filter(
+      ([entry]) => entry.event === "rate_limit_session_cookie_name_missing"
+    );
+    expect(events).toHaveLength(1);
+    // only the address bucket counted, on both requests
+    expect(binding.limit).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not warn about the cookie name when the base URL names it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await post(
+      createApp(
+        createRateLimitMiddleware({
+          route: () => "/rpc/x",
+          rule: () => RPC_WRITE_RULE,
+        })
+      ),
+      "/rpc/sale/confirm",
+      bindings({ RPC_MUTATION_RATE_LIMIT: limiter(true) }),
+      { "cf-connecting-ip": clientAddress }
+    );
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

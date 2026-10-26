@@ -37,6 +37,10 @@ References: [Turnstile server-side validation](https://developers.cloudflare.com
 
 The general IP limiter runs before Siteverify to avoid spending verification calls after a request has exceeded its configured limit. The email-send limiter runs after a valid challenge, so an invalid token cannot consume another user's email-send allowance. A missing binding or binding error fails closed with HTTP 503; an exceeded counter returns HTTP 429.
 
+## Identidade de IP dos limites
+
+Todo limite por IP do servidor (`/rpc`, upload, entrada e cadastro, e-mails de redefinição e confirmação, Google, links dos e-mails) conta o cliente pela mesma identidade, de `apps/web/src/server/client-ip.ts`: IPv4 inteiro, IPv4 mapeado em IPv6 vale o IPv4, IPv6 pela rede /64, e texto que não é endereço não conta. Nos limites que falham fechado (`auth-ip`, `auth-email-send-ip`, `auth-social-ip`, `auth-link-ip`), cliente sem endereço válido é 503, como antes.
+
 ## Google sign-in limiter
 
 `AUTH_SOCIAL_RATE_LIMITER` (20 requests per 60 seconds per client IP, ADR 0017 and ADR 0100) covers `POST /api/auth/sign-in/social` and `/api/auth/callback/google`, which calls Google and writes `verification`. It has no Turnstile and does not depend on `AUTH_ABUSE_PROTECTION_ENABLED` or `EMAIL_PASSWORD_AUTH_ENABLED`: Google is on while the password is off.
