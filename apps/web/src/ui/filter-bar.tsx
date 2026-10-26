@@ -292,21 +292,29 @@ function EditorContent({
   }
 }
 
+const noPhone = () => false;
+const noUnsubscribe = () => undefined;
+const hasMatchMedia = () =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function";
+
 function subscribePhone(onChange: () => void): () => void {
+  if (!hasMatchMedia()) {
+    return noUnsubscribe;
+  }
   const query = window.matchMedia(PHONE_QUERY);
   query.addEventListener("change", onChange);
   return () => query.removeEventListener("change", onChange);
 }
 
-const readPhone = () => window.matchMedia(PHONE_QUERY).matches;
-const noPhone = () => false;
+const readPhone = () =>
+  hasMatchMedia() && window.matchMedia(PHONE_QUERY).matches;
 
 /** Below 760 px, the line the form Dialog is the whole screen at: there the editor of a pill is that Dialog, not a Popover. */
 function usePhone(): boolean {
   return useSyncExternalStore(subscribePhone, readPhone, noPhone);
 }
 
-/** Why the Dialog of an editor closed with no value applied (Cancelar, ×, Esc, the step back of the phone). */
+/** Why the Dialog of an editor closed with no value applied (Cancelar, ×, Esc, the step back of the phone): the reasons of Base UI are not told apart, for none of them applies. */
 const DIALOG_CLOSE = "dialog-close";
 
 /** A text in the Dialog: what is typed is a draft, "Aplicar" (or Enter) applies it, "Limpar" empties the draft. */
@@ -353,10 +361,14 @@ function DraftContent({
   draft,
   field,
   onDraft,
+  onHalfChange,
+  statusId,
 }: {
   draft: FilterRuleValue | null;
   field: FilterField;
   onDraft: Commit;
+  onHalfChange: (half: boolean) => void;
+  statusId: string;
 }) {
   const text = typeof draft === "string" ? draft : "";
   switch (field.type) {
@@ -368,6 +380,8 @@ function DraftContent({
       return (
         <DateRangePanel
           onCommit={onDraft}
+          onHalfChange={onHalfChange}
+          statusId={statusId}
           today={field.today}
           value={draft && typeof draft !== "string" ? draft : null}
         />
@@ -382,7 +396,8 @@ function DraftContent({
  * body is the editor of the Popover and the footer, fixed, has "Aplicar" and "Cancelar". Nothing is applied until
  * "Aplicar": a choice, a text, a day or a shortcut only change the draft, which lives with the content, so closing
  * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
- * taking the filter out, as in the Popover.
+ * taking the filter out, as in the Popover. With only the first day of a period marked "Aplicar" is `aria-disabled`
+ * (described by the line that asks for the last day), so the day touched is never dropped by applying the old range.
  */
 function PhoneEditorContent({
   field,
@@ -394,12 +409,16 @@ function PhoneEditorContent({
   value: FilterRuleValue | undefined;
 }) {
   const [draft, setDraft] = useState<FilterRuleValue | null>(value ?? null);
+  const [half, setHalf] = useState(false);
+  const statusId = useId();
   const apply = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      onApply(draft);
+      if (!half) {
+        onApply(draft);
+      }
     },
-    [draft, onApply]
+    [draft, half, onApply]
   );
   return (
     <DialogForm onSubmit={apply}>
@@ -407,13 +426,25 @@ function PhoneEditorContent({
         <DialogTitle>{field.label}</DialogTitle>
       </DialogHeader>
       <DialogBody>
-        <DraftContent draft={draft} field={field} onDraft={setDraft} />
+        <DraftContent
+          draft={draft}
+          field={field}
+          onDraft={setDraft}
+          onHalfChange={setHalf}
+          statusId={statusId}
+        />
       </DialogBody>
       <DialogFooter>
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancelar
         </DialogClose>
-        <Button type="submit">Aplicar</Button>
+        <Button
+          aria-describedby={half ? statusId : undefined}
+          aria-disabled={half || undefined}
+          type="submit"
+        >
+          Aplicar
+        </Button>
       </DialogFooter>
     </DialogForm>
   );
@@ -726,6 +757,14 @@ export function FilterBar({
     setAdding(null);
     setEditing(null);
   }, []);
+
+  // crossing 760 px with an editor open (the phone turned, the window resized) swaps the Popover for the Dialog or back:
+  // the editor is closed, as the swap would drop its draft and its trigger anyway
+  const [wasPhone, setWasPhone] = useState(phone);
+  if (wasPhone !== phone) {
+    setWasPhone(phone);
+    closeEditor();
+  }
 
   const commit = useCallback(
     (field: FilterField, next: FilterRuleValue | null) => {

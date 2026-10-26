@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { FORM_VIEWPORTS, touchDay } from "./date-pickers";
+import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -39,15 +40,6 @@ const remover = (page: Page, field: string) =>
   });
 const editor = (page: Page, field: string) =>
   page.getByRole("dialog", { name: field });
-
-/** Below 760 px the editor is the form Dialog of the whole screen: nothing applies before "Aplicar". */
-const onPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
-
-async function apply(page: Page, popup: Locator) {
-  if (onPhone(page)) {
-    await popup.getByRole("button", { exact: true, name: "Aplicar" }).click();
-  }
-}
 
 /** Chooses a field in the "Filtrar" menu: its pill is added and its editor opens. */
 async function addFilter(page: Page, field: string) {
@@ -118,7 +110,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await touchDay(popup, "2026-10-12");
       await expect(popup).toBeVisible();
       await touchDay(popup, "2026-10-05");
-      await apply(page, popup);
+      await applyEditor(page, popup);
       await expect(popup).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 05/10 a 12/10, editar"
@@ -137,7 +129,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
-      await apply(page, shortcuts);
+      await applyEditor(page, shortcuts);
       await expect(shortcuts).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
@@ -152,7 +144,7 @@ for (const viewport of FORM_VIEWPORTS) {
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
-      await apply(page, clearing);
+      await applyEditor(page, clearing);
       await expect(clearing).toBeHidden();
       await expect(pill(page, "Período")).toHaveCount(0);
       await expect.poll(() => askedWithout(asked, "occurredFrom")).toBe(true);
@@ -168,7 +160,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await status
         .getByRole("button", { exact: true, name: "Canceladas" })
         .click();
-      await apply(page, status);
+      await applyEditor(page, status);
       await expect(status).toBeHidden();
       await expect(pill(page, "Situação")).toHaveAccessibleName(
         "Situação: Canceladas, editar"
@@ -206,7 +198,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await confirmed
         .getByRole("button", { exact: true, name: "Confirmadas" })
         .click();
-      await apply(page, confirmed);
+      await applyEditor(page, confirmed);
       await expect(clearAll).toBeVisible();
       await clearAll.click();
       await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(

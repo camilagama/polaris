@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
 import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
@@ -58,16 +59,6 @@ const item = (page: Page, name: string) =>
   menu(page).getByRole("menuitem", { name: new RegExp(`^${name}`) });
 const editor = (page: Page, label: string) =>
   page.getByRole("dialog", { name: label });
-
-/** Below 760 px the editor of a pill is the form Dialog of the whole screen ("Aplicar" and "Cancelar"), above it a Popover. */
-const onPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
-
-/** Applies the draft of the Dialog of a phone; the Popover applied by the touch itself, so there is nothing to do. */
-async function apply(page: Page, open: Locator) {
-  if (onPhone(page)) {
-    await open.getByRole("button", { exact: true, name: "Aplicar" }).click();
-  }
-}
 
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
@@ -247,7 +238,7 @@ for (const viewport of VIEWPORTS) {
         "true"
       );
       await open.getByRole("button", { name: "Cancelada" }).click();
-      await apply(page, open);
+      await applyEditor(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Situação")).toHaveAccessibleName(
         "Situação: Cancelada, editar"
@@ -310,7 +301,7 @@ for (const viewport of VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { name: "7 dias" })
         .click();
-      await apply(page, open);
+      await applyEditor(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 18/10 a 24/10, editar"
@@ -323,7 +314,7 @@ for (const viewport of VIEWPORTS) {
       await again.locator('button[data-day="2026-10-05"]').click();
       await expect(again).toBeVisible();
       await again.locator('button[data-day="2026-10-09"]').click();
-      await apply(page, again);
+      await applyEditor(page, again);
       await expect(again).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 05/10 a 09/10, editar"
@@ -333,7 +324,7 @@ for (const viewport of VIEWPORTS) {
       await pill(page, "Período").click();
       const clearing = editor(page, "Período");
       await clearing.getByRole("button", { name: "Limpar" }).click();
-      await apply(page, clearing);
+      await applyEditor(page, clearing);
       await expect(pill(page, "Período")).toHaveCount(0);
       await expect(count(page)).toHaveText("2 filtros ativos");
     });
@@ -359,7 +350,7 @@ for (const viewport of VIEWPORTS) {
       await item(page, "Situação").click();
       const choosing = editor(page, "Situação");
       await choosing.getByRole("button", { name: "Paga" }).click();
-      await apply(page, choosing);
+      await applyEditor(page, choosing);
       await expect(clearAll(page)).toBeVisible();
       await clearAll(page).click();
       await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(

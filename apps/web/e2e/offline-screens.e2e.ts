@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
@@ -900,12 +901,7 @@ test.describe("histórico de vendas", () => {
       .getByRole("button", { exact: true, name: "Canceladas" })
       .click();
     // below 760 px the editor is the form Dialog: nothing applies before "Aplicar"
-    const onPhone = (page.viewportSize()?.width ?? 1280) < 760;
-    if (onPhone) {
-      await status
-        .getByRole("button", { exact: true, name: "Aplicar" })
-        .click();
-    }
+    await applyEditor(page, status);
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await bar.getByRole("button", { name: "Tirar o filtro Situação" }).click();
     await expect(list.getByRole("listitem")).toHaveCount(3);
@@ -914,7 +910,7 @@ test.describe("histórico de vendas", () => {
     const customer = page.getByRole("dialog", { name: "Cliente" });
     await customer.getByRole("textbox", { name: "Cliente" }).fill("angela");
     await customer
-      .getByRole("button", { name: onPhone ? "Aplicar" : "Pronto" })
+      .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
       .click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("Ângela Souza");

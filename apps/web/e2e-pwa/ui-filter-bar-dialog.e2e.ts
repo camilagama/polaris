@@ -247,6 +247,44 @@ test.describe("a 360 px", () => {
     await expect(pill(page, "Período")).toBeFocused();
   });
 
+  test("período pela metade: com só o primeiro dia marcado o Aplicar está desligado e descrito pelo aviso, e o dia não se perde", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const period = await openPill(page, "Período");
+    await expect(apply(period)).not.toHaveAttribute("aria-disabled", "true");
+    await period.locator('button[data-day="2026-10-20"]').click();
+    await expect(apply(period)).toHaveAttribute("aria-disabled", "true");
+    await expect(apply(period)).toHaveAccessibleDescription(
+      "Início 20/10/2026. Escolha o último dia."
+    );
+    await apply(period).click({ force: true });
+    await expect(period).toBeVisible();
+    await period.locator('button[data-day="2026-10-22"]').click();
+    await expect(apply(period)).not.toHaveAttribute("aria-disabled", "true");
+    await apply(period).click();
+    await expect(period).toBeHidden();
+    await expect(pill(page, "Período")).toHaveAttribute(
+      "aria-label",
+      "Período: 20/10 a 22/10, editar"
+    );
+  });
+
+  test("passar de 760 px com o editor aberto (celular girado, janela maior) o fecha: nada aplicado, sem entrada sobrando", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const open = await openPill(page, "Situação");
+    await open.getByRole("button", { name: "Cancelada" }).click();
+    await page.setViewportSize(DESKTOP);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expectNoEntryLeft(page);
+    await expect(pill(page, "Situação")).toHaveAttribute(
+      "aria-label",
+      "Situação: Paga, editar"
+    );
+  });
+
   test("campo novo pelo menu: abre o editor em tela inteira; Cancelar tira a pílula e o foco vai a Filtrar; Aplicar a mantém", async ({
     page,
   }) => {
