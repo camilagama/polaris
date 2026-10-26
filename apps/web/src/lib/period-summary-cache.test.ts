@@ -3,6 +3,7 @@ import type { PreferenceStorage } from "./current-organization-model";
 import {
   clearOrganizationResultCopies,
   clearPeriodSummaryCaches,
+  cogsCoverageOf,
   isPeriodSummary,
   readPeriodSummaryCache,
   type StoredPeriodSummary,
@@ -639,6 +640,67 @@ describe("the costs of the day in the kept series (AC-9)", () => {
     const read = readPeriodSummaryCache(storage, ORG, "2026-10");
     expect(read).toEqual(summary);
     expect(read?.daily?.[4]?.costs).toBeNull();
+  });
+});
+
+describe("the coverage of the cost of the goods in a kept summary (t419)", () => {
+  const lines = (itemLines: number, itemLinesWithUnknownCost: number) => {
+    const summary = summaryOf("2026-10");
+    return {
+      ...summary,
+      quality: { ...summary.quality, itemLines, itemLinesWithUnknownCost },
+    };
+  };
+  const withField = (
+    summary: StoredPeriodSummary,
+    cogsCoverage: unknown
+  ): StoredPeriodSummary => ({
+    ...summary,
+    quality: { ...summary.quality, cogsCoverage },
+  });
+
+  it.each([
+    ["without the field (a copy kept before it, or an older Worker)", undefined],
+    ['with "none"', "none"],
+    ["with a value this bundle does not know", "unknown_later"],
+    ["with a number", 7],
+    ["with an object", { coverage: "none" }],
+  ])("a copy %s is valid, kept and read back, and the coverage comes from the counts", (_name, field) => {
+    for (const [itemLines, unknown, expected] of [
+      [25, 25, "none"],
+      [25, 3, "partial"],
+      [25, 0, "full"],
+      [0, 0, "full"],
+    ] as const) {
+      const base = lines(itemLines, unknown);
+      const copy =
+        field === undefined
+          ? (() => {
+              const { cogsCoverage: _field, ...quality } = withField(
+                base,
+                "x"
+              ).quality;
+              return { ...base, quality };
+            })()
+          : withField(base, field);
+      expect(isPeriodSummary(copy)).toBe(true);
+      const { storage } = memoryStorage();
+      writePeriodSummaryCache(storage, ORG, "2026-10", copy, ALLOWED);
+      const read = readPeriodSummaryCache(storage, ORG, "2026-10");
+      expect(read).toEqual(copy);
+      expect(cogsCoverageOf((read as StoredPeriodSummary).quality)).toBe(
+        expected
+      );
+    }
+  });
+
+  it('a copy that says "full" with 25 of 25 lines unknown derives "none"; one that says "none" with 3 of 25, "partial"', () => {
+    expect(cogsCoverageOf(withField(lines(25, 25), "full").quality)).toBe(
+      "none"
+    );
+    expect(cogsCoverageOf(withField(lines(25, 3), "none").quality)).toBe(
+      "partial"
+    );
   });
 });
 

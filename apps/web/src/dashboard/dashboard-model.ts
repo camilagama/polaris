@@ -1,6 +1,7 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { type ClockParts, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { cogsCoverageOf, type StoredQuality } from "../lib/period-summary-cache";
 
 /**
  * Pure helpers of the period result screen: text for the figures the server
@@ -8,7 +9,8 @@ import { formatBrlAmount, formatQuantity } from "../lib/format";
  * estimated result. Money stays exact decimal text; nothing is recomputed here.
  */
 
-export type PeriodQuality = PeriodSummaryReadModel["quality"];
+/** The quality as the screen reads it: a copy kept on the device may have no `cogsCoverage` (`cogsCoverageOf`). */
+export type PeriodQuality = StoredQuality;
 export type PeriodChain = PeriodSummaryReadModel["chain"];
 
 /** Shown where a figure does not exist (a margin without sales, say). */
@@ -254,14 +256,14 @@ function lineNote(
 
 /**
  * The rows of "Como chegamos a este resultado", with the unknowns that were left out marked on their line. With no cost
- * known in the period (`noKnownCost`, decided by the caller) the subtotals from the CMV on are a dash with their note:
- * the server's figures there are the sales, and a partial cost stays as it is.
+ * of the goods known in the period (`cogsCoverageOf` is "none") the subtotals from the CMV on are a dash with their
+ * note: the server's figures there are the sales, and a partial cost stays as it is.
  */
 export function chainRows(
   chain: PeriodChain,
-  quality: PeriodQuality,
-  noKnownCost = false
+  quality: PeriodQuality
 ): ChainRow[] {
+  const noKnownCost = cogsCoverageOf(quality) === "none";
   return CHAIN_LINES.map((line) => {
     const amount = chain[line.id];
     if (noKnownCost && COST_SUBTOTALS.has(line.id)) {

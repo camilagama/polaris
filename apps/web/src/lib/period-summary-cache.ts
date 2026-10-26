@@ -1,4 +1,8 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import {
+  type CogsCoverage,
+  cogsCoverage,
+} from "@polaris/domain/economics/period-summary";
 import type { PreferenceStorage } from "./current-organization-model";
 
 /**
@@ -33,16 +37,42 @@ export type StoredDay = Omit<
 > &
   Partial<Pick<SummaryDay, "costs" | "operatingExpenses" | "operatingResult">>;
 
+type SummaryQuality = PeriodSummaryReadModel["quality"];
+
+/**
+ * The quality as kept: a copy written before `cogsCoverage` existed (or a Worker of the version before) has none, and
+ * one from a later server may bring a value this bundle does not know. Neither is read: see `cogsCoverageOf`.
+ */
+export type StoredQuality = Omit<SummaryQuality, "cogsCoverage"> & {
+  cogsCoverage?: unknown;
+};
+
 /**
  * A summary as kept on the device: a copy written before the daily series
  * existed has no `daily` (the screen then draws no series for that month), one
  * written before the costs of the day has days without `costs` (no series of
- * costs is drawn), and the most sold products are there only when the read
- * asked for them.
+ * costs is drawn), one written before the coverage of the cost of the goods has
+ * no `quality.cogsCoverage`, and the most sold products are there only when the
+ * read asked for them.
  */
-export type StoredPeriodSummary = Omit<PeriodSummaryReadModel, "daily"> & {
+export type StoredPeriodSummary = Omit<
+  PeriodSummaryReadModel,
+  "daily" | "quality"
+> & {
   daily?: StoredDay[];
+  quality: StoredQuality;
 };
+
+/**
+ * The coverage of the cost of the goods of a summary on screen: always the domain's, from the two counts of item lines
+ * that every valid copy has, never the server's field (an older copy has none, a later server could send a value this
+ * bundle does not know, and the field could disagree with the counts). The same function the server runs.
+ */
+export function cogsCoverageOf(
+  quality: Pick<SummaryQuality, "itemLines" | "itemLinesWithUnknownCost">
+): CogsCoverage {
+  return cogsCoverage(quality);
+}
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 /** Money as the server writes it (`Money.from` reads it): a copy with anything else would break a sum on screen. */
@@ -126,6 +156,7 @@ function isCards(value: unknown): boolean {
   );
 }
 
+/** `cogsCoverage` is not checked: absent, unknown or of another type, the screen derives it (`cogsCoverageOf`). */
 function isQuality(value: unknown): boolean {
   return (
     isDictionary(value) &&

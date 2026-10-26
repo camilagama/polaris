@@ -11,6 +11,7 @@ import {
   productSales,
   topProducts,
 } from "./period-series";
+import { cogsCoverage, resultQuality } from "./period-summary";
 import {
   InvalidSaleFactError,
   periodResult,
@@ -770,6 +771,58 @@ describe("period series properties", () => {
       );
       // the property must not pass by never meeting an unknown input
       expect(withUnknown).toBeGreaterThan(0);
+    });
+
+    it("no known cost of the goods (cogsCoverage none) makes every day with a counted sale null", () => {
+      // half of the sales lose every cost of their items, so "none" is met often
+      const noCostSale = datedSale.map(
+        (fact): SaleFact => ({
+          ...fact,
+          items: fact.items.map((entry) => ({ ...entry, unitCost: null })),
+        })
+      );
+      let none = 0;
+      assertProperty(
+        fc.property(
+          fc.array(fc.oneof(noCostSale, datedSale), { maxLength: 12 }),
+          fc.array(datedExpense, { maxLength: 6 }),
+          (sales, expenses) => {
+            const quality = resultQuality(
+              periodResult(
+                sales,
+                expenses.map((entry) => entry.amount)
+              )
+            );
+            if (cogsCoverage(quality) !== "none") {
+              return;
+            }
+            none += 1;
+            expect(quality.cogsCoverage).toBe("none");
+            const series = dailyEconomics(sales, expenses, FROM, TO);
+            for (const entry of series) {
+              const counted = sales.some(
+                (fact) => fact.occurredOn === entry.date && !fact.cancelled
+              );
+              if (counted) {
+                expect(entry.operatingResult).toBeNull();
+              }
+            }
+          }
+        )
+      );
+      // the property must not pass by never meeting a period with no known cost
+      expect(none).toBeGreaterThan(0);
+    });
+
+    it("every day null by an unknown fee alone, with every cost of the goods known, is full coverage", () => {
+      const sales = DATES.map((date) =>
+        sale({ occurredOn: date, processingFee: null })
+      );
+      const series = dailyEconomics(sales, [], FROM, TO);
+      expect(series.every((entry) => entry.operatingResult === null)).toBe(
+        true
+      );
+      expect(resultQuality(periodResult(sales, [])).cogsCoverage).toBe("full");
     });
 
     it("a day is null in both fields or in neither, and its costs are never negative", () => {

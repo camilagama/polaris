@@ -294,8 +294,12 @@ describe("chainRows", () => {
     expect(notes.grossSales).toBeNull();
   });
 
-  it("with no cost known, the subtotals from the CMV on are a dash with their note and the rest keeps its value", () => {
-    const rows = chainRows(chain, completeQuality, true);
+  it("with no cost of the goods known, the subtotals from the CMV on are a dash with their note and the rest keeps its value", () => {
+    const rows = chainRows(chain, {
+      ...completeQuality,
+      itemLines: 4,
+      itemLinesWithUnknownCost: 4,
+    });
     const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
     for (const id of [
       "grossProfit",

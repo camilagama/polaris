@@ -65,9 +65,31 @@ export type MissingInput =
 
 export type ResultQualityLevel = "complete" | "no_data" | "partial";
 
+/** How much of the cost of the goods (the item lines) is known; an unknown fee does not count here. */
+export type CogsCoverage = "full" | "none" | "partial";
+
+/**
+ * The coverage of the cost of the goods sold: "full" when no item line has an unknown cost (no line at all included:
+ * the CMV is then zero by fact), "none" when there are item lines and none has a known cost (the CMV is zero by lack
+ * of data, so the result is the sales, not an estimate), "partial" otherwise.
+ */
+export function cogsCoverage(quality: {
+  itemLines: number;
+  itemLinesWithUnknownCost: number;
+}): CogsCoverage {
+  if (quality.itemLinesWithUnknownCost === 0) {
+    return "full";
+  }
+  return quality.itemLinesWithUnknownCost >= quality.itemLines
+    ? "none"
+    : "partial";
+}
+
 export interface ResultQuality {
   /** Sales whose anticipation fee was unknown (left out of the result). */
   anticipationFeesUnknown: number;
+  /** The coverage of the cost of the goods (`cogsCoverage`), from the two counts of item lines. */
+  cogsCoverage: CogsCoverage;
   /** Item lines of the period (the denominator of the cost coverage). */
   itemLines: number;
   /** Item lines whose cost was unknown (left out of the CMV). */
@@ -119,6 +141,10 @@ export function resultQuality(result: PeriodResult): ResultQuality {
   }
   return {
     anticipationFeesUnknown: result.unknown.anticipationFees,
+    cogsCoverage: cogsCoverage({
+      itemLines: result.itemLines,
+      itemLinesWithUnknownCost: result.unknown.costItems,
+    }),
     itemLines: result.itemLines,
     itemLinesWithUnknownCost: result.unknown.costItems,
     level,

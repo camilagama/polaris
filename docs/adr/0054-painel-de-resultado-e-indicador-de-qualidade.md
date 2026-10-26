@@ -33,6 +33,17 @@ Registro datado; o procedimento e os cartões que ele devolve não mudam. A tela
 - **O chip compara com o período anterior por uma segunda leitura do mesmo `periodSummary`.** Mês inteiro contra o mês anterior; outro intervalo contra o de mesmo tamanho que termina na véspera. Só depois de a leitura da tela responder, sem `topProducts`, numa tentativa só e sem cópia no aparelho: se falhar, o cartão fica sem chip e não diz nada. Nenhum número da tela vem dessa leitura, só a comparação.
 - **O resultado só tem curva e chip com todos os dias conhecidos** (AC-9 do corte do Resultado, emenda de 25/10). Com dia de custo desconhecido, o cartão mostra o número do servidor com "estimativa incompleta" e "N de M dias sem custo informado"; a soma dos dias conhecidos nunca aparece como total.
 
+## Emenda (26/10/2026): a cobertura do custo das mercadorias no contrato (`quality.cogsCoverage`)
+
+Registro datado; os cartões, a cadeia e o motor não mudam. Desenho t419, aprovado por Filipe, Rodrigo e Petković em 26/10. Até aqui só a tela decidia que o resultado não valia como estimativa quando nenhum custo de mercadoria era conhecido; a regra passa ao domínio e ao contrato.
+
+- **O indicador de qualidade ganha `cogsCoverage`, calculado só pelas linhas de item** (`cogsCoverage()` no domínio, a mesma função no servidor e no aparelho): `full` quando nenhuma linha de item tem custo desconhecido (também sem linha alguma: o CMV é zero de fato), `none` quando há linhas de item e nenhuma tem custo conhecido (o CMV é zero por falta de dado) e `partial` nos demais. Taxa de processamento ou de antecipação desconhecida não entra: o dia continua nulo por ela, mas o período não vira `none`. Por isso o nome é do custo das mercadorias, não do custo em geral.
+- **Com `none`, `cards.operatingResult`, `cards.marginPercent` e a cadeia seguem número, mas não são estimativa:** são as vendas menos o que se conhece. Quem mostra o resultado mostra que ele não existe (a tela usa "—").
+- **O campo é aditivo (expandir).** O Worker novo convive com o aparelho de versão anterior, que ignora o campo; o aparelho novo, diante de uma cópia guardada antes do campo ou de um Worker anterior, deriva o valor das duas contagens que toda cópia válida tem (`itemLines` e `itemLinesWithUnknownCost`). O aparelho deriva sempre e não lê o campo do servidor, e um valor ausente ou desconhecido não invalida a cópia.
+- **Anular `operatingResult`, `marginPercent` ou `cogs` com `none` (forma B do desenho) fica fora.** Quebraria o aparelho de versão anterior, que recusa resultado nulo. Se um dia fizer sentido, é um "contrair" futuro, por decisão explícita, depois de não existir aparelho antigo.
+- **Sai a cláusula "todos os dias até hoje com resultado nulo"**, que dependia do "hoje" da loja e marcava "sem custo" períodos com CMV conhecido. Em dois casos de canto (só taxa desconhecida em todos os dias, ou todo dia com algo desconhecido mas algum CMV conhecido) o resultado passa a aparecer como qualquer parcial. `none` pelas linhas implica que todo dia com venda tem resultado nulo; o teste de propriedade do domínio prova isso.
+- As metas ficam como estão nesta etapa.
+
 ## Consequências
 
 - O painel e o resultado de um período sempre concordam, porque vêm do mesmo motor e da mesma leitura.

@@ -18,7 +18,6 @@ import {
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { type ChainRow, chainRows, EMPTY_VALUE } from "./dashboard-model";
 import { PartsBar } from "./parts-bar";
-import { summaryHasNoKnownCost } from "./result-kpis";
 
 const CHAIN_TITLE_ID = "dashboard-chain-title";
 
@@ -43,18 +42,8 @@ const LEADER =
   "min-w-4 flex-1 translate-y-[-0.3em] border-input border-b border-dotted";
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
-export function ResultChain({
-  summary,
-  today,
-}: {
-  summary: StoredPeriodSummary;
-  today: string;
-}) {
-  const rows = chainRows(
-    summary.chain,
-    summary.quality,
-    summaryHasNoKnownCost(summary, today)
-  );
+export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
+  const rows = chainRows(summary.chain, summary.quality);
   return (
     <Card aria-labelledby={CHAIN_TITLE_ID} className="gap-0 py-0" role="region">
       <CardHeader className="border-b py-(--card-spacing)">

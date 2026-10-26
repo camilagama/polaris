@@ -11,18 +11,17 @@ import {
   maskMoney,
   useHiddenValues,
 } from "../lib/hidden-values";
-import type { StoredPeriodSummary } from "../lib/period-summary-cache";
+import {
+  cogsCoverageOf,
+  type StoredPeriodSummary,
+} from "../lib/period-summary-cache";
 import { useIsMobile } from "../lib/use-mobile";
 import {
   formatPercentOrDash,
   isIncompleteEstimate,
   NO_KNOWN_COST_NOTE,
 } from "./dashboard-model";
-import {
-  type ResultKpis,
-  resultKpis,
-  summaryHasNoKnownCost,
-} from "./result-kpis";
+import { type ResultKpis, resultKpis } from "./result-kpis";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -118,7 +117,7 @@ interface ResultCardsProps {
  * Ticket médio and Margem. The sparklines of sales, ticket and result read the same day together (the pointer, the
  * finger or the arrows); leaving, they go back to the period up to today. The result has its sparkline and its chip
  * (in reais) only when every day up to today has a known cost; otherwise the badge "estimativa incompleta" and "N de M
- * dias sem custo informado", with neither (AC-9). With no cost known at all (`noKnownCost`) the result and the margin
+ * dias sem custo informado", with neither (AC-9). With no cost of the goods known (`cogsCoverageOf` is "none") the result and the margin
  * show a dash, the badge and one line each: the server's figures are then the sales, never an estimate. The margin is
  * the server's, with no sparkline. On a phone the
  * sparklines are drawn finished; the reading by the finger stays (t386).
@@ -178,8 +177,8 @@ export function ResultCards({
   );
   // a period with no sale draws nothing; a copy kept before the series existed has the totals only
   const drawn = cards.salesCount > 0 && kpis.days.length > 0;
-  // no cost known at all: the server's margin and result are the sales, so the two cards say so and show no number
-  const noCost = summaryHasNoKnownCost(summary, today);
+  // no cost of the goods known: the server's margin and result are the sales, so the two cards say so and show no number
+  const noCost = cogsCoverageOf(quality) === "none";
   const incomplete =
     noCost ||
     isIncompleteEstimate(quality) ||
