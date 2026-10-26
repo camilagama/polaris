@@ -20,6 +20,7 @@ import { connectionControlProps } from "../app-shell/connection-required-notice"
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { DateField } from "../sales/sale-fields";
 import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
 import {
   EXPENSE_DRAFT_FIELDS,
@@ -129,6 +130,11 @@ export function ExpenseForm({
     }
   }, []);
 
+  const handleCompetence = useCallback((competenceOn: string) => {
+    setDraft((current) => ({ ...current, competenceOn }));
+    setErrors((current) => ({ ...current, competenceOn: undefined }));
+  }, []);
+
   const handleCategory = useCallback((categoryId: string) => {
     setDraft((current) => ({ ...current, categoryId }));
     setErrors((current) => ({ ...current, categoryId: undefined }));
@@ -198,16 +204,15 @@ export function ExpenseForm({
             placeholder="Escolha uma categoria"
             value={draft.categoryId}
           />
-          <ExpenseTextField
+          <DateField
             disabled={disabled}
             error={errors.competenceOn}
             hint="O mês a que a despesa se refere, não o dia do pagamento."
             id={fieldId("competenceOn")}
             label="Data de competência"
             min={EARLIEST_EXPENSE_COMPETENCE}
-            name="competenceOn"
-            onChange={handleChange}
-            type="date"
+            onChange={handleCompetence}
+            today={today}
             value={draft.competenceOn}
           />
           <ExpenseTextField

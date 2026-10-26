@@ -1,6 +1,13 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import {
+  datePickerButton,
+  FORM_VIEWPORTS,
+  openDatePicker,
+  pickDate,
+  touchDay,
+} from "./date-pickers";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { WORKER_MARK, serveLabWorker } from "./worker-mark";
 
@@ -14,6 +21,7 @@ const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
+const TODAY_BR = "14/10/2026";
 const rpcPrefix = /^\/rpc\//;
 
 interface FakeCategory {
@@ -463,6 +471,65 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   );
 });
 
+for (const viewport of FORM_VIEWPORTS) {
+  test(`a data de competência, a ${viewport.name} px: abre em hoje, escolhe um dia e o servidor recebe esse dia`, async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(NOW));
+    await page.setViewportSize(viewport);
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+
+    await expect(
+      datePickerButton(page, "Data de competência")
+    ).toHaveAccessibleName(`Data de competência, ${TODAY_BR}`);
+    await pickDate(page, "Data de competência", "2026-10-03");
+    await expect(
+      datePickerButton(page, "Data de competência")
+    ).toHaveAccessibleName("Data de competência, 03/10/2026");
+
+    // "Hoje" in the footer of the calendar goes back to the store's day
+    const popup = await openDatePicker(page, "Data de competência");
+    await popup.getByRole("button", { exact: true, name: "Hoje" }).click();
+    await expect(popup).toBeHidden();
+    await expect(
+      datePickerButton(page, "Data de competência")
+    ).toHaveAccessibleName(`Data de competência, ${TODAY_BR}`);
+
+    await pickDate(page, "Data de competência", "2026-10-03");
+    await fillExpense(page, {
+      amount: "80",
+      category: "Aluguel",
+      description: "Conta de luz",
+    });
+    await page.getByRole("button", { name: "Registrar despesa" }).click();
+    await expect(page.getByText("Despesa registrada.")).toBeVisible();
+    expect(server.expenses[0]?.competenceOn).toBe("2026-10-03");
+  });
+}
+
+test("o calendário da data de competência: o teclado abre, as setas andam, Enter escolhe e o foco volta ao botão", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+
+  await datePickerButton(page, "Data de competência").focus();
+  await page.keyboard.press("Enter");
+  const popup = page.getByRole("dialog", { name: "Data de competência" });
+  await expect(popup.getByRole("grid").first()).toBeVisible();
+  // the focus is on the chosen day (today), and the arrows walk the days
+  await expect(popup.locator(`button[data-day="${TODAY}"]`)).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  await expect(datePickerButton(page, "Data de competência")).toBeFocused();
+  await expect(
+    datePickerButton(page, "Data de competência")
+  ).toHaveAccessibleName("Data de competência, 13/10/2026");
+});
+
 test("um valor inválido é recusado na tela, sem chamar o servidor", async ({
   page,
 }) => {
@@ -586,7 +653,7 @@ async function createMonthlyRule(page: Page, description: string) {
   await panel.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
   await choose(page, panel, "Categoria", "Aluguel");
   await choose(page, panel, "Frequência", "Todo mês");
-  await panel.getByLabel("Começa em").fill("2026-07-14");
+  await pickDate(panel, "Começa em", "2026-07-14");
   await panel.getByLabel("Descrição").fill(description);
   await panel.getByRole("button", { name: "Criar despesa recorrente" }).click();
   await expect(panel.getByText("Despesa recorrente criada.")).toBeVisible();
@@ -624,6 +691,49 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   await expect(rule).toContainText("Começa em 14/07/2026");
   await expect(rule).toContainText("Próxima: 14/11/2026");
 });
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`'Termina em' da despesa recorrente, a ${viewport.name} px: não aceita dia antes do início, é opcional e Limpar o esvazia`, async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(NOW));
+    await page.setViewportSize(viewport);
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+    await openRulesPanel(page);
+    const panel = rulesPanel(page);
+    await panel
+      .getByRole("button", { name: "Nova despesa recorrente" })
+      .click();
+
+    await pickDate(panel, "Começa em", "2026-10-10");
+    const ends = await openDatePicker(page, "Termina em");
+    // the days before the start cannot be chosen: the "ends before it starts" error cannot be made
+    await expect(ends.locator('button[data-day="2026-10-09"]')).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
+    await touchDay(ends, "2026-12-10");
+    await expect(ends).toBeHidden();
+    await expect(datePickerButton(page, "Termina em")).toHaveAccessibleName(
+      "Termina em, 10/12/2026"
+    );
+
+    await panel.getByRole("button", { name: "Limpar data de término" }).click();
+    await expect(datePickerButton(page, "Termina em")).toHaveAccessibleName(
+      "Termina em, Escolher data"
+    );
+    // the button that was cleared is gone: the focus goes to the field, not to the page
+    await expect(datePickerButton(page, "Termina em")).toBeFocused();
+    // the help of the field is read with it
+    await expect(
+      datePickerButton(page, "Termina em")
+    ).toHaveAccessibleDescription("Em branco, repete sem data de término.");
+    await expect(
+      panel.getByRole("button", { name: "Limpar data de término" })
+    ).toHaveCount(0);
+  });
+}
 
 test("pausar uma despesa recorrente a esconde, e retomar não lança os períodos da pausa", async ({
   page,

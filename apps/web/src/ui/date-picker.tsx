@@ -24,6 +24,8 @@ export interface DatePickerProps {
   disabled?: boolean | undefined;
   /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
   disabledReason?: string | undefined;
+  /** The id of a help text the screen shows under the button, read after the error. */
+  describedBy?: string | undefined;
   /** The error under the button; `true` is the default text, "Escolha uma data". */
   error?: boolean | string | undefined;
   id?: string | undefined;
@@ -47,6 +49,7 @@ export interface DatePickerProps {
  */
 export function DatePicker({
   className,
+  describedBy,
   disabled,
   disabledReason,
   error,
@@ -101,7 +104,11 @@ export function DatePicker({
         <PopoverTrigger
           render={
             <Button
-              aria-describedby={errorText ? errorId : undefined}
+              aria-describedby={
+                [errorText ? errorId : null, describedBy]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               aria-invalid={errorText ? true : undefined}
               aria-label={`${label}, ${text}`}
               className="w-full justify-start font-normal sm:w-fit"
@@ -123,7 +130,7 @@ export function DatePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto gap-2 p-2"
+          className="max-h-(--available-height) w-auto gap-2 overflow-y-auto p-2"
           initialFocus={false}
         >
           <OnDemandCalendar
