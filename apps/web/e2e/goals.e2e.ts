@@ -514,6 +514,18 @@ for (const width of FORM_WIDTHS) {
     ).toBeFocused();
     await expectFormDialogLayout(dialog, width);
 
+    // Esc sem digitar não guarda nada, nem o que foi digitado e apagado: reabrir traz o formulário como começou
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await openForm.click();
+    await expect(dialog.locator("#goal-create-target")).toHaveValue("");
+    await dialog.locator("#goal-create-target").fill("5");
+    await dialog.locator("#goal-create-target").fill("");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await openForm.click();
+    await expect(dialog.locator("#goal-create-target")).toHaveValue("");
+
     await dialog.locator("#goal-create-target").fill("1.000,00");
     if (width < 760) {
       await expectKeyboardKeepsMainButton(

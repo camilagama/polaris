@@ -63,8 +63,8 @@ interface ExpenseRuleFormProps {
   feedback: Feedback | null;
   /** What was typed and kept when the form was closed by Esc or "Fechar", for the same rule or a new one. */
   keptDraft?: RuleDraft | undefined;
-  /** Every change of the draft, so the panel can keep it when the form closes. */
-  onDraftChange: (draft: RuleDraft) => void;
+  /** Every change of the draft, so the panel can keep it when the form closes; `null` while it is as it started. */
+  onDraftChange: (draft: RuleDraft | null) => void;
   onCancel: () => void;
   /** Resolves true when the rule was saved. */
   onSave: (input: RuleCreateInput) => Promise<boolean>;
@@ -153,11 +153,16 @@ export function ExpenseRuleForm({
   const [draft, setDraft] = useState<RuleDraft>(
     () => keptDraft ?? draftFrom(editing, today)
   );
-  useEffect(() => onDraftChange(draft), [draft, onDraftChange]);
   const [errors, setErrors] = useState<RuleDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<RuleDraft>(() => draftFrom(editing, today));
-  useReportUnsentWork(isDraftChanged(draft, initialDraft));
+  const changed = isDraftChanged(draft, initialDraft);
+  // an Esc without typing keeps nothing: only a draft that differs from the start is worth bringing back
+  useEffect(
+    () => onDraftChange(changed ? draft : null),
+    [changed, draft, onDraftChange]
+  );
+  useReportUnsentWork(changed);
   const online = useConnectionOnline();
 
   // Active categories only; the one the edited rule already has stays

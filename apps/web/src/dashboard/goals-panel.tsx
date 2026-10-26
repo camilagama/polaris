@@ -165,7 +165,7 @@ export function GoalsPanel({
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only
   const draftStore = useRef<GoalDraft | null>(null);
-  const handleDraftChange = useCallback((draft: GoalDraft) => {
+  const handleDraftChange = useCallback((draft: GoalDraft | null) => {
     draftStore.current = draft;
   }, []);
   /** "Cancelar", a saved goal: the form closes and what was typed is thrown away. */

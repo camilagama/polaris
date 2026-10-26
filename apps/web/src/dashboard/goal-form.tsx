@@ -176,8 +176,8 @@ interface GoalCreateFormProps {
   /** The month on screen (YYYY-MM): the period starts as that whole month. */
   month: string;
   onCancel: () => void;
-  /** Every change of the draft, so the panel can keep it when the form closes. */
-  onDraftChange: (draft: GoalDraft) => void;
+  /** Every change of the draft, so the panel can keep it when the form closes; `null` while it is as it started. */
+  onDraftChange: (draft: GoalDraft | null) => void;
   /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
   onDismiss: () => void;
   /** Resolves true when the goal was created. */
@@ -254,11 +254,16 @@ function GoalCreateContent({
   const [draft, setDraft] = useState<GoalDraft>(
     () => keptDraft ?? newGoalDraft(month)
   );
-  useEffect(() => onDraftChange(draft), [draft, onDraftChange]);
   const [errors, setErrors] = useState<GoalDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<GoalDraft>(() => newGoalDraft(month));
-  useReportUnsentWork(isDraftChanged(draft, initialDraft));
+  const changed = isDraftChanged(draft, initialDraft);
+  // an Esc without typing keeps nothing: only a draft that differs from the start is worth bringing back
+  useEffect(
+    () => onDraftChange(changed ? draft : null),
+    [changed, draft, onDraftChange]
+  );
+  useReportUnsentWork(changed);
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.currentTarget;

@@ -317,8 +317,8 @@ export function ExpenseRulesPanel({
   // what was typed when the form was closed by Esc or "Fechar", for the next opening of the same form; in memory only
   const draftStore = useRef<{ draft: RuleDraft; key: string } | null>(null);
   const draftKey = useRef("");
-  const handleDraftChange = useCallback((draft: RuleDraft) => {
-    draftStore.current = { draft, key: draftKey.current };
+  const handleDraftChange = useCallback((draft: RuleDraft | null) => {
+    draftStore.current = draft && { draft, key: draftKey.current };
   }, []);
   /** "Cancelar", a saved rule: the form closes and what was typed is thrown away. */
   const closeForm = useCallback(() => {
