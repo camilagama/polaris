@@ -138,7 +138,8 @@ function resultKindOf(days: readonly Day[]): ResultKind {
 /**
  * The period before whose `periodSummary` the chip of the result needs, or null when that chip cannot exist: the
  * result is a sum of known days (`kind: "known"`) and some cost of the goods of the period is known (`cogsCoverageOf`
- * is not "none"). Only `periodSummary` runs the engine, so the Worker does not read the period before for a card with no chip.
+ * is not "none"). Only `periodSummary` runs the engine, so the Worker does not read the period before for a card with
+ * no chip.
  */
 export function resultChipPeriod(
   summary: Pick<StoredPeriodSummary, "daily" | "period" | "quality">,

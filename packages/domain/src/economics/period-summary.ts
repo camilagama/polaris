@@ -70,8 +70,8 @@ export type CogsCoverage = "full" | "none" | "partial";
 
 /**
  * The coverage of the cost of the goods sold: "full" when no item line has an unknown cost (no line at all included:
- * the CMV is then zero by fact), "none" when there are item lines and none has a known cost (the CMV is zero by lack
- * of data, so the result is the sales, not an estimate), "partial" otherwise.
+ * the CMV is then zero by fact), "none" when every item line has an unknown cost (the count of unknown lines reaches
+ * the lines; the CMV is zero by lack of data, so the result is the sales, not an estimate), "partial" otherwise.
  */
 export function cogsCoverage(quality: {
   itemLines: number;

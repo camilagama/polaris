@@ -35,7 +35,7 @@ Registro datado; o procedimento e os cartões que ele devolve não mudam. A tela
 
 ## Emenda (26/10/2026): a cobertura do custo das mercadorias no contrato (`quality.cogsCoverage`)
 
-Registro datado; os cartões, a cadeia e o motor não mudam. Desenho t419, aprovado por Filipe, Rodrigo e Petković em 26/10. Até aqui só a tela decidia que o resultado não valia como estimativa quando nenhum custo de mercadoria era conhecido; a regra passa ao domínio e ao contrato.
+Registro datado; o motor e os números do resumo não mudam, e os cartões e a cadeia só mudam nos dois casos de canto abaixo. Desenho t419, aprovado por Filipe, Rodrigo e Petković em 26/10. Até aqui só a tela decidia que o resultado não valia como estimativa quando nenhum custo de mercadoria era conhecido; a regra passa ao domínio e ao contrato.
 
 - **O indicador de qualidade ganha `cogsCoverage`, calculado só pelas linhas de item** (`cogsCoverage()` no domínio, a mesma função no servidor e no aparelho): `full` quando nenhuma linha de item tem custo desconhecido (também sem linha alguma: o CMV é zero de fato), `none` quando há linhas de item e nenhuma tem custo conhecido (o CMV é zero por falta de dado) e `partial` nos demais. Taxa de processamento ou de antecipação desconhecida não entra: o dia continua nulo por ela, mas o período não vira `none`. Por isso o nome é do custo das mercadorias, não do custo em geral.
 - **Com `none`, `cards.operatingResult`, `cards.marginPercent` e a cadeia seguem número, mas não são estimativa:** são as vendas menos o que se conhece. Quem mostra o resultado mostra que ele não existe (a tela usa "—").

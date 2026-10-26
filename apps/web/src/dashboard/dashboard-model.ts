@@ -1,7 +1,10 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { type ClockParts, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import { cogsCoverageOf, type StoredQuality } from "../lib/period-summary-cache";
+import {
+  cogsCoverageOf,
+  type StoredQuality,
+} from "../lib/period-summary-cache";
 
 /**
  * Pure helpers of the period result screen: text for the figures the server

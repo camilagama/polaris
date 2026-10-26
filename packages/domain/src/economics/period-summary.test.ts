@@ -1,11 +1,7 @@
 import fc from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
-import {
-  cogsCoverage,
-  dashboardCards,
-  resultQuality,
-} from "./period-summary";
+import { cogsCoverage, dashboardCards, resultQuality } from "./period-summary";
 import {
   type PeriodResult,
   periodResult,
@@ -216,10 +212,7 @@ describe("resultQuality", () => {
 
   it("an unknown fee alone leaves the coverage of the cost of the goods full", () => {
     const quality = resultQuality(
-      result(
-        [sale({ anticipationFee: null, processingFee: null })],
-        ["1.00"]
-      )
+      result([sale({ anticipationFee: null, processingFee: null })], ["1.00"])
     );
     expect(quality.cogsCoverage).toBe("full");
     expect(quality.missing).toEqual([

@@ -426,7 +426,7 @@ describe("the period before that the result's chip asks the engine for", () => {
     ).toBeNull();
   });
 
-  it("reads the coverage from the counts, never from the field: \"none\" with 3 of 25 lines unknown keeps the chip", () => {
+  it('reads the coverage from the counts, never from the field: "none" with 3 of 25 lines unknown keeps the chip', () => {
     const base = summary(days("2026-10-01", 25));
     expect(
       resultChipPeriod(
