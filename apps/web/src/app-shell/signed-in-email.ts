@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { browserConnection } from "../lib/browser-connection";
 
 /**
  * The e-mail of the person signed in, for the foot of the sidebar. Read once from the session, and nothing
@@ -28,7 +29,8 @@ export function useSignedInUser(): {
     const controller = new AbortController();
     // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
     const timer = setTimeout(() => controller.abort(), 5000);
-    fetch("/api/auth/get-session", {
+    // through the connection: the first lookup of the tab goes out before the screen's reads (`read-gate.ts`)
+    browserConnection.fetch("/api/auth/get-session", {
       cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal,

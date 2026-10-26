@@ -137,19 +137,28 @@ function failed(error: unknown): { retryable: boolean; status: "error" } {
   };
 }
 
+/** Whether the page still wants the answer of a read (its ticket is the newest): leaving it cancels the read. */
+type IsCurrent = () => boolean;
+
 async function readSummary(
   organizationId: string,
+  isCurrent: IsCurrent,
   from: string,
   to: string,
   topProducts?: number
 ): Promise<StoredPeriodSummary> {
-  const summary = await readWithRetry(() =>
-    orpcClient.report.periodSummary({
-      from,
-      organizationId,
-      to,
-      ...(topProducts ? { topProducts } : {}),
-    })
+  const summary = await readWithRetry(
+    (signal) =>
+      orpcClient.report.periodSummary(
+        {
+          from,
+          organizationId,
+          to,
+          ...(topProducts ? { topProducts } : {}),
+        },
+        { signal }
+      ),
+    { isCurrent }
   );
   if (!isPeriodSummary(summary) || summary.daily === undefined) {
     // not what the server sends (a captive portal page, a proxy): as if it had not answered
@@ -160,12 +169,13 @@ async function readSummary(
 
 async function readFigures(
   organizationId: string,
+  isCurrent: IsCurrent,
   today: string
 ): Promise<Omit<HomeFigures, "today">> {
   const { before, month } = homePeriods(today);
   const [monthSummary, beforeSummary] = await Promise.all([
-    readSummary(organizationId, month.from, month.to, 3),
-    readSummary(organizationId, before.from, before.to),
+    readSummary(organizationId, isCurrent, month.from, month.to, 3),
+    readSummary(organizationId, isCurrent, before.from, before.to),
   ]);
   return { before: beforeSummary, month: monthSummary };
 }
@@ -176,10 +186,12 @@ async function readFigures(
  */
 async function readChecklist(
   organizationId: string,
+  isCurrent: IsCurrent,
   readsStock: boolean
 ): Promise<HomeChecklist | "sold" | null> {
-  const sold = await readWithRetry(() =>
-    orpcClient.sale.list({ limit: 1, organizationId })
+  const sold = await readWithRetry(
+    (signal) => orpcClient.sale.list({ limit: 1, organizationId }, { signal }),
+    { isCurrent }
   );
   if (sold.sales.length > 0) {
     return "sold";
@@ -188,23 +200,25 @@ async function readChecklist(
     return null;
   }
   const [product] = (
-    await readWithRetry(() =>
-      orpcClient.inventory.listBalances({
-        limit: 1,
-        organizationId,
-        productStatus: "all",
-      })
+    await readWithRetry(
+      (signal) =>
+        orpcClient.inventory.listBalances(
+          { limit: 1, organizationId, productStatus: "all" },
+          { signal }
+        ),
+      { isCurrent }
     )
   ).entries;
   if (product === undefined) {
     return { firstProductId: null, hasStock: false };
   }
-  const stocked = await readWithRetry(() =>
-    orpcClient.inventory.listBalances({
-      limit: 1,
-      organizationId,
-      stock: "with_stock",
-    })
+  const stocked = await readWithRetry(
+    (signal) =>
+      orpcClient.inventory.listBalances(
+        { limit: 1, organizationId, stock: "with_stock" },
+        { signal }
+      ),
+    { isCurrent }
   );
   return {
     firstProductId: product.productId,
@@ -215,30 +229,41 @@ async function readChecklist(
 /** S, and C only when the month sold an item without a known cost (§ 2.4). */
 async function readStock(
   organizationId: string,
+  isCurrent: IsCurrent,
   withUnknownCost: Promise<boolean>
 ): Promise<{ unknownCost: BalancesPage | null; withoutStock: BalancesPage }> {
   const page = (list: { entries: unknown[]; nextCursor: string | null }) => ({
     count: list.entries.length,
     more: list.nextCursor !== null,
   });
-  const withoutStock = readWithRetry(() =>
-    orpcClient.inventory.listBalances({
-      limit: PAGE,
-      organizationId,
-      productStatus: "active",
-      stock: "without_stock",
-    })
+  const withoutStock = readWithRetry(
+    (signal) =>
+      orpcClient.inventory.listBalances(
+        {
+          limit: PAGE,
+          organizationId,
+          productStatus: "active",
+          stock: "without_stock",
+        },
+        { signal }
+      ),
+    { isCurrent }
   );
   // awaited below, after C: a failure of S meanwhile is not an unhandled rejection
   withoutStock.catch(() => undefined);
   const unknownCost = (await withUnknownCost)
-    ? await readWithRetry(() =>
-        orpcClient.inventory.listBalances({
-          cost: "unknown",
-          limit: PAGE,
-          organizationId,
-          productStatus: "active",
-        })
+    ? await readWithRetry(
+        (signal) =>
+          orpcClient.inventory.listBalances(
+            {
+              cost: "unknown",
+              limit: PAGE,
+              organizationId,
+              productStatus: "active",
+            },
+            { signal }
+          ),
+        { isCurrent }
       )
     : null;
   return {
@@ -315,12 +340,13 @@ export function useHome(
           new Date(Date.now() + skew.current),
           timezone
         );
-        let figures = await readFigures(organizationId, guess);
+        const isCurrent = () => ticket === sequence.current.numbers;
+        let figures = await readFigures(organizationId, isCurrent, guess);
         skew.current = Date.parse(figures.month.generatedAt) - Date.now();
         const today = storeToday(figures.month.generatedAt, timezone);
         // the device's month is not the server's (a wrong clock, the turn of the month): read the server's
         if (today.slice(0, 7) !== guess.slice(0, 7)) {
-          figures = await readFigures(organizationId, today);
+          figures = await readFigures(organizationId, isCurrent, today);
         }
         const ready = { ...figures, today };
         if (ticket === sequence.current.numbers) {
@@ -349,8 +375,12 @@ export function useHome(
         settle(ticket, "figures", { block: { data: ready, status: "ready" } });
         return ready;
       } catch (error) {
-        // no connection: the page shows the copy (§ 7.4); the read is made again when the connection is back
-        if (!(await noConnection(error))) {
+        // a read the page left behind (cancelled) says nothing; no connection: the page shows the copy (§ 7.4), and
+        // the read is made again when the connection is back
+        if (
+          ticket === sequence.current.numbers &&
+          !(await noConnection(error))
+        ) {
           settle(ticket, "figures", { error }, keep);
         }
         return null;
@@ -370,7 +400,11 @@ export function useHome(
         return;
       }
       try {
-        const read = await readChecklist(organizationId, reads.inventory);
+        const read = await readChecklist(
+          organizationId,
+          () => ticket === sequence.current.numbers,
+          reads.inventory
+        );
         if (read === "sold" && ticket === sequence.current.numbers) {
           keepCopy(reads.report && !copyRefused.current, (storage) =>
             writeHomeCopy(storage, organizationId, { hadSale: true })
@@ -403,8 +437,10 @@ export function useHome(
       }
       try {
         // every status: reading settles the goals, and a goal that just settled leaves the active ones (§ 5.3)
-        const { goals } = await readWithRetry(() =>
-          orpcClient.goal.list({ organizationId, status: "all" })
+        const { goals } = await readWithRetry(
+          (signal) =>
+            orpcClient.goal.list({ organizationId, status: "all" }, { signal }),
+          { isCurrent: () => ticket === sequence.current.goals }
         );
         if (ticket === sequence.current.goals) {
           // the goal the card shows, as it shows it now, and when (§ 7.3)
@@ -421,7 +457,7 @@ export function useHome(
         }
         settle(ticket, "goals", { block: { data: goals, status: "ready" } });
       } catch (error) {
-        if (!(await noConnection(error))) {
+        if (ticket === sequence.current.goals && !(await noConnection(error))) {
           settle(ticket, "goals", { error }, keep);
         }
       }
@@ -442,6 +478,7 @@ export function useHome(
       try {
         const data = await readStock(
           organizationId,
+          () => ticket === sequence.current.numbers,
           figures.then(
             (read) =>
               reads.unknownCost &&
@@ -450,7 +487,10 @@ export function useHome(
         );
         settle(ticket, "stock", { block: { data, status: "ready" } });
       } catch (error) {
-        if (!(await noConnection(error))) {
+        if (
+          ticket === sequence.current.numbers &&
+          !(await noConnection(error))
+        ) {
           settle(ticket, "stock", { error }, keep);
         }
       }

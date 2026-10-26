@@ -10,8 +10,9 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  *   connection not proven (an answer of the Worker to it is what proves it again);
  * - when the connection comes back: a sync about 1 s later (±20%, so tabs and devices do not come back
  *   together);
- * - after `sync_failed` (a 5xx, a 429): again in 5, 10, 20, 40 and then 60 s (±20%), never before the
- *   `Retry-After` of a 429.
+ * - after `sync_failed` (a 5xx, a 429), and after a transient failure the runtime still keeps quiet (a Worker
+ *   killed for CPU, `retriesQuietly`): again in 2, 4, 8, 20, 40 and then 60 s (±20%), never before the
+ *   `Retry-After` of a 429. The sync never goes through the retries of the screens' reads: these steps are its own.
  *
  * Never two runs pending: the runtime's sync is single-flight, and each of the timers here is replaced,
  * never added. Framework-free, with the clock and the page injected.
@@ -19,6 +20,7 @@ import type { RuntimeSnapshot } from "./offline-runtime";
 interface SchedulerRuntime {
   connectionChanged: () => void;
   getSnapshot: () => RuntimeSnapshot;
+  retriesQuietly: () => boolean;
   syncNow: () => Promise<void>;
 }
 
@@ -46,7 +48,7 @@ export interface SyncScheduler {
 
 const TICK_MS = 60_000;
 const BACK_ONLINE_MS = 1000;
-const RETRY_STEPS_MS = [5000, 10_000, 20_000, 40_000, 60_000] as const;
+const RETRY_STEPS_MS = [2000, 4000, 8000, 20_000, 40_000, 60_000] as const;
 
 export function startSyncScheduler(
   dependencies: SyncSchedulerDependencies
@@ -95,7 +97,10 @@ export function startSyncScheduler(
         if (stopped) {
           return;
         }
-        if (runtime.getSnapshot().reason === "sync_failed") {
+        if (
+          runtime.getSnapshot().reason === "sync_failed" ||
+          runtime.retriesQuietly()
+        ) {
           scheduleRetry();
         } else {
           retryStep = 0;

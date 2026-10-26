@@ -125,11 +125,11 @@ export function CustomersPage() {
       setCustomers([]);
       try {
         const result = await readWithRetry(
-          () =>
-            orpcClient.customer.list({
-              organizationId: targetOrganizationId,
-              status: targetStatus,
-            }),
+          (signal) =>
+            orpcClient.customer.list(
+              { organizationId: targetOrganizationId, status: targetStatus },
+              { signal }
+            ),
           { isCurrent: () => requestSequence === customerLoadSequence.current }
         );
         if (requestSequence !== customerLoadSequence.current) {

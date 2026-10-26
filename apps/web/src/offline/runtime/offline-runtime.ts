@@ -4,6 +4,7 @@ import {
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isTransientReadFailure,
   rpcErrorCode,
 } from "../../lib/rpc-error";
 import type { PendingWork, PendingWorkSource } from "../../pwa/update-model";
@@ -221,6 +222,12 @@ function isSessionRefusal(error: unknown): boolean {
   return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
 
+/**
+ * How long a sync that keeps failing in a transient way (a Worker killed for CPU, 1102; a 503 "try again") stays quiet:
+ * no "Envio falhou" before 60 s in a row without a good sync (paliativo dos 1102). Nothing kept is lost meanwhile.
+ */
+const QUIET_FAILURE_MS = 60_000;
+
 /** How the last sync ended, for "Sair": a try that got no answer blocks it as offline (ADR 0039). */
 type SyncOutcome = "answered" | "no_answer" | "not_run";
 
@@ -320,6 +327,8 @@ export class OfflineRuntime {
   private lease: string | null = null;
   private inFlight: Promise<void> | null = null;
   private lastOutcome: SyncOutcome = "not_run";
+  /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
+  private failingSince: number | null = null;
   /** When the server last confirmed the session user of the open namespace; null forces a new look. */
   private sessionConfirmedAt: number | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
@@ -1605,6 +1614,7 @@ export class OfflineRuntime {
         await bootstrapLocalStore(source, stores.writer);
       }
       this.lastOutcome = "answered";
+      this.failingSince = null;
       this.set({
         ...this.snapshot,
         bootstrapped: true,
@@ -1622,6 +1632,25 @@ export class OfflineRuntime {
       return;
     }
     await this.refreshCounts(); // what was queued while the pull ran
+  }
+
+  /**
+   * A transient failure of the server (the platform killed the Worker, a 503 "try again") within 60 s of the first
+   * one in a row: the sync tries again soon (`retriesQuietly`) and says nothing yet. Any other failure ends the run.
+   */
+  private failsQuietly(error: unknown): boolean {
+    if (!isTransientReadFailure(error)) {
+      this.failingSince = null;
+      return false;
+    }
+    const now = this.now().getTime();
+    this.failingSince ??= now;
+    return now - this.failingSince < QUIET_FAILURE_MS;
+  }
+
+  /** The last sync failed in a transient way and says nothing yet: the scheduler tries again in 2, 4 and 8 s. */
+  retriesQuietly(): boolean {
+    return this.failingSince !== null && this.snapshot.reason === null;
   }
 
   /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
@@ -1650,13 +1679,14 @@ export class OfflineRuntime {
     }
     const noAnswer = isConnectionFailure(error);
     this.lastOutcome = noAnswer ? "no_answer" : "answered";
+    const quiet = !noAnswer && this.failsQuietly(error);
     // a partial sync may still have changed rows (accepted commands, pulled pages). No answer is not
     // "Envio falhou": the connection state says offline (its probe decides) and the queue waits for it
     this.set({
       ...this.snapshot,
       dataVersion: this.snapshot.dataVersion + 1,
       online: this.dependencies.isOnline(),
-      reason: noAnswer ? null : "sync_failed",
+      reason: noAnswer || quiet ? null : "sync_failed",
       sessionRefused: false,
       syncing: false,
     });

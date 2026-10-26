@@ -156,14 +156,17 @@ export function usePeriodSummary(
     }));
     try {
       const summary = await readWithRetry(
-        () =>
-          orpcClient.report.periodSummary({
-            from,
-            organizationId,
-            to,
-            // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
-            topProducts: 3,
-          }),
+        (signal) =>
+          orpcClient.report.periodSummary(
+            {
+              from,
+              organizationId,
+              to,
+              // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
+              topProducts: 3,
+            },
+            { signal }
+          ),
         { isCurrent: () => requestSequence === sequence.current }
       );
       if (!isPeriodSummary(summary)) {

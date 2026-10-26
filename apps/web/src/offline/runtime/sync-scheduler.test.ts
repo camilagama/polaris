@@ -30,6 +30,8 @@ function setup(options: Options = {}) {
   >();
   const state = {
     online: true,
+    /** The runtime keeps quiet about a transient failure (a Worker killed for CPU) for its first 60 s. */
+    quiet: false,
     reason: null as string | null,
     retryAfterMs: null as number | null,
     visible: options.visible ?? true,
@@ -57,6 +59,7 @@ function setup(options: Options = {}) {
   const runtime = {
     connectionChanged,
     getSnapshot: () => ({ reason: state.reason }) as RuntimeSnapshot,
+    retriesQuietly: () => state.quiet,
     syncNow,
   };
   // connection
@@ -240,7 +243,7 @@ describe("the connection coming back and going", () => {
 });
 
 describe("after a failed sync", () => {
-  it("tries again in 5, 10, 20, 40 and then 60 s", async () => {
+  it("tries again in 2, 4, 8, 20, 40 and then 60 s", async () => {
     const t = setup({ visible: false });
     t.state.reason = "sync_failed";
 
@@ -259,13 +262,13 @@ describe("after a failed sync", () => {
       last = t.now();
     }
 
-    expect(gaps).toEqual([5000, 10_000, 20_000, 40_000, 60_000, 60_000]);
+    expect(gaps).toEqual([2000, 4000, 8000, 20_000, 40_000, 60_000]);
   });
 
   it("spreads each wait by 20% either way", async () => {
     for (const [random, first] of [
-      [0, 4000],
-      [1, 6000],
+      [0, 1600],
+      [1, 2400],
     ] as const) {
       const t = setup({ random, visible: false });
       t.state.reason = "sync_failed";
@@ -294,7 +297,7 @@ describe("after a failed sync", () => {
     t.state.retryAfterMs = 1000;
 
     await t.scheduler.syncNow();
-    await t.advance(4999);
+    await t.advance(1999);
     expect(t.syncNow).toHaveBeenCalledTimes(1);
     await t.advance(1);
     expect(t.syncNow).toHaveBeenCalledTimes(2);
@@ -304,17 +307,31 @@ describe("after a failed sync", () => {
     const t = setup({ visible: false });
     t.state.reason = "sync_failed";
     await t.scheduler.syncNow();
-    await t.advance(5000); // the retry: fails again, next wait is 10 s
+    await t.advance(2000); // the retry: fails again, next wait is 4 s
     expect(t.syncNow).toHaveBeenCalledTimes(2);
 
     t.state.reason = null;
-    await t.advance(10_000); // goes through
+    await t.advance(4000); // goes through
     expect(t.syncNow).toHaveBeenCalledTimes(3);
-    expect(t.liveDelays()).not.toContain(20_000);
+    expect(t.liveDelays()).not.toContain(8000);
 
     t.state.reason = "sync_failed";
     await t.scheduler.syncNow();
-    expect(t.liveDelays()).toContain(5000);
+    expect(t.liveDelays()).toContain(2000);
+  });
+
+  it("a transient failure the runtime keeps quiet (1102) is tried again in 2, 4 and 8 s, with no sync_failed", async () => {
+    const t = setup({ visible: false });
+    t.state.quiet = true;
+
+    await t.scheduler.syncNow();
+    await t.advance(2000);
+    expect(t.syncNow).toHaveBeenCalledTimes(2);
+    await t.advance(4000);
+    expect(t.syncNow).toHaveBeenCalledTimes(3);
+    await t.advance(8000);
+    expect(t.syncNow).toHaveBeenCalledTimes(4);
+    expect(t.state.reason).toBeNull();
   });
 
   it("does not retry after a sync that ended with no answer (reason null)", async () => {
@@ -338,7 +355,7 @@ describe("after a failed sync", () => {
 });
 
 describe("never two runs and never two timers", () => {
-  const retryDelays = [5000, 10_000, 20_000, 40_000];
+  const retryDelays = [2000, 4000, 8000, 20_000, 40_000];
   const retryTimers = (t: ReturnType<typeof setup>) =>
     t.liveDelays().filter((delay) => retryDelays.includes(delay)).length;
   const returnTimers = (t: ReturnType<typeof setup>) =>

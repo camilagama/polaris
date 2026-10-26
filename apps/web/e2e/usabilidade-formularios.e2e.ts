@@ -198,9 +198,10 @@ test("U-29: só a leitura que falhou oferece 'Tentar novamente'; o erro de salva
     createRefused: true,
     listFails: true,
   });
+  // the read tries three times (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await page.getByLabel("Nome do perfil").fill("Perfil novo");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   await expect.poll(() => calls.creates).toBe(1);

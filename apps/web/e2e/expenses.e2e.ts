@@ -1050,7 +1050,8 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   );
 
   const retry = page.getByRole("button", { name: "Tentar novamente" });
-  await expect(retry).toBeVisible();
+  // no answer with the connection there: three tries (~1.5 s and ~4 s between them) before the screen says so
+  await expect(retry).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Nenhuma despesa neste período")).toHaveCount(0);
 
   reads.fail = false;

@@ -300,15 +300,16 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e nunca 
   page,
 }) => {
   await openServerScreen(page, {
-    // the read tries once more by itself: only the second 503 reaches the screen
+    // the read tries twice more by itself (~1.5 s and ~4 s): only the third 503 reaches the screen
     lists: [
+      (route) => route.fulfill(unavailable),
       (route) => route.fulfill(unavailable),
       (route) => route.fulfill(unavailable),
       answer([MACHINE]),
     ],
   });
   const alert = page.getByRole("alert");
-  await expect(alert).toBeVisible();
+  await expect(alert).toBeVisible({ timeout: 15_000 });
   // an error is not an empty list
   await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
   await alert.getByRole("button", { name: "Tentar novamente" }).click();

@@ -677,8 +677,10 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
   await openDashboard(page, server);
 
   const alert = page.getByRole("alert");
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toContainText(
-    "Não foi possível carregar o resultado. Tente novamente."
+    "Não foi possível carregar o resultado. Tente novamente.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
@@ -861,11 +863,20 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
-  // an outage of the server is not a refusal
+  // an outage of the server is not a refusal: with the connection there, after the three tries, the copy stays
+  // under "Não foi possível atualizar agora", with when it was read and "Tentar novamente" (paliativo dos 1102)
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  const stale = page
+    .getByRole("status")
+    .filter({ hasText: "Não foi possível atualizar agora" });
+  await expect(stale).toContainText("09:00", { timeout: 15_000 });
+  await expect(copyNotice(page)).toHaveCount(0);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  server.failure = null;
+  await stale.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(stale).toHaveCount(0);
 });
 
 /** The text of the line that reads the day in focus of the chart (the last one until the pointer moves it). */
@@ -1089,7 +1100,8 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     server.failure = { code: "INTERNAL_SERVER_ERROR", status: 500 };
     await choosePreset(page, "Últimos 30 dias");
     await expect(page.getByRole("alert")).toContainText(
-      "Não foi possível carregar o resultado. Tente novamente."
+      "Não foi possível carregar o resultado. Tente novamente.",
+      { timeout: 15_000 }
     );
     await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
     await expect(chartRegion(page)).toHaveCount(0);

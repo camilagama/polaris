@@ -4,6 +4,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { READ_PROCEDURES } from "../src/lib/read-gate";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -167,11 +168,29 @@ class FakeServer {
   /** Answers of a procedure replaced by a failure, a hold or a missing mark. */
   readonly broken = new Map<
     string,
-    "401" | "403" | "429" | "500" | "slow" | "unmarked"
+    "401" | "403" | "429" | "500" | "1102" | "slow" | "unmarked"
   >();
+  /** How many of the next answers of a procedure are the platform's page for a Worker killed for CPU (1102). */
+  readonly diesNext = new Map<string, number>();
+  /** How long each read of the Início takes to answer (ms), so the reads of an opening overlap. */
+  latencyMs = 0;
 
   constructor(scenario: Scenario) {
     this.scenario = scenario;
+  }
+
+  /** The latency, and the platform's page when the Worker "died" for CPU: true when that page was the answer. */
+  async platformAnswers(procedure: string, route: Route): Promise<boolean> {
+    if (this.latencyMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
+    }
+    const dies = this.diesNext.get(procedure) ?? 0;
+    if (dies <= 0 && this.broken.get(procedure) !== "1102") {
+      return false;
+    }
+    this.diesNext.set(procedure, dies - 1);
+    await route.fulfill(KILLED_FOR_CPU);
+    return true;
   }
 
   summary(from: string, to: string, topProducts: unknown) {
@@ -302,6 +321,17 @@ class FakeServer {
   }
 }
 
+/**
+ * What the platform answers for a Worker it killed for CPU (1102): an HTML 503 with `cf-ray` and without the
+ * Worker's mark (`server_failed`), never a JSON of the RPC.
+ */
+const KILLED_FOR_CPU = {
+  body: "<!DOCTYPE html><title>Worker exceeded resource limits</title><h1>Error 1102</h1>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d2f0c1e9a7b-GRU" },
+  status: 503,
+};
+
 /** What the Worker answers: the RPC and the auth endpoints. */
 const WORKER_PATHS = /\/(rpc|api)\//;
 
@@ -331,6 +361,9 @@ async function serve(page: Page, server: FakeServer) {
     const input = inputOf(route);
     server.calls.push({ input, procedure });
     const broken = server.broken.get(procedure);
+    if (await server.platformAnswers(procedure, route)) {
+      return;
+    }
     if (broken === "slow") {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
@@ -1187,7 +1220,8 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       const alert = page
         .getByRole("alert")
         .filter({ hasText: "Não foi possível carregar os números da loja." });
-      await expect(alert).toBeVisible();
+      // a 429 at once; a 500 or no answer after the three tries (~1.5 s and ~4 s between them)
+      await expect(alert).toBeVisible({ timeout: 15_000 });
       await expect(newSale(page)).toHaveAttribute("href", "/sales");
       await expect(region(page, "Meta")).toContainText("Meta");
       await expect(region(page, "Vendas hoje")).toHaveCount(0);
@@ -1205,11 +1239,13 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     server.broken.set("inventory/listBalances", "500");
     await openHome(page, server);
     await expect(region(page, "Meta")).toContainText(
-      "Não foi possível carregar a meta."
+      "Não foi possível carregar a meta.",
+      { timeout: 15_000 }
     );
     const attention = region(page, "Precisa de atenção");
     await expect(attention).toContainText(
-      "Avisos do estoque indisponíveis agora."
+      "Avisos do estoque indisponíveis agora.",
+      { timeout: 15_000 }
     );
     await expect(attention.getByRole("link")).toHaveCount(0);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
@@ -1814,5 +1850,184 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect
       .poll(() => copyKeys(page).catch(() => ["navegando"]))
       .toEqual([]);
+  });
+});
+
+/** Remembers, in the page, whether the error of the figures ever showed up (even for a frame). */
+async function watchFiguresError(page: Page) {
+  await page.addInitScript(() => {
+    const seen = () =>
+      document.body?.textContent?.includes(
+        "Não foi possível carregar os números da loja."
+      ) === true;
+    const observer = new MutationObserver(() => {
+      if (seen()) {
+        (window as unknown as { figuresErrorSeen: boolean }).figuresErrorSeen =
+          true;
+      }
+    });
+    document.addEventListener("DOMContentLoaded", () =>
+      observer.observe(document.body, { childList: true, subtree: true })
+    );
+  });
+  return () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { figuresErrorSeen?: boolean })
+          .figuresErrorSeen === true
+    );
+}
+
+const SLOW_READ = "Demorando mais que o normal…";
+const STALE_COPY = "Não foi possível atualizar agora";
+const RPC_PATH = /\/rpc\/(.+)$/;
+
+test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com freio", () => {
+  test("(a) as duas primeiras respostas do periodSummary morrem por CPU: o Início abre sem 'Tentar novamente', em menos de 8 s, com o esqueleto no meio", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.diesNext.set("report/periodSummary", 2);
+    const errorSeen = await watchFiguresError(page);
+    const firstRead = page
+      .waitForRequest((request) =>
+        request.url().includes("/rpc/report/periodSummary")
+      )
+      .then(() => Date.now());
+    await openHome(page, server);
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Carregando os números de hoje…" })
+    ).toBeAttached();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
+      timeout: 8000,
+    });
+    expect(Date.now() - (await firstRead)).toBeLessThan(8000);
+    expect(await errorSeen()).toBe(false);
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente" })
+    ).toHaveCount(0);
+    // the two that died and the two that answered: nothing more
+    expect(periodCalls(server)).toHaveLength(4);
+  });
+
+  test("passados ~3 s, o esqueleto diz 'Demorando mais que o normal…', sem botão, e os números chegam sem erro", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    // the month and the days before die twice each: the third try of each answers, ~5.5 s after the first
+    server.diesNext.set("report/periodSummary", 4);
+    const errorSeen = await watchFiguresError(page);
+    await openHome(page, server);
+    const slow = page.getByRole("status").filter({ hasText: SLOW_READ });
+    await expect(slow).toBeVisible({ timeout: 8000 });
+    await expect(slow.getByRole("button")).toHaveCount(0);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
+      timeout: 10_000,
+    });
+    await expect(slow).toHaveCount(0);
+    expect(await errorSeen()).toBe(false);
+    expect(periodCalls(server)).toHaveLength(6);
+  });
+
+  test("(b) três mortes seguidas, sem cópia: o erro de hoje com 'Tentar novamente', depois de três tentativas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.broken.set("report/periodSummary", "1102");
+    await openHome(page, server);
+    const alert = page
+      .getByRole("alert")
+      .filter({ hasText: "Não foi possível carregar os números da loja." });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    // two reads (the month and the days before), three tries each: the error shows with the first to give up
+    await expect.poll(() => periodCalls(server).length).toBe(6);
+    server.broken.delete("report/periodSummary");
+    await alert.getByRole("button", { name: "Tentar novamente" }).click();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+  });
+
+  test("(b) três mortes seguidas, com cópia: a cópia fica, com 'Atualizado às' e o aviso com 'Tentar novamente'", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    server.broken.set("report/periodSummary", "1102");
+    await page.reload();
+    const notice = page.getByRole("status").filter({ hasText: STALE_COPY });
+    await expect(notice).toBeVisible({ timeout: 20_000 });
+    await expect(notice).toContainText("Atualizado às 12:00");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(
+      page.getByText("Não foi possível carregar os números da loja.")
+    ).toHaveCount(0);
+    server.broken.delete("report/periodSummary");
+    await notice.getByRole("button", { name: "Tentar novamente" }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(
+      page.getByText("Sexta-feira, 23 de outubro · atualizado às 12:00")
+    ).toBeVisible();
+  });
+
+  test("(c) na abertura, nunca mais de 4 leituras /rpc em voo, e o get-session antes das leituras da tela", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.latencyMs = 400;
+    const flying = { all: 0, maxAll: 0, maxReads: 0, reads: 0 };
+    const order: string[] = [];
+    const procedureOf = (url: string) => RPC_PATH.exec(new URL(url).pathname);
+    const isRead = (url: string) => {
+      const match = procedureOf(url);
+      return match !== null && READ_PROCEDURES.has(match[1] ?? "");
+    };
+    page.on("request", (request) => {
+      const url = request.url();
+      if (url.includes("/api/auth/get-session")) {
+        order.push("get-session:start");
+      }
+      if (procedureOf(url) === null) {
+        return;
+      }
+      order.push(`rpc:${procedureOf(url)?.[1]}`);
+      flying.all += 1;
+      flying.maxAll = Math.max(flying.maxAll, flying.all);
+      if (isRead(url)) {
+        flying.reads += 1;
+        flying.maxReads = Math.max(flying.maxReads, flying.reads);
+      }
+    });
+    const done = (request: { url: () => string }) => {
+      const url = request.url();
+      if (url.includes("/api/auth/get-session")) {
+        order.push("get-session:end");
+      }
+      if (procedureOf(url) === null) {
+        return;
+      }
+      flying.all -= 1;
+      if (isRead(url)) {
+        flying.reads -= 1;
+      }
+    };
+    page.on("requestfinished", done);
+    page.on("requestfailed", done);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
+      timeout: 15_000,
+    });
+    await expect(region(page, "Meta")).toBeVisible();
+    await expect(region(page, "Precisa de atenção")).toBeVisible();
+
+    expect(flying.maxReads).toBeLessThanOrEqual(4);
+    // the screen's reads leave after the first session lookup ended
+    const firstEnd = order.indexOf("get-session:end");
+    expect(firstEnd).toBeGreaterThan(-1);
+    expect(order.indexOf("rpc:report/periodSummary")).toBeGreaterThan(firstEnd);
+    test.info().annotations.push({
+      description: `leituras em voo no máximo: ${flying.maxReads}; todas as /rpc (escritas incluídas): ${flying.maxAll}`,
+      type: "rpc-em-voo",
+    });
   });
 });

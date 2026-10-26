@@ -945,8 +945,10 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await openGoals(page, server);
 
   const alert = page.getByRole("alert");
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
   await expect(alert).toContainText(
-    "Não foi possível carregar as metas. Tente novamente."
+    "Não foi possível carregar as metas. Tente novamente.",
+    { timeout: 15_000 }
   );
   await expect(
     page

@@ -36,7 +36,7 @@
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
    and of the connection, the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
 @source "../pwa/update-banner.tsx";
 @source "../offline/logout-dialog.tsx";
 @source "../offline/runtime/{offline-access-expired,attention-page}.tsx";

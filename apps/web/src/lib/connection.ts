@@ -16,6 +16,8 @@
  * page visibility injected, so it is tested without a browser.
  */
 
+import { callKind, createReadGate, isRpcCall } from "./read-gate";
+
 type ConnectionState = "offline" | "online";
 
 /**
@@ -204,6 +206,11 @@ export interface Connection {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getSnapshot: () => ConnectionSnapshot;
   isOnline: () => boolean;
+  /**
+   * Whether a read that failed in a transient way may be tried again now (the brakes of `read-gate.ts`): true spends
+   * one retry of the tab's budget.
+   */
+  mayRetryRead: () => boolean;
   /** "Tentar agora": one probe right now, whatever the interval; the state it ends in. */
   probeNow: () => Promise<ConnectionState>;
   subscribe: (listener: () => void) => () => void;
@@ -226,6 +233,7 @@ export function createConnection(
   let step = 0;
   let timeouts = 0;
   let retryAfterMs: number | null = null;
+  const reads = createReadGate({ now, schedule });
 
   const mark = (name: string) => dependencies.mark?.(name);
 
@@ -391,6 +399,55 @@ export function createConnection(
     }
   };
 
+  /** An answer to the RPC: the breaker counts the platform's deaths, and a 429 holds every read of the tab. */
+  const noteRpcAnswer = (response: Response, verdict: ResponseVerdict) => {
+    reads.record(verdict === "server_failed");
+    const wait =
+      verdict === "worker" && response.status === 429
+        ? retryAfterOf(response)
+        : null;
+    if (wait !== null) {
+      // the pull included: a retry before it ends spends the same bucket of the server
+      reads.pause(wait);
+    }
+  };
+
+  /** The call itself, classified before anyone reads it (see `fetch` below). */
+  const call = async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    const cancelSlow = schedule(doubt, SLOW_CALL_MS);
+    let response: Response;
+    try {
+      response = await dependencies.fetch(input, init);
+    } catch (error) {
+      const signal =
+        init?.signal ?? (input instanceof Request ? input.signal : undefined);
+      // the caller gave up (it left the screen): that says nothing about the network; an abort for time
+      // (`AbortSignal.timeout`) is an answer that did not come
+      if (!signal?.aborted || signal.reason?.name === "TimeoutError") {
+        doubt();
+      }
+      throw error;
+    } finally {
+      cancelSlow();
+    }
+    const verdict = classifyResponse(response);
+    if (isRpcCall(input)) {
+      noteRpcAnswer(response, verdict);
+    }
+    if (verdict === "worker" || verdict === "server_failed") {
+      if (verdict === "worker" && response.status === 429) {
+        retryAfterMs = retryAfterOf(response);
+      }
+      goOnline();
+      return response;
+    }
+    doubt();
+    throw new NoWorkerAnswerError(verdict);
+  };
+
   const start = now();
   const stored = readRemembered(memory);
   // an old "offline since" (a tab that slept) says nothing about this cut: it would start at the 60 s probe
@@ -440,35 +497,25 @@ export function createConnection(
       };
     },
     async fetch(input, init) {
-      const cancelSlow = schedule(doubt, SLOW_CALL_MS);
-      let response: Response;
+      const kind = callKind(input);
+      if (kind === "session") {
+        return await reads.session(() => call(input, init));
+      }
+      if (kind === "other") {
+        return await call(input, init);
+      }
+      const release = await reads.acquire(
+        init?.signal ?? (input instanceof Request ? input.signal : undefined)
+      );
       try {
-        response = await dependencies.fetch(input, init);
-      } catch (error) {
-        const signal =
-          init?.signal ?? (input instanceof Request ? input.signal : undefined);
-        // the caller gave up (it left the screen): that says nothing about the network; an abort for time
-        // (`AbortSignal.timeout`) is an answer that did not come
-        if (!signal?.aborted || signal.reason?.name === "TimeoutError") {
-          doubt();
-        }
-        throw error;
+        return await call(input, init);
       } finally {
-        cancelSlow();
+        release();
       }
-      const verdict = classifyResponse(response);
-      if (verdict === "worker" || verdict === "server_failed") {
-        if (verdict === "worker" && response.status === 429) {
-          retryAfterMs = retryAfterOf(response);
-        }
-        goOnline();
-        return response;
-      }
-      doubt();
-      throw new NoWorkerAnswerError(verdict);
     },
     getSnapshot: () => snapshot,
     isOnline: () => snapshot.state === "online",
+    mayRetryRead: reads.mayRetry,
     async probeNow() {
       await probe();
       return snapshot.state;
