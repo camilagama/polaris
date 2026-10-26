@@ -184,9 +184,21 @@ describe("route timing middleware", () => {
       const app = new Hono<ServerEnv>();
       app.use("*", requestIdMiddleware);
       app.use("*", routeTimingMiddleware);
-      app.use("/api/*", async (_context, next) => {
+      app.use("/api/*", async (context, next) => {
+        if (context.req.header("origin") === "https://evil.example") {
+          return context.json({ error: "origin" }, 403);
+        }
         await next();
       });
+      app.use("/api/products/:productId/stats", async (context, next) => {
+        if (context.req.header("x-limited") === "1") {
+          return context.json({ error: "limit" }, 429);
+        }
+        await next();
+      });
+      app.post("/api/products/:productId/media", (context) =>
+        context.json({ ok: true })
+      );
       const procedure = (context: Context<ServerEnv>) => {
         markMatchedProcedure(context);
         return context.json({ ok: true });
@@ -203,6 +215,7 @@ describe("route timing middleware", () => {
         context.json({ ok: true })
       );
       app.get("/api/export", (context) => context.json({ ok: true }));
+      app.get("/api/auth/*", (context) => context.json({ ok: true }));
       return app;
     }
 
@@ -246,6 +259,7 @@ describe("route timing middleware", () => {
         env
       );
       await app.request("/api/export", {}, env);
+      await app.request("/api/products/p1/media", { method: "POST" }, env);
       await app.request("/rpc/report/periodSummary", { method: "POST" }, env);
       await app.request("/rpc/sale/confirm", { method: "POST" }, env);
 
@@ -263,6 +277,7 @@ describe("route timing middleware", () => {
           ["/rpc/category/create", 200],
           ["/api/products/:productId/stats", 200],
           ["/api/export", 200],
+          ["/api/products/:productId/media", 200],
           ["/rpc/report/periodSummary", 403],
           ["/rpc/sale/confirm", 200],
         ].sort()
@@ -301,6 +316,49 @@ describe("route timing middleware", () => {
       await app.request("/api/", {}, env);
 
       expect(timedEvents(logs)).toEqual([]);
+    });
+
+    it("with true, logs nothing for a non-critical /api request refused before its handler, even when the limit shares the pattern of the route", async () => {
+      const logs = spyLogs();
+      const app = createWideApp();
+      const env = { ROUTE_TIMING_ALL: "true" };
+
+      const refused = await Promise.all([
+        app.request(
+          "/api/export",
+          { headers: { origin: "https://evil.example" } },
+          env
+        ),
+        app.request(
+          "/api/products/p1/stats",
+          { headers: { origin: "https://evil.example" } },
+          env
+        ),
+        app.request(
+          "/api/products/p1/stats",
+          { headers: { "x-limited": "1" } },
+          env
+        ),
+      ]);
+
+      expect(refused.map((response) => response.status)).toEqual([
+        403, 403, 429,
+      ]);
+      expect(timedEvents(logs)).toEqual([]);
+    });
+
+    it("keeps the event of a critical /api route refused before its handler, as without the variable", async () => {
+      const logs = spyLogs();
+      const app = createWideApp();
+
+      const response = await app.request("/api/auth/get-session", {
+        headers: { origin: "https://evil.example" },
+      });
+
+      expect(response.status).toBe(403);
+      expect(timedEvents(logs).map((event) => event.route)).toEqual([
+        "/api/auth/*",
+      ]);
     });
   });
 });

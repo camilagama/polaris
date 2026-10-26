@@ -413,7 +413,7 @@ describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
       .map((entry) => [entry.route, entry.httpStatus]);
   }
 
-  async function callAll(bindings: WorkerBindings) {
+  async function callAll(bindings: WorkerBindings, extraPaths: string[] = []) {
     const app = createServerApp({
       rpcRouter: createRpcRouter({
         createProduct: (() =>
@@ -443,6 +443,9 @@ describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
       (await post("/rpc/product/AbC123xyzToken")).status,
       (await app.request(`${baseURL}/api/nao-existe/0199c2d0`, {}, bindings))
         .status,
+      ...(await Promise.all(
+        extraPaths.map(async (path) => (await post(path)).status)
+      )),
     ];
     return statuses;
   }
@@ -460,6 +463,48 @@ describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
 
     expect(statuses).toEqual([409, 404, 404]);
     expect(timedRoutes(spies)).toEqual([["/rpc/product/create", 409]]);
+  });
+
+  it("labels a procedure called with a trailing slash as oRPC matched it, without the slash, and logs nothing for a leading double slash it does not match", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(
+      createBindings({ ROUTE_TIMING_ALL: "true" }),
+      ["/rpc/product/create/", "/rpc//product/create"]
+    );
+
+    expect(statuses).toEqual([409, 404, 404, 409, 404]);
+    expect(timedRoutes(spies).map(([route]) => route)).toEqual([
+      "/rpc/product/create",
+      "/rpc/product/create",
+    ]);
+  });
+
+  it("logs an /api route only when the request reached its handler: the origin refusal of a named route emits nothing", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+    const app = createServerApp({ rpcRouter: createRpcRouter({}) });
+    const bindings = createBindings({ ROUTE_TIMING_ALL: "true" });
+    const postLoginUnlock = (origin: string) =>
+      app.request(
+        `${baseURL}/api/login-unlock`,
+        { headers: { origin }, method: "POST" },
+        bindings
+      );
+
+    const refused = await postLoginUnlock("https://evil.example");
+    expect(refused.status).toBe(403);
+    expect(timedRoutes(spies)).toEqual([]);
+
+    const reached = await postLoginUnlock(baseURL);
+    expect(timedRoutes(spies)).toEqual([["/api/login-unlock", reached.status]]);
   });
 
   it("logs none of them without the variable, as in production", async () => {
