@@ -262,6 +262,19 @@ interface Served {
   offline?: boolean;
 }
 
+/** The summary of the period for what is served: the partial month unless another state is asked for. */
+function summaryFor(served: Served, from: string, to: string): unknown {
+  if (served.empty) {
+    return EMPTY_SUMMARY(from, to);
+  }
+  if (served.noCost) {
+    return NO_COST_SUMMARY(from, to);
+  }
+  return served.complete
+    ? COMPLETE_SUMMARY(from, to)
+    : PARTIAL_SUMMARY(from, to);
+}
+
 async function serveResult(page: Page, served: Served) {
   await page.route("**/rpc/**", (route: Route) => {
     if (served.offline) {
@@ -277,15 +290,7 @@ async function serveResult(page: Page, served: Served) {
     if (procedure === "report/periodSummary") {
       const from = String(input.from);
       const to = String(input.to);
-      let summary = PARTIAL_SUMMARY(from, to);
-      if (served.empty) {
-        summary = EMPTY_SUMMARY(from, to) as unknown as typeof summary;
-      } else if (served.noCost) {
-        summary = NO_COST_SUMMARY(from, to);
-      } else if (served.complete) {
-        summary = COMPLETE_SUMMARY(from, to) as unknown as typeof summary;
-      }
-      return route.fulfill(rpc(summary));
+      return route.fulfill(rpc(summaryFor(served, from, to)));
     }
     if (procedure === "report/dailySales") {
       // the chips of Vendas and Ticket médio read the period before here (a SQL `GROUP BY`: sales and counts only)
