@@ -98,6 +98,8 @@ export interface AreaChartProps {
   readingNote?: (index: number) => string | null;
   /** A second series, dashed, with a legend (Resultado: the costs against the sales). */
   secondary?: AreaChartSecondary;
+  /** What the keyboard control says of the note of a day; `readingNote` when absent (the amounts hidden: spoken apart). */
+  spokenNote?: (index: number) => string | null;
 }
 
 /**
@@ -282,6 +284,7 @@ export function AreaChart({
   rangeLabel = "Dia",
   readingNote,
   secondary,
+  spokenNote,
   still = false,
   valueLabels = false,
 }: AreaChartProps) {
@@ -401,6 +404,7 @@ export function AreaChart({
             aria-valuetext={spokenValue({
               ...reading,
               formatValue: formatSpoken ?? formatValue,
+              note: spokenNote ? spokenNote(active) : reading.note,
             })}
             className={RANGE_CLASS}
             max={last}

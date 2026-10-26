@@ -18,6 +18,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * becomes completed and stays so, one whose period ended unmet is missed. What
  * the real server computes is proved on PostgreSQL by the goals gate.
  */
+/** An amount written on the screen: "R$ 450,00". */
+const AN_AMOUNT = /R\$ \d/;
 const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const ANY_NAME = /.+/;
@@ -542,6 +544,30 @@ test("edita o alvo e mostra o histórico de mudanças", async ({ page }) => {
   await goal.getByRole("button", { name: "Histórico do alvo" }).click();
   await expect(goal.getByRole("listitem")).toHaveText(
     "de 10 para 5 em 14/10/2026"
+  );
+});
+
+test("com Esconder valores ligado (v7 § 6), a aba Metas também esconde os reais e deixa a porcentagem", async ({
+  page,
+}) => {
+  // the choice was made on the Início or on the Resultado: it is the device's
+  await page.addInitScript(() =>
+    localStorage.setItem("polaris-valores", "escondidos")
+  );
+  const server = new FakeGoalServer();
+  server.seed({
+    kind: "net_sales",
+    name: "Meta de outubro",
+    target: "1000.00",
+  });
+  await openGoals(page, server);
+  const goal = card(page, "Meta de outubro");
+  await expect(goal).toContainText("45,0%");
+  await expect(goal).toContainText("R$ ••••");
+  await expect(goal).not.toContainText(AN_AMOUNT);
+  await expect(goal.getByRole("progressbar")).toHaveAttribute(
+    "aria-valuetext",
+    "valor escondido de valor escondido, 45,0%"
   );
 });
 

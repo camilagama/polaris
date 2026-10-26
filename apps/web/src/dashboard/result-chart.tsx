@@ -288,7 +288,14 @@ function useDrawingData({ costsDrawn, rows }: ResultSeries) {
     },
     [hidden, rows]
   );
-  return { data, note, secondary };
+  const spoken = useCallback(
+    (index: number) => {
+      const text = readingNote(rows[index]);
+      return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
+    },
+    [hidden, rows]
+  );
+  return { data, note, secondary, spoken };
 }
 
 const maskedValue = () => MASKED_MONEY;
@@ -297,7 +304,7 @@ const noAxis = () => "";
 
 /** The area chart of the charts chunk, with the sales and, when the cost of every day is known, the dashed cost line. */
 function Drawing({ label, series }: { label: string; series: ResultSeries }) {
-  const { data, note, secondary } = useDrawingData(series);
+  const { data, note, secondary, spoken } = useDrawingData(series);
   const [hidden] = useHiddenValues();
   return (
     <OnDemandAreaChart
@@ -313,6 +320,7 @@ function Drawing({ label, series }: { label: string; series: ResultSeries }) {
       name="Vendas"
       rangeLabel={series.grouped ? "Mês" : "Dia"}
       readingNote={note}
+      spokenNote={spoken}
       {...(secondary ? { secondary } : {})}
     />
   );

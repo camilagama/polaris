@@ -23,6 +23,7 @@ const ENTITY_SQUARE: Record<KpiEntity, string> = {
   ticket: "bg-chart-ticket",
 };
 
+const SIGN = /^[+-]/;
 const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
 
 /**
@@ -31,19 +32,16 @@ const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
  */
 export function HeroValue({
   amount,
-  className,
   size = "lg",
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
-  className?: string;
   size?: "lg" | "md";
 }) {
   const [hidden] = useHiddenValues();
   const box = cn(
     "whitespace-nowrap font-[650] tabular-nums leading-[1.05] tracking-[-0.035em]",
-    size === "lg" ? "text-[1.75rem] md:text-[1.875rem]" : "text-[1.3125rem]",
-    className
+    size === "lg" ? "text-[1.75rem] md:text-[1.875rem]" : "text-[1.3125rem]"
   );
   const currency = "font-medium text-[0.56em] tracking-normal";
   if (amount === null) {
@@ -81,6 +79,17 @@ export interface KpiDelta {
   trend: "down" | "flat" | "up";
 }
 
+/** An amount of a chip: its sign stays in sight when the amount is hidden ("+R$ ••••"), so the direction is not lost. */
+function MoneyChipText({ text }: { text: string }) {
+  const sign = SIGN.exec(text)?.[0] ?? "";
+  return (
+    <>
+      {sign}
+      <MoneyText text={text.slice(sign.length)} />
+    </>
+  );
+}
+
 export function DeltaChip({ delta }: { delta: KpiDelta }) {
   let Icon: typeof ArrowUpIcon | null = null;
   if (delta.trend === "up") {
@@ -101,7 +110,7 @@ export function DeltaChip({ delta }: { delta: KpiDelta }) {
       {Icon ? (
         <Icon aria-hidden="true" className="size-3" strokeWidth={2.5} />
       ) : null}
-      {delta.money ? <MoneyText text={delta.text} /> : delta.text}
+      {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
     </span>
   );
 }

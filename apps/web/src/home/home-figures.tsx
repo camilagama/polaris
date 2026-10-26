@@ -26,7 +26,7 @@ function barWidth(netSales: string, top: bigint): number {
 
 /**
  * The three most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has its
- * position in a circle, the whole name, the net sales and the units, and a green bar proportional to the net sales
+ * position in a circle, the name (cut with an ellipsis only when it does not fit), the net sales and the units, and a green bar proportional to the net sales
  * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it.
  */
 export function TopProductsBlock({ products }: { products: TopProducts }) {

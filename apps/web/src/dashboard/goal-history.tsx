@@ -1,3 +1,4 @@
+import { MoneyText } from "@/ui/hidden-values";
 import type { GoalReadModel } from "@polaris/contracts";
 import { Button } from "@/ui/button";
 import { LoadError } from "../expenses/expense-fields";
@@ -66,9 +67,10 @@ function HistoryList({ goal, organizationId, timezone }: GoalHistoryProps) {
         <ul className="grid gap-1 text-support">
           {state.changes.map((change) => (
             <li key={`${change.changedAt}:${change.newTarget}`}>
-              de {formatGoalValue(goal.kind, change.previousTarget)} para{" "}
-              {formatGoalValue(goal.kind, change.newTarget)} em{" "}
-              {formatGoalDate(change.changedAt, timezone)}
+              <MoneyText
+                text={`de ${formatGoalValue(goal.kind, change.previousTarget)} para ${formatGoalValue(goal.kind, change.newTarget)}`}
+              />{" "}
+              em {formatGoalDate(change.changedAt, timezone)}
             </li>
           ))}
         </ul>

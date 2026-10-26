@@ -28,6 +28,9 @@ import type { HomeFigures } from "./use-home";
  * to today. On a phone the sparklines are drawn finished, with no entrance; the reading by the finger stays.
  */
 
+/** No day: the same array on every render, so a copy without the series does not redo the memoized series. */
+const NO_DAYS: readonly never[] = [];
+
 const LINK =
   "touch-hit focus-ring w-fit rounded-sm text-xs underline decoration-input underline-offset-4 hover:decoration-foreground";
 
@@ -70,8 +73,8 @@ function TodayCard({
   still: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const before = figures.before.daily ?? [];
-  const month = figures.month.daily ?? [];
+  const before = figures.before.daily ?? NO_DAYS;
+  const month = figures.month.daily ?? NO_DAYS;
   const series = useMemo(
     () => todaySeries(before, month, figures.today),
     [before, month, figures.today]
@@ -129,8 +132,8 @@ function MonthCards({
 }) {
   const [hidden] = useHiddenValues();
   const { cards, quality } = figures.month;
-  const before = figures.before.daily ?? [];
-  const month = figures.month.daily ?? [];
+  const before = figures.before.daily ?? NO_DAYS;
+  const month = figures.month.daily ?? NO_DAYS;
   const kpis = useMemo(
     () => monthKpis(before, month, figures.today, cards),
     [before, month, figures.today, cards]
@@ -171,7 +174,10 @@ function MonthCards({
   // a month with no sale says so; a copy kept before the series existed has the totals only, nothing drawn
   const noSale = cards.salesCount === 0;
   const drawn = !noSale && kpis.days.length > 0;
-  const resultNegative = (read.result.value ?? "").trim().startsWith("-");
+  // the line is red when the result up to today is below zero: its color does not change while a day is read
+  const resultNegative = (kpis.read(null).result.value ?? "")
+    .trim()
+    .startsWith("-");
   const incomplete = isIncompleteEstimate(quality);
   return (
     <>

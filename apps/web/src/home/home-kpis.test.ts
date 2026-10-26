@@ -389,9 +389,10 @@ describe("monthKpis: result (AC-9)", () => {
     for (const index of [null, 3, 9, 20]) {
       expect(kpis.read(index).result.delta).toBeNull();
     }
-    // a day before the unknown one still reads its partial total as a value
-    expect(kpis.read(3).result.value).toBe("20.00");
+    // no day is read as a sum of known days while the month has an unknown one; at rest, the server's card
+    expect(kpis.read(3).result.value).toBeNull();
     expect(kpis.read(9).result.value).toBeNull();
+    expect(kpis.read(null).result.value).toBe(cards.operatingResult);
   });
 
   it("ignores an unknown result after today", () => {
@@ -429,6 +430,33 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.read(null).result.value).toBe("125.00");
     expect(kpis.read(null).result.delta?.text).toBe("+R$ 75,00");
     expect(kpis.series.result?.slice(0, 3)).toEqual([5, 10, 15]);
+  });
+
+  it("at rest, says the sum up to today, not the whole month with the expenses dated after today", () => {
+    // the rent of 3.000,00 has its competence on 30/10: the month's card (-2.875,00) has it, today (25/10) does not
+    const month = october(
+      (date) =>
+        date === "2026-10-30" ? { operatingResult: "-3000.00" } : undefined,
+      "5.00"
+    );
+    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, {
+      ...cards,
+      operatingResult: "-2875.00",
+    });
+    const atRest = kpis.read(null).result;
+    expect(atRest.value).toBe("125.00");
+    expect(atRest.date).toBe("1 a 25/10");
+    // the chip is the difference of that same number: 125,00 against 25 x 2,00
+    expect(atRest.delta?.text).toBe("+R$ 75,00");
+    expect(kpis.read(24).result.value).toBe(atRest.value);
+  });
+
+  it("at rest, without the results of the days, says the server's card", () => {
+    const kpis = monthKpis(september(), october(), TODAY, {
+      ...cards,
+      operatingResult: "-2875.00",
+    });
+    expect(kpis.read(null).result.value).toBe("-2875.00");
   });
 
   it("gives no chip, but still draws, when the previous month has an unknown day in the range", () => {

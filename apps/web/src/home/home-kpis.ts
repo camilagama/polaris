@@ -285,11 +285,14 @@ function resultReading({
     previous.result !== null
       ? moneyDelta(sum.result, previous.result)
       : null;
-  let value: string | null = cards.operatingResult;
-  if (!atRest) {
-    value =
-      sum.result === null ? null : Money.fromMinorUnits(sum.result).toString();
-  }
+  // with every day known, the number is the sum from the 1st to the day read, at rest too: the same account as the
+  // chip and the sparkline ("1 a 25/10"), never the whole month with the expenses dated after today. Without the
+  // results of the days (some unknown, or not sent) the number at rest is the server's card, with its badge.
+  const known =
+    result.kind === "known" && sum.result !== null
+      ? Money.fromMinorUnits(sum.result).toString()
+      : null;
+  const value = atRest && known === null ? cards.operatingResult : known;
   return {
     count: "Não é lucro líquido nem dinheiro já recebido.",
     date: range,
