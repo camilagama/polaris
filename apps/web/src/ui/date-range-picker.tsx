@@ -30,6 +30,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 export interface DateRangePickerProps {
   className?: string | undefined;
+  /** The id of a help text the screen shows under the button, read after the error. */
+  describedBy?: string | undefined;
   disabled?: boolean | undefined;
   /** The error under the button (the screen's text). */
   error?: string | undefined;
@@ -140,7 +142,7 @@ export function DateRangePanel({
       {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
       <fieldset
         aria-label="Atalhos do período"
-        className="m-0 mb-1 flex min-w-0 rounded-md border-0 p-0 shadow-xs"
+        className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
       >
         {RANGE_PRESETS.map((preset) => (
           <button
@@ -155,18 +157,24 @@ export function DateRangePanel({
           </button>
         ))}
       </fieldset>
-      <OnDemandCalendar
-        autoFocus
-        defaultMonth={firstMonth(draft, todayDate, two)}
-        mode="range"
-        numberOfMonths={two ? 2 : 1}
-        onSelect={pickDay}
-        selected={selected}
-        // with two months a day of the neighbour would show twice, once in each
-        showOutsideDays={!two}
-        today={todayDate}
-      />
-      <div className="flex min-h-ctl-sm items-center justify-between gap-2 border-border border-t pt-2">
+      {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
+          and the line that asks for the last day stay in view (the popover itself does not scroll, so with less
+          room than the shortcuts and the footer, as a phone on its side, the month is what gives way); the 4 px
+          around keep the focus ring of a day */}
+      <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
+        <OnDemandCalendar
+          autoFocus
+          defaultMonth={firstMonth(draft, todayDate, two)}
+          mode="range"
+          numberOfMonths={two ? 2 : 1}
+          onSelect={pickDay}
+          selected={selected}
+          // with two months a day of the neighbour would show twice, once in each
+          showOutsideDays={!two}
+          today={todayDate}
+        />
+      </div>
+      <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
         <p aria-live="polite" className="text-muted-foreground text-support">
           {half ? `Início ${formatDate(half)}. Escolha o último dia.` : null}
         </p>
@@ -186,6 +194,7 @@ export function DateRangePanel({
  */
 export function DateRangePicker({
   className,
+  describedBy,
   disabled,
   error,
   id,
@@ -215,7 +224,11 @@ export function DateRangePicker({
         <PopoverTrigger
           render={
             <Button
-              aria-describedby={error ? errorId : undefined}
+              aria-describedby={
+                [error ? errorId : null, describedBy]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               aria-invalid={error ? true : undefined}
               aria-label={`${label}, ${text}`}
               className="w-full justify-start font-normal sm:w-fit"
@@ -237,7 +250,7 @@ export function DateRangePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto max-w-[calc(100vw-1rem)] gap-3 p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
           initialFocus={false}
         >
           <DateRangePanel onCommit={commit} today={today} value={value} />

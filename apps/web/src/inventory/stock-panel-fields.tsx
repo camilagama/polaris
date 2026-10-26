@@ -5,6 +5,7 @@ import { Button } from "@/ui/button";
 import { Field, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupTextarea } from "@/ui/input-group";
 import {
+  DateField,
   describedBy,
   FieldTexts,
   QuantityStepper,
@@ -221,13 +222,16 @@ export function EditFields({
           />
         </>
       ) : null}
-      <TextField
+      <DateField
+        disabled={disabled}
+        disabledReason="Só até hoje"
         error={errors.occurredOn}
         hint="Dia do movimento, no horário da loja."
         id={id("occurredOn")}
         label="Data"
+        max={state.today}
         onChange={handleDate}
-        type="date"
+        today={state.today}
         value={draft.occurredOn}
       />
     </div>
