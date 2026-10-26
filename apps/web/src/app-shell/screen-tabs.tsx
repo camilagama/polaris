@@ -18,8 +18,8 @@ import {
 import { PageLoading } from "./page-loading";
 import { TabPanelScope } from "./screen-title";
 
-/** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout. */
-const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno"];
+/** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout, the part of Despesas. */
+const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno", "ver"];
 
 /**
  * The tab on screen and the way to change it. The address names it (`?aba=`); a tab this person does not have (Aparelhos

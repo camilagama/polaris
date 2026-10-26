@@ -6,8 +6,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 /**
  * The states of the expenses screen the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=expenses`), with the categories, the expenses of the month and the recurring rules
- * answered by the test (`page.route`), synthetic data only. Three states, as for the other screens of the lab: each
- * one starts the runtime of the lab in every context of the map, and the CI job has a limit of 30 minutes. The empty
+ * answered by the test (`page.route`), synthetic data only. A few states, as for the other screens of the lab: each
+ * one starts the runtime of the lab in every context of the map, and the CI job has a limit of 30 minutes (five since the forms became dialogs, UI-H: each dialog is measured open). The empty
  * list, the loading, the list that could not be read, the voided tab and the saves are proved in
  * `e2e/expenses.e2e.ts` and in the captures of the pull request. The lab's own controls are hidden at the end of each
  * state, so what is measured is the screen alone.
@@ -201,9 +201,10 @@ async function showScreenAlone(page: Page) {
 }
 
 export const expenseStates = {
-  /** A new expense sent empty: the amount, the category and the description say what is missing. */
+  /** A new expense sent empty, in its dialog: the amount, the category and the description say what is missing. */
   async errors(page: Page) {
     await openExpensesLab(page);
+    await page.getByRole("button", { exact: true, name: "Nova despesa" }).click();
     await page.getByRole("button", { name: "Registrar despesa" }).click();
     await page.locator("#expense-description-error").waitFor();
     await showScreenAlone(page);
@@ -240,18 +241,27 @@ export const expenseStates = {
     });
   },
 
-  /** Both closed sections opened, the paused rules and archived categories shown, and the form of a new rule. */
-  async sections(page: Page) {
+  /** The Recorrentes part with the paused rules shown, and the form of a new rule in its dialog. */
+  async rules(page: Page) {
     await openExpensesLab(page);
-    await page.getByRole("button", { name: "Despesas recorrentes" }).click();
-    await page.getByRole("button", { name: "Categorias de despesa" }).click();
+    await page.getByRole("tab", { name: "Recorrentes" }).click();
     await page.getByRole("checkbox", { name: "Mostrar pausadas" }).check();
+    await page.getByText("Assinatura do sistema").waitFor();
+    await page.getByRole("button", { name: "Nova despesa recorrente" }).click();
+    await page.getByLabel("Valor de cada ocorrência (R$)").waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The Categorias part with the archived categories shown, and the form of a new category in its dialog. */
+  async categories(page: Page) {
+    await openExpensesLab(page);
+    await page.getByRole("tab", { name: "Categorias" }).click();
     await page
       .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
       .check();
     await page.getByText("Material de escritório").waitFor();
-    await page.getByRole("button", { name: "Nova despesa recorrente" }).click();
-    await page.getByLabel("Valor de cada ocorrência (R$)").waitFor();
+    await page.getByRole("button", { exact: true, name: "Nova categoria" }).click();
+    await page.getByLabel("Nome da categoria").waitFor();
     await showScreenAlone(page);
   },
 };

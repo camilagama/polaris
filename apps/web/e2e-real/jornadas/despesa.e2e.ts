@@ -9,14 +9,18 @@ import { choose } from "../pages/venda";
 const BRL_VALUE = /R\$/;
 const EXPENSES_OF_PERIOD = "(−) Despesas do período (sem venda)";
 
+/** Categorias, a part of the Despesas tab: the new category in its dialog, then back to Lançamentos. */
 async function addCategory(page: Page, categoryName: string): Promise<void> {
-  await page.getByRole("button", { name: "Categorias de despesa" }).click();
-  const categories = page.getByRole("region", {
-    name: "Categorias de despesa",
-  });
-  await choose(page, categories, "Grupo", "Operacional/Administrativa");
-  await categories.getByLabel("Nome da categoria").fill(categoryName);
-  await categories.getByRole("button", { name: "Adicionar categoria" }).click();
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  const categories = page.getByRole("tabpanel", { name: "Categorias" });
+  await categories
+    .getByRole("button", { exact: true, name: "Nova categoria" })
+    .click();
+  const form = page.getByRole("dialog", { name: "Nova categoria" });
+  await choose(page, form, "Grupo", "Operacional/Administrativa");
+  await form.getByLabel("Nome da categoria").fill(categoryName);
+  await form.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     categories.getByText(categoryName, { exact: true })
   ).toBeVisible();
@@ -43,21 +47,23 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
 
   await page.goto("/expenses");
   await addCategory(page, categoryName);
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
 
-  const form = page.getByRole("region", {
-    exact: true,
-    name: "Nova despesa",
-  });
+  const form = page.getByRole("dialog", { name: "Nova despesa" });
   const register = async (
     amount: string,
     competenceOn: string,
     description: string
   ) => {
+    await page
+      .getByRole("button", { exact: true, name: "Nova despesa" })
+      .click();
     await form.getByLabel("Valor (R$)").fill(amount);
     await choose(page, form, "Categoria", categoryName);
     await pickDate(form, "Data de competência", competenceOn);
     await form.getByLabel("Descrição").fill(description);
     await form.getByRole("button", { name: "Registrar despesa" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("Despesa registrada.")).toBeVisible();
   };
   await register("1.234,56", today, "Aluguel deste mês");
@@ -117,8 +123,8 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
   await page.goto("/expenses");
   await addCategory(page, categoryName);
 
-  await page.getByRole("button", { name: "Despesas recorrentes" }).click();
-  const rules = page.getByRole("region", { name: "Despesas recorrentes" });
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  const rules = page.getByRole("tabpanel", { name: "Recorrentes" });
   const create = async (
     amount: string,
     startsOn: string,
@@ -127,7 +133,7 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
     await rules
       .getByRole("button", { name: "Nova despesa recorrente" })
       .click();
-    // the form is a dialog, outside the region of the panel
+    // the form is a dialog, outside the panel
     const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
     await form.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
     await choose(page, form, "Categoria", categoryName);

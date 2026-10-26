@@ -1,24 +1,32 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useMemo, useState } from "react";
+import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Dialog, DialogContent } from "@/ui/dialog";
+import { Tabs, TabsContent } from "@/ui/tabs";
+import { ScreenTitle } from "../app-shell/screen-title";
+import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
-import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, ExpenseList, ExpenseSummary } from "./expense-list";
 import {
+  type ExpenseDraft,
   type ExpenseInput,
   formatMonthLabel,
   monthOfDay,
 } from "./expense-model";
 import { ExpenseRulesPanel } from "./expense-rules-panel";
+import { EXPENSE_VIEWS, useExpenseView } from "./expense-view";
+import { MonthPicker } from "./month-picker";
 import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
-import { ScreenTitle } from "../app-shell/screen-title";
+import { useFormDialog } from "./use-form-dialog";
 
 type StatusChange = "restore" | "void";
 
@@ -47,29 +55,43 @@ function Heading() {
 
 const LIST_TITLE_ID = "expense-list-title";
 
-/** The expenses screen: online only, every figure comes from the server. */
+/** What opened the form: "Nova despesa" or the "Editar" of the expense. */
+function expenseFormOrigin(next: ExpenseReadModel | "new") {
+  return next === "new"
+    ? () => document.querySelector<HTMLElement>("[data-expense-new]")
+    : () =>
+        document.querySelector<HTMLElement>(
+          `[data-expense-id="${next.id}"] [data-expense-edit]`
+        );
+}
+
+/**
+ * The expenses screen, the Despesas tab of the Resultado: online only, every figure comes from the server. Three parts
+ * in a segmented list, named in the address (`?ver=`): the expenses of the month, the recurring rules and the
+ * categories. Every form is a dialog; the three parts stay mounted, so a filter or a ticked box survives a change of part.
+ */
 export function ExpensesPage() {
   const { organization, organizationId } = useCurrentOrganization();
   const today = useMemo(
     () => calendarDayInTimezone(new Date(), organization.timezone),
     [organization.timezone]
   );
+  const [view, selectView] = useExpenseView();
   const [filters, setFilters] = useState<ExpenseFilters>(() => ({
     categoryId: "",
     month: monthOfDay(today),
     status: "active",
   }));
-  const [editing, setEditing] = useState<ExpenseReadModel | null>(null);
-  const [formCount, setFormCount] = useState(0);
   const { busy, clearFeedback, feedback, run } = useCommandRunner();
   const categories = useExpenseCategories(organizationId);
   const { loadMore, refresh, state } = useExpenseList(organizationId, filters);
   const reloadCategories = categories.reload;
-
-  const resetForm = useCallback(() => {
-    setEditing(null);
-    setFormCount((count) => count + 1);
-  }, []);
+  const form = useFormDialog<ExpenseReadModel, ExpenseDraft>({
+    busy: busy !== null,
+    onOpen: clearFeedback,
+    originOf: expenseFormOrigin,
+  });
+  const { close: closeForm, editing, openForm } = form;
 
   const handleSave = useCallback(
     async (input: ExpenseInput) => {
@@ -99,7 +121,7 @@ export function ExpensesPage() {
       if (outcome === "failed") {
         return false;
       }
-      resetForm();
+      closeForm();
       await refresh();
       if (outcome === "conflict") {
         await reloadCategories();
@@ -107,12 +129,12 @@ export function ExpensesPage() {
       return outcome === "ok";
     },
     [
+      closeForm,
       editing,
       filters.month,
       organizationId,
       refresh,
       reloadCategories,
-      resetForm,
       run,
     ]
   );
@@ -134,12 +156,12 @@ export function ExpensesPage() {
       });
       if (outcome !== "failed") {
         if (editing?.id === expense.id) {
-          resetForm();
+          closeForm();
         }
         await refresh();
       }
     },
-    [editing?.id, organizationId, refresh, resetForm, run]
+    [closeForm, editing?.id, organizationId, refresh, run]
   );
 
   const handleVoid = useCallback(
@@ -150,14 +172,10 @@ export function ExpensesPage() {
     (expense: ExpenseReadModel) => handleStatusChange(expense, "restore"),
     [handleStatusChange]
   );
-
-  const handleEdit = useCallback(
-    (expense: ExpenseReadModel) => {
-      clearFeedback();
-      setEditing(expense);
-      focusLater(() => document.getElementById("expense-amount")?.focus());
-    },
-    [clearFeedback]
+  const handleNew = useCallback(() => openForm("new"), [openForm]);
+  const handleMonth = useCallback(
+    (month: string) => setFilters((current) => ({ ...current, month })),
+    []
   );
 
   // The server generates the occurrences that fell due when the list is read,
@@ -178,7 +196,6 @@ export function ExpensesPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <Heading />
-      <ActionNotice feedback={feedback} />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}
@@ -186,63 +203,102 @@ export function ExpensesPage() {
           onRetry={handleCategoriesRetry}
         />
       ) : null}
+      <Tabs className="min-w-0 gap-4" onValueChange={selectView} value={view}>
+        <ScreenTabList
+          label="Lançamentos, recorrentes e categorias"
+          value={view}
+        >
+          {EXPENSE_VIEWS.map((item) => (
+            <ScreenTabTrigger key={item.value} value={item.value}>
+              {item.label}
+            </ScreenTabTrigger>
+          ))}
+        </ScreenTabList>
 
-      {/* from 900 px, the form beside the list (as Formas de receber); below, one column, the form first */}
-      <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-        <ExpenseForm
-          categories={categories.state.categories}
-          disabled={busy !== null}
-          editing={editing}
-          key={
-            editing ? `${editing.id}:${editing.version}` : `new:${formCount}`
-          }
-          onCancel={resetForm}
-          onSave={handleSave}
-          saving={isSaving}
-          today={today}
-        />
-
-        <Card aria-labelledby={LIST_TITLE_ID} role="region">
-          <CardHeader>
-            <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
-              Despesas do período
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <ExpenseFiltersBar
-              categories={categories.state.categories}
+        <TabsContent className="grid gap-4" keepMounted value="lancamentos">
+          {/* the month at the top of the part, beside the way to a new expense */}
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+            <MonthPicker
               currentMonth={monthOfDay(today)}
-              filters={filters}
-              onChange={setFilters}
+              id="expense-month"
+              label="Mês de competência"
+              month={filters.month}
+              onChange={handleMonth}
             />
-            <ExpenseSummary filters={filters} state={state} />
-            <ExpenseList
-              busyKey={busy}
-              filters={filters}
-              onEdit={handleEdit}
-              onLoadMore={loadMore}
-              onRestore={handleRestore}
-              onRetry={handleRetry}
-              onVoid={handleVoid}
-              state={state}
-            />
-          </CardContent>
-        </Card>
-      </div>
+            <Button
+              data-expense-new=""
+              disabled={busy !== null}
+              onClick={handleNew}
+              type="button"
+            >
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              Nova despesa
+            </Button>
+          </div>
+          {/* while the form is open it covers the screen: what the commands say is said inside it */}
+          <ActionNotice feedback={form.open ? null : feedback} />
+          <Dialog disablePointerDismissal {...form.dialog}>
+            <DialogContent finalFocus={form.finalFocus} layout="form">
+              <ExpenseForm
+                categories={categories.state.categories}
+                disabled={busy !== null}
+                editing={editing}
+                feedback={feedback?.kind === "error" ? feedback : null}
+                key={form.formKey}
+                keptDraft={form.keptDraft}
+                onCancel={closeForm}
+                onDraftChange={form.onDraftChange}
+                onSave={handleSave}
+                saving={isSaving}
+                today={today}
+              />
+            </DialogContent>
+          </Dialog>
+          <Card aria-labelledby={LIST_TITLE_ID} role="region">
+            <CardHeader>
+              <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
+                Despesas do período
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <ExpenseFiltersBar
+                categories={categories.state.categories}
+                filters={filters}
+                onChange={setFilters}
+              />
+              <ExpenseSummary filters={filters} state={state} />
+              <ExpenseList
+                busyKey={busy}
+                filters={filters}
+                onEdit={openForm}
+                onLoadMore={loadMore}
+                onRestore={handleRestore}
+                onRetry={handleRetry}
+                onVoid={handleVoid}
+                state={state}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <ExpenseRulesPanel
-        categories={categories.state.categories}
-        onChanged={handleRulesChanged}
-        organizationId={organizationId}
-        today={today}
-      />
+        <TabsContent keepMounted value="recorrentes">
+          <ExpenseRulesPanel
+            categories={categories.state.categories}
+            onChanged={handleRulesChanged}
+            organizationId={organizationId}
+            today={today}
+          />
+        </TabsContent>
 
-      <ExpenseCategoriesPanel
-        onReload={reloadCategories}
-        onUpsert={categories.upsert}
-        organizationId={organizationId}
-        state={categories.state}
-      />
+        <TabsContent keepMounted value="categorias">
+          <ExpenseCategoriesPanel
+            onReload={reloadCategories}
+            onUpsert={categories.upsert}
+            organizationId={organizationId}
+            state={categories.state}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
