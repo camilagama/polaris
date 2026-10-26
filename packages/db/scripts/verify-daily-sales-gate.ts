@@ -742,6 +742,14 @@ async function explainPlans(admin: AdminPool, fixture: Fixture, store: Store) {
     from: dateFrom(store.today, 1 - MAX_DAILY_SALES_DAYS),
     to: store.today,
   };
+  const proportion = await admin.query<{ inside: string; total: string }>(
+    `SELECT count(*) FILTER (WHERE occurred_on BETWEEN $2::date AND $3::date)::text AS inside, count(*)::text AS total
+       FROM public.sales WHERE organization_id = $1`,
+    [store.tenant.organizationId, period.from, period.to]
+  );
+  console.log(
+    `gate-note: daily-sales sales of the store in the period / all ${proportion.rows[0]?.inside}/${proportion.rows[0]?.total}`
+  );
   const statements: [
     string,
     (tx: TenantTransaction, organization: string) => ReturnType<typeof sql>,
