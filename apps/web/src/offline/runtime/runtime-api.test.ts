@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/client";
 import type { PolarisRpcClient } from "@polaris/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
@@ -103,5 +104,23 @@ describe("runtime api deviceIsMine", () => {
     await expect(
       apiWithCheck(() => Promise.reject(network)).deviceIsMine(deviceId)
     ).rejects.toBe(network);
+  });
+
+  it("asks once when the server answers 503 (a killed Worker, the 1102): device.check is a write, never the read's second try", async () => {
+    for (const failure of [
+      new ORPCError("SERVICE_UNAVAILABLE"),
+      new ORPCError("SERVICE_UNAVAILABLE", { data: { reason: "server_busy" } }),
+      Object.assign(new Error("Worker exceeded resource limits"), {
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+      }),
+    ]) {
+      const check = vi.fn(() => Promise.reject(failure));
+      // biome-ignore lint/performance/noAwaitInLoops: each failure is verified on its own
+      await expect(apiWithCheck(check).deviceIsMine(deviceId)).rejects.toBe(
+        failure
+      );
+      expect(check).toHaveBeenCalledTimes(1);
+    }
   });
 });

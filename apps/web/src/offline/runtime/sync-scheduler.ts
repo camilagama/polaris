@@ -6,8 +6,12 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  * runtime only says how a sync ended (offline, or `sync_failed`); the connection only says whether the
  * Worker answers. Here:
  *
- * - at start, on the return to the page and every 60 s while it is visible: one real try, even with the
- *   connection not proven (an answer of the Worker to it is what proves it again);
+ * - every 60 s while the page is visible, in ONE tab of the browser per store (the one holding the lock
+ *   of `isLeader`, Web Locks): the other tabs hear its pull through the data channel. One real try,
+ *   even with the connection not proven (an answer of the Worker to it is what proves it again);
+ * - at start and on the return to the page (`refresh`): the same try, unless some tab of this browser
+ *   pulled the store less than 60 s ago and nothing is queued. Each screen is its own page load, so
+ *   without this every change of screen was a pull (the ~2.5 s pulls of the QA of 26/10);
  * - when the connection comes back: a sync about 1 s later (±20%, so tabs and devices do not come back
  *   together);
  * - after `sync_failed` (a 5xx, a 429), and after a transient failure the runtime still keeps quiet (a Worker
@@ -21,6 +25,11 @@ interface SchedulerRuntime {
   connectionChanged: () => void;
   getSnapshot: () => RuntimeSnapshot;
   retriesQuietly: () => boolean;
+  /**
+   * Whether the local copy was pulled (by any tab) less than `maxAgeMs` ago and nothing waits to be
+   * sent; without it every start and return syncs.
+   */
+  isFresh?: (maxAgeMs: number) => Promise<boolean>;
   syncNow: () => Promise<void>;
 }
 
@@ -32,6 +41,11 @@ interface SchedulerConnection {
 
 export interface SyncSchedulerDependencies {
   connection: SchedulerConnection;
+  /**
+   * Whether this tab is the one of the browser that pulls on the tick (it holds the Web Lock of the store);
+   * always, without it (a browser without Web Locks keeps one tick per tab).
+   */
+  isLeader?: () => boolean;
   isVisible: () => boolean;
   /** Calls the listener when the page comes back to the front; returns how to stop. */
   onVisible: (listener: () => void) => () => void;
@@ -41,12 +55,14 @@ export interface SyncSchedulerDependencies {
 }
 
 export interface SyncScheduler {
+  /** The start and the return to the page: a sync, unless the copy is fresh and nothing is queued. */
+  refresh: () => Promise<void>;
   stop: () => void;
   /** A sync now (the start, "Tentar agora"); the same run when one is on its way. */
   syncNow: () => Promise<void>;
 }
 
-const TICK_MS = 60_000;
+export const TICK_MS = 60_000;
 const BACK_ONLINE_MS = 1000;
 const RETRY_STEPS_MS = [2000, 4000, 8000, 20_000, 40_000, 60_000] as const;
 
@@ -113,9 +129,20 @@ export function startSyncScheduler(
     return run;
   };
 
+  const refresh = async (): Promise<void> => {
+    if (pending) {
+      return pending;
+    }
+    const fresh = await runtime.isFresh?.(TICK_MS).catch(() => false);
+    if (!fresh) {
+      await sync();
+    }
+  };
+
+  const isLeader = dependencies.isLeader ?? (() => true);
   const tick = () => {
     cancelTick = schedule(() => {
-      if (dependencies.isVisible()) {
+      if (dependencies.isVisible() && isLeader()) {
         sync().catch(() => undefined);
       }
       tick();
@@ -124,7 +151,7 @@ export function startSyncScheduler(
   tick();
 
   const stopVisible = dependencies.onVisible(() => {
-    sync().catch(() => undefined);
+    refresh().catch(() => undefined);
   });
 
   const stopConnection = connection.subscribe(() => {
@@ -148,6 +175,7 @@ export function startSyncScheduler(
   });
 
   return {
+    refresh,
     stop: () => {
       stopped = true;
       clearRetry();

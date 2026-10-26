@@ -1473,6 +1473,25 @@ const legalAcceptanceStatus = z.object({
   ),
 });
 
+/**
+ * Whether a procedure only reads (`read`) or changes state (`write`), declared on each one. The Worker's
+ * rate limit picks its bucket by it, never by the name: a write with a name like a read still counts as a
+ * write. A command (a sale, a stock movement, a send of the queue, a lease, a billing step) is always a
+ * write, and so is `device.check`: it promotes the session's link to the device (ADR 0048), and once per
+ * page load fits the write bucket. `read` = no effect asked for by the user; it may do idempotent, bounded
+ * maintenance, proven by a gate (today only `goal.list`, which settles the goals whose period ended;
+ * `verify-home-writes-gate`).
+ */
+export type ProcedureKind = "read" | "write";
+
+export interface ProcedureMeta {
+  kind?: ProcedureKind;
+}
+
+const procedure = oc.$meta<ProcedureMeta>({});
+const readProcedure = procedure.meta({ kind: "read" });
+const writeProcedure = procedure.meta({ kind: "write" });
+
 export const polarisContract = {
   // The acceptance of the Terms of Use and of the Privacy Policy (ADR 0100). Per user, never per
   // organization: the server reads the session. Both are exempt from the acceptance control, so
@@ -1481,7 +1500,7 @@ export const polarisContract = {
     // Records the acceptance of the versions in force (origin `reaceite`); the text hash and the
     // instant are the server's. A version that is not the one in force is a CONFLICT with reason
     // `legal_version_mismatch`: the screen reads the status again. Accepting again is idempotent.
-    acceptLegal: oc
+    acceptLegal: writeProcedure
       .input(
         z
           .object({
@@ -1508,10 +1527,10 @@ export const polarisContract = {
       .output(legalAcceptanceStatus),
     // The documents still to accept: those whose highest accepted version is below the floor of the
     // server's constant, each with the version in force and what changed from the previous one.
-    legalStatus: oc.output(legalAcceptanceStatus),
+    legalStatus: readProcedure.output(legalAcceptanceStatus),
   },
   category: {
-    archive: oc
+    archive: writeProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -1519,7 +1538,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
-    create: oc
+    create: writeProcedure
       .input(
         z.object({
           name: categoryNameSchema,
@@ -1527,7 +1546,7 @@ export const polarisContract = {
         })
       )
       .output(category),
-    delete: oc
+    delete: writeProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -1535,7 +1554,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1545,7 +1564,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ categories: z.array(category) })),
-    rename: oc
+    rename: writeProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -1554,7 +1573,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
-    restore: oc
+    restore: writeProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -1565,7 +1584,7 @@ export const polarisContract = {
   },
   customer: {
     // Irreversible: replaces the name and removes phone, e-mail and notes; sales keep their economic facts.
-    anonymizeForPrivacy: oc
+    anonymizeForPrivacy: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1574,7 +1593,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
-    archive: oc
+    archive: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1583,21 +1602,21 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
-    create: oc
+    create: writeProcedure
       .input(
         customerProfileFields
           .extend({ organizationId: z.string().trim().min(1) })
           .superRefine(requireCustomerContact)
       )
       .output(customer),
-    findPossibleDuplicates: oc
+    findPossibleDuplicates: readProcedure
       .input(
         customerDuplicateSearchFields.extend({
           organizationId: z.string().trim().min(1),
         })
       )
       .output(z.object({ matches: z.array(customerDuplicateMatch) })),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1605,7 +1624,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ customers: z.array(customer) })),
-    restore: oc
+    restore: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1614,7 +1633,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
-    update: oc
+    update: writeProcedure
       .input(
         customerProfileFields
           .extend({
@@ -1627,13 +1646,13 @@ export const polarisContract = {
       .output(z.object({ changed: z.boolean(), customer })),
   },
   expense: {
-    archiveCategory: oc
+    archiveCategory: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
-    create: oc
+    create: writeProcedure
       .input(expenseFields.extend({ organizationId: z.string().trim().min(1) }))
       .output(expense),
-    createCategory: oc
+    createCategory: writeProcedure
       .input(
         z.object({
           group: expenseGroupKey,
@@ -1642,10 +1661,10 @@ export const polarisContract = {
         })
       )
       .output(expenseCategory),
-    archiveRule: oc
+    archiveRule: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), rule: expenseRule })),
-    createRule: oc
+    createRule: writeProcedure
       .input(
         expenseRuleFields.extend({
           frequency: z.enum(RECURRENCE_FREQUENCIES),
@@ -1654,7 +1673,7 @@ export const polarisContract = {
         })
       )
       .output(expenseRule),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           categoryId: z.string().uuid().nullish(),
@@ -1681,7 +1700,7 @@ export const polarisContract = {
           total: z.string(),
         })
       ),
-    listCategories: oc
+    listCategories: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1689,7 +1708,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ categories: z.array(expenseCategory) })),
-    listRules: oc
+    listRules: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1697,30 +1716,30 @@ export const polarisContract = {
         })
       )
       .output(z.object({ rules: z.array(expenseRule) })),
-    renameCategory: oc
+    renameCategory: writeProcedure
       .input(expenseVersionTarget.extend({ name: expenseCategoryName }))
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
-    restore: oc
+    restore: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),
-    restoreRule: oc
+    restoreRule: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), rule: expenseRule })),
-    restoreCategory: oc
+    restoreCategory: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
-    update: oc
+    update: writeProcedure
       .input(expenseFields.extend(expenseVersionTarget.shape))
       .output(z.object({ changed: z.boolean(), expense })),
-    updateRule: oc
+    updateRule: writeProcedure
       .input(expenseRuleFields.extend(expenseVersionTarget.shape))
       .output(z.object({ changed: z.boolean(), rule: expenseRule })),
-    void: oc
+    void: writeProcedure
       .input(expenseVersionTarget)
       .output(z.object({ changed: z.boolean(), expense })),
   },
   goal: {
-    cancel: oc
+    cancel: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1729,7 +1748,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), goal })),
-    create: oc
+    create: writeProcedure
       .input(
         z.object({
           endsOn: expenseCalendarDate,
@@ -1743,7 +1762,7 @@ export const polarisContract = {
       .output(goal),
     // Reading goals also settles them: a goal whose target was reached becomes
     // completed (and stays so), one whose period ended without it is missed.
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1753,7 +1772,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ goals: z.array(goal) })),
-    targetChanges: oc
+    targetChanges: readProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -1771,7 +1790,7 @@ export const polarisContract = {
           ),
         })
       ),
-    update: oc
+    update: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1785,7 +1804,7 @@ export const polarisContract = {
   },
   publicCatalog: {
     // Choose which products the public catalog shows. Needs the plan to include it.
-    publishProducts: oc
+    publishProducts: writeProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1795,7 +1814,7 @@ export const polarisContract = {
       .output(z.object({ published: z.number().int().nonnegative() })),
     // Create or edit the public profile. The address is unique across every
     // organization; an edit names the version it started from.
-    saveProfile: oc
+    saveProfile: writeProcedure
       .input(
         z.object({
           description: z.string().max(2000).nullable().optional(),
@@ -1809,7 +1828,7 @@ export const polarisContract = {
       )
       .output(publicCatalogProfile),
     // The organization's own switch; turning it off never needs the plan.
-    setPublished: oc
+    setPublished: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -1818,11 +1837,13 @@ export const polarisContract = {
         })
       )
       .output(publicCatalogProfile),
-    setup: oc
+    // Only reads the profile, the plan's entitlement and the published products: a read, which the public
+    // catalog screen repeats once on a transient failure (`readWithRetry`, which the contract's kind guards).
+    setup: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(publicCatalogSetup),
     // Taking products out is always allowed.
-    unpublishProducts: oc
+    unpublishProducts: writeProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1835,21 +1856,21 @@ export const polarisContract = {
     // The owner's billing commands (ADR 0104, decision 3), only with `billing:manage`, behind
     // BILLING_SELF_SERVICE_ENABLED, under the store's command lock and its limit. Cancel the renewal: access already
     // paid for runs to its end, and it cannot be undone.
-    cancelRenewal: oc
+    cancelRenewal: writeProcedure
       .input(billingCancelRenewalInput)
       .output(billingCancelRenewalOutput),
     // The provider's page of the charge that failed (grace, card): it pays that charge and does not change the card.
     // The address is the payer's: never logged.
-    openOverduePayment: oc
+    openOverduePayment: writeProcedure
       .input(billingOpenOverduePaymentInput)
       .output(billingOpenOverduePaymentOutput),
     // The plan as its owner reads it (ADR 0104, decision 2): only with `billing:manage`, behind
     // BILLING_SELF_SERVICE_ENABLED. The output is strict and closed: nothing personal and nothing of the provider.
-    readPlan: oc
+    readPlan: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(billingPlanView),
     // The refund of the right of withdrawal: the renewal is cancelled first, then the first charge is refunded.
-    requestRefund: oc
+    requestRefund: writeProcedure
       .input(billingRequestRefundInput)
       .output(billingRequestRefundOutput),
     // Starts the Pro subscription at the payment provider (ADR 0101): the
@@ -1860,7 +1881,7 @@ export const polarisContract = {
     // Polaris nothing of the payer. The price, the dates and the return URLs are
     // the server's. The link and the Pix payload are the payer's alone and are
     // never logged.
-    startCheckout: oc.input(billingStartCheckoutInput).output(
+    startCheckout: writeProcedure.input(billingStartCheckoutInput).output(
       z.object({
         handoff: z.discriminatedUnion("kind", [
           z.object({
@@ -1881,12 +1902,12 @@ export const polarisContract = {
   plan: {
     // Where the organization stands against the Free variant limit and which
     // variants it keeps operational (Free Over Limit, ADR 0064).
-    operationalSelection: oc
+    operationalSelection: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(operationalSelection),
     // The complete choice. While the adaptation window is open it replaces the
     // previous one; after it, it must keep what is held and may only grow.
-    selectOperationalVariants: oc
+    selectOperationalVariants: writeProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -1898,7 +1919,7 @@ export const polarisContract = {
   report: {
     // Server-computed and online only: the figures come from the confirmed
     // records of the organization, never from the device's pending work.
-    periodSummary: oc
+    periodSummary: readProcedure
       .input(
         z
           .object({
@@ -1918,7 +1939,7 @@ export const polarisContract = {
       .output(periodSummary),
     // Only net sales and the count of sales of each date, aggregated by the
     // database (no sale goes through the engine in the Worker): the Início's map.
-    dailySales: oc
+    dailySales: readProcedure
       .input(
         z
           .object({
@@ -1942,10 +1963,10 @@ export const polarisContract = {
     // A closed organization's copy (ADR 0081): the owner of an organization in closure asks for it outside the
     // tenant (which no longer opens), until the day its data may be deleted, with a session signed in within 15
     // minutes. Downloaded from /api/closed-exports/{id}/files/{ordinal}.
-    listClosed: oc
+    listClosed: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(z.object({ exports: z.array(closedDataExport) })),
-    requestClosed: oc
+    requestClosed: writeProcedure
       .input(
         z.object({
           formats: z
@@ -1956,7 +1977,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ id: z.string().uuid() })),
-    list: oc
+    list: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(
         z.object({
@@ -1987,7 +2008,7 @@ export const polarisContract = {
           ),
         })
       ),
-    request: oc
+    request: writeProcedure
       .input(
         z.object({
           formats: z
@@ -2002,14 +2023,16 @@ export const polarisContract = {
   device: {
     // Devices belong to the signed-in user, never to an organization: no
     // organization or user field to trust, the server reads the session.
-    list: oc.output(z.object({ devices: z.array(deviceReadModel) })),
+    list: readProcedure.output(z.object({ devices: z.array(deviceReadModel) })),
     // Confirms a live device of the user and links this session to it; the
     // offline runtime calls it at every online start. A revoked device is a
     // CONFLICT, an unknown one NOT_FOUND.
-    check: oc
+    // A write for the rate limit: it promotes the link of this session to the device (ADR 0048, under a
+    // lock) and records the device's last seen. Once per page load fits the write bucket.
+    check: writeProcedure
       .input(z.object({ deviceId: z.string().uuid() }))
       .output(z.object({ device: deviceReadModel })),
-    register: oc
+    register: writeProcedure
       .input(z.object({ label: z.string().max(200).nullish() }))
       .output(z.object({ device: deviceReadModel })),
     // Ends the sessions linked to the device; `endOtherSessions` (off unless
@@ -2018,7 +2041,7 @@ export const polarisContract = {
     // session signed in within 15 minutes: otherwise FORBIDDEN with reason
     // `fresh_session_required`. `endedCurrentSession` tells the screen this
     // browser is signed out as well.
-    revoke: oc
+    revoke: writeProcedure
       .input(
         z.object({
           deviceId: z.string().uuid(),
@@ -2039,16 +2062,18 @@ export const polarisContract = {
     // a fresh session. Another device of the user is FORBIDDEN with reason
     // `not_current_device`, even for a recent session; an unknown one (or
     // another user's) NOT_FOUND. Repeating it is harmless (`alreadyRevoked`).
-    revokeCurrent: oc.input(z.object({ deviceId: z.string().uuid() })).output(
-      z.object({
-        alreadyRevoked: z.boolean(),
-        endedCurrentSession: z.boolean(),
-        revokedGrantCount: z.number().int().nonnegative(),
-      })
-    ),
+    revokeCurrent: writeProcedure
+      .input(z.object({ deviceId: z.string().uuid() }))
+      .output(
+        z.object({
+          alreadyRevoked: z.boolean(),
+          endedCurrentSession: z.boolean(),
+          revokedGrantCount: z.number().int().nonnegative(),
+        })
+      ),
   },
   inventory: {
-    getBalance: oc
+    getBalance: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -2056,7 +2081,7 @@ export const polarisContract = {
         })
       )
       .output(inventoryBalance),
-    inventoryCount: oc
+    inventoryCount: writeProcedure
       .input(
         z
           .object({
@@ -2092,7 +2117,7 @@ export const polarisContract = {
     // One read for the stock screen and the sale picker: every sellable
     // variant of non-deleted products, with a zero balance when it has no
     // materialized row. Keyset-paginated; never one request per variant.
-    listBalances: oc
+    listBalances: readProcedure
       .input(
         z.object({
           // "unknown" keeps the variants whose average cost is not known,
@@ -2115,7 +2140,7 @@ export const polarisContract = {
           nextCursor: z.string().nullable(),
         })
       ),
-    receiveStock: oc
+    receiveStock: writeProcedure
       .input(
         z.object({
           commandId: z.string().uuid(),
@@ -2134,7 +2159,7 @@ export const polarisContract = {
           replayed: z.boolean(),
         })
       ),
-    writeOffStock: oc
+    writeOffStock: writeProcedure
       .input(
         z
           .object({
@@ -2168,7 +2193,7 @@ export const polarisContract = {
   offline: {
     // Issues (or renews) the signed authorization lease of a device for one
     // organization: at most 72 hours, revalidated by the server at sync.
-    issueLease: oc
+    issueLease: writeProcedure
       .input(
         z.object({
           deviceId: z.string().uuid(),
@@ -2185,7 +2210,7 @@ export const polarisContract = {
       ),
   },
   organization: {
-    createInitial: oc
+    createInitial: writeProcedure
       .input(
         z.object({
           name: z.string().trim().min(1).max(128),
@@ -2197,7 +2222,7 @@ export const polarisContract = {
     // user's active memberships, so the client learns its organizations here
     // instead of remembering an ID.
     // `billingSelfService`: BILLING_SELF_SERVICE_ENABLED is on (ADR 0104), so the owner's "Assinatura" may show.
-    listMine: oc.output(
+    listMine: readProcedure.output(
       z.object({
         billingSelfService: z.boolean(),
         organizations: z.array(organizationMembership),
@@ -2205,7 +2230,7 @@ export const polarisContract = {
     ),
     // The owner's own organizations whose closure can still be undone. Not tenant-scoped:
     // an organization in closure no longer opens as a tenant.
-    listClosing: oc.output(
+    listClosing: readProcedure.output(
       z.object({
         organizations: z.array(
           z.object({
@@ -2218,19 +2243,19 @@ export const polarisContract = {
     ),
     // The owner's closed organizations (closing, closed or with the purge scheduled) and their dates, computed by the
     // server in the organization's time zone; never a legal hold nor the status of a purge. Replaces listClosing.
-    listClosed: oc.output(
+    listClosed: readProcedure.output(
       z.object({ organizations: z.array(closedOrganization) })
     ),
     // One of them; null for an organization that is not the user's or does not exist, alike.
-    closedStatus: oc
+    closedStatus: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(z.object({ organization: closedOrganization.nullable() })),
     // Undo a closure while its recovery window is open. The leases revoked at the request stay revoked.
-    recoverClosure: oc
+    recoverClosure: writeProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(z.object({ recovered: z.literal(true) })),
     // Closing revokes access at once. The owner types the organization's name to confirm.
-    requestClosure: oc
+    requestClosure: writeProcedure
       .input(
         z.object({
           confirmation: z.string().min(1).max(256),
@@ -2245,7 +2270,7 @@ export const polarisContract = {
       ),
   },
   paymentProfile: {
-    archive: oc
+    archive: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2254,14 +2279,14 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
-    create: oc
+    create: writeProcedure
       .input(
         paymentProfileFields.extend({
           organizationId: z.string().trim().min(1),
         })
       )
       .output(paymentProfile),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -2269,7 +2294,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ profiles: z.array(paymentProfile) })),
-    restore: oc
+    restore: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2278,7 +2303,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
-    update: oc
+    update: writeProcedure
       .input(
         paymentProfileFields.extend({
           expectedVersion: z.number().int().positive(),
@@ -2289,7 +2314,7 @@ export const polarisContract = {
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
   },
   product: {
-    archive: oc
+    archive: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2298,7 +2323,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
-    configureVariants: oc
+    configureVariants: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2336,7 +2361,7 @@ export const polarisContract = {
           product,
         })
       ),
-    create: oc
+    create: writeProcedure
       .input(
         z.object({
           categoryId: z.string().uuid().nullable().optional(),
@@ -2361,7 +2386,7 @@ export const polarisContract = {
         })
       )
       .output(product),
-    delete: oc
+    delete: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2370,7 +2395,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
-    getVariants: oc
+    getVariants: readProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -2378,7 +2403,7 @@ export const polarisContract = {
         })
       )
       .output(productVariantConfiguration),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -2388,7 +2413,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ products: z.array(product) })),
-    restore: oc
+    restore: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2397,7 +2422,7 @@ export const polarisContract = {
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
-    setVariantListPrice: oc
+    setVariantListPrice: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2415,7 +2440,7 @@ export const polarisContract = {
           product,
         })
       ),
-    setVariantSku: oc
+    setVariantSku: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
@@ -2432,7 +2457,7 @@ export const polarisContract = {
           product,
         })
       ),
-    update: oc
+    update: writeProcedure
       .input(
         z.object({
           categoryId: z.string().uuid().nullable(),
@@ -2448,10 +2473,10 @@ export const polarisContract = {
   sale: {
     // Attribution is separate from the sale's economics: it never changes the
     // confirmed sale. Each change needs the version the operator saw.
-    assignCustomer: oc
+    assignCustomer: writeProcedure
       .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
       .output(saleCustomerLinkChange),
-    cancel: oc
+    cancel: writeProcedure
       .input(
         z.object({
           commandId: z.string().uuid(),
@@ -2465,7 +2490,7 @@ export const polarisContract = {
       .output(cancelledSaleResult),
     // One command confirms the whole sale. The payment profile is an explicit
     // choice: an id with the version the operator saw, or null for no profile.
-    confirm: oc
+    confirm: writeProcedure
       .input(
         z.object({
           adjustments: z.array(saleAdjustmentInput).max(20),
@@ -2480,7 +2505,7 @@ export const polarisContract = {
         })
       )
       .output(confirmedSale),
-    get: oc
+    get: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -2488,7 +2513,7 @@ export const polarisContract = {
         })
       )
       .output(saleDetail),
-    getCustomerLink: oc
+    getCustomerLink: readProcedure
       .input(
         z.object({
           organizationId: z.string().trim().min(1),
@@ -2496,7 +2521,7 @@ export const polarisContract = {
         })
       )
       .output(saleCustomerLink),
-    list: oc
+    list: readProcedure
       .input(
         z.object({
           // Optional, additive filters. Dates are commercial dates
@@ -2516,12 +2541,12 @@ export const polarisContract = {
         z.object({ hasMore: z.boolean(), sales: z.array(saleListEntry) })
       ),
 
-    reassignCustomer: oc
+    reassignCustomer: writeProcedure
       .input(saleCustomerLinkTarget.extend({ customerId: z.string().uuid() }))
       .output(saleCustomerLinkChange),
     // A partial return: per item the returned quantity and the quantity that
     // goes back to sellable stock (restocked <= returned <= still available).
-    return: oc
+    return: writeProcedure
       .input(
         z.object({
           commandId: z.string().uuid(),
@@ -2534,7 +2559,7 @@ export const polarisContract = {
         })
       )
       .output(returnedSaleResult),
-    unassignCustomer: oc
+    unassignCustomer: writeProcedure
       .input(saleCustomerLinkTarget)
       .output(saleCustomerLinkChange),
   },
@@ -2542,7 +2567,7 @@ export const polarisContract = {
     // One page of one local collection, keyed by id, or specific entities
     // (`ids`) to re-read after a change. A device records the cursor first, reads
     // its snapshot page by page, then pulls from the cursor.
-    bootstrapPage: oc
+    bootstrapPage: readProcedure
       .input(
         z.object({
           afterId: z.string().uuid().nullish(),
@@ -2561,12 +2586,12 @@ export const polarisContract = {
       .output(bootstrapPageOutput),
     // The latest committed change sequence of the organization. A device records
     // it before reading a snapshot and pulls from it afterwards.
-    getCursor: oc
+    getCursor: readProcedure
       .input(z.object({ organizationId: z.string().trim().min(1) }))
       .output(z.object({ cursor: syncCursorText })),
     // The changes after a cursor, in commit order. Entities changed several
     // times in the page appear once, at their latest sequence.
-    pull: oc
+    pull: readProcedure
       .input(
         z.object({
           cursor: syncCursorText.nullish(),
@@ -2586,7 +2611,7 @@ export const polarisContract = {
     // revalidates everything per command and answers each one: accepted,
     // rejected with a stable code, or not processed because a command before it
     // was rejected. The same command again returns the same outcome.
-    push: oc
+    push: writeProcedure
       .input(
         z.object({
           commands: z.array(pushCommand).min(1).max(50),
@@ -2596,7 +2621,7 @@ export const polarisContract = {
       .output(z.object({ results: z.array(pushResult) })),
   },
   system: {
-    ping: oc.output(z.object({ message: z.literal("pong") })),
+    ping: readProcedure.output(z.object({ message: z.literal("pong") })),
   },
 };
 

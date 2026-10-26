@@ -19,7 +19,7 @@ import type { ServerEnv, WorkerBindings } from "./environment";
 import { originCheckMiddleware } from "./middleware/origin-check";
 import {
   mediaUploadRateLimitMiddleware,
-  rpcMutationRateLimitMiddleware,
+  rpcRateLimitMiddleware,
 } from "./middleware/rate-limit";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { routeTimingMiddleware } from "./middleware/route-timing";
@@ -119,7 +119,7 @@ export function createServerApp({
   app.use("*", securityHeadersMiddleware);
   app.use("/rpc/*", originCheckMiddleware);
   app.use("/api/*", originCheckMiddleware);
-  app.use("/rpc/*", rpcMutationRateLimitMiddleware);
+  app.use("/rpc/*", rpcRateLimitMiddleware);
   app.use("/api/products/:productId/media", mediaUploadRateLimitMiddleware);
   app.use("/rpc/*", async (context, next) => {
     const { matched, response } = await rpcHandler.handle(context.req.raw, {
