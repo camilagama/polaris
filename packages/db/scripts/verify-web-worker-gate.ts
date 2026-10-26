@@ -53,7 +53,7 @@ const BINDINGS = [
   ],
 ] as const;
 /** The tests of apps/web/worker/index.workerd-db.test.ts: one added or removed is changed here too, or the gate fails (an `it.each` counts one test per case). */
-const WEB_WORKER_TESTS = 30;
+const WEB_WORKER_TESTS = 31;
 const MAINTENANCE_JOBS = [
   "auth.login_lock_expiry",
   "auth.unverified_user_purge",

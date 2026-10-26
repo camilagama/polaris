@@ -88,12 +88,19 @@ async function openHistoryLab(page: Page, answers: boolean, hold = false) {
     .waitFor();
 }
 
-/** Below 760 px the filters are in a closed panel under "Filtrar"; from 760 px there is no trigger. */
-async function openFilters(page: Page) {
-  const trigger = page.getByRole("button", { exact: true, name: "Filtrar" });
-  if (await trigger.isVisible()) {
-    await trigger.click();
-  }
+const bar = (page: Page) =>
+  page.getByRole("search", { exact: true, name: "Filtrar vendas" });
+
+/** Chooses a field in the "Filtrar" menu: its pill is added and its editor opens. */
+async function addFilter(page: Page, field: string) {
+  await bar(page).getByRole("button", { exact: true, name: "Filtrar" }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: new RegExp(`^${field}`) })
+    .click();
+  const popup = page.getByRole("dialog", { name: field });
+  await popup.waitFor();
+  return popup;
 }
 
 /** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
@@ -137,14 +144,24 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The period backwards: the message of the field. */
-  async periodError(page: Page) {
+  /** The bar with three pills (Período, Situação, Cliente) and "Limpar tudo", every editor closed. */
+  async filters(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
-    await openFilters(page);
-    await page.getByLabel("De (data da venda)").fill("2026-10-20");
-    await page.getByLabel("Até (data da venda)").fill("2026-10-10");
-    await page.getByText("A data inicial é posterior à data final.").waitFor();
+    const period = await addFilter(page, "Período");
+    await period.locator('button[data-day="2026-10-12"]').click();
+    await period.locator('button[data-day="2026-10-05"]').click();
+    await period.waitFor({ state: "hidden" });
+    const status = await addFilter(page, "Situação");
+    await status
+      .getByRole("button", { exact: true, name: "Canceladas" })
+      .click();
+    await status.waitFor({ state: "hidden" });
+    const customer = await addFilter(page, "Cliente");
+    await customer.getByRole("textbox", { name: "Cliente" }).fill("Ângela");
+    await customer.getByRole("button", { name: "Pronto" }).click();
+    await customer.waitFor({ state: "hidden" });
+    await bar(page).getByRole("button", { name: "Limpar tudo" }).waitFor();
     await showScreenAlone(page);
   },
 };

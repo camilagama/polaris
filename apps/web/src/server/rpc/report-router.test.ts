@@ -1,6 +1,9 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import type {
+  DailySalesReadModel,
+  PeriodSummaryReadModel,
+} from "@polaris/contracts";
 import { InvalidEconomicsPeriodError } from "@polaris/db/economics-repository";
 import type {
   TenantRequestIdentity,
@@ -33,6 +36,7 @@ const testBindings = {
 
 interface ReportClient {
   report: {
+    dailySales: (input: unknown) => Promise<DailySalesReadModel>;
     periodSummary: (input: unknown) => Promise<PeriodSummaryReadModel>;
   };
 }
@@ -404,6 +408,120 @@ describe("report.periodSummary", () => {
       "requestId",
       "responseBytes",
       "topProducts",
+    ]);
+  });
+});
+
+type TenantOverride = NonNullable<
+  NonNullable<Parameters<typeof createRpcRouter>[0]>["withTenantRequestContext"]
+>;
+
+describe("report.dailySales", () => {
+  const series = {
+    count: [3, 0, 1],
+    from: "2026-10-01",
+    net: ["310.50", "0.00", "89.90"],
+  };
+
+  it("reads with report:read in the organization the server resolves and returns the compact series as read", async () => {
+    const seen: { capability: string; isolationLevel?: string }[] = [];
+    const read = vi.fn(async () => series);
+    const answer = await client(
+      createRpcRouter({
+        readDailySales: read,
+        withTenantRequestContext: tenantStub((input) => seen.push(input)),
+      })
+    ).report.dailySales({
+      from: "2026-10-01",
+      organizationId: "requested-org",
+      to: "2026-10-03",
+    });
+    // one statement is one snapshot: no repeatable read needed
+    expect(seen).toEqual([{ capability: "report:read" }]);
+    expect(read).toHaveBeenCalledWith({}, identity, {
+      from: "2026-10-01",
+      to: "2026-10-03",
+    });
+    expect(answer).toEqual(series);
+  });
+
+  it("maps an invalid period to a bad request", async () => {
+    await expect(
+      client(
+        createRpcRouter({
+          readDailySales: () =>
+            Promise.reject(new InvalidEconomicsPeriodError()),
+          withTenantRequestContext: tenantStub(),
+        })
+      ).report.dailySales({
+        from: "2026-10-31",
+        organizationId,
+        to: "2026-10-01",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it.each([
+    ["2026-04-26", "2026-10-25"],
+    ["2025-10-25", "2026-10-25"],
+    ["25/10/2026", "2026-10-25"],
+  ])(
+    "refuses %s to %s (183 dates or a malformed date) before opening a tenant context",
+    async (from, to) => {
+      const withTenantRequestContext = vi.fn(tenantStub());
+      await expect(
+        client(
+          createRpcRouter({
+            withTenantRequestContext:
+              withTenantRequestContext as unknown as TenantOverride,
+          })
+        ).report.dailySales({ from, organizationId, to })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(withTenantRequestContext).not.toHaveBeenCalled();
+    }
+  );
+
+  it("reads 182 dates, the longest allowed", async () => {
+    const read = vi.fn(async () => series);
+    await client(
+      createRpcRouter({
+        readDailySales: read,
+        withTenantRequestContext: tenantStub(),
+      })
+    ).report.dailySales({
+      from: "2026-04-27",
+      organizationId,
+      to: "2026-10-25",
+    });
+    expect(read).toHaveBeenCalledOnce();
+  });
+
+  it("records each read with the days, the size and the opaque organization only: no amount", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    await client(
+      createRpcRouter({
+        readDailySales: async () => series,
+        withTenantRequestContext: tenantStub(),
+      })
+    ).report.dailySales({
+      from: "2026-10-01",
+      organizationId,
+      to: "2026-10-03",
+    });
+    const calls = info.mock.calls.filter(
+      ([event]) => event === "report_daily_sales_read"
+    );
+    expect(calls).toHaveLength(1);
+    const fields = calls[0]?.[1] as Record<string, unknown>;
+    expect(fields).toMatchObject({ days: 3, organizationId });
+    expect(fields.responseBytes).toBeGreaterThan(0);
+    expect(JSON.stringify(fields)).not.toContain("310.50");
+    expect(Object.keys(fields).sort()).toEqual([
+      "days",
+      "durationMs",
+      "organizationId",
+      "requestId",
+      "responseBytes",
     ]);
   });
 });

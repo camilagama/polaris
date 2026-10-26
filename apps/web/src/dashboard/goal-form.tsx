@@ -1,5 +1,4 @@
 import type { GoalReadModel } from "@polaris/contracts";
-import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { MAX_GOAL_NAME_LENGTH } from "@polaris/domain/goals/goal";
 import {
   type ChangeEvent,
@@ -19,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import type { DateRange } from "@/ui/date-values";
 import { Field, FieldLabel } from "@/ui/field";
 import {
   Select,
@@ -32,7 +32,7 @@ import { formatMonthLabel } from "../expenses/expense-model";
 import type { Feedback } from "../expenses/use-command-runner";
 import { focusLater } from "../lib/focus";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
-import { describedBy, FieldTexts } from "../sales/sale-fields";
+import { DateRangeField, describedBy, FieldTexts } from "../sales/sale-fields";
 import {
   GOAL_DRAFT_FIELDS,
   GOAL_KIND_OPTIONS,
@@ -184,6 +184,8 @@ interface GoalCreateFormProps {
   onSave: (input: GoalCreateInput) => Promise<boolean>;
   open: boolean;
   saving: boolean;
+  /** The organization's today, YYYY-MM-DD. */
+  today: string;
 }
 
 function isDraftField(name: string): name is GoalDraftField {
@@ -198,6 +200,15 @@ type GoalCreateContentProps = Omit<
   GoalCreateFormProps,
   "finalFocus" | "onDismiss" | "open"
 >;
+
+const PERIOD_ID = "goal-create-period";
+
+/** The two ends of the period are one control: the error of either one focuses it. */
+function controlId(field: GoalDraftField): string {
+  return field === "startsOn" || field === "endsOn"
+    ? PERIOD_ID
+    : createId(field);
+}
 
 /**
  * Creates a goal, in a dialog (the whole screen on a phone). Esc and "Fechar" are "Cancelar" (nothing closes while a
@@ -238,6 +249,7 @@ function GoalCreateContent({
   onDraftChange,
   onSave,
   saving,
+  today,
 }: GoalCreateContentProps) {
   const [draft, setDraft] = useState<GoalDraft>(
     () => keptDraft ?? newGoalDraft(month)
@@ -256,6 +268,18 @@ function GoalCreateContent({
     setDraft((current) => ({ ...current, [name]: value }));
     setErrors((current) => ({ ...current, [name]: undefined }));
   }, []);
+  const handlePeriod = useCallback((range: DateRange | null) => {
+    setDraft((current) => ({
+      ...current,
+      endsOn: range?.to ?? "",
+      startsOn: range?.from ?? "",
+    }));
+    setErrors((current) => ({
+      ...current,
+      endsOn: undefined,
+      startsOn: undefined,
+    }));
+  }, []);
   const handleKind = useCallback((kind: GoalKind) => {
     setDraft((current) => ({ ...current, kind }));
     setErrors((current) => ({ ...current, kind: undefined }));
@@ -269,7 +293,7 @@ function GoalCreateContent({
         setErrors(result.errors);
         const first = GOAL_DRAFT_FIELDS.find((field) => result.errors[field]);
         if (first) {
-          focusLater(() => document.getElementById(createId(first))?.focus());
+          focusLater(() => document.getElementById(controlId(first))?.focus());
         }
         return;
       }
@@ -312,28 +336,17 @@ function GoalCreateContent({
           optional
           value={draft.name}
         />
-        <ExpenseTextField
+        <DateRangeField
+          className="md:col-span-2"
           disabled={disabled}
-          error={errors.startsOn}
-          id={createId("startsOn")}
-          label="Começa em"
-          min={EARLIEST_EXPENSE_COMPETENCE}
-          name="startsOn"
-          onChange={handleChange}
-          type="date"
-          value={draft.startsOn}
-        />
-        <ExpenseTextField
-          disabled={disabled}
-          error={errors.endsOn}
+          error={errors.startsOn ?? errors.endsOn}
+          from={draft.startsOn}
           hint={PERIOD_HELP}
-          id={createId("endsOn")}
-          label="Termina em"
-          min={draft.startsOn}
-          name="endsOn"
-          onChange={handleChange}
-          type="date"
-          value={draft.endsOn}
+          id={PERIOD_ID}
+          label="Período da meta"
+          onChange={handlePeriod}
+          to={draft.endsOn}
+          today={today}
         />
         <ExpenseTextField
           addon={targetAddon(draft.kind)}

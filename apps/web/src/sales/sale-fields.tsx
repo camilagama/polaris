@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
+import { DatePicker } from "@/ui/date-picker";
+import { DateRangePicker } from "@/ui/date-range-picker";
+import type { DateRange, IsoDate } from "@/ui/date-values";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import {
@@ -74,8 +77,6 @@ interface TextFieldProps {
   maxLength?: number | undefined;
   onChange: (value: string) => void;
   placeholder?: string | undefined;
-  /** A date takes the browser's picker; the default is text. */
-  type?: "date" | "text" | undefined;
   value: string;
 }
 
@@ -91,7 +92,6 @@ export function TextField({
   maxLength,
   onChange,
   placeholder,
-  type,
   value,
 }: TextFieldProps) {
   const handleChange = useCallback(
@@ -113,11 +113,149 @@ export function TextField({
           maxLength={maxLength}
           onChange={handleChange}
           placeholder={placeholder}
-          type={type}
           value={value}
         />
       </InputGroup>
       <FieldTexts error={error} hint={hint} id={id} />
+    </Field>
+  );
+}
+
+interface DateFieldProps {
+  className?: string | undefined;
+  disabled?: boolean | undefined;
+  /** Why the days after `max` or before `min` cannot be chosen ("Só até hoje"). */
+  disabledReason?: string | undefined;
+  /** The error under the button; `true` is "Escolha uma data". */
+  error?: boolean | string | undefined;
+  hint?: string | undefined;
+  id: string;
+  label: string;
+  max?: IsoDate | undefined;
+  min?: IsoDate | undefined;
+  /** The name of the "Limpar" button of an optional field ("Limpar data de término"). */
+  clearLabel?: string | undefined;
+  /** "Opcional" beside the label, with a "Limpar" beside the button once a day is chosen. */
+  optional?: boolean | undefined;
+  /** The text form of the draft (`AAAA-MM-DD`, "" for none). */
+  onChange: (value: string) => void;
+  /** The organization's day (the screen has it from the server); the device's day when absent. */
+  today?: string | undefined;
+  value: string;
+}
+
+/** One date on the DatePicker of src/ui: label, button, help and error, in the shape of the other fields. */
+export function DateField({
+  className,
+  clearLabel,
+  disabled,
+  disabledReason,
+  error,
+  hint,
+  id,
+  label,
+  max,
+  min,
+  onChange,
+  optional,
+  today,
+  value,
+}: DateFieldProps) {
+  const handleChange = useCallback(
+    (next: IsoDate | null) => onChange(next ?? ""),
+    [onChange]
+  );
+  const handleClear = useCallback(() => {
+    onChange("");
+    // the button is gone with the date: the focus goes back to the field it cleared
+    document.getElementById(id)?.focus();
+  }, [id, onChange]);
+  return (
+    <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>
+        {label}
+        {optional ? (
+          <span className="font-normal text-muted-foreground">Opcional</span>
+        ) : null}
+      </FieldLabel>
+      <div className="flex flex-wrap items-center gap-2">
+        <DatePicker
+          className="min-w-0 flex-1 sm:flex-none"
+          describedBy={hint ? `${id}-hint` : undefined}
+          disabled={disabled}
+          disabledReason={disabledReason}
+          error={error}
+          id={id}
+          label={label}
+          max={max}
+          min={min}
+          onValueChange={handleChange}
+          today={today}
+          value={value === "" ? null : value}
+        />
+        {optional && value !== "" ? (
+          <Button
+            aria-label={clearLabel ?? `Limpar ${label.toLowerCase()}`}
+            disabled={disabled}
+            onClick={handleClear}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Limpar
+          </Button>
+        ) : null}
+      </div>
+      {hint ? (
+        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
+      ) : null}
+    </Field>
+  );
+}
+
+interface DateRangeFieldProps {
+  className?: string | undefined;
+  disabled?: boolean | undefined;
+  error?: string | undefined;
+  hint?: string | undefined;
+  id: string;
+  label: string;
+  /** Both ends are written together: `from` and `to` of the draft are "" for none. */
+  onChange: (range: DateRange | null) => void;
+  today?: string | undefined;
+  from: string;
+  to: string;
+}
+
+/** A period on the DateRangePicker of src/ui, with the draft's two texts as value. */
+export function DateRangeField({
+  className,
+  disabled,
+  error,
+  from,
+  hint,
+  id,
+  label,
+  onChange,
+  to,
+  today,
+}: DateRangeFieldProps) {
+  return (
+    <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <DateRangePicker
+        describedBy={hint ? `${id}-hint` : undefined}
+        disabled={disabled}
+        error={error}
+        id={id}
+        label={label}
+        onValueChange={onChange}
+        today={today}
+        value={from !== "" && to !== "" ? { from, to } : null}
+      />
+      {hint ? (
+        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
+      ) : null}
     </Field>
   );
 }

@@ -277,6 +277,7 @@ export function GoalsPanel({
         onSave={handleSave}
         open={creating}
         saving={busy === "create"}
+        today={today}
       />
       <GoalList
         busyKey={busy}

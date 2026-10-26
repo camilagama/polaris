@@ -722,6 +722,13 @@
       "when": 1792916022214,
       "tag": "0103_tentativa_do_aviso_de_cobranca",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1792984401466,
+      "tag": "0104_indice_de_vendas_por_dia",
+      "breakpoints": true
     }
   ]
 }

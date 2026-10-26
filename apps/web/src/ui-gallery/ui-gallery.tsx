@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/ui/card";
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
+import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
@@ -54,6 +55,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
+import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
 import {
   Field,
   FieldContent,
@@ -64,6 +67,7 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
+import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import { Input } from "@/ui/input";
 import {
   InputGroup,
@@ -186,6 +190,11 @@ function showToast() {
     type: "success",
   });
 }
+
+/** The accumulated sales of a month, sample data for the KPI card of the gallery. */
+const GALLERY_KPI_SERIES = [
+  120, 180, 180, 260, 410, 410, 520, 690, 760, 760, 880, 1010, 1200, 1340,
+] as const;
 
 function Section({
   children,
@@ -340,6 +349,96 @@ function DatePickerStates() {
         </div>
       </Section>
     </>
+  );
+}
+
+/**
+ * The filter bar (t383), as the sales history will use it: a period, a choice, a text and a field that needs the
+ * connection (aria-disabled, with its reason). "Hoje" is the same fixed day as the pickers. The status line is the
+ * screen's own, inside the bar's `<search>`.
+ */
+const FILTER_FIELDS: FilterField[] = [
+  { id: "periodo", label: "Período", today: TODAY, type: "date-range" },
+  {
+    id: "situacao",
+    label: "Situação",
+    options: [
+      { label: "Paga", value: "paga" },
+      { label: "Cancelada", value: "cancelada" },
+      { label: "Devolvida", value: "devolvida" },
+    ],
+    type: "select",
+  },
+  {
+    id: "cliente",
+    label: "Cliente",
+    placeholder: "Nome do cliente",
+    type: "text",
+  },
+  {
+    disabledReason: "Só com conexão",
+    id: "produto",
+    label: "Produto vendido",
+    placeholder: "Nome do produto",
+    type: "text",
+  },
+];
+
+const FILTER_START: FilterRule[] = [
+  { fieldId: "periodo", value: { from: "2026-10-01", to: TODAY } },
+  { fieldId: "situacao", value: "paga" },
+  { fieldId: "cliente", value: "Maria Souza" },
+];
+
+/** With no connection the history already filtered by a product: that pill cannot be edited, only taken out. */
+const FILTER_OFFLINE_START: FilterRule[] = [
+  { fieldId: "produto", value: "Camiseta" },
+];
+
+function GalleryFilterBar({
+  label,
+  start,
+  testId,
+}: {
+  label: string;
+  start: FilterRule[];
+  testId: string;
+}) {
+  const [rules, setRules] = useState<FilterRule[]>(start);
+  return (
+    <FilterBar
+      fields={FILTER_FIELDS}
+      label={label}
+      onChange={setRules}
+      value={rules}
+    >
+      <p
+        className="text-muted-foreground text-support"
+        data-testid={testId}
+        role="status"
+      >
+        {rules.length === 1
+          ? "1 filtro ativo"
+          : `${rules.length} filtros ativos`}
+      </p>
+    </FilterBar>
+  );
+}
+
+function FilterBarExample() {
+  return (
+    <Section title="Filtros">
+      <GalleryFilterBar
+        label="Filtrar vendas"
+        start={FILTER_START}
+        testId="filtros-contagem"
+      />
+      <GalleryFilterBar
+        label="Filtrar vendas sem conexão"
+        start={FILTER_OFFLINE_START}
+        testId="filtros-contagem-sem-conexao"
+      />
+    </Section>
   );
 }
 
@@ -858,9 +957,58 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="Cartão de KPI e Esconder valores">
+            <div className="flex flex-wrap items-center gap-3">
+              <HideValuesButton />
+              <span className="text-support">
+                <MoneyText text="Melhor dia: 18/10, R$ 1.840,00" />
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <KpiCard
+                chip={
+                  <DeltaChip
+                    delta={{ money: false, text: "+19,1%", trend: "up" }}
+                  />
+                }
+                date="1 a 25/10"
+                entity="sales"
+                footer="41 vendas no mês"
+                id="galeria-kpi-vendas"
+                note="vs. 1 a 25/09"
+                spark={
+                  <OnDemandSparkline
+                    color="var(--chart-sales)"
+                    domain="zero"
+                    height={64}
+                    values={GALLERY_KPI_SERIES}
+                  />
+                }
+                title="Vendas em outubro"
+                value={<HeroValue amount="2660.60" />}
+              />
+              <KpiCard
+                chip={
+                  <DeltaChip
+                    delta={{ money: true, text: "-R$ 12,00", trend: "down" }}
+                  />
+                }
+                date="1 a 25/10"
+                entity="result"
+                footer="Não é lucro líquido nem dinheiro já recebido."
+                id="galeria-kpi-resultado"
+                note="vs. 1 a 25/09"
+                title="Resultado estimado"
+                value={<HeroValue amount="-48.30" size="md" />}
+              />
+            </div>
+          </Section>
+
           <ChartStates />
 
           <DatePickerStates />
+
+          <FilterBarExample />
 
           <Section title="Caracteres das fontes">
             <div className="grid gap-2" data-testid="font-sample">

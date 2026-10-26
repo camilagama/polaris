@@ -8,7 +8,8 @@ import { BROWSER_TARGET } from "../vite.ui";
  * Rules of the interface base that the review would otherwise have to remember (ADR 0103):
  * - colors only in OKLCH in src/ui/ and in the CSS of the base (decision 3);
  * - lucide icons one file at a time, never the whole package (section 2);
- * - the primitives keep the animation that shadcn brings (DESIGN.md, motion), and the page zeroes it with reduce;
+ * - the primitives keep the animation that shadcn brings (DESIGN.md, motion) at the `full` level of motion, not on a
+ *   phone, and the page zeroes it with reduce;
  * - the browser floor of Tailwind 4 is the same in `build.target` and in `browserslist` (section 2).
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
@@ -30,6 +31,7 @@ const BASE_UI_STYLE = /^base-/;
 const TOAST_VIEWPORT_NAMED =
   /<ToastPrimitive\.Viewport\b[^>]*\saria-label="Avisos"/;
 const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
+const MOTION_IMPORT = /from\s+"motion|import\s+"motion/;
 
 /**
  * A component that only loads on demand is in the gallery through its loader, as in the app: a static import of it
@@ -37,6 +39,8 @@ const ESBUILD_TARGET = /^([a-z]+)([\d.]+)$/;
  */
 const ON_DEMAND_LOADER: Record<string, string> = {
   calendar: "calendar-on-demand",
+  // the animated layer of the bar comes by `import()` only at the full level of motion (t386)
+  "filter-bar-motion": "filter-bar",
 };
 
 const read = (path: string) =>
@@ -119,22 +123,28 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
   });
 
   it.each(["popover.tsx", "dropdown-menu.tsx", "select.tsx", "tooltip.tsx"])(
-    "%s keeps the shadcn animation (zoom, slide by side, 100 ms)",
+    "%s keeps the shadcn animation (zoom, slide by side, 100 ms) at the full level of motion (none on a phone, t386)",
     (file) => {
       const source = read(`src/ui/${file}`);
       for (const part of [
-        "data-open:animate-in",
+        "motion-full:data-open:animate-in",
         "data-open:zoom-in-95",
-        "data-closed:animate-out",
+        "motion-full:data-closed:animate-out",
         "data-closed:zoom-out-95",
         "data-[side=bottom]:slide-in-from-top-2",
         "data-[side=top]:slide-in-from-bottom-2",
-        "duration-100",
+        "motion-full:duration-100",
       ]) {
         expect(source, part).toContain(part);
       }
     }
   );
+
+  it("the filter bar does not import motion: its animated layer comes by import(), only at the full level of motion (t386)", () => {
+    const source = read("src/ui/filter-bar.tsx");
+    expect(source).not.toMatch(MOTION_IMPORT);
+    expect(source).toContain('import("./filter-bar-motion")');
+  });
 
   it("names the toast viewport in Portuguese", () => {
     expect(read("src/ui/toast.tsx")).toMatch(TOAST_VIEWPORT_NAMED);

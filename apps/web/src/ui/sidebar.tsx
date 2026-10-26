@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { readMotionLevel } from "@/lib/motion-level";
 import { useIsMobile } from "@/lib/use-mobile";
 
 /* Polaris v5.1: the shadcn Sidebar, cut to the parts the shell uses and with no primitive of Base UI (the frame of
@@ -87,9 +88,9 @@ function SidebarProvider({
    2.5 rem to the side. The exit has a class set of its own (swapped in while it runs) so the two `animation`s never
    compete, and the veil (`::backdrop`) fades with the panel. */
 const SHEET_ENTER =
-  "open:fade-in-0 data-[side=left]:open:slide-in-from-left-10 data-[side=right]:open:slide-in-from-right-10 open:animate-in open:duration-200 open:ease-in-out";
+  "open:fade-in-0 data-[side=left]:open:slide-in-from-left-10 data-[side=right]:open:slide-in-from-right-10 motion-full:open:animate-in motion-full:open:duration-200 open:ease-in-out";
 const SHEET_EXIT =
-  "animate-out fade-out-0 fill-mode-forwards data-[side=left]:slide-out-to-left-10 data-[side=right]:slide-out-to-right-10 duration-200 ease-in-out backdrop:animate-out backdrop:fade-out-0 backdrop:fill-mode-forwards backdrop:duration-200 backdrop:ease-in-out";
+  "motion-full:animate-out fade-out-0 fill-mode-forwards data-[side=left]:slide-out-to-left-10 data-[side=right]:slide-out-to-right-10 motion-full:duration-200 ease-in-out motion-full:backdrop:animate-out backdrop:fade-out-0 backdrop:fill-mode-forwards motion-full:backdrop:duration-200 backdrop:ease-in-out";
 /** The time to wait for `animationend` before closing anyway (the exit takes 200 ms). */
 const EXIT_GUARD_MS = 300;
 
@@ -98,8 +99,8 @@ const EXIT_GUARD_MS = 300;
  * native element gives the same: the page behind is inert, Escape closes, the focus stays inside, and it costs no
  * script of a primitive). Every way out (Escape, the veil, "Fechar", the state going to closed) asks for the close
  * through one path: the exit animation runs (`data-closing`) and the dialog closes at `animationend`, or after a guard
- * if the event never comes, or at once with `prefers-reduced-motion: reduce`. Closing hands the focus back to what
- * opened it.
+ * if the event never comes, or at once below the `full` level of motion (a phone, or `prefers-reduced-motion`).
+ * Closing hands the focus back to what opened it.
  */
 function MobileSheet({
   children,
@@ -137,7 +138,8 @@ function MobileSheet({
     if (!dialog?.open || dialog.hasAttribute("data-closing")) {
       return;
     }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    // on the phone and with `prefers-reduced-motion` the panel has no exit animation: it closes at once
+    if (readMotionLevel() !== "full") {
       finishClose();
       return;
     }
@@ -217,7 +219,7 @@ function MobileSheet({
     >
       {/* first in the order: the focus lands on it when the panel opens */}
       <button
-        className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent [&_svg]:size-3.5"
+        className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground motion-full:transition-colors hover:bg-accent [&_svg]:size-3.5"
         onClick={requestClose}
         type="button"
       >
@@ -402,7 +404,7 @@ function SidebarMenuButton({
   return (
     <a
       className={cx(
-        "peer/menu-button focus-ring flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
+        "peer/menu-button focus-ring flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
         className
       )}
       data-active={isActive ? "" : undefined}

@@ -131,6 +131,10 @@ export const sales = pgTable(
       table.confirmedAt,
       table.id
     ),
+    index("sales_organization_occurred_on_idx").on(
+      table.organizationId,
+      table.occurredOn
+    ),
     pgPolicy("sales_current_tenant_select", {
       for: "select",
       to: runtimeRole,

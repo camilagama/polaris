@@ -14,6 +14,9 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  *    class; an `oklch(…)` literal lives only in the token sheet (`src/styles/theme.css`).
  * 5. motion: the components use the animation they bring (shadcn, Bklit UI); the CSS of an animation lives only in
  *    the sheets of the base; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
+ *    On the phone (t386, ADR 0103 "Níveis de movimento") only the essential motion runs: every `animate-*`,
+ *    `transition*` and `duration-*` class of the `.ts` and `.tsx` of `src/` is under the `motion-full:` variant or
+ *    in `ESSENTIAL_MOTION` (the four of the inventory) or `INERT_MOTION` (moves nothing), with its reason.
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 
@@ -53,6 +56,104 @@ const ANIMATION_SHEETS = [TOKEN_SHEET, MASK_SHEET];
 const OWN_ANIMATION = /@keyframes\b|\banimation(?:-name)?\s*:/;
 
 const withoutComments = (text: string) => text.replace(COMMENT, "");
+
+/**
+ * The motion that stays on the phone (`data-motion="essential"`), the four essentials of the inventory of the Petković
+ * (25/10; the fifth, the row of pills scrolling to the pill, left when the row began to wrap): the file, what in it makes the motion (`source`, a class or a piece of code) and why. A motion class listed
+ * here is allowed off `motion-full:`; anything else that animates is written `motion-full:…` and runs only at the
+ * `full` level, and a new animation fails here until someone decides whether it is essential.
+ */
+export const ESSENTIAL_MOTION: readonly {
+  file: string;
+  source: string;
+  why: string;
+}[] = [
+  {
+    file: "src/ui/button.tsx",
+    source: "active:not-aria-[haspopup]:scale-[0.98]",
+    why: "o estado pressionado (escala 0,98, na hora) é o único retorno do toque antes da resposta",
+  },
+  {
+    file: "src/ui/skeleton.tsx",
+    source: "animate-pulse",
+    why: "nas listas carregando o texto é sr-only: o pulso é o único sinal visível de que a tela espera",
+  },
+  {
+    file: "src/ui/toast.tsx",
+    source: "swipeDirection",
+    why: "o arraste para dispensar segue o dedo (transform em linha do Base UI enquanto arrasta); sem ele o toast salta",
+  },
+  {
+    file: "src/ui/charts/area-chart.tsx",
+    source: "<ChartTooltip",
+    why: "o tooltip acompanha o dedo, que é o uso do gráfico no celular; abaixo do full ele salta de ponto em ponto (damping 0)",
+  },
+];
+
+/**
+ * Motion classes that move nothing, so neither essential nor dispensable: the file, the class and why. Only in code
+ * that is not ours (the Bklit registry, kept as distributed).
+ */
+const INERT_MOTION: readonly { file: string; token: string; why: string }[] = [
+  {
+    file: "src/ui/bklit/charts/tooltip/tooltip-content.tsx",
+    token: "transition-opacity",
+    why: "a opacidade do bloco de baixo do tooltip do Bklit nunca muda; e, abaixo do full, theme.css zera as transições dentro do gráfico",
+  },
+  {
+    file: "src/ui/bklit/charts/tooltip/tooltip-content.tsx",
+    token: "duration-200",
+    why: "a duração da transição de cima",
+  },
+];
+
+/** Smooth scrolling would animate the essential scroll of the row of pills (and any other): the default `auto` only. */
+const SMOOTH_SCROLL = /behavior:\s*["']smooth["']|\bscroll-smooth\b/;
+
+/** An `animate-*`, `transition*` or `duration-*` utility that moves something (`animate-none`, `transition-none` stop it). */
+const MOTION_UTILITY =
+  /^(?:animate-(?!none$)|transition(?:$|-(?!none$))|duration-)/;
+/** A string of a source, where the classes are: between double quotes, single quotes or backticks. */
+const STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
+const SPACES = /\s+/;
+const TS_OR_TSX = /\.tsx?$/;
+
+/** The words of the strings of a source: the classes, among other words. */
+const classTokens = (text: string) =>
+  [...withoutComments(text).matchAll(STRING)].flatMap((match) =>
+    (match[1] ?? match[2] ?? match[3] ?? "").split(SPACES).filter(Boolean)
+  );
+
+/** The motion classes of a source that run on the phone without being listed as essential (t386). */
+export function phoneMotionFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path)) {
+    return [];
+  }
+  const faults = new Set<string>();
+  for (const token of classTokens(text)) {
+    // the utility is what follows the last variant (`data-open:animate-in` → `animate-in`); a `:` inside brackets is
+    // part of an arbitrary value, not a variant
+    const variants = token.replace(/\[[^\]]*\]/g, (part) =>
+      part.replaceAll(":", "_")
+    );
+    const utility = variants.slice(variants.lastIndexOf(":") + 1);
+    if (!MOTION_UTILITY.test(utility.replace(/^!|!$/g, ""))) {
+      continue;
+    }
+    if (variants.split(":").includes("motion-full")) {
+      continue;
+    }
+    const listed = (entry: { file: string; token?: string; source?: string }) =>
+      entry.file === path && (entry.token ?? entry.source) === token;
+    if (ESSENTIAL_MOTION.some(listed) || INERT_MOTION.some(listed)) {
+      continue;
+    }
+    faults.add(
+      `movimento no celular sem motion-full: nem ESSENTIAL_MOTION: ${token}`
+    );
+  }
+  return [...faults];
+}
 
 /** The faults of items 4 and 5 that a file's text has; the path says whether it is the token sheet. */
 export function sourceFaults(path: string, text: string) {
@@ -114,6 +215,11 @@ const SCOPE = [
 
 const read = (path: string) => readFileSync(join(web, path), "utf8");
 
+/** The motion of the phone is read in every component of the app, not only in the folders of the measured screens. */
+const MOTION_SCOPE = sourcesUnder("src").filter((path) =>
+  path.endsWith(".tsx")
+);
+
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it("cobre a base, os estilos e as pastas das telas", () => {
     expect(SCOPE).toEqual(
@@ -135,6 +241,37 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it.each(SCOPE)("%s: só OKLCH, só tokens", (path) => {
     expect(sourceFaults(path, read(path))).toEqual([]);
   });
+
+  it.each(MOTION_SCOPE)(
+    "%s: no celular só anima o essencial (motion-full: ou ESSENTIAL_MOTION)",
+    (path) => {
+      expect(phoneMotionFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("as quatro essenciais do inventário ainda estão nos arquivos delas, e as classes que não movem nada também (uma lista velha deixaria passar outra coisa)", () => {
+    expect(ESSENTIAL_MOTION).toHaveLength(4);
+    for (const entry of ESSENTIAL_MOTION) {
+      expect(MOTION_SCOPE, entry.file).toContain(entry.file);
+      expect(
+        withoutComments(read(entry.file)),
+        `${entry.file}: ${entry.source}`
+      ).toContain(entry.source);
+    }
+    for (const entry of INERT_MOTION) {
+      expect(
+        classTokens(read(entry.file)),
+        `${entry.file}: ${entry.token}`
+      ).toContain(entry.token);
+    }
+  });
+
+  it.each(MOTION_SCOPE)(
+    "%s: nenhuma rolagem suave (a rolagem que sobra é instantânea)",
+    (path) => {
+      expect(withoutComments(read(path))).not.toMatch(SMOOTH_SCROLL);
+    }
+  );
 
   it("com prefers-reduced-motion: reduce a base zera animação e transição (a medida está em e2e-pwa)", () => {
     const sheet = withoutComments(read(TOKEN_SHEET));
@@ -175,6 +312,42 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ["background: oklch(0 0 0);", "literal oklch"],
   ])("%s", (text, fault) => {
     expect(faultsOf(text).join("\n")).toContain(fault);
+  });
+
+  it.each([
+    [
+      'className="data-open:animate-in data-closed:animate-out"',
+      "src/ui/x.tsx",
+    ],
+    [
+      'cn("grid", open && "transition-[grid-template-rows,opacity]")',
+      "src/ui/x.tsx",
+    ],
+    ['className="transition duration-200"', "src/ui/x.tsx"],
+    ['className="has-[>[data-slot=x]]:transition-colors"', "src/ui/x.tsx"],
+    // essential only where the inventory put it
+    ['className="animate-pulse"', "src/ui/x.tsx"],
+  ])("%s em %s anima no celular e é reprovado", (text, path) => {
+    expect(phoneMotionFaults(path, text).join("\n")).toContain(
+      "movimento no celular"
+    );
+  });
+
+  it.each([
+    [
+      'className="motion-full:data-open:animate-in motion-full:duration-100"',
+      "src/ui/x.tsx",
+    ],
+    [
+      'className="animate-none transition-none motion-reduce:transition-none"',
+      "src/ui/x.tsx",
+    ],
+    ['className="animate-pulse rounded-md"', "src/ui/skeleton.tsx"],
+    ["<Area animate={false} transition={transition} />", "src/ui/x.tsx"],
+    ["/* data-open:animate-in in a comment */", "src/ui/x.tsx"],
+    ['className="data-open:animate-in"', "src/ui/x.css"],
+  ])("%s em %s passa", (text, path) => {
+    expect(phoneMotionFaults(path, text)).toEqual([]);
   });
 
   it.each([

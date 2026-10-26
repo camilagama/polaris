@@ -1,0 +1,24 @@
+# Bklit UI nos gráficos do Polaris
+
+Os blocos desta pasta são o **Bklit UI como o registry oficial os entrega** (https://bklit.com, MIT, © uixmat), instalados em 25/10/2026 (t336) com:
+
+```
+"registries": { "@bklit": "https://ui.bklit.com/r/{name}.json" }   (apps/web/components.json)
+bunx shadcn@latest add @bklit/area-chart @bklit/sparkline @bklit/y-axis
+```
+
+`charts/` é o `components/charts/` do registry (73 arquivos: `area-chart`, `area`, `grid`, `x-axis`, `y-axis`, `tooltip/`, `sparkline` e o que eles puxam) e `shimmering-text.tsx` é o `components/shimmering-text.tsx`. O Biome não olha esta pasta (`files.includes` do `biome.jsonc`): é código de outra pessoa, mantido igual para que um novo `shadcn add` mostre o diff. O que é do Polaris está em `src/ui/charts/` (os componentes que as telas usam, o carregamento sob demanda, o texto de leitura e o teclado).
+
+## O que foi mudado nos arquivos do Bklit (a lista inteira)
+
+1. **Importação de `cn`**: o CLI escreveu `@/lib/lib/utils`; é `@/lib/utils` (o `cn` do projeto, que conhece as escalas do tema).
+2. **Tipos (`exactOptionalPropertyTypes`)**: o `tsconfig` do app liga a opção e o Bklit não. Cada `nome?: T` das interfaces virou `nome?: T | undefined`, mais seis ajustes do mesmo tipo (`animation.ts`, `chart-parent-size.tsx`, `grid.tsx`, `loading-sweep.tsx`, `sparkline-geometry.ts`, `tooltip/tooltip-box.tsx`). Nenhuma mudança de comportamento.
+3. **Cores (`theme.css`)**: o `date-ticker.tsx` usava `bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900`; usa `bg-foreground text-background`. As variáveis `--chart-*` que o Bklit lê são mapeadas uma vez em `src/styles/theme.css` (`--chart-line-primary` → `--chart-5`, `--chart-line-secondary` → `--chart-3`, `--chart-grid` → `--border`, `--chart-tooltip-background` → `--card`, `--chart-crosshair` → `--foreground` a 35%). O registry injeta uma paleta própria (índigo, amarelo, fúcsia) no CSS: ela não entra.
+4. **pt-BR**: `chart-formatters.ts` usa `pt-BR` onde o Bklit usa `en-US` (datas e números).
+5. **Unidade do eixo Y**: `y-axis.tsx` passa a `formatValue` um segundo argumento, `isTop` (o rótulo mais alto), para que "R$" apareça uma vez, no topo ("R$ 2 mil"), como no desenho do Início.
+6. **Largura do painel do tooltip**: `tooltip/tooltip-box.tsx` tinha `min-w-[160px]`; é `min-w-[120px]`, para que o painel de uma linha por série (12 px) caiba em até 150 px a 360 px de largura (decisão do Petković, 24/10: ajuste de tamanho, não troca do tooltip).
+7. **Comentários**: três comentários com "from `nome`" (`use-highlight-segment.ts`, `path-stroke-utils.ts`, `highlight-segment.tsx`) perderam as crases, porque a regra de fonte da cadeia de suprimentos (`scanUiSource`) lê "from `x`" como importação.
+8. **Toque (`touch-action`)**: o `area-chart.tsx` (a caixa) e o `use-chart-interaction.ts` (o grupo do desenho) usavam `touch-action: none`, que tira da página o gesto vertical sobre o gráfico (o dedo que começa nele não rola a tela). Usam `pan-y`, como a sparkline interativa do próprio Bklit: arrastar na horizontal lê os dias, na vertical rola a página. O navegador cancela o toque quando assume a rolagem; por isso `onTouchCancel` fecha o tooltip como o `onTouchEnd` (sem isso, o tooltip ficaria aberto depois de uma rolagem). Decisão do Petković, 25/10.
+9. **Movimento (`MotionConfig`)**: os oito arquivos que liam `useReducedMotion` do `motion` (`use-animated-y-domains.ts`, `use-animated-series-path.ts`, `use-grid-shimmer.ts`, `loading-sweep.tsx`, `sparkline.tsx`, `tooltip/tooltip-box.tsx`, `tooltip/date-ticker.tsx` e `shimmering-text.tsx`) importam `useReducedMotionConfig as useReducedMotion`. Só a linha da importação muda. O hook original lê só o sistema; este lê o `<MotionConfig reducedMotion>` que o invólucro de `src/ui/charts/` põe em volta dos blocos: `"always"` no celular e com `prefers-reduced-motion`, `"user"` (o sistema) no nível `full` (`src/lib/motion-level.ts`, t386). Sem um `MotionConfig` em volta, o `motion` responde `"never"`; por isso os blocos só são desenhados pelo invólucro. A revelação (`chart-reveal-clip.tsx`, que anima uma largura e não lê o hook) e o tween do eixo Y também se desligam pelas props do invólucro (`animationDuration={0}`, `yDomainTween={false}`). As transições que os blocos escrevem em linha, sem prop para desligar (os rótulos do eixo Y deslizando 500 ms até a escala nova em `y-axis.tsx`, o desvanecer dos rótulos do eixo X e dos marcadores), não mudam aqui: abaixo do nível `full`, uma regra de `src/styles/theme.css` zera a duração delas dentro do `[data-chart]` do invólucro.
+
+O resto (animação de revelação, `yDomainTween`, morph do caminho, `ChartTooltip` com crosshair, pontos, pílula de data e mola, grade tracejada, gradiente, sparkline) é o do Bklit. `prefers-reduced-motion`, o texto de leitura, o teclado, o nome para o leitor de tela e o gráfico sob demanda estão em `src/ui/charts/`.

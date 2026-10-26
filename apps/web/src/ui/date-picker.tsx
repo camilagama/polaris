@@ -24,6 +24,8 @@ export interface DatePickerProps {
   disabled?: boolean | undefined;
   /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
   disabledReason?: string | undefined;
+  /** The id of a help text the screen shows under the button, read after the error. */
+  describedBy?: string | undefined;
   /** The error under the button; `true` is the default text, "Escolha uma data". */
   error?: boolean | string | undefined;
   id?: string | undefined;
@@ -47,6 +49,7 @@ export interface DatePickerProps {
  */
 export function DatePicker({
   className,
+  describedBy,
   disabled,
   disabledReason,
   error,
@@ -101,7 +104,11 @@ export function DatePicker({
         <PopoverTrigger
           render={
             <Button
-              aria-describedby={errorText ? errorId : undefined}
+              aria-describedby={
+                [errorText ? errorId : null, describedBy]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               aria-invalid={errorText ? true : undefined}
               aria-label={`${label}, ${text}`}
               className="w-full justify-start font-normal sm:w-fit"
@@ -123,20 +130,24 @@ export function DatePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto gap-2 p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-2 overflow-hidden p-2"
           initialFocus={false}
         >
-          <OnDemandCalendar
-            autoFocus
-            defaultMonth={firstMonth}
-            disabled={outside}
-            disabledReason={disabledReason}
-            mode="single"
-            onSelect={pickDay}
-            selected={selected}
-            today={todayDate}
-          />
-          <div className="flex justify-end border-border border-t pt-2">
+          {/* with little room (the popover above the field at 360 x 600) only the month scrolls: "Hoje" stays in view
+              (the popover itself does not scroll); the 4 px around keep the focus ring of a day */}
+          <div className="-m-1 min-h-0 overflow-y-auto p-1" data-date-month>
+            <OnDemandCalendar
+              autoFocus
+              defaultMonth={firstMonth}
+              disabled={outside}
+              disabledReason={disabledReason}
+              mode="single"
+              onSelect={pickDay}
+              selected={selected}
+              today={todayDate}
+            />
+          </div>
+          <div className="flex shrink-0 justify-end border-border border-t pt-2">
             <Button
               aria-describedby={todayAllowed ? undefined : todayReasonId}
               aria-disabled={todayAllowed ? undefined : true}

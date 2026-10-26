@@ -23,7 +23,6 @@ import {
   moreLoaded,
   moreLoadFailed,
   nextOffset,
-  periodError,
   SALES_PAGE_SIZE,
   saleCustomerHref,
   saleDetailHref,
@@ -333,16 +332,6 @@ describe("filters", () => {
         to: "",
       })
     ).toBe(4);
-  });
-
-  it("rejects a period that ends before it starts", () => {
-    expect(
-      periodError({ ...filters, from: "2026-05-10", to: "2026-05-01" })
-    ).toContain("posterior");
-    expect(
-      periodError({ ...filters, from: "2026-05-01", to: "2026-05-01" })
-    ).toBeNull();
-    expect(periodError({ ...filters, from: "2026-05-10" })).toBeNull();
   });
 
   it("explains an empty result differently when filters are active", () => {

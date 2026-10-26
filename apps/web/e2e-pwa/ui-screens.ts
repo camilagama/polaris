@@ -329,7 +329,7 @@ async function exerciseSalePayment(page: Page) {
   );
 }
 
-/** The files of the expenses screen on the new interface (the month picker is also Resultado's). */
+/** The files of the expenses screen on the new interface (the month picker is Despesas' only). */
 const EXPENSE_SOURCES = [
   "src/expenses/collapsible-section.tsx",
   "src/expenses/expense-categories-panel.tsx",
@@ -354,11 +354,17 @@ const expenseScreen = (
   sourceDirs: EXPENSE_SOURCES,
 });
 
+/** The category filter and the grid of months (the popover of the month picker), each opened and closed. */
 async function exerciseExpenseCategoryFilter(page: Page) {
   await openAndClose(
     page,
     { name: "Categoria", role: "combobox" },
     { role: "listbox" }
+  );
+  await openAndClose(
+    page,
+    { name: "Mês de competência, Outubro de 2026", role: "button" },
+    { name: "Mês de competência", role: "dialog" }
   );
 }
 
@@ -859,6 +865,7 @@ export const SCREENS: UiScreen[] = [
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
   expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
   resultScreen("mês incompleto e gráfico de vendas", resultStates.list),
@@ -873,13 +880,14 @@ export const SCREENS: UiScreen[] = [
   subscriptionScreen("oferta com Pix", subscriptionStates.offer),
   subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
   subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("cancelar a renovação", subscriptionStates.cancelDialog),
   subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
   resultScreen("sem conexão", resultStates.offline),
   historyScreen("lista", historyStates.list),
   historyScreen("carregando", historyStates.loading),
   historyScreen("sem conexão", historyStates.offline),
-  historyScreen("período invertido", historyStates.periodError),
+  historyScreen("filtros ativos", historyStates.filters),
   saleDetailScreen("aberto", saleDetailStates.detail),
   saleDetailScreen("carregando", saleDetailStates.loading),
   saleDetailScreen("devolução com erro", saleDetailStates.returnError),

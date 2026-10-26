@@ -13,10 +13,15 @@ import { dirname, resolve, sep } from "node:path";
  * The two `@fontsource-variable` packages came with the UI base (ADR 0103, section 2): the Geist files
  * served by the app itself, so it works offline and under `font-src 'self'`; CSS and woff2 only, no code
  * and no dependencies, imported by their latin subset file.
- * `d3-shape` and `d3-path` came with the charts (ADR 0103, amendment "Gráficos", t285): the curve, line and area
- * generators that Bklit UI uses, adapted in `src/ui/charts/`, and the path builder `d3-shape` is made of. No
- * install script; `d3-path` has no dependencies and `d3-shape` only it. Only the charts chunk imports them (the
- * guard of `pwa/precache-budget.ts`).
+ * `d3-shape` came with the charts (ADR 0103, amendment "Gráficos", t285) and stays for the blocks of Bklit UI (t336):
+ * the curve, line and area generators the blocks import; `d3-path` is its only dependency and is no longer declared
+ * (the hand-written geometry that imported it is gone). No install script. Only the charts chunk imports it (the guard
+ * of `pwa/precache-budget.ts`).
+ * `motion`, `d3-array` and the six `@visx/*` came with the charts as Bklit UI distributes them (t336): the blocks
+ * are copied unchanged into `src/ui/charts/`, and these are the packages those files import. None has an install
+ * script (`trustedDependencies` stays empty); `motion` is the animation library (`framer-motion` and `motion-dom`
+ * under it), the `@visx/*` are the scales, shapes and event helpers (`@visx/vendor` under them carries the d3 modules).
+ * The closure is in `ui-dependency-closure.txt`; only the charts chunk imports them (the same guard).
  * `react-day-picker` and `date-fns` came with the date pickers (t363): the month grid of `src/ui/calendar.tsx` (the
  * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
  * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
@@ -27,12 +32,19 @@ export const UI_ALLOWED_PACKAGES = [
   "@fontsource-variable/geist",
   "@fontsource-variable/geist-mono",
   "@tailwindcss/vite",
+  "@visx/curve",
+  "@visx/event",
+  "@visx/grid",
+  "@visx/responsive",
+  "@visx/scale",
+  "@visx/shape",
   "class-variance-authority",
   "clsx",
-  "d3-path",
+  "d3-array",
   "d3-shape",
   "date-fns",
   "lucide-react",
+  "motion",
   "react-day-picker",
   "tailwind-merge",
   "tailwindcss",
@@ -44,12 +56,11 @@ export const UI_ALLOWED_PACKAGES = [
  * closure under review) but never importable by src/ui/ nor declared as a runtime dependency.
  * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): the Playwright checks
  * evaluate it inside the gallery (no violation in each theme). It has no dependencies and no install script.
- * `@types/d3-path` and `@types/d3-shape` (t285) are types only, no code at run time. `@types/d3-path` is a
- * dependency of the second one; it is declared too because the charts import `d3-path` themselves and the
- * compiler looks for its types from `apps/web`, not from inside the other package.
+ * `@types/d3-shape` (t285) and `@types/d3-array` (t336) are types only, no code at run time; `d3-array` is imported by
+ * the time-series block of Bklit UI and its types are the ones `@visx/vendor` already brings (same version).
  */
 export const UI_TEST_PACKAGES = [
-  "@types/d3-path",
+  "@types/d3-array",
   "@types/d3-shape",
   "axe-core",
 ] as const;

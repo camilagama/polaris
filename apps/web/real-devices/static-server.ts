@@ -22,6 +22,19 @@ const TYPES: Record<string, string> = {
   ".webmanifest": "application/manifest+json",
 };
 const WORKER_PATHS = ["/api/", "/rpc/"];
+/**
+ * A marca que o Worker põe em toda resposta (`X-Request-Id` com um UUID, emenda do ADR 0043): sem ela o app toma a
+ * resposta por falta de resposta do Worker e o laboratório para em "unavailable" em vez de "ready".
+ */
+const workerMark = () => ({ "x-request-id": crypto.randomUUID() });
+const CALENDAR_CHUNK = /^\/assets\/calendar-[\w-]+\.js$/;
+
+/** A chave de teste do fluxo 4 (a suíte liga e desliga): ligada, o servidor do shell responde 503 ao chunk do calendário. */
+export const calendarChunkBlock: { on: boolean } = { on: false };
+
+/** Para `serveBuild({ refuse })`: o chunk do calendário (`/assets/calendar-<hash>.js`, com qualquer query) com a chave ligada. */
+export const refuseCalendarChunk = (pathname: string) =>
+  calendarChunkBlock.on && CALENDAR_CHUNK.test(pathname);
 
 /** Certificado autoassinado e descartável: vive num diretório temporário privado e some ao final. */
 export function selfSignedCertificate() {
@@ -74,18 +87,40 @@ function fileFor(root: string, pathname: string) {
   }
 }
 
-/** Serve um build estático em HTTPS, com fallback de página única; `/api/` e `/rpc/` respondem 404. */
+/**
+ * Serve um build estático em HTTPS, com fallback de página única; `/api/` e `/rpc/` respondem 404 e `/health` 200,
+ * com a marca do Worker, como o Worker responde. `refuse` (só da suíte) responde 503 aos caminhos que ele aceitar.
+ */
 export function serveBuild(
   directory: string,
   port: number,
-  tls: { cert: Buffer; key: Buffer }
+  tls: { cert: Buffer; key: Buffer },
+  options: { refuse?: (pathname: string) => boolean } = {}
 ): Promise<Server> {
   const root = resolve(directory);
   const server = createServer(tls, (request, response) => {
     try {
       const { pathname } = new URL(request.url ?? "/", "https://localhost");
+      if (options.refuse?.(pathname)) {
+        response.writeHead(503, { "cache-control": "no-store" });
+        response.end();
+        return;
+      }
+      if (pathname === "/health") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          ...workerMark(),
+        });
+        response.end('{"status":"ok"}');
+        return;
+      }
       if (WORKER_PATHS.some((prefix) => pathname.startsWith(prefix))) {
-        response.writeHead(404, { "content-type": "application/json" });
+        response.writeHead(404, {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          ...workerMark(),
+        });
         response.end('{"error":"not found"}');
         return;
       }

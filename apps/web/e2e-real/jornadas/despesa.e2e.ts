@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { pickDate } from "../../e2e/date-pickers";
 import { addDays, extremeTimeZone, localDate, monthStart } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
@@ -54,7 +55,7 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
   ) => {
     await form.getByLabel("Valor (R$)").fill(amount);
     await choose(page, form, "Categoria", categoryName);
-    await form.getByLabel("Data de competência").fill(competenceOn);
+    await pickDate(form, "Data de competência", competenceOn);
     await form.getByLabel("Descrição").fill(description);
     await form.getByRole("button", { name: "Registrar despesa" }).click();
     await expect(page.getByText("Despesa registrada.")).toBeVisible();
@@ -129,7 +130,7 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
     await rules.getByLabel("Valor de cada ocorrência (R$)").fill(amount);
     await choose(page, rules, "Categoria", categoryName);
     await choose(page, rules, "Frequência", "Todo mês");
-    await rules.getByLabel("Começa em").fill(startsOn);
+    await pickDate(rules, "Começa em", startsOn);
     await rules.getByLabel("Descrição").fill(description);
     await rules
       .getByRole("button", { name: "Criar despesa recorrente" })

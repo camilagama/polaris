@@ -37,6 +37,16 @@
   --chart-3: oklch(0.47 0.005 85);
   --chart-4: oklch(0.33 0.005 85);
   --chart-5: oklch(0.2 0.005 85);
+  /* one color per entity in the charts (v7, 25/10/2026): sales green, result indigo, ticket orchid; the grey of a
+     comparison series; the four steps of the heat map (sequential, one hue). Contrast in docs/design/contraste-v5.1.md */
+  --chart-sales: oklch(0.6 0.13 162);
+  --chart-result: oklch(0.52 0.19 277);
+  --chart-ticket: oklch(0.6 0.19 340);
+  --chart-context: oklch(0.64 0.005 85);
+  --chart-heat-1: oklch(0.88 0.075 162);
+  --chart-heat-2: oklch(0.77 0.115 162);
+  --chart-heat-3: oklch(0.65 0.125 162);
+  --chart-heat-4: oklch(0.5 0.105 162);
   --sidebar: oklch(0.965 0.005 85);
   --sidebar-foreground: oklch(0.36 0.005 85);
   --sidebar-primary: oklch(0.2 0.005 85);
@@ -97,6 +107,14 @@
   --chart-3: oklch(0.72 0.0035 85);
   --chart-4: oklch(0.83 0.004 85);
   --chart-5: oklch(0.945 0.005 85);
+  --chart-sales: oklch(0.66 0.14 162);
+  --chart-result: oklch(0.62 0.17 277);
+  --chart-ticket: oklch(0.66 0.18 340);
+  --chart-context: oklch(0.55 0.0035 85);
+  --chart-heat-1: oklch(0.37 0.07 162);
+  --chart-heat-2: oklch(0.49 0.1 162);
+  --chart-heat-3: oklch(0.62 0.13 162);
+  --chart-heat-4: oklch(0.77 0.15 162);
   --sidebar: oklch(0.175 0.0035 85);
   --sidebar-foreground: oklch(0.78 0.004 85);
   --sidebar-primary: oklch(0.93 0.005 85);
@@ -118,6 +136,39 @@
   --btn-drop: oklch(0 0 0 / 0.5);
   --card-glow: oklch(1 0 0 / 0.04);
   --card-ring: oklch(0.945 0.005 85 / 0.06);
+}
+
+/* The variables Bklit UI's chart blocks read (src/ui/bklit/charts/), mapped once to the tokens above and to nothing of
+   their own: the ink for the series (`--chart-5`), the mid grey for the second one (`--chart-3`), the border for the
+   grid, the card for the tooltip panel, the foreground at 35% for the crosshair. One block serves both themes, in
+   `@layer base` (the sheet has one `:root` of tokens, which `scripts/generate-color-tokens.mjs` reads): `.dark` is on
+   the same element as `:root` (`applyTheme`), so each one follows the token it points at. The series of the
+   screens take the color of their entity (`--chart-sales`, `--chart-result`, `--chart-ticket`, v7) and a comparison is
+   `--chart-context`, dashed; the ink stays the default of a series with no entity. */
+@layer base {
+  :root {
+    --chart-line-primary: var(--chart-5);
+    --chart-line-secondary: var(--chart-3);
+    --chart-grid: var(--border);
+    --chart-crosshair: color-mix(in oklab, var(--foreground) 35%, transparent);
+    --chart-background: transparent;
+    --chart-foreground: var(--foreground);
+    --chart-foreground-muted: var(--muted-foreground);
+    --chart-label: var(--muted-foreground);
+    --chart-tooltip-background: var(--card);
+    --chart-tooltip-foreground: var(--card-foreground);
+    --chart-tooltip-muted: var(--muted-foreground);
+    --chart-brush-border: var(--border);
+    --chart-indicator-color: var(--foreground);
+    --chart-indicator-secondary-color: var(--muted);
+    --chart-marker-background: var(--muted);
+    --chart-marker-border: var(--border);
+    --chart-marker-foreground: var(--foreground);
+    --chart-marker-badge-background: var(--foreground);
+    --chart-marker-badge-foreground: var(--background);
+    --chart-segment-background: var(--muted);
+    --chart-segment-line: var(--border);
+  }
 }
 
 @theme inline {
@@ -144,6 +195,14 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-sales: var(--chart-sales);
+  --color-chart-result: var(--chart-result);
+  --color-chart-ticket: var(--chart-ticket);
+  --color-chart-context: var(--chart-context);
+  --color-chart-label: var(--chart-label);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -222,6 +281,11 @@
   --default-transition-duration: 140ms;
   --default-transition-timing-function: var(--ease-soft);
   --animate-rise: rise 220ms var(--ease-soft) both;
+  /* The height of the `Collapsible` panel, as the Accordion of shadcn does it (accordion-down and accordion-up in
+     shadcn-tailwind.css: 200 ms, ease-out) with the variable of the Base UI Collapsible. The panel clips only while
+     the animation runs, so the 3 px focus ring of a field at its edge is not cut when it is open. */
+  --animate-collapsible-down: collapsible-down 200ms ease-out;
+  --animate-collapsible-up: collapsible-up 200ms ease-out;
   @keyframes rise {
     from {
       opacity: 0;
@@ -230,11 +294,6 @@
       opacity: 1;
     }
   }
-  /* The height of the `Collapsible` panel, as the Accordion of shadcn does it (accordion-down and accordion-up in
-     shadcn-tailwind.css: 200 ms, ease-out) with the variable of the Base UI Collapsible. The panel clips only while
-     the animation runs, so the 3 px focus ring of a field at its edge is not cut when it is open. */
-  --animate-collapsible-down: collapsible-down 200ms ease-out;
-  --animate-collapsible-up: collapsible-up 200ms ease-out;
   @keyframes collapsible-down {
     from {
       height: 0;
@@ -274,6 +333,11 @@
     --text-value-xl--line-height: 2.25rem;
   }
 }
+
+/* The level of motion (src/lib/motion-level.ts, ADR 0103 "Níveis de movimento"): `motion-full:` runs only when
+   main.tsx wrote `data-motion="full"` on <html>. On a phone (`essential`), with `prefers-reduced-motion` (`none`) or
+   with no attribute, the class is not there and the element is in its final state at once. */
+@custom-variant motion-full (&:is([data-motion="full"] *));
 
 /* Polaris variant and utilities */
 /* Block form: the shorthand with a comma-separated media query compiles to a broken selector. */
@@ -341,6 +405,14 @@
   }
   ::selection {
     background: color-mix(in oklch, var(--mark) 24%, transparent);
+  }
+  /* Below the `full` level of motion (a phone, or no attribute) the charts do not move (t386): the blocks of the Bklit
+     write some transitions inline, with no prop to turn them off (the labels of the y axis sliding to the new scale in
+     500 ms, the fade of the labels of the x axis and of the markers), and they end at once here, as the reduce rule
+     below does for the whole page. The rest of the charts' motion is off by the props and the `MotionConfig` of
+     `src/ui/charts/`. */
+  :root:not([data-motion="full"]) [data-chart] * {
+    transition-duration: 0s !important;
   }
   @media (prefers-reduced-motion: reduce) {
     *,

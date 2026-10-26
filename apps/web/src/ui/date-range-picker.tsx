@@ -21,8 +21,8 @@ import {
   presetRange,
   RANGE_PRESETS,
   type RangePreset,
-  toIsoDate,
   todayOr,
+  toIsoDate,
   validRange,
 } from "@/ui/date-values";
 import { FieldError } from "@/ui/field";
@@ -30,6 +30,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 export interface DateRangePickerProps {
   className?: string | undefined;
+  /** The id of a help text the screen shows under the button, read after the error. */
+  describedBy?: string | undefined;
   disabled?: boolean | undefined;
   /** The error under the button (the screen's text). */
   error?: string | undefined;
@@ -72,51 +74,39 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
 }
 
 /**
- * A period in one field: the button writes "01/10 a 24/10" ("24/10/2026" for one day, "Escolher período" for none)
- * and opens the month in a Popover, with the shortcuts above it (Hoje · 7 dias · Este mês · Mês passado) and
- * "Limpar" below. The first touch on a day marks the start and keeps the popover open; the second closes the range
- * and hands it over, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
- * Closing with only the start marked keeps the range there was. Two months side by side from 1280 px, one below.
+ * What a range editor shows inside a popover: the shortcuts (Hoje · 7 dias · Este mês · Mês passado) above the month and
+ * "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
+ * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
+ * A shortcut hands its range over at once and "Limpar" hands over null. Two months side by side from 1280 px, one
+ * below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
+ * `value`. The `DateRangePicker` and the period editor of the filter bar share it.
  */
-export function DateRangePicker({
-  className,
-  disabled,
-  error,
-  id,
-  label,
-  onValueChange,
+export function DateRangePanel({
+  onCommit,
   today: todayProp,
   value: valueProp,
-}: DateRangePickerProps) {
+}: {
+  /** Called with the closed range, or null for "Limpar"; the caller closes the popover. */
+  onCommit: (range: DateRange | null) => void;
+  today?: IsoDate | undefined;
+  /** The range there is, both ends `AAAA-MM-DD`, or null. */
+  value: DateRange | null;
+}) {
   const value = validRange(valueProp);
-  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DraftRange | undefined>(
     value ?? undefined
   );
-  const errorId = useId();
   const two = useTwoMonths();
   const today = todayOr(todayProp);
   const todayDate = parseIsoDate(today) as Date;
   const pressed = matchingPreset(value, today);
-  // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"
-  const text = value ? formatRange(value, today) : "Escolher período";
-
-  const openChange = useCallback(
-    (next: boolean) => {
-      // every opening starts from the range there is; a half-chosen one is dropped on closing
-      setDraft(value ?? undefined);
-      setOpen(next);
-    },
-    [value]
-  );
 
   const commit = useCallback(
     (range: DateRange | null) => {
-      onValueChange(range);
       setDraft(range ?? undefined);
-      setOpen(false);
+      onCommit(range);
     },
-    [onValueChange]
+    [onCommit]
   );
 
   const pickDay = useCallback(
@@ -148,12 +138,97 @@ export function DateRangePicker({
   const half = draft?.from && !draft.to ? draft.from : undefined;
 
   return (
+    <>
+      {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
+      <fieldset
+        aria-label="Atalhos do período"
+        className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
+      >
+        {RANGE_PRESETS.map((preset) => (
+          <button
+            aria-pressed={preset.value === pressed}
+            className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
+            data-preset={preset.value}
+            key={preset.value}
+            onClick={pickPreset}
+            type="button"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </fieldset>
+      {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
+          and the line that asks for the last day stay in view (the popover itself does not scroll, so with less
+          room than the shortcuts and the footer, as a phone on its side, the month is what gives way); the 4 px
+          around keep the focus ring of a day */}
+      <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
+        <OnDemandCalendar
+          autoFocus
+          defaultMonth={firstMonth(draft, todayDate, two)}
+          mode="range"
+          numberOfMonths={two ? 2 : 1}
+          onSelect={pickDay}
+          selected={selected}
+          // with two months a day of the neighbour would show twice, once in each
+          showOutsideDays={!two}
+          today={todayDate}
+        />
+      </div>
+      <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
+        <p aria-live="polite" className="text-muted-foreground text-support">
+          {half ? `Início ${formatDate(half)}. Escolha o último dia.` : null}
+        </p>
+        {value || half ? (
+          <Button onClick={clear} size="sm" variant="ghost">
+            Limpar
+          </Button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * A period in one field: the button writes "01/10 a 24/10" ("24/10/2026" for one day, "Escolher período" for none)
+ * and opens the editor (`DateRangePanel`) in a Popover. Closing with only the start marked keeps the range there was.
+ */
+export function DateRangePicker({
+  className,
+  describedBy,
+  disabled,
+  error,
+  id,
+  label,
+  onValueChange,
+  today: todayProp,
+  value: valueProp,
+}: DateRangePickerProps) {
+  const value = validRange(valueProp);
+  const [open, setOpen] = useState(false);
+  const errorId = useId();
+  const today = todayOr(todayProp);
+  // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"
+  const text = value ? formatRange(value, today) : "Escolher período";
+
+  const commit = useCallback(
+    (range: DateRange | null) => {
+      onValueChange(range);
+      setOpen(false);
+    },
+    [onValueChange]
+  );
+
+  return (
     <div className={cn("grid gap-1.5", className)}>
-      <Popover onOpenChange={openChange} open={open}>
+      <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger
           render={
             <Button
-              aria-describedby={error ? errorId : undefined}
+              aria-describedby={
+                [error ? errorId : null, describedBy]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               aria-invalid={error ? true : undefined}
               aria-label={`${label}, ${text}`}
               className="w-full justify-start font-normal sm:w-fit"
@@ -175,53 +250,10 @@ export function DateRangePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="w-auto max-w-[calc(100vw-1rem)] gap-3 p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
           initialFocus={false}
         >
-          {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
-          <fieldset
-            aria-label="Atalhos do período"
-            className="m-0 mb-1 flex min-w-0 rounded-md border-0 p-0 shadow-xs"
-          >
-            {RANGE_PRESETS.map((preset) => (
-              <button
-                aria-pressed={preset.value === pressed}
-                className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
-                data-preset={preset.value}
-                key={preset.value}
-                onClick={pickPreset}
-                type="button"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </fieldset>
-          <OnDemandCalendar
-            autoFocus
-            defaultMonth={firstMonth(draft, todayDate, two)}
-            mode="range"
-            numberOfMonths={two ? 2 : 1}
-            onSelect={pickDay}
-            selected={selected}
-            // with two months a day of the neighbour would show twice, once in each
-            showOutsideDays={!two}
-            today={todayDate}
-          />
-          <div className="flex min-h-ctl-sm items-center justify-between gap-2 border-border border-t pt-2">
-            <p
-              aria-live="polite"
-              className="text-muted-foreground text-support"
-            >
-              {half
-                ? `Início ${formatDate(half)}. Escolha o último dia.`
-                : null}
-            </p>
-            {value || half ? (
-              <Button onClick={clear} size="sm" variant="ghost">
-                Limpar
-              </Button>
-            ) : null}
-          </div>
+          <DateRangePanel onCommit={commit} today={today} value={value} />
         </PopoverContent>
       </Popover>
       <FieldError id={errorId}>{error}</FieldError>

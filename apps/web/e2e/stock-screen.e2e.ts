@@ -6,6 +6,12 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import {
+  datePickerButton,
+  FORM_VIEWPORTS,
+  openDatePicker,
+  touchDay,
+} from "./date-pickers";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -421,6 +427,58 @@ for (const width of [360, 320]) {
         .length;
     });
     expect(past).toBe(0);
+  });
+}
+
+/** The instant the movement tests fix as "now" (noon of the 15th, UTC: the same day in every zone of the device). */
+const FIXED_NOW = new Date("2026-10-15T12:00:00.000Z");
+
+/** A day of the device's calendar, `AAAA-MM-DD`, `offset` days from the fixed "now". */
+function deviceDay(offset: number): string {
+  const day = new Date(FIXED_NOW);
+  day.setDate(day.getDate() + offset);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+const brDay = (iso: string) => iso.split("-").reverse().join("/");
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`a data do movimento, a ${viewport.name} px: abre em hoje, não deixa escolher o futuro e o servidor recebe o dia escolhido`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await openStockLab(page, "claro");
+    const sent: string[] = [];
+    await page.route("**/rpc/inventory/receiveStock", (route) => {
+      sent.push(route.request().postData() ?? "");
+      return route.fallback();
+    });
+    const today = deviceDay(0);
+    const yesterday = deviceDay(-1);
+    await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+    await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+      `Data, ${brDay(today)}`
+    );
+
+    const popup = await openDatePicker(page, "Data");
+    // tomorrow cannot be chosen: it is aria-disabled and says why
+    const tomorrow = popup.locator(`button[data-day="${deviceDay(1)}"]`);
+    await expect(tomorrow).toHaveAttribute("aria-disabled", "true");
+    await expect(tomorrow).toHaveAccessibleDescription("Só até hoje");
+    await touchDay(popup, yesterday);
+    await expect(popup).toBeHidden();
+    await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+      `Data, ${brDay(yesterday)}`
+    );
+
+    await page.getByLabel("Quantidade recebida").fill("10");
+    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+    await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+    await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
+    expect(sent.join("")).toContain(yesterday);
   });
 }
 

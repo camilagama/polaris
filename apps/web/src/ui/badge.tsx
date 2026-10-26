@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
    `destructive` (needs attention), and for the state of a goal `secondary` (in progress) and `ink` (reached).
    A badge is never the only signal: an icon and a text go with the color. */
 const badgeVariants = cva(
-  "group/badge focus-ring inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-transparent px-2 font-medium text-xs leading-none transition-colors has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "group/badge focus-ring inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-transparent px-2 font-medium text-xs leading-none motion-full:transition-colors has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&>svg]:pointer-events-none [&>svg]:size-3!",
   {
     defaultVariants: {
       variant: "outline",

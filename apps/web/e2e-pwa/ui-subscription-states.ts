@@ -6,11 +6,13 @@ import { serveHealth } from "./worker-mark";
 
 /**
  * The states of the Assinatura the interface guardrails measure (t328): the real route `/subscription` in the shell,
- * with the session and `billing.readPlan` answered by the test (`page.route`), synthetic data only. Four states, as
- * the other screens (each one loads in every context of the map, and the CI job has a limit of 30 minutes): the
- * offer of a Free store with the form of Pix Automático open, the Pix waiting for the bank, the Pro in force, and the
- * grace with the notice at the top. Each state of the plan, the refusals and the return of the card are proved in
- * `e2e/subscription-screen.e2e.ts` and in the captures of the pull request.
+ * with the session and `billing.readPlan` answered by the test (`page.route`), synthetic data only. Five states, as
+ * few as the other screens (each one loads in every context of the map, and the CI job has a limit of 30 minutes):
+ * the offer of a Free store with the form of Pix Automático open, the Pix waiting for the bank, the Pro in force in
+ * the window of the refund, the dialog of cancelling the renewal (t372), and the grace with the notice at the top and
+ * the page of the charge that failed. Each state of the plan, the refusals, the return of the card and the owner's
+ * commands are proved in `e2e/subscription-screen.e2e.ts`, `e2e/subscription-commands.e2e.ts` and in the captures
+ * of the pull requests.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -111,6 +113,15 @@ async function openSubscription(
   await settle(page);
 }
 
+const ACTIVE_IN_WINDOW = plan({
+  accessEndsAt: "2026-11-24T03:00:00.000Z",
+  cycleMonths: 1,
+  method: "card",
+  nextCharge: { amount: "24.90", on: "2026-11-23" },
+  refund: { amount: "24.90", until: "2026-10-31T02:59:59.999Z", via: "app" },
+  state: "active",
+});
+
 const PIX_RADIO = /Pix Automático/;
 
 async function choosePix(page: Page) {
@@ -122,22 +133,23 @@ async function choosePix(page: Page) {
 }
 
 export const subscriptionStates = {
-  /** The Pro in force: the plan, the use, how it pays. */
+  /** The Pro in force, in the window of the right of withdrawal: the plan, the use, how it pays, its two actions. */
   active: (page: Page) =>
-    openSubscription(
-      page,
-      [
-        plan({
-          accessEndsAt: "2026-11-24T03:00:00.000Z",
-          cycleMonths: 1,
-          method: "card",
-          nextCharge: { amount: "24.90", on: "2026-11-23" },
-          state: "active",
-        }),
-      ],
-      (current) => current.getByText("Próxima cobrança em").first().waitFor()
+    openSubscription(page, [ACTIVE_IN_WINDOW], (current) =>
+      current.getByText("Próxima cobrança em").first().waitFor()
     ),
-  /** The grace: the notice at the top and the plan's own title. */
+  /** "Cancelar a renovação" open: the loss, what stays, the reason and the two buttons (t372). */
+  cancelDialog: (page: Page) =>
+    openSubscription(page, [ACTIVE_IN_WINDOW], async (current) => {
+      await current
+        .getByRole("button", { exact: true, name: "Cancelar a renovação" })
+        .click();
+      await current
+        .getByRole("dialog")
+        .getByLabel("Por que está cancelando? (opcional)")
+        .waitFor();
+    }),
+  /** The grace: the notice at the top, the plan's own title and the page of the charge that failed. */
   grace: (page: Page) =>
     openSubscription(
       page,
@@ -146,6 +158,7 @@ export const subscriptionStates = {
           accessEndsAt: "2026-10-31T03:00:00.000Z",
           cycleMonths: 1,
           method: "card",
+          recovery: "provider_page",
           state: "grace",
         }),
       ],

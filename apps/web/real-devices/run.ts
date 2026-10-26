@@ -30,7 +30,11 @@ import {
   type RunReport,
   writeReport,
 } from "./report";
-import { selfSignedCertificate, serveBuild } from "./static-server";
+import {
+  refuseCalendarChunk,
+  selfSignedCertificate,
+  serveBuild,
+} from "./static-server";
 import { runGate5Suite } from "./suite";
 
 const webRoot = new URL("..", import.meta.url).pathname;
@@ -245,7 +249,10 @@ try {
     await serveBuild(join(webRoot, "dist/offline-poc"), LAB_PORT, certificate)
   );
   servers.push(
-    await serveBuild(join(webRoot, "dist/pwa-e2e"), SHELL_PORT, certificate)
+    // o fluxo 4 liga a chave que faz o chunk do calendário responder 503 (só a suíte, nada no app)
+    await serveBuild(join(webRoot, "dist/pwa-e2e"), SHELL_PORT, certificate, {
+      refuse: refuseCalendarChunk,
+    })
   );
   console.log("Abrindo o BrowserStack Local…");
   tunnel = new Local();

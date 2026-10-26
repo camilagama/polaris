@@ -873,33 +873,49 @@ test.describe("histórico de vendas", () => {
     await expect(list.getByRole("listitem")).toHaveCount(3);
     // no detail without a connection
     await expect(list.getByRole("link")).toHaveCount(0);
-    // below 760 px the filters are in a panel, closed
-    const trigger = page.getByRole("button", { exact: true, name: "Filtrar" });
-    const inPanel = await trigger.isVisible();
-    if (inPanel) {
-      await expect(trigger).toHaveAttribute("aria-expanded", "false");
-      await trigger.click();
-    }
-    await expect(page.getByLabel("Busca")).toBeDisabled();
-
-    await page.getByRole("combobox", { name: "Situação" }).click();
-    await page.getByRole("option", { name: "Canceladas" }).click();
+    // the search by item needs the server: it stays in the "Filtrar" menu with its reason, and cannot be chosen
+    const bar = page.getByRole("search", {
+      exact: true,
+      name: "Filtrar vendas",
+    });
+    const menu = page.getByRole("menu", { name: "Filtrar por" });
+    await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+    await expect(
+      menu.getByRole("menuitem", { name: "Produto vendido" })
+    ).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      menu.getByRole("menuitem", { name: "Produto vendido" })
+    ).toContainText("Só com conexão");
+    // touching it neither chooses it nor closes the menu
+    await menu
+      .getByRole("menuitem", { name: "Produto vendido" })
+      .click({ force: true });
+    await expect(menu).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Produto vendido" })
+    ).toHaveCount(0);
+    await menu.getByRole("menuitem", { name: "Situação" }).click();
+    const status = page.getByRole("dialog", { name: "Situação" });
+    await status
+      .getByRole("button", { exact: true, name: "Canceladas" })
+      .click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
-    await page.getByRole("combobox", { name: "Situação" }).click();
-    await page.getByRole("option", { name: "Todas" }).click();
-    await page.getByLabel("Cliente").fill("angela");
+    await bar.getByRole("button", { name: "Tirar o filtro Situação" }).click();
+    await expect(list.getByRole("listitem")).toHaveCount(3);
+    await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+    await menu.getByRole("menuitem", { name: "Cliente" }).click();
+    const customer = page.getByRole("dialog", { name: "Cliente" });
+    await customer.getByRole("textbox", { name: "Cliente" }).fill("angela");
+    await customer.getByRole("button", { name: "Pronto" }).click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("Ângela Souza");
-    // with a filter on, the trigger of the panel counts it
-    if (inPanel) {
-      await expect(
-        page.getByRole("button", { name: "Filtrar · 1" })
-      ).toBeVisible();
-    }
 
     // back online it is the server's history again, with the links
     await page.getByLabel("Rede disponível").check();
-    await expect(page.getByLabel("Busca")).toBeEnabled();
+    await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+    await expect(
+      menu.getByRole("menuitem", { name: "Produto vendido" })
+    ).not.toHaveAttribute("aria-disabled", "true");
   });
 });
 

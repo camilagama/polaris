@@ -284,6 +284,20 @@ describe("validateGoalDraft", () => {
     expect(result.errors.target).toBeDefined();
   });
 
+  it("asks for the period, by the control's name, when both ends are empty", () => {
+    const empty = validateGoalDraft(draft({ endsOn: "", startsOn: "" }));
+    expect(empty.errors).toEqual({ startsOn: "Escolha o período da meta." });
+    expect(empty.input).toBeNull();
+    expect(
+      validateGoalDraft(draft({ endsOn: "2026-10-31", startsOn: "1999-12-31" }))
+        .errors.startsOn
+    ).toBe("O início não pode ser anterior a 2000.");
+    expect(
+      validateGoalDraft(draft({ endsOn: "2027-12-31", startsOn: "2026-10-01" }))
+        .errors.endsOn
+    ).toBe("O período não pode passar de 366 dias.");
+  });
+
   it("refuses dates that are not dates, before 2000, or reversed", () => {
     expect(
       validateGoalDraft(draft({ startsOn: "" })).errors.startsOn

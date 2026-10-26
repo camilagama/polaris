@@ -277,6 +277,7 @@ import type { WorkerBindings } from "../environment";
 import {
   InvalidEconomicsPeriodError,
   InvalidTopProductsError,
+  type readDailySales,
   type readPeriodSummary,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
@@ -388,6 +389,7 @@ interface RpcRouterDependencies {
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
+  readDailySales: typeof readDailySales;
   readPeriodSummary: typeof readPeriodSummary;
   readAcceptedLegalVersions: typeof readAcceptedLegalVersions;
   recordLegalAcceptance: typeof recordLegalAcceptance;
@@ -1510,6 +1512,7 @@ export function createRpcRouter(
     withAuthenticatedRequestContext: authenticatedRequest,
   });
   const reportHandlers = createReportRpcHandlers({
+    readDailySales: overrides.readDailySales,
     readPeriodSummary: overrides.readPeriodSummary,
     toRpcError,
     withTenantRequestContext: tenantRequest,

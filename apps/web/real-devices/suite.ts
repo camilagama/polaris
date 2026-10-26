@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Browser } from "webdriverio";
 import { restoreNetwork, setNetworkProfile } from "./browserstack-api";
 import { labUrl, SELECTED_FLOWS, shellUrl } from "./config";
+import { calendarChunkBlock } from "./static-server";
 
 type StepStatus = "failed" | "passed" | "skipped";
 export interface StepResult {
@@ -574,12 +577,389 @@ async function shellFlow(
   });
 }
 
+const EXPENSES_LAB = "/offline-screens-lab?screen=expenses";
+const COMPETENCE = "Data de competência";
+const COMPETENCE_BUTTON = `button[aria-label^="${COMPETENCE},"]`;
+const CALENDAR = '[role="dialog"] [role="grid"]';
+
+/** Com `GATE5_SCREENSHOT_DIR`, grava a tela do aparelho (`<plataforma>-<nome>.png`); sem ela, nada. */
+async function screenshot(browser: Browser, name: string) {
+  const directory = process.env.GATE5_SCREENSHOT_DIR;
+  if (!directory) {
+    return;
+  }
+  mkdirSync(directory, { recursive: true });
+  const platform = browser.isIOS ? "ios" : "android";
+  writeFileSync(
+    join(directory, `${platform}-${name}.png`),
+    Buffer.from(await browser.takeScreenshot(), "base64")
+  );
+}
+
+/** A tela de despesas do laboratório no build do shell, com o runtime iniciado (o formulário traz a data). */
+async function openExpensesLab(browser: Browser, network: boolean) {
+  await browser.url(shellUrl(EXPENSES_LAB));
+  await waitForText(browser, "Laboratório das telas offline");
+  await (await control(browser, "Usuário")).setValue(
+    `real-${crypto.randomUUID()}`
+  );
+  if (!network) {
+    await setChecked(browser, "Rede disponível", false);
+  }
+  await startRuntime(browser, "Despesas");
+  await (await browser.$(COMPETENCE_BUTTON)).waitForExist({
+    timeout: WAIT_MS,
+  });
+}
+
+const competenceLabel = async (browser: Browser) =>
+  (await (await browser.$(COMPETENCE_BUTTON)).getAttribute("aria-label")) ?? "";
+
+/** Toca no seletor da data de competência e espera o popover com o calendário ou com a caixa de falha. */
+async function openCompetence(
+  browser: Browser,
+  expect: "calendar" | "failure"
+) {
+  await click(browser, COMPETENCE_BUTTON);
+  const target =
+    expect === "calendar" ? CALENDAR : '[role="dialog"] [role="alert"]';
+  await (await browser.$(target)).waitForDisplayed({
+    timeout: WAIT_MS,
+    timeoutMsg:
+      expect === "calendar"
+        ? "o calendário não apareceu"
+        : "a caixa de falha do calendário não apareceu",
+  });
+}
+
+/**
+ * Toca num elemento do popover sem o `blur` de `tap`: o foco está num dia do calendário, e tirá-lo de dentro do
+ * popover poderia fechá-lo antes do toque.
+ */
+async function tapInPopover(browser: Browser, selector: string) {
+  const element = await browser.$(selector);
+  await element.waitForClickable({ timeout: WAIT_MS });
+  await element.click();
+}
+
+/** O botão do popover cujo texto é `text`. */
+const popoverButton = (text: string) =>
+  `//*[@role="dialog"]//button[normalize-space()="${text}"]`;
+
+const popoverText = (browser: Browser) =>
+  browser.execute(
+    () =>
+      (document.querySelector('[role="dialog"]') as HTMLElement | null)
+        ?.innerText ?? ""
+  );
+
+/** Marca a página: some só se ela for carregada de novo. */
+const RELOAD_MARK = "__gate5NoReload";
+const setReloadMark = (browser: Browser, value: string) =>
+  browser.execute(
+    (name, mark) => {
+      (window as unknown as Record<string, string>)[name] = mark;
+    },
+    RELOAD_MARK,
+    value
+  );
+const reloadMark = (browser: Browser) =>
+  browser.execute(
+    (name) =>
+      (window as unknown as Record<string, string | undefined>)[name] ?? null,
+    RELOAD_MARK
+  );
+
+/** Apaga service workers e caches da origem do shell: a página seguinte não é controlada e nada vem do precache. */
+async function dropServiceWorker(browser: Browser) {
+  await browser.execute(async () => {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(
+      registrations.map((registration) => registration.unregister())
+    );
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  });
+}
+
+async function datePickerFlow(
+  recorder: Recorder,
+  browser: Browser,
+  sessionId: string
+) {
+  recorder.startFlow("4a. Seletor de data: abre e escolhe um dia");
+
+  await recorder.step(
+    "Abrir a tela de despesas do laboratório (build do shell) e iniciar o runtime",
+    async () => {
+      await openExpensesLab(browser, true);
+      return await competenceLabel(browser);
+    }
+  );
+
+  await recorder.step(
+    'Tocar em "Data de competência": o calendário aparece',
+    async () => {
+      await openCompetence(browser, "calendar");
+      await screenshot(browser, "4a-calendario-aberto");
+    }
+  );
+
+  await recorder.step("Tocar num dia: o campo mostra a data", async () => {
+    // o mês aberto é o da data do campo (hoje): o dia 10 dele, ou o 11 se hoje já é 10
+    const [day, month, year] =
+      (await competenceLabel(browser)).split(", ")[1]?.split("/") ?? [];
+    if (!(day && month && year)) {
+      throw new Error("o campo não mostra uma data");
+    }
+    const chosen = day === "10" ? "11" : "10";
+    await tapInPopover(
+      browser,
+      `[role="dialog"] button[data-day="${year}-${month}-${chosen}"]`
+    );
+    const expected = `${COMPETENCE}, ${chosen}/${month}/${year}`;
+    await browser.waitUntil(
+      async () => (await competenceLabel(browser)) === expected,
+      { timeout: WAIT_MS, timeoutMsg: `o campo não chegou a "${expected}"` }
+    );
+    await (await browser.$('[role="dialog"]')).waitForExist({
+      reverse: true,
+      timeout: WAIT_MS,
+      timeoutMsg: "o calendário não fechou depois do toque no dia",
+    });
+    await screenshot(browser, "4a-data-escolhida");
+    return expected;
+  });
+
+  // o BrowserStack não instala o app na tela inicial: "service worker controlando + sem rede" é o substituto de
+  // "instalado", como no fluxo 3
+  recorder.startFlow(
+    "4b. Seletor de data sem rede, com o service worker controlando: o calendário abre do precache"
+  );
+
+  await recorder.step(
+    "Instalar o service worker (pelo shell) e deixar que ele controle a tela de despesas",
+    async () => {
+      await browser.url(shellUrl("/"));
+      await browser.execute(async () => {
+        await navigator.serviceWorker.ready;
+      });
+      await browser.url(shellUrl(EXPENSES_LAB));
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => navigator.serviceWorker.controller !== null),
+        {
+          timeout: WAIT_MS,
+          timeoutMsg: "o service worker não controla a página",
+        }
+      );
+    }
+  );
+
+  await recorder.step(
+    "Sem rede, recarregar e abrir o seletor: o calendário abre",
+    async () => {
+      await goOffline(browser, sessionId);
+      await openExpensesLab(browser, false);
+      await openCompetence(browser, "calendar");
+      await screenshot(browser, "4b-calendario-sem-rede");
+    }
+  );
+
+  await recorder.step("Voltar a rede do aparelho", async () => {
+    await goOnline(browser, sessionId);
+  });
+
+  // um passo falho do 4b pode ter deixado o aparelho sem rede
+  await restoreNetwork(sessionId).catch(() => undefined);
+  const mark = crypto.randomUUID();
+  recorder.startFlow(
+    "4c. Seletor de data com o chunk do calendário respondendo 503 (sem service worker)"
+  );
+
+  try {
+    await recorder.step(
+      "Ligar a chave do 503, apagar o service worker e os caches e abrir a tela sem controle",
+      async () => {
+        calendarChunkBlock.on = true;
+        await browser.url(shellUrl(EXPENSES_LAB));
+        await dropServiceWorker(browser);
+        await openExpensesLab(browser, true);
+        const controlled = await browser.execute(
+          () => navigator.serviceWorker.controller !== null
+        );
+        if (controlled) {
+          throw new Error("a página continua controlada pelo service worker");
+        }
+        await setReloadMark(browser, mark);
+      }
+    );
+
+    if (browser.isIOS) {
+      await recorder.step(
+        'Safari: "O calendário não abriu." e "Recarregar a página", sem recarregar sozinha',
+        async () => {
+          await openCompetence(browser, "failure");
+          const text = await popoverText(browser);
+          if (
+            !(
+              text.includes("O calendário não abriu.") &&
+              text.includes("Recarregar a página")
+            )
+          ) {
+            throw new Error(`a caixa de falha diz: ${JSON.stringify(text)}`);
+          }
+          await screenshot(browser, "4c-falha-recarregar");
+          // a página não recarrega por conta própria: a marca continua lá alguns segundos depois
+          await browser.pause(5000);
+          if ((await reloadMark(browser)) !== mark) {
+            throw new Error("a página recarregou sozinha");
+          }
+          return text.replaceAll("\n", " · ");
+        }
+      );
+
+      await recorder.step(
+        '"Recarregar a página" recarrega só no toque',
+        async () => {
+          if ((await reloadMark(browser)) !== mark) {
+            throw new Error("a página recarregou antes do toque");
+          }
+          await tapInPopover(browser, popoverButton("Recarregar a página"));
+          await browser.waitUntil(
+            async () => (await reloadMark(browser)) === null,
+            {
+              timeout: WAIT_MS,
+              timeoutMsg: "o toque não recarregou a página",
+            }
+          );
+          await waitForText(browser, "Laboratório das telas offline");
+        }
+      );
+    } else {
+      await recorder.step(
+        'Chrome: "O calendário não abriu." e "Tentar novamente"',
+        async () => {
+          await openCompetence(browser, "failure");
+          const text = await popoverText(browser);
+          if (
+            !(
+              text.includes("O calendário não abriu.") &&
+              text.includes("Tentar novamente")
+            )
+          ) {
+            throw new Error(`a caixa de falha diz: ${JSON.stringify(text)}`);
+          }
+          await screenshot(browser, "4c-falha-tentar");
+          return text.replaceAll("\n", " · ");
+        }
+      );
+
+      await recorder.step(
+        'Desligar a chave e tocar em "Tentar novamente": o calendário abre sem recarregar',
+        async () => {
+          calendarChunkBlock.on = false;
+          await tapInPopover(browser, popoverButton("Tentar novamente"));
+          await (await browser.$(CALENDAR)).waitForDisplayed({
+            timeout: WAIT_MS,
+            timeoutMsg: "o calendário não apareceu depois de Tentar novamente",
+          });
+          if ((await reloadMark(browser)) !== mark) {
+            throw new Error("a página recarregou");
+          }
+          await screenshot(browser, "4c-calendario-depois-de-tentar");
+        }
+      );
+    }
+  } finally {
+    calendarChunkBlock.on = false;
+  }
+}
+
+/**
+ * O celular de verdade é o nível de movimento `essential` (t386, ADR 0103 "Níveis de movimento"): a emulação do
+ * Playwright prova o resto (`e2e-pwa/motion-level.e2e.ts`), mas não que um aparelho real dê `pointer: coarse`.
+ */
+async function motionFlow(recorder: Recorder, browser: Browser) {
+  recorder.startFlow("5. Movimento no celular: só o essencial");
+
+  await recorder.step(
+    'Abrir a galeria: o aparelho tem ponteiro grosso e a página está em data-motion="essential"',
+    async () => {
+      await browser.url(shellUrl("/ui-galeria"));
+      await waitForText(browser, "Galeria da interface");
+      const found = await browser.execute(() => ({
+        coarse: matchMedia("(pointer: coarse)").matches,
+        level: document.documentElement.dataset.motion ?? "",
+        size: `${window.innerWidth}×${window.innerHeight}`,
+      }));
+      if (!(found.coarse && found.level === "essential")) {
+        throw new Error(`nível de movimento errado: ${JSON.stringify(found)}`);
+      }
+      return `pointer: coarse; data-motion=${found.level}; janela ${found.size}`;
+    }
+  );
+
+  await recorder.step(
+    "O gráfico aparece pronto: sem o clip da revelação e o mesmo desenho 1,5 s depois",
+    async () => {
+      const drawing = () =>
+        browser.execute(() => {
+          const charts = [...document.querySelectorAll("[data-chart-area]")];
+          return {
+            clips: charts.filter((chart) =>
+              chart.querySelector("svg g[clip-path]")
+            ).length,
+            count: charts.length,
+            path:
+              charts[0]?.querySelector("svg path[stroke]")?.getAttribute("d") ??
+              "",
+          };
+        });
+      await browser.waitUntil(async () => (await drawing()).path !== "", {
+        timeout: WAIT_MS,
+        timeoutMsg: "o gráfico da galeria não foi desenhado",
+      });
+      const first = await drawing();
+      await browser.pause(1500);
+      const later = await drawing();
+      if (first.clips > 0 || later.clips > 0 || later.path !== first.path) {
+        throw new Error(
+          `o gráfico animou: ${first.clips} e ${later.clips} clips, desenho ${later.path === first.path ? "igual" : "mudou"}`
+        );
+      }
+      return `${first.count} gráficos de área, nenhum com o clip da revelação`;
+    }
+  );
+
+  await recorder.step(
+    "A barra de filtros não pediu a camada animada (filter-bar-motion)",
+    async () => {
+      const layer = await browser.execute(
+        () =>
+          performance
+            .getEntriesByType("resource")
+            .filter((entry) =>
+              entry.name.includes("/assets/filter-bar-motion-")
+            ).length
+      );
+      if (layer > 0) {
+        throw new Error("o celular pediu a camada animada da barra");
+      }
+    }
+  );
+}
+
 /** Roda os fluxos escolhidos e sempre tenta devolver a rede do aparelho ao normal ao final. */
 export async function runGate5Suite(browser: Browser, sessionId: string) {
   const recorder = new Recorder();
-  const flows = [customersFlow, saleFlow, shellFlow].filter((_, index) =>
-    SELECTED_FLOWS.includes(index + 1)
-  );
+  const flows = [
+    customersFlow,
+    saleFlow,
+    shellFlow,
+    datePickerFlow,
+    motionFlow,
+  ].filter((_, index) => SELECTED_FLOWS.includes(index + 1));
   try {
     for (const flow of flows) {
       // um fluxo que falhou pode ter deixado o aparelho sem rede

@@ -16,9 +16,18 @@ import {
   TableRow,
 } from "@/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { MoneyText } from "@/ui/hidden-values";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
+  MASKED_MONEY,
+  MASKED_SPOKEN,
+  maskMoney,
+  useHiddenValues,
+} from "../lib/hidden-values";
+import { useIsMobile } from "../lib/use-mobile";
+import {
+  addDays,
   bestDay,
   bestDayText,
   chartValue,
@@ -58,6 +67,10 @@ function moneyText(value: number): string {
   return formatBrlAmount((Math.round(value * 100) / 100).toFixed(2));
 }
 
+const maskedValue = () => MASKED_MONEY;
+const spokenMasked = () => MASKED_SPOKEN;
+const noAxis = () => "";
+
 /** The Início has no form: loading the page again is the way to ask for the chunk once more. */
 function reloadPage() {
   window.location.reload();
@@ -79,6 +92,80 @@ function ChartFailed() {
   );
 }
 
+/**
+ * The days before the period, as many as it has (the "7 dias antes" of the week): only when the series read has them
+ * all. The 30 days before 30 days are not read today (B starts 29 days before today at most), so the 30 days have no
+ * comparison until the reading of the heat map brings them.
+ */
+function comparison(figures: HomeFigures, days: 7 | 30) {
+  if (days !== 7) {
+    return null;
+  }
+  const before = figures.before.daily ?? [];
+  const month = figures.month.daily ?? [];
+  const known = new Set([...before, ...month].map((day) => day.date));
+  const earlier = lastDays(before, month, addDays(figures.today, -days), days);
+  return earlier.every((day) => known.has(day.date)) ? earlier : null;
+}
+
+type Series = ReturnType<typeof lastDays>;
+
+const points = (series: Series) =>
+  series.map((day) => ({
+    label: shortDate(day.date),
+    value: chartValue(day.netSales),
+  }));
+
+/**
+ * The area of the period, in the green of the sales (v7 § 4): a ring on every day of the week (full when it sold,
+ * hollow on a zero) or on the best day and today of the 30, their values written above them, and the days before in
+ * dashed grey with the legend when they were read. With the values hidden the amounts, the axis and the spoken values
+ * are masked; the shape stays.
+ */
+function DayChart({
+  days,
+  earlier,
+  series,
+  summary,
+}: {
+  days: 7 | 30;
+  earlier: Series | null;
+  series: Series;
+  summary: string;
+}) {
+  const [hidden] = useHiddenValues();
+  const still = useIsMobile();
+  return (
+    <OnDemandAreaChart
+      color="var(--chart-sales)"
+      data={points(series)}
+      failed={<ChartFailed />}
+      formatAxis={hidden ? noAxis : axisMoney}
+      formatSpoken={hidden ? spokenMasked : moneyText}
+      formatValue={hidden ? maskedValue : moneyText}
+      height={days === 7 ? 180 : 220}
+      label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
+      legend="Vendas líquidas"
+      markers={days === 7 ? "all" : "key"}
+      name="Vendas"
+      rangeLabel={`Dia, últimos ${days} dias`}
+      still={still}
+      valueLabels
+      {...(hidden ? {} : { axisUnit: "R$" })}
+      {...(earlier
+        ? {
+            secondary: {
+              color: "var(--chart-context)",
+              data: points(earlier),
+              legend: `${days} dias antes`,
+              name: `${days} dias antes`,
+            },
+          }
+        : {})}
+    />
+  );
+}
+
 function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   const series = lastDays(
     figures.before.daily ?? [],
@@ -86,42 +173,46 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
     figures.today,
     days
   );
+  const earlier = comparison(figures, days);
   const total = sumNetSales(series);
   const best = bestDay(series);
   // a period of returns only (net below zero) still has a drawing: "Sem vendas" is for a period with nothing
   const sold = series.some((day) => chartValue(day.netSales) !== 0);
   const range = `de ${shortDate(series[0]?.date ?? figures.today)} a ${shortDate(figures.today)}`;
+  const summary = `Vendas líquidas por dia, ${range}: ${formatBrlAmount(total)} no total`;
   return (
     <div className="grid gap-3">
       <p className="grid gap-0.5">
         <span className="font-semibold text-lg tabular-nums">
-          {formatBrlAmount(total)}
+          <MoneyText text={formatBrlAmount(total)} />
         </span>
         <span className="text-muted-foreground text-support">
           {`Vendas líquidas ${range}`}
         </span>
         {best ? (
-          <span className="text-support">{bestDayText(series)}</span>
+          <span className="flex items-center gap-1.5 text-support">
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full bg-chart-sales"
+            />
+            <span>
+              <MoneyText text={bestDayText(series) ?? ""} />
+            </span>
+          </span>
         ) : null}
       </p>
       {sold ? (
-        <OnDemandAreaChart
-          axisUnit="R$"
-          data={series.map((day) => ({
-            label: shortDate(day.date),
-            value: chartValue(day.netSales),
-          }))}
-          failed={<ChartFailed />}
-          formatAxis={axisMoney}
-          formatValue={moneyText}
-          height={days === 7 ? 180 : 220}
-          label={`Vendas líquidas por dia, ${range}: ${formatBrlAmount(total)} no total`}
-          rangeLabel={`Dia, últimos ${days} dias`}
+        <DayChart
+          days={days}
+          earlier={earlier}
+          series={series}
+          summary={summary}
         />
       ) : (
         <p className="text-muted-foreground">Sem vendas no período.</p>
       )}
-      <Collapsible>
+      {/* the table of the other period opens closed, as it did with a panel for each period */}
+      <Collapsible key={days}>
         <CollapsibleTrigger
           className="group/numbers w-fit"
           render={<Button size="sm" variant="ghost" />}
@@ -129,7 +220,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           Ver os números
           <ChevronDownIcon
             aria-hidden="true"
-            className="transition-transform group-data-[panel-open]/numbers:rotate-180"
+            className="motion-full:transition-transform group-data-[panel-open]/numbers:rotate-180"
             data-icon="inline-end"
           />
         </CollapsibleTrigger>
@@ -148,7 +239,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
                 <TableRow key={day.date}>
                   <TableCell>{formatCalendarDate(day.date)}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatBrlAmount(day.netSales)}
+                    <MoneyText text={formatBrlAmount(day.netSales)} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -187,11 +278,10 @@ export function ChartBlock({
           <TabsTrigger value="7">7 dias</TabsTrigger>
           <TabsTrigger value="30">30 dias</TabsTrigger>
         </TabsList>
-        <TabsContent value="7">
-          <Period days={7} figures={figures} />
-        </TabsContent>
-        <TabsContent value="30">
-          <Period days={30} figures={figures} />
+        {/* one panel for both periods, so the chart is the same instance when the tab changes: no new reveal of a chart
+            that mounted again (the data change at once and the y axis tweens, 500 ms) */}
+        <TabsContent value={days}>
+          <Period days={days === "30" ? 30 : 7} figures={figures} />
         </TabsContent>
       </Tabs>
     </HomeBlock>

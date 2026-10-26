@@ -1,10 +1,11 @@
 /*
  * Copy of `shadcn/tailwind.css` from the shadcn package 4.21.4 (MIT, Copyright (c) 2023 shadcn), ADR 0103:
  * the `shadcn` package (the CLI and its dependencies) does not enter the app, only this file does.
- * Two changes from the original, so it follows our CSS rules:
+ * Two changes from the original, so it follows our CSS rules and what the app uses:
  * - the mask color `#000` is written `oklch(0 0 0)` (colors in OKLCH only, ADR 0103 decision 3);
- * - the unlayered `@media (prefers-reduced-motion) .shimmer` block of the end ("kept for backwards
- *   compatibility") is gone: no CSS outside a layer, and the utility already handles reduced motion.
+ * - the shimmer of the end (the `tw-shimmer` keyframes, the `shimmer*` utilities, their properties and the unlayered
+ *   `@media (prefers-reduced-motion) .shimmer` block) is gone: nothing in the app used it (t386), and an animation with
+ *   no use would be one more to keep under the levels of motion.
  * To update: copy the new version over this one, redo the two changes and the version above.
  */
 @theme inline {
@@ -540,112 +541,4 @@
 
 @utility scroll-fade-none {
   --scroll-fade-mask: none;
-}
-
-/* shimmer */
-@property --shimmer-angle {
-  syntax: "<angle>";
-  inherits: true;
-  initial-value: 20deg;
-}
-@property --shimmer-image {
-  syntax: "*";
-  inherits: false;
-}
-@property --shimmer-text-fill {
-  syntax: "*";
-  inherits: false;
-}
-
-@theme inline {
-  @keyframes tw-shimmer {
-    from {
-      background-position: 100% 0;
-    }
-    to {
-      background-position: 0 0;
-    }
-  }
-}
-
-@utility shimmer {
-  --_spread: var(--shimmer-spread, calc(3ch + 40px));
-  --_base: currentColor;
-  --_highlight: var(
-    --shimmer-color,
-    oklch(from currentColor l c h / calc(alpha * 0.2))
-  );
-  -webkit-text-fill-color: var(--shimmer-text-fill, transparent);
-
-  background-image: var(
-    --shimmer-image,
-    linear-gradient(
-      calc(90deg + var(--shimmer-angle)),
-      var(--_base) calc(50% - var(--_spread)),
-      color-mix(in oklch, var(--_highlight), var(--_base) 50%)
-        calc(50% - var(--_spread) * 0.5),
-      var(--_highlight) 50%,
-      color-mix(in oklch, var(--_highlight), var(--_base) 50%)
-        calc(50% + var(--_spread) * 0.5),
-      var(--_base) calc(50% + var(--_spread))
-    )
-  );
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  background-size: calc(200% + var(--_spread) * 2) 100%;
-  animation: tw-shimmer var(--shimmer-duration, 2s) linear infinite;
-
-  @variant dark {
-    --_highlight: var(
-      --shimmer-color,
-      oklch(from currentColor max(0.8, calc(l + 0.4)) c h / calc(alpha + 0.4))
-    );
-  }
-
-  &:where([dir="rtl"], [dir="rtl"] *) {
-    animation-direction: reverse;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    -webkit-text-fill-color: currentColor;
-    background-image: none;
-    animation: none;
-  }
-}
-
-@utility shimmer-once {
-  animation-iteration-count: 1;
-}
-
-@utility shimmer-reverse {
-  animation-direction: reverse;
-}
-
-@utility shimmer-none {
-  --shimmer-image: none;
-  --shimmer-text-fill: currentColor;
-}
-
-@utility shimmer-color-* {
-  --shimmer-color: --value(--color, [color]);
-  --shimmer-color: color-mix(
-    in oklch,
-    --value(--color, [color]) calc(--modifier(integer) * 1%),
-    transparent
-  );
-}
-
-@utility shimmer-duration-* {
-  --shimmer-duration: calc(--value(integer) * 1ms);
-}
-
-@utility shimmer-spread-* {
-  --shimmer-spread: calc(var(--spacing) * --value(integer));
-  --shimmer-spread: --value([length], [percentage]);
-}
-
-@utility shimmer-angle-* {
-  --shimmer-angle: calc(--value(integer) * 1deg);
 }

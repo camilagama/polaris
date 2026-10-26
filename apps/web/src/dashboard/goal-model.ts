@@ -372,13 +372,18 @@ export function validateGoalDraft(draft: GoalDraft): {
   if (name) {
     errors.name = name;
   }
-  const start = startError(draft.startsOn);
-  if (start) {
-    errors.startsOn = start;
-  }
-  const end = endError(draft.startsOn, draft.endsOn);
-  if (end) {
-    errors.endsOn = end;
+  if (draft.startsOn === "" && draft.endsOn === "") {
+    // the two ends are one control on the form ("Período da meta"): an empty one is named as such
+    errors.startsOn = "Escolha o período da meta.";
+  } else {
+    const start = startError(draft.startsOn);
+    if (start) {
+      errors.startsOn = start;
+    }
+    const end = endError(draft.startsOn, draft.endsOn);
+    if (end) {
+      errors.endsOn = end;
+    }
   }
   const target = parseGoalTarget(draft.kind, draft.target);
   if (!target.ok) {
