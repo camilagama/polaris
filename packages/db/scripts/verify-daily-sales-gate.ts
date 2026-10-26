@@ -7,6 +7,7 @@ import {
   type EconomicsPeriod,
   InvalidEconomicsPeriodError,
   MAX_DAILY_SALES_DAYS,
+  periodSalesSelect,
   readDailySales,
   readPeriodSummary,
 } from "../src/economics-repository";
@@ -40,8 +41,11 @@ import {
  * over generated sales with discounts (fixed and percentage, split among the
  * items, with ties), partial, repeated and full returns, cancellations, sales a
  * second before and after midnight and organizations in different time zones.
- * It also proves the scope (organization, capability, period) and prints the
- * plan of the statement: which index reads `sales`.
+ * It also proves the scope (organization, capability, period) and the plan of
+ * the two statements that read the sales of a period, the series and the
+ * `readPeriodFacts` one of the summary: after a long history is added, both read
+ * `sales` by the (organization_id, occurred_on) index, never the whole
+ * organization.
  *
  * The generated sales come from a seed printed as a `gate-note`; set
  * `POLARIS_DAILY_SALES_SEED` to replay a failure.
@@ -59,6 +63,15 @@ const GENERATED_DAYS = 26;
 const MOVED_BACK_DAYS = 150;
 /** The last sales of each store (generated ones, uuidv7 in creation order) are the ones moved back. */
 const MOVED_BACK_PER_STORE = 8;
+/**
+ * The history of a store older than the 182 days of the series, added only for the plan: with the few sales above the
+ * planner reads `sales` whole, and the index matters only when most of the organization's sales are out of the period.
+ */
+const HISTORY_SALES_PER_STORE = 4000;
+/** The `$n` placeholders of a built statement. */
+const PLACEHOLDER = /\$(\d+)/;
+/** The index of the migration that serves both statements. */
+const OCCURRED_ON_INDEX = "sales_organization_occurred_on_idx";
 
 type AdminPool = ReturnType<typeof createDatabase>["pool"];
 type RuntimeDb = ReturnType<typeof createDatabase>["db"];
@@ -638,31 +651,53 @@ async function indexesOfSales(admin: AdminPool) {
   return result.rows;
 }
 
-/** The plan of the statement: `sales` is read by an index of the organization, never whole. */
-async function explainPlan(admin: AdminPool, fixture: Fixture, store: Store) {
-  const indexes = await indexesOfSales(admin);
-  const plan = await fixture.as(
-    store.tenant,
-    "report:read",
-    async (tx, identity) => {
-      // the gate's tables are tiny: without this the planner reads them whole
-      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
-      const explained = await tx.execute(
-        sql`EXPLAIN (FORMAT JSON) ${dailySalesQuery(identity.organizationId, {
-          from: dateFrom(store.today, 1 - MAX_DAILY_SALES_DAYS),
-          to: store.today,
-        })}`
-      );
-      const [row] = explained.rows as { "QUERY PLAN": [{ Plan: PlanNode }] }[];
-      assert.ok(row);
-      return row["QUERY PLAN"][0].Plan;
-    }
+/**
+ * Older sales for every store, by copying one of its own and dating the copies 200 to 1 000 days back, then ANALYZE:
+ * the statistics are what the planner chooses by. A gate fixture, never done with real data: the sales have no items
+ * (so the trigger that checks the items against the header is off while they go in) and are out of every period the
+ * other proofs read.
+ */
+async function addHistory(admin: AdminPool, stores: Store[]) {
+  await admin.query(
+    "ALTER TABLE public.sales DISABLE TRIGGER sales_confirmation_complete"
   );
-  const scans = scansOf(plan, "sales").map((scan) => ({
-    indexes: indexesOf(scan),
-    node: scan["Node Type"] ?? null,
-  }));
-  assert.ok(scans.length > 0);
+  let added: number | null;
+  try {
+    const inserted = await admin.query(
+      `INSERT INTO public.sales (
+        adjustment_count, command_id, confirmed_at, currency, id, item_count, occurred_at, occurred_on, organization_id,
+        recorded_at
+      )
+      SELECT template.adjustment_count, gen_random_uuid(), template.confirmed_at, template.currency, uuidv7(),
+             template.item_count, template.occurred_at - make_interval(days => older.days),
+             template.occurred_on - older.days, template.organization_id, template.recorded_at
+        FROM (
+          SELECT DISTINCT ON (organization_id) *
+            FROM public.sales
+           WHERE organization_id = ANY($1)
+           ORDER BY organization_id, id
+        ) AS template
+        CROSS JOIN (
+          SELECT 200 + (step * 7919) % 800 AS days FROM generate_series(1, $2::int) AS step
+        ) AS older`,
+      [
+        stores.map((store) => store.tenant.organizationId),
+        HISTORY_SALES_PER_STORE,
+      ]
+    );
+    added = inserted.rowCount;
+  } finally {
+    await admin.query(
+      "ALTER TABLE public.sales ENABLE TRIGGER sales_confirmation_complete"
+    );
+  }
+  assert.equal(added, HISTORY_SALES_PER_STORE * stores.length);
+  await admin.query("ANALYZE public.sales");
+}
+
+/** The indexes of `sales` whose first column is the organization, and those that go on with the date. */
+async function organizationIndexes(admin: AdminPool) {
+  const indexes = await indexesOfSales(admin);
   const byOrganization = indexes
     .filter((index) => index.columns[0] === "organization_id")
     .map((index) => index.name);
@@ -673,28 +708,93 @@ async function explainPlan(admin: AdminPool, fixture: Fixture, store: Store) {
         index.columns[1] === "occurred_on"
     )
     .map((index) => index.name);
-  const used = scans.flatMap((scan) => scan.indexes);
-  for (const scan of scans) {
-    assert.notEqual(scan.node, "Seq Scan");
-    assert.ok(
-      scan.indexes.length > 0 &&
-        scan.indexes.every((name) => byOrganization.includes(name)),
-      `sales read by ${scan.node} on ${scan.indexes.join(", ")}`
-    );
-  }
-  if (byOrganizationAndDate.length > 0) {
-    // once the index exists, the plan must use it
-    assert.ok(
-      used.some((name) => byOrganizationAndDate.includes(name)),
-      `the plan reads sales by ${used.join(", ")}`
-    );
-  }
-  console.log(
-    `gate-note: daily-sales plan ${JSON.stringify({ byOrganizationAndDate, scans })}`
+  return { byOrganization, byOrganizationAndDate };
+}
+
+/** A built statement as the text of `EXPLAIN`: its `$n` placeholders become parameters of the template. */
+function explainedStatement(built: { params: unknown[]; sql: string }) {
+  const parts = built.sql.split(PLACEHOLDER);
+  return sql.join(
+    parts.map((part, position) =>
+      position % 2 === 0
+        ? sql.raw(part)
+        : sql`${built.params[Number(part) - 1]}`
+    )
   );
-  return byOrganizationAndDate.length > 0
-    ? `EXPLAIN: sales is read by the (organization_id, occurred_on) index (${used.join(", ")})`
-    : `EXPLAIN: sales is read by an index led by organization_id (${used.join(", ")}); there is NO (organization_id, occurred_on) index, so the dates are filtered among all the organization's sales`;
+}
+
+type TenantTransaction = Parameters<Parameters<Fixture["as"]>[2]>[0];
+
+/**
+ * The plans of the two statements that read the sales of a period: the daily series and `readPeriodFacts`. The
+ * history above is out of the period, so reading the organization's sales whole (or by an index that only knows the
+ * organization and the confirmation) is the wrong plan: each statement must read `sales` by the
+ * (organization_id, occurred_on) index. The planner chooses freely, with no setting turned off.
+ */
+async function explainPlans(admin: AdminPool, fixture: Fixture, store: Store) {
+  const { byOrganization, byOrganizationAndDate } =
+    await organizationIndexes(admin);
+  assert.ok(
+    byOrganizationAndDate.includes(OCCURRED_ON_INDEX),
+    `no ${OCCURRED_ON_INDEX} on sales (indexes: ${byOrganizationAndDate.join(", ")})`
+  );
+  const period = {
+    from: dateFrom(store.today, 1 - MAX_DAILY_SALES_DAYS),
+    to: store.today,
+  };
+  const statements: [
+    string,
+    (tx: TenantTransaction, organization: string) => ReturnType<typeof sql>,
+  ][] = [
+    [
+      "dailySales",
+      (_tx, organization) => dailySalesQuery(organization, period),
+    ],
+    [
+      "readPeriodFacts",
+      (tx, organization) =>
+        explainedStatement(periodSalesSelect(tx, organization, period).toSQL()),
+    ],
+  ];
+  const used: string[] = [];
+  for (const [name, statement] of statements) {
+    // biome-ignore lint/performance/noAwaitInLoops: two plans, one after the other
+    const plan = await fixture.as(
+      store.tenant,
+      "report:read",
+      async (tx, identity) => {
+        const explained = await tx.execute(
+          sql`EXPLAIN (FORMAT JSON) ${statement(tx, identity.organizationId)}`
+        );
+        const [row] = explained.rows as {
+          "QUERY PLAN": [{ Plan: PlanNode }];
+        }[];
+        assert.ok(row);
+        return row["QUERY PLAN"][0].Plan;
+      }
+    );
+    const scans = scansOf(plan, "sales").map((scan) => ({
+      indexes: indexesOf(scan),
+      node: scan["Node Type"] ?? null,
+    }));
+    assert.ok(scans.length > 0, `${name}: the plan has no scan of sales`);
+    for (const scan of scans) {
+      assert.notEqual(scan.node, "Seq Scan", `${name}: sales read whole`);
+      assert.ok(
+        scan.indexes.length > 0 &&
+          scan.indexes.every((index) => byOrganization.includes(index)),
+        `${name}: sales read by ${scan.node} on ${scan.indexes.join(", ")}`
+      );
+    }
+    const indexes = scans.flatMap((scan) => scan.indexes);
+    assert.ok(
+      indexes.includes(OCCURRED_ON_INDEX),
+      `${name}: the plan reads sales by ${indexes.join(", ")}, not by ${OCCURRED_ON_INDEX}`
+    );
+    console.log(`gate-note: ${name} plan ${JSON.stringify({ scans })}`);
+    used.push(`${name} by ${indexes.join(", ")}`);
+  }
+  return `EXPLAIN, after ${HISTORY_SALES_PER_STORE} older sales per store and ANALYZE, with the planner free: ${used.join("; ")}`;
 }
 
 async function run() {
@@ -770,7 +870,8 @@ async function run() {
       "an organization without sales gets 182 dates of 0.00 and 0; the statement for another organization finds nothing under RLS; another capability, 183 dates, an inverted period and an impossible date are refused"
     );
 
-    tests.push(await explainPlan(admin.pool, fixture, stores[0] as Store));
+    await addHistory(admin.pool, stores);
+    tests.push(await explainPlans(admin.pool, fixture, stores[0] as Store));
 
     console.log(
       JSON.stringify(
