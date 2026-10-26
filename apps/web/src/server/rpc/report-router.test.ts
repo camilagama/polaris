@@ -172,6 +172,8 @@ describe("report.periodSummary", () => {
       60_000
     );
     expect(summary.quality).toMatchObject({
+      // an unknown fee alone: the cost of the goods is fully known
+      cogsCoverage: "full",
       level: "partial",
       missing: ["unknown_processing_fee"],
       processingFeesUnknown: 1,

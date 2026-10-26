@@ -391,6 +391,7 @@ async function run() {
     });
     assert.deepEqual(resultQuality(result), {
       anticipationFeesUnknown: 0,
+      cogsCoverage: "partial",
       itemLines: 4,
       itemLinesWithUnknownCost: 1,
       level: "partial",
@@ -401,7 +402,7 @@ async function run() {
       salesCount: 3,
     });
     tests.push(
-      "the dashboard cards (net sales 443.70, margin 84.88%, 3 sales, ticket 147.90, 7 items) and the quality account (one item without cost, two sales without a processing fee, expenses present, level partial) match the real data"
+      "the dashboard cards (net sales 443.70, margin 84.88%, 3 sales, ticket 147.90, 7 items) and the quality account (one item without cost of four, so the coverage of the cost of the goods is partial, two sales without a processing fee, expenses present, level partial) match the real data"
     );
 
     // -------------------- 2. independent SQL aggregates agree with the engine

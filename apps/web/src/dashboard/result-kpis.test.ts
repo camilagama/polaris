@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { StoredDay } from "../lib/period-summary-cache";
 import {
   comparisonPeriod,
-  noKnownCost,
   rangeText,
   resultChipPeriod,
   resultKpis,
@@ -376,45 +375,6 @@ describe("the cards of the Resultado (v7 § 8)", () => {
   });
 });
 
-describe("no known cost in the period", () => {
-  const lines = { itemLines: 25, itemLinesWithUnknownCost: 3 };
-
-  it("is true when every day up to today has a null result", () => {
-    const unknown = days("2026-10-01", 25, () => ({ operatingResult: null }));
-    expect(noKnownCost(unknown, lines)).toBe(true);
-  });
-
-  it("is true when every item line sold has an unknown cost (the CMV is zero for lack of data)", () => {
-    expect(
-      noKnownCost(days("2026-10-01", 25), {
-        itemLines: 25,
-        itemLinesWithUnknownCost: 25,
-      })
-    ).toBe(true);
-  });
-
-  it("is false for a partial cost: 3 of 25 days, or 3 of 25 lines", () => {
-    const partial = days("2026-10-01", 25, (index) =>
-      index % 8 === 0 ? { operatingResult: null } : {}
-    );
-    expect(noKnownCost(partial, lines)).toBe(false);
-    expect(noKnownCost(days("2026-10-01", 25), lines)).toBe(false);
-  });
-
-  it("is false with no day and no item line (nothing to say of the cost)", () => {
-    expect(noKnownCost([], { itemLines: 0, itemLinesWithUnknownCost: 0 })).toBe(
-      false
-    );
-  });
-
-  it("is false for a copy that never sent the results of the days, when the lines are known", () => {
-    const unsent = days("2026-10-01", 25).map(
-      ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
-    );
-    expect(noKnownCost(unsent, lines)).toBe(false);
-  });
-});
-
 describe("the period before that the result's chip asks the engine for", () => {
   const TODAY = "2026-10-25";
   const lines = { itemLines: 25, itemLinesWithUnknownCost: 3 };
@@ -461,6 +421,26 @@ describe("the period before that the result's chip asks the engine for", () => {
           itemLines: 25,
           itemLinesWithUnknownCost: 25,
         }),
+        TODAY
+      )
+    ).toBeNull();
+  });
+
+  it('reads the coverage from the counts, never from the field: "none" with 3 of 25 lines unknown keeps the chip', () => {
+    const base = summary(days("2026-10-01", 25));
+    expect(
+      resultChipPeriod(
+        { ...base, quality: { ...base.quality, cogsCoverage: "none" } },
+        TODAY
+      )
+    ).toEqual(SEPTEMBER);
+    const none = summary(days("2026-10-01", 25), {
+      itemLines: 25,
+      itemLinesWithUnknownCost: 25,
+    });
+    expect(
+      resultChipPeriod(
+        { ...none, quality: { ...none.quality, cogsCoverage: "full" } },
         TODAY
       )
     ).toBeNull();

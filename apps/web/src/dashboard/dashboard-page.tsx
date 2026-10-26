@@ -244,7 +244,7 @@ function Content({
         summary={summary}
         timezone={timezone}
       />
-      <ResultChain summary={summary} today={today} />
+      <ResultChain summary={summary} />
     </div>
   );
 }

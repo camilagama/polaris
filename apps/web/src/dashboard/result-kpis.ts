@@ -6,9 +6,10 @@ import {
   percentDelta,
 } from "../home/home-kpis";
 import { salesCountText, shortDate } from "../home/home-model";
-import type {
-  StoredDay,
-  StoredPeriodSummary,
+import {
+  cogsCoverageOf,
+  type StoredDay,
+  type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
 import { addDays, dayCount, monthName, type Period } from "./result-period";
 
@@ -107,24 +108,6 @@ function consecutive(days: readonly Day[], period: Period): Day[] {
   return out;
 }
 
-/**
- * True when no cost of the period is known: every day up to today has a null result, or every item line sold has an
- * unknown cost (the server's CMV is then zero by lack of data, not by fact). The margin and the result of the server
- * are then the sales, not an estimate: the cards show a dash, never a number made of costs read as zero.
- */
-export function noKnownCost(
-  days: readonly Day[],
-  quality: { itemLines: number; itemLinesWithUnknownCost: number }
-): boolean {
-  if (days.length > 0 && days.every((day) => day.operatingResult === null)) {
-    return true;
-  }
-  return (
-    quality.itemLines > 0 &&
-    quality.itemLinesWithUnknownCost >= quality.itemLines
-  );
-}
-
 /** The days of the period from its first to today (or to its last, when that is before today): what the cards read. */
 function daysUpToToday(
   daily: readonly Day[],
@@ -135,17 +118,6 @@ function daysUpToToday(
     from: period.from,
     to: period.to < today ? period.to : today,
   });
-}
-
-/** `noKnownCost` of a summary on screen: the one answer the cards and the chain of the Resultado both give. */
-export function summaryHasNoKnownCost(
-  summary: Pick<StoredPeriodSummary, "daily" | "period" | "quality">,
-  today: string
-): boolean {
-  return noKnownCost(
-    daysUpToToday(summary.daily ?? [], summary.period, today),
-    summary.quality
-  );
 }
 
 /** Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9). */
@@ -165,8 +137,9 @@ function resultKindOf(days: readonly Day[]): ResultKind {
 
 /**
  * The period before whose `periodSummary` the chip of the result needs, or null when that chip cannot exist: the
- * result is a sum of known days (`kind: "known"`) and the period has some known cost (`summaryHasNoKnownCost` is
- * false). Only `periodSummary` runs the engine, so the Worker does not read the period before for a card with no chip.
+ * result is a sum of known days (`kind: "known"`) and some cost of the goods of the period is known (`cogsCoverageOf`
+ * is not "none"). Only `periodSummary` runs the engine, so the Worker does not read the period before for a card with
+ * no chip.
  */
 export function resultChipPeriod(
   summary: Pick<StoredPeriodSummary, "daily" | "period" | "quality">,
@@ -175,7 +148,7 @@ export function resultChipPeriod(
   const days = daysUpToToday(summary.daily ?? [], summary.period, today);
   if (
     resultKindOf(days).kind !== "known" ||
-    summaryHasNoKnownCost(summary, today)
+    cogsCoverageOf(summary.quality) === "none"
   ) {
     return null;
   }
