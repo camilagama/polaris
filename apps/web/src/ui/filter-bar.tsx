@@ -94,7 +94,7 @@ function loadMotionLayer(): Promise<MotionLayer> {
  * The animated layer of the pills, only at the `full` level of motion: it comes by `import()`, so a phone never asks
  * for the `motion` chunk. Until it arrives (and if it cannot) the pills are drawn still, with the same DOM and the same
  * final state; the first paint does not animate anyway. Changing between the two remounts the pills, so it waits while
- * an editor is open (`busy`): the focus and the text being typed are never lost to it.
+ * an editor is open or the focus is in the bar (`busy`): the focus and the text being typed are never lost to it.
  */
 function useMotionLayer(level: MotionLevel, busy: boolean): MotionLayer | null {
   const [loaded, setLoaded] = useState(loadedLayer);
@@ -502,7 +502,30 @@ export function FilterBar({
   const [adding, setAdding] = useState<string | null>(null);
   /** The field whose editor is open. */
   const [editing, setEditing] = useState<string | null>(null);
-  const layer = useMotionLayer(level, editing !== null || adding !== null);
+  /** The focus is in the bar (a pill, its X, the menu button): swapping the layer would remount it and drop the focus. */
+  const [focusInside, setFocusInside] = useState(false);
+  useEffect(() => {
+    const bar = searchRef.current;
+    if (!bar) {
+      return;
+    }
+    const focusIn = () => setFocusInside(true);
+    const focusOut = (event: FocusEvent) =>
+      setFocusInside(
+        event.relatedTarget instanceof Node &&
+          bar.contains(event.relatedTarget)
+      );
+    bar.addEventListener("focusin", focusIn);
+    bar.addEventListener("focusout", focusOut);
+    return () => {
+      bar.removeEventListener("focusin", focusIn);
+      bar.removeEventListener("focusout", focusOut);
+    };
+  }, []);
+  const layer = useMotionLayer(
+    level,
+    editing !== null || adding !== null || focusInside
+  );
   const PillList = layer?.PillList ?? StillPillList;
   /** Choosing a field closes the menu and opens an editor: the menu must not take the focus back from it. */
   const handOverFocus = useRef(false);
