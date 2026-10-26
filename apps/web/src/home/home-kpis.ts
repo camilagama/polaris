@@ -29,7 +29,7 @@ type Day = Pick<StoredDay, "date" | "netSales" | "salesCount"> &
 const cents = (amount: string): bigint => Money.from(amount).minorUnits;
 
 /** round-half-up(numerator / denominator), ties away from zero; denominator > 0 (the rule of the server's ticket). */
-function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
+export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
   const negative = numerator < 0n;
   const absolute = negative ? -numerator : numerator;
   const rounded = (absolute * 2n + denominator) / (denominator * 2n);

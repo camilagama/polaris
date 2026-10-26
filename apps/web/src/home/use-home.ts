@@ -22,6 +22,12 @@ import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { isSessionOver } from "../offline/runtime/session-ended";
 import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
+  type DailySeries,
+  isDailySeries,
+  rhythmPeriod,
+} from "./home-rhythm-model";
+import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
+import {
   type BalancesPage,
   homePeriods,
   homeReads,
@@ -74,6 +80,8 @@ export interface HomeState {
   copyRefused: boolean;
   figures: Block<HomeFigures>;
   goals: Block<GoalReadModel[]>;
+  /** The light daily series of the map (`report.dailySales`), read once the figures said what today is. */
+  rhythm: Block<DailySeries>;
   /** The server refused the session or waits for the legal acceptance: the shell says so, the blocks say nothing. */
   sessionRefused: boolean;
   /** S and C together: the lines of the stock in "Precisa de atenção". */
@@ -88,6 +96,7 @@ const LOADING: HomeState = {
   copyRefused: false,
   figures: { status: "loading" },
   goals: { status: "loading" },
+  rhythm: { status: "loading" },
   sessionRefused: false,
   stock: { status: "loading" },
 };
@@ -126,6 +135,51 @@ function keepCopy(
   ) {
     keep(browserStorage());
   }
+}
+
+/**
+ * Keeps the series just read: in the page's memory, with the runtime off too (the daily cache, `rhythm-copy.ts`), and
+ * on the device with it on; nothing once the store refused this person its results, the session ended or "Sair" began.
+ */
+function keepRhythm(
+  organizationId: string,
+  series: DailySeries,
+  today: string,
+  copyRefused: { current: boolean }
+) {
+  if (copyRefused.current || isSessionOver()) {
+    return;
+  }
+  writeRhythmCopy(
+    OFFLINE_RUNTIME_ENABLED ? browserStorage() : null,
+    organizationId,
+    series,
+    today,
+    {
+      offlineRuntimeEnabled: OFFLINE_RUNTIME_ENABLED,
+      signingOut: isSigningOut(),
+    }
+  );
+}
+
+/**
+ * The series of the map read on the store's today (the daily cache): from the page's memory, or with the runtime on
+ * from the device; nothing once the store refused this person its results.
+ */
+function rhythmOfToday(
+  organizationId: string,
+  period: { from: string; to: string },
+  today: string,
+  copyRefused: { current: boolean }
+): DailySeries | null {
+  return copyRefused.current
+    ? null
+    : todaysRhythmCopy(
+        OFFLINE_RUNTIME_ENABLED ? browserStorage() : null,
+        organizationId,
+        period,
+        today
+      );
 }
 
 /** Trying again only helps when the server did not answer or was out; a refusal stays a refusal. */
@@ -266,7 +320,7 @@ export function useHome(
 
   /** Sets a block, if the answer is of the newest read; a refusal of the session goes to the shell instead. */
   const settle = useCallback(
-    <K extends "checklist" | "figures" | "goals" | "stock">(
+    <K extends "checklist" | "figures" | "goals" | "rhythm" | "stock">(
       ticket: number,
       key: K,
       outcome: { block: HomeState[K] } | { error: unknown },
@@ -282,7 +336,7 @@ export function useHome(
       }
       if (
         "error" in outcome &&
-        (key === "figures" || key === "goals") &&
+        (key === "figures" || key === "goals" || key === "rhythm") &&
         refusesCopy(outcome.error)
       ) {
         // what the server refuses now, the device does not show from its copy (ADR 0056)
@@ -458,14 +512,74 @@ export function useHome(
     [organizationId, reads.inventory, reads.unknownCost, settle]
   );
 
-  /** The figures, then the checklist that depends on them; the stock waits for them only to decide on C. */
+  // the figures of the last read: "Tentar novamente" of the map reads the series of their today again
+  const lastFigures = useRef<HomeFigures | null>(null);
+
+  /**
+   * The series of the map, from the first Sunday of the 26 weeks to the eve of the month (the month is the figures').
+   * Without the figures it is not read: the map is drawn only beside them. The copy is written only after the answer,
+   * with the guard asked then: a read still in flight when "Sair" starts writes nothing. A copy read on the store's
+   * today is the series without asking again (one read a day per device, CPU-1e); only `force`, the gesture of
+   * "Tentar novamente", reads past it. It is served only with `figures` read from the server in this load, which asks
+   * the same capability as `dailySales` (`report:read`): a person who lost it gets the refusal there, and the refusal
+   * clears the series first.
+   */
+  const loadRhythm = useCallback(
+    async (
+      ticket: number,
+      figures: HomeFigures | null,
+      keep: boolean,
+      force = false
+    ) => {
+      if (!reads.report) {
+        settle(ticket, "rhythm", { block: { status: "hidden" } });
+        return;
+      }
+      if (figures === null) {
+        return;
+      }
+      lastFigures.current = figures;
+      const period = rhythmPeriod(figures.today);
+      const kept = force
+        ? null
+        : rhythmOfToday(organizationId, period, figures.today, copyRefused);
+      if (kept) {
+        settle(ticket, "rhythm", { block: { data: kept, status: "ready" } });
+        return;
+      }
+      if (!keep) {
+        settle(ticket, "rhythm", { block: { status: "loading" } });
+      }
+      try {
+        const series = await readWithRetry(() =>
+          orpcClient.report.dailySales({ organizationId, ...period })
+        );
+        if (!isDailySeries(series, period)) {
+          // not what the server sends (a captive portal page, a proxy): as if it had not answered
+          throw new Error("daily_sales_malformed");
+        }
+        if (ticket === sequence.current.numbers) {
+          keepRhythm(organizationId, series, figures.today, copyRefused);
+        }
+        settle(ticket, "rhythm", { block: { data: series, status: "ready" } });
+      } catch (error) {
+        if (!(await noConnection(error))) {
+          settle(ticket, "rhythm", { error }, keep);
+        }
+      }
+    },
+    [organizationId, reads.report, settle]
+  );
+
+  /** The figures, then the checklist and the map that depend on them; the stock waits for them only to decide on C. */
   const loadNumbers = useCallback(
     (ticket: number, keep: boolean) => {
       const figures = loadFigures(ticket, keep);
       const checklist = figures.then((read) => loadChecklist(ticket, read));
-      return { checklist, figures };
+      const rhythm = figures.then((read) => loadRhythm(ticket, read, keep));
+      return { checklist, figures, rhythm };
     },
-    [loadChecklist, loadFigures]
+    [loadChecklist, loadFigures, loadRhythm]
   );
 
   /** The figures and what hangs on them (the checklist, and the stock, which waits for them only to decide on C). */
@@ -473,8 +587,9 @@ export function useHome(
     (keep: boolean) => {
       sequence.current.numbers += 1;
       const ticket = sequence.current.numbers;
-      const { checklist, figures } = loadNumbers(ticket, keep);
+      const { checklist, figures, rhythm } = loadNumbers(ticket, keep);
       checklist.catch(() => undefined);
+      rhythm.catch(() => undefined);
       loadStock(ticket, figures, keep).catch(() => undefined);
     },
     [loadNumbers, loadStock]
@@ -564,7 +679,24 @@ export function useHome(
     [loadNumbersAndStock]
   );
   const retryGoals = useCallback(() => loadGoalsAgain(false), [loadGoalsAgain]);
+  // "Tentar novamente" of the map: only its series, for the today of the figures on the screen
+  const retryRhythm = useCallback(() => {
+    loadRhythm(
+      sequence.current.numbers,
+      lastFigures.current,
+      false,
+      true
+    ).catch(() => undefined);
+  }, [loadRhythm]);
   /** The server's clock as the device estimates it from the last answer (the device's own before any). */
   const serverNow = useCallback(() => Date.now() + skew.current, []);
-  return { online, reads, retryFigures, retryGoals, serverNow, state };
+  return {
+    online,
+    reads,
+    retryFigures,
+    retryGoals,
+    retryRhythm,
+    serverNow,
+    state,
+  };
 }

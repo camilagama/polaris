@@ -22,6 +22,10 @@ import { dirname, resolve, sep } from "node:path";
  * script (`trustedDependencies` stays empty); `motion` is the animation library (`framer-motion` and `motion-dom`
  * under it), the `@visx/*` are the scales, shapes and event helpers (`@visx/vendor` under them carries the d3 modules).
  * The closure is in `ui-dependency-closure.txt`; only the charts chunk imports them (the same guard).
+ * `@visx/heatmap` and `@visx/group` came with the map of the Início (t394), Bklit UI's `HeatmapChart` as distributed:
+ * the grid of cells (`HeatmapRect`) and the `<g>` around it. `@visx/group` was already in the closure under
+ * `@visx/shape` and `@visx/grid` (same version); `@visx/heatmap` brings only it and `classnames`, both already there.
+ * No install script. Only the heat map chunk imports `@visx/heatmap` (the guard of `pwa/precache-budget.ts`).
  * `react-day-picker` and `date-fns` came with the date pickers (t363): the month grid of `src/ui/calendar.tsx` (the
  * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
  * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
@@ -35,6 +39,8 @@ export const UI_ALLOWED_PACKAGES = [
   "@visx/curve",
   "@visx/event",
   "@visx/grid",
+  "@visx/group",
+  "@visx/heatmap",
   "@visx/responsive",
   "@visx/scale",
   "@visx/shape",
