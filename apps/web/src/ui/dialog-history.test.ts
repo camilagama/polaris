@@ -98,7 +98,7 @@ function openDialog(
 function setUp(entries: unknown[] = [null]) {
   const history = new FakeHistory(entries);
   const stack = createDialogEntries(history, "load");
-  history.onPopState(() => stack.settle());
+  history.onPopState(() => stack.landed());
   return { history, stack };
 }
 
@@ -109,7 +109,7 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     expect(history.length).toBe(2);
     expect(entry.depth).toBe(1);
     expect(history.state).toMatchObject({ aba: "metas" });
-    expect(entryOf(history.state)).toEqual(entry);
+    expect(entryOf(history.state)).toEqual({ depth: 1, id: entry.id });
   });
 
   it("o voltar fecha o Dialog e o voltar seguinte sai da tela", () => {
@@ -147,7 +147,7 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     history.land();
     expect(above.closedByBack).toBe(true);
     expect(below.closedByBack).toBe(false);
-    expect(entryOf(history.state)).toEqual(below.entry);
+    expect(entryOf(history.state)?.id).toBe(below.entry?.id);
 
     history.back();
     history.land();
@@ -162,7 +162,7 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     above.closeItself();
     history.land();
     expect(below.closedByBack).toBe(false);
-    expect(entryOf(history.state)).toEqual(below.entry);
+    expect(entryOf(history.state)?.id).toBe(below.entry?.id);
   });
 
   it("os dois fechados ao mesmo tempo: a entrada que sobra é pulada e o voltar seguinte sai", () => {
@@ -173,6 +173,28 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     above.closeItself();
     below.closeItself();
     history.land();
+    expect(history.index).toBe(1);
+    expect(entryOf(history.state)).toBeNull();
+  });
+
+  it("reabrir antes de o passo do fechamento chegar: a entrada nova espera o passo e o Dialog novo fica aberto", () => {
+    const { history, stack } = setUp([null, null]);
+    const first = openDialog(history, stack);
+    first.closeItself();
+    // the step back is on its way, and the person opens the form again
+    const again = openDialog(history, stack);
+    expect(again.entry?.depth).toBeNull();
+    history.land();
+    expect(again.closedByBack).toBe(false);
+    expect(history.length).toBe(3);
+    expect(entryOf(history.state)).toEqual({
+      depth: 1,
+      id: again.entry?.id,
+    });
+    // and the step back closes it, and the next one leaves the screen
+    history.back();
+    history.land();
+    expect(again.closedByBack).toBe(true);
     expect(history.index).toBe(1);
     expect(entryOf(history.state)).toBeNull();
   });
@@ -190,7 +212,7 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     const left = { polarisDialog: { depth: 1, id: "older-load-1" } };
     const history = new FakeHistory([null, null, left]);
     const stack = createDialogEntries(history, "load");
-    history.onPopState(() => stack.settle());
+    history.onPopState(() => stack.landed());
     stack.settle();
     history.land();
     expect(history.index).toBe(1);

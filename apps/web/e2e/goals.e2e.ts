@@ -619,6 +619,42 @@ test.describe("no celular, o voltar fecha a Nova meta", () => {
     await expect(page).toHaveURL(BEFORE);
   });
 
+  test("com o envio em andamento o voltar não fecha, a entrada volta, e o envio termina como sempre", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    await page.goto(BEFORE);
+    await openGoals(page, server);
+    // the answer to the save waits for the test
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/rpc/goal/create", async (route) => {
+      await answered;
+      await route.fallback();
+    });
+    const openForm = page.getByRole("button", { name: "Nova meta" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Nova meta" });
+    await target(page).fill("1.000,00");
+    await dialog.getByRole("button", { name: "Criar meta" }).click();
+
+    await page.goBack();
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(LAB_ADDRESS);
+    // the entry is back on top: the next step back is the dialog's again
+    await expect.poll(() => dialogEntry(page)).not.toBeNull();
+
+    answer();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(server.created).toHaveLength(1);
+    await expect.poll(() => dialogEntry(page)).toBeNull();
+    await page.goBack();
+    await expect(page).toHaveURL(BEFORE);
+  });
+
   test("aba recém-aberta: a entrada do Dialog é a primeira, o voltar fecha e fica na tela", async ({
     page,
   }) => {
@@ -661,9 +697,19 @@ test.describe("no celular, o voltar fecha a Nova meta", () => {
     await expect.poll(() => dialogEntry(page)).not.toBeNull();
 
     await page.reload();
-    // the entry left behind is stepped over as the screen loads
+    // the entry left behind is stepped over as the screen loads, inside the same page: no second load
     await expect.poll(() => dialogEntry(page)).toBeNull();
     await expect(page).toHaveURL(LAB_ADDRESS);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            performance.getEntriesByType("navigation")[0] as
+              | PerformanceNavigationTiming
+              | undefined
+          )?.type
+      )
+    ).toBe("reload");
     await startLab(page);
     await page.getByRole("tab", { name: "Metas" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

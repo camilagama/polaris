@@ -1017,7 +1017,17 @@ async function dialogBackFlow(recorder: Recorder, browser: Browser) {
       if (kept !== "Camiseta azul") {
         throw new Error(`o rascunho não voltou: "${kept}"`);
       }
-      await click(browser, "[role=dialog] [data-slot=dialog-close]");
+      // o × do canto: o "Fechar" do leitor de tela (o "Cancelar" do rodapé também fecha, mas é outro botão)
+      const closeButton = await browser.execute(
+        () =>
+          [...document.querySelectorAll("[role=dialog] button")].find(
+            (button) => button.textContent?.trim() === "Fechar"
+          ) ?? null
+      );
+      if (!closeButton) {
+        throw new Error("o × do formulário não foi encontrado");
+      }
+      await tap(browser, await browser.$(closeButton as never));
       await browser.waitUntil(
         async () =>
           !(await dialogOpen(browser)) && (await dialogEntry(browser)) === null,
@@ -1027,9 +1037,55 @@ async function dialogBackFlow(recorder: Recorder, browser: Browser) {
       await browser.waitUntil(
         async () =>
           (await browser.execute(() => location.pathname)) === "/termos",
-        { timeout: WAIT_MS, timeoutMsg: "o voltar seguinte não saiu da galeria" }
+        {
+          timeout: WAIT_MS,
+          timeoutMsg: "o voltar seguinte não saiu da galeria",
+        }
       );
       return "rascunho mantido; o voltar seguinte foi para /termos";
+    }
+  );
+
+  await recorder.step(
+    "Recarregar com o formulário aberto: a galeria volta sem ele e o primeiro voltar sai (o detalhe diz o tipo da carga)",
+    async () => {
+      await browser.url(shellUrl("/ui-galeria"));
+      await waitForText(browser, "Galeria da interface");
+      await clickButtonContaining(browser, "Abrir formulário");
+      await waitForText(browser, "Novo cadastro");
+      await browser.refresh();
+      await waitForText(browser, "Galeria da interface");
+      // a entrada que sobrou é pulada na carga; uma segunda carga apareceria como "back_forward"
+      await browser.waitUntil(
+        async () => (await dialogEntry(browser)) === null,
+        { timeout: WAIT_MS, timeoutMsg: "a entrada que sobrou não foi pulada" }
+      );
+      await browser.pause(1000);
+      const loaded = await browser.execute(() => ({
+        dialog: document.querySelector("[role=dialog]") !== null,
+        navigation:
+          (
+            performance.getEntriesByType("navigation")[0] as
+              | PerformanceNavigationTiming
+              | undefined
+          )?.type ?? "",
+        path: location.pathname,
+      }));
+      if (loaded.dialog || loaded.path !== "/ui-galeria") {
+        throw new Error(
+          `a recarga não voltou à galeria sem o formulário: ${JSON.stringify(loaded)}`
+        );
+      }
+      await browser.back();
+      await browser.waitUntil(
+        async () =>
+          (await browser.execute(() => location.pathname)) === "/termos",
+        {
+          timeout: WAIT_MS,
+          timeoutMsg: "o primeiro voltar depois da recarga não saiu da galeria",
+        }
+      );
+      return `navegação da carga: ${loaded.navigation}`;
     }
   );
 }

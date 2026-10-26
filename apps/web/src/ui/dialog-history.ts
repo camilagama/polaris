@@ -14,8 +14,9 @@ const STATE_KEY = "polarisDialog";
 /** Below `md` (760 px), where the form dialog is the whole screen: the exact complement of `md:`. */
 export const PHONE_QUERY = "not all and (min-width: 47.5rem)";
 
+/** The place of an open form dialog in the stack: its depth is known once its entry is in the history. */
 export interface DialogEntry {
-  readonly depth: number;
+  depth: number | null;
   readonly id: string;
 }
 
@@ -41,25 +42,52 @@ export function entryOf(state: unknown): DialogEntry | null {
 
 /**
  * The stack of one page. `load` tells the ids of this page from those a reload left in the history, which belong to no
- * open dialog.
+ * open dialog. A step back the stack asked for lands later (the browser queues it): a dialog that opens meanwhile writes
+ * its entry only when the step has landed, or the step would take the new entry instead of the old one.
  */
 export function createDialogEntries(history: EntryHistory, load: string) {
   const open = new Set<string>();
+  const waiting: DialogEntry[] = [];
+  let stepsOnTheWay = 0;
   let opened = 0;
+
+  const stepBack = () => {
+    stepsOnTheWay += 1;
+    history.back();
+  };
+  const write = (entry: DialogEntry) => {
+    entry.depth = (entryOf(history.state)?.depth ?? 0) + 1;
+    const base =
+      typeof history.state === "object" && history.state !== null
+        ? history.state
+        : {};
+    history.pushState(
+      { ...base, [STATE_KEY]: { depth: entry.depth, id: entry.id } },
+      ""
+    );
+  };
+  /**
+   * An entry with no open dialog is stepped over, so the step back that follows leaves the screen: one left by a
+   * reload, reached by a step forward, or left by a dialog closed with the one under it (both at once).
+   */
+  const settle = () => {
+    const current = entryOf(history.state);
+    if (current && !open.has(current.id)) {
+      stepBack();
+    }
+  };
+
   return {
     /** A form dialog opened: its entry goes on top, at the same address, keeping what the state had. */
     push(): DialogEntry {
       opened += 1;
-      const entry = {
-        depth: (entryOf(history.state)?.depth ?? 0) + 1,
-        id: `${load}-${opened}`,
-      };
-      const base =
-        typeof history.state === "object" && history.state !== null
-          ? history.state
-          : {};
-      history.pushState({ ...base, [STATE_KEY]: entry }, "");
+      const entry: DialogEntry = { depth: null, id: `${load}-${opened}` };
       open.add(entry.id);
+      if (stepsOnTheWay > 0) {
+        waiting.push(entry);
+      } else {
+        write(entry);
+      }
       return entry;
     },
     /** The step back took the entry and closes the dialog: nothing to take out. */
@@ -69,22 +97,32 @@ export function createDialogEntries(history: EntryHistory, load: string) {
     /** The dialog closed by itself: its entry goes, if it is still the current one. */
     remove(entry: DialogEntry) {
       open.delete(entry.id);
-      if (entryOf(history.state)?.id === entry.id) {
-        history.back();
+      const queued = waiting.indexOf(entry);
+      if (queued >= 0) {
+        waiting.splice(queued, 1);
+      } else if (entryOf(history.state)?.id === entry.id) {
+        stepBack();
       }
     },
-    /**
-     * On the load and after every step: an entry with no open dialog is stepped over, so the step back that follows
-     * leaves the screen. A dialog closed with the one under it (both at once) leaves its entry for this to take.
-     */
-    settle() {
-      const current = entryOf(history.state);
-      if (current && !open.has(current.id)) {
-        history.back();
+    settle,
+    /** Every step that lands, before the dialogs hear of it: once the stack's own steps are done, it settles. */
+    landed() {
+      stepsOnTheWay = Math.max(0, stepsOnTheWay - 1);
+      if (stepsOnTheWay > 0) {
+        return;
+      }
+      settle();
+      if (stepsOnTheWay === 0) {
+        for (const entry of waiting.splice(0)) {
+          write(entry);
+        }
       }
     },
     /** After a step back: is the entry of this dialog gone? A dialog over it does not take it. */
     taken(entry: DialogEntry): boolean {
+      if (entry.depth === null) {
+        return false;
+      }
       const current = entryOf(history.state);
       const depth = current?.depth ?? 0;
       return (
@@ -95,11 +133,14 @@ export function createDialogEntries(history: EntryHistory, load: string) {
   };
 }
 
-export type DialogEntries = ReturnType<typeof createDialogEntries>;
+type DialogEntries = ReturnType<typeof createDialogEntries>;
 
 let pageEntries: DialogEntries | null = null;
 
-/** The stack of this page, made the first time a dialog asks; it steps over what a reload left and keeps doing so. */
+/**
+ * The stack of this page, made as `dialog.tsx` loads: it steps over what a reload left, and hears every step before the
+ * dialogs do (its listener is the first).
+ */
 export function dialogEntries(): DialogEntries {
   if (!pageEntries) {
     const entries = createDialogEntries(
@@ -107,8 +148,8 @@ export function dialogEntries(): DialogEntries {
       Math.random().toString(36).slice(2)
     );
     pageEntries = entries;
+    window.addEventListener("popstate", () => entries.landed());
     entries.settle();
-    window.addEventListener("popstate", () => entries.settle());
   }
   return pageEntries;
 }
