@@ -1,12 +1,12 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { emptyDraft, ProductForm } from "./product-form";
+import { emptyDraft, ProductForm, productFormHasErrors } from "./product-form";
 
 /**
  * The form of a product, drawn without a browser: which fields a new product shows at first sight and which wait
- * under "Mais detalhes". The behavior of the fields (focus, errors, the retry) is proved in the browser
- * (e2e/products-screen.e2e.ts) and in the model (product-opening-model.test.ts).
+ * under "Mais detalhes". The dialog around it (tabs, buttons, focus, errors in a hidden tab, the retry) is proved in the
+ * browser (e2e/products-screen.e2e.ts) and the fields in the model (product-opening-model.test.ts).
  */
 const noop = () => undefined;
 
@@ -29,11 +29,10 @@ function draw(editingProduct: ProductReadModel | null): string {
     <ProductForm
       categories={[]}
       draft={{ ...emptyDraft, name: editingProduct?.name ?? "" }}
-      editingProduct={editingProduct}
-      isPending={false}
-      onCancel={noop}
+      editing={editingProduct !== null}
       onChange={noop}
       onSubmit={noop}
+      showRequired={false}
     />
   );
 }
@@ -87,10 +86,15 @@ describe("form of a new product", () => {
     expect(markup.split(">R$<")).toHaveLength(3);
   });
 
-  it("says once what an empty quantity does, and labels the button for the new product", () => {
+  it("says once what an empty quantity does, and where the variants and the images go", () => {
     expect(markup).toContain("Deixe vazio se ainda não tem estoque.");
-    expect(markup).toContain("Cadastrar produto");
-    expect(markup).toContain("Novo produto");
+    expect(markup).toContain(
+      "Variações (cor, tamanho), SKU e fotos ficam nas abas do produto depois de salvar."
+    );
+  });
+
+  it("is the form the footer of the dialog submits, from any tab", () => {
+    expect(tagWith(markup, "<form")).toContain('id="product-form"');
   });
 });
 
@@ -101,8 +105,7 @@ describe("form of an edit", () => {
     expect(markup).not.toContain("Preço de tabela");
     expect(markup).not.toContain("Quantos você tem agora");
     expect(markup).not.toContain("Custo de cada unidade");
-    expect(markup).toContain("Editar produto");
-    expect(markup).toContain("Salvar alterações");
+    expect(markup).not.toContain("Variações (cor, tamanho)");
   });
 
   it("opens the details, where the category and the description are what changes", () => {
@@ -110,5 +113,30 @@ describe("form of an edit", () => {
     expect(tagWith(markup, 'data-slot="collapsible-content"')).not.toContain(
       'hidden=""'
     );
+  });
+});
+
+describe("errors of the data", () => {
+  it("a new product needs a name and an opening that reads", () => {
+    expect(productFormHasErrors(emptyDraft, false)).toBe(true);
+    expect(productFormHasErrors({ ...emptyDraft, name: "Boné" }, false)).toBe(
+      false
+    );
+    expect(
+      productFormHasErrors(
+        { ...emptyDraft, name: "Boné", quantity: "abc" },
+        false
+      )
+    ).toBe(true);
+  });
+
+  it("an edit needs only the name: the stock is not edited there", () => {
+    expect(productFormHasErrors({ ...emptyDraft, name: " " }, true)).toBe(true);
+    expect(
+      productFormHasErrors(
+        { ...emptyDraft, name: "Boné", quantity: "abc" },
+        true
+      )
+    ).toBe(false);
   });
 });

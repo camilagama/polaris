@@ -1,4 +1,13 @@
-import { useEffect, useId, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 /**
  * Which screens hold work that was typed or picked and not sent yet. Each screen says so itself, from
@@ -34,15 +43,49 @@ export function hasUnsentWork(): boolean {
   return dirtySources.size > 0;
 }
 
+/**
+ * A part of a screen that wants to know whether the forms inside it hold unsent work (a tab of the product dialog,
+ * whose save must not close the dialog over the variants typed in another tab). The page-wide sign is the same.
+ */
+type UnsentWorkReport = (source: string, dirty: boolean) => void;
+const UnsentWorkScopeContext = createContext<UnsentWorkReport | null>(null);
+export const UnsentWorkScope = UnsentWorkScopeContext.Provider;
+
+/** The report a scope gives to the forms inside it, and whether any of them holds unsent work now. */
+export function useUnsentWorkScope(): [UnsentWorkReport, boolean] {
+  const [sources, setSources] = useState<ReadonlySet<string>>(new Set());
+  const report = useCallback((source: string, dirty: boolean) => {
+    setSources((current) => {
+      if (current.has(source) === dirty) {
+        return current;
+      }
+      const next = new Set(current);
+      if (dirty) {
+        next.add(source);
+      } else {
+        next.delete(source);
+      }
+      return next;
+    });
+  }, []);
+  return useMemo(() => [report, sources.size > 0], [report, sources]);
+}
+
 /** A screen's own sign that its form was changed and not sent. It clears when the screen leaves. */
 export function useReportUnsentWork(dirty: boolean): void {
   const source = useId();
+  const scope = useContext(UnsentWorkScopeContext);
   useEffect(() => {
     if (!dirty) {
       return;
     }
-    return markUnsentWork(source);
-  }, [dirty, source]);
+    const clear = markUnsentWork(source);
+    scope?.(source, true);
+    return () => {
+      clear();
+      scope?.(source, false);
+    };
+  }, [dirty, scope, source]);
 }
 
 /** Whether any screen on the page holds work that is not sent (the session notice's warning). */
