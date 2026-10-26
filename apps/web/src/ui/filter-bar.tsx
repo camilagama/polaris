@@ -512,8 +512,7 @@ export function FilterBar({
     const focusIn = () => setFocusInside(true);
     const focusOut = (event: FocusEvent) =>
       setFocusInside(
-        event.relatedTarget instanceof Node &&
-          bar.contains(event.relatedTarget)
+        event.relatedTarget instanceof Node && bar.contains(event.relatedTarget)
       );
     bar.addEventListener("focusin", focusIn);
     bar.addEventListener("focusout", focusOut);
