@@ -20,12 +20,15 @@ test("cliente: cadastro, lista e escolha na venda", async ({
   const name = "Maria Aparecida Souza";
 
   await page.goto("/customers");
-  await page.getByLabel("Nome", { exact: true }).fill(name);
-  await page.getByLabel("Telefone").fill("+55 11 91234-5678");
-  await page
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  // the form is a dialog (the whole screen on a phone)
+  const form = page.getByRole("dialog", { name: "Novo cliente" });
+  await form.getByLabel("Nome", { exact: true }).fill(name);
+  await form.getByLabel("Telefone").fill("+55 11 91234-5678");
+  await form
     .getByRole("textbox", { name: EMAIL_FIELD })
     .fill(`maria.${journey.name}@exemplo.com.br`);
-  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  await form.getByRole("button", { name: "Cadastrar cliente" }).click();
   await expect(
     page.getByRole("button", { name: `Mais ações para ${name}` })
   ).toBeVisible();
@@ -76,8 +79,13 @@ test("cliente: cadastro, lista e escolha na venda", async ({
   await confirmed
     .getByRole("button", { name: "Associar cliente a esta venda (opcional)" })
     .click();
-  await choose(page, confirmed, "Cliente", name);
-  await confirmed.getByRole("button", { name: "Associar cliente" }).click();
+  // "Associar cliente" opens the dialog that picks the customer and sends the association
+  await confirmed
+    .getByRole("button", { exact: true, name: "Associar cliente" })
+    .click();
+  const choosing = page.getByRole("dialog", { name: "Associar cliente" });
+  await choose(page, choosing, "Cliente", name);
+  await choosing.getByRole("button", { name: "Associar cliente" }).click();
   await expect(confirmed.getByText("Cliente associado à venda.")).toBeVisible();
   await expect
     .poll(async () =>
