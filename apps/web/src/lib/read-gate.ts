@@ -7,8 +7,9 @@
  *   (its signal aborts: the screen left) leaves the line, and one in flight frees its slot at once.
  * - **The session first:** while the first `get-session` of the tab is on its way, no read leaves (without a session
  *   they would all be 401, and would still cost CPU); at most 5 s, so a hung lookup never holds the screen.
- * - **429:** the Worker's `Retry-After` pauses every read of the tab (the sync's pull included) until it ends:
- *   trying again spends the same bucket of the server.
+ * - **429:** the Worker's `Retry-After` pauses every read of the tab (the sync's pull included) until it ends, 60 s
+ *   at most: trying again spends the same bucket of the server.
+ * - **A hung read** (a mobile network that never answers) holds its slot 15 s at most; the call itself goes on.
  * - **Brakes on the retries** (`mayRetry`): at most 8 retries in any 10 s, and none for 15 s once more than half of
  *   the last 20 calls died on the platform (`server_failed`).
  *
@@ -17,7 +18,11 @@
  */
 
 const SLOTS = 4;
+/** A read still in flight after this stops holding its slot (the call goes on): a hung network never holds the line. */
+const SLOT_HOLD_MAX_MS = 15_000;
 const SESSION_FIRST_MAX_MS = 5000;
+/** The longest a 429 pauses the reads: the sync (and "Sair", which waits for it) never stands still for minutes. */
+const PAUSE_MAX_MS = 60_000;
 const RETRY_BUDGET = 8;
 const RETRY_BUDGET_WINDOW_MS = 10_000;
 const BREAKER_WINDOW = 20;
@@ -170,12 +175,14 @@ export function createReadGate({
       }
       return new Promise((resolve, reject) => {
         let state: "done" | "running" | "waiting" = "waiting";
+        let cancelHold: (() => void) | null = null;
         const release = () => {
           if (state !== "running") {
             return;
           }
           state = "done";
           running -= 1;
+          cancelHold?.();
           signal?.removeEventListener("abort", onAbort);
           pump();
         };
@@ -183,6 +190,7 @@ export function createReadGate({
           grant: () => {
             state = "running";
             running += 1;
+            cancelHold = schedule(release, SLOT_HOLD_MAX_MS);
             resolve(release);
           },
           signal,
@@ -221,7 +229,7 @@ export function createReadGate({
       return true;
     },
     pause(ms) {
-      pausedUntil = Math.max(pausedUntil, now() + ms);
+      pausedUntil = Math.max(pausedUntil, now() + Math.min(ms, PAUSE_MAX_MS));
       pump();
     },
     record(died) {

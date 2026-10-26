@@ -30,11 +30,12 @@ export function useSignedInUser(): {
     // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
     const timer = setTimeout(() => controller.abort(), 5000);
     // through the connection: the first lookup of the tab goes out before the screen's reads (`read-gate.ts`)
-    browserConnection.fetch("/api/auth/get-session", {
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: controller.signal,
-    })
+    browserConnection
+      .fetch("/api/auth/get-session", {
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller.signal,
+      })
       .then((response) => (response.ok ? response.json() : null))
       .then(
         (session: { user?: { email?: unknown; name?: unknown } } | null) => {

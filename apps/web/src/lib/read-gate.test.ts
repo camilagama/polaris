@@ -198,6 +198,24 @@ describe("at most 4 reads in flight", () => {
   });
 });
 
+describe("a hung read", () => {
+  it("holds its slot 15 s at most: the line moves on while the call itself goes on", async () => {
+    const t = network();
+    for (let i = 0; i < 4; i += 1) {
+      t.call("/rpc/sale/list");
+    }
+    t.call("/rpc/goal/list");
+    await t.time.advance(14_999);
+    expect(t.sent).not.toContain("/rpc/goal/list");
+    await t.time.advance(1);
+    expect(t.sent).toContain("/rpc/goal/list");
+    // the four hung calls were never cancelled
+    expect(
+      t.pending.filter((entry) => entry.path === "/rpc/sale/list")
+    ).toHaveLength(4);
+  });
+});
+
 describe("the session first", () => {
   it("the reads asked while the first get-session is on its way leave only after it", async () => {
     const t = network();
@@ -262,6 +280,23 @@ describe("a 429 pauses the reads of the tab until its Retry-After", () => {
       "/rpc/goal/list",
       "/rpc/sync/pull",
     ]);
+  });
+
+  it("a Retry-After of minutes pauses 60 s at most", async () => {
+    const t = network();
+    t.call("/rpc/report/periodSummary");
+    await t.answer(
+      "/rpc/report/periodSummary",
+      new Response("{}", {
+        headers: { "retry-after": "300", "x-request-id": MARK },
+        status: 429,
+      })
+    );
+    t.call("/rpc/sync/pull");
+    await t.time.advance(59_999);
+    expect(t.sent).not.toContain("/rpc/sync/pull");
+    await t.time.advance(1);
+    expect(t.sent).toContain("/rpc/sync/pull");
   });
 
   it("without a Retry-After nothing is paused", async () => {
