@@ -695,21 +695,22 @@ test.describe("no celular, o voltar fecha a Nova meta", () => {
     await page.getByRole("button", { name: "Nova meta" }).click();
     await target(page).fill("1.000,00");
     await expect.poll(() => dialogEntry(page)).not.toBeNull();
+    // each document from here on counts itself: stepping over the entry must not load the page a second time
+    await page.addInitScript(() => {
+      const key = "t408-documents";
+      sessionStorage.setItem(
+        key,
+        String(Number(sessionStorage.getItem(key) ?? "0") + 1)
+      );
+    });
 
     await page.reload();
     // the entry left behind is stepped over as the screen loads, inside the same page: no second load
     await expect.poll(() => dialogEntry(page)).toBeNull();
     await expect(page).toHaveURL(LAB_ADDRESS);
     expect(
-      await page.evaluate(
-        () =>
-          (
-            performance.getEntriesByType("navigation")[0] as
-              | PerformanceNavigationTiming
-              | undefined
-          )?.type
-      )
-    ).toBe("reload");
+      await page.evaluate(() => sessionStorage.getItem("t408-documents"))
+    ).toBe("1");
     await startLab(page);
     await page.getByRole("tab", { name: "Metas" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
