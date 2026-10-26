@@ -33,6 +33,8 @@ export interface RateLimitRule {
 }
 
 interface RateLimitOptions {
+  /** The route the 429 log names: never a path the client made up (it could flood the log with its own text). */
+  route: (request: Request) => string;
   /** The quota a request counts against; null when it counts against none. */
   rule: (request: Request) => RateLimitRule | null;
 }
@@ -62,11 +64,20 @@ export function rpcProcedureKind(request: Request): ProcedureKind | null {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) {
     return null;
   }
+  return procedureKinds.get(procedurePath(request)) ?? "write";
+}
+
+function procedurePath(request: Request): string {
   const { pathname } = new URL(request.url);
-  const path = pathname.startsWith(RPC_PREFIX)
+  return pathname.startsWith(RPC_PREFIX)
     ? pathname.slice(RPC_PREFIX.length)
     : pathname;
-  return procedureKinds.get(path) ?? "write";
+}
+
+/** The procedure's route when the contract knows it; any other path is logged as one. */
+function rpcRoute(request: Request): string {
+  const path = procedurePath(request);
+  return procedureKinds.has(path) ? `${RPC_PREFIX}${path}` : "/rpc/<unknown>";
 }
 
 export function isMediaUploadRequest(request: Request): boolean {
@@ -108,13 +119,16 @@ function identities(request: Request): [KeyType, string][] {
   return found;
 }
 
-/** The kinds of key whose bucket is exhausted; empty when the request is within every limit. */
+/**
+ * The kinds of key whose bucket is exhausted (empty when the request is within every limit that answered),
+ * and the first failure of a limiter. A limiter that fails opens only its own key: another key's refusal stands.
+ */
 async function deniedKeyTypes(
   counted: [KeyType, RateLimitBinding, string][],
   secret: string,
   scope: string
-): Promise<KeyType[]> {
-  const results = await Promise.all(
+): Promise<{ denied: KeyType[]; failure: unknown }> {
+  const results = await Promise.allSettled(
     counted.map(async ([keyType, limiter, identity]) => ({
       keyType,
       result: await limiter.limit({
@@ -122,9 +136,16 @@ async function deniedKeyTypes(
       }),
     }))
   );
-  return results
-    .filter(({ result }) => result.success === false)
-    .map(({ keyType }) => keyType);
+  const denied: KeyType[] = [];
+  let failure: unknown;
+  for (const settled of results) {
+    if (settled.status === "rejected") {
+      failure ??= settled.reason;
+    } else if (settled.value.result.success === false) {
+      denied.push(settled.value.keyType);
+    }
+  }
+  return { denied, failure };
 }
 
 /**
@@ -179,16 +200,17 @@ export function createRateLimitMiddleware(
       }
     }
 
-    let denied: KeyType[];
-    try {
-      denied = await deniedKeyTypes(counted, secret, rule.scope);
-    } catch (error) {
+    const { denied, failure } = await deniedKeyTypes(
+      counted,
+      secret,
+      rule.scope
+    );
+    if (failure !== undefined) {
       logger.error("rate_limit_unavailable", {
-        ...describeError(error),
+        ...describeError(failure),
         requestId: context.get("requestId"),
         scope: rule.scope,
       });
-      denied = [];
     }
 
     if (denied.length > 0) {
@@ -196,7 +218,7 @@ export function createRateLimitMiddleware(
         bucket: rule.bucket,
         keyType: denied.join("+"),
         requestId: context.get("requestId"),
-        route: new URL(context.req.url).pathname,
+        route: options.route(context.req.raw),
         scope: rule.scope,
       });
       return context.json(
@@ -247,6 +269,7 @@ const MEDIA_UPLOAD_RULE: RateLimitRule = {
 };
 
 export const rpcRateLimitMiddleware = createRateLimitMiddleware({
+  route: rpcRoute,
   rule: (request) => {
     const kind = rpcProcedureKind(request);
     if (kind === null) {
@@ -257,5 +280,6 @@ export const rpcRateLimitMiddleware = createRateLimitMiddleware({
 });
 
 export const mediaUploadRateLimitMiddleware = createRateLimitMiddleware({
+  route: () => "/api/products/:productId/media",
   rule: (request) => (isMediaUploadRequest(request) ? MEDIA_UPLOAD_RULE : null),
 });

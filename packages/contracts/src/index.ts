@@ -1477,8 +1477,9 @@ const legalAcceptanceStatus = z.object({
  * Whether a procedure only reads (`read`) or changes state (`write`), declared on each one. The Worker's
  * rate limit picks its bucket by it, never by the name: a write with a name like a read still counts as a
  * write. A command (a sale, a stock movement, a send of the queue, a lease, a billing step) is always a
- * write; the one read that writes is `device.check`, whose only effect is bookkeeping the app makes on its
- * own at every page load.
+ * write. Two reads write, and only what follows from facts already recorded, the same however often they
+ * run: `device.check` (the device's last seen and its link to the session, at every page load) and
+ * `goal.list` (it settles the goals whose period ended).
  */
 export type ProcedureKind = "read" | "write";
 

@@ -397,6 +397,51 @@ describe("rate limit middleware", () => {
     expect(logged).not.toContain(sessionToken);
   });
 
+  it("a limiter that fails opens only its own key: the other key's refusal stands", async () => {
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const readIp = limiter(() => Promise.reject(new Error("limiter down")));
+    const readSession = limiter(false);
+    const response = await post(
+      createApp(),
+      "/rpc/sync/pull",
+      bindings({
+        RPC_READ_IP_RATE_LIMIT: readIp,
+        RPC_READ_RATE_LIMIT: readSession,
+      }),
+      {
+        "cf-connecting-ip": clientAddress,
+        cookie: `better-auth.session_token=${sessionToken}`,
+      }
+    );
+
+    expect(response.status).toBe(429);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "rate_limit_unavailable" })
+    );
+  });
+
+  it("logs a path the contract does not know as one, never the client's text", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await post(
+      createApp(),
+      "/rpc/aaaa-made-up-by-the-client",
+      bindings({ RPC_MUTATION_RATE_LIMIT: limiter(false) }),
+      { "cf-connecting-ip": clientAddress }
+    );
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bucket: "write",
+        event: "rate_limited",
+        route: "/rpc/<unknown>",
+      })
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("made-up");
+  });
+
   it("does not limit GET or paths outside the middleware", async () => {
     const binding = limiter(false);
     const app = createApp();
@@ -414,7 +459,10 @@ describe("rate limit middleware", () => {
   it("does not block when the binding is absent and warns once", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const app = createApp(
-      createRateLimitMiddleware({ rule: () => RPC_WRITE_RULE })
+      createRateLimitMiddleware({
+        route: () => "/rpc/sale/confirm",
+        rule: () => RPC_WRITE_RULE,
+      })
     );
     const headers = { "cf-connecting-ip": clientAddress };
 
