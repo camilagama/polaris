@@ -4,11 +4,17 @@ import {
   clearOrganizationResultCopies,
   clearPeriodSummaryCaches,
 } from "../lib/period-summary-cache";
-import { readRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
+import {
+  readRhythmCopy,
+  todaysRhythmCopy,
+  writeRhythmCopy,
+} from "./rhythm-copy";
 
 const ORG = "0199c2d0-0000-7000-8000-00000000a001";
 const OTHER = "0199c2d0-0000-7000-8000-00000000a002";
 const ALLOWED = { offlineRuntimeEnabled: true, signingOut: false };
+const TODAY = "2026-10-23";
+const PERIOD = { from: "2026-09-28", to: "2026-09-30" };
 const SERIES = {
   count: [0, 2, 1],
   from: "2026-09-28",
@@ -36,7 +42,7 @@ function memoryStorage() {
 describe("the copy of the Início's map (rhythm-copy)", () => {
   it("reads back the series written for the organization, under its own key", () => {
     const { storage, values } = memoryStorage();
-    writeRhythmCopy(storage, ORG, SERIES, ALLOWED);
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, ALLOWED);
 
     expect([...values.keys()]).toEqual([`polaris.offline.dailySales.${ORG}`]);
     expect(readRhythmCopy(storage, ORG)).toEqual(SERIES);
@@ -45,11 +51,11 @@ describe("the copy of the Início's map (rhythm-copy)", () => {
 
   it("writes nothing with the runtime off or once sign-out started", () => {
     const { storage, values } = memoryStorage();
-    writeRhythmCopy(storage, ORG, SERIES, {
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, {
       offlineRuntimeEnabled: false,
       signingOut: false,
     });
-    writeRhythmCopy(storage, ORG, SERIES, {
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, {
       offlineRuntimeEnabled: true,
       signingOut: true,
     });
@@ -63,6 +69,7 @@ describe("the copy of the Início's map (rhythm-copy)", () => {
       storage,
       ORG,
       { ...SERIES, count: [1] } as typeof SERIES,
+      TODAY,
       ALLOWED
     );
     expect(values.size).toBe(0);
@@ -78,14 +85,37 @@ describe("the copy of the Início's map (rhythm-copy)", () => {
 
   it("goes with the session (clearPeriodSummaryCaches) and with a refusal of the store, only that store's", () => {
     const { storage, values } = memoryStorage();
-    writeRhythmCopy(storage, ORG, SERIES, ALLOWED);
-    writeRhythmCopy(storage, OTHER, SERIES, ALLOWED);
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, ALLOWED);
+    writeRhythmCopy(storage, OTHER, SERIES, TODAY, ALLOWED);
 
     clearOrganizationResultCopies(storage, ORG);
     expect([...values.keys()]).toEqual([`polaris.offline.dailySales.${OTHER}`]);
 
     clearPeriodSummaryCaches(storage);
     expect(values.size).toBe(0);
+  });
+
+  it("is the series of today only when read on the store's today for the same period (the daily cache)", () => {
+    const { storage, values } = memoryStorage();
+    writeRhythmCopy(storage, ORG, SERIES, TODAY, ALLOWED);
+
+    expect(todaysRhythmCopy(storage, ORG, PERIOD, TODAY)).toEqual(SERIES);
+    // read yesterday: asked again today
+    expect(todaysRhythmCopy(storage, ORG, PERIOD, "2026-10-24")).toBeNull();
+    // the month turned, the period with it
+    expect(
+      todaysRhythmCopy(
+        storage,
+        ORG,
+        { from: "2026-09-28", to: "2026-10-31" },
+        TODAY
+      )
+    ).toBeNull();
+    expect(todaysRhythmCopy(storage, OTHER, PERIOD, TODAY)).toBeNull();
+    // a copy kept before the day of the reading existed: offline it still draws, online it is read again
+    values.set(`polaris.offline.dailySales.${ORG}`, JSON.stringify(SERIES));
+    expect(readRhythmCopy(storage, ORG)).toEqual(SERIES);
+    expect(todaysRhythmCopy(storage, ORG, PERIOD, TODAY)).toBeNull();
   });
 
   it("does not throw without usable storage", () => {
@@ -98,7 +128,9 @@ describe("the copy of the Início's map (rhythm-copy)", () => {
         throw new Error("blocked");
       },
     };
-    expect(() => writeRhythmCopy(refusing, ORG, SERIES, ALLOWED)).not.toThrow();
+    expect(() =>
+      writeRhythmCopy(refusing, ORG, SERIES, TODAY, ALLOWED)
+    ).not.toThrow();
     expect(readRhythmCopy(refusing, ORG)).toBeNull();
     expect(readRhythmCopy(null, ORG)).toBeNull();
   });

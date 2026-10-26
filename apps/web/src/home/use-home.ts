@@ -26,7 +26,7 @@ import {
   isDailySeries,
   rhythmPeriod,
 } from "./home-rhythm-model";
-import { writeRhythmCopy } from "./rhythm-copy";
+import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
 import {
   type BalancesPage,
   homePeriods,
@@ -135,6 +135,18 @@ function keepCopy(
   ) {
     keep(browserStorage());
   }
+}
+
+/** The copy of the map read on the store's today (the daily cache), unless the runtime is off or the store refused. */
+function rhythmOfToday(
+  organizationId: string,
+  period: { from: string; to: string },
+  today: string,
+  copyRefused: { current: boolean }
+): DailySeries | null {
+  return OFFLINE_RUNTIME_ENABLED && !copyRefused.current
+    ? todaysRhythmCopy(browserStorage(), organizationId, period, today)
+    : null;
 }
 
 /** Trying again only helps when the server did not answer or was out; a refusal stays a refusal. */
@@ -473,10 +485,17 @@ export function useHome(
   /**
    * The series of the map, from the first Sunday of the 26 weeks to the eve of the month (the month is the figures').
    * Without the figures it is not read: the map is drawn only beside them. The copy is written only after the answer,
-   * with the guard asked then: a read still in flight when "Sair" starts writes nothing.
+   * with the guard asked then: a read still in flight when "Sair" starts writes nothing. A copy read on the store's
+   * today is the series without asking again (one read a day per device, CPU-1e); only `force`, the gesture of
+   * "Tentar novamente", reads past it.
    */
   const loadRhythm = useCallback(
-    async (ticket: number, figures: HomeFigures | null, keep: boolean) => {
+    async (
+      ticket: number,
+      figures: HomeFigures | null,
+      keep: boolean,
+      force = false
+    ) => {
       if (!reads.report) {
         settle(ticket, "rhythm", { block: { status: "hidden" } });
         return;
@@ -485,10 +504,17 @@ export function useHome(
         return;
       }
       lastFigures.current = figures;
+      const period = rhythmPeriod(figures.today);
+      const kept = force
+        ? null
+        : rhythmOfToday(organizationId, period, figures.today, copyRefused);
+      if (kept) {
+        settle(ticket, "rhythm", { block: { data: kept, status: "ready" } });
+        return;
+      }
       if (!keep) {
         settle(ticket, "rhythm", { block: { status: "loading" } });
       }
-      const period = rhythmPeriod(figures.today);
       try {
         const series = await readWithRetry(() =>
           orpcClient.report.dailySales({ organizationId, ...period })
@@ -499,7 +525,7 @@ export function useHome(
         }
         if (ticket === sequence.current.numbers) {
           keepCopy(reads.report && !copyRefused.current, (storage) =>
-            writeRhythmCopy(storage, organizationId, series, {
+            writeRhythmCopy(storage, organizationId, series, figures.today, {
               offlineRuntimeEnabled: OFFLINE_RUNTIME_ENABLED,
               signingOut: isSigningOut(),
             })
@@ -625,9 +651,12 @@ export function useHome(
   const retryGoals = useCallback(() => loadGoalsAgain(false), [loadGoalsAgain]);
   // "Tentar novamente" of the map: only its series, for the today of the figures on the screen
   const retryRhythm = useCallback(() => {
-    loadRhythm(sequence.current.numbers, lastFigures.current, false).catch(
-      () => undefined
-    );
+    loadRhythm(
+      sequence.current.numbers,
+      lastFigures.current,
+      false,
+      true
+    ).catch(() => undefined);
   }, [loadRhythm]);
   /** The server's clock as the device estimates it from the last answer (the device's own before any). */
   const serverNow = useCallback(() => Date.now() + skew.current, []);

@@ -1867,7 +1867,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
     // 24/10, to come, has no outline and no fill
@@ -2005,7 +2005,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
     );
     await expect(
       map.getByRole("slider", { name: "Dia do mapa de vendas" })
@@ -2016,6 +2016,47 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await map.getByRole("button", { name: "Ver os números" }).click();
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.getByRole("row").nth(1)).toContainText("2 vendas");
+  });
+
+  test("cache diário (CPU-1e): duas aberturas no mesmo dia leem a série uma vez; no dia seguinte, de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    const dailyCalls = () =>
+      server.calls
+        .filter((call) => call.procedure === "report/dailySales")
+        .map((call) => [call.input.from, call.input.to]);
+    await openHome(page, server);
+    await expect(reading(page)).toHaveText(READING);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Object.keys(localStorage).some((key) =>
+            key.startsWith("polaris.offline.dailySales.")
+          )
+        )
+      )
+      .toBe(true);
+    const summaries = periodCalls(server).length;
+
+    // the second opening of the day: the figures are read again, the series comes from the copy of today
+    await page.reload();
+    await expect(reading(page)).toHaveText(READING, { timeout: 20_000 });
+    await expect
+      .poll(() => periodCalls(server).length)
+      .toBeGreaterThan(summaries);
+    expect(dailyCalls()).toEqual([["2026-04-26", "2026-09-30"]]);
+
+    // the next day of the store: the copy is of yesterday, the series is read again (the next 26 weeks)
+    server.now = NOON + 86_400_000;
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(rhythm(page)).toBeVisible({ timeout: 20_000 });
+    await expect.poll(dailyCalls).toEqual([
+      ["2026-04-26", "2026-09-30"],
+      ["2026-04-26", "2026-09-30"],
+    ]);
   });
 
   test("a série quebrada: o bloco diz o seu erro e Tentar novamente lê só a série; o resto fica", async ({

@@ -152,7 +152,13 @@ function keepCopies(m: Modules, stored: Map<string, string>) {
       hadSale: true,
     });
     m.payments.writePaymentProfileCache(storage, organization, [profile]);
-    m.rhythm.writeRhythmCopy(storage, organization, SERIES, guard);
+    m.rhythm.writeRhythmCopy(
+      storage,
+      organization,
+      SERIES,
+      "2026-10-23",
+      guard
+    );
   }
   m.organizations.writeOrganizationsCache(storage, [
     { id: ORG, name: "Loja", role: "owner", timezone: "America/Sao_Paulo" },
@@ -305,10 +311,16 @@ describe("lists every polaris.offline.* key after each way out of the session", 
     const answer = Promise.resolve(SERIES);
     m.leave.leaveAfterSignOut("/");
 
-    m.rhythm.writeRhythmCopy(window.localStorage, ORG, await answer, {
-      offlineRuntimeEnabled: true,
-      signingOut: m.signOut.isSigningOut(),
-    });
+    m.rhythm.writeRhythmCopy(
+      window.localStorage,
+      ORG,
+      await answer,
+      "2026-10-23",
+      {
+        offlineRuntimeEnabled: true,
+        signingOut: m.signOut.isSigningOut(),
+      }
+    );
 
     expect(m.signOut.isSigningOut()).toBe(true);
     expect(copyKeys(offlineKeys(stored))).toEqual([]);

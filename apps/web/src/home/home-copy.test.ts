@@ -578,7 +578,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
 
   it("sem permissão não mostra nada, mesmo com a cópia no aparelho", () => {
     const storage = kept();
-    writeRhythmCopy(storage, ORG, SERIES, ALLOWED);
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
     const home = offlineHome(storage, ORG, ZONE, NOW, false);
 
     expect(home.figures).toBeNull();
@@ -590,14 +590,14 @@ describe("what the Início shows without a connection (offlineHome)", () => {
     const storage = kept();
     expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toBeNull();
 
-    writeRhythmCopy(storage, ORG, SERIES, ALLOWED);
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
 
     expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toEqual(SERIES);
   });
 
   it("sem as figuras, a cópia do mapa não aparece sozinha", () => {
     const { storage } = memoryStorage();
-    writeRhythmCopy(storage, ORG, SERIES, ALLOWED);
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
 
     expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toBeNull();
   });

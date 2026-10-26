@@ -330,6 +330,12 @@ function soldDaysText(count: number): string {
   return `${formatQuantity(count)} ${count === 1 ? "dia" : "dias"} com venda`;
 }
 
+/**
+ * The days before the month are read once a day (the daily cache): a return made today of an old sale shows tomorrow.
+ * The map does not promise them exact to the minute.
+ */
+const PAST_UNTIL_YESTERDAY = "Meses anteriores atualizados até ontem.";
+
 /** The name of the map for a screen reader: what it shows, in words; the numbers are in the table. */
 export function rhythmSummary(view: RhythmView): string {
   const head = `Vendas por dia nas últimas ${view.weeks} semanas`;
@@ -337,7 +343,7 @@ export function rhythmSummary(view: RhythmView): string {
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysText(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. Os números estão em Ver os números.`;
+  return `${head}: ${soldDaysText(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
 }
 
 /** Under the legend: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */

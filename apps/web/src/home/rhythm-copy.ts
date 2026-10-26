@@ -3,6 +3,7 @@ import {
   DAILY_SALES_COPY_KEY_PREFIX,
   type PeriodSummaryWriteGuard,
 } from "../lib/period-summary-cache";
+import type { Period } from "./home-model";
 import { type DailySeries, isDailySeries } from "./home-rhythm-model";
 
 /**
@@ -12,6 +13,10 @@ import { type DailySeries, isDailySeries } from "./home-rhythm-model";
  * (`clearPeriodSummaryCaches`), with a refusal of the store (`clearOrganizationResultCopies`), and a read still in flight
  * does not write it once sign-out started (the guard). The days of the month are the month's copy; without this one
  * the map says it opens with a connection.
+ *
+ * It is also the map's daily cache (Filipe, CPU-1e item 3): the copy keeps the store's day it was read on, and the
+ * Início asks `report.dailySales` again only when the copy is not of today (or of another period), or on an explicit
+ * "Tentar novamente". The days before the month may then miss a return made today until tomorrow: "até ontem".
  */
 const keyOf = (organizationId: string) =>
   `${DAILY_SALES_COPY_KEY_PREFIX}${organizationId}`;
@@ -21,6 +26,7 @@ export function writeRhythmCopy(
   storage: PreferenceStorage | null,
   organizationId: string,
   series: DailySeries,
+  readOn: string,
   guard: PeriodSummaryWriteGuard
 ): void {
   if (!(guard.offlineRuntimeEnabled && storage) || guard.signingOut) {
@@ -36,10 +42,32 @@ export function writeRhythmCopy(
         count: series.count,
         from: series.from,
         net: series.net,
+        readOn,
       })
     );
   } catch {
     // Without it the map only loses its copy for offline.
+  }
+}
+
+function readKept(
+  storage: PreferenceStorage | null,
+  organizationId: string
+): { readOn: unknown; series: DailySeries } | null {
+  try {
+    const parsed: unknown = JSON.parse(
+      storage?.getItem(keyOf(organizationId)) ?? "null"
+    );
+    if (!isDailySeries(parsed)) {
+      return null;
+    }
+    const { count, from, net } = parsed;
+    return {
+      readOn: (parsed as { readOn?: unknown }).readOn,
+      series: { count, from, net },
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -48,12 +76,21 @@ export function readRhythmCopy(
   storage: PreferenceStorage | null,
   organizationId: string
 ): DailySeries | null {
-  try {
-    const parsed: unknown = JSON.parse(
-      storage?.getItem(keyOf(organizationId)) ?? "null"
-    );
-    return isDailySeries(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return readKept(storage, organizationId)?.series ?? null;
+}
+
+/**
+ * The series kept, only when it was read on the store's `today` for this `period`: what the Início shows instead of
+ * reading `report.dailySales` again (one read a day per device). Null otherwise, a copy without its day included.
+ */
+export function todaysRhythmCopy(
+  storage: PreferenceStorage | null,
+  organizationId: string,
+  period: Period,
+  today: string
+): DailySeries | null {
+  const kept = readKept(storage, organizationId);
+  return kept?.readOn === today && isDailySeries(kept.series, period)
+    ? kept.series
+    : null;
 }
