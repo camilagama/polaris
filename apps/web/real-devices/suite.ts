@@ -1013,7 +1013,12 @@ async function dialogBackFlow(recorder: Recorder, browser: Browser) {
     async () => {
       await clickButtonContaining(browser, "Abrir formulário");
       await waitForText(browser, "Novo cadastro");
-      const kept = await (await control(browser, "Campo 1")).getValue();
+      // o Safari do WebDriver não lê `value` de um elemento: a página lê
+      const kept = await browser.execute(
+        () =>
+          (document.getElementById("galeria-form-1") as HTMLInputElement | null)
+            ?.value ?? ""
+      );
       if (kept !== "Camiseta azul") {
         throw new Error(`o rascunho não voltou: "${kept}"`);
       }
