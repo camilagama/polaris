@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from "react";
@@ -267,7 +268,8 @@ export function DashboardPage() {
   const goals = useGoals(organizationId);
   const [initialTab] = useState(() => readResultTab(window.location.search));
   const [tab, setTab] = useState<ResultTab>(initialTab);
-  useEffect(() => {
+  // before the effects of the form dialog `?meta=nova` opens: on a phone it pushes its entry over this address
+  useLayoutEffect(() => {
     // the links of the Início open the Metas tab: the address keeps it from now on
     if (initialTab === "metas") {
       writeResultTab("metas");

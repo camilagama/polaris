@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ChangeEvent, useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -442,6 +442,79 @@ function FilterBarExample() {
   );
 }
 
+/**
+ * The form dialog, with a second one opened from inside it: on a phone each has its entry in the history, and the step
+ * back closes the top one first (`e2e-pwa/dialog-voltar.e2e.ts`). What was typed lives here, as a screen keeps its
+ * draft, so a dialog closed by the step back opens again with it.
+ */
+function GalleryFormDialog() {
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const fieldProps = (id: string) => ({
+    id,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      const { value } = event.target;
+      setFields((current) => ({ ...current, [id]: value }));
+    },
+    value: fields[id] ?? "",
+  });
+  return (
+    <Dialog disablePointerDismissal>
+      <DialogTrigger render={<Button variant="outline" />}>
+        Abrir formulário
+      </DialogTrigger>
+      <DialogContent layout="form">
+        <DialogForm>
+          <DialogHeader>
+            <DialogTitle>Novo cadastro</DialogTitle>
+            <DialogDescription>
+              No celular ocupa a tela inteira; só o meio rola.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((number) => (
+              <div className="grid gap-1.5" key={number}>
+                <Label htmlFor={`galeria-form-${number}`}>Campo {number}</Label>
+                <Input {...fieldProps(`galeria-form-${number}`)} />
+              </div>
+            ))}
+            <Dialog disablePointerDismissal>
+              <DialogTrigger render={<Button variant="outline" />}>
+                Abrir outro formulário
+              </DialogTrigger>
+              <DialogContent layout="form">
+                <DialogHeader>
+                  <DialogTitle>Outro cadastro</DialogTitle>
+                  <DialogDescription>
+                    Aberto por cima do primeiro.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="galeria-form-outro">Observação</Label>
+                    <Input {...fieldProps("galeria-form-outro")} />
+                  </div>
+                </DialogBody>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline" />}>
+                    Cancelar
+                  </DialogClose>
+                  <DialogClose render={<Button />}>Salvar</DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              Cancelar
+            </DialogClose>
+            <Button type="submit">Salvar</Button>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function UiGallery() {
   return (
     <ToastProvider>
@@ -511,37 +584,7 @@ export function UiGallery() {
                 </DialogContent>
               </Dialog>
 
-              <Dialog disablePointerDismissal>
-                <DialogTrigger render={<Button variant="outline" />}>
-                  Abrir formulário
-                </DialogTrigger>
-                <DialogContent layout="form">
-                  <DialogForm>
-                    <DialogHeader>
-                      <DialogTitle>Novo cadastro</DialogTitle>
-                      <DialogDescription>
-                        No celular ocupa a tela inteira; só o meio rola.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogBody>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((number) => (
-                        <div className="grid gap-1.5" key={number}>
-                          <Label htmlFor={`galeria-form-${number}`}>
-                            Campo {number}
-                          </Label>
-                          <Input id={`galeria-form-${number}`} />
-                        </div>
-                      ))}
-                    </DialogBody>
-                    <DialogFooter>
-                      <DialogClose render={<Button variant="outline" />}>
-                        Cancelar
-                      </DialogClose>
-                      <Button type="submit">Salvar</Button>
-                    </DialogFooter>
-                  </DialogForm>
-                </DialogContent>
-              </Dialog>
+              <GalleryFormDialog />
 
               <Popover>
                 <PopoverTrigger render={<Button variant="outline" />}>

@@ -950,6 +950,151 @@ async function motionFlow(recorder: Recorder, browser: Browser) {
   );
 }
 
+const dialogOpen = (browser: Browser) =>
+  browser.execute(() => document.querySelector("[role=dialog]") !== null);
+const dialogEntry = (browser: Browser) =>
+  browser.execute(() => history.state?.polarisDialog ?? null);
+
+/**
+ * O "voltar" do celular fecha o Dialog de tela inteira (t408, DESIGN.md "Diálogo de formulário"): a entrada do Dialog
+ * no histórico é a que o voltar tira, o rascunho fica e o foco volta ao botão; fechado pelo ×, ele retira a entrada e o
+ * voltar seguinte sai da tela. O WebDriver volta como o gesto e o botão do sistema (`history.back`); a emulação prova o
+ * resto (dois Dialogs, recarga, aba nova, endereço: `e2e-pwa/dialog-voltar.e2e.ts` e `e2e/goals.e2e.ts`).
+ */
+async function dialogBackFlow(recorder: Recorder, browser: Browser) {
+  recorder.startFlow("6. Voltar fecha o Dialog de tela inteira");
+
+  await recorder.step(
+    "Abrir a galeria depois de outra página, abrir o formulário e digitar no Campo 1",
+    async () => {
+      await browser.url(shellUrl("/termos"));
+      await waitForText(browser, "Termos de Uso");
+      await browser.url(shellUrl("/ui-galeria"));
+      await waitForText(browser, "Galeria da interface");
+      const before = await browser.execute(() => history.length);
+      await clickButtonContaining(browser, "Abrir formulário");
+      await waitForText(browser, "Novo cadastro");
+      const after = await browser.execute(() => history.length);
+      if (after !== before + 1) {
+        throw new Error(
+          `o formulário não empurrou uma entrada: ${before} → ${after}`
+        );
+      }
+      const field = await control(browser, "Campo 1");
+      await field.setValue("Camiseta azul");
+      return `janela ${await browser.execute(() => `${innerWidth}×${innerHeight}`)}; histórico ${before} → ${after}`;
+    }
+  );
+
+  await recorder.step(
+    "Voltar: o formulário fecha, a tela continua a galeria e o foco volta ao botão",
+    async () => {
+      await browser.back();
+      await browser.waitUntil(async () => !(await dialogOpen(browser)), {
+        timeout: WAIT_MS,
+        timeoutMsg: "o voltar não fechou o formulário",
+      });
+      const where = await browser.execute(() => ({
+        focus: document.activeElement?.textContent?.trim() ?? "",
+        path: location.pathname,
+      }));
+      if (where.path !== "/ui-galeria") {
+        throw new Error(`o voltar saiu da galeria: ${where.path}`);
+      }
+      if (where.focus !== "Abrir formulário") {
+        throw new Error(`o foco não voltou ao botão: "${where.focus}"`);
+      }
+      return `foco em "${where.focus}"`;
+    }
+  );
+
+  await recorder.step(
+    "Reabrir traz o rascunho; o × fecha e retira a entrada; o voltar seguinte sai da galeria",
+    async () => {
+      await clickButtonContaining(browser, "Abrir formulário");
+      await waitForText(browser, "Novo cadastro");
+      // o Safari do WebDriver não lê `value` de um elemento: a página lê
+      const kept = await browser.execute(
+        () =>
+          (document.getElementById("galeria-form-1") as HTMLInputElement | null)
+            ?.value ?? ""
+      );
+      if (kept !== "Camiseta azul") {
+        throw new Error(`o rascunho não voltou: "${kept}"`);
+      }
+      // o × do canto: o "Fechar" do leitor de tela (o "Cancelar" do rodapé também fecha, mas é outro botão)
+      const closeButton = await browser.execute(
+        () =>
+          [...document.querySelectorAll("[role=dialog] button")].find(
+            (button) => button.textContent?.trim() === "Fechar"
+          ) ?? null
+      );
+      if (!closeButton) {
+        throw new Error("o × do formulário não foi encontrado");
+      }
+      await tap(browser, await browser.$(closeButton as never));
+      await browser.waitUntil(
+        async () =>
+          !(await dialogOpen(browser)) && (await dialogEntry(browser)) === null,
+        { timeout: WAIT_MS, timeoutMsg: "o × não retirou a entrada do Dialog" }
+      );
+      await browser.back();
+      await browser.waitUntil(
+        async () =>
+          (await browser.execute(() => location.pathname)) === "/termos",
+        {
+          timeout: WAIT_MS,
+          timeoutMsg: "o voltar seguinte não saiu da galeria",
+        }
+      );
+      return "rascunho mantido; o voltar seguinte foi para /termos";
+    }
+  );
+
+  await recorder.step(
+    "Recarregar com o formulário aberto: a galeria volta sem ele e o primeiro voltar sai (o detalhe diz o tipo da carga)",
+    async () => {
+      await browser.url(shellUrl("/ui-galeria"));
+      await waitForText(browser, "Galeria da interface");
+      await clickButtonContaining(browser, "Abrir formulário");
+      await waitForText(browser, "Novo cadastro");
+      await browser.refresh();
+      await waitForText(browser, "Galeria da interface");
+      // a entrada que sobrou é pulada na carga; uma segunda carga apareceria como "back_forward"
+      await browser.waitUntil(
+        async () => (await dialogEntry(browser)) === null,
+        { timeout: WAIT_MS, timeoutMsg: "a entrada que sobrou não foi pulada" }
+      );
+      await browser.pause(1000);
+      const loaded = await browser.execute(() => ({
+        dialog: document.querySelector("[role=dialog]") !== null,
+        navigation:
+          (
+            performance.getEntriesByType("navigation")[0] as
+              | PerformanceNavigationTiming
+              | undefined
+          )?.type ?? "",
+        path: location.pathname,
+      }));
+      if (loaded.dialog || loaded.path !== "/ui-galeria") {
+        throw new Error(
+          `a recarga não voltou à galeria sem o formulário: ${JSON.stringify(loaded)}`
+        );
+      }
+      await browser.back();
+      await browser.waitUntil(
+        async () =>
+          (await browser.execute(() => location.pathname)) === "/termos",
+        {
+          timeout: WAIT_MS,
+          timeoutMsg: "o primeiro voltar depois da recarga não saiu da galeria",
+        }
+      );
+      return `navegação da carga: ${loaded.navigation}`;
+    }
+  );
+}
+
 /** Roda os fluxos escolhidos e sempre tenta devolver a rede do aparelho ao normal ao final. */
 export async function runGate5Suite(browser: Browser, sessionId: string) {
   const recorder = new Recorder();
@@ -959,6 +1104,7 @@ export async function runGate5Suite(browser: Browser, sessionId: string) {
     shellFlow,
     datePickerFlow,
     motionFlow,
+    dialogBackFlow,
   ].filter((_, index) => SELECTED_FLOWS.includes(index + 1));
   try {
     for (const flow of flows) {

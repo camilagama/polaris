@@ -2,10 +2,20 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import XIcon from "lucide-react/dist/esm/icons/x";
-import { createContext, useContext } from "react";
+import {
+  createContext,
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { dialogEntries, PHONE_QUERY } from "@/ui/dialog-history";
 import {
   FORM_BODY_CLASS,
   FORM_CLOSE_CLASS,
@@ -47,8 +57,92 @@ function followVisualViewport(
   };
 }
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+// an entry a reload left behind is stepped over as the screen loads, before any dialog opens or the screen is ready
+if (typeof window !== "undefined") {
+  dialogEntries();
+}
+
+/** What the content needs from its root to close itself on a step back: whether it is open, and the way to close it. */
+interface DialogRootState {
+  actionsRef: RefObject<DialogPrimitive.Root.Actions | null>;
+  open: boolean;
+}
+const DialogRootStateContext = createContext<DialogRootState | null>(null);
+
+/**
+ * Below 760 px the form dialog has an entry of its own in the history (`dialog-history.ts`): the step back of the phone
+ * closes it as Esc does, through the root (so a form that keeps its draft on Esc keeps it here too, and one busy saving
+ * stays open and gets its entry back), and the focus goes back to what opened it. Closed by itself, it takes its entry
+ * out. The small dialog (a question, a confirmation) and the desktop never touch the history.
+ */
+function useStepBackCloses(state: DialogRootState | null, enabled: boolean) {
+  const open = enabled && state?.open === true;
+  const actionsRef = state?.actionsRef;
+  // a step back that the root did not follow (a save on its way): the entry goes back on top
+  const [refused, setRefused] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a refused close (a new `refused`) pushes a new entry
+  useEffect(() => {
+    if (!(open && actionsRef && window.matchMedia(PHONE_QUERY).matches)) {
+      return;
+    }
+    const entries = dialogEntries();
+    const entry = entries.push();
+    let taken = false;
+    const handlePopState = () => {
+      if (taken || !entries.taken(entry)) {
+        return;
+      }
+      taken = true;
+      entries.release(entry);
+      setRefused((count) => count + 1);
+      actionsRef.current?.close();
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      if (!taken) {
+        entries.remove(entry);
+      }
+    };
+  }, [actionsRef, open, refused]);
+}
+
+function Dialog({
+  actionsRef,
+  defaultOpen = false,
+  onOpenChange,
+  open,
+  ...props
+}: DialogPrimitive.Root.Props) {
+  const ownActionsRef = useRef<DialogPrimitive.Root.Actions>(null);
+  const actions = actionsRef ?? ownActionsRef;
+  // the open state of a dialog that keeps its own (opened by a trigger), for the content to know when it closes
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  const handleOpenChange = useCallback(
+    (next: boolean, details: DialogPrimitive.Root.ChangeEventDetails): void => {
+      onOpenChange?.(next, details);
+      if (!details.isCanceled) {
+        setOwnOpen(next);
+      }
+    },
+    [onOpenChange]
+  );
+  const state = useMemo(
+    () => ({ actionsRef: actions, open: open ?? ownOpen }),
+    [actions, open, ownOpen]
+  );
+  return (
+    <DialogRootStateContext.Provider value={state}>
+      <DialogPrimitive.Root
+        actionsRef={actions}
+        data-slot="dialog"
+        defaultOpen={defaultOpen}
+        onOpenChange={handleOpenChange}
+        open={open}
+        {...props}
+      />
+    </DialogRootStateContext.Provider>
+  );
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -91,6 +185,8 @@ function DialogContent({
   showCloseButton?: boolean;
 }) {
   const isForm = layout === "form";
+  const rootState = useContext(DialogRootStateContext);
+  useStepBackCloses(rootState, isForm);
   return (
     <DialogPortal>
       <DialogOverlay />
