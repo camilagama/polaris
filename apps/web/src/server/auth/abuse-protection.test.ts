@@ -812,3 +812,135 @@ describe("protectAuthLinkRequest (links of the e-mails)", () => {
     expect(second?.status).toBe(503);
   });
 });
+
+describe("one identity of the client across the per-IP limits", () => {
+  const sameNet = [
+    "2001:db8:1:2:aaaa:bbbb:cccc:dddd",
+    "2001:0db8:0001:0002::1",
+    "2001:DB8:1:2:ffff:ffff:ffff:ffff",
+  ] as const;
+  const otherNet = "2001:db8:1:3::1";
+  const invalid = ["abc", "1.2.3.4, 5.6.7.8", "2001:db8::1 2", "999.1.1.1"];
+
+  /** What one request to a limited flow did: the limiter keys it counted, and the status it answered with. */
+  interface Outcome {
+    keys: string[];
+    status: number | undefined;
+  }
+
+  const flows: [string, (ip: string) => Promise<Outcome>][] = [
+    [
+      "sign-in (auth-ip)",
+      async (ip) => {
+        const limiter = createLimiter();
+        const response = await protectAuthRequest(
+          new Request(`${baseURL}/api/auth/sign-in/email`, {
+            headers: { "cf-connecting-ip": ip, "x-turnstile-token": "t" },
+            method: "POST",
+          }),
+          createBindings({ AUTH_RATE_LIMITER: limiter }),
+          requestId,
+          createSuccessfulSiteverify("login")
+        );
+        return {
+          keys: limiter.limit.mock.calls.map(([call]) => call.key),
+          status: response?.status,
+        };
+      },
+    ],
+    [
+      "Google sign-in (auth-social-ip)",
+      async (ip) => {
+        const limiter = createLimiter();
+        const response = await protectSocialAuthRequest(
+          new Request(`${baseURL}/api/auth/sign-in/social`, {
+            headers: { "cf-connecting-ip": ip, origin: baseURL },
+            method: "POST",
+          }),
+          {
+            AUTH_SOCIAL_RATE_LIMITER: limiter,
+            BETTER_AUTH_BASE_URL: baseURL,
+            BETTER_AUTH_SECRET: "test-only-better-auth-secret-32-bytes",
+            HYPERDRIVE: { connectionString: "" },
+          } as WorkerBindings,
+          requestId
+        );
+        return {
+          keys: limiter.limit.mock.calls.map(([call]) => call.key),
+          status: response?.status,
+        };
+      },
+    ],
+    [
+      "e-mail links (auth-link-ip)",
+      async (ip) => {
+        const limiter = createLimiter();
+        const response = await protectAuthLinkRequest(
+          new Request(`${baseURL}/api/login-unlock`, {
+            headers: { "cf-connecting-ip": ip },
+            method: "POST",
+          }),
+          createBindings({ AUTH_RATE_LIMITER: limiter }),
+          requestId
+        );
+        return {
+          keys: limiter.limit.mock.calls.map(([call]) => call.key),
+          status: response?.status,
+        };
+      },
+    ],
+    [
+      "e-mail send (auth-email-send-ip)",
+      async (ip) => {
+        const limiter = createLimiter();
+        const response = await protectAuthRequest(
+          new Request(`${baseURL}/api/auth/request-password-reset`, {
+            headers: { "cf-connecting-ip": ip, "x-turnstile-token": "t" },
+            method: "POST",
+          }),
+          createBindings({ AUTH_EMAIL_RATE_LIMITER: limiter }),
+          requestId,
+          createSuccessfulSiteverify("password_reset_request")
+        );
+        return {
+          keys: limiter.limit.mock.calls.map(([call]) => call.key),
+          status: response?.status,
+        };
+      },
+    ],
+  ];
+
+  it.each(flows)(
+    "%s: the addresses of one /64 share a bucket and another /64 has its own",
+    async (_name, run) => {
+      const first = await run(sameNet[0]);
+      expect(first.keys).toHaveLength(1);
+      for (const outcome of await Promise.all(sameNet.map(run))) {
+        expect(outcome.keys).toEqual(first.keys);
+      }
+      expect((await run(otherNet)).keys).not.toEqual(first.keys);
+    }
+  );
+
+  it.each(flows)(
+    "%s: IPv4 is counted whole, and a mapped IPv4 is the IPv4 address",
+    async (_name, run) => {
+      const plain = (await run("203.0.113.17")).keys;
+      expect(plain).toHaveLength(1);
+      expect((await run("::ffff:203.0.113.17")).keys).toEqual(plain);
+      expect((await run("::ffff:cb00:7111")).keys).toEqual(plain);
+      expect((await run("203.0.113.18")).keys).not.toEqual(plain);
+      expect(plain[0]).not.toContain("203.0.113.17");
+    }
+  );
+
+  it.each(flows)(
+    "%s: text that is not an address is a 503 and counts nothing",
+    async (_name, run) => {
+      for (const outcome of await Promise.all([...invalid, ""].map(run))) {
+        expect(outcome.status).toBe(503);
+        expect(outcome.keys).toEqual([]);
+      }
+    }
+  );
+});
