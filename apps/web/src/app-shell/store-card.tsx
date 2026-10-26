@@ -27,7 +27,7 @@ const THEME_LABEL: Record<Theme, string> = {
 };
 
 /** The name of the button of the card's menu (v7 § 3 item 12): what the menu holds. */
-export const STORE_MENU_LABEL = "Loja, tema e Sair";
+const STORE_MENU_LABEL = "Loja, tema e Sair";
 
 /**
  * The card of the store at the foot of the desktop's sidebar (v7 § 3 item 12): the store and the e-mail, and the

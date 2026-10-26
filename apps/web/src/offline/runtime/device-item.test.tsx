@@ -99,7 +99,9 @@ describe("a device row", () => {
     );
     expect(html).not.toContain("Para tirar este aparelho");
     const connected = render({ online: true, row: row({ isCurrent: true }) });
-    expect(connected).toContain("Para tirar este aparelho, use <strong>Sair</strong>");
+    expect(connected).toContain(
+      "Para tirar este aparelho, use <strong>Sair</strong>"
+    );
     expect(connected).not.toContain("Sem conexão");
   });
 

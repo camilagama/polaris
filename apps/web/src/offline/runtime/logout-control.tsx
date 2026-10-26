@@ -129,7 +129,7 @@ export function useLogout(destination: LeavePath) {
 }
 
 /** The state of a protected logout and what it does: what `useLogout` returns. */
-export type Logout = ReturnType<typeof useLogout>;
+type Logout = ReturnType<typeof useLogout>;
 
 interface LogoutNoticesProps {
   logout: Logout;
