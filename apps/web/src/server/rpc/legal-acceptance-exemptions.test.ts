@@ -91,6 +91,7 @@ const CONTROLLED = [
   "publicCatalog.setPublished",
   "publicCatalog.setup",
   "publicCatalog.unpublishProducts",
+  "report.dailySales",
   "report.periodSummary",
   "sale.assignCustomer",
   "sale.cancel",

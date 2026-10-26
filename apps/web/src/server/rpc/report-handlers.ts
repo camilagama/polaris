@@ -1,6 +1,9 @@
 import { implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
-import { readPeriodSummary } from "@polaris/db/economics-repository";
+import {
+  readDailySales,
+  readPeriodSummary,
+} from "@polaris/db/economics-repository";
 import {
   dashboardCards,
   resultQuality,
@@ -16,6 +19,7 @@ interface ReportRpcContext {
 }
 
 interface ReportRpcDependencies {
+  readDailySales: typeof readDailySales | undefined;
   readPeriodSummary: typeof readPeriodSummary | undefined;
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
@@ -108,5 +112,41 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
         .catch(dependencies.toRpcError)
   );
 
-  return { periodSummary };
+  const readSeries = dependencies.readDailySales ?? readDailySales;
+
+  /**
+   * Net sales and the count of sales of each date of up to 182 days, for the
+   * Início's map: the database aggregates them in one statement, so the CPU of
+   * the Worker does not grow with the number of sales. The same context,
+   * organization and permission as the period summary; the record says counts
+   * and sizes only.
+   */
+  const dailySales = implementContract.report.dailySales.handler(
+    ({ context, input }) =>
+      dependencies
+        .withTenantRequestContext({
+          bindings: context.bindings,
+          capability: "report:read",
+          operation: async (transaction, identity) => {
+            const started = Date.now();
+            const output = await readSeries(transaction, identity, {
+              from: input.from,
+              to: input.to,
+            });
+            logger.info("report_daily_sales_read", {
+              days: output.net.length,
+              durationMs: Date.now() - started,
+              organizationId: opaqueId(identity.organizationId),
+              requestId: context.requestId,
+              responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+            });
+            return output;
+          },
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        })
+        .catch(dependencies.toRpcError)
+  );
+
+  return { dailySales, periodSummary };
 }

@@ -441,6 +441,28 @@ const periodSummary = z.object({
 
 export type PeriodSummaryReadModel = z.infer<typeof periodSummary>;
 
+/** The longest daily sales series: 182 dates, `to` at most 181 days after `from` (the same limit as `readDailySales`). */
+const MAX_DAILY_SALES_DAYS = 182;
+
+/**
+ * Net sales and the count of sales of each date, compact for the Início's map:
+ * the first date and two positional arrays, one entry per date from `from`, in
+ * order, a date without sales "0.00" and 0. The same rule as
+ * `periodSummary.daily[].netSales` and `salesCount`, aggregated by the database.
+ */
+export const dailySales = z
+  .object({
+    count: z.array(z.number().int().nonnegative()).max(MAX_DAILY_SALES_DAYS),
+    from: expenseCalendarDate,
+    net: z.array(z.string()).max(MAX_DAILY_SALES_DAYS),
+  })
+  .refine(({ count, net }) => count.length === net.length, {
+    message: "series_length_mismatch",
+    path: ["count"],
+  });
+
+export type DailySalesReadModel = z.infer<typeof dailySales>;
+
 const paymentFeeConfiguration = z
   .object({
     fixedAmount: z.string().trim().min(1).max(64).nullable(),
@@ -1894,6 +1916,24 @@ export const polarisContract = {
           )
       )
       .output(periodSummary),
+    // Only net sales and the count of sales of each date, aggregated by the
+    // database (no sale goes through the engine in the Worker): the Início's map.
+    dailySales: oc
+      .input(
+        z
+          .object({
+            from: expenseCalendarDate,
+            organizationId: z.string().trim().min(1),
+            to: expenseCalendarDate,
+          })
+          .refine(
+            ({ from, to }) =>
+              // an inverted or impossible date is the read's own refusal (NaN passes here)
+              !(periodSummaryDays(from, to) > MAX_DAILY_SALES_DAYS),
+            { message: "period_too_long", path: ["to"] }
+          )
+      )
+      .output(dailySales),
   },
   // A copy of the organization's data, built in the background and kept for a short time
   // (ADR 0078). Asking is a tenant operation of the owner; the file itself is downloaded from
