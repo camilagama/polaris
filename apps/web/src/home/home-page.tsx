@@ -7,7 +7,7 @@ import { formatLastConfirmed } from "../dashboard/dashboard-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
-import { updatedAtText } from "../lib/read-wait-text";
+import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
   useOfflineRuntime,
@@ -166,7 +166,7 @@ const NO_BLOCKS: Blocks = {
 
 /**
  * Every try of the figures failed with a connection, and the device has the copy (paliativo dos 1102): the copy's
- * figures, under the notice that they could not be updated now, with when they were read and "Tentar novamente".
+ * figures, under the notice that they could not be updated now, with what they show and "Tentar novamente".
  */
 function staleCopyBlocks(
   failed: OfflineHome & { figures: NonNullable<OfflineHome["figures"]> },
@@ -184,7 +184,7 @@ function staleCopyBlocks(
         <div className="grid gap-4">
           <StaleCopyNotice
             onRetry={retryFigures}
-            updated={updatedAtText(figures.confirmedAt, timezone, now)}
+            shown={copyShownText(figures.confirmedAt, timezone, now)}
           />
           {blocks.main}
         </div>

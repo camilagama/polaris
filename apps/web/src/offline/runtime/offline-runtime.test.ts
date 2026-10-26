@@ -2,6 +2,7 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { ORPCError } from "@orpc/client";
 import { describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "../../lib/connection";
+import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { attemptLogout } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
@@ -91,6 +92,8 @@ function world(options: { leaseHours?: number } = {}) {
     openStoresFailures?: number;
     /** Makes every pull wait for this promise. */
     pull?: Promise<void> | undefined;
+    /** Makes every pull go through the tab's read gate, as the real `fetch` does (the signal frees it). */
+    readGate?: ReadGate | undefined;
     /** Makes every push wait for this promise. */
     push?: Promise<void> | undefined;
   } = {};
@@ -151,10 +154,16 @@ function world(options: { leaseHours?: number } = {}) {
   };
   // the server as a source of pulls, counting them and able to make them wait
   const countedSource = Object.create(server) as FakeCatalogServer;
+  let pullSignal: AbortSignal | undefined;
   countedSource.pull = async (cursor, limit) => {
     calls.pull += 1;
     await gates.pull;
-    return server.pull(cursor, limit);
+    const release = await gates.readGate?.acquire(pullSignal);
+    try {
+      return await server.pull(cursor, limit);
+    } finally {
+      release?.();
+    }
   };
   const api: RuntimeApi = {
     deviceIsMine: (deviceId) => {
@@ -218,7 +227,10 @@ function world(options: { leaseHours?: number } = {}) {
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
-    source: () => countedSource,
+    source: (_organizationId, signal) => {
+      pullSignal = signal;
+      return countedSource;
+    },
   };
   const make = (
     deviceLabel: string | null = null,
@@ -707,6 +719,57 @@ describe("starting", () => {
     runtime.forgetDevice();
     expect(w.keyValues.data.size).toBe(0);
     expect(runtime.currentDeviceId()).toBeNull();
+  });
+
+  describe("\"Sair\" with the reads of the tab held (the pause of a 429, the line full)", () => {
+    /** Four reads in flight and a 60 s pause: nothing goes through this gate until the (never firing) clock moves. */
+    function heldGate(): ReadGate {
+      const gate = createReadGate({
+        now: () => 0,
+        schedule: () => () => undefined,
+      });
+      for (let read = 0; read < 4; read += 1) {
+        gate.acquire().catch(() => undefined);
+      }
+      gate.pause(60_000);
+      return gate;
+    }
+
+    it("sends the queue and goes on, without a pull that would wait for the gate", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      w.gates.readGate = heldGate();
+      const pulls = w.calls.pull;
+
+      const outcome = await attemptLogout(await runtime.logoutWorkspaces());
+
+      expect(outcome).toEqual({ status: "ready" });
+      expect(w.calls.push).toBeGreaterThan(0);
+      expect(w.calls.pull).toBe(pulls);
+      expect(w.purged).toEqual([{ discardPending: false }]);
+    });
+
+    it("cuts the pull of a sync already waiting for the gate, and sends what was queued after its push", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      w.gates.readGate = heldGate();
+      const pulls = w.calls.pull;
+      const held = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.pull).toBe(pulls + 1));
+      await queueProduct(runtime, "Camiseta", 1);
+      const pushes = w.calls.push;
+
+      const outcome = await attemptLogout(await runtime.logoutWorkspaces());
+
+      expect(outcome).toEqual({ status: "ready" });
+      expect(w.calls.push).toBeGreaterThan(pushes);
+      expect(w.calls.pull).toBe(pulls + 1);
+      await held; // the cut run ended by itself, not as a failure
+      expect(runtime.getSnapshot().reason).toBeNull();
+    });
   });
 
   it("logging out with no store open and work queued is blocked, deletes the collections and the lease, and keeps the queue", async () => {

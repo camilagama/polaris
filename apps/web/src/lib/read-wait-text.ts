@@ -12,10 +12,11 @@ export const SLOW_READ_TEXT = "Demorando mais que o normal…";
 export const STALE_COPY_TITLE = "Não foi possível atualizar agora";
 
 /**
- * "Atualizado às 14:05" when the copy is of today in the store's zone, "Atualizado em 22/10 às 18:40" when it is of
- * another day: the hour alone would pass an old copy for a fresh one.
+ * What the copy under the stale notice is, in the words of what is seen: "Mostrando os números de 12:00. Vendas feitas
+ * depois não estão aqui." when the copy is of today in the store's zone, "Mostrando os números de 22/10 às 18:40. ..."
+ * when it is of another day: the hour alone would pass an old copy for a fresh one.
  */
-export function updatedAtText(
+export function copyShownText(
   generatedAt: string,
   timezone: string | null,
   now: Date
@@ -26,8 +27,9 @@ export function updatedAtText(
   }
   const { time } = clockPartsInTimezone(instant, timezone);
   const day = calendarDayInTimezone(instant, timezone);
-  if (day === calendarDayInTimezone(now, timezone)) {
-    return `Atualizado às ${time}`;
-  }
-  return `Atualizado em ${day.slice(8, 10)}/${day.slice(5, 7)} às ${time}`;
+  const when =
+    day === calendarDayInTimezone(now, timezone)
+      ? time
+      : `${day.slice(8, 10)}/${day.slice(5, 7)} às ${time}`;
+  return `Mostrando os números de ${when}. Vendas feitas depois não estão aqui.`;
 }

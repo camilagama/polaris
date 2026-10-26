@@ -873,13 +873,16 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
   // an outage of the server is not a refusal: with the connection there, after the three tries, the copy stays
-  // under "Não foi possível atualizar agora", with when it was read and "Tentar novamente" (paliativo dos 1102)
+  // under "Não foi possível atualizar agora", with what it shows and "Tentar novamente" (paliativo dos 1102)
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
   const stale = page
     .getByRole("status")
     .filter({ hasText: "Não foi possível atualizar agora" });
-  await expect(stale).toContainText("09:00", { timeout: 15_000 });
+  await expect(stale).toContainText(
+    "Mostrando os números de 09:00. Vendas feitas depois não estão aqui.",
+    { timeout: 15_000 }
+  );
   await expect(copyNotice(page)).toHaveCount(0);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   server.failure = null;

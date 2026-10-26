@@ -28,24 +28,24 @@ export function SlowReadNote({ className }: { className?: string }) {
 }
 
 /**
- * Every try of a read failed with a connection, and the screen has a copy of it: the copy stays, with when it was
- * read and "Tentar novamente". `children`: what else the screen says about the copy (work still on the device).
+ * Every try of a read failed with a connection, and the screen has a copy of it: the copy stays, with what it shows
+ * (`shown`) and "Tentar novamente". `children`: what else the screen says about the copy (work still on the device).
  */
 export function StaleCopyNotice({
   children,
   onRetry,
-  updated,
+  shown,
 }: {
   children?: ReactNode;
   onRetry: () => void;
-  updated: string;
+  shown: string;
 }) {
   return (
     <Alert variant="warning">
       <TriangleAlertIcon aria-hidden="true" />
       <AlertTitle>{STALE_COPY_TITLE}</AlertTitle>
       <AlertDescription>
-        <p>{updated}</p>
+        <p>{shown}</p>
         {children}
         <Button
           className="mt-1.5"

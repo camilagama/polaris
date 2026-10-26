@@ -2053,7 +2053,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
   });
 
-  test("(b) três mortes seguidas, com cópia: a cópia fica, com 'Atualizado às' e o aviso com 'Tentar novamente'", async ({
+  test("(b) três mortes seguidas, com cópia: a cópia fica, com 'Mostrando os números de' e o aviso com 'Tentar novamente'", async ({
     page,
   }) => {
     const server = new FakeServer(SOLD);
@@ -2062,7 +2062,9 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
     await page.reload();
     const notice = page.getByRole("status").filter({ hasText: STALE_COPY });
     await expect(notice).toBeVisible({ timeout: 20_000 });
-    await expect(notice).toContainText("Atualizado às 12:00");
+    await expect(notice).toContainText(
+      "Mostrando os números de 12:00. Vendas feitas depois não estão aqui."
+    );
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     await expect(
       page.getByText("Não foi possível carregar os números da loja.")

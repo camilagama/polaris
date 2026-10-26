@@ -75,7 +75,11 @@ export interface RuntimeApi {
    * with something unusable.
    */
   sessionUserId: () => Promise<string | null>;
-  source: (organizationId: string) => BootstrapSource;
+  /**
+   * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
+   * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair".
+   */
+  source: (organizationId: string, signal?: AbortSignal) => BootstrapSource;
 }
 
 /** The own lease ended and could not be renewed: the offline access expired (not a refused session). */
@@ -326,6 +330,8 @@ export class OfflineRuntime {
   private deviceId: string | null = null;
   private lease: string | null = null;
   private inFlight: Promise<void> | null = null;
+  /** Ends the reads (the pull) of the run in flight; a send that needs the queue out does not wait for them. */
+  private pullAbort: AbortController | null = null;
   private lastOutcome: SyncOutcome = "not_run";
   /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
   private failingSince: number | null = null;
@@ -405,12 +411,21 @@ export class OfflineRuntime {
   /**
    * The real try of "Sair" and of the update cycle: it sends whatever the connection state says, and only
    * then a send that got no answer counts as offline (ADR 0039). Rejects with `offline` in that case.
+   *
+   * It sends the queue and nothing else: the pull does not protect work, and it goes through the tab's read gate
+   * (the line, the pause of a 429, up to 60 s). A run in flight stops at its pull (its push is already out, or
+   * done before it gets there) and this one pushes alone, with the same command ids and no gate.
    */
   private async trySend(): Promise<void> {
     if (!this.mayTry()) {
       throw new Error("offline");
     }
-    await this.syncNow();
+    while (this.inFlight) {
+      this.pullAbort?.abort();
+      // biome-ignore lint/performance/noAwaitInLoops: one run at a time, each one cut at its pull
+      await this.inFlight.catch(() => undefined);
+    }
+    await this.syncNow({ pull: false });
     if (this.lastOutcome === "no_answer") {
       throw new Error("offline");
     }
@@ -667,11 +682,11 @@ export class OfflineRuntime {
   }
 
   /** Sends what is queued and catches the local collections up. Single-flight. */
-  syncNow(): Promise<void> {
+  syncNow(options: { pull?: boolean } = {}): Promise<void> {
     if (this.inFlight) {
       return this.inFlight;
     }
-    const run = this.runExclusive().finally(() => {
+    const run = this.runExclusive(options.pull !== false).finally(() => {
       this.inFlight = null;
     });
     this.inFlight = run;
@@ -707,14 +722,14 @@ export class OfflineRuntime {
 
   // ------------------------------------------------------------- internals
   /** One sync per namespace across the tabs: another tab sending the same queue now makes this one wait for the next. */
-  private async runExclusive(): Promise<void> {
+  private async runExclusive(pull: boolean): Promise<void> {
     const { exclusive } = this.dependencies;
     if (!exclusive) {
-      await this.runSync();
+      await this.runSync(pull);
       return;
     }
     const name = `polaris-sync:${this.namespace?.coordinatorName ?? "none"}`;
-    const ran = await exclusive(name, () => this.runSync());
+    const ran = await exclusive(name, () => this.runSync(pull));
     if (!ran) {
       this.lastOutcome = "not_run";
     }
@@ -1534,17 +1549,18 @@ export class OfflineRuntime {
     return true;
   }
 
-  private async runSync(): Promise<void> {
+  private async runSync(pull: boolean): Promise<void> {
     this.lastOutcome = "not_run";
     this.mark("sync:start");
     try {
-      await this.runSyncSteps();
+      await this.runSyncSteps(pull);
     } finally {
+      this.pullAbort = null;
       this.mark("sync:done");
     }
   }
 
-  private async runSyncSteps(): Promise<void> {
+  private async runSyncSteps(pull: boolean): Promise<void> {
     if (this.snapshot.phase === "ready" && this.openLeaseEnded()) {
       this.expireNow(); // the timer has not fired yet (a tab in the background): the sync looks itself
     }
@@ -1583,13 +1599,20 @@ export class OfflineRuntime {
       this.failingSince = null;
       return;
     }
+    let pullAbort: AbortController | null = null;
+    let pulling = false;
     try {
       this.mark("sync:phase:lease");
       const lease = await this.ensureLease(userId, organizationId, deviceId);
       if (!this.adoptLease(run, lease)) {
         return;
       }
-      const source = this.dependencies.api.source(organizationId);
+      pullAbort = new AbortController();
+      this.pullAbort = pullAbort;
+      const source = this.dependencies.api.source(
+        organizationId,
+        pullAbort.signal
+      );
       this.mark("sync:phase:push");
       // the catch-up comes below, once: the chip counts what is left as soon as the push answered
       const summary = await syncOutbox({
@@ -1606,6 +1629,25 @@ export class OfflineRuntime {
       }
       this.mark("sync:phase:contagens");
       await this.refreshCounts();
+      if (!pull) {
+        this.lastOutcome = "answered";
+        this.failingSince = null;
+        this.set({
+          ...this.snapshot,
+          legalAcceptanceRequired: false,
+          online: this.dependencies.isOnline(),
+          reason: null,
+          sessionRefused: false,
+          syncing: false,
+        });
+        this.channel?.post();
+        return;
+      }
+      if (pullAbort.signal.aborted) {
+        this.pullCut();
+        return;
+      }
+      pulling = true;
       const meta = await stores.writer.readMeta();
       if (isLocalStoreReady(meta) && meta?.cursor) {
         // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
@@ -1631,10 +1673,30 @@ export class OfflineRuntime {
       });
       this.channel?.post();
     } catch (error) {
+      if (pulling && pullAbort?.signal.aborted) {
+        // someone needs the queue out and cut the pull: the push answered, the next sync catches up
+        this.pullCut();
+        await this.refreshCounts();
+        return;
+      }
       await this.syncFailed(run, error);
       return;
     }
     await this.refreshCounts(); // what was queued while the pull ran
+  }
+
+  /** The run ended at its pull, cut on purpose (`trySend`): not a failure, and not a catch-up either. */
+  private pullCut() {
+    this.lastOutcome = "answered";
+    this.set({
+      ...this.snapshot,
+      dataVersion: this.snapshot.dataVersion + 1,
+      online: this.dependencies.isOnline(),
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    this.channel?.post();
   }
 
   /**

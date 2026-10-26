@@ -1,7 +1,7 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { StaleCopyNotice } from "../app-shell/read-wait";
-import { updatedAtText } from "../lib/read-wait-text";
+import { copyShownText } from "../lib/read-wait-text";
 import { offlineCopyNotice } from "./dashboard-model";
 
 interface OfflineCopyNoticeProps {
@@ -9,7 +9,7 @@ interface OfflineCopyNoticeProps {
   generatedAt: string;
   /**
    * The tab has a connection, and every try of the read failed (paliativo dos 1102): "Não foi possível atualizar
-   * agora", with when the copy was read and "Tentar novamente".
+   * agora", with what the copy shows and "Tentar novamente".
    */
   online?: { onRetry: () => void } | undefined;
   timezone: string | null;
@@ -38,7 +38,7 @@ export function OfflineCopyNotice({
     return (
       <StaleCopyNotice
         onRetry={online.onRetry}
-        updated={updatedAtText(generatedAt, timezone, new Date())}
+        shown={copyShownText(generatedAt, timezone, new Date())}
       >
         {pending ? <p>{pending}</p> : null}
       </StaleCopyNotice>
