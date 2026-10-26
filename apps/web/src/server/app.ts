@@ -22,7 +22,10 @@ import {
   rpcRateLimitMiddleware,
 } from "./middleware/rate-limit";
 import { requestIdMiddleware } from "./middleware/request-id";
-import { routeTimingMiddleware } from "./middleware/route-timing";
+import {
+  markMatchedProcedure,
+  routeTimingMiddleware,
+} from "./middleware/route-timing";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import {
   logServerError,
@@ -132,6 +135,7 @@ export function createServerApp({
     });
 
     if (matched) {
+      markMatchedProcedure(context);
       return context.newResponse(response.body, response);
     }
 

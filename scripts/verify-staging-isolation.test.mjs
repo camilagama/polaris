@@ -659,6 +659,17 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("refuses the timing of every route in production, which is a staging measure", () => {
+    const entries = repositoryEntries();
+    const { production, staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.ROUTE_TIMING_ALL).toBe("true");
+    expect(production.vars.ROUTE_TIMING_ALL).toBe("false");
+    production.vars.ROUTE_TIMING_ALL = "true";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.production vars.ROUTE_TIMING_ALL must not be "true" (the timing of every route is a staging measure, ADR 0094)',
+    ]);
+  });
+
   it("refuses production using the widget key of staging", () => {
     const entries = repositoryEntries();
     const { production, staging } = entryOf(entries, "web").config.env;

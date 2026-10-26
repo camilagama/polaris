@@ -2,7 +2,7 @@ import { connectionsClosedByUs } from "@polaris/db/pool-errors";
 import { isCriticalRoute } from "@polaris/observability/alerts";
 import { startWideEvent } from "@polaris/observability/wide-event";
 import type { MiddlewareHandler } from "hono";
-import { routePath } from "hono/route";
+import { matchedRoutes, routePath } from "hono/route";
 import type { ServerEnv } from "../environment";
 import { countIsolateInvocation } from "../observability/isolate";
 
@@ -29,6 +29,62 @@ function routeLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
   }
 }
 
+/**
+ * Called by the `/rpc` handler when oRPC matched a procedure: under `ROUTE_TIMING_ALL` only such a path is logged,
+ * so a path the client made up never reaches the log. The label is the path as oRPC matched it, which takes one
+ * slash off each end of what follows the prefix (`/rpc/sale/list/` and `/rpc//sale/list` are `/rpc/sale/list`).
+ */
+export function markMatchedProcedure(
+  context: Parameters<MiddlewareHandler<ServerEnv>>[0]
+) {
+  const procedure = context.req.path
+    .slice("/rpc".length)
+    .replace(/^\/|\/$/g, "");
+  context.set("timedProcedure", `/rpc/${procedure}`);
+}
+
+/**
+ * The pattern of the route that answered, or `null` when the request stopped in a middleware. `routePath(context, -1)`
+ * is the last route that matched, run or not; `routePath(context)` is the one the request reached last, but a
+ * middleware can share the pattern of its handler (as a limit of the media upload would), so a route counts
+ * only when it is not an `app.use` one (`method` `ALL`; an `app.all` handler is not labelled either, the safe side).
+ */
+function handlerPattern(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
+  const reached = matchedRoutes(context).at(context.req.routeIndex);
+  return reached === undefined || reached.method === "ALL"
+    ? null
+    : reached.path;
+}
+
+/**
+ * `ROUTE_TIMING_ALL` = `"true"` (staging only, CPU-1e, ADR 0094 amended on 26/10/2026) widens the event to every
+ * `/rpc` procedure and every named `/api` route, so a route can be measured by `isolate.seq` against another one in
+ * the same deploy. The label is still a pattern: a `/rpc` path is logged only when oRPC matched a procedure
+ * (`markMatchedProcedure`), and an `/api` path only when a route of the app named it (not the `/api/*` of a
+ * middleware, and only when the request reached its handler: `handlerPattern`). A request refused before the handler
+ * (origin, rate limit) or that matched nothing emits nothing.
+ * Any other value of the variable, or none, keeps the critical routes only.
+ */
+function wideRouteLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
+  if (context.env?.ROUTE_TIMING_ALL !== "true") {
+    return null;
+  }
+  if (context.req.path.startsWith("/rpc/")) {
+    return context.get("timedProcedure") ?? null;
+  }
+  if (!context.req.path.startsWith("/api/")) {
+    return null;
+  }
+  try {
+    const pattern = handlerPattern(context);
+    return pattern?.startsWith("/api/") && pattern !== "/api/*"
+      ? pattern
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function outcomeOf(httpStatus: number): "failure" | "rejected" | "success" {
   if (httpStatus >= 500) {
     return "failure";
@@ -49,8 +105,9 @@ export const routeTimingMiddleware: MiddlewareHandler<ServerEnv> = async (
     await next();
   } finally {
     try {
-      const route = routeLabel(context);
-      if (isCriticalRoute(route)) {
+      const label = routeLabel(context);
+      const route = isCriticalRoute(label) ? label : wideRouteLabel(context);
+      if (route !== null) {
         const httpStatus = context.res.status;
         wide.set({
           httpStatus,

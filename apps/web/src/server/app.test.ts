@@ -395,3 +395,128 @@ describe("the Worker's mark on every response", () => {
     ).toEqual([true, true, true, true, true]);
   });
 });
+
+describe("route timing of every route (ROUTE_TIMING_ALL, ADR 0094)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function timedRoutes(spies: { mock: { calls: unknown[][] } }[]) {
+    return spies
+      .flatMap((spy) =>
+        spy.mock.calls.map(
+          ([entry]) =>
+            entry as { event?: string; httpStatus?: number; route?: string }
+        )
+      )
+      .filter((entry) => entry?.event === "http_request_timed")
+      .map((entry) => [entry.route, entry.httpStatus]);
+  }
+
+  async function callAll(bindings: WorkerBindings, extraPaths: string[] = []) {
+    const app = createServerApp({
+      rpcRouter: createRpcRouter({
+        createProduct: (() =>
+          Promise.reject(
+            new EntitlementLimitReachedError("variants.active.max", 50)
+          )) as never,
+        withTenantRequestContext: ((input: {
+          operation: (transaction: unknown, identity: unknown) => unknown;
+        }) =>
+          Promise.resolve(
+            input.operation({}, { organizationId: "org", role: "owner" })
+          )) as never,
+      }),
+    });
+    const post = (path: string) =>
+      app.request(
+        `${baseURL}${path}`,
+        {
+          body: JSON.stringify({ json: { name: "x", organizationId: "o" } }),
+          headers: { "content-type": "application/json", origin: baseURL },
+          method: "POST",
+        },
+        bindings
+      );
+    const statuses = [
+      (await post("/rpc/product/create")).status,
+      (await post("/rpc/product/AbC123xyzToken")).status,
+      (await app.request(`${baseURL}/api/nao-existe/0199c2d0`, {}, bindings))
+        .status,
+      ...(await Promise.all(
+        extraPaths.map(async (path) => (await post(path)).status)
+      )),
+    ];
+    return statuses;
+  }
+
+  it("logs a matched procedure by its name and nothing for a path no procedure or route matched", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(
+      createBindings({ ROUTE_TIMING_ALL: "true" })
+    );
+
+    expect(statuses).toEqual([409, 404, 404]);
+    expect(timedRoutes(spies)).toEqual([["/rpc/product/create", 409]]);
+  });
+
+  it("labels a procedure called with a trailing slash as oRPC matched it, without the slash, and logs nothing for a leading double slash it does not match", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(
+      createBindings({ ROUTE_TIMING_ALL: "true" }),
+      ["/rpc/product/create/", "/rpc//product/create"]
+    );
+
+    expect(statuses).toEqual([409, 404, 404, 409, 404]);
+    expect(timedRoutes(spies).map(([route]) => route)).toEqual([
+      "/rpc/product/create",
+      "/rpc/product/create",
+    ]);
+  });
+
+  it("logs an /api route only when the request reached its handler: the origin refusal of a named route emits nothing", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+    const app = createServerApp({ rpcRouter: createRpcRouter({}) });
+    const bindings = createBindings({ ROUTE_TIMING_ALL: "true" });
+    const postLoginUnlock = (origin: string) =>
+      app.request(
+        `${baseURL}/api/login-unlock`,
+        { headers: { origin }, method: "POST" },
+        bindings
+      );
+
+    const refused = await postLoginUnlock("https://evil.example");
+    expect(refused.status).toBe(403);
+    expect(timedRoutes(spies)).toEqual([]);
+
+    const reached = await postLoginUnlock(baseURL);
+    expect(timedRoutes(spies)).toEqual([["/api/login-unlock", reached.status]]);
+  });
+
+  it("logs none of them without the variable, as in production", async () => {
+    const spies = [
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+
+    const statuses = await callAll(createBindings());
+
+    expect(statuses).toEqual([409, 404, 404]);
+    expect(timedRoutes(spies)).toEqual([]);
+  });
+});
