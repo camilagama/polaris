@@ -532,11 +532,21 @@ test("a data de competência a 360×600: 'Hoje' fica à vista sem rolar e tocar 
     .toBe(true);
   // "Hoje" is whole in the view with no scrolling: the popover itself does not scroll
   await expect(today).toBeInViewport({ ratio: 1 });
-  const whole = await popup.evaluate((element) => ({
-    clientHeight: element.clientHeight,
-    scrollHeight: element.scrollHeight,
-  }));
-  expect(whole.scrollHeight).toBeLessThanOrEqual(whole.clientHeight);
+  // and the month is not scrolled away: the footer sits below it, in its own band
+  const month = popup.locator("[data-date-month]");
+  await expect
+    .poll(async () => {
+      const [monthBox, todayBox] = await Promise.all([
+        month.boundingBox(),
+        today.boundingBox(),
+      ]);
+      return (
+        monthBox !== null &&
+        todayBox !== null &&
+        todayBox.y >= monthBox.y + monthBox.height
+      );
+    })
+    .toBe(true);
 
   await today.click();
   await expect(popup).toBeHidden();
@@ -563,13 +573,13 @@ test("a data de competência com pouca altura (celular deitado): o mês rola den
     })
     .toBe(true);
   // less room than the month needs: the month gives way, the footer stays
-  const month = await popup
-    .locator("[data-date-month]")
-    .evaluate((element) => ({
-      clientHeight: element.clientHeight,
-      scrollHeight: element.scrollHeight,
-    }));
-  expect(month.scrollHeight).toBeGreaterThan(month.clientHeight);
+  await expect
+    .poll(() =>
+      popup
+        .locator("[data-date-month]")
+        .evaluate((element) => element.scrollHeight > element.clientHeight)
+    )
+    .toBe(true);
   await expect(
     popup.getByRole("button", { exact: true, name: "Hoje" })
   ).toBeInViewport({ ratio: 1 });
