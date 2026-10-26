@@ -18,7 +18,7 @@ import { SCREENS } from "./ui-screens";
  *
  * a) the filter bar never asks for the `motion` chunk and a pill goes at once, with no style of motion;
  * b) the chart is drawn finished on the first frame: no clip of the reveal, and the path and the y axis already at the
- *    final scale one frame after the change from 7 to 30 days;
+ *    final scale one frame after the change from 7 to 30 days; the map of the Início with no entrance nor wave (t394);
  * c) the essential motion still runs (the pulse of the skeleton, the press of a button) and nothing else does;
  * d) control: the desktop and the tablet are `full`, the bar loads its layer and the pill animates;
  * e) with `prefers-reduced-motion` the level is `none`;
@@ -211,6 +211,36 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   expect(next.ticks).toContain("R$ 2.000@");
   await page.waitForTimeout(1300);
   expect(await drawing(chart)).toEqual(next);
+
+  // the map (t394): no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it
+  // appears, nothing of it runs an animation, and reading a day changes the line at once
+  const map = page.getByRole("region", { name: "Ritmo de vendas" });
+  const cells = map.locator(
+    '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
+  );
+  await expect(cells).toHaveCount(91);
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve))
+  );
+  const opacities = () =>
+    cells.evaluateAll((rects) => [
+      ...new Set(rects.map((rect) => getComputedStyle(rect).opacity)),
+    ]);
+  expect(await opacities()).toEqual(["1"]);
+  expect(
+    await map
+      .locator("[data-heatmap]")
+      .evaluate((element) =>
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.id)
+      )
+  ).toEqual([]);
+  await cells.nth(12 * 7 + 1).tap();
+  await expect(map.locator("[data-rhythm-reading]")).toHaveText(
+    "Segunda, 19/10 · R$ 90,00 · 1 venda"
+  );
+  expect(await opacities()).toEqual(["1"]);
 });
 
 test("c) no celular o essencial continua (o pulso do Skeleton, o botão afundando no toque) e nada mais se move no Início com o painel Mais", async ({

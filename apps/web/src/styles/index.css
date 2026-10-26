@@ -53,7 +53,7 @@
 /* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
 @source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
-@source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards}.tsx";
+@source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */

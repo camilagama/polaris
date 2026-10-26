@@ -14,12 +14,19 @@ import {
   writeHomeCopy,
 } from "./home-copy";
 import type { GoalView } from "./home-model";
+import { writeRhythmCopy } from "./rhythm-copy";
 
 const ORG = "0199c2d0-0000-7000-8000-00000000a001";
 const ZONE = "America/Sao_Paulo";
 const ALLOWED = { offlineRuntimeEnabled: true, signingOut: false };
 const KEY = `${HOME_COPY_KEY_PREFIX}${ORG}`;
 const DAY = 86_400_000;
+/** The map's series as `report.dailySales` returns it (three days are enough for the copy). */
+const SERIES = {
+  count: [0, 2, 1],
+  from: "2026-09-28",
+  net: ["0.00", "130.00", "12.50"],
+};
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -570,10 +577,29 @@ describe("what the Início shows without a connection (offlineHome)", () => {
   });
 
   it("sem permissão não mostra nada, mesmo com a cópia no aparelho", () => {
-    const home = offlineHome(kept(), ORG, ZONE, NOW, false);
+    const storage = kept();
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
+    const home = offlineHome(storage, ORG, ZONE, NOW, false);
 
     expect(home.figures).toBeNull();
     expect(home.goal).toEqual({ kind: "online-only" });
+    expect(home.rhythm).toBeNull();
+  });
+
+  it("a série do mapa vem da sua cópia, ao lado das figuras; sem ela, null (o mapa abre com internet)", () => {
+    const storage = kept();
+    expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toBeNull();
+
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
+
+    expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toEqual(SERIES);
+  });
+
+  it("sem as figuras, a cópia do mapa não aparece sozinha", () => {
+    const { storage } = memoryStorage();
+    writeRhythmCopy(storage, ORG, SERIES, "2026-10-23", ALLOWED);
+
+    expect(offlineHome(storage, ORG, ZONE, NOW, true).rhythm).toBeNull();
   });
 
   it("sem cópia do Início não há figuras e a meta só vem com conexão", () => {
@@ -678,6 +704,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
     expect(offlineHome(throwing, ORG, ZONE, NOW, true)).toEqual({
       figures: null,
       goal: { kind: "online-only" },
+      rhythm: null,
     });
   });
 
