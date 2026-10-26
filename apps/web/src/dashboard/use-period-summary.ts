@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isDailySeries } from "../home/home-rhythm-model";
 import { isNoAnswer } from "../lib/connection";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
@@ -7,6 +8,7 @@ import {
   clearPeriodSummaryCaches,
   isPeriodSummary,
   readPeriodSummaryCache,
+  type StoredDay,
   type StoredPeriodSummary,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
@@ -18,7 +20,7 @@ import {
   periodSummaryErrorMessage,
   periodSummaryMayUseCopy,
 } from "./dashboard-errors";
-import { type Period, samePeriod } from "./result-period";
+import { addDays, type Period, samePeriod } from "./result-period";
 
 export interface PeriodSummaryState {
   error: string | null;
@@ -227,26 +229,41 @@ export function usePeriodSummary(
 }
 
 /** The days of the period the chips of the cards compare with, and which period they are of. */
-export interface ComparisonDays {
-  days: NonNullable<StoredPeriodSummary["daily"]>;
+export interface ComparisonDays<
+  Day = NonNullable<StoredPeriodSummary["daily"]>[number],
+> {
+  days: Day[];
   period: Period;
 }
 
-/**
- * The daily series of the period before (`result-kpis.ts`, `comparisonPeriod`): what the chips of the cards compare
- * with. A read of its own, asked only once the screen's read of the period answered (the caller passes null before),
- * in one try and with no copy on the device: when it fails, or with no connection, the cards have no chip and say
- * nothing about it. A late answer never stands for another period;
- * the last one read is kept, so going back to a period does not ask again.
- */
-export function useComparisonDays(
+/** The days of a period as `report.dailySales` read them: sales and counts only, no cost. */
+export type ComparisonSales = ComparisonDays<
+  Pick<StoredDay, "date" | "netSales" | "salesCount">
+>;
+
+/** How a read of the period before is made: in one try (see `useComparisonRead`), `null` for what the server does not send. */
+type ReadDays<Day> = (
   organizationId: string,
-  period: Period | null
-): ComparisonDays | null {
+  period: Period,
+  isCurrent: () => boolean
+) => Promise<Day[] | null>;
+
+/**
+ * A read of the period before that the cards compare with, asked only once the screen's read of the period answered
+ * (the caller passes null before, and also when the card that reads it can have no chip), in one try and with no copy on the device: when it fails, or with no connection,
+ * the cards have no chip and say nothing about it. `read` gives the days of the period, or null when what came back is
+ * not what the server sends. A late answer never stands for another period; the last one read is kept, so going back
+ * to a period does not ask again.
+ */
+function useComparisonRead<Day>(
+  organizationId: string,
+  period: Period | null,
+  read: ReadDays<Day>
+): ComparisonDays<Day> | null {
   const from = period?.from ?? null;
   const to = period?.to ?? null;
   const [kept, setKept] = useState<
-    (ComparisonDays & { organizationId: string }) | null
+    (ComparisonDays<Day> & { organizationId: string }) | null
   >(null);
   const sequence = useRef(0);
   const wanted =
@@ -262,22 +279,10 @@ export function useComparisonDays(
     sequence.current += 1;
     const requestSequence = sequence.current;
     const isCurrent = () => requestSequence === sequence.current;
-    readWithRetry(
-      (signal) =>
-        orpcClient.report.periodSummary(
-          { from, organizationId, to },
-          { signal }
-        ),
-      // one try: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
-      { isCurrent, mayRetry: () => false }
-    )
-      .then((summary) => {
-        if (isCurrent() && isPeriodSummary(summary) && summary.daily) {
-          setKept({
-            days: summary.daily,
-            organizationId,
-            period: { from, to },
-          });
+    read(organizationId, { from, to }, isCurrent)
+      .then((days) => {
+        if (isCurrent() && days) {
+          setKept({ days, organizationId, period: { from, to } });
         }
       })
       .catch(() => {
@@ -286,7 +291,63 @@ export function useComparisonDays(
     return () => {
       sequence.current += 1;
     };
-  }, [from, organizationId, to, wanted]);
+  }, [from, organizationId, read, to, wanted]);
 
   return wanted ? { days: kept.days, period: kept.period } : null;
+}
+
+// one try in each: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
+const readSummaryDays: ReadDays<ComparisonDays["days"][number]> = async (
+  organizationId,
+  { from, to },
+  isCurrent
+) => {
+  const summary = await readWithRetry(
+    (signal) =>
+      orpcClient.report.periodSummary({ from, organizationId, to }, { signal }),
+    { isCurrent, mayRetry: () => false }
+  );
+  return isPeriodSummary(summary) && summary.daily ? summary.daily : null;
+};
+
+const readSalesDays: ReadDays<ComparisonSales["days"][number]> = async (
+  organizationId,
+  period,
+  isCurrent
+) => {
+  const series = await readWithRetry(
+    (signal) =>
+      orpcClient.report.dailySales({ organizationId, ...period }, { signal }),
+    { isCurrent, mayRetry: () => false }
+  );
+  // not what the server sends (a captive portal page, a proxy): as if it had not answered
+  return isDailySeries(series, period)
+    ? series.net.map((netSales, index) => ({
+        date: addDays(period.from, index),
+        netSales,
+        salesCount: series.count[index] as number,
+      }))
+    : null;
+};
+
+/**
+ * The daily series of the period before (`result-kpis.ts`, `comparisonPeriod`) with the result of each day, read by
+ * `periodSummary` (the engine): what the chip of the result compares with.
+ */
+export function useComparisonDays(
+  organizationId: string,
+  period: Period | null
+): ComparisonDays | null {
+  return useComparisonRead(organizationId, period, readSummaryDays);
+}
+
+/**
+ * The same period's net sales and sales count of each day, read by `dailySales` (a SQL `GROUP BY`, no engine): what the
+ * chips of sales and ticket compare with.
+ */
+export function useComparisonSales(
+  organizationId: string,
+  period: Period | null
+): ComparisonSales | null {
+  return useComparisonRead(organizationId, period, readSalesDays);
 }

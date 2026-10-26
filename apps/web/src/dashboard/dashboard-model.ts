@@ -169,6 +169,16 @@ export interface ChainRow {
   value: string;
 }
 
+/** What the subtotals from the CMV on say when no cost of the period is known: the dash, and why. */
+export const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
+
+/** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
+const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
+  "grossProfit",
+  "contributionMargin",
+  "estimatedOperatingResult",
+]);
+
 interface ChainLine {
   id: keyof PeriodChain;
   kind: ChainRowKind;
@@ -242,13 +252,28 @@ function lineNote(
   return null;
 }
 
-/** The rows of "Como chegamos a este resultado", with the unknowns that were left out marked on their line. */
+/**
+ * The rows of "Como chegamos a este resultado", with the unknowns that were left out marked on their line. With no cost
+ * known in the period (`noKnownCost`, decided by the caller) the subtotals from the CMV on are a dash with their note:
+ * the server's figures there are the sales, and a partial cost stays as it is.
+ */
 export function chainRows(
   chain: PeriodChain,
-  quality: PeriodQuality
+  quality: PeriodQuality,
+  noKnownCost = false
 ): ChainRow[] {
   return CHAIN_LINES.map((line) => {
     const amount = chain[line.id];
+    if (noKnownCost && COST_SUBTOTALS.has(line.id)) {
+      return {
+        id: line.id,
+        kind: line.kind,
+        label: line.label,
+        negative: false,
+        note: NO_KNOWN_COST_NOTE,
+        value: EMPTY_VALUE,
+      };
+    }
     return {
       id: line.id,
       kind: line.kind,

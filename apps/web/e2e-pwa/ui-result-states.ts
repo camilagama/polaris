@@ -254,6 +254,17 @@ async function serveResult(page: Page, served: Served) {
       }
       return route.fulfill(rpc(summary));
     }
+    if (procedure === "report/dailySales") {
+      // the chips of Vendas and Ticket médio read the period before here (a SQL `GROUP BY`: sales and counts only)
+      const daily = dailyOf(String(input.from), String(input.to), false);
+      return route.fulfill(
+        rpc({
+          count: daily.map((day) => day.salesCount),
+          from: input.from,
+          net: daily.map((day) => day.netSales),
+        })
+      );
+    }
     if (procedure === "goal/list") {
       return route.fulfill(rpc({ goals: served.empty ? [] : GOALS }));
     }
