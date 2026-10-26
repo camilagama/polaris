@@ -228,7 +228,7 @@ export const RPC_WRITE_RULE: RateLimitRule = {
  * write quota. The address bucket (`RPC_READ_IP_RATE_LIMIT`) is wider than the session one
  * (`RPC_READ_RATE_LIMIT`): every device of a store, and the stores behind one carrier address, share it.
  */
-export const RPC_READ_RULE: RateLimitRule = {
+const RPC_READ_RULE: RateLimitRule = {
   bindings: {
     ip: (bindings) => bindings.RPC_READ_IP_RATE_LIMIT,
     session: (bindings) => bindings.RPC_READ_RATE_LIMIT,
