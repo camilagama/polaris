@@ -464,11 +464,10 @@ const historyScreen = (
   sourceDirs: HISTORY_SOURCES,
 });
 
-/** The files of the sale detail (with its return, cancellation and customer panels) and of the customer page. */
+/** The files of the sale detail (with its return, cancellation and customer panels). */
 const SALE_DETAIL_SOURCES = [
   "src/sales/operation-failure-notice.tsx",
   "src/sales/sale-cancel-panel.tsx",
-  "src/sales/sale-customer-page.tsx",
   "src/sales/sale-customer-panel.tsx",
   "src/sales/sale-detail-page.tsx",
   "src/sales/sale-id-missing.tsx",

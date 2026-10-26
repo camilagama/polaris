@@ -146,6 +146,18 @@ const chip = (page: Page) => page.locator(".sync-status");
 const storeMenu = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Loja, tema e Sair" });
 
+/** The eight destinations of the menu, in order (map of navigation, § 1). */
+const DESTINATIONS = [
+  "Início",
+  "Vender",
+  "Histórico",
+  "Estoque",
+  "Produtos",
+  "Clientes",
+  "Resultado",
+  "Configurações",
+];
+
 test.describe("desktop (1280 px)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -159,20 +171,8 @@ test.describe("desktop (1280 px)", () => {
     const nav = sidebar(page);
     await expect(nav).toBeVisible();
     await expect(bottomBar(page)).toBeHidden();
-    await expect(nav.getByRole("link")).toHaveText([
-      "Início",
-      "Vender",
-      "Histórico",
-      "Estoque",
-      "Produtos",
-      "Categorias",
-      "Clientes",
-      "Despesas",
-      "Resultado",
-      "Perfis de pagamento",
-      "Catálogo público",
-      "Aparelhos",
-    ]);
+    // the eight destinations (map of navigation, § 1): no Pendências with nothing refused
+    await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
     await expect(nav.locator('[data-sidebar="group-label"]')).toHaveText([
       "Catálogo",
       "Resultado",
@@ -381,17 +381,19 @@ test.describe("celular (360 px)", () => {
     ).toBe(true);
 
     await page.goto("/products");
-    // Estoque marks its area (Produtos, Categorias, Clientes); Mais does not
+    // Estoque marks its area (Produtos, with its Categorias, and Clientes); Mais does not
     await expect(bar.locator('[aria-current="page"]')).toHaveCount(0);
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
     await expect(bar.locator("[data-bottom-mark]")).toHaveCount(1);
     await more(page).click();
     const panel = page.getByRole("dialog", { name: "Mais" });
     await expect(panel).toBeVisible();
-    // the four of the bar are not repeated in Mais; Resultado is there now
+    // the four of the bar are not repeated in Mais: the rest of the destinations, with Resultado and Configurações
     await expect(panel.getByRole("link", { name: "Vender" })).toHaveCount(0);
     await expect(panel.getByRole("link", { name: "Início" })).toHaveCount(0);
-    await expect(panel.getByRole("link", { name: "Resultado" })).toBeVisible();
+    await expect(
+      panel.getByRole("navigation", { name: "Principal" }).getByRole("link")
+    ).toHaveText(["Produtos", "Clientes", "Resultado", "Configurações"]);
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");
     await expect(
@@ -401,8 +403,13 @@ test.describe("celular (360 px)", () => {
     await page.waitForURL("**/customers");
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
 
-    // a screen of no destination of the bar marks Mais: Resultado and Despesas since the Início took their place
-    for (const path of ["/dashboard", "/expenses", "/payment-profiles"]) {
+    // a screen of no destination of the bar marks Mais: Resultado and Configurações, with their tabs
+    for (const path of [
+      "/dashboard",
+      "/dashboard?aba=despesas",
+      "/configuracoes",
+      "/configuracoes?aba=catalogo-publico",
+    ]) {
       // biome-ignore lint/performance/noAwaitInLoops: one page at a time
       await page.goto(path);
       await expect(bar.locator("[aria-current]")).toHaveCount(0);
@@ -486,4 +493,454 @@ test.describe("celular (360 px)", () => {
     await expect.poll(() => state.signOutCalls).toBe(1);
     await expect(page).toHaveURL(LEFT_TO_START);
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* t417: the eight destinations, the tabs, the old addresses, Pendências and the folding column                     */
+/* -------------------------------------------------------------------------- */
+
+const pathOf = (page: Page) => {
+  const url = new URL(page.url());
+  return `${url.pathname}${url.search}`;
+};
+
+/**
+ * One command of this device that the server refused (as `sync.push` leaves it): written into the outbox of the
+ * runtime, which opened with the page, and read again on a reload. The screens of this harness have no copy of their
+ * own to queue with, so the record is made here, in the shape the outbox keeps.
+ */
+async function leaveOneRefused(page: Page) {
+  await page.goto("/");
+  await expect(chip(page)).toContainText("Tudo sincronizado", {
+    timeout: 20_000,
+  });
+  await page.evaluate(
+    async ({ deviceId, organizationId }) => {
+      const names = (await indexedDB.databases())
+        .map(({ name }) => name ?? "")
+        .filter((name) => name.startsWith("polaris-outbox-"));
+      for (const name of names) {
+        // biome-ignore lint/performance/noAwaitInLoops: one database, the one of this person
+        await new Promise<void>((resolve, reject) => {
+          const opening = indexedDB.open(name);
+          opening.onerror = () => reject(opening.error);
+          opening.onsuccess = () => {
+            const tx = opening.result.transaction(
+              ["commands", "meta"],
+              "readwrite"
+            );
+            const at = new Date().toISOString();
+            tx.objectStore("commands").put({
+              attempts: 1,
+              baseVersion: null,
+              commandId: crypto.randomUUID(),
+              createdAt: at,
+              deviceId,
+              lastAttemptAt: at,
+              lease: "lease",
+              organizationId,
+              payload: { name: "Bia Souza" },
+              rejection: { at, code: "validation_failed" },
+              seq: 1,
+              status: "rejected",
+              type: "customer.create",
+            });
+            tx.objectStore("meta").put(1, "lastSeq");
+            tx.oncomplete = () => {
+              opening.result.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        });
+      }
+      return names.length;
+    },
+    { deviceId: DEVICE.id, organizationId: ORGANIZATION_ID }
+  );
+  await page.reload();
+  await expect(chip(page)).toContainText("precisa de atenção", {
+    timeout: 20_000,
+  });
+}
+
+/** The text of the Pendências link: its name and the drawn count (its accessible name says the count in words). */
+const PENDENCIAS_WITH_COUNT = "Pendências1";
+
+const tabList = (page: Page, name: string) =>
+  page.getByRole("tablist", { exact: true, name });
+
+test.describe("os 8 destinos e as abas (1280 px)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+  });
+
+  test("cada destino da lateral abre a sua tela e fica como o atual", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/");
+    for (const [label, path] of [
+      ["Vender", "/sales"],
+      ["Histórico", "/sales/history"],
+      ["Estoque", "/inventory"],
+      ["Produtos", "/products"],
+      ["Clientes", "/customers"],
+      ["Resultado", "/dashboard"],
+      ["Configurações", "/configuracoes"],
+      ["Início", "/"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one destination at a time
+      await sidebar(page)
+        .getByRole("link", { exact: true, name: label })
+        .click();
+      await expect.poll(() => pathOf(page)).toBe(path);
+      await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
+        label
+      );
+      await expect(sidebar(page).getByRole("link")).toHaveText(DESTINATIONS);
+    }
+  });
+
+  for (const screen of [
+    {
+      label: "Produtos e categorias",
+      path: "/products",
+      tabs: [
+        ["Produtos", "/products"],
+        ["Categorias", "/products?aba=categorias"],
+      ],
+      title: "Produtos",
+    },
+    {
+      label: "Resultado, metas e despesas",
+      path: "/dashboard",
+      tabs: [
+        ["Resultado", "/dashboard"],
+        ["Metas", "/dashboard?aba=metas"],
+        ["Despesas", "/dashboard?aba=despesas"],
+      ],
+      title: "Resultado",
+    },
+    {
+      label: "Configurações",
+      path: "/configuracoes",
+      // Assinatura without billing:manage and Senha with the password off are not offered (map § 1)
+      tabs: [
+        ["Formas de receber", "/configuracoes"],
+        ["Catálogo público", "/configuracoes?aba=catalogo-publico"],
+        ["Aparelhos", "/configuracoes?aba=aparelhos"],
+      ],
+      title: "Configurações",
+    },
+  ]) {
+    test(`${screen.title}: cada aba abre a sua tela, fica no endereço e volta marcada ao recarregar`, async ({
+      page,
+    }) => {
+      await serve(page);
+      await page.goto(screen.path);
+      await expect(
+        page.getByRole("heading", { exact: true, level: 1, name: screen.title })
+      ).toBeVisible();
+      const list = tabList(page, screen.label);
+      await expect(list.getByRole("tab")).toHaveText(
+        screen.tabs.map(([name]) => name as string)
+      );
+      for (const [name, address] of screen.tabs) {
+        const tab = list.getByRole("tab", { exact: true, name });
+        // biome-ignore lint/performance/noAwaitInLoops: one tab at a time
+        await tab.click();
+        await expect(tab).toHaveAttribute("aria-selected", "true");
+        await expect.poll(() => pathOf(page)).toBe(address);
+        // the menu keeps the destination current on every tab
+        await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
+          screen.title
+        );
+        await expect(page.getByRole("tabpanel")).toHaveCount(1);
+      }
+      // a reload opens the tab of the address, and the tab changes leave no step in the history
+      await page.reload();
+      const last = screen.tabs.at(-1)?.[0] as string;
+      await expect(
+        tabList(page, screen.label).getByRole("tab", {
+          exact: true,
+          name: last,
+        })
+      ).toHaveAttribute("aria-selected", "true");
+    });
+  }
+
+  test("as abas andam com as setas do teclado e a tela da aba tem o título dela", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/configuracoes");
+    const list = tabList(page, "Configurações");
+    await list
+      .getByRole("tab", { exact: true, name: "Formas de receber" })
+      .focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    const tab = list.getByRole("tab", {
+      exact: true,
+      name: "Catálogo público",
+    });
+    await expect(tab).toBeFocused();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("heading", {
+        exact: true,
+        level: 2,
+        name: "Catálogo público",
+      })
+    ).toBeVisible();
+    // one h1 a page: the destination
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Configurações"
+    );
+  });
+
+  test("os endereços antigos abrem a aba certa, sem quebrar link salvo", async ({
+    page,
+  }) => {
+    await serve(page);
+    for (const [old, address, list, tab] of [
+      [
+        "/categories",
+        "/products?aba=categorias",
+        "Produtos e categorias",
+        "Categorias",
+      ],
+      [
+        "/expenses",
+        "/dashboard?aba=despesas",
+        "Resultado, metas e despesas",
+        "Despesas",
+      ],
+      [
+        "/payment-profiles",
+        "/configuracoes",
+        "Configurações",
+        "Formas de receber",
+      ],
+      [
+        "/public-catalog",
+        "/configuracoes?aba=catalogo-publico",
+        "Configurações",
+        "Catálogo público",
+      ],
+      [
+        "/devices",
+        "/configuracoes?aba=aparelhos",
+        "Configurações",
+        "Aparelhos",
+      ],
+      [
+        "/subscription",
+        "/configuracoes?aba=assinatura",
+        "Configurações",
+        "Assinatura",
+      ],
+      [
+        "/conta/seguranca",
+        "/configuracoes?aba=senha",
+        "Configurações",
+        "Senha",
+      ],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one address at a time
+      await page.goto(old);
+      await expect.poll(() => pathOf(page)).toBe(address);
+      await expect(
+        tabList(page, list).getByRole("tab", { exact: true, name: tab })
+      ).toHaveAttribute("aria-selected", "true");
+    }
+    // the rest of the query goes on (the return of a checkout)
+    await page.goto("/subscription?retorno=concluida");
+    await expect
+      .poll(() => pathOf(page))
+      .toBe("/configuracoes?retorno=concluida&aba=assinatura");
+  });
+
+  test("/sales/customer não existe mais: o 404 do shell leva ao Início e ao Histórico", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto(
+      "/sales/customer?saleId=0199c2d0-0000-7000-8000-000000000001"
+    );
+    await expect(
+      page.getByRole("heading", { name: "Página não encontrada" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { exact: true, name: "Ir para o Início" })
+    ).toHaveAttribute("href", "/");
+    await expect(
+      page.getByRole("link", { exact: true, name: "Ver o histórico" })
+    ).toHaveAttribute("href", "/sales/history");
+  });
+
+  test("Pendências aparece só com registro recusado, com o número, e marca a si mesma", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/");
+    await expect(
+      sidebar(page).getByRole("link", { name: "Pendências" })
+    ).toHaveCount(0);
+    await leaveOneRefused(page);
+    const link = sidebar(page).getByRole("link", {
+      exact: true,
+      name: "Pendências, 1 registro recusado",
+    });
+    await expect(link).toBeVisible();
+    await expect(link.locator("[data-attention-count]")).toHaveText("1");
+    // the ninth, right after Histórico
+    await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Início",
+      "Vender",
+      "Histórico",
+      PENDENCIAS_WITH_COUNT,
+      ...DESTINATIONS.slice(3),
+    ]);
+    await link.click();
+    await expect.poll(() => pathOf(page)).toBe("/attention");
+    await expect(sidebar(page).locator('[aria-current="page"]')).toContainText(
+      "Pendências"
+    );
+  });
+});
+
+test.describe("lateral recolhível (a partir de 1024 px)", () => {
+  const collapse = (page: Page) =>
+    page.getByRole("button", { exact: true, name: "Recolher menu" });
+  const expand = (page: Page) =>
+    page.getByRole("button", { exact: true, name: "Expandir menu" });
+
+  test("o botão do topo recolhe só para os ícones, com o nome de cada destino, e a escolha fica no aparelho", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await page.goto("/products");
+    const nav = sidebar(page);
+    const wide = (await nav.boundingBox())?.width ?? 0;
+    await expect(collapse(page)).toHaveAttribute("aria-expanded", "true");
+    await collapse(page).click();
+    await expect(expand(page)).toHaveAttribute("aria-expanded", "false");
+    await expect
+      .poll(async () => (await nav.boundingBox())?.width ?? 0)
+      .toBeLessThan(wide / 3);
+    // folded, the links keep their names (for a screen reader) and the current one its mark
+    await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
+    await expect(nav.locator('[aria-current="page"]')).toHaveAccessibleName(
+      "Produtos"
+    );
+    // only to the eye: the name is a pixel, out of sight
+    expect(
+      (await nav.getByText("Produtos", { exact: true }).boundingBox())?.width ??
+        0
+    ).toBeLessThanOrEqual(1);
+    // the name in a tooltip beside the icon
+    await nav.getByRole("link", { exact: true, name: "Clientes" }).hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
+      "Clientes"
+    );
+    // the legal links leave the folded column for the foot of the content
+    await expect(
+      page.getByRole("link", { exact: true, name: "Termos de Uso" })
+    ).toBeVisible();
+    // kept on the device: a reload opens it folded
+    await page.reload();
+    await expect(expand(page)).toBeVisible();
+    await expand(page).click();
+    await expect(collapse(page)).toBeVisible();
+    await expect
+      .poll(async () => (await nav.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(wide - 2);
+  });
+
+  test("Ctrl+B recolhe e abre, e a borda da lateral também", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1024 });
+    await serve(page);
+    await page.goto("/");
+    await expect(collapse(page)).toBeVisible();
+    await page.keyboard.press("Control+b");
+    await expect(expand(page)).toBeVisible();
+    await page.keyboard.press("Control+b");
+    await expect(collapse(page)).toBeVisible();
+    await page.locator('[data-sidebar="rail"]').click();
+    await expect(expand(page)).toBeVisible();
+  });
+
+  test("de 760 a 1023 px a lateral não recolhe, nem com a escolha guardada", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await page.goto("/");
+    await collapse(page).click();
+    await expect(expand(page)).toBeVisible();
+    await page.setViewportSize({ height: 800, width: 900 });
+    await expect(expand(page)).toHaveCount(0);
+    await expect(collapse(page)).toHaveCount(0);
+    await page.keyboard.press("Control+b");
+    // open, with every name written
+    const name = sidebar(page)
+      .getByRole("link", { exact: true, name: "Configurações" })
+      .getByText("Configurações", { exact: true });
+    expect((await name.boundingBox())?.width ?? 0).toBeGreaterThan(40);
+  });
+});
+
+test.describe("barra do celular a 360 e 320 px", () => {
+  for (const width of [360, 320]) {
+    test(`${width} px: a barra cabe, Vender no centro, e o número de Pendências fica em Mais`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await serve(page);
+      await leaveOneRefused(page);
+      const bar = bottomBar(page);
+      await expect(bar.getByRole("link")).toHaveText([
+        "Início",
+        "Histórico",
+        "Vender",
+        "Estoque",
+      ]);
+      // each of the five is whole on the screen, and nothing scrolls sideways
+      for (const item of await bar.locator("a, button").all()) {
+        // biome-ignore lint/performance/noAwaitInLoops: one item at a time
+        await expect(item).toBeInViewport({ ratio: 1 });
+      }
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+      await expect(more(page).locator("[data-attention-count]")).toHaveText(
+        "1"
+      );
+      await more(page).click();
+      const panel = page.getByRole("dialog", { name: "Mais" });
+      await expect(
+        panel.getByRole("navigation", { name: "Principal" }).getByRole("link")
+      ).toHaveText([
+        PENDENCIAS_WITH_COUNT,
+        "Produtos",
+        "Clientes",
+        "Resultado",
+        "Configurações",
+      ]);
+      await expect(
+        panel.getByRole("button", { exact: true, name: "Sair" })
+      ).toBeVisible();
+      // no folding on the phone
+      await expect(
+        page.getByRole("button", { name: "Recolher menu" })
+      ).toHaveCount(0);
+    });
+  }
 });

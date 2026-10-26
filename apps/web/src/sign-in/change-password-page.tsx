@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Separator } from "@/ui/separator";
+import { tabHref } from "../app-shell/navigation-model";
 import { NotFoundPage } from "../app-shell/not-found-page";
+import { ScreenTitle, useInTab } from "../app-shell/screen-title";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
 import { signInPath } from "../lib/sign-in-path";
 import { LogoutDialog } from "../offline/logout-dialog";
@@ -52,9 +54,9 @@ import {
   PASSWORD_RULE,
 } from "./password-texts";
 
-const ACCOUNT_SECURITY_PATH = "/conta/seguranca";
+const ACCOUNT_SECURITY_PATH = tabHref("settings", "senha");
 /** "Cancelar" goes back to where the page is reached from, without saving. */
-const DEVICES_PATH = "/devices";
+const DEVICES_PATH = tabHref("settings", "aparelhos");
 /** A live but old login: "Sair" (the queue protected first), then back here, as in Aparelhos. */
 const SIGN_IN_AGAIN = signInPath({
   reason: "recente",
@@ -352,18 +354,22 @@ function ChangePasswordForm() {
 export function ChangePasswordPage() {
   const { methods, retry } = useEntryMethods(undefined, false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // alone, the page takes the focus to its title; as a tab of Configurações the focus stays on the tab
+  const inTab = useInTab();
   useEffect(() => {
-    headingRef.current?.focus();
-  }, []);
+    if (!inTab) {
+      headingRef.current?.focus();
+    }
+  }, [inTab]);
   if (methods.state === "off") {
     return <NotFoundPage pathname={window.location.pathname} />;
   }
   return (
     <div className="grid max-w-[34rem]">
       <UiBlock>
-        <h1 className="text-title" ref={headingRef} tabIndex={-1}>
+        <ScreenTitle ref={headingRef} tabIndex={-1}>
           {CHANGE_TITLE}
-        </h1>
+        </ScreenTitle>
         <p className="text-pretty text-muted-foreground text-support">
           {CHANGE_SUPPORT}
         </p>

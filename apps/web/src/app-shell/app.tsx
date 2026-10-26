@@ -7,6 +7,7 @@ import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { legacyCheckoutReturnPath } from "../subscription/plan-notice";
 import { getUpdateStore } from "../pwa/runtime";
 import { UpdateBanner } from "../pwa/update-banner";
+import { useAddress } from "./address";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
 import { type LazyScreen, lazyScreen } from "./lazy-screen";
@@ -14,9 +15,10 @@ import {
   documentTitle,
   type EntryPageId,
   entryPageFor,
+  legacyAddress,
   type ResolvedRoute,
-  type RouteId,
   resolveRoute,
+  type ScreenId,
 } from "./navigation-model";
 import { NotFoundPage } from "./not-found-page";
 import { PageLoading } from "./page-loading";
@@ -25,21 +27,11 @@ type Page = LazyScreen;
 
 const TRAILING_SLASHES = /\/+$/;
 
-/** Each area is its own chunk; a screen only loads when it is opened. */
-const pages: Readonly<Record<RouteId, Page>> = {
-  "account-security": lazyScreen(() =>
-    import("../sign-in/change-password-page").then((module) => ({
-      default: module.ChangePasswordPage,
-    }))
-  ),
+/** Each area is its own chunk; a screen only loads when it is opened (and each tab of a screen, when it opens). */
+const pages: Readonly<Record<ScreenId, Page>> = {
   attention: lazyScreen(() =>
     import("../offline/runtime/attention-page").then((module) => ({
       default: module.AttentionPage,
-    }))
-  ),
-  categories: lazyScreen(() =>
-    import("../catalog/categories-page").then((module) => ({
-      default: module.CategoriesPage,
     }))
   ),
   customers: lazyScreen(() =>
@@ -52,16 +44,6 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.DashboardPage,
     }))
   ),
-  devices: lazyScreen(() =>
-    import("../offline/runtime/devices-page").then((module) => ({
-      default: module.DevicesPage,
-    }))
-  ),
-  expenses: lazyScreen(() =>
-    import("../expenses/expenses-page").then((module) => ({
-      default: module.ExpensesPage,
-    }))
-  ),
   home: lazyScreen(() =>
     import("../home/home-page").then((module) => ({
       default: module.HomePage,
@@ -72,29 +54,14 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.InventoryPage,
     }))
   ),
-  "payment-profiles": lazyScreen(() =>
-    import("../payment-profiles/payment-profiles-page").then((module) => ({
-      default: module.PaymentProfilesPage,
-    }))
-  ),
   products: lazyScreen(() =>
-    import("../catalog/products-page").then((module) => ({
-      default: module.ProductsPage,
-    }))
-  ),
-  "public-catalog": lazyScreen(() =>
-    import("../catalog/public-catalog-page").then((module) => ({
-      default: module.PublicCatalogPage,
+    import("../catalog/catalog-products-screen").then((module) => ({
+      default: module.CatalogProductsScreen,
     }))
   ),
   sale: lazyScreen(() =>
     import("../sales/sale-page").then((module) => ({
       default: module.SalePage,
-    }))
-  ),
-  "sale-customer": lazyScreen(() =>
-    import("../sales/sale-customer-page").then((module) => ({
-      default: module.SaleCustomerPage,
     }))
   ),
   "sale-detail": lazyScreen(() =>
@@ -107,9 +74,9 @@ const pages: Readonly<Record<RouteId, Page>> = {
       default: module.SaleHistoryPage,
     }))
   ),
-  subscription: lazyScreen(() =>
-    import("../subscription/subscription-page").then((module) => ({
-      default: module.SubscriptionPage,
+  settings: lazyScreen(() =>
+    import("../settings/settings-screen").then((module) => ({
+      default: module.SettingsScreen,
     }))
   ),
 };
@@ -171,12 +138,13 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       </AppShell>
     );
   }
-  const Page = pages[route.id];
+  const Page = pages[route.screen];
   return (
     <AppShell
       connectionForm={route.connectionForm}
       navId={route.navId}
       onlineOnly={route.onlineOnly}
+      routeId={route.id}
       updateNotice={<UpdateSlot />}
     >
       <ErrorBoundary onRetry={Page.reset}>
@@ -245,7 +213,9 @@ function AcceptanceApp() {
 }
 
 function StoreApp() {
-  const route = resolveRoute(window.location.pathname);
+  // the tab is in the address: a change of tab is a change of route for the shell (the chip, the connection notice)
+  const { pathname, search } = useAddress();
+  const route = resolveRoute(pathname, search);
   const { title } = route;
   useEffect(() => {
     document.title = documentTitle(title);
@@ -295,6 +265,16 @@ export function App() {
   if (checkoutReturn) {
     window.location.replace(checkoutReturn);
     return null;
+  }
+  // a screen that became a tab keeps its address (map of navigation, § 6): in place, with no load, so it opens offline
+  // from the copy of the shell as well
+  const tabAddress = legacyAddress(
+    window.location.pathname,
+    window.location.search,
+    window.location.hash
+  );
+  if (tabAddress) {
+    window.history.replaceState(window.history.state, "", tabAddress);
   }
   const entryPage = entryPageFor(window.location.pathname);
   if (entryPage && TRAILING_SLASHES.test(window.location.pathname)) {

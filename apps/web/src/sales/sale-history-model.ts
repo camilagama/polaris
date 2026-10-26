@@ -37,11 +37,6 @@ export function saleDetailHref(saleId: string): string {
   return `/sales/detail?saleId=${saleId}`;
 }
 
-/** The customer reconciliation of one sale; reached from the sale detail. */
-export function saleCustomerHref(saleId: string): string {
-  return `/sales/customer?saleId=${saleId}`;
-}
-
 /* -------------------------------------------------------------------------- */
 /* List state                                                                 */
 /* -------------------------------------------------------------------------- */

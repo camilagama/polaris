@@ -18,6 +18,7 @@ import { ExpenseRulesPanel } from "./expense-rules-panel";
 import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 type StatusChange = "restore" | "void";
 
@@ -36,7 +37,7 @@ function savedMessage(
 function Heading() {
   return (
     <header className="grid gap-1">
-      <h1 className="text-title">Despesas</h1>
+      <ScreenTitle>Despesas</ScreenTitle>
       <p className="text-muted-foreground text-support">
         Cada despesa conta no mês de competência, não no dia do pagamento.
       </p>

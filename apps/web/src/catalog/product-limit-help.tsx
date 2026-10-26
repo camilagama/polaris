@@ -9,6 +9,9 @@ import {
   type ProductLimitHelp,
   productLimitHelp,
 } from "./product-errors";
+import { tabHref } from "../app-shell/navigation-model";
+
+const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /**
  * Works out what goes with the plan's limit refusal (stage 2 of the corte 61b, AC-10). Whom may manage the billing
@@ -75,7 +78,7 @@ export function LimitHelp({
       <span className="mt-2 flex">
         <a
           className={buttonVariants({ size: "sm", variant: "outline" })}
-          href="/subscription"
+          href={SUBSCRIPTION_HREF}
         >
           Conhecer o Pro
         </a>

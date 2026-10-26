@@ -24,7 +24,6 @@ import {
   moreLoadFailed,
   nextOffset,
   SALES_PAGE_SIZE,
-  saleCustomerHref,
   saleDetailHref,
   saleDetailView,
 } from "./sale-history-model";
@@ -345,10 +344,6 @@ describe("filters", () => {
     });
     expect(filtered).toMatchObject({ href: null, kind: "empty" });
     expect("message" in filtered && filtered.message).toContain("filtros");
-  });
-
-  it("links the sale detail to the customer page without putting it in the menu", () => {
-    expect(saleCustomerHref(id(1))).toBe(`/sales/customer?saleId=${id(1)}`);
   });
 });
 
