@@ -506,6 +506,16 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.read(null).result.date).toBe("outubro inteiro");
   });
 
+  it("without the series (a copy kept before it), says the server's card, never a sum of no day", () => {
+    const kpis = monthKpis([], [], TODAY, {
+      ...cards,
+      operatingResult: "-5.00",
+    });
+    expect(kpis.result).toEqual({ kind: "unsent" });
+    expect(kpis.read(null).result.value).toBe("-5.00");
+    expect(kpis.read(null).result.date).toBe("outubro inteiro");
+  });
+
   it("gives no chip, but still draws, when the previous month has an unknown day in the range", () => {
     const before = september(
       (date) => (date === "2026-09-03" ? { operatingResult: null } : undefined),

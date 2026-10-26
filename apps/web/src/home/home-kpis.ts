@@ -420,7 +420,11 @@ export function monthKpis(
   let result: ResultSeries = { kind: "known" };
   if (unknown > 0) {
     result = { kind: "incomplete", total: days.length, unknown };
-  } else if (days.some((day) => day.operatingResult === undefined)) {
+  } else if (
+    days.length === 0 ||
+    days.some((day) => day.operatingResult === undefined)
+  ) {
+    // no series at all (a copy kept before it existed) is no known result either: never a sum of no day as "0,00"
     result = { kind: "unsent" };
   }
 

@@ -508,8 +508,8 @@ test.describe("loja com venda", () => {
     await expect(
       today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
     ).toHaveText("16,0×");
-    await expect(today.locator("[data-kpi-delta=up]")).toHaveText(
-      "16,0×16,0 vezes"
+    await expect(today.locator("[data-kpi-delta=up] .sr-only")).toHaveText(
+      "16,0 vezes"
     );
     await expect(today).toContainText("vs. média das 4 sextas anteriores");
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
