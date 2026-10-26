@@ -29,13 +29,16 @@ export function useSignedInUser(): {
     const controller = new AbortController();
     // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
     const timer = setTimeout(() => controller.abort(), 5000);
-    // through the connection: the first lookup of the tab goes out before the screen's reads (`read-gate.ts`)
+    // the first lookup of the tab goes out before the screen's reads (`read-gate.ts`); its answer is only a reminder,
+    // never a proof of the connection, so it is not classified (a portal's page leaves the line empty, nothing more)
     browserConnection
-      .fetch("/api/auth/get-session", {
-        cache: "no-store",
-        credentials: "same-origin",
-        signal: controller.signal,
-      })
+      .sessionFirst(() =>
+        fetch("/api/auth/get-session", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        })
+      )
       .then((response) => (response.ok ? response.json() : null))
       .then(
         (session: { user?: { email?: unknown; name?: unknown } } | null) => {

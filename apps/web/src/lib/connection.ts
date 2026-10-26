@@ -211,6 +211,11 @@ export interface Connection {
    * one retry of the tab's budget.
    */
   mayRetryRead: () => boolean;
+  /**
+   * Runs a session lookup that does not go through `fetch` here (the e-mail at the foot of the shell): the first one
+   * of the tab still holds the reads until it ends (`read-gate.ts`), and its answer is not classified.
+   */
+  sessionFirst: <T>(task: () => Promise<T>) => Promise<T>;
   /** "Tentar agora": one probe right now, whatever the interval; the state it ends in. */
   probeNow: () => Promise<ConnectionState>;
   subscribe: (listener: () => void) => () => void;
@@ -516,6 +521,7 @@ export function createConnection(
     getSnapshot: () => snapshot,
     isOnline: () => snapshot.state === "online",
     mayRetryRead: reads.mayRetry,
+    sessionFirst: reads.session,
     async probeNow() {
       await probe();
       return snapshot.state;

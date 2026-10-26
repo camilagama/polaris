@@ -233,6 +233,27 @@ describe("the session first", () => {
     ]);
   });
 
+  it("a lookup outside the connection's fetch (the shell's e-mail) holds them too, and its answer is not classified", async () => {
+    const t = network();
+    let answer: (response: Response) => void = () => undefined;
+    const lookup = t.connection.sessionFirst(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+    );
+    t.call("/rpc/report/periodSummary");
+    await flush();
+    expect(t.sent).toEqual([]);
+
+    // a portal's page: no mark, and still no doubt about the connection
+    answer(new Response("<html></html>", { status: 200 }));
+    await expect(lookup).resolves.toBeInstanceOf(Response);
+    await flush();
+    expect(t.sent).toEqual(["/rpc/report/periodSummary"]);
+    expect(t.connection.isOnline()).toBe(true);
+  });
+
   it("a session lookup that hangs holds the reads 5 s at most", async () => {
     const t = network();
     t.call("/api/auth/get-session");
