@@ -104,6 +104,24 @@ function consecutive(days: readonly Day[], period: Period): Day[] {
   return out;
 }
 
+/**
+ * True when no cost of the period is known: every day up to today has a null result, or every item line sold has an
+ * unknown cost (the server's CMV is then zero by lack of data, not by fact). The margin and the result of the server
+ * are then the sales, not an estimate: the cards show a dash, never a number made of costs read as zero.
+ */
+export function noKnownCost(
+  days: readonly Day[],
+  quality: { itemLines: number; itemLinesWithUnknownCost: number }
+): boolean {
+  if (days.length > 0 && days.every((day) => day.operatingResult === null)) {
+    return true;
+  }
+  return (
+    quality.itemLines > 0 &&
+    quality.itemLinesWithUnknownCost >= quality.itemLines
+  );
+}
+
 export interface ResultKpiCards {
   marginPercent: string | null;
   netSales: string;

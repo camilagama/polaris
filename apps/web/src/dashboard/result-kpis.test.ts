@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { StoredDay } from "../lib/period-summary-cache";
-import { comparisonPeriod, rangeText, resultKpis } from "./result-kpis";
+import {
+  comparisonPeriod,
+  noKnownCost,
+  rangeText,
+  resultKpis,
+} from "./result-kpis";
 import { addDays } from "./result-period";
 
 /** `count` days from `from`, each with R$ `sales` of net sales in one sale and a result of R$ `result`. */
@@ -280,5 +285,44 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(kpis.result.kind).toBe("unsent");
     expect(kpis.series.result).toBeNull();
     expect(kpis.read(null).result.value).toBe("1000.00");
+  });
+});
+
+describe("no known cost in the period", () => {
+  const lines = { itemLines: 25, itemLinesWithUnknownCost: 3 };
+
+  it("is true when every day up to today has a null result", () => {
+    const unknown = days("2026-10-01", 25, () => ({ operatingResult: null }));
+    expect(noKnownCost(unknown, lines)).toBe(true);
+  });
+
+  it("is true when every item line sold has an unknown cost (the CMV is zero for lack of data)", () => {
+    expect(
+      noKnownCost(days("2026-10-01", 25), {
+        itemLines: 25,
+        itemLinesWithUnknownCost: 25,
+      })
+    ).toBe(true);
+  });
+
+  it("is false for a partial cost: 3 of 25 days, or 3 of 25 lines", () => {
+    const partial = days("2026-10-01", 25, (index) =>
+      index % 8 === 0 ? { operatingResult: null } : {}
+    );
+    expect(noKnownCost(partial, lines)).toBe(false);
+    expect(noKnownCost(days("2026-10-01", 25), lines)).toBe(false);
+  });
+
+  it("is false with no day and no item line (nothing to say of the cost)", () => {
+    expect(noKnownCost([], { itemLines: 0, itemLinesWithUnknownCost: 0 })).toBe(
+      false
+    );
+  });
+
+  it("is false for a copy that never sent the results of the days, when the lines are known", () => {
+    const unsent = days("2026-10-01", 25).map(
+      ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
+    );
+    expect(noKnownCost(unsent, lines)).toBe(false);
   });
 });

@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
+import { GapSeries } from "../ui/charts/chart-gaps";
+import { knownRuns } from "../ui/charts/chart-data";
 import { NumbersTable, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
 import { resultSeries } from "./result-series";
@@ -10,6 +12,31 @@ import { resultSeries } from "./result-series";
  * the Petković (26/10 00:41), the summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
  * day of unknown cost says "sem custo informado", never R$ 0,00. The drawing itself is measured in the browser.
  */
+
+// the plot is measured by the browser and is not in the markup of the server: the gap series is drawn here inside a
+// stand-in of the context of the blocks (seven days, 70 px each), the rest of the module is the real one
+vi.mock("../ui/bklit/charts/chart-context", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useChart: () => {
+    const data = Array.from({ length: 7 }, (_, index) => ({
+      date: new Date(2026, 9, index + 1),
+      drawn: 10,
+      drawnSecondary: index % 2 === 1 ? 5 : undefined,
+      label: String(index + 1),
+      raw: 10,
+      rawSecondary: index % 2 === 1 ? 5 : null,
+    }));
+    return {
+      data,
+      innerHeight: 100,
+      innerWidth: 420,
+      isLoaded: true,
+      tooltipData: null,
+      xScale: (date: Date) => (date.getDate() - 1) * 70,
+    };
+  },
+  useYScale: () => (value: number) => 100 - value * 5,
+}));
 
 const ZONE = "America/Sao_Paulo";
 // October 2026 read on the 25th at noon of the store
@@ -181,5 +208,56 @@ describe("the table Ver os números (AC-9, AC-18)", () => {
 
   it("keeps the header cell of each row", () => {
     expect(table([3])).toContain('scope="row"');
+  });
+});
+
+describe("the cost line by run of known days (AC-9)", () => {
+  // the stand-in has days 2, 4 and 6 known between unknown ones: three runs of one day
+  const markup = renderToStaticMarkup(
+    <svg aria-hidden="true">
+      <GapSeries
+        color="var(--chart-result)"
+        dash="4 3"
+        mainColor="var(--chart-sales)"
+        runs={knownRuns(
+          Array.from({ length: 7 }, (_, index) => ({
+            label: String(index + 1),
+            value: index % 2 === 1 ? 5 : null,
+          }))
+        )}
+      />
+    </svg>
+  );
+
+  it("draws a known day alone between two unknown ones as a point, never as a line", () => {
+    expect(markup.match(/data-chart-lone-day="/g)).toHaveLength(3);
+    expect(markup).toContain('data-chart-lone-day="1"');
+    expect(markup).toContain('data-chart-lone-day="3"');
+    expect(markup).toContain('data-chart-lone-day="5"');
+    // a run of one day has no path: `data-chart-run` is only of a run of two days or more
+    expect(markup).not.toContain("data-chart-run");
+  });
+
+  it("hatches the four unknown days and nothing else", () => {
+    expect(markup.match(/data-chart-unknown-day="/g)).toHaveLength(4);
+  });
+
+  it("keeps the line of a run of two days or more beside the point of the day alone", () => {
+    const mixed = renderToStaticMarkup(
+      <svg aria-hidden="true">
+        <GapSeries
+          color="var(--chart-result)"
+          dash="4 3"
+          mainColor="var(--chart-sales)"
+          runs={[
+            { end: 1, start: 1 },
+            { end: 5, start: 3 },
+          ]}
+        />
+      </svg>
+    );
+    expect(mixed).toContain('data-chart-lone-day="1"');
+    expect(mixed).toContain('data-chart-run="3-5"');
+    expect(mixed.match(/data-chart-run="/g)).toHaveLength(1);
   });
 });

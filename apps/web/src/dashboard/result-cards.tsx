@@ -14,7 +14,7 @@ import {
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { useIsMobile } from "../lib/use-mobile";
 import { formatPercentOrDash, isIncompleteEstimate } from "./dashboard-model";
-import { resultKpis } from "./result-kpis";
+import { noKnownCost, type ResultKpis, resultKpis } from "./result-kpis";
 import type { ComparisonDays } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -26,6 +26,43 @@ export function IncompleteBadge() {
     >
       estimativa incompleta
     </Badge>
+  );
+}
+
+/** The lines of the two cards when no cost of the period is known (never a margin or a result made of zero costs). */
+const NO_COST_MARGIN = "Sem custo conhecido no período.";
+const NO_COST_RESULT = "Sem custo conhecido: o resultado não dá para estimar.";
+
+function IncompleteBadgeLine() {
+  return (
+    <span className="mb-1 block">
+      <IncompleteBadge />
+    </span>
+  );
+}
+
+/** The foot of the result card: the badge, then the line of the card, or what is missing (and never both). */
+function ResultFooter({
+  incomplete,
+  kind,
+  line,
+  noCost,
+}: {
+  incomplete: boolean;
+  kind: ResultKpis["result"];
+  line: string;
+  noCost: boolean;
+}) {
+  return (
+    <>
+      {incomplete ? <IncompleteBadgeLine /> : null}
+      {noCost ? <span data-kpi-no-cost="">{NO_COST_RESULT}</span> : line}
+      {!noCost && kind.kind === "incomplete" ? (
+        <span className="mt-1 block" data-kpi-unknown="">
+          {unknownDaysText(kind.unknown, kind.total)}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -71,7 +108,9 @@ interface ResultCardsProps {
  * Ticket médio and Margem. The sparklines of sales, ticket and result read the same day together (the pointer, the
  * finger or the arrows); leaving, they go back to the period up to today. The result has its sparkline and its chip
  * (in reais) only when every day up to today has a known cost; otherwise the badge "estimativa incompleta" and "N de M
- * dias sem custo informado", with neither (AC-9). The margin is the server's, with no sparkline. On a phone the
+ * dias sem custo informado", with neither (AC-9). With no cost known at all (`noKnownCost`) the result and the margin
+ * show a dash, the badge and one line each: the server's figures are then the sales, never an estimate. The margin is
+ * the server's, with no sparkline. On a phone the
  * sparklines are drawn finished; the reading by the finger stays (t386).
  */
 export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
@@ -123,8 +162,12 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
   );
   // a period with no sale draws nothing; a copy kept before the series existed has the totals only
   const drawn = cards.salesCount > 0 && kpis.days.length > 0;
+  // no cost known at all: the server's margin and result are the sales, so the two cards say so and show no number
+  const noCost = noKnownCost(kpis.days, quality);
   const incomplete =
-    isIncompleteEstimate(quality) || kpis.result.kind === "incomplete";
+    noCost ||
+    isIncompleteEstimate(quality) ||
+    kpis.result.kind === "incomplete";
   const resultNegative = (rest.result.value ?? "").trim().startsWith("-");
   const salesTitle = kpis.month ? `Vendas em ${kpis.month}` : "Vendas líquidas";
   return (
@@ -133,28 +176,21 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
       data-kpi-row=""
     >
       <KpiCard
-        {...chip(read.result)}
+        {...(noCost ? {} : chip(read.result))}
         className="col-span-2 lg:col-span-1"
         date={read.result.date}
         entity="result"
         footer={
-          <>
-            {incomplete ? (
-              <span className="mb-1 block">
-                <IncompleteBadge />
-              </span>
-            ) : null}
-            {read.result.count}
-            {kpis.result.kind === "incomplete" ? (
-              <span className="mt-1 block" data-kpi-unknown="">
-                {unknownDaysText(kpis.result.unknown, kpis.result.total)}
-              </span>
-            ) : null}
-          </>
+          <ResultFooter
+            incomplete={incomplete}
+            kind={kpis.result}
+            line={read.result.count}
+            noCost={noCost}
+          />
         }
         id="result-kpi-result"
-        note={read.result.note}
-        {...(kpis.series.result && drawn
+        note={noCost ? null : read.result.note}
+        {...(kpis.series.result && drawn && !noCost
           ? {
               range: range(
                 read.result,
@@ -169,7 +205,7 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
             }
           : {})}
         title="Resultado estimado"
-        value={<HeroValue amount={read.result.value} />}
+        value={<HeroValue amount={noCost ? null : read.result.value} />}
       />
       <KpiCard
         {...chip(read.sales)}
@@ -230,17 +266,13 @@ export function ResultCards({ comparison, summary, today }: ResultCardsProps) {
         entity="result"
         footer={
           <>
-            {incomplete ? (
-              <span className="mb-1 block">
-                <IncompleteBadge />
-              </span>
-            ) : null}
-            Contribuição sobre as vendas líquidas.
+            {incomplete ? <IncompleteBadgeLine /> : null}
+            {noCost ? NO_COST_MARGIN : "Contribuição sobre as vendas líquidas."}
           </>
         }
         id="result-kpi-margin"
         title="Margem"
-        value={<MarginValue percent={cards.marginPercent} />}
+        value={<MarginValue percent={noCost ? null : cards.marginPercent} />}
       />
     </div>
   );
