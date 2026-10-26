@@ -643,7 +643,7 @@ describe("the costs of the day in the kept series (AC-9)", () => {
 });
 
 describe("forgetting the copies of one organization (clearOrganizationResultCopies)", () => {
-  it("removes the months and the Início's copy of that organization only", () => {
+  it("removes the months and the Início's copies (blocks and map) of that organization only", () => {
     const { storage, values } = memoryStorage();
     for (const organization of [ORG, OTHER]) {
       writePeriodSummaryCache(
@@ -661,6 +661,7 @@ describe("forgetting the copies of one organization (clearOrganizationResultCopi
         ALLOWED
       );
       values.set(`polaris.offline.home.${organization}`, "{}");
+      values.set(`polaris.offline.dailySales.${organization}`, "{}");
     }
     values.set("polaris.offline.paymentProfiles.x", "[]");
     values.set("polaris.preferredOrganizationId", ORG);
@@ -668,6 +669,7 @@ describe("forgetting the copies of one organization (clearOrganizationResultCopi
     clearOrganizationResultCopies(storage, ORG);
 
     expect([...values.keys()].sort()).toEqual([
+      `polaris.offline.dailySales.${OTHER}`,
       `polaris.offline.home.${OTHER}`,
       "polaris.offline.paymentProfiles.x",
       keyOf(OTHER, "2026-09"),

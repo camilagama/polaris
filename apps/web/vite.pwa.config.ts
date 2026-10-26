@@ -1,7 +1,11 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import { MOTION_MODULE, precacheBudgetPlugin } from "./pwa/precache-budget";
+import {
+  isSharedChartModule,
+  MOTION_MODULE,
+  precacheBudgetPlugin,
+} from "./pwa/precache-budget";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -42,6 +46,14 @@ export default defineConfig({
               name: "motion",
               priority: 30,
               test: MOTION_MODULE,
+            },
+            // the charts and the map of the Início (t394) share the sparkline, d3 and visx: they stay in the charts
+            // chunk, so the map's chunk has only the map (the guards of `pwa/precache-budget.ts`)
+            {
+              includeDependenciesRecursively: false,
+              name: "charts",
+              priority: 25,
+              test: isSharedChartModule,
             },
           ],
         },

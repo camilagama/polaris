@@ -128,6 +128,28 @@ function summary(
   };
 }
 
+/** The light series of the map (`report.dailySales`): the first date and one entry per date, from the same days. */
+function dailySales(
+  from: string,
+  to: string,
+  sold: Readonly<Record<string, [string, number]>> = SOLD
+) {
+  const net: string[] = [];
+  const count: number[] = [];
+  for (
+    let time = Date.parse(`${from}T00:00:00.000Z`);
+    time <= Date.parse(`${to}T00:00:00.000Z`);
+    time += DAY
+  ) {
+    const [netSales, salesCount] = sold[
+      new Date(time).toISOString().slice(0, 10)
+    ] ?? ["0.00", 0];
+    net.push(netSales);
+    count.push(salesCount);
+  }
+  return { count, from, net };
+}
+
 const GOAL = {
   achievedValue: null,
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -190,6 +212,11 @@ function answer(
           )
         );
   }
+  if (asked === "report/dailySales") {
+    return rpc(
+      dailySales(String(input.from), String(input.to), fresh ? {} : SOLD)
+    );
+  }
   if (asked === "goal/list") {
     return rpc({ goals: fresh ? [] : [GOAL] });
   }
@@ -235,6 +262,7 @@ export async function serveHome(
   for (const procedure of [
     "goal/list",
     "inventory/listBalances",
+    "report/dailySales",
     "report/periodSummary",
     "sale/list",
   ]) {
@@ -269,8 +297,8 @@ async function openHome(
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** The keys of the Início's copy: A under the period summary's key, the rest under the Início's own. */
-const COPY_KEYS = /^polaris\.offline\.(home|periodSummary)\./;
+/** The keys of the Início's copy: A under the period summary's key, the rest under the Início's own, the map's series under its own. */
+const COPY_KEYS = /^polaris\.offline\.(home|periodSummary|dailySales)\./;
 
 /** The charts chunk of a build, by its path. */
 const CHARTS_CHUNK_PATH = /\/assets\/charts-[\w-]+\.js$/;
@@ -278,6 +306,7 @@ const CHARTS_CHUNK_PATH = /\/assets\/charts-[\w-]+\.js$/;
 const HOME_READS = [
   "goal/list",
   "inventory/listBalances",
+  "report/dailySales",
   "report/periodSummary",
   "sale/list",
 ];
@@ -389,7 +418,7 @@ export async function readHomeInLab(page: Page): Promise<string> {
     .getByRole("img")
     .waitFor();
   // biome-ignore lint/performance/noAwaitInLoops: waits for the copy the read keeps
-  for (let tries = 0; (await homeCopyKeys(page)).length < 2; tries += 1) {
+  for (let tries = 0; (await homeCopyKeys(page)).length < 3; tries += 1) {
     if (tries > 50) {
       throw new Error("o Início não guardou a cópia");
     }
@@ -435,12 +464,16 @@ export const homeStates = {
     openHome(page, { fresh: true }, (opened) =>
       opened.getByRole("link", { name: "Cadastrar produto" }).waitFor()
     ),
-  /** A store with sales: every block, with the chart drawn (not the box that holds its place). */
+  /** A store with sales: every block, with the chart and the map drawn (not the boxes that hold their places). */
   sold: (page: Page) =>
     openHome(page, {}, async (opened) => {
       await opened
         .getByRole("region", { name: "Vendas por dia" })
         .getByRole("img")
+        .waitFor();
+      await opened
+        .getByRole("region", { name: "Ritmo de vendas" })
+        .locator("[data-heatmap] svg")
         .waitFor();
       await opened
         .locator("[data-chart-loading]")

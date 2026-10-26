@@ -20,6 +20,7 @@ import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import { KpiCards } from "./home-kpi-cards";
+import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import {
   copyLine,
   type GoalView,
@@ -77,12 +78,20 @@ interface Blocks {
   chart: React.ReactNode;
   main: React.ReactNode;
   ranking: React.ReactNode;
+  rhythm: React.ReactNode;
+}
+
+/** The map's series and its "Tentar novamente". */
+interface Rhythm {
+  onRetry: () => void;
+  source: RhythmSource;
 }
 
 /** The KPI cards, the ranking and the chart of figures that were read (from the server or from the copy). */
 function readBlocks(
   figures: HomeFigures,
   chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  rhythm: Rhythm,
   todayShown = true
 ): Blocks {
   const top = figures.month.topProducts ?? [];
@@ -95,6 +104,15 @@ function readBlocks(
     ) : null,
     main: <KpiCards figures={figures} todayShown={todayShown && series} />,
     ranking: top.length > 0 ? <TopProductsBlock products={top} /> : null,
+    // the days of the month are the figures': a copy without the series of the month draws no map either
+    rhythm:
+      figures.month.daily === undefined ? null : (
+        <RhythmBlock
+          figures={figures}
+          onRetry={rhythm.onRetry}
+          source={rhythm.source}
+        />
+      ),
   };
 }
 
@@ -102,11 +120,12 @@ function readBlocks(
 function figureBlocks(
   state: HomeState,
   onRetry: () => void,
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void }
+  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  onRetryRhythm: () => void
 ): Blocks {
   const { checklist, figures } = state;
   if (figures.status === "hidden") {
-    return { chart: null, main: null, ranking: null };
+    return NO_BLOCKS;
   }
   if (figures.status === "error") {
     return {
@@ -118,6 +137,7 @@ function figureBlocks(
         />
       ),
       ranking: null,
+      rhythm: null,
     };
   }
   if (figures.status === "loading" || checklist.status === "loading") {
@@ -144,22 +164,32 @@ function figureBlocks(
         </div>
       ),
       ranking: null,
+      rhythm: (
+        <BlockSkeleton
+          className="h-72"
+          label="Carregando o ritmo de vendas…"
+          lines={0}
+        />
+      ),
     };
   }
   if (checklist.status === "ready" && checklist.data) {
     return {
-      chart: null,
+      ...NO_BLOCKS,
       main: <ChecklistBlock checklist={checklist.data} />,
-      ranking: null,
     };
   }
-  return readBlocks(figures.data, chart);
+  return readBlocks(figures.data, chart, {
+    onRetry: onRetryRhythm,
+    source: state.rhythm,
+  });
 }
 
 const NO_BLOCKS: Blocks = {
   chart: null,
   main: null,
   ranking: null,
+  rhythm: null,
 };
 
 /** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
@@ -168,6 +198,7 @@ function pageBlocks({
   offline,
   readsReport,
   retryFigures,
+  retryRhythm,
   state,
   timezone,
   today,
@@ -176,13 +207,14 @@ function pageBlocks({
   offline: OfflineHome | null;
   readsReport: boolean;
   retryFigures: () => void;
+  retryRhythm: () => void;
   state: HomeState;
   timezone: string | null;
   today: string;
 }): { blocks: Blocks; updated: string | null } {
   if (offline === null) {
     return {
-      blocks: figureBlocks(state, retryFigures, chart),
+      blocks: figureBlocks(state, retryFigures, chart, retryRhythm),
       updated:
         state.figures.status === "ready"
           ? homeUpdatedLine(state.figures.data.month.generatedAt, timezone)
@@ -196,7 +228,15 @@ function pageBlocks({
     return { blocks: noFigures(today), updated: null };
   }
   return {
-    blocks: readBlocks(offline.figures, chart, offline.figures.todayShown),
+    blocks: readBlocks(
+      offline.figures,
+      chart,
+      {
+        onRetry: retryRhythm,
+        source: { data: offline.rhythm, status: "copy" },
+      },
+      offline.figures.todayShown
+    ),
     updated: copyLine(
       formatLastConfirmed(offline.figures.confirmedAt, timezone),
       offline.figures.stale
@@ -210,7 +250,7 @@ function pageBlocks({
  */
 function noFigures(today: string): Blocks {
   return {
-    chart: null,
+    ...NO_BLOCKS,
     main: (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <HomeBlock
@@ -229,7 +269,6 @@ function noFigures(today: string): Blocks {
         </HomeBlock>
       </div>
     ),
-    ranking: null,
   };
 }
 
@@ -397,29 +436,37 @@ function pickGoalBlock({
 }
 
 /**
- * The blocks under the KPI cards. The source has the order of a phone (Atenção, Meta, the chart, Mais vendidos, v7
- * § 3); from 1024 px the chart takes the left 2/3 and the other blocks stack on the right, the last row taking what is
- * left over, so no gap opens between them.
+ * The blocks under the KPI cards. The source has the order of a phone (Atenção, Meta, Vendas por dia, Ritmo de vendas,
+ * Mais vendidos, v7 § 3); from 1024 px the chart takes the left 2/3 beside Atenção and Meta, and the map the left 2/3
+ * of the next row beside Mais vendidos. Without the map the chart takes the three rows, as before it, and the ranking
+ * stacks under the goal; the row of the goal takes what is left over, so no gap opens between Atenção and Meta.
  */
 function LowerBlocks({
   attention,
   chart,
   goal,
   ranking,
+  rhythm,
 }: {
   attention: React.ReactNode;
   chart: React.ReactNode;
   goal: React.ReactNode;
   ranking: React.ReactNode;
+  rhythm: React.ReactNode;
 }) {
   const placed = chart !== null;
+  const mapped = placed && rhythm !== null;
   return (
     <div
       className={cn(
         "grid min-w-0 gap-4 lg:items-start",
         placed
-          ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:grid-rows-[auto_auto_1fr]"
-          : "lg:grid-cols-2"
+          ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+          : "lg:grid-cols-2",
+        placed &&
+          (mapped
+            ? "lg:grid-rows-[auto_1fr_auto]"
+            : "lg:grid-rows-[auto_auto_1fr]")
       )}
     >
       {attention ? (
@@ -429,8 +476,23 @@ function LowerBlocks({
         <div className={cn("grid min-w-0", placed && SIDE[1])}>{goal}</div>
       ) : null}
       {placed ? (
-        <div className="grid min-w-0 lg:col-start-1 lg:row-span-3 lg:row-start-1">
+        <div
+          className={cn(
+            "grid min-w-0 lg:col-start-1 lg:row-start-1",
+            mapped ? "lg:row-span-2" : "lg:row-span-3"
+          )}
+        >
           {chart}
+        </div>
+      ) : null}
+      {rhythm ? (
+        <div
+          className={cn(
+            "grid min-w-0",
+            mapped && "lg:col-start-1 lg:row-start-3"
+          )}
+        >
+          {rhythm}
         </div>
       ) : null}
       {ranking ? (
@@ -450,11 +512,15 @@ function LowerBlocks({
 export function HomePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const { timezone } = organization;
-  const { online, reads, retryFigures, retryGoals, serverNow, state } = useHome(
-    organizationId,
-    organization.role,
-    timezone
-  );
+  const {
+    online,
+    reads,
+    retryFigures,
+    retryGoals,
+    retryRhythm,
+    serverNow,
+    state,
+  } = useHome(organizationId, organization.role, timezone);
   const snapshot = useRuntimeSnapshot();
   const { offline, view } = useOfflineView({
     figuresLoading: state.figures.status === "loading",
@@ -483,6 +549,7 @@ export function HomePage() {
         offline: view,
         readsReport: reads.report,
         retryFigures,
+        retryRhythm,
         state,
         timezone,
         today,
@@ -527,6 +594,7 @@ export function HomePage() {
           chart={blocks.chart}
           goal={goalBlock}
           ranking={blocks.ranking}
+          rhythm={blocks.rhythm}
         />
       </div>
     </div>

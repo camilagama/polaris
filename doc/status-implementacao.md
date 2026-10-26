@@ -2282,6 +2282,23 @@ Desenho do Filipe de 25/10 (item 6). A tela do mapa e a cópia offline são outr
 | Índice `(organization_id, occurred_on)` | Em revisão (t393) | Migration 0104 (provisória), só `CREATE INDEX sales_organization_occurred_on_idx ON sales (organization_id, occurred_on)` com `lock_timeout` de 10 s (expand-only; a construção segura as escritas em `sales`, curta antes do go-live). O gate `daily-sales` semeia 4 000 vendas antigas por loja, roda `ANALYZE` e exige, com o planejador livre, que o `dailySales` e o `readPeriodFacts` (a consulta real, vinda de `periodSalesSelect`) leiam `sales` por esse índice. O CI já roda o gate em todo PR (`gates:ci`, job `PostgreSQL 18 gates`). |
 | Medida de CPU | Pendente | Local (`wrangler dev`, banco falso): ver o PR. A medida oficial é a do Juan no staging (mediana ≤ 8 ms, p95 ≤ 12 ms, 0 `exceededCpu`). |
 
+### Início v7, pacote D: "Ritmo de vendas" e a cópia da série (t394; sem migration)
+
+Revisão de UI v7 (Petković, 25/10), § 3 item 10 e § 7 linha D; desenho do `dailySales` (Filipe, 25/10, item 6); condição do Rodrigo no PR 335 (656-1). Emendas de 26/10 do ADR 0103 (o chunk do mapa) e do ADR 0056 (a cópia).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Bloco "Ritmo de vendas" | Em revisão | `home/home-rhythm.tsx` e `home/home-rhythm-model.ts`: 26 semanas a partir de 760 px (13 no celular), domingo a sábado; vazio com contorno, 4 níveis pelos quartis da loja, melhor dia em tinta, hoje tracejado; leitura acima, legenda com as faixas em reais, frase do melhor dia da semana ou "Poucas semanas…", média por dia da semana em barras. A 1280 ao lado de Mais vendidos; a 360 depois de Vendas por dia. |
+| Acessibilidade | Em revisão | SVG do Bklit `aria-hidden`; resumo `role="img"`, leitura, teclado (`input type="range"`: dia, semana, Home/End) e "Ver os números" nossos. |
+| Esconder valores | Em revisão | Leitura, legenda, frase, resumo, `aria-valuetext` e tabela pela máscara do pacote B. |
+| Dados | Em revisão | `report.dailySales` de 182 dias no máximo (do primeiro domingo das 26 semanas à véspera do dia 1º), também no celular: uma leitura e uma cópia para qualquer largura; o mês vem do `month.daily`. Sem todos os dias, esqueleto (com conexão) ou "O mapa abre com internet." (sem); nunca zero no lugar do desconhecido. |
+| Cópia offline da série | Em revisão | `home/rhythm-copy.ts`, chave `polaris.offline.dailySales.<org>`, gravada depois da resposta com a guarda (`isSigningOut`, runtime, sessão); apagada por `clearPeriodSummaryCaches` (Sair, 401, limpeza da saída) e `clearOrganizationResultCopies` (403). |
+| Cache diário (t403) | Em revisão | Pedido do Filipe (CPU-1e, item 3): a cópia guarda o dia da loja da leitura; com rede, o Início usa a cópia de hoje do mesmo período e só chama o `dailySales` com cópia de outro dia (ou outro período) ou no "Tentar novamente" do mapa; com o runtime desligado (produção), o mesmo cache só na memória da página, sem disco. "Meses anteriores atualizados até ontem." no resumo e sobre a tabela de "Ver os números". Prova: `rhythm-copy.test.ts` (`todaysRhythmCopy`, memória com runtime desligado), `session-copies.test.ts` (a memória sai com o Sair e com a sessão encerrada) e o e2e "cache diário" (duas aberturas no mesmo dia, uma chamada; no dia seguinte, outra). |
+| Celular (t386) | Em revisão | Sem a entrada de 1 600 ms nem a onda; leitura instantânea; o toque lê no `pointerdown` e fica. |
+| Peso | Em revisão | Chunk `heatmap-*.js` com linha `HEATMAP` própria (referência 16 000 B, só avisa): 10 041 B gzip; `CHARTS` +79 B; resto +3 348 B (Node, contra a `main` `a864dcf3`). |
+| Provas | Em revisão | `home-rhythm-model.test.ts`, `rhythm-copy.test.ts`, `home-copy.test.ts`, `period-summary-cache.test.ts`, `session-copies.test.ts` (purga em cada saída e a guarda da gravação), `ui-charts-rules.test.ts` (guardas do chunk); e2e: `e2e/home.e2e.ts` ("Ritmo de vendas", Sair e "Sair com a leitura do mapa em voo": a resposta segurada até depois do Sair não grava a série, com controle negativo feito à mão), `e2e-pwa/home-offline.e2e.ts` (o mapa da cópia sem rede, pelo precache), `e2e-pwa/motion-level.e2e.ts` (celular sem entrada), verificações de tela do Início. |
+| Aparelho real | Pendente | BrowserStack, depois. |
+
 ### Início v7, pacotes E e F: Meta com anel e shell v7 (t398; revisão de UI v7, § 3 itens 9 e 12; sem migration)
 
 | Item | Estado | Detalhe |
