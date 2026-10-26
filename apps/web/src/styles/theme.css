@@ -281,6 +281,11 @@
   --default-transition-duration: 140ms;
   --default-transition-timing-function: var(--ease-soft);
   --animate-rise: rise 220ms var(--ease-soft) both;
+  /* The height of the `Collapsible` panel, as the Accordion of shadcn does it (accordion-down and accordion-up in
+     shadcn-tailwind.css: 200 ms, ease-out) with the variable of the Base UI Collapsible. The panel clips only while
+     the animation runs, so the 3 px focus ring of a field at its edge is not cut when it is open. */
+  --animate-collapsible-down: collapsible-down 200ms ease-out;
+  --animate-collapsible-up: collapsible-up 200ms ease-out;
   @keyframes rise {
     from {
       opacity: 0;
@@ -289,11 +294,6 @@
       opacity: 1;
     }
   }
-  /* The height of the `Collapsible` panel, as the Accordion of shadcn does it (accordion-down and accordion-up in
-     shadcn-tailwind.css: 200 ms, ease-out) with the variable of the Base UI Collapsible. The panel clips only while
-     the animation runs, so the 3 px focus ring of a field at its edge is not cut when it is open. */
-  --animate-collapsible-down: collapsible-down 200ms ease-out;
-  --animate-collapsible-up: collapsible-up 200ms ease-out;
   @keyframes collapsible-down {
     from {
       height: 0;
@@ -333,6 +333,11 @@
     --text-value-xl--line-height: 2.25rem;
   }
 }
+
+/* The level of motion (src/lib/motion-level.ts, ADR 0103 "Níveis de movimento"): `motion-full:` runs only when
+   main.tsx wrote `data-motion="full"` on <html>. On a phone (`essential`), with `prefers-reduced-motion` (`none`) or
+   with no attribute, the class is not there and the element is in its final state at once. */
+@custom-variant motion-full (&:is([data-motion="full"] *));
 
 /* Polaris variant and utilities */
 /* Block form: the shorthand with a comma-separated media query compiles to a broken selector. */
@@ -400,6 +405,14 @@
   }
   ::selection {
     background: color-mix(in oklch, var(--mark) 24%, transparent);
+  }
+  /* Below the `full` level of motion (a phone, or no attribute) the charts do not move (t386): the blocks of the Bklit
+     write some transitions inline, with no prop to turn them off (the labels of the y axis sliding to the new scale in
+     500 ms, the fade of the labels of the x axis and of the markers), and they end at once here, as the reduce rule
+     below does for the whole page. The rest of the charts' motion is off by the props and the `MotionConfig` of
+     `src/ui/charts/`. */
+  :root:not([data-motion="full"]) [data-chart] * {
+    transition-duration: 0s !important;
   }
   @media (prefers-reduced-motion: reduce) {
     *,

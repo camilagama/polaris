@@ -27,8 +27,10 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   of its own, as the calendar's is: `motion` and what only it brings, which the charts and the filter bar share, each
  *   loaded on demand. It is in the precache so a chart or the bar animates offline, and it counts here and in no other
  *   line. Two guards fail the build: `motion` in a chunk that is neither the charts chunk nor the motion chunk
- *   (`chartsPlacementProblems`), and the motion chunk reachable from the entry by static imports, which would put it in the
- *   shell's first load (`motionLoadProblems`); only a dynamic `import()` may load it.
+ *   (`chartsPlacementProblems`), and the motion chunk reachable by static imports from the entry, which would put it in
+ *   the shell's first load, or from a screen, which would load it on a phone (`motionLoadProblems`, t385 and t386); only
+ *   the `import()` of the charts or of the bar's motion layer (at the `full` level of motion) may load it. A phone still
+ *   downloads it with the precache (the charts need it offline), but does not run it outside a chart.
  * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
  *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
  *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
@@ -95,6 +97,12 @@ const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
 /** The chunk `motion` lives in, shared by the charts and the filter bar (t383): the one the group named `motion` of the Vite configs makes; a line of its own (t385). */
 const MOTION_CHUNK = /(^|\/)assets\/motion-[\w-]+\.js$/;
+/**
+ * The two chunks that may import the motion chunk statically (t386): the charts and the animated layer of the filter
+ * bar (`src/ui/filter-bar-motion.tsx`, loaded only at the `full` level of motion). Each comes by an `import()` of its own.
+ */
+const MOTION_LOADER_CHUNK =
+  /(^|\/)assets\/(?:charts|filter-bar-motion)-[\w-]+\.js$/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
  * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
@@ -180,6 +188,8 @@ export interface ChunkModules {
   imports?: readonly string[];
   /** Whether the chunk is an entry of the build (the shell's first script). */
   isEntry?: boolean;
+  /** Whether the chunk is loaded by an `import()` (a screen of `lazyScreen`, the gallery, the charts, a picker). */
+  isDynamicEntry?: boolean;
   modules: Record<string, { renderedLength: number }>;
 }
 
@@ -305,22 +315,24 @@ export function chartsPlacementProblems(
   });
 }
 
+/** A chunk loaded by `import()` that is neither the charts nor the bar's motion layer: a screen, the gallery, a picker. */
+const isLazyNonLoader = (chunk: ChunkModules) =>
+  chunk.isDynamicEntry === true && !MOTION_LOADER_CHUNK.test(chunk.fileName);
+
 /**
- * One problem when the motion chunk can be reached from an entry of the build through static imports only (t385): the
- * chunk is made to load on demand, with the screen that draws a chart or shows the filter bar, and a static import
- * anywhere on the way from the entry would make it part of the shell's first load. A dynamic `import()` is the only
- * way in, and it is not an edge of this graph. The problem names the path, from the entry to the chunk.
+ * One problem when the motion chunk can be reached by static imports from an entry of the build (t385) or from a chunk
+ * loaded by `import()` other than the charts and the animated layer of the filter bar (t386): a screen of `lazyScreen`,
+ * the gallery, a picker. The chunk is made to load on demand, with a chart or with the bar at the `full` level of motion,
+ * and a static import on the way from the entry would make it part of the shell's first load, as one from a screen
+ * would load it on a phone that opens the screen. Only the `import()` of the charts or of the layer may load it, and an
+ * `import()` is not an edge of this graph. The problem names the path, from where it starts to the chunk.
  */
 export function motionLoadProblems(chunks: readonly ChunkModules[]): string[] {
   const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
-  const via = new Map<string, string | null>();
-  const queue: string[] = [];
-  for (const chunk of chunks) {
-    if (chunk.isEntry) {
-      via.set(chunk.fileName, null);
-      queue.push(chunk.fileName);
-    }
-  }
+  const queue = chunks
+    .filter((chunk) => chunk.isEntry || isLazyNonLoader(chunk))
+    .map((chunk) => chunk.fileName);
+  const via = new Map<string, string | null>(queue.map((name) => [name, null]));
   // a graph with a motion chunk and no entry would pass for lack of a starting point: that is a fault of the proof, not a pass
   if (
     queue.length === 0 &&
@@ -346,7 +358,7 @@ export function motionLoadProblems(chunks: readonly ChunkModules[]): string[] {
           from = via.get(from) ?? "";
         }
         problems.push(
-          `the motion chunk is reachable from the entry by static imports (${path.join(" -> ")}); only a dynamic import() may load it`
+          `the motion chunk is reachable by static imports (${path.join(" -> ")}); only the import() of the charts or of the filter bar's motion layer may load it`
         );
       }
     }
@@ -595,6 +607,7 @@ export function precacheBudgetPlugin(
               {
                 fileName: item.fileName,
                 imports: item.imports,
+                isDynamicEntry: item.isDynamicEntry,
                 isEntry: item.isEntry,
                 modules: item.modules,
               },

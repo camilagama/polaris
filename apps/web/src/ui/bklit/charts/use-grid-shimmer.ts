@@ -3,7 +3,7 @@
 import {
   animate,
   useMotionValue,
-  useReducedMotion,
+  useReducedMotionConfig as useReducedMotion,
   useTransform,
 } from "motion/react";
 import { useEffect } from "react";

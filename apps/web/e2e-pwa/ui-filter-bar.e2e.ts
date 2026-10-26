@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
 /**
@@ -475,11 +476,25 @@ test.describe("a linha de pílulas", () => {
 });
 
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
-  test(`movimento: a pílula sai com animação e fica no lugar até acabar; com prefers-reduced-motion sai na hora (${reducedMotion})`, async ({
+  test(`movimento: no nível full a pílula sai com animação e fica no lugar até acabar; no celular e com prefers-reduced-motion sai na hora (${reducedMotion})`, async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion });
     await openGallery(page);
+    // the level of the page: the Pixel 5 project at 360 px is a phone (`essential`), the reduce is `none`
+    const level = await expectMotionLevel(page);
+    const moves = level === "full";
+    if (moves) {
+      // the animated layer comes by import() after the first paint
+      await expect
+        .poll(() =>
+          bar(page)
+            .locator('[data-slot="filter-pill"]')
+            .first()
+            .evaluate((element) => element.getAttribute("style") ?? "")
+        )
+        .not.toBe("");
+    }
     // click and look 40 ms later: an exit that animates is still in the page, one that is switched off is not
     const stillThere = await page.evaluate(async () => {
       const x = document.querySelector<HTMLButtonElement>(
@@ -489,10 +504,10 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       await new Promise((resolve) => setTimeout(resolve, 40));
       return document.querySelector('[aria-label^="Cliente: "]') !== null;
     });
-    expect(stillThere).toBe(reducedMotion === "no-preference");
+    expect(stillThere).toBe(moves);
     await expect(pill(page, "Cliente")).toHaveCount(0);
 
-    // adding: the pill enters from a lower opacity, or at once with no style at all under reduce
+    // adding: the pill enters from a lower opacity, or at once with no style at all when nothing moves
     await openMenu(page);
     await item(page, "Cliente").click();
     const style = await pill(page, "Cliente").evaluate(
@@ -500,10 +515,10 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
         element.closest('[data-slot="filter-pill"]')?.getAttribute("style") ??
         ""
     );
-    if (reducedMotion === "reduce") {
-      expect(style).toBe("");
-    } else {
+    if (moves) {
       expect(style).toContain("opacity");
+    } else {
+      expect(style).toBe("");
     }
   });
 }

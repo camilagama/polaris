@@ -214,8 +214,8 @@ describe("os nomes que o leitor de tela ouve", () => {
 });
 
 describe("movimento", () => {
-  it("a pílula entra e sai com opacidade e escala e as vizinhas deslizam (layout), como no Araute", () => {
-    const motion = pillMotion(false);
+  it("no nível full a pílula entra e sai com opacidade e escala e as vizinhas deslizam (layout), como no Araute", () => {
+    const motion = pillMotion("full");
     expect(motion.initial).toEqual({ opacity: 0, scale: 0.95, y: 4 });
     expect(motion.animate).toEqual({ opacity: 1, scale: 1, y: 0 });
     expect(motion.exit).toEqual({ opacity: 0, scale: 0.95, y: -4 });
@@ -223,12 +223,9 @@ describe("movimento", () => {
     expect(motion.transition?.type).toBe("spring");
   });
 
-  it("antes de saber a preferência (null) ainda anima; só 'reduzir movimento' desliga", () => {
-    expect(pillMotion(null).layout).toBe(true);
-  });
-
-  it("com prefers-reduced-motion nada se move: sem entrada, sem saída e sem deslizar", () => {
-    expect(pillMotion(true)).toEqual({});
+  it("no celular (essential) e com prefers-reduced-motion (none) nada se move: sem entrada, sem saída e sem deslizar", () => {
+    expect(pillMotion("essential")).toEqual({});
+    expect(pillMotion("none")).toEqual({});
   });
 });
 

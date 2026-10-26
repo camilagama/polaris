@@ -5,6 +5,7 @@ import { CSPProvider } from "@base-ui/react/csp-provider";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app-shell/app";
+import { followMotionLevel } from "./lib/motion-level";
 import { followSystemTheme } from "./lib/theme";
 import { initSentry } from "./observability/sentry";
 import {
@@ -25,6 +26,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 // The system can go from dark to light with the page open: the `dark` class follows it (U-40).
 followSystemTheme();
+// How much the interface moves (ADR 0103, "Níveis de movimento"): `data-motion` on <html> before the first render, and
+// again when the window crosses the line of the phone or the system asks for no motion.
+followMotionLevel();
 
 const rootElement = document.getElementById("root");
 

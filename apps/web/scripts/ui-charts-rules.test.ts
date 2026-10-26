@@ -23,6 +23,9 @@ const SOURCE_FILE = /\.tsx?$/;
 const ATTRIBUTION = /^\/\* Polaris adaptation of .*Bklit UI .*MIT \*\//;
 const DIRECT_IMPORT = /^import\s+(?!type\b)[^;]*from\s+["']\.\//gm;
 const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
+const TS_SOURCE = /\.tsx?$/;
+// `useReducedMotion` imported as itself, not as the alias of `useReducedMotionConfig`
+const BARE_REDUCED_MOTION = /(?<!as )\buseReducedMotion\b(?=\s*[,}])/;
 const PALETTE_COLOR =
   /\b(?:bg|text|border|ring|outline|fill|stroke)-(?:white|black|(?:slate|gray|zinc|neutral|red|orange|amber|yellow|green|emerald|blue|indigo|violet|purple|pink)-\d+)/;
 const MOVEMENT = /\b(?:translate|scale|rotate|zoom|slide)-/;
@@ -187,13 +190,14 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     }
   });
 
-  it("keeps the animation of the blocks and turns all of it off under prefers-reduced-motion", () => {
+  it("keeps the animation of the blocks at the full level and turns all of it off on a phone and under prefers-reduced-motion (t386)", () => {
     const area = read("src/ui/charts/area-chart.tsx").replace(COMMENT, "");
-    expect(area).toContain("useReducedMotion");
+    expect(area).toContain('useMotionLevel() !== "full"');
     for (const off of [
       "animate: false",
       "animationDuration: 0",
       "damping: 0",
+      'reducedMotion: "always"',
       "yDomainTween: false",
     ]) {
       expect(area, off).toContain(off);
@@ -201,9 +205,29 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     // and the defaults of the blocks otherwise: the reveal of 1 100 ms and the spring of the panel at 20
     expect(area).toContain("animationDuration: 1100");
     expect(area).toContain("damping: 20");
+    expect(area).toContain(
+      "<MotionConfig reducedMotion={motion.reducedMotion}>"
+    );
     const sparkline = read("src/ui/charts/sparkline.tsx");
-    expect(sparkline).toContain("useReducedMotion");
-    expect(sparkline).toContain("animate={!reduced}");
+    expect(sparkline).toContain('useMotionLevel() !== "full"');
+    expect(sparkline).toContain("animate={!still}");
+    expect(sparkline).toContain(
+      '<MotionConfig reducedMotion={still ? "always" : "user"}>'
+    );
+  });
+
+  it("adaptation 9: the blocks read the reduced motion of the MotionConfig, not only the system's (BKLIT-UI.md)", () => {
+    const blocks = readdirSync(join(web, "src/ui/bklit"), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((file) => TS_SOURCE.test(file));
+    for (const file of blocks) {
+      const source = read(`src/ui/bklit/${file}`);
+      // the bare hook of `motion` reads the system only: a phone at the essential level would still animate
+      expect(source, file).not.toMatch(BARE_REDUCED_MOTION);
+    }
+    expect(read("src/ui/bklit/BKLIT-UI.md")).toContain("9. **Movimento");
   });
 });
 

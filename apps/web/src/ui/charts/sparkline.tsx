@@ -1,6 +1,7 @@
 /* Polaris adaptation of the Bklit UI sparkline (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
-import { useReducedMotion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import { useCallback, useMemo } from "react";
+import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { AreaSparkline } from "../bklit/charts/sparkline";
 import { type ChartColor, drawn } from "./chart-data";
@@ -36,7 +37,8 @@ export interface SparklineProps {
  * nothing, a dot on the last value), with no axis, no grid and no focus. It is `aria-hidden`: the number beside it is
  * the information, and a screen reader hears that, not a drawing it cannot read. With `onRead` the pointer and the
  * finger read a point (the recipe "KPI sparklines"): the card writes the point read; its keyboard control is the
- * card's. `prefers-reduced-motion: reduce` (and `still`) turns the entrance, the morph and the spring off.
+ * card's. Below the `full` level of motion (a phone,
+ * `prefers-reduced-motion`), and with `still`, the entrance, the morph and the spring are off: it is drawn finished.
  */
 export function Sparkline({
   className,
@@ -49,7 +51,7 @@ export function Sparkline({
   values,
   width,
 }: SparklineProps) {
-  const reduced = useReducedMotion() === true || still;
+  const reduced = useMotionLevel() !== "full" || still;
   // the data follow the content of the values, not the identity of the array a screen builds on each render
   const signature = values.join();
   const data = useMemo(
@@ -66,22 +68,24 @@ export function Sparkline({
       className={cn("block w-full", className)}
       style={{ height }}
     >
-      <AreaSparkline
-        animate={!reduced}
-        {...(reduced ? { dataTransitionDuration: 0 } : {})}
-        {...(color ? { color } : {})}
-        data={data}
-        dataKey="value"
-        endDot
-        height={height}
-        hoverTransition={!reduced}
-        interactive={onRead !== undefined}
-        {...(onRead
-          ? { hoverIndex: readIndex ?? null, onHoverChange: read }
-          : {})}
-        {...(domain === "zero" ? { yDomain: [0] as [number] } : {})}
-        width={width}
-      />
+      <MotionConfig reducedMotion={reduced ? "always" : "user"}>
+        <AreaSparkline
+          animate={!reduced}
+          {...(reduced ? { dataTransitionDuration: 0 } : {})}
+          {...(color ? { color } : {})}
+          data={data}
+          dataKey="value"
+          endDot
+          height={height}
+          hoverTransition={!reduced}
+          interactive={onRead !== undefined}
+          {...(onRead
+            ? { hoverIndex: readIndex ?? null, onHoverChange: read }
+            : {})}
+          {...(domain === "zero" ? { yDomain: [0] as [number] } : {})}
+          width={width}
+        />
+      </MotionConfig>
     </span>
   );
 }

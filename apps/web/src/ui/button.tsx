@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /* Polaris v5.1: heights from the --h-* tokens (`h-ctl-*`: 32/28/24 with a mouse, 36/32/28 with touch; lg 36/40),
    a 48 px touch area through `touch-hit`, focus as a 3 px outline (`focus-ring`). */
 const buttonVariants = cva(
-  "group/button touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium text-sm transition-[background-color,border-color,color,box-shadow,transform] active:not-aria-[haspopup]:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-invalid:border-destructive [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "group/button touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium text-sm motion-full:transition-[background-color,border-color,color,box-shadow,transform] active:not-aria-[haspopup]:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-invalid:border-destructive [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",

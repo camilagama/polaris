@@ -220,7 +220,7 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           Ver os números
           <ChevronDownIcon
             aria-hidden="true"
-            className="transition-transform group-data-[panel-open]/numbers:rotate-180"
+            className="motion-full:transition-transform group-data-[panel-open]/numbers:rotate-180"
             data-icon="inline-end"
           />
         </CollapsibleTrigger>

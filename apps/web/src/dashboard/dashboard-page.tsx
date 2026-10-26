@@ -172,7 +172,10 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
   }
   return (
     <div
-      className={cn("grid gap-5 transition-opacity", stale && "opacity-60")}
+      className={cn(
+        "grid gap-5 motion-full:transition-opacity",
+        stale && "opacity-60"
+      )}
       data-stale={stale ? "" : undefined}
     >
       {behind ? (

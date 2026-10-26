@@ -49,7 +49,7 @@ Roda o roteiro do Gate 5 em um iPhone e um Android **físicos** do BrowserStack 
 
     scripts/gate5-real-devices.sh              # iPhone e Android, em sequência
     GATE5_PLATFORMS=android scripts/gate5-real-devices.sh   # só um aparelho (ios ou android)
-    GATE5_FLOWS=2 scripts/gate5-real-devices.sh             # só um fluxo (1, 2, 3 ou 4)
+    GATE5_FLOWS=2 scripts/gate5-real-devices.sh             # só um fluxo (1 a 5)
 
 Pré-requisitos: `bun install --frozen-lockfile`, `openssl` no PATH e as credenciais `BROWSERSTACK_USERNAME` e `BROWSERSTACK_ACCESS_KEY` no ambiente ou em `~/.secrets/browserstack.env` (o script exige modo 600 ou 400 e lê só essas duas variáveis, sem executar o arquivo; outro caminho em `BROWSERSTACK_ENV_FILE`). As credenciais nunca vão para o repositório, o relatório ou o log. Aparelhos padrão: iPhone 18 Pro Max (iOS 27, Safari) e Google Pixel 11 Pro (Android 17, Chrome); troque com `GATE5_IOS_DEVICE`, `GATE5_IOS_VERSION`, `GATE5_ANDROID_DEVICE` e `GATE5_ANDROID_VERSION` (nomes como na lista da API do BrowserStack, `GET https://api.browserstack.com/automate/browsers.json`, filtrando `device` e navegador `iphone` ou `android`). Use só dados sintéticos: os laboratórios têm servidor simulado dentro da página e não alcançam API, Neon nem pagamentos.
 
@@ -69,6 +69,7 @@ Fluxos (cada passo falho pula os seguintes do mesmo fluxo):
 | 2. Venda | iniciar a tela de venda e esperar o carregamento; sem rede, guardar uma venda de 2 itens no aparelho; conferir que o estoque do aparelho desce de 5 para 3; religar a rede, sincronizar e ver o servidor simulado confirmar uma venda; conferir que o botão volta a ser "Confirmar venda" |
 | 3. Shell | instalar o service worker e deixá-lo controlar a página; sem rede, recarregar e abrir uma rota interna a partir do shell em cache; religar a rede |
 | 4. Seletor de data | no build do shell (porta 4444), a tela de despesas do laboratório (`/offline-screens-lab?screen=expenses`, o formulário "Nova despesa"). **4a**: iniciar o runtime, tocar em "Data de competência", o calendário aparece, tocar no dia 10 (ou 11) do mês, o campo mostra a data e o popover fecha. **4b**: registrar o service worker pelo `/` e conferir que ele controla a tela; derrubar a rede, recarregar, iniciar sem rede e abrir o seletor: o calendário abre do precache; religar a rede. **4c**: ligar a chave do 503, apagar service workers e caches da origem e abrir a tela sem controle; Safari: "O calendário não abriu." e "Recarregar a página", e uma marca em `window` continua lá 5 s depois (a página não recarrega sozinha) e some só com o toque no botão; Chrome: "O calendário não abriu." e "Tentar novamente", desligar a chave, tocar, o calendário abre e a marca continua (sem recarregar). A chave volta a desligar ao fim do fluxo, mesmo com falha. Com `GATE5_SCREENSHOT_DIR` (fora do repositório), grava a tela do aparelho em cada passo de 4a a 4c |
+| 5. Movimento no celular (t386) | abrir a galeria do shell e conferir `pointer: coarse` e `data-motion="essential"` ([ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md), Níveis de movimento); o gráfico de área aparece pronto (sem o clip da revelação e com o mesmo desenho 1,5 s depois); a barra de filtros não pediu a camada animada (`filter-bar-motion`) |
 
 ### Como ler o relatório
 

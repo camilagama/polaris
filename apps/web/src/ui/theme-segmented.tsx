@@ -27,7 +27,7 @@ export function ThemeSegmented() {
       {THEMES.map((option) => (
         <button
           aria-pressed={option === theme}
-          className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-0 flex-1 items-center justify-center border border-border bg-card px-1 font-medium text-foreground text-xs transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
+          className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-0 flex-1 items-center justify-center border border-border bg-card px-1 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
           data-theme={option}
           key={option}
           onClick={pick}

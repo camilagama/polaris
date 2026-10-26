@@ -1,3 +1,4 @@
+import type { MotionLevel } from "@/lib/motion-level";
 import {
   type DateRange,
   formatRange,
@@ -178,9 +179,12 @@ export interface PillMotion {
   };
 }
 
-/** With `prefers-reduced-motion` nothing moves: no entry, no exit and no sliding of the neighbours. */
-export function pillMotion(reduced: boolean | null): PillMotion {
-  if (reduced) {
+/**
+ * Only at the `full` level the pills move (src/lib/motion-level.ts): on a phone (`essential`) and with
+ * `prefers-reduced-motion` (`none`) there is no entry, no exit and no sliding of the neighbours.
+ */
+export function pillMotion(level: MotionLevel): PillMotion {
+  if (level !== "full") {
     return {};
   }
   return {

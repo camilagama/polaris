@@ -3,17 +3,18 @@
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import FunnelIcon from "lucide-react/dist/esm/icons/funnel";
 import XIcon from "lucide-react/dist/esm/icons/x";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
 } from "react";
+import { type MotionLevel, useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { DateRangePanel } from "@/ui/date-range-picker";
@@ -31,6 +32,7 @@ import {
   type FilterRuleValue,
   lockedLabel,
   PENDING_TEXT,
+  type PillMotion,
   pillMotion,
   removeLabel,
   removeRule,
@@ -65,6 +67,80 @@ export interface FilterBarProps {
 }
 
 type Commit = (value: FilterRuleValue | null) => void;
+
+type MotionLayer = typeof import("./filter-bar-motion");
+
+let loadedLayer: MotionLayer | null = null;
+let loadingLayer: Promise<MotionLayer> | null = null;
+
+function loadMotionLayer(): Promise<MotionLayer> {
+  if (!loadingLayer) {
+    loadingLayer = import("./filter-bar-motion").then(
+      (layer) => {
+        loadedLayer = layer;
+        return layer;
+      },
+      (error: unknown) => {
+        // a failed download (offline before the chunk was cached) is tried again by the next bar; until then nothing moves
+        loadingLayer = null;
+        throw error;
+      }
+    );
+  }
+  return loadingLayer;
+}
+
+/**
+ * The animated layer of the pills, only at the `full` level of motion: it comes by `import()`, so a phone never asks
+ * for the `motion` chunk. Until it arrives (and if it cannot) the pills are drawn still, with the same DOM and the same
+ * final state; the first paint does not animate anyway. Changing between the two remounts the pills, so it waits while
+ * an editor is open or the focus is in the bar (`busy`): the focus and the text being typed are never lost to it.
+ */
+function useMotionLayer(level: MotionLevel, busy: boolean): MotionLayer | null {
+  const [loaded, setLoaded] = useState(loadedLayer);
+  useEffect(() => {
+    if (level !== "full" || loaded) {
+      return;
+    }
+    let current = true;
+    loadMotionLayer().then(
+      (layer) => current && setLoaded(layer),
+      () => undefined
+    );
+    return () => {
+      current = false;
+    };
+  }, [level, loaded]);
+  const wanted = level === "full" ? loaded : null;
+  const [shown, setShown] = useState(wanted);
+  if (!busy && shown !== wanted) {
+    setShown(wanted);
+  }
+  return shown;
+}
+
+/** A pill with no motion: the frame the animated layer draws as `motion.div`, as a plain element. */
+function StillPillFrame({
+  children,
+  className,
+  ref,
+}: {
+  children: ReactNode;
+  className: string;
+  motion: PillMotion;
+  ref: Ref<HTMLDivElement>;
+}) {
+  return (
+    <div className={className} data-slot="filter-pill" ref={ref}>
+      {children}
+    </div>
+  );
+}
+
+/** The list of pills with no motion: no presence to wait for an exit. */
+function StillPillList({ children }: { children: ReactNode }) {
+  return children;
+}
 
 /** One option of a choice: touching it chooses it. */
 function OptionButton({
@@ -224,7 +300,9 @@ interface PillProps {
   onCommit: (field: FilterField, value: FilterRuleValue | null) => void;
   onEditingChange: (field: FilterField, open: boolean, reason: string) => void;
   onRemove: (field: FilterField) => void;
-  reduced: boolean | null;
+  /** The animated layer, at the `full` level once loaded; null draws the pill still. */
+  layer: MotionLayer | null;
+  level: MotionLevel;
   /** Absent on the pill of a field just chosen in the menu, which has no value yet. */
   rule: FilterRule | undefined;
   text: string;
@@ -236,7 +314,8 @@ function FilterPill({
   onCommit,
   onEditingChange,
   onRemove,
-  reduced,
+  layer,
+  level,
   rule,
   text,
 }: PillProps) {
@@ -287,16 +366,16 @@ function FilterPill({
     </>
   );
 
+  const Frame = layer?.PillFrame ?? StillPillFrame;
   return (
-    <motion.div
-      {...pillMotion(reduced)}
+    <Frame
       className={cn(
         "inline-flex h-9 touch:h-11 max-w-full shrink-0 scroll-ms-1.5 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10",
         // the row is as wide as its pills (`w-max`), so `max-w-full` caps nothing: a pill with a reason is never wider than the
         // screen, and it is the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
         blocked && "max-w-[calc(100vw-4rem)] md:max-w-full"
       )}
-      data-slot="filter-pill"
+      motion={pillMotion(level)}
       ref={pillRef}
     >
       {blocked ? (
@@ -350,7 +429,7 @@ function FilterPill({
       >
         <XIcon aria-hidden="true" className="size-4" />
       </button>
-    </motion.div>
+    </Frame>
   );
 }
 
@@ -402,10 +481,12 @@ function FieldItem({
  * with its reason under the name ("Só com conexão"). Choosing a field adds its pill and opens the editor; closing the
  * editor with no value takes the pill back. "Limpar tudo" shows with two or more pills.
  *
- * The pills come in and go out with opacity and scale and the neighbours slide (`motion`, as the Araute has it);
- * `prefers-reduced-motion` turns all of it off. Under 760 px the row scrolls sideways in one line (`ScrollArea`), above
- * it the pills wrap. Focus: closing an editor gives it back to the pill; a pill that disappears gives it to "Filtrar".
- * The count of results is the screen's, in a `role="status"` it passes as `children`.
+ * At the `full` level of motion the pills come in and go out with opacity and scale and the neighbours slide (`motion`,
+ * as the Araute has it, in `filter-bar-motion.tsx`, loaded by `import()`); on a phone and with `prefers-reduced-motion`
+ * nothing of it runs and the `motion` chunk is not asked for (src/lib/motion-level.ts, ADR 0103). Under 760 px the row
+ * scrolls sideways in one line (`ScrollArea`), above it the pills wrap. Focus: closing an editor gives it back to the
+ * pill; a pill that disappears gives it to "Filtrar". The count of results is the screen's, in a `role="status"` it
+ * passes as `children`.
  */
 export function FilterBar({
   children,
@@ -415,12 +496,36 @@ export function FilterBar({
   onChange,
   value,
 }: FilterBarProps) {
-  const reduced = useReducedMotion();
+  const level = useMotionLevel();
   const searchRef = useRef<HTMLElement>(null);
   /** The field chosen in the menu, whose pill waits for a value. */
   const [adding, setAdding] = useState<string | null>(null);
   /** The field whose editor is open. */
   const [editing, setEditing] = useState<string | null>(null);
+  /** The focus is in the bar (a pill, its X, the menu button): swapping the layer would remount it and drop the focus. */
+  const [focusInside, setFocusInside] = useState(false);
+  useEffect(() => {
+    const bar = searchRef.current;
+    if (!bar) {
+      return;
+    }
+    const focusIn = () => setFocusInside(true);
+    const focusOut = (event: FocusEvent) =>
+      setFocusInside(
+        event.relatedTarget instanceof Node && bar.contains(event.relatedTarget)
+      );
+    bar.addEventListener("focusin", focusIn);
+    bar.addEventListener("focusout", focusOut);
+    return () => {
+      bar.removeEventListener("focusin", focusIn);
+      bar.removeEventListener("focusout", focusOut);
+    };
+  }, []);
+  const layer = useMotionLayer(
+    level,
+    editing !== null || adding !== null || focusInside
+  );
+  const PillList = layer?.PillList ?? StillPillList;
   /** Choosing a field closes the menu and opens an editor: the menu must not take the focus back from it. */
   const handOverFocus = useRef(false);
 
@@ -498,11 +603,20 @@ export function FilterBar({
     focusFilter();
   }, [closeEditor, focusFilter, onChange]);
 
+  const pills: {
+    field: FilterField;
+    rule: FilterRule | undefined;
+    text: string;
+  }[] = pending
+    ? [...shown, { field: pending, rule: undefined, text: PENDING_TEXT }]
+    : shown;
+
   const pillProps = {
     onCommit: commit,
     onEditingChange: editingChange,
+    layer,
+    level,
     onRemove: remove,
-    reduced,
   };
 
   return (
@@ -550,8 +664,10 @@ export function FilterBar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <AnimatePresence initial={false}>
-            {shown.map(({ field, rule, text }) => (
+          {/* one keyed list: the pill of a field just chosen and the same pill once it has a value are one element,
+              so the editor's trigger (where the focus goes back) is not remounted; `AnimatePresence` does the same */}
+          <PillList>
+            {pills.map(({ field, rule, text }) => (
               <FilterPill
                 {...pillProps}
                 field={field}
@@ -561,17 +677,7 @@ export function FilterBar({
                 text={text}
               />
             ))}
-            {pending ? (
-              <FilterPill
-                {...pillProps}
-                field={pending}
-                isEditing={editing === pending.id}
-                key={pending.id}
-                rule={undefined}
-                text={PENDING_TEXT}
-              />
-            ) : null}
-          </AnimatePresence>
+          </PillList>
 
           {showClearAll(shown.length) ? (
             <Button

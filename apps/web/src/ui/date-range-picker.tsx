@@ -147,7 +147,7 @@ export function DateRangePanel({
         {RANGE_PRESETS.map((preset) => (
           <button
             aria-pressed={preset.value === pressed}
-            className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
+            className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
             data-preset={preset.value}
             key={preset.value}
             onClick={pickPreset}
