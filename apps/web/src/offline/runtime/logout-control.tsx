@@ -196,7 +196,7 @@ interface LogoutControlProps {
    * The logout of the one that holds the state, when the control may be unmounted and mounted again with it kept (the
    * sidebar, when the width crosses 760 px in the middle of the flow). Without it the control has its own.
    */
-  logout?: Logout;
+  logout?: Logout | undefined;
   /** See `LogoutNotices`. */
   onAttention?: (() => void) | undefined;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
