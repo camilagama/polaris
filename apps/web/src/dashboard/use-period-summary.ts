@@ -241,6 +241,13 @@ export type ComparisonSales = ComparisonDays<
   Pick<StoredDay, "date" | "netSales" | "salesCount">
 >;
 
+/** How a read of the period before is made: in one try (see `useComparisonRead`), `null` for what the server does not send. */
+type ReadDays<Day> = (
+  organizationId: string,
+  period: Period,
+  isCurrent: () => boolean
+) => Promise<Day[] | null>;
+
 /**
  * A read of the period before that the cards compare with, asked only once the screen's read of the period answered
  * (the caller passes null before), in one try and with no copy on the device: when it fails, or with no connection,
@@ -251,11 +258,7 @@ export type ComparisonSales = ComparisonDays<
 function useComparisonRead<Day>(
   organizationId: string,
   period: Period | null,
-  read: (
-    organizationId: string,
-    period: Period,
-    signal: AbortSignal
-  ) => Promise<Day[] | null>
+  read: ReadDays<Day>
 ): ComparisonDays<Day> | null {
   const from = period?.from ?? null;
   const to = period?.to ?? null;
@@ -276,11 +279,7 @@ function useComparisonRead<Day>(
     sequence.current += 1;
     const requestSequence = sequence.current;
     const isCurrent = () => requestSequence === sequence.current;
-    readWithRetry((signal) => read(organizationId, { from, to }, signal), {
-      isCurrent,
-      // one try: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
-      mayRetry: () => false,
-    })
+    read(organizationId, { from, to }, isCurrent)
       .then((days) => {
         if (isCurrent() && days) {
           setKept({ days, organizationId, period: { from, to } });
@@ -297,26 +296,29 @@ function useComparisonRead<Day>(
   return wanted ? { days: kept.days, period: kept.period } : null;
 }
 
-const readSummaryDays = async (
-  organizationId: string,
-  { from, to }: Period,
-  signal: AbortSignal
+// one try in each: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)
+const readSummaryDays: ReadDays<ComparisonDays["days"][number]> = async (
+  organizationId,
+  { from, to },
+  isCurrent
 ) => {
-  const summary = await orpcClient.report.periodSummary(
-    { from, organizationId, to },
-    { signal }
+  const summary = await readWithRetry(
+    (signal) =>
+      orpcClient.report.periodSummary({ from, organizationId, to }, { signal }),
+    { isCurrent, mayRetry: () => false }
   );
   return isPeriodSummary(summary) && summary.daily ? summary.daily : null;
 };
 
-const readSalesDays = async (
-  organizationId: string,
-  period: Period,
-  signal: AbortSignal
+const readSalesDays: ReadDays<ComparisonSales["days"][number]> = async (
+  organizationId,
+  period,
+  isCurrent
 ) => {
-  const series = await orpcClient.report.dailySales(
-    { organizationId, ...period },
-    { signal }
+  const series = await readWithRetry(
+    (signal) =>
+      orpcClient.report.dailySales({ organizationId, ...period }, { signal }),
+    { isCurrent, mayRetry: () => false }
   );
   // not what the server sends (a captive portal page, a proxy): as if it had not answered
   return isDailySeries(series, period)
