@@ -47,11 +47,11 @@ export function Sparkline({
   height = 32,
   onRead,
   readIndex,
-  still = false,
+  still: drawnFinished = false,
   values,
   width,
 }: SparklineProps) {
-  const reduced = useMotionLevel() !== "full" || still;
+  const still = useMotionLevel() !== "full" || drawnFinished;
   // the data follow the content of the values, not the identity of the array a screen builds on each render
   const signature = values.join();
   const data = useMemo(
@@ -68,16 +68,16 @@ export function Sparkline({
       className={cn("block w-full", className)}
       style={{ height }}
     >
-      <MotionConfig reducedMotion={reduced ? "always" : "user"}>
+      <MotionConfig reducedMotion={still ? "always" : "user"}>
         <AreaSparkline
-          animate={!reduced}
-          {...(reduced ? { dataTransitionDuration: 0 } : {})}
+          animate={!still}
+          {...(still ? { dataTransitionDuration: 0 } : {})}
           {...(color ? { color } : {})}
           data={data}
           dataKey="value"
           endDot
           height={height}
-          hoverTransition={!reduced}
+          hoverTransition={!still}
           interactive={onRead !== undefined}
           {...(onRead
             ? { hoverIndex: readIndex ?? null, onHoverChange: read }
