@@ -322,15 +322,30 @@ function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
   return (2n * numerator + denominator) / (2n * denominator);
 }
 
-export interface GoalProjection {
-  /** The last day of the goal, "31/10". */
-  on: string;
-  /** "R$ 3.380,00" or "45 vendas". */
-  value: string;
-}
+export type GoalProjection =
+  /** The rhythm does not reach the target: "chega a R$ 3.380,00 em 31/10". */
+  | {
+      kind: "short";
+      /** The last day of the goal, "31/10". */
+      on: string;
+      /** "R$ 3.380,00" or "45 vendas". */
+      value: string;
+    }
+  /** The rhythm crosses the target: "a meta é batida em 28/10" ("até 31/10" when that is the last day). */
+  | {
+      kind: "reaches";
+      /** The day the projected total crosses the target, "28/10". */
+      on: string;
+      /** Whether that day is the last of the goal. */
+      onLastDay: boolean;
+    }
+  /** Nothing sold in the 7 days: no rhythm to project. */
+  | { kind: "no_sales" };
 
 /**
- * "No ritmo dos últimos 7 dias, chega a R$ 3.380,00 em 31/10. Estimativa." (v7 § 3 item 9), only from what is known:
+ * "No ritmo dos últimos 7 dias, chega a R$ 3.380,00 em 31/10. Estimativa." (v7 § 3 item 9), only from what is known;
+ * when the rhythm crosses the target, the day it does ("a meta é batida em 28/10", Petković, 26/10), and with nothing
+ * sold in the 7 days no figure at all (a "chega a" equal to what was reached is no estimate):
  * the goal's own measure today (the server's `progress.value`) plus, for each day after today up to its last one, the
  * mean of the 7 whole days before today, from the daily series the server sent (`month.daily` and `before.daily`):
  *
@@ -373,33 +388,57 @@ export function goalProjection(
     }
     rhythm.push(day);
   }
-  const left = BigInt(daysBetween(today, goal.endsOn));
-  const on = shortDate(goal.endsOn);
+  const left = daysBetween(today, goal.endsOn);
+  const days = BigInt(RHYTHM_DAYS);
+  /** The projected total on the `ahead`-th day after today, by the same formula as the last day. */
+  let total: (ahead: number) => bigint;
+  let target: bigint;
+  let sold: bigint;
   if (goal.kind === "sale_count") {
-    if (!WHOLE_NUMBER.test(progress.value)) {
+    if (!WHOLE_NUMBER.test(progress.value) || !WHOLE_NUMBER.test(goal.target)) {
       return null;
     }
-    const sold = rhythm.reduce(
-      (total, day) => total + BigInt(day.salesCount),
-      0n
-    );
-    const count =
-      BigInt(progress.value) + divideHalfUp(sold * left, BigInt(RHYTHM_DAYS));
-    return { on, value: salesCountText(Number(count)) };
+    sold = rhythm.reduce((sum, day) => sum + BigInt(day.salesCount), 0n);
+    const measured = BigInt(progress.value);
+    target = BigInt(goal.target);
+    total = (ahead) => measured + divideHalfUp(sold * BigInt(ahead), days);
+  } else {
+    let measured: bigint;
+    try {
+      sold = Money.from(sumNetSales(rhythm)).minorUnits;
+      measured = Money.from(progress.value).minorUnits;
+      target = Money.from(goal.target).minorUnits;
+    } catch {
+      return null;
+    }
+    if (sold < 0n) {
+      return null;
+    }
+    total = (ahead) => measured + divideHalfUp(sold * BigInt(ahead), days);
   }
-  let sum: bigint;
-  let measured: bigint;
-  try {
-    sum = Money.from(sumNetSales(rhythm)).minorUnits;
-    measured = Money.from(progress.value).minorUnits;
-  } catch {
-    return null;
+  if (sold === 0n) {
+    return { kind: "no_sales" };
   }
-  if (sum < 0n) {
-    return null;
+  if (total(left) >= target) {
+    let ahead = 1;
+    while (total(ahead) < target) {
+      ahead += 1;
+    }
+    return {
+      kind: "reaches",
+      on: shortDate(addDays(today, ahead)),
+      onLastDay: ahead === left,
+    };
   }
-  const cents = measured + divideHalfUp(sum * left, BigInt(RHYTHM_DAYS));
-  return { on, value: formatBrlAmount(Money.fromMinorUnits(cents).toString()) };
+  const projected = total(left);
+  return {
+    kind: "short",
+    on: shortDate(goal.endsOn),
+    value:
+      goal.kind === "sale_count"
+        ? salesCountText(Number(projected))
+        : formatBrlAmount(Money.fromMinorUnits(projected).toString()),
+  };
 }
 
 /** A page of a list of balances: as many as came, and whether there are more than a page. */

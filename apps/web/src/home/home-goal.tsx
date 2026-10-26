@@ -118,6 +118,39 @@ function goalState(goal: GoalReadModel): string | null {
   return null;
 }
 
+/** The estimate under the amounts (v7 § 3 item 9): where the rhythm of the last 7 days takes the goal. */
+function ProjectionLine({ projection }: { projection: GoalProjection }) {
+  if (projection.kind === "no_sales") {
+    return (
+      <p
+        className="mt-1.5 text-muted-foreground text-support"
+        data-goal-projection="sem-venda"
+      >
+        Sem vendas nos últimos 7 dias para estimar.
+      </p>
+    );
+  }
+  if (projection.kind === "reaches") {
+    return (
+      <p className="mt-1.5 text-support" data-goal-projection="batida">
+        No ritmo dos últimos 7 dias, a meta é batida{" "}
+        {projection.onLastDay ? "até" : "em"} {projection.on}.{" "}
+        <span className="text-muted-foreground">Estimativa.</span>
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1.5 text-support" data-goal-projection="">
+      No ritmo dos últimos 7 dias, chega a{" "}
+      <span className="font-medium tabular-nums">
+        <MoneyText text={projection.value} />
+      </span>{" "}
+      em {projection.on}.{" "}
+      <span className="text-muted-foreground">Estimativa.</span>
+    </p>
+  );
+}
+
 function ActiveGoal({
   daysLeft = null,
   goal,
@@ -164,16 +197,7 @@ function ActiveGoal({
                 text={`de ${formatGoalValue(goal.kind, goal.target)}`}
               />
             </p>
-            {projection ? (
-              <p className="mt-1.5 text-support" data-goal-projection="">
-                No ritmo dos últimos 7 dias, chega a{" "}
-                <span className="font-medium tabular-nums">
-                  <MoneyText text={projection.value} />
-                </span>{" "}
-                em {projection.on}.{" "}
-                <span className="text-muted-foreground">Estimativa.</span>
-              </p>
-            ) : null}
+            {projection ? <ProjectionLine projection={projection} /> : null}
           </div>
         </div>
       ) : null}
