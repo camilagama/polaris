@@ -6,6 +6,7 @@ import {
   runningMotion,
   startMotionRecorder,
 } from "./ui-guardrails";
+import { historyStates } from "./ui-history-states";
 import { homeStates } from "./ui-home-states";
 import { SCREENS } from "./ui-screens";
 
@@ -20,7 +21,9 @@ import { SCREENS } from "./ui-screens";
  *    final scale one frame after the change from 7 to 30 days;
  * c) the essential motion still runs (the pulse of the skeleton, the press of a button) and nothing else does;
  * d) control: the desktop and the tablet are `full`, the bar loads its layer and the pill animates;
- * e) with `prefers-reduced-motion` the level is `none`.
+ * e) with `prefers-reduced-motion` the level is `none`;
+ * g) the sales history, the first screen on the filter bar (t391), asks for neither the `motion` chunk nor the layer on
+ *    a phone, and its pills go at once; on the desktop the same page loads the layer.
  */
 const MOTION_CHUNK = /\/assets\/motion-[\w-]+\.js$/;
 const CHARTS_CHUNK = /\/assets\/charts-[\w-]+\.js$/;
@@ -342,4 +345,42 @@ test("f) com prefers-reduced-motion o nível é none, no celular e no desktop", 
       }
     );
   }
+});
+
+test("g) no celular o Histórico (a barra de filtros na tela) não pede o motion nem a camada animada, e a pílula sai de uma vez; no desktop a mesma tela carrega a camada", async ({
+  browser,
+}) => {
+  await inContext(
+    browser,
+    { ...PHONE, serviceWorkers: "block" },
+    async (page) => {
+      await page.route(CHARTS_CHUNK, (route) => route.abort());
+      const layer = watchRequests(page, LAYER_CHUNK);
+      const motion = watchRequests(page, MOTION_CHUNK);
+      await historyStates.filters(page);
+      await expectPhone(page);
+      await page.getByRole("button", { name: "Tirar o filtro Situação" }).click();
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(resolve))
+      );
+      expect(
+        await page.locator('[aria-label^="Situação: "]').count(),
+        "a pílula sai no quadro do clique"
+      ).toBe(0);
+      await page.waitForLoadState("networkidle");
+      expect(motion).toEqual([]);
+      expect(layer).toEqual([]);
+    }
+  );
+  await inContext(
+    browser,
+    { ...DESKTOP, serviceWorkers: "block" },
+    async (page) => {
+      await page.route(CHARTS_CHUNK, (route) => route.abort());
+      const layer = watchRequests(page, LAYER_CHUNK);
+      await historyStates.filters(page);
+      expect(await level(page)).toBe("full");
+      await expect.poll(() => layer.length).toBe(1);
+    }
+  );
 });

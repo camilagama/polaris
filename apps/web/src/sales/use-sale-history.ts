@@ -27,7 +27,6 @@ interface SaleHistory {
   filters: HistoryFilters;
   loadMore: () => void;
   reload: () => void;
-  reset: () => void;
   setFilters: (changes: Partial<HistoryFilters>) => void;
   state: HistoryState;
 }
@@ -140,12 +139,11 @@ export function useSaleHistory(
     () => setReloadVersion((version) => version + 1),
     []
   );
-  const reset = useCallback(() => setFiltersState(emptyHistoryFilters), []);
   const setFilters = useCallback(
     (changes: Partial<HistoryFilters>) =>
       setFiltersState((current) => ({ ...current, ...changes })),
     []
   );
 
-  return { filters, loadMore, reload, reset, setFilters, state };
+  return { filters, loadMore, reload, setFilters, state };
 }
