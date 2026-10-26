@@ -101,6 +101,7 @@
     "poc:billing-lifecycle:verify": "bun scripts/verify-billing-lifecycle-gate.ts",
     "poc:bootstrap:verify": "bun scripts/verify-bootstrap-gate.ts",
     "poc:customers:verify": "bun scripts/verify-customers-gate.ts",
+    "poc:daily-sales:verify": "bun scripts/verify-daily-sales-gate.ts",
     "poc:dead-letter:verify": "bun scripts/verify-dead-letter-gate.ts",
     "poc:economics:verify": "bun scripts/verify-economics-gate.ts",
     "poc:entitlement-grants:verify": "bun scripts/verify-entitlement-grants-gate.ts",
