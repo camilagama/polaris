@@ -57,6 +57,29 @@ test("sem rede o app abre a partir do shell em cache, inclusive numa rota intern
   await expect(page.locator("#root")).not.toBeEmpty();
 });
 
+test("sem rede, o endereço de uma tela que virou aba abre a aba no próprio navegador (t417)", async ({
+  context,
+  page,
+}) => {
+  await installAndControl(page);
+  await context.setOffline(true);
+  for (const [old, address, title] of [
+    ["/expenses", "/dashboard?aba=despesas", "Despesas · Polaris"],
+    ["/categories", "/products?aba=categorias", "Categorias · Polaris"],
+    ["/devices", "/configuracoes?aba=aparelhos", "Aparelhos · Polaris"],
+  ] as const) {
+    // biome-ignore lint/performance/noAwaitInLoops: one address at a time
+    await page.goto(old);
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return `${url.pathname}${url.search}`;
+      })
+      .toBe(address);
+    await expect(page).toHaveTitle(title);
+  }
+});
+
 test("a API do tenant e a autenticação nunca passam pelo cache", async ({
   context,
   page,

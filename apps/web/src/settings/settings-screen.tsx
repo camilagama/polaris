@@ -74,8 +74,9 @@ function usePasswordOn(): boolean | null {
 /**
  * Configurações (map of navigation, § 1): Formas de receber, Catálogo público, Aparelhos only with the offline runtime,
  * Assinatura only with `billing:manage` and the self-service on (AS-19), and Senha only with the password on. A tab
- * the address names is drawn even without its condition (an old link, `/subscription` or `/conta/seguranca`): its
- * screen says itself what this person cannot do there, as it did as a page of its own.
+ * the address names is drawn even without its condition (an old link to `/subscription` or `/devices`): its screen
+ * says itself what this person cannot do there, as it did as a page of its own. Senha is the exception once the
+ * server said the password is off (its page would be a 404): the address opens the first tab.
  */
 export function SettingsScreen() {
   const { billingSelfService, organization } = useCurrentOrganization();
@@ -90,7 +91,12 @@ export function SettingsScreen() {
     senha: passwordOn === true,
   };
   const panels = Object.entries(PANELS)
-    .filter(([value]) => shows[value] || value === asked)
+    .filter(
+      ([value]) =>
+        shows[value] ||
+        // Senha waits for the server to say whether the password is on; off, there is nothing to show there
+        (value === asked && (value !== "senha" || passwordOn === null))
+    )
     .map(([, panel]) => panel);
   return (
     <ScreenTabs

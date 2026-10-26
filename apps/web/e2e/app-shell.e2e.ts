@@ -676,6 +676,67 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     });
   }
 
+  test("trocar de aba não deixa passo no histórico nem reabre o que o endereço abriu; aba que não existe abre a primeira", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/");
+    await page.goto("/products?novo=1");
+    const form = page.getByRole("dialog", { name: "Novo produto" });
+    await expect(form).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(form).toBeHidden();
+    const steps = await page.evaluate(() => history.length);
+    const list = tabList(page, "Produtos e categorias");
+    await list.getByRole("tab", { exact: true, name: "Categorias" }).click();
+    await expect.poll(() => pathOf(page)).toBe("/products?aba=categorias");
+    await list.getByRole("tab", { exact: true, name: "Produtos" }).click();
+    await expect.poll(() => pathOf(page)).toBe("/products");
+    // the link of the new product was the tab's: it does not open the form again
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(() => history.length)).toBe(steps);
+    // "voltar" leaves the screen, it does not walk the tabs
+    await page.goBack();
+    await expect.poll(() => pathOf(page)).toBe("/");
+
+    await page.goto("/configuracoes?aba=nenhuma");
+    await expect.poll(() => pathOf(page)).toBe("/configuracoes");
+    await expect(
+      tabList(page, "Configurações").getByRole("tab", {
+        exact: true,
+        name: "Formas de receber",
+      })
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("sem conexão, o chip e a faixa seguem a aba aberta: Produtos funciona do aparelho, Categorias precisa de internet", async ({
+    context,
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/products");
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    await context.setOffline(true);
+    const strip = page.getByText("Esta tela precisa de conexão.", {
+      exact: false,
+    });
+    const list = tabList(page, "Produtos e categorias");
+    await list.getByRole("tab", { exact: true, name: "Categorias" }).click();
+    await expect(strip).toBeVisible({ timeout: 20_000 });
+    await expect(chip(page)).toHaveAttribute(
+      "title",
+      /esta tela precisa de internet/
+    );
+    await list.getByRole("tab", { exact: true, name: "Produtos" }).click();
+    await expect(strip).toHaveCount(0);
+    await expect(chip(page)).not.toHaveAttribute(
+      "title",
+      /esta tela precisa de internet/
+    );
+  });
+
   test("as abas andam com as setas do teclado e a tela da aba tem o título dela", async ({
     page,
   }) => {
@@ -866,15 +927,21 @@ test.describe("lateral recolhível (a partir de 1024 px)", () => {
       .toBeGreaterThan(wide - 2);
   });
 
-  test("Ctrl+B recolhe e abre, e a borda da lateral também", async ({
+  test("Ctrl+B recolhe e abre sem tirar o foco do item, e a borda da lateral também", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1024 });
     await serve(page);
     await page.goto("/");
     await expect(collapse(page)).toBeVisible();
+    const item = sidebar(page).getByRole("link", {
+      exact: true,
+      name: "Estoque",
+    });
+    await item.focus();
     await page.keyboard.press("Control+b");
     await expect(expand(page)).toBeVisible();
+    await expect(item).toBeFocused();
     await page.keyboard.press("Control+b");
     await expect(collapse(page)).toBeVisible();
     await page.locator('[data-sidebar="rail"]').click();

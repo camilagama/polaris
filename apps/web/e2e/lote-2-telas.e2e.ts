@@ -43,6 +43,9 @@ const reply =
     route.fulfill(rpc(json));
 
 /** The app as someone signed in sees it, with one answer per procedure; what has none is a network that failed. */
+/** The addresses of the screens that became tabs (map of navigation, § 6). */
+const TAB_PATHS = ["/categories", "/public-catalog"];
+
 async function openScreen(
   page: Page,
   path: string,
@@ -70,8 +73,9 @@ async function openScreen(
   });
   await page.goto(path);
   // Categorias and Catálogo público are tabs now (of Produtos and of Configurações): their title is an h2 there
+  const level = TAB_PATHS.includes(path) ? 2 : 1;
   await expect(
-    page.getByRole("heading", { exact: true, name: heading })
+    page.getByRole("heading", { exact: true, level, name: heading })
   ).toBeVisible();
 }
 

@@ -51,8 +51,8 @@ interface SidebarContextProps {
   /** The control that opens the panel below 760 px (the "Mais" of the shell): the focus goes back to it. */
   mobileTrigger: RefObject<HTMLButtonElement | null>;
   openMobile: boolean;
-  /** Opens (unfolds) or folds the column, and keeps the choice. */
-  setOpen: (open: boolean) => void;
+  /** Opens (unfolds) or folds the column; the choice is kept unless `keep` is false (an unfolding the app asks for). */
+  setOpen: (open: boolean, keep?: boolean) => void;
   setOpenMobile: (open: boolean) => void;
   /** "collapsed" only where it may fold and the person folded it. */
   state: "collapsed" | "expanded";
@@ -96,16 +96,15 @@ function SidebarProvider({
   const collapsible = useMediaQuery(COLLAPSIBLE_QUERY);
   const [openMobile, setOpenMobile] = useState(false);
   const [open, setOpenState] = useState(readStoredOpen);
-  const setOpen = useCallback((next: boolean) => {
-    storeOpen(next);
+  const setOpen = useCallback((next: boolean, keep = true) => {
+    if (keep) {
+      storeOpen(next);
+    }
     setOpenState(next);
   }, []);
   const toggleSidebar = useCallback(() => {
-    setOpenState((current) => {
-      storeOpen(!current);
-      return !current;
-    });
-  }, []);
+    setOpen(!open);
+  }, [open, setOpen]);
   // the shortcut of the shadcn, only where the column folds
   useEffect(() => {
     if (!collapsible) {
@@ -559,11 +558,13 @@ function SidebarMenuButton({
       {...props}
     />
   );
-  if (!tooltip || state !== "collapsed") {
+  if (!tooltip) {
     return button;
   }
+  // the same tree open or folded, the tooltip only switched off: the link is not remounted, so the focus stays on it
+  // when Ctrl+B folds the column
   return (
-    <Tooltip>
+    <Tooltip disabled={state !== "collapsed"}>
       <TooltipTrigger render={button} />
       <TooltipContent align="center" side="right">
         {tooltip}

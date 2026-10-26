@@ -210,7 +210,8 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
     if (isMobile) {
       setOpenMobile(true);
     } else if (state === "collapsed") {
-      setOpen(true);
+      // for this answer only: the choice of the person to keep it folded stays on the device
+      setOpen(true, false);
     }
   }, [isMobile, setOpen, setOpenMobile, state]);
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
