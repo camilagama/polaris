@@ -420,6 +420,17 @@ const periodSummary = z.object({
   /** How complete the estimate is: what was left out is never counted as zero. */
   quality: z.object({
     anticipationFeesUnknown: z.number().int().nonnegative(),
+    /**
+     * The coverage of the cost of the goods (the item lines) only: an unknown
+     * fee does not count here. "full" when no item line has an unknown cost
+     * (none at all included), "none" when there are item lines and none has a
+     * known cost, "partial" otherwise; always the one derived from
+     * `itemLines` and `itemLinesWithUnknownCost`. With "none",
+     * `cards.operatingResult` and `cards.marginPercent` are still numbers, but
+     * they are not an estimate: they are the sales minus what is known.
+     * The goals stay as they are at this stage.
+     */
+    cogsCoverage: z.enum(["full", "none", "partial"]),
     itemLines: z.number().int().nonnegative(),
     itemLinesWithUnknownCost: z.number().int().nonnegative(),
     level: z.enum(["complete", "no_data", "partial"]),

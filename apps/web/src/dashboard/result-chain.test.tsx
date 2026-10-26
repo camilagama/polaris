@@ -5,12 +5,11 @@ import { ResultChain } from "./result-chain";
 import { addDays } from "./result-period";
 
 /**
- * The chain "Como chegamos a este resultado" with no cost known (Petković 26/10, T399-2): the subtotals from the CMV
- * on show a dash and "Sem custo conhecido no período.", as the cards do; the lines of entry keep their values. A
- * partial cost stays as it was.
+ * The chain "Como chegamos a este resultado" with no cost of the goods known (Petković 26/10, T399-2; `cogsCoverageOf`
+ * "none", from the item lines, t419): the subtotals from the CMV on show a dash and "Sem custo conhecido no período.",
+ * as the cards do; the lines of entry keep their values. A partial cost, and every day null with some cost of the
+ * goods known or only a fee unknown (cases a/b of t419), stay as they were.
  */
-
-const TODAY = "2026-10-25";
 
 function summary(
   unknown: readonly number[],
@@ -57,7 +56,7 @@ function summary(
 }
 
 const chain = (value: StoredPeriodSummary) =>
-  renderToStaticMarkup(<ResultChain summary={value} today={TODAY} />);
+  renderToStaticMarkup(<ResultChain summary={value} />);
 
 /** The markup of the row of a line, from its name to the end of its row. */
 function row(markup: string, label: string): string {
@@ -82,6 +81,16 @@ function words(markup: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
+const ALL = Array.from({ length: 25 }, (_, index) => index + 1);
+
+/** The same summary with the server's `quality.cogsCoverage`: the screen reads the counts, never this field. */
+function withCoverage(
+  value: StoredPeriodSummary,
+  cogsCoverage: unknown
+): StoredPeriodSummary {
+  return { ...value, quality: { ...value.quality, cogsCoverage } };
+}
+
 const SUBTOTALS = [
   "(=) Lucro bruto",
   "(=) Margem de contribuição",
@@ -91,12 +100,16 @@ const SUBTOTALS = [
 describe("the chain with no cost known", () => {
   for (const [name, value] of [
     [
-      "every day has a null result",
-      summary(Array.from({ length: 25 }, (_, i) => i + 1)),
+      "every item line sold has an unknown cost (a copy kept before cogsCoverage)",
+      summary(ALL),
     ],
     [
-      "every item line sold has an unknown cost",
+      "every item line sold has an unknown cost, every day with a result",
       summary([], { itemLines: 25, itemLinesWithUnknownCost: 25 }),
+    ],
+    [
+      'every item line sold has an unknown cost, whatever the field says ("full")',
+      withCoverage(summary(ALL), "full"),
     ],
   ] as const) {
     it(`${name}: the subtotals from the CMV on are a dash with the note, the entries keep their values`, () => {
@@ -114,6 +127,25 @@ describe("the chain with no cost known", () => {
         "R$ 1.250,00"
       );
       expect(words(row(markup, "Vendas brutas"))).not.toContain("Sem custo");
+    });
+  }
+
+  for (const [name, lines] of [
+    ["(a) only a fee unknown, every cost of the goods known", 0],
+    ["(b) some cost of the goods known", 3],
+  ] as const) {
+    it(`every day null, ${name}: every subtotal with its amount, as any partial`, () => {
+      const markup = chain(
+        withCoverage(
+          summary(ALL, { itemLines: 25, itemLinesWithUnknownCost: lines }),
+          "none"
+        )
+      );
+      for (const label of SUBTOTALS) {
+        const text = words(row(markup, label));
+        expect(text).toContain("R$ 1.250,00");
+        expect(text).not.toContain("Sem custo conhecido");
+      }
     });
   }
 

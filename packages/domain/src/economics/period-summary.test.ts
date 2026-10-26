@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { assertProperty } from "../testing/property";
 import { describe, expect, it } from "vitest";
-import { dashboardCards, resultQuality } from "./period-summary";
+import { cogsCoverage, dashboardCards, resultQuality } from "./period-summary";
 import {
   type PeriodResult,
   periodResult,
@@ -165,7 +165,73 @@ describe("dashboardCards", () => {
   });
 });
 
+describe("cogsCoverage", () => {
+  it("is full with no line or no unknown line, none when every line is unknown and partial in between", () => {
+    expect(cogsCoverage({ itemLines: 0, itemLinesWithUnknownCost: 0 })).toBe(
+      "full"
+    );
+    expect(cogsCoverage({ itemLines: 25, itemLinesWithUnknownCost: 0 })).toBe(
+      "full"
+    );
+    expect(cogsCoverage({ itemLines: 25, itemLinesWithUnknownCost: 3 })).toBe(
+      "partial"
+    );
+    expect(cogsCoverage({ itemLines: 25, itemLinesWithUnknownCost: 25 })).toBe(
+      "none"
+    );
+  });
+});
+
+const noCostItem = (position: number) => ({
+  chargedUnitPrice: "10.00",
+  position,
+  quantity: 1,
+  unitCost: null,
+});
+
 describe("resultQuality", () => {
+  it("the coverage of the cost of the goods: none, partial and full from the item lines", () => {
+    const none = resultQuality(
+      result([sale({ items: [noCostItem(0), noCostItem(1)] })], ["1.00"])
+    );
+    expect(none).toMatchObject({
+      cogsCoverage: "none",
+      itemLines: 2,
+      itemLinesWithUnknownCost: 2,
+      level: "partial",
+      missing: ["unknown_cost"],
+    });
+    const mixed = resultQuality(
+      result([sale(), sale({ items: [noCostItem(0)] })], ["1.00"])
+    );
+    expect(mixed.cogsCoverage).toBe("partial");
+    expect(resultQuality(result([sale(), sale()], ["1.00"])).cogsCoverage).toBe(
+      "full"
+    );
+  });
+
+  it("an unknown fee alone leaves the coverage of the cost of the goods full", () => {
+    const quality = resultQuality(
+      result([sale({ anticipationFee: null, processingFee: null })], ["1.00"])
+    );
+    expect(quality.cogsCoverage).toBe("full");
+    expect(quality.missing).toEqual([
+      "unknown_processing_fee",
+      "unknown_anticipation_fee",
+    ]);
+  });
+
+  it("a cancelled sale with an item of unknown cost does not count against the coverage", () => {
+    const quality = resultQuality(
+      result(
+        [sale({ cancelled: true, items: [noCostItem(0)] }), sale()],
+        ["1.00"]
+      )
+    );
+    expect(quality.cogsCoverage).toBe("full");
+    expect(quality.level).toBe("complete");
+  });
+
   it("is complete only when nothing was left out and expenses exist", () => {
     const quality = resultQuality(result([sale()], ["10.00"]));
     expect(quality.level).toBe("complete");

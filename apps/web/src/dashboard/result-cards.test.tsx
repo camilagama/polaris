@@ -6,9 +6,10 @@ import { ResultCards } from "./result-cards";
 import { addDays } from "./result-period";
 
 /**
- * The cards of the Resultado when no cost is known (Petković 26/10, VC1): the margin and the result show a dash with
- * the badge and one line each, never the percent or the amount the server makes of costs read as zero. A partial cost
- * (3 of 25 days) stays as it was.
+ * The cards of the Resultado when no cost of the goods is known (Petković 26/10, VC1; `cogsCoverageOf` "none", from
+ * the item lines, t419): the margin and the result show a dash with the badge and one line each, never the percent or
+ * the amount the server makes of costs read as zero. A partial cost (3 of 25 days), and every day null with some cost
+ * of the goods known or only a fee unknown (cases a/b of t419), stay as any partial.
  */
 
 const TODAY = "2026-10-25";
@@ -122,12 +123,27 @@ function words(markup: string): string {
 
 const ALL = Array.from({ length: 25 }, (_, index) => index + 1);
 
+/** The same summary with the server's `quality.cogsCoverage`: the screen reads the counts, never this field. */
+function withCoverage(
+  summary: StoredPeriodSummary,
+  cogsCoverage: unknown
+): StoredPeriodSummary {
+  return { ...summary, quality: { ...summary.quality, cogsCoverage } };
+}
+
 describe("the Margem and the Resultado estimado with no cost known", () => {
   for (const [name, summary] of [
-    ["every day has a null result", october(ALL)],
     [
-      "every item line sold has an unknown cost",
+      "every item line sold has an unknown cost (a copy kept before cogsCoverage)",
+      october(ALL),
+    ],
+    [
+      "every item line sold has an unknown cost, every day with a result",
       october([], { itemLines: 25, itemLinesWithUnknownCost: 25 }),
+    ],
+    [
+      'every item line sold has an unknown cost, whatever the field says ("full")',
+      withCoverage(october(ALL), "full"),
     ],
   ] as const) {
     it(`${name}: a dash, the badge and one line, no percent, no amount`, () => {
@@ -179,6 +195,30 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     expect(words(result)).toContain("R$");
     expect(words(result)).not.toContain("Sem custo conhecido");
   });
+
+  for (const [name, lines] of [
+    ["(a) only a fee unknown, every cost of the goods known", 0],
+    ["(b) some cost of the goods known", 3],
+  ] as const) {
+    it(`every day null up to today, ${name}: the numbers with the badge, as any partial`, () => {
+      const markup = cards(
+        withCoverage(
+          october(ALL, { itemLines: 25, itemLinesWithUnknownCost: lines }),
+          "none"
+        )
+      );
+      const result = card(markup, "result-kpi-result");
+      expect(words(result)).toContain("estimativa incompleta");
+      expect(words(result)).toContain("25 de 25 dias sem custo informado");
+      expect(words(result)).toContain("R$");
+      expect(result).toContain("data-kpi-value");
+      expect(words(result)).not.toContain("Sem custo conhecido");
+      expect(result).not.toContain("data-kpi-spark");
+      const margin = card(markup, "result-kpi-margin");
+      expect(margin).toContain("%");
+      expect(words(margin)).not.toContain("Sem custo conhecido");
+    });
+  }
 
   it("every day known: no badge and no dash, with the chip and the curve of the result", () => {
     const markup = cards(october([]));
