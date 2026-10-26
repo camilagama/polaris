@@ -62,8 +62,10 @@ export function SaleHistoryPage() {
   const offlineWorkspace =
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
-  const { filters, loadMore, reload, reset, setFilters, state } =
-    useSaleHistory(organizationId, offlineWorkspace);
+  const { filters, loadMore, reload, setFilters, state } = useSaleHistory(
+    organizationId,
+    offlineWorkspace
+  );
   const view = historyView(state, filters);
   const more = loadMoreView(state);
 
@@ -82,7 +84,6 @@ export function SaleHistoryPage() {
         filters={filters}
         offline={offline}
         onChange={setFilters}
-        onReset={reset}
       />
       {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
       {view.kind === "error" ? (

@@ -252,6 +252,28 @@ export interface PeriodReadCounts {
 }
 
 /**
+ * The sales of a period of the organization's calendar, by commercial date. Apart so that the gate `daily-sales` can
+ * EXPLAIN this very statement and prove it reads `sales` by the (organization_id, occurred_on) index.
+ */
+export function periodSalesSelect(
+  transaction: TenantRequestTransaction,
+  organization: string,
+  period: EconomicsPeriod
+) {
+  return transaction
+    .select({ id: sales.id, occurredOn: sales.occurredOn })
+    .from(sales)
+    .where(
+      and(
+        eq(sales.organizationId, organization),
+        sql`${sales.occurredOn} >= ${period.from}::date`,
+        sql`${sales.occurredOn} <= ${period.to}::date`
+      )
+    )
+    .orderBy(asc(sales.occurredOn), asc(sales.id));
+}
+
+/**
  * The facts the economics engine needs for a period of the organization's
  * calendar: the sales whose commercial date is in it (with their items,
  * adjustments, payment fee snapshots, return lines, cancellation and linked
@@ -280,17 +302,7 @@ export async function readPeriodFacts(
     throw new EconomicsSnapshotRequiredError();
   }
 
-  const saleRows = await transaction
-    .select({ id: sales.id, occurredOn: sales.occurredOn })
-    .from(sales)
-    .where(
-      and(
-        eq(sales.organizationId, organization),
-        sql`${sales.occurredOn} >= ${period.from}::date`,
-        sql`${sales.occurredOn} <= ${period.to}::date`
-      )
-    )
-    .orderBy(asc(sales.occurredOn), asc(sales.id));
+  const saleRows = await periodSalesSelect(transaction, organization, period);
   const operatingRows = await transaction
     .select({ amount: expenses.amount, competenceOn: expenses.competenceOn })
     .from(expenses)

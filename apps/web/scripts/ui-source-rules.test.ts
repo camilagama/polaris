@@ -16,7 +16,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  *    the sheets of the base; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
  *    On the phone (t386, ADR 0103 "Níveis de movimento") only the essential motion runs: every `animate-*`,
  *    `transition*` and `duration-*` class of the `.ts` and `.tsx` of `src/` is under the `motion-full:` variant or
- *    in `ESSENTIAL_MOTION` (the five of the inventory) or `INERT_MOTION` (moves nothing), with its reason.
+ *    in `ESSENTIAL_MOTION` (the four of the inventory) or `INERT_MOTION` (moves nothing), with its reason.
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 
@@ -58,8 +58,8 @@ const OWN_ANIMATION = /@keyframes\b|\banimation(?:-name)?\s*:/;
 const withoutComments = (text: string) => text.replace(COMMENT, "");
 
 /**
- * The motion that stays on the phone (`data-motion="essential"`), the five essentials of the inventory of the Petković
- * (25/10): the file, what in it makes the motion (`source`, a class or a piece of code) and why. A motion class listed
+ * The motion that stays on the phone (`data-motion="essential"`), the four essentials of the inventory of the Petković
+ * (25/10; the fifth, the row of pills scrolling to the pill, left when the row began to wrap): the file, what in it makes the motion (`source`, a class or a piece of code) and why. A motion class listed
  * here is allowed off `motion-full:`; anything else that animates is written `motion-full:…` and runs only at the
  * `full` level, and a new animation fails here until someone decides whether it is essential.
  */
@@ -87,11 +87,6 @@ export const ESSENTIAL_MOTION: readonly {
     file: "src/ui/charts/area-chart.tsx",
     source: "<ChartTooltip",
     why: "o tooltip acompanha o dedo, que é o uso do gráfico no celular; abaixo do full ele salta de ponto em ponto (damping 0)",
-  },
-  {
-    file: "src/ui/filter-bar.tsx",
-    source: 'scrollIntoView({ block: "nearest", inline: "nearest" })',
-    why: "a linha rola até a pílula antes de o editor abrir ao lado dela; sem suavização (o padrão auto)",
   },
 ];
 
@@ -254,8 +249,8 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
-  it("as cinco essenciais do inventário ainda estão nos arquivos delas, e as classes que não movem nada também (uma lista velha deixaria passar outra coisa)", () => {
-    expect(ESSENTIAL_MOTION).toHaveLength(5);
+  it("as quatro essenciais do inventário ainda estão nos arquivos delas, e as classes que não movem nada também (uma lista velha deixaria passar outra coisa)", () => {
+    expect(ESSENTIAL_MOTION).toHaveLength(4);
     for (const entry of ESSENTIAL_MOTION) {
       expect(MOTION_SCOPE, entry.file).toContain(entry.file);
       expect(
@@ -272,7 +267,7 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   });
 
   it.each(MOTION_SCOPE)(
-    "%s: nenhuma rolagem suave (a da linha de pílulas é essencial e instantânea)",
+    "%s: nenhuma rolagem suave (a rolagem que sobra é instantânea)",
     (path) => {
       expect(withoutComments(read(path))).not.toMatch(SMOOTH_SCROLL);
     }
