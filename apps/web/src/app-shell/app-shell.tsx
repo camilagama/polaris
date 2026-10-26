@@ -351,6 +351,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
               href={item.href}
               key={id}
             >
+              {current ? mark : null}
               <span className="grid h-8 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
                 <Icon aria-hidden />
               </span>

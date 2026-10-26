@@ -317,11 +317,9 @@ const WHOLE_NUMBER = /^\d+$/;
 /** The days the rhythm of a projection is taken from: the 7 whole days before today (today is not over). */
 const RHYTHM_DAYS = 7;
 
-/** `numerator / denominator` rounded half-up (away from zero), in whole units: cents, or sales. */
+/** `numerator / denominator` rounded half-up, in whole units (cents, or sales), for a numerator of zero or more. */
 function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
-  const magnitude = numerator < 0n ? -numerator : numerator;
-  const rounded = (2n * magnitude + denominator) / (2n * denominator);
-  return numerator < 0n ? -rounded : rounded;
+  return (2n * numerator + denominator) / (2n * denominator);
 }
 
 export interface GoalProjection {
@@ -341,8 +339,10 @@ export interface GoalProjection {
  * in exact cents (net sales) or in sales (number of sales). Only for those two measures: the estimated result needs
  * the costs of each day, and a day with no known cost would turn the rhythm into a guess. None when the goal is
  * paused, reached, not begun, on its last day or over, when the series does not cover the 7 days (a copy kept before
- * the series existed), or when it is measured by another day than the series' (`today` of the figures): never a zero in
- * place of what is not known.
+ * the series existed), when the 7 days returned more than they sold (a negative rhythm projects nothing anyone would
+ * aim at), or when a value is not one the server writes: never a zero in place of what is not known. `today` is the
+ * store's day of the series' read; the goals are another read of the same opening, so at the turn of the day the two
+ * may be a day apart, and the estimate then counts one day less: it is an estimate, and says so.
  */
 export function goalProjection(
   goal: GoalReadModel,
@@ -387,10 +387,18 @@ export function goalProjection(
       BigInt(progress.value) + divideHalfUp(sold * left, BigInt(RHYTHM_DAYS));
     return { on, value: salesCountText(Number(count)) };
   }
-  const sum = Money.from(sumNetSales(rhythm)).minorUnits;
-  const cents =
-    Money.from(progress.value).minorUnits +
-    divideHalfUp(sum * left, BigInt(RHYTHM_DAYS));
+  let sum: bigint;
+  let measured: bigint;
+  try {
+    sum = Money.from(sumNetSales(rhythm)).minorUnits;
+    measured = Money.from(progress.value).minorUnits;
+  } catch {
+    return null;
+  }
+  if (sum < 0n) {
+    return null;
+  }
+  const cents = measured + divideHalfUp(sum * left, BigInt(RHYTHM_DAYS));
   return { on, value: formatBrlAmount(Money.fromMinorUnits(cents).toString()) };
 }
 

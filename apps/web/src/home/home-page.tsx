@@ -360,7 +360,6 @@ function pickGoalBlock({
   readsGoals,
   retryGoals,
   state,
-  today,
   view,
 }: {
   goal: GoalView | null;
@@ -368,7 +367,6 @@ function pickGoalBlock({
   readsGoals: boolean;
   retryGoals: () => void;
   state: HomeState;
-  today: string;
   view: OfflineHome | null;
 }): React.ReactNode {
   if (view && readsGoals && (offline || state.goals.status === "loading")) {
@@ -392,7 +390,7 @@ function pickGoalBlock({
       block={state.goals}
       onRetry={retryGoals}
       projection={projection}
-      today={today}
+      today={figures?.today ?? null}
       view={goal}
     />
   );
@@ -495,7 +493,6 @@ export function HomePage() {
     readsGoals: reads.goals,
     retryGoals,
     state,
-    today,
     view,
   });
 

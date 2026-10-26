@@ -8,6 +8,12 @@ describe("storeInitials (the tile of the store card, v7 § 3 item 12)", () => {
     expect(storeInitials("  Bazar   Central  Sul ")).toBe("BS");
   });
 
+  it("skips what is not a letter or a digit: an emoji or a bracket never stands for the store", () => {
+    expect(storeInitials("🌸 Floricultura (Centro)")).toBe("FC");
+    expect(storeInitials("🌸")).toBe("");
+    expect(storeInitials("Loja 2")).toBe("L2");
+  });
+
   it("with the e-mail alone, takes the part before the @", () => {
     expect(storeInitials("clara.souza@exemplo.com.br")).toBe("CS");
     expect(storeInitials("contato@exemplo.com.br")).toBe("C");

@@ -89,7 +89,13 @@ function GoalRing({
         aria-hidden="true"
         className="col-start-1 row-start-1 grid justify-items-center gap-0.5 text-center"
       >
-        <span className="font-semibold text-xl tabular-nums leading-6 tracking-tight">
+        <span
+          className={cn(
+            "font-semibold tabular-nums leading-6 tracking-tight",
+            // "100,0%" fits the hole of 76 px at 20 px; a goal far past its target is written smaller
+            percent.length > 6 ? "text-base" : "text-xl"
+          )}
+        >
           {percent}
         </span>
         <span className="text-muted-foreground text-xs">da meta</span>
@@ -293,8 +299,8 @@ export function GoalBlock({
   onRetry: () => void;
   /** The estimate of the active goal, when what it needs is known (`goalProjection`). */
   projection: GoalProjection | null;
-  /** The store's today, for the days left. */
-  today: string;
+  /** The store's today by the server's clock, for the days left; null when it is not known (no figures read). */
+  today: string | null;
   view: GoalView | null;
 }) {
   if (block.status === "hidden") {
@@ -317,7 +323,7 @@ export function GoalBlock({
     <HomeBlock id="home-goal" title="Meta">
       {view.kind === "active" ? (
         <ActiveGoal
-          daysLeft={goalDaysLeftText(view.goal, today)}
+          daysLeft={today ? goalDaysLeftText(view.goal, today) : null}
           goal={view.goal}
           others={view.others}
           projection={projection}

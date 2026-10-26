@@ -605,6 +605,25 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
     ).toBe("R$ 1.520,00");
   });
 
+  it("says nothing when the 7 days returned more than they sold, or when a value is not the server's", () => {
+    const returns = series("2026-10-01", "2026-10-31", (date) =>
+      date === "2026-10-20" ? ["-50.00", 0] : undefined
+    );
+    expect(
+      goalProjection(goal({}), { before, month: returns }, today)
+    ).toBeNull();
+    const odd = {
+      percent: "40.0",
+      periodEnded: false,
+      reached: false,
+      value: "quatrocentos",
+    };
+    expect(goalProjection(goal({ progress: odd }), known, today)).toBeNull();
+    expect(
+      goalProjection(goal({ kind: "sale_count", progress: odd }), known, today)
+    ).toBeNull();
+  });
+
   it("says nothing for the estimated result: its rhythm needs the cost of every day", () => {
     expect(
       goalProjection(goal({ kind: "operating_result" }), known, today)

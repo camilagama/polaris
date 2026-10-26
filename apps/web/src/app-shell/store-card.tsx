@@ -26,8 +26,9 @@ const THEME_LABEL: Record<Theme, string> = {
   sistema: "Automático",
 };
 
-/** The name of the button of the card's menu (v7 § 3 item 12): what the menu holds. */
+/** The name of the button of the card's menu (v7 § 3 item 12): what the menu holds ("Sair" only with the runtime). */
 const STORE_MENU_LABEL = "Loja, tema e Sair";
+const STORE_MENU_LABEL_NO_LOGOUT = "Loja e tema";
 
 /**
  * The card of the store at the foot of the desktop's sidebar (v7 § 3 item 12): the store and the e-mail, and the
@@ -113,7 +114,9 @@ export function StoreCard({
             ref={trigger}
             render={
               <Button
-                aria-label={STORE_MENU_LABEL}
+                aria-label={
+                  runtime ? STORE_MENU_LABEL : STORE_MENU_LABEL_NO_LOGOUT
+                }
                 className="shrink-0"
                 size="icon-sm"
                 variant="ghost"
