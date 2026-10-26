@@ -504,7 +504,13 @@ test.describe("loja com venda", () => {
     await expect(today).toContainText("R$ 320,10");
     await expect(today).toContainText("2 vendas hoje");
     await expect(today).toContainText("sexta-feira, 23/10");
-    await expect(today.locator("[data-kpi-delta=up]")).toHaveText("+1.500,5%");
+    // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "16,0 vezes"
+    await expect(
+      today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
+    ).toHaveText("16,0×");
+    await expect(today.locator("[data-kpi-delta=up]")).toHaveText(
+      "16,0×16,0 vezes"
+    );
     await expect(today).toContainText("vs. média das 4 sextas anteriores");
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
     await expect(
@@ -520,7 +526,9 @@ test.describe("loja com venda", () => {
     const month = region(page, "Vendas em outubro");
     await expect(month).toContainText("R$ 2.660,60");
     await expect(month).toContainText("1 a 23/10");
-    await expect(month.locator("[data-kpi-delta=up]")).toHaveText("+1.465,1%");
+    await expect(
+      month.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
+    ).toHaveText("15,7×");
     await expect(month).toContainText("vs. 1 a 23/09");
     await expect(month).toContainText("12 vendas no mês");
 
@@ -529,7 +537,11 @@ test.describe("loja com venda", () => {
     await expect(result).toContainText(
       "Não é lucro líquido nem dinheiro já recebido."
     );
-    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9)
+    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9); the number is
+    // the server's card of the whole month, and the date says so
+    await expect(result.locator("[data-kpi-date]")).toHaveText(
+      "outubro inteiro"
+    );
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(
@@ -538,7 +550,11 @@ test.describe("loja com venda", () => {
 
     const ticket = region(page, "Ticket médio");
     await expect(ticket).toContainText("R$ 221,72");
-    await expect(ticket).toContainText("Média por venda no mês");
+    // at 360 px the card of half the width says the short line; its date says the month
+    await expect(
+      ticket.getByText("Média por venda", { exact: true })
+    ).toBeVisible();
+    await expect(ticket.getByText("Média por venda no mês")).toBeHidden();
     await expect(ticket.locator("[data-kpi-delta]")).toHaveCount(1);
 
     const meta = region(page, "Meta");
@@ -1003,6 +1019,14 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     // no amount anywhere in the page, the chip in reais of the result included, nor in what a slider says
     await expect(main).not.toContainText(AN_AMOUNT);
     await expect(region(page, "Resultado estimado")).toContainText("R$ ••••");
+    // the sign of the chip in reais stays with the hidden amount, in one box: "+R$ ••••", no gap after the sign
+    const resultChip = region(page, "Resultado estimado").locator(
+      "[data-kpi-delta=up]"
+    );
+    await expect(resultChip.locator(":scope > span")).toHaveCount(1);
+    await expect(resultChip.locator(":scope > span")).toHaveText(
+      "+R$ ••••valor escondido"
+    );
     const spoken = await main
       .getByRole("slider")
       .evaluateAll((sliders) =>
@@ -1014,7 +1038,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       region(page, "Vendas hoje").locator("[data-kpi-value]")
     ).toHaveText("R$ ••••valor escondido");
     // the percents, the counts and the shape stay
-    await expect(region(page, "Vendas hoje")).toContainText("+1.500,5%");
+    await expect(region(page, "Vendas hoje")).toContainText("16,0×");
     await expect(region(page, "Vendas em outubro")).toContainText(
       "12 vendas no mês"
     );

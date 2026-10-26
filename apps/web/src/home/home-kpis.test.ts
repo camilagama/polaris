@@ -89,8 +89,31 @@ describe("percentDelta", () => {
     expect(percentDelta(10_001n, 10_000n)?.trend).toBe("flat");
   });
 
-  it("separates thousands of percent with a dot", () => {
-    expect(percentDelta(13_345n, 1000n)?.text).toBe("+1.234,5%");
+  it("from +1.000% up, says how many times the base, with no place from 100 times up", () => {
+    // 10.999 / 1.000 = +999,9%; 11.000 / 1.000 = +1.000,0%, 11 times
+    expect(percentDelta(10_999n, 1000n)).toEqual({
+      money: false,
+      text: "+999,9%",
+      trend: "up",
+    });
+    expect(percentDelta(11_000n, 1000n)).toEqual({
+      money: false,
+      spoken: "11,0 vezes",
+      text: "11,0×",
+      trend: "up",
+    });
+    // the multiple is rounded half-up on its own: 16,005 times is 16,0, 15,651 is 15,7
+    expect(percentDelta(160_050n, 10_000n)?.text).toBe("16,0×");
+    expect(percentDelta(156_510n, 10_000n)?.text).toBe("15,7×");
+    // 99,94 times keeps its place; 99,95 rounds to 100 and drops it
+    expect(percentDelta(99_940n, 1000n)?.text).toBe("99,9×");
+    expect(percentDelta(99_950n, 1000n)).toEqual({
+      money: false,
+      spoken: "100 vezes",
+      text: "100×",
+      trend: "up",
+    });
+    expect(percentDelta(1_234_400n, 1000n)?.text).toBe("1.234×");
   });
 
   it("says nothing over a base that is not above zero", () => {
@@ -372,6 +395,7 @@ describe("monthKpis: ticket", () => {
     );
     expect(ticket.value).toBe("20.00");
     expect(ticket.count).toBe("Média por venda no mês");
+    expect(ticket.countNarrow).toBe("Média por venda");
     expect(ticket.note).toBe("vs. 1 a 25/09");
     expect(ticket.delta?.text).toBe("+100,0%");
   });
@@ -393,6 +417,28 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.read(3).result.value).toBeNull();
     expect(kpis.read(9).result.value).toBeNull();
     expect(kpis.read(null).result.value).toBe(cards.operatingResult);
+    expect(kpis.read(null).result.date).toBe("outubro inteiro");
+    expect(kpis.read(9).result.date).toBe("1 a 10/10");
+  });
+
+  it("with an unknown day, says the server's card is the whole month, the expense dated after today in it", () => {
+    // the rent of 3.000,00 on 30/10 is in the server's card (-2.875,00), which reads the month to the 31st
+    const month = october((date) => {
+      if (date === "2026-10-10") {
+        return { operatingResult: null };
+      }
+      return date === "2026-10-30" ? { operatingResult: "-3000.00" } : undefined;
+    }, "5.00");
+    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, {
+      ...cards,
+      operatingResult: "-2875.00",
+    });
+    const atRest = kpis.read(null).result;
+    expect(atRest.value).toBe("-2875.00");
+    expect(atRest.date).toBe("outubro inteiro");
+    expect(atRest.delta).toBeNull();
+    // the other cards keep the range up to today
+    expect(kpis.read(null).sales.date).toBe("1 a 25/10");
   });
 
   it("ignores an unknown result after today", () => {
@@ -457,6 +503,7 @@ describe("monthKpis: result (AC-9)", () => {
       operatingResult: "-2875.00",
     });
     expect(kpis.read(null).result.value).toBe("-2875.00");
+    expect(kpis.read(null).result.date).toBe("outubro inteiro");
   });
 
   it("gives no chip, but still draws, when the previous month has an unknown day in the range", () => {

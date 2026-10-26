@@ -75,6 +75,8 @@ export function HeroValue({
 /** The change of a card: green when it went up, neutral when it went down or stayed (selling less is not an error). */
 export interface KpiDelta {
   money: boolean;
+  /** What a screen reader says in place of `text`, when the text does not read well. */
+  spoken?: string;
   text: string;
   trend: "down" | "flat" | "up";
 }
@@ -82,11 +84,35 @@ export interface KpiDelta {
 /** An amount of a chip: its sign stays in sight when the amount is hidden ("+R$ ••••"), so the direction is not lost. */
 function MoneyChipText({ text }: { text: string }) {
   const sign = SIGN.exec(text)?.[0] ?? "";
+  // one box: the gap of the chip would come between the sign and a hidden amount ("+ R$ ••••")
   return (
-    <>
+    <span>
       {sign}
       <MoneyText text={text.slice(sign.length)} />
-    </>
+    </span>
+  );
+}
+
+/** A text seen one way and heard another ("16,0×", heard "16,0 vezes"). */
+function ChipText({ spoken, text }: { spoken: string; text: string }) {
+  return (
+    <span>
+      <span aria-hidden="true" data-kpi-delta-text="">
+        {text}
+      </span>
+      <span className="sr-only">{spoken}</span>
+    </span>
+  );
+}
+
+function chipText(delta: KpiDelta): ReactNode {
+  if (delta.money) {
+    return <MoneyChipText text={delta.text} />;
+  }
+  return delta.spoken ? (
+    <ChipText spoken={delta.spoken} text={delta.text} />
+  ) : (
+    delta.text
   );
 }
 
@@ -110,7 +136,7 @@ export function DeltaChip({ delta }: { delta: KpiDelta }) {
       {Icon ? (
         <Icon aria-hidden="true" className="size-3" strokeWidth={2.5} />
       ) : null}
-      {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
+      {chipText(delta)}
     </span>
   );
 }

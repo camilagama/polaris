@@ -1,7 +1,13 @@
 import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount } from "../lib/format";
 import type { StoredDay } from "../lib/period-summary-cache";
-import { addDays, firstOfMonth, salesCountText, shortDate } from "./home-model";
+import {
+  addDays,
+  firstOfMonth,
+  monthTitle,
+  salesCountText,
+  shortDate,
+} from "./home-model";
 
 /**
  * The four KPI cards of the Início (revisão de UI v7, § 3, items 2 to 6): what each one says for today and for any
@@ -12,7 +18,8 @@ import { addDays, firstOfMonth, salesCountText, shortDate } from "./home-model";
  * - Vendas hoje: the net sales of a day against the mean of the 4 same weekdays before it.
  * - Vendas no mês: the net sales from the 1st to a day, against the same days of the previous month.
  * - Resultado estimado: the same, in reais, and only when every day of both sides has a known result (AC-9: a sum of
- *   the known days is never shown as the total).
+ *   the known days is never shown as the total). Without it, the number at rest is the server's card of the whole
+ *   month, and its date says so ("outubro inteiro").
  * - Ticket médio: net sales over sales from the 1st to a day, against the same days of the previous month.
  */
 
@@ -33,6 +40,8 @@ function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
 export interface Delta {
   /** True when the text is an amount in reais (the result's chip), which "Esconder valores" hides. */
   money: boolean;
+  /** What a screen reader says in place of `text`, when the sign does not read well ("16,0 vezes" for "16,0×"). */
+  spoken?: string;
   text: string;
   trend: "down" | "flat" | "up";
 }
@@ -44,6 +53,10 @@ const trendOf = (difference: bigint): Delta["trend"] => {
   return difference < 0n ? "down" : "flat";
 };
 
+/** "1.234": the digits of a whole number grouped by thousands. */
+const grouped = (whole: bigint): string =>
+  whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
 /** "+52,9%", "-12,0%", "0,0%" from tenths of a percent. */
 function percentText(tenths: bigint): string {
   const absolute = tenths < 0n ? -tenths : tenths;
@@ -51,18 +64,37 @@ function percentText(tenths: bigint): string {
   if (tenths !== 0n) {
     sign = tenths > 0n ? "+" : "-";
   }
-  return `${sign}${(absolute / 10n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${absolute % 10n}%`;
+  return `${sign}${grouped(absolute / 10n)},${absolute % 10n}%`;
+}
+
+/** From +1.000,0% up, the chip says how many times the base: "16,0×", and "123×" with no place from 100 times up. */
+const MULTIPLE_FROM_TENTHS = 10_000n;
+
+function multipleText(current: bigint, base: bigint): {
+  spoken: string;
+  text: string;
+} {
+  const tenths = divideHalfUp(current * 10n, base);
+  const number =
+    tenths >= 1000n
+      ? grouped(divideHalfUp(current, base))
+      : `${grouped(tenths / 10n)},${tenths % 10n}`;
+  return { spoken: `${number} vezes`, text: `${number}×` };
 }
 
 /**
- * How much `current` moved against `base`, in percent with one place; null over a base that is not above zero (a
- * percent over nothing, or over a negative, says nothing).
+ * How much `current` moved against `base`, in percent with one place, or as a multiple from +1.000% up (a percent of
+ * five digits says less than "16,0×"); null over a base that is not above zero (a percent over nothing, or over a
+ * negative, says nothing).
  */
 export function percentDelta(current: bigint, base: bigint): Delta | null {
   if (base <= 0n) {
     return null;
   }
   const tenths = divideHalfUp((current - base) * 1000n, base);
+  if (tenths >= MULTIPLE_FROM_TENTHS) {
+    return { money: false, ...multipleText(current, base), trend: "up" };
+  }
   return { money: false, text: percentText(tenths), trend: trendOf(tenths) };
 }
 
@@ -100,6 +132,8 @@ function weekdayDate(day: string): string {
 export interface KpiReading {
   /** The line under the number: the count, or what the number is. */
   count: string;
+  /** A shorter `count` for a card of half the width on a phone, when the long one does not fit there. */
+  countNarrow?: string;
   /** The date at the top right: "domingo, 25/10" or "1 a 25/10". */
   date: string;
   delta: Delta | null;
@@ -242,6 +276,8 @@ interface ReadContext {
   range: string;
   result: ResultSeries;
   sum: Cumulative;
+  /** "outubro inteiro": the period of the server's cards, which read the month to its last day. */
+  wholeMonth: string;
 }
 
 function salesReading({
@@ -277,6 +313,7 @@ function resultReading({
   range,
   result,
   sum,
+  wholeMonth,
 }: ReadContext): KpiReading {
   const delta =
     result.kind === "known" &&
@@ -287,18 +324,19 @@ function resultReading({
       : null;
   // with every day known, the number is the sum from the 1st to the day read, at rest too: the same account as the
   // chip and the sparkline ("1 a 25/10"), never the whole month with the expenses dated after today. Without the
-  // results of the days (some unknown, or not sent) the number at rest is the server's card, with its badge.
+  // results of the days (some unknown, or not sent) the number at rest is the server's card, with its badge: the
+  // whole month, as its date says (the read of the month is the Resultado's "Este mês", kept for both offline).
   const known =
     result.kind === "known" && sum.result !== null
       ? Money.fromMinorUnits(sum.result).toString()
       : null;
-  const value = atRest && known === null ? cards.operatingResult : known;
+  const card = atRest && known === null;
   return {
     count: "Não é lucro líquido nem dinheiro já recebido.",
-    date: range,
+    date: card ? wholeMonth : range,
     delta,
     note: delta ? `vs. ${previousRange}` : null,
-    value,
+    value: card ? cards.operatingResult : known,
   };
 }
 
@@ -323,14 +361,17 @@ function ticketReading({
   if (!atRest) {
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
-  let count = `Média por venda de ${range}`;
+  let count: Pick<KpiReading, "count" | "countNarrow"> = {
+    count: `Média por venda de ${range}`,
+  };
   if (value === null) {
-    count = "Sem vendas no período";
+    count = { count: "Sem vendas no período" };
   } else if (atRest) {
-    count = "Média por venda no mês";
+    // at 360 px "no mês" does not fit the card of half the width; its date already says the month
+    count = { count: "Média por venda no mês", countNarrow: "Média por venda" };
   }
   return {
-    count,
+    ...count,
     date: range,
     delta,
     note: delta ? `vs. ${previousRange}` : null,
@@ -400,6 +441,7 @@ export function monthKpis(
       range: "",
       result,
       sum: sums[at] ?? { count: 0, net: 0n, result: 0n },
+      wholeMonth: `${monthTitle(today).toLowerCase()} inteiro`,
     };
     context.range = rangeText(firstOfMonth(today), context.date);
     return {

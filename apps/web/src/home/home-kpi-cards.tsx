@@ -259,7 +259,16 @@ function MonthCards({
         compact
         date={read.ticket.date}
         entity="ticket"
-        footer={read.ticket.count}
+        footer={
+          read.ticket.countNarrow ? (
+            <>
+              <span className="md:hidden">{read.ticket.countNarrow}</span>
+              <span className="max-md:hidden">{read.ticket.count}</span>
+            </>
+          ) : (
+            read.ticket.count
+          )
+        }
         id="home-ticket"
         note={read.ticket.note}
         {...(drawn
