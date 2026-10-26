@@ -2,7 +2,7 @@
 
 import { scaleLinear } from "@visx/scale";
 import { AreaClosed, type AreaClosedProps, LinePath } from "@visx/shape";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotionConfig as useReducedMotion } from "motion/react";
 import {
   useCallback,
   useEffect,

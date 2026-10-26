@@ -63,7 +63,7 @@ function CollapsiblePanel({
     <CollapsiblePrimitive.Panel
       className={
         moved
-          ? "data-closed:animate-collapsible-up data-open:animate-collapsible-down"
+          ? "motion-full:data-closed:animate-collapsible-up motion-full:data-open:animate-collapsible-down"
           : undefined
       }
       data-slot="collapsible-content"

@@ -69,7 +69,7 @@ function MonthCell({ cursor, month, onChoose, selected }: MonthCellProps) {
       // the name starts with the text the cell shows ("Jan, janeiro de 2026"): the name holds the visible text (WCAG 2.5.3)
       aria-label={`${short}, ${words}`}
       aria-pressed={selected}
-      className="touch-hit focus-ring relative inline-flex h-ctl-md touch:h-11 items-center justify-center rounded-md border border-transparent font-medium text-sm transition-[background-color,color] hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+      className="touch-hit focus-ring relative inline-flex h-ctl-md touch:h-11 items-center justify-center rounded-md border border-transparent font-medium text-sm motion-full:transition-[background-color,color] hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground"
       data-month={month}
       onClick={choose}
       tabIndex={cursor ? 0 : -1}

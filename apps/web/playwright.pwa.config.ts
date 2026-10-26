@@ -7,6 +7,8 @@ import {
 } from "./e2e/run-settings";
 
 const inCI = Boolean(process.env.CI);
+/** The checks that only make sense on a phone, run by the `chromium-celular` project alone. */
+const PHONE_ONLY = "**/motion-level.e2e.ts";
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -14,11 +16,25 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-desktop",
+      testIgnore: PHONE_ONLY,
       use: { ...devices["Desktop Chrome"], browserName: "chromium" },
     },
     {
       name: "chromium-mobile-emulated",
+      testIgnore: PHONE_ONLY,
       use: { ...devices["Pixel 5"], browserName: "chromium" },
+    },
+    // The levels of motion on a phone (t386): a touch screen of 360×740, the phone of the design. The file proves
+    // `pointer: coarse` before anything else and fails loudly without it; its desktop and tablet controls open their own
+    // contexts.
+    {
+      name: "chromium-celular",
+      testMatch: PHONE_ONLY,
+      use: {
+        ...devices["Pixel 5"],
+        browserName: "chromium",
+        viewport: { height: 740, width: 360 },
+      },
     },
   ],
   reporter: "list",

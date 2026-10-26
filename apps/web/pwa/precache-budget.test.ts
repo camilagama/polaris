@@ -935,7 +935,7 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     for (const options of [{}, { only: "chunks" as const }]) {
       expect(
         run(options, motionFiles, graph(["assets/motion-B0SXIb_6.js"])).error
-      ).toEqual([expect.stringContaining("reachable from the entry")]);
+      ).toEqual([expect.stringContaining("reachable by static imports")]);
       expect(run(options, motionFiles, graph([])).error).toEqual([]);
     }
   });
@@ -1014,15 +1014,24 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         modules: anyModule,
       },
       { fileName: "assets/react-def.js", imports: [], modules: anyModule },
-      // the lazy chunks import motion statically, but the entry only reaches them by import()
+      // the charts and the bar's motion layer import motion statically, but the entry only reaches them by import()
       {
         fileName: "assets/charts-Dk3jf9.js",
         imports: ["assets/motion-B0SXIb_6.js", "assets/react-def.js"],
+        isDynamicEntry: true,
         modules: anyModule,
       },
       {
+        fileName: "assets/filter-bar-motion-Q1w2e3.js",
+        imports: ["assets/motion-B0SXIb_6.js", "assets/react-def.js"],
+        isDynamicEntry: true,
+        modules: anyModule,
+      },
+      // a lazy screen with the bar: the bar itself does not import motion (t386)
+      {
         fileName: "assets/ui-gallery-ghi.js",
-        imports: ["assets/motion-B0SXIb_6.js"],
+        imports: ["assets/react-def.js"],
+        isDynamicEntry: true,
         modules: anyModule,
       },
       {
@@ -1054,6 +1063,53 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         "assets/index-abc.js -> assets/motion-B0SXIb_6.js"
       ),
     ]);
+  });
+
+  it("fails when a screen loaded by import() reaches the motion chunk by static imports: a phone would run it with the screen (t386)", () => {
+    const graph = (galleryImports: string[]) => [
+      {
+        fileName: "assets/index-abc.js",
+        imports: [],
+        isEntry: true,
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/ui-gallery-ghi.js",
+        imports: galleryImports,
+        isDynamicEntry: true,
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/filter-bar-ab1.js",
+        imports: ["assets/motion-B0SXIb_6.js"],
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/charts-Dk3jf9.js",
+        imports: ["assets/motion-B0SXIb_6.js"],
+        isDynamicEntry: true,
+        modules: anyModule,
+      },
+      {
+        fileName: "assets/motion-B0SXIb_6.js",
+        imports: [],
+        modules: anyModule,
+      },
+    ];
+    // the screen imports a bar that imports motion statically, as the bar of t383 did
+    expect(motionLoadProblems(graph(["assets/filter-bar-ab1.js"]))).toEqual([
+      expect.stringContaining(
+        "assets/ui-gallery-ghi.js -> assets/filter-bar-ab1.js -> assets/motion-B0SXIb_6.js"
+      ),
+    ]);
+    // the screen imports the charts chunk statically instead of by import(): it would load motion with the screen
+    expect(motionLoadProblems(graph(["assets/charts-Dk3jf9.js"]))).toEqual([
+      expect.stringContaining(
+        "assets/ui-gallery-ghi.js -> assets/charts-Dk3jf9.js -> assets/motion-B0SXIb_6.js"
+      ),
+    ]);
+    // control: the screen with no static way to motion passes
+    expect(motionLoadProblems(graph([]))).toEqual([]);
   });
 
   it("a bundle with a motion chunk and no entry fails: it cannot be proved that the shell does not load it (a graph with no motion chunk and no entry has nothing to prove)", () => {

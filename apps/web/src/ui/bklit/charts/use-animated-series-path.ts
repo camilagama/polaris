@@ -2,7 +2,7 @@
 
 import type { CurveFactory } from "d3-shape";
 import { curveLinear } from "d3-shape";
-import { animate, useReducedMotion } from "motion/react";
+import { animate, useReducedMotionConfig as useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LINE_LOADING_PULSE_EASE } from "./line-loading-timing";
 import {

@@ -202,7 +202,7 @@ export function VariantSearch({
             {view.options.map((option) => (
               <li key={option.id}>
                 <button
-                  className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:border-input hover:bg-accent"
+                  className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left motion-full:transition-colors hover:border-input hover:bg-accent"
                   data-variant-id={option.id}
                   onClick={handlePick}
                   type="button"
