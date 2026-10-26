@@ -70,7 +70,10 @@ function percentText(tenths: bigint): string {
 /** From +1.000,0% up, the chip says how many times the base: "16,0×", and "123×" with no place from 100 times up. */
 const MULTIPLE_FROM_TENTHS = 10_000n;
 
-function multipleText(current: bigint, base: bigint): {
+function multipleText(
+  current: bigint,
+  base: bigint
+): {
   spoken: string;
   text: string;
 } {

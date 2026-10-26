@@ -427,7 +427,9 @@ describe("monthKpis: result (AC-9)", () => {
       if (date === "2026-10-10") {
         return { operatingResult: null };
       }
-      return date === "2026-10-30" ? { operatingResult: "-3000.00" } : undefined;
+      return date === "2026-10-30"
+        ? { operatingResult: "-3000.00" }
+        : undefined;
     }, "5.00");
     const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, {
       ...cards,
