@@ -1,9 +1,9 @@
 /**
  * Which tab of this browser pulls on the scheduler's tick: the one holding the Web Lock of the store. A tab
- * asks for it while its page is visible and lets it go when the page is hidden, so the lock passes to the
- * next visible tab in line; the other tabs hear the leader's pull through the data channel. One pull per
- * tick per browser, however many tabs are open. Without Web Locks every tab is its own leader (the tick of
- * each tab, as before). Framework-free, with the lock manager and the page injected.
+ * asks for it while it can lead (its page is visible and its runtime is open) and lets it go otherwise, so
+ * the lock passes to the next tab in line; the other tabs hear the leader's pull through the data channel.
+ * One pull per tick per browser, however many tabs are open. Without Web Locks every tab is its own leader
+ * (the tick of each tab, as before). Framework-free, with the lock manager and the page injected.
  */
 interface LockManagerLike {
   request: (
@@ -14,11 +14,12 @@ interface LockManagerLike {
 }
 
 export interface SyncLeadershipOptions {
-  isVisible: () => boolean;
+  /** Whether this tab can pull now: a tab that cannot must not hold the lock the others wait for. */
+  canLead: () => boolean;
   locks: LockManagerLike | undefined;
   name: string;
-  /** Calls the listener when the page is shown or hidden; returns how to stop. */
-  onVisibilityChange: (listener: () => void) => () => void;
+  /** Calls the listener whenever `canLead` may have changed; returns how to stop. */
+  onChange: (listener: () => void) => () => void;
 }
 
 export interface SyncLeadership {
@@ -74,7 +75,7 @@ export function holdSyncLeadership(
   };
 
   const follow = () => {
-    if (options.isVisible()) {
+    if (options.canLead()) {
       want();
     } else {
       letGo();
@@ -82,7 +83,7 @@ export function holdSyncLeadership(
   };
 
   follow();
-  const stopListening = options.onVisibilityChange(follow);
+  const stopListening = options.onChange(follow);
   return {
     isLeader: () => leader,
     stop: () => {

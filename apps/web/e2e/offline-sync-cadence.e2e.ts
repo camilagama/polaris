@@ -190,6 +190,7 @@ test("trocar de tela não puxa de novo quando uma aba puxou há menos de um cicl
 }) => {
   const pulls = await serve(page.context());
   await openSynced(page, "/customers");
+  const pulledAt = Date.now();
   const afterStart = pulls.count;
   expect(afterStart).toBeGreaterThanOrEqual(1);
 
@@ -199,5 +200,7 @@ test("trocar de tela não puxa de novo quando uma aba puxou há menos de um cicl
     await openSynced(page, path);
   }
 
+  // past a tick the copy is old and a load pulls, rightly: the loads above must fit in one
+  expect(Date.now() - pulledAt).toBeLessThan(TICK_MS);
   expect(pulls.count).toBe(afterStart);
 });

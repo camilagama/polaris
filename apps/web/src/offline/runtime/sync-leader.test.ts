@@ -54,10 +54,10 @@ function lockManager() {
 function tab(locks: ReturnType<typeof lockManager> | undefined) {
   const page = { listeners: new Set<() => void>(), visible: true };
   const leadership = holdSyncLeadership({
-    isVisible: () => page.visible,
+    canLead: () => page.visible,
     locks,
     name: "polaris-sync-leader:org",
-    onVisibilityChange: (listener) => {
+    onChange: (listener) => {
       page.listeners.add(listener);
       return () => page.listeners.delete(listener);
     },

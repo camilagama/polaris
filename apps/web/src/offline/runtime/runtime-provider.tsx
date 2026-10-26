@@ -82,6 +82,9 @@ function createBrowserRuntime(): OfflineRuntime {
   });
 }
 
+/** The phases whose sync does something: the open copy, or the expired one that a sync renews. */
+const LEADING_PHASES: ReadonlySet<string> = new Set(["expired", "ready"]);
+
 function onVisibilityChange(listener: () => void): () => void {
   document.addEventListener("visibilitychange", listener);
   return () => document.removeEventListener("visibilitychange", listener);
@@ -115,12 +118,21 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
     let scheduler: ReturnType<typeof startSyncScheduler> | null = null;
     let stopped = false;
     const isVisible = () => document.visibilityState === "visible";
-    // one tab of the browser pulls on the tick; the same person and store in every tab, so the organization names it
+    // one tab of the browser pulls on the tick, and only a visible one whose runtime opened (a tab that could
+    // not open the store must not hold the others back); one session per browser, so the organization names it
     const leadership = holdSyncLeadership({
-      isVisible,
+      canLead: () =>
+        isVisible() && LEADING_PHASES.has(runtime.getSnapshot().phase),
       locks: typeof navigator === "undefined" ? undefined : navigator.locks,
       name: `polaris-sync-leader:${organizationId}`,
-      onVisibilityChange,
+      onChange: (listener) => {
+        const stopVisibility = onVisibilityChange(listener);
+        const stopRuntime = runtime.subscribe(listener);
+        return () => {
+          stopVisibility();
+          stopRuntime();
+        };
+      },
     });
     const schedule = () => {
       if (stopped) {

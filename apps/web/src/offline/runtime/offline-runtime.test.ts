@@ -952,10 +952,14 @@ describe("whether the copy is fresh (the scheduler skips the sync of a page load
   it("is fresh right after a pull, and no longer a tick later", async () => {
     const { offset, runtime } = freshWorld();
     await runtime.start(organizationId);
+    // the first load's snapshot is old by now; the pull below stamps the copy again
+    offset.ms = 50_000;
+    expect(await runtime.isFresh(10_000)).toBe(false);
     await runtime.syncNow();
 
+    offset.ms = 100_000;
     expect(await runtime.isFresh(60_000)).toBe(true);
-    offset.ms = 60_001;
+    offset.ms = 110_001;
     expect(await runtime.isFresh(60_000)).toBe(false);
   });
 
@@ -968,15 +972,23 @@ describe("whether the copy is fresh (the scheduler skips the sync of a page load
     expect(await runtime.isFresh(60_000)).toBe(false);
   });
 
-  it("is not fresh before it is ready, nor after a failed sync", async () => {
+  it("is not fresh before it is ready, nor after a failed sync with nothing queued", async () => {
     const { runtime, w } = freshWorld();
     expect(await runtime.isFresh(60_000)).toBe(false);
 
     await runtime.start(organizationId);
-    await queueProduct(runtime, "Camiseta", 1);
-    w.failures.push = true;
+    expect(await runtime.isFresh(60_000)).toBe(true);
+    // the pull fails on the server: the copy is as recent as the first load's, but the sync did not go through
+    const failing = Promise.reject(new Error("pull_failed"));
+    failing.catch(() => undefined);
+    w.gates.pull = failing;
     await runtime.syncNow();
-    expect(runtime.getSnapshot().reason).toBe("sync_failed");
+    w.gates.pull = undefined;
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 0, sending: 0 },
+      reason: "sync_failed",
+    });
     expect(await runtime.isFresh(60_000)).toBe(false);
   });
 
