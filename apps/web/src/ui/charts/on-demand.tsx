@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AreaChartProps } from "./area-chart";
+import type { RingChartProps } from "./ring-chart";
 import type { SalesHeatmapProps } from "./sales-heatmap";
 import type { SparklineProps } from "./sparkline";
 import type { WeekdayBarsProps } from "./weekday-bars";
@@ -17,6 +18,7 @@ import type { WeekdayBarsProps } from "./weekday-bars";
  */
 export type { AreaChartProps } from "./area-chart";
 export type { ChartDatum } from "./chart-data";
+export type { RingChartProps } from "./ring-chart";
 export type { HeatmapDay, SalesHeatmapProps } from "./sales-heatmap";
 export type { SparklineProps } from "./sparkline";
 export type { WeekdayBarsProps } from "./weekday-bars";
@@ -171,6 +173,27 @@ export function OnDemandSparkline({
     return failed ?? null;
   }
   return <Reserved className={props.className} height={props.height ?? 32} />;
+}
+
+export function OnDemandRingChart({
+  failed,
+  ...props
+}: OnDemandProps & RingChartProps) {
+  const state = useCharts();
+  if (state.status === "ready") {
+    return <state.charts.RingChart {...props} />;
+  }
+  if (state.status === "failed") {
+    return failed ?? null;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("block", props.className)}
+      data-chart-loading=""
+      style={{ height: props.size, width: props.size }}
+    />
+  );
 }
 
 /** The map of the Início; while its chunk loads, a box of the height it will have. */

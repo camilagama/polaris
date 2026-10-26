@@ -62,7 +62,7 @@ import {
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
-import { LogoutControl } from "../offline/runtime/logout-control";
+import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
   useOfflineAccessExpired,
@@ -91,6 +91,7 @@ import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
 import { useSignedInEmail } from "./signed-in-email";
 import { StatePanel } from "./state-panel";
+import { StoreCard } from "./store-card";
 
 /** The first access is its own chunk, kept by the service worker: only a person with no organization opens it. */
 const OrganizationSetup = lazy(() =>
@@ -208,6 +209,9 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       setOpenMobile(true);
     }
   }, [isMobile, setOpenMobile]);
+  // the state of "Sair" lives above the switch between the sheet and the card, so a width that crosses 760 px in the
+  // middle of the flow keeps the dialog of the queue and the message of a failure (Rodrigo, 26/10, menor 1)
+  const logout = useLogout("/");
   const email = useSignedInEmail();
   const items = menuItemsOf({
     offline: OFFLINE_RUNTIME_ENABLED,
@@ -270,34 +274,44 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       </SidebarContent>
       <SidebarFooter>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
-        <div className="grid gap-3 p-1">
-          <ThemeSegmented />
-          {organization || email ? (
-            <div className="grid min-w-0 gap-0.5">
-              {organization ? (
-                <OrganizationSwitcher current={organization} />
-              ) : null}
-              {email ? (
-                <span className="truncate text-muted-foreground text-xs">
-                  {email}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          <LogoutControl onAttention={showLogoutAttention} />
-          {isMobile ? null : (
-            // with touch, the 48 px areas of "Sair" and of the links would meet: 12 px more between them
+        {isMobile ? (
+          // the phone keeps "Sair" straight in "Mais", with the theme (Rodrigo, 25/10, vale corrigir 2)
+          <div className="grid gap-3 p-1">
+            <ThemeSegmented />
+            {organization || email ? (
+              <div className="grid min-w-0 gap-0.5">
+                {organization ? (
+                  <OrganizationSwitcher current={organization} />
+                ) : null}
+                {email ? (
+                  <span className="truncate text-muted-foreground text-xs">
+                    {email}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <LogoutControl logout={logout} onAttention={showLogoutAttention} />
+          </div>
+        ) : (
+          // the desktop: the card of the store, with the theme, the other stores and "Sair" in its menu (v7 § 3 item 12)
+          <div className="grid gap-3 p-1">
+            <StoreCard
+              email={email}
+              logout={logout}
+              organization={organization}
+            />
+            {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them */}
             <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs" />
-          )}
-        </div>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
 }
 
 /**
- * The bar of destinations of the phone: Início, Vender, Histórico, Estoque and "Mais", which opens the rest
- * (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
+ * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
+ * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
  * screens of its area (`aria-current="true"`): Estoque on Produtos, Categorias and Clientes. "Mais" carries it on
  * the screens of no destination of the bar (Resultado, Despesas, Pendências...), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
@@ -333,6 +347,26 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         let ariaCurrent: "page" | "true" | undefined;
         if (current) {
           ariaCurrent = id === navId ? "page" : "true";
+        }
+        if (id === "sale") {
+          // Vender, in the middle: a pill of ink around its icon, the one action of the bar (v7 § 3 item 12)
+          return (
+            <a
+              aria-current={ariaCurrent}
+              className={`${tab} text-foreground`}
+              data-bottom-sell=""
+              href={item.href}
+              key={id}
+            >
+              {current ? mark : null}
+              <span className="grid h-8 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
+                <Icon aria-hidden />
+              </span>
+              <span className="max-w-full truncate font-semibold">
+                {item.label}
+              </span>
+            </a>
+          );
         }
         return (
           <a

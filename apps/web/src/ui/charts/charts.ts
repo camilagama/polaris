@@ -9,4 +9,5 @@
  */
 // biome-ignore lint/performance/noBarrelFile: this is the entry of the charts chunk, the one file `import()` asks for
 export { AreaChart, type AreaChartProps } from "./area-chart";
+export { RingChart, type RingChartProps } from "./ring-chart";
 export { Sparkline, type SparklineProps } from "./sparkline";

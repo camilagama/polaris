@@ -59,6 +59,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "charts.ts",
       "heatmap.ts",
       "on-demand.tsx",
+      "ring-chart.tsx",
       "sales-heatmap.tsx",
       "sparkline.tsx",
       "weekday-bars.tsx",
@@ -71,6 +72,8 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
         "area-chart.tsx",
         "area.tsx",
         "grid.tsx",
+        "ring-chart.tsx",
+        "ring.tsx",
         "sparkline.tsx",
         "x-axis.tsx",
         "y-axis.tsx",
@@ -174,6 +177,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     for (const file of [
       "src/ui/charts/area-chart.tsx",
       "src/ui/charts/chart-bridge.tsx",
+      "src/ui/charts/ring-chart.tsx",
       "src/ui/charts/sparkline.tsx",
     ]) {
       expect(read(file), file).not.toContain("--chart-1");
@@ -220,6 +224,23 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect(sparkline).toContain(
       '<MotionConfig reducedMotion={still ? "always" : "user"}>'
     );
+    // the ring of the goal (t398): drawn finished, with no entrance, below the full level
+    const ring = read("src/ui/charts/ring-chart.tsx");
+    expect(ring).toContain('useMotionLevel() !== "full"');
+    expect(ring).toContain("animate={!still}");
+    expect(ring).toContain(
+      '<MotionConfig reducedMotion={still ? "always" : "user"}>'
+    );
+  });
+
+  it("the ring of Bklit UI comes without its center: no ChartStatFlow and no @number-flow/react (v7 § 7, pacote E)", () => {
+    const files = readdirSync(bklitFolder);
+    expect(files).not.toContain("ring-center.tsx");
+    expect(files).not.toContain("chart-stat-flow.tsx");
+    for (const file of bklitSources) {
+      expect(read(`src/ui/bklit/${file}`), file).not.toContain("number-flow");
+      expect(read(`src/ui/bklit/${file}`), file).not.toContain("@visx/group");
+    }
   });
 
   it("adaptation 9: the blocks read the reduced motion of the MotionConfig, not only the system's (BKLIT-UI.md)", () => {
