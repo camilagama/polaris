@@ -989,6 +989,8 @@ test("o calendário do período da meta se usa só com o teclado: setas andam pe
   await expect(popup.getByText(HALF_RANGE_NOTE)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
+  // Escape closed the calendar only: the form dialog around it stays open
+  await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
   await expect(datePickerButton(page, "Período da meta")).toBeFocused();
   // closing with only the start marked keeps the period there was
   await expect(datePickerButton(page, "Período da meta")).toHaveAccessibleName(
