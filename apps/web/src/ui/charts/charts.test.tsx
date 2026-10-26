@@ -182,6 +182,89 @@ describe("AreaChart: a second series (the costs of the Resultado)", () => {
   });
 });
 
+describe("AreaChart: a second series with unknown days (AC-9 of the Resultado, emenda de 25/10)", () => {
+  const UNKNOWN = {
+    legend: "dia sem custo informado",
+    text: "sem custo informado",
+  };
+  const costs = WEEK.map((day, index) => ({
+    label: day.label,
+    value: index === 6 || index === 2 ? null : day.value * 2,
+  }));
+  const markup = html(
+    <AreaChart
+      data={WEEK}
+      formatValue={money}
+      label="Vendas e custos"
+      legend="Vendas líquidas"
+      name="Vendas"
+      secondary={{
+        data: costs,
+        legend: "Custos",
+        name: "Custos",
+        unknown: UNKNOWN,
+      }}
+    />
+  );
+
+  it("reads the unknown day in words, never as R$ 0,00", () => {
+    const reading = text(markup.match(READING)?.[0] ?? "");
+    expect(reading).toBe(
+      "23/10 · Vendas R$ 520,00 · Custos: sem custo informado"
+    );
+    expect(reading).not.toContain("R$ 0,00");
+  });
+
+  it("speaks the unknown day in words through the keyboard control", () => {
+    expect(markup.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: Vendas R$ 520,00, Custos: sem custo informado"'
+    );
+  });
+
+  it("names the hatch in the legend, beside the two lines", () => {
+    const legend = markup.match(LEGEND)?.[0] ?? "";
+    expect(text(legend)).toBe("Vendas líquidasCustosdia sem custo informado");
+    expect(legend).toContain('stroke="var(--chart-unknown)"');
+    expect(legend).not.toMatch(OKLCH_OR_HEX);
+  });
+
+  it("does not name the cost line when no day is known: only the hatch", () => {
+    const none = html(
+      <AreaChart
+        data={WEEK}
+        formatValue={money}
+        label="Vendas e custos"
+        secondary={{
+          data: WEEK.map((day) => ({ label: day.label, value: null })),
+          legend: "Custos",
+          name: "Custos",
+          unknown: UNKNOWN,
+        }}
+      />
+    );
+    expect(text(none.match(LEGEND)?.[0] ?? "")).toBe(
+      "Vendasdia sem custo informado"
+    );
+  });
+
+  it("has no hatch in the legend when every day is known", () => {
+    const known = html(
+      <AreaChart
+        data={WEEK}
+        formatValue={money}
+        label="Vendas e custos"
+        secondary={{
+          data: WEEK,
+          legend: "Custos",
+          name: "Custos",
+          unknown: UNKNOWN,
+        }}
+      />
+    );
+    expect(known).not.toContain("data-chart-legend-unknown");
+  });
+});
+
 describe("Sparkline", () => {
   it("is hidden from a screen reader: the number beside it is the information", () => {
     const markup = html(<Sparkline values={[1, 2, 3]} />);

@@ -21,13 +21,25 @@ import { PartsBar } from "./parts-bar";
 
 const CHAIN_TITLE_ID = "dashboard-chain-title";
 
-/** A subtotal ("=") sits on a tinted band; the result closes the table under a 2 px line. */
-function rowClass(row: ChainRow): string | undefined {
+/**
+ * The chain as a receipt (revisão de UI v7, § 8): no lines between the rows, a dotted leader from the name to the
+ * value, a subtotal ("=") in a heavier weight, and the result after the perforation of the receipt (a dashed line
+ * across the card), larger. The leader and the perforation are drawing: the row is still a header cell and its value.
+ */
+function rowClass(row: ChainRow): string {
+  const base = "border-b-0 hover:bg-transparent";
   if (row.kind === "result") {
-    return "border-t-2 border-t-foreground/20 bg-muted/40 font-semibold";
+    return cn(
+      base,
+      "border-t-2 border-t-input border-dashed font-semibold text-base"
+    );
   }
-  return row.kind === "subtotal" ? "bg-muted/40 font-medium" : undefined;
+  return row.kind === "subtotal" ? cn(base, "font-semibold") : base;
 }
+
+/** The dotted line from the end of the name to the value: it fills what is left of the cell and says nothing. */
+const LEADER =
+  "min-w-4 flex-1 translate-y-[-0.3em] border-input border-b border-dotted";
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
 export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
@@ -46,7 +58,8 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
         <caption className="sr-only">
           Das vendas brutas ao resultado operacional estimado
         </caption>
-        <TableHeader>
+        {/* the names of the columns are for the screen reader: the receipt shows only names and values */}
+        <TableHeader className="sr-only">
           <TableRow>
             <TableHead scope="col">Etapa</TableHead>
             <TableHead className="text-right" scope="col">
@@ -58,10 +71,16 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
           {rows.map((row) => (
             <TableRow className={rowClass(row)} key={row.id}>
               <TableHead
-                className="h-auto whitespace-normal py-2.5 align-top font-[weight:inherit] text-foreground text-sm"
+                className={cn(
+                  "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
+                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2"
+                )}
                 scope="row"
               >
-                {row.label}
+                <span className="flex items-baseline gap-2">
+                  <span>{row.label}</span>
+                  <span aria-hidden="true" className={LEADER} />
+                </span>
                 {row.note ? (
                   <span className="mt-0.5 block font-normal text-warning text-xs italic">
                     <MoneyText text={row.note} />
@@ -70,7 +89,8 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
               </TableHead>
               <TableCell
                 className={cn(
-                  "text-right align-top tabular-nums",
+                  "pl-2 text-right align-top tabular-nums",
+                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
                   row.negative && row.kind !== "line" && "text-destructive"
                 )}
               >

@@ -4,6 +4,8 @@ import {
   bestIndex,
   chartPoints,
   drawn,
+  hasUnknown,
+  knownRuns,
   seriesMax,
   yAxisMargin,
 } from "./chart-data";
@@ -97,5 +99,47 @@ describe("drawn", () => {
     expect(drawn(-3)).toBe(0);
     expect(drawn(Number.NaN)).toBe(0);
     expect(drawn(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("a second series with unknown values (AC-9 of the Resultado)", () => {
+  const costs = [5, null, 7, null, null, 9, 10, null].map((value, index) => ({
+    label: `d${index}`,
+    value,
+  }));
+
+  it("never gives the blocks a number for an unknown value: no drawn value, the raw one null", () => {
+    const points = chartPoints(days([1, 1, 1, 1, 1, 1, 1, 1]), costs);
+    for (const [index, point] of points.entries()) {
+      if (costs[index]?.value === null) {
+        expect(point).not.toHaveProperty("drawnSecondary");
+        expect(point.rawSecondary).toBeNull();
+      } else {
+        expect(typeof point.drawnSecondary).toBe("number");
+      }
+    }
+    // the y domain of the blocks reads only numbers: an unknown day does not pull it to zero nor stretch it
+    expect(
+      resolveTimeSeriesYDomain(points, ["drawnSecondary"], undefined)
+    ).toEqual([0, 10 * 1.1]);
+  });
+
+  it("splits the known values into runs, a lone known day being a run of one (drawn as a point)", () => {
+    expect(knownRuns(costs)).toEqual([
+      { end: 0, start: 0 },
+      { end: 2, start: 2 },
+      { end: 6, start: 5 },
+    ]);
+    expect(knownRuns(days([1, 2, 3]))).toEqual([{ end: 2, start: 0 }]);
+    expect(knownRuns(costs.map((cost) => ({ ...cost, value: null })))).toEqual(
+      []
+    );
+  });
+
+  it("says when a series has an unknown value, and the highest value skips it", () => {
+    expect(hasUnknown(costs)).toBe(true);
+    expect(hasUnknown(days([1, 2]))).toBe(false);
+    expect(hasUnknown(undefined)).toBe(false);
+    expect(seriesMax(costs)).toBe(10);
   });
 });

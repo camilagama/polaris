@@ -33,7 +33,7 @@ const PALETTE_COLOR =
 const MOVEMENT = /\b(?:translate|scale|rotate|zoom|slide)-/;
 const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\(/;
 const TOKEN_ONLY =
-  /^var\(--(?:chart-(?:[1-5]|sales|result|ticket|context)|card|foreground|border|destructive)\)$/;
+  /^var\(--(?:chart-(?:[1-5]|sales|result|ticket|context|unknown)|card|foreground|border|destructive)\)$/;
 const SVG_COLOR_ATTRIBUTE = /\b(?:fill|stroke|stopColor)="([^"]+)"/g;
 const CHART_IMPORT =
   /from\s+["'][^"']*\/(?:charts\/(?!on-demand)|bklit\/)[^"']*["']/;
@@ -55,6 +55,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "area-chart.tsx",
       "chart-bridge.tsx",
       "chart-data.ts",
+      "chart-gaps.tsx",
       "chart-text.tsx",
       "charts.ts",
       "heatmap.ts",
@@ -192,6 +193,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "--chart-result",
       "--chart-ticket",
       "--chart-context",
+      "--chart-unknown",
       "--chart-heat-1",
       "--chart-heat-4",
     ]) {

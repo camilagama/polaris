@@ -150,6 +150,8 @@ describe.each([
   it.each([
     ["`chart-3`", 3],
     ["`chart-5`", 4.5],
+    // the hatch of an unknown day (Resultado, AC-9): it always comes with words, and still reaches the bar of a graphic
+    ["`chart-unknown`", 3],
   ] as const)(
     "%s / `card` is in the map and reaches %d:1",
     (foreground, bar) => {

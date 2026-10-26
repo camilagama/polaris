@@ -25,6 +25,15 @@ export interface ChartDatum {
   value: number;
 }
 
+/**
+ * A point of the second series, which may be unknown (`null`: the costs of a day the server could not know, AC-9 of the
+ * Resultado). An unknown value is never drawn, never a zero: the day is hatched and the line breaks on it.
+ */
+export interface SecondaryDatum {
+  label: string;
+  value: number | null;
+}
+
 /** The margins of the plot, in pixels: the tooltip lives in the 40 px of the top, the dates in the bottom. */
 export const MARGIN = { bottom: 32, left: 44, right: 20, top: 40 };
 /** What the margins add to the height of the plot, less the 32 px the chart used to keep for them. */
@@ -42,10 +51,12 @@ const DAY = 86_400_000;
 export interface ChartPoint extends Record<string, unknown> {
   date: Date;
   drawn: number;
+  /** Absent when the value of the second series is unknown: the blocks never get a number for it. */
   drawnSecondary?: number;
   label: string;
   raw: number;
-  rawSecondary?: number;
+  /** `null` when the value of the second series is unknown (the reading says so in words). */
+  rawSecondary?: number | null;
 }
 
 export const drawn = (value: number) =>
@@ -58,25 +69,71 @@ export const drawn = (value: number) =>
  */
 export function chartPoints(
   data: readonly ChartDatum[],
-  secondary: readonly ChartDatum[] | undefined
+  secondary: readonly SecondaryDatum[] | undefined
 ): ChartPoint[] {
   return data.map((datum, index) => {
     const second = secondary?.[index];
+    const value = second ? second.value : undefined;
+    let point: Pick<ChartPoint, "drawnSecondary" | "rawSecondary"> = {};
+    if (value === null) {
+      point = { rawSecondary: null };
+    } else if (value !== undefined) {
+      point = { drawnSecondary: drawn(value), rawSecondary: value };
+    }
     return {
       date: new Date(Date.UTC(2000, 0, 1) + index * DAY),
       drawn: drawn(datum.value),
       label: datum.label,
       raw: datum.value,
-      ...(second
-        ? { drawnSecondary: drawn(second.value), rawSecondary: second.value }
-        : {}),
+      ...point,
     };
   });
 }
 
-/** The highest value a series draws (values below zero and unknown ones count as zero), 0 for an empty series. */
-export function seriesMax(data: readonly ChartDatum[]): number {
-  return data.reduce((max, datum) => Math.max(max, drawn(datum.value)), 0);
+/** The highest value a series draws (values below zero count as zero; an unknown one is skipped), 0 for an empty series. */
+export function seriesMax(data: readonly { value: number | null }[]): number {
+  return data.reduce(
+    (max, datum) =>
+      datum.value === null ? max : Math.max(max, drawn(datum.value)),
+    0
+  );
+}
+
+/** True when some value of the second series is unknown: the chart then draws it by runs, with the hatch. */
+export function hasUnknown(
+  data: readonly SecondaryDatum[] | undefined
+): boolean {
+  return data?.some((datum) => datum.value === null) ?? false;
+}
+
+/** A run of known values of the second series: the indexes between `start` and `end`, both in. */
+export interface KnownRun {
+  end: number;
+  start: number;
+}
+
+/**
+ * The runs of known values, in order (AC-9 of the Resultado, "uma série por trecho contínuo"): each one is drawn as a
+ * line of its own, and a run of one day (a known day between two unknown ones) is drawn as a point. The unknown
+ * indexes are in no run: nothing is drawn for them but the hatch.
+ */
+export function knownRuns(data: readonly SecondaryDatum[]): KnownRun[] {
+  const runs: KnownRun[] = [];
+  let start: number | null = null;
+  data.forEach((datum, index) => {
+    if (datum.value === null) {
+      if (start !== null) {
+        runs.push({ end: index - 1, start });
+      }
+      start = null;
+    } else if (start === null) {
+      start = index;
+    }
+  });
+  if (start !== null) {
+    runs.push({ end: data.length - 1, start });
+  }
+  return runs;
 }
 
 /**

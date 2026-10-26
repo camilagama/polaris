@@ -38,10 +38,13 @@ import {
   presetPeriod,
   samePeriod,
 } from "./result-period";
+import { comparisonPeriod } from "./result-kpis";
 import { type ResultTab, readResultTab, writeResultTab } from "./result-tab";
 import { useGoals } from "./use-goals";
 import {
+  type ComparisonDays,
   type PeriodSummaryState,
+  useComparisonDays,
   usePeriodSummary,
 } from "./use-period-summary";
 
@@ -154,6 +157,8 @@ function CardNote({
 }
 
 interface ContentProps {
+  /** The days of the period before the one asked for, for the chips of the cards (null while not read). */
+  comparison: ComparisonDays | null;
   /** What the person asked for: the figures on screen may still be those of the period before it (AC-3). */
   period: Period;
   state: PeriodSummaryState;
@@ -161,7 +166,13 @@ interface ContentProps {
   timezone: string;
 }
 
-function Content({ period, state, thisYear, timezone }: ContentProps) {
+function Content({
+  comparison,
+  period,
+  state,
+  thisYear,
+  timezone,
+}: ContentProps) {
   const { summary } = state;
   if (summary === null) {
     return state.isLoading ? (
@@ -182,6 +193,8 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
   const shown = periodText(summary.period, thisYear);
   const behind = !samePeriod(summary.period, period);
   const stale = behind && state.isLoading;
+  // the store's today on the server's clock of the figures, the same that cuts the chart (AC-6)
+  const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   if (summary.quality.level === "no_data") {
     return (
       <CardNote description="Escolha outro período ou registre vendas e despesas.">
@@ -204,7 +217,19 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
         >{`Mostrando ${shown} até o novo período carregar.`}</p>
       ) : null}
       <QualityBanner quality={summary.quality} />
-      <ResultCards summary={summary} />
+      <ResultCards
+        comparison={
+          // only the comparison of the figures on screen: never the one of a period still loading
+          samePeriod(
+            comparison?.period ?? null,
+            comparisonPeriod(summary.period, today)
+          )
+            ? comparison
+            : null
+        }
+        summary={summary}
+        today={today}
+      />
       <ResultChart
         source={state.source}
         summary={summary}
@@ -248,6 +273,16 @@ export function DashboardPage() {
     organizationId,
     period,
     copyMonth
+  );
+  // the period before is read only after the server answered for the period asked, with figures to compare
+  const answered =
+    state.source === "server" &&
+    state.summary !== null &&
+    samePeriod(state.summary.period, period) &&
+    state.summary.quality.level !== "no_data";
+  const comparison = useComparisonDays(
+    organizationId,
+    answered ? comparisonPeriod(period, today) : null
   );
   // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
   // disagrees, the periods are computed again once, from the server's day, and read again
@@ -338,6 +373,7 @@ export function DashboardPage() {
           ) : null}
           <div aria-busy={state.isLoading} className="grid gap-5">
             <Content
+              comparison={comparison}
               period={period}
               state={state}
               thisYear={today.slice(0, 4)}

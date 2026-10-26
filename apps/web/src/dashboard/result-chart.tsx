@@ -44,15 +44,18 @@ import {
   bestRowText,
   chartNumber,
   costParts,
+  costSeries,
+  costsKnown,
   costText,
   hasAnyValue,
-  hasUnknownCostDay,
   moneyText,
+  NO_COST_TEXT,
   type ResultRow,
   type ResultSeries,
   readingNote,
   resultSeries,
   supportText,
+  unknownDaysCount,
 } from "./result-series";
 
 const TITLE_ID = "dashboard-chart-title";
@@ -101,7 +104,7 @@ interface NumbersTableProps {
 }
 
 /** "Ver os números": the day by day (or month by month) table, which is the proof that the drawing hides nothing. */
-function NumbersTable({ hasCosts, series }: NumbersTableProps) {
+export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
   const columns = hasCosts ? 5 : 2;
   const unit = series.grouped ? "mês" : "dia";
   return (
@@ -188,11 +191,8 @@ function NumbersTable({ hasCosts, series }: NumbersTableProps) {
   );
 }
 
-/** What the block says in place of the cost line when it is not drawn (AC-9): no zero is made up. */
-function costsNote(unknown: boolean, fromCopy: boolean): string {
-  if (unknown) {
-    return "A linha de custos não aparece enquanto houver custo desconhecido.";
-  }
+/** What the block says in place of the cost line when the costs of the days were not sent at all: no zero is made up. */
+function costsNote(fromCopy: boolean): string {
   return fromCopy
     ? "Esta cópia guardada não tem os custos por dia."
     : "Os custos por dia não estão disponíveis agora.";
@@ -256,8 +256,11 @@ function Totals({
   );
 }
 
-/** The numbers a drawing is given: the sales, the costs when they are drawn, and the note of a day. Memoized, so the layout is not redone. */
-function useDrawingData({ costsDrawn, rows }: ResultSeries) {
+/**
+ * The numbers a drawing is given: the sales, the costs when they are sent (`null` on a day whose cost is unknown:
+ * hatched, never a zero) and the note of a day. Memoized, so the layout is not redone.
+ */
+function useDrawingData({ costsSent, grouped, rows }: ResultSeries) {
   const data = useMemo(
     () =>
       rows.map((row) => ({
@@ -266,20 +269,27 @@ function useDrawingData({ costsDrawn, rows }: ResultSeries) {
       })),
     [rows]
   );
-  const secondary = useMemo(
-    () =>
-      costsDrawn
-        ? {
-            data: rows.map((row) => ({
-              label: row.label,
-              value: chartNumber(row.costs ?? "0.00"),
-            })),
-            legend: "Custos (CMV, taxas e despesas)",
-            name: "Custos",
-          }
-        : null,
-    [costsDrawn, rows]
-  );
+  const secondary = useMemo(() => {
+    if (!costsSent) {
+      return null;
+    }
+    const costs = costSeries(rows);
+    return {
+      data: rows.map((row, index) => ({
+        label: row.label,
+        value: costs[index] ?? null,
+      })),
+      legend: "Custos (CMV, taxas e despesas)",
+      name: "Custos",
+      unknown: {
+        // a month with one unknown day is unknown as a whole (never a partial sum): the hatch names it so
+        legend: grouped
+          ? "mês com dia sem custo informado"
+          : "dia sem custo informado",
+        text: NO_COST_TEXT,
+      },
+    };
+  }, [costsSent, grouped, rows]);
   const [hidden] = useHiddenValues();
   const note = useCallback(
     (index: number) => {
@@ -302,19 +312,23 @@ const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
 
-/** The area chart of the charts chunk, with the sales and, when the cost of every day is known, the dashed cost line. */
+/**
+ * The area chart of the charts chunk, with the sales and the dashed cost line, broken on a hatched day whose cost is
+ * unknown (AC-9, emenda de 25/10).
+ */
 function Drawing({ label, series }: { label: string; series: ResultSeries }) {
   const { data, note, secondary, spoken } = useDrawingData(series);
   const [hidden] = useHiddenValues();
   return (
     <OnDemandAreaChart
+      color="var(--chart-sales)"
       data={data}
       failed={<ChartFailed />}
       formatAxis={hidden ? noAxis : axisMoney}
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
       {...(hidden ? {} : { axisUnit: "R$" })}
-      height={series.costsDrawn || series.rows.length > 7 ? 220 : 180}
+      height={series.costsSent || series.rows.length > 7 ? 220 : 180}
       label={hidden ? maskMoney(label, MASKED_SPOKEN) : label}
       legend="Vendas líquidas"
       name="Vendas"
@@ -377,8 +391,8 @@ interface ResultChartProps {
 }
 
 /**
- * "Vendas × custos por dia" (AC-4 to AC-12): the sales of each day and, only when the cost of every day is known, the
- * costs against them. The total of sales, the total of costs and the best day are written above the drawing, and "Ver os
+ * "Vendas × custos por dia" (AC-4 to AC-12): the sales of each day and the costs against them, hatched and broken on a
+ * day whose cost is unknown (AC-9, emenda de 25/10). The total of sales, the total of costs and the best day are written above the drawing, and "Ver os
  * números" has the table: the numbers hold without the drawing. The period is cut at the store's today, read from the
  * server's clock; what the days to come cost closes the table.
  */
@@ -393,15 +407,16 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
     return null;
   }
 
-  const { costsDrawn, rows } = series;
-  const unknown = hasUnknownCostDay(daily);
+  const { costsDrawn, costsSent: sent, days, rows } = series;
+  const unknown = days.unknown > 0;
   const range = periodText(summary.period, today.slice(0, 4));
   const best = bestRowText(series);
   const salesTotal = summary.cards.netSales;
-  const costsTotal = costsDrawn
+  // the total of the costs only when every day is known: never the sum of the known days as the total (AC-9)
+  const costsTotal = costsKnown(daily)
     ? costParts(summary.chain, summary.quality).total
     : null;
-  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por dia, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}`;
+  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por dia, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount(days.unknown, days.total)}` : ""}`;
 
   return (
     <Card aria-labelledby={TITLE_ID} className="gap-0 py-0" role="region">
@@ -409,13 +424,13 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
         incomplete={isIncompleteEstimate(summary.quality) || unknown}
         range={range}
         source={source}
-        support={supportText(costsDrawn, summary.chain)}
+        support={supportText(series, summary.chain)}
       />
       <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-3 py-(--card-spacing)">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
-        {costsDrawn ? null : (
+        {sent ? null : (
           <p className="text-muted-foreground text-support">
-            {costsNote(unknown, source === "cache")}
+            {costsNote(source === "cache")}
           </p>
         )}
         {best ? (
@@ -425,10 +440,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
         ) : null}
         <Body label={label} series={series} />
         {rows.length > 0 ? (
-          <NumbersToggle
-            hasCosts={rows.some((row) => row.costs !== undefined)}
-            series={series}
-          />
+          <NumbersToggle hasCosts={sent} series={series} />
         ) : null}
       </CardContent>
     </Card>

@@ -49,6 +49,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `chart-result` / `card` | série do resultado (v7) | Chart | **5.87** | 3 | ✓ |
 | `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.37** | 3 | ✓ |
 | `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.36** | 3 | ✓ |
+| `chart-unknown` / `card` | hachura do dia sem custo informado (Resultado v7, AC-9) | Chart | **3.40** | 3 | ✓ |
+| `chart-unknown` / `chart-unknown/8 sobre card` | linha da hachura sobre o próprio fundo tingido | Chart | **3.13** | 3 | ✓ |
 | `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **7.06** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.26** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **3.64** | 3 | ✓ |
@@ -118,6 +120,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `chart-result` / `card` | série do resultado (v7) | Chart | **4.38** | 3 | ✓ |
 | `chart-ticket` / `card` | série do ticket (v7) | Chart | **4.89** | 3 | ✓ |
 | `chart-context` / `card` | série de comparação, tracejada (v7) | Chart | **3.44** | 3 | ✓ |
+| `chart-unknown` / `card` | hachura do dia sem custo informado (Resultado v7, AC-9) | Chart | **3.41** | 3 | ✓ |
+| `chart-unknown` / `chart-unknown/8 sobre card` | linha da hachura sobre o próprio fundo tingido | Chart | **3.15** | 3 | ✓ |
 | `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **8.62** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.05** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **4.22** | 3 | ✓ |

@@ -43,6 +43,8 @@
   --chart-result: oklch(0.52 0.19 277);
   --chart-ticket: oklch(0.6 0.19 340);
   --chart-context: oklch(0.64 0.005 85);
+  /* the hatch of an unknown day (Resultado, AC-9, emenda de 25/10), and nothing else: lines at 45° over an 8 % tint */
+  --chart-unknown: oklch(0.64 0.08 75);
   --chart-heat-1: oklch(0.88 0.075 162);
   --chart-heat-2: oklch(0.77 0.115 162);
   --chart-heat-3: oklch(0.65 0.125 162);
@@ -111,6 +113,7 @@
   --chart-result: oklch(0.62 0.17 277);
   --chart-ticket: oklch(0.66 0.18 340);
   --chart-context: oklch(0.55 0.0035 85);
+  --chart-unknown: oklch(0.55 0.07 78);
   --chart-heat-1: oklch(0.37 0.07 162);
   --chart-heat-2: oklch(0.49 0.1 162);
   --chart-heat-3: oklch(0.62 0.13 162);
