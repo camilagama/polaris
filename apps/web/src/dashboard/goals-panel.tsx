@@ -2,13 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
-import {
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";

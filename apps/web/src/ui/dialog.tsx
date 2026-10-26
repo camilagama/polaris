@@ -119,10 +119,7 @@ function Dialog({
   // the open state of a dialog that keeps its own (opened by a trigger), for the content to know when it closes
   const [ownOpen, setOwnOpen] = useState(defaultOpen);
   const handleOpenChange = useCallback(
-    (
-      next: boolean,
-      details: DialogPrimitive.Root.ChangeEventDetails
-    ): void => {
+    (next: boolean, details: DialogPrimitive.Root.ChangeEventDetails): void => {
       onOpenChange?.(next, details);
       if (!details.isCanceled) {
         setOwnOpen(next);
