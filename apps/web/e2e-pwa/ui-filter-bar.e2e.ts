@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
 import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
@@ -41,10 +42,16 @@ const offlineBar = (page: Page) =>
 const count = (page: Page) => page.getByTestId("filtros-contagem");
 const addButton = (page: Page) =>
   bar(page).getByRole("button", { exact: true, name: "Filtrar" });
+// by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`, and a hidden element is not found by role and has no name
 const pill = (page: Page, label: string) =>
-  bar(page).getByRole("button", { name: new RegExp(`^${label}: .*, editar$`) });
+  page.locator(
+    `search[aria-label="Filtrar vendas"] button[aria-label^="${label}: "][aria-label$=", editar"]`
+  );
 const remover = (page: Page, label: string) =>
-  bar(page).getByRole("button", { name: `Tirar o filtro ${label}` });
+  bar(page).getByRole("button", {
+    includeHidden: true,
+    name: `Tirar o filtro ${label}`,
+  });
 const clearAll = (page: Page) =>
   bar(page).getByRole("button", { name: "Limpar tudo" });
 const menu = (page: Page) => page.getByRole("menu", { name: "Filtrar por" });
@@ -181,7 +188,8 @@ for (const viewport of VIEWPORTS) {
       await openMenu(page);
       await item(page, "Cliente").click();
       await expect(menu(page)).toBeHidden();
-      await expect(pill(page, "Cliente")).toHaveAccessibleName(
+      await expect(pill(page, "Cliente")).toHaveAttribute(
+        "aria-label",
         "Cliente: Escolher, editar"
       );
       const open = editor(page, "Cliente");
@@ -230,6 +238,7 @@ for (const viewport of VIEWPORTS) {
         "true"
       );
       await open.getByRole("button", { name: "Cancelada" }).click();
+      await applyEditor(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Situação")).toHaveAccessibleName(
         "Situação: Cancelada, editar"
@@ -292,6 +301,7 @@ for (const viewport of VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { name: "7 dias" })
         .click();
+      await applyEditor(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 18/10 a 24/10, editar"
@@ -304,6 +314,7 @@ for (const viewport of VIEWPORTS) {
       await again.locator('button[data-day="2026-10-05"]').click();
       await expect(again).toBeVisible();
       await again.locator('button[data-day="2026-10-09"]').click();
+      await applyEditor(page, again);
       await expect(again).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 05/10 a 09/10, editar"
@@ -311,9 +322,9 @@ for (const viewport of VIEWPORTS) {
 
       // Limpar takes the filter out
       await pill(page, "Período").click();
-      await editor(page, "Período")
-        .getByRole("button", { name: "Limpar" })
-        .click();
+      const clearing = editor(page, "Período");
+      await clearing.getByRole("button", { name: "Limpar" }).click();
+      await applyEditor(page, clearing);
       await expect(pill(page, "Período")).toHaveCount(0);
       await expect(count(page)).toHaveText("2 filtros ativos");
     });
@@ -337,9 +348,9 @@ for (const viewport of VIEWPORTS) {
 
       await openMenu(page);
       await item(page, "Situação").click();
-      await editor(page, "Situação")
-        .getByRole("button", { name: "Paga" })
-        .click();
+      const choosing = editor(page, "Situação");
+      await choosing.getByRole("button", { name: "Paga" }).click();
+      await applyEditor(page, choosing);
       await expect(clearAll(page)).toBeVisible();
       await clearAll(page).click();
       await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
@@ -641,7 +652,14 @@ async function axeWithEditor(page: Page, label: string) {
   const open = editor(page, label);
   await expect(open).toBeVisible();
   await settled(page);
-  expect(await axeFaults(page, '[data-slot="popover-content"]')).toEqual([]);
+  expect(
+    await axeFaults(
+      page,
+      onPhone(page)
+        ? '[data-slot="dialog-content"]'
+        : '[data-slot="popover-content"]'
+    )
+  ).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(open).toBeHidden();
 }

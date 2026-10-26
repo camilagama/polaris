@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -151,15 +152,19 @@ export const historyStates = {
     const period = await addFilter(page, "Período");
     await period.locator('button[data-day="2026-10-12"]').click();
     await period.locator('button[data-day="2026-10-05"]').click();
+    await applyEditor(page, period);
     await period.waitFor({ state: "hidden" });
     const status = await addFilter(page, "Situação");
     await status
       .getByRole("button", { exact: true, name: "Canceladas" })
       .click();
+    await applyEditor(page, status);
     await status.waitFor({ state: "hidden" });
     const customer = await addFilter(page, "Cliente");
     await customer.getByRole("textbox", { name: "Cliente" }).fill("Ângela");
-    await customer.getByRole("button", { name: "Pronto" }).click();
+    await customer
+      .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
+      .click();
     await customer.waitFor({ state: "hidden" });
     await bar(page).getByRole("button", { name: "Limpar tudo" }).waitFor();
     await showScreenAlone(page);

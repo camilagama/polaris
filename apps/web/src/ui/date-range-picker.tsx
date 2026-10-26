@@ -83,11 +83,17 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
  */
 export function DateRangePanel({
   onCommit,
+  onHalfChange,
+  statusId,
   today: todayProp,
   value: valueProp,
 }: {
   /** Called with the closed range, or null for "Limpar"; the caller closes the popover. */
   onCommit: (range: DateRange | null) => void;
+  /** Called with whether only the start is marked: a caller that applies by a button of its own waits for the last day. */
+  onHalfChange?: ((half: boolean) => void) | undefined;
+  /** The id of the line that asks for the last day, for a button that is off while it shows. */
+  statusId?: string | undefined;
   today?: IsoDate | undefined;
   /** The range there is, both ends `AAAA-MM-DD`, or null. */
   value: DateRange | null;
@@ -104,9 +110,10 @@ export function DateRangePanel({
   const commit = useCallback(
     (range: DateRange | null) => {
       setDraft(range ?? undefined);
+      onHalfChange?.(false);
       onCommit(range);
     },
-    [onCommit]
+    [onCommit, onHalfChange]
   );
 
   const pickDay = useCallback(
@@ -116,9 +123,10 @@ export function DateRangePanel({
         commit(next.range);
       } else {
         setDraft(next.draft);
+        onHalfChange?.(true);
       }
     },
-    [commit, draft]
+    [commit, draft, onHalfChange]
   );
 
   const pickPreset = useCallback(
@@ -175,7 +183,11 @@ export function DateRangePanel({
         />
       </div>
       <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
-        <p aria-live="polite" className="text-muted-foreground text-support">
+        <p
+          aria-live="polite"
+          className="text-muted-foreground text-support"
+          id={statusId}
+        >
           {half ? `Início ${formatDate(half)}. Escolha o último dia.` : null}
         </p>
         {value || half ? (

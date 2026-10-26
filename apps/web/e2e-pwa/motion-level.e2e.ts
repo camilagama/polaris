@@ -31,7 +31,6 @@ const MOTION_CHUNK = /\/assets\/motion-[\w-]+\.js$/;
 const CHARTS_CHUNK = /\/assets\/charts-[\w-]+\.js$/;
 const LAYER_CHUNK = /\/assets\/filter-bar-motion-[\w-]+\.js$/;
 const CLIENT_ITEM = /^Cliente/;
-const CLIENT_PILL = /^Cliente: .*, editar$/;
 const WEEK_LABEL =
   /^Vendas líquidas por dia, de 17\/10 a 23\/10, dados de exemplo$/;
 /** What may move on a phone: the pulse of the skeleton (an animation) and the press of a button (a transition). */
@@ -109,8 +108,11 @@ async function addedPillStyle(page: Page) {
     .getByRole("menu", { name: "Filtrar por" })
     .getByRole("menuitem", { name: CLIENT_ITEM })
     .click();
-  return bar(page)
-    .getByRole("button", { name: CLIENT_PILL })
+  // by `aria-label`: on a phone the editor is the form Dialog and the page behind it is `aria-hidden`
+  return page
+    .locator(
+      'search[aria-label="Filtrar vendas"] button[aria-label^="Cliente: "]'
+    )
     .evaluate(
       (element) =>
         element.closest('[data-slot="filter-pill"]')?.getAttribute("style") ??
