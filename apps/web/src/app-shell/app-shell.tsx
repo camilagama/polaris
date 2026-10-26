@@ -1,16 +1,11 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
-import BadgeCheckIcon from "lucide-react/dist/esm/icons/badge-check";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
-import CreditCardIcon from "lucide-react/dist/esm/icons/credit-card";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
-import GlobeIcon from "lucide-react/dist/esm/icons/globe";
 import HouseIcon from "lucide-react/dist/esm/icons/house";
-import LayoutGridIcon from "lucide-react/dist/esm/icons/layout-grid";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
-import ReceiptTextIcon from "lucide-react/dist/esm/icons/receipt-text";
+import SettingsIcon from "lucide-react/dist/esm/icons/settings";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
-import SmartphoneIcon from "lucide-react/dist/esm/icons/smartphone";
 import TagIcon from "lucide-react/dist/esm/icons/tag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
@@ -48,6 +43,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from "@/ui/sidebar";
 import { ThemeSegmented } from "@/ui/theme-segmented";
@@ -61,7 +58,6 @@ import {
   useLegalAcceptanceRequired,
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
-import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
@@ -75,7 +71,6 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
-import { canManageBilling } from "../lib/billing-access";
 import { GraceNoticeSlot } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
 import {
@@ -86,6 +81,7 @@ import {
   NAV_ITEMS,
   type NavId,
   navGroups,
+  type RouteId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
@@ -103,20 +99,25 @@ const OrganizationSetup = lazy(() =>
 /** The icon of each destination (lucide, one module each). */
 const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
   attention: TriangleAlertIcon,
-  categories: LayoutGridIcon,
   customers: UsersIcon,
   dashboard: BarChart3Icon,
-  devices: SmartphoneIcon,
-  expenses: ReceiptTextIcon,
   history: ClockIcon,
   home: HouseIcon,
   inventory: PackageIcon,
-  "payment-profiles": CreditCardIcon,
   products: TagIcon,
-  "public-catalog": GlobeIcon,
   sale: ShoppingBagIcon,
-  subscription: BadgeCheckIcon,
+  settings: SettingsIcon,
 };
+
+/** The count of Pendências, drawn: 99 at most. */
+function countText(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+/** How a screen reader hears the count beside "Pendências" (the badge is only drawn). */
+function attentionCountText(count: number): string {
+  return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
+}
 
 /** One organization is shown as context; more than one can be switched. */
 function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
@@ -199,40 +200,44 @@ interface AppSidebarProps {
 
 /**
  * The sidebar of the desktop (the shadcn Sidebar) and, below 760 px, the same content in the "Mais" sheet without
- * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot.
+ * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot. Pendências
+ * is there only while this device has a refused record, with the count (map of navigation, § 1).
  */
 function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
-  const { isMobile, setOpenMobile } = useSidebar();
-  // the answer of "Sair" may come after "Mais" was closed: open it again to show the warning
+  const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
+  // the answer of "Sair" may come after "Mais" was closed, or with the column folded: open it to show the warning
   const showLogoutAttention = useCallback(() => {
     if (isMobile) {
       setOpenMobile(true);
+    } else if (state === "collapsed") {
+      // for this answer only: the choice of the person to keep it folded stays on the device
+      setOpen(true, false);
     }
-  }, [isMobile, setOpenMobile]);
+  }, [isMobile, setOpen, setOpenMobile, state]);
+  const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
   // the state of "Sair" lives above the switch between the sheet and the card, so a width that crosses 760 px in the
   // middle of the flow keeps the dialog of the queue and the message of a failure (Rodrigo, 26/10, menor 1)
   const logout = useLogout("/");
   const email = useSignedInEmail();
-  const items = menuItemsOf({
-    offline: OFFLINE_RUNTIME_ENABLED,
-    // the plan only for whom may manage it (ADR 0104): the server refuses the others anyway
-    subscription:
-      organization !== null &&
-      canManageBilling(
-        organization.billingSelfService,
-        organization.organization.role
-      ),
-  }).filter((item) => !(isMobile && inBottomBar(item.id)));
+  const items = menuItemsOf({ attention: rejected > 0 }).filter(
+    (item) => !(isMobile && inBottomBar(item.id))
+  );
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
-      <SidebarHeader className="px-4 pt-4 pb-2">
-        <a
-          className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
-          href="/"
-        >
-          <Logo />
-          Polaris
-        </a>
+      <SidebarHeader className="px-4 pt-4 pb-2 group-data-[collapsible=icon]:px-2">
+        <div className="flex items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+          <a
+            className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
+            href="/"
+          >
+            <Logo />
+            <span className="group-data-[collapsible=icon]:sr-only">
+              Polaris
+            </span>
+          </a>
+          {/* the column folds only from 1024 px: below, the button is not there */}
+          <SidebarTrigger />
+        </div>
         {isMobile ? <SyncStatusMenuLine onlineOnly={onlineOnly} /> : null}
       </SidebarHeader>
       <SidebarContent>
@@ -247,19 +252,39 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
                   {group.items.map((item) => {
                     const current = item.id === navId;
                     const Icon = NAV_ICONS[item.id];
+                    const count = item.id === "attention" ? rejected : 0;
                     return (
                       <SidebarMenuItem key={item.id}>
                         <SidebarMenuButton
                           aria-current={current ? "page" : undefined}
+                          // the count is only drawn: its name says it in words, after the visible name
+                          aria-label={
+                            count > 0
+                              ? `${item.label}, ${attentionCountText(count)}`
+                              : undefined
+                          }
                           href={item.href}
                           isActive={current}
+                          tooltip={item.label}
                         >
                           <Icon aria-hidden />
-                          <span>{item.label}</span>
-                          {current ? (
+                          {/* folded, the name is still the name of the link: hidden only to the eye */}
+                          <span className="group-data-[collapsible=icon]:sr-only">
+                            {item.label}
+                          </span>
+                          {count > 0 ? (
                             <span
                               aria-hidden="true"
-                              className="ml-auto size-1.5 shrink-0 rounded-full bg-mark"
+                              className="ml-auto min-w-5 shrink-0 rounded-full bg-warning px-1.5 text-center font-semibold text-warning-foreground text-xs tabular-nums leading-5 group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:top-0.5 group-data-[collapsible=icon]:right-0.5 group-data-[collapsible=icon]:size-2 group-data-[collapsible=icon]:min-w-0 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:text-[0px]"
+                              data-attention-count=""
+                            >
+                              {countText(count)}
+                            </span>
+                          ) : null}
+                          {current && count === 0 ? (
+                            <span
+                              aria-hidden="true"
+                              className="ml-auto size-1.5 shrink-0 rounded-full bg-mark group-data-[collapsible=icon]:hidden"
                             />
                           ) : null}
                         </SidebarMenuButton>
@@ -298,13 +323,16 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
             <StoreCard
               email={email}
               logout={logout}
+              onAttention={showLogoutAttention}
               organization={organization}
             />
-            {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them */}
-            <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs" />
+            {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them;
+                folded, the links go under the content (`AppFooter`) */}
+            <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden" />
           </div>
         )}
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }
@@ -312,8 +340,8 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
 /**
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
- * screens of its area (`aria-current="true"`): Estoque on Produtos, Categorias and Clientes. "Mais" carries it on
- * the screens of no destination of the bar (Resultado, Despesas, Pendências...), and the number of operations of
+ * screens of its area (`aria-current="true"`): Estoque on Produtos and Clientes. "Mais" carries it on the screens of
+ * no destination of the bar (Pendências, Resultado and Configurações, with their tabs), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
@@ -398,7 +426,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
               className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
-              {rejected > 99 ? "99+" : rejected}
+              {countText(rejected)}
             </span>
           ) : null}
         </span>
@@ -513,12 +541,15 @@ function LegalLinks({ className }: { className: string }) {
 }
 
 /**
- * The legal links under the content, on the phone only: from 760 px they are at the foot of the sidebar
- * (`AppSidebar`), once.
+ * The legal links under the content, on the phone and beside the folded column: from 760 px they are at the foot of
+ * the open sidebar (`AppSidebar`), once.
  */
 function AppFooter() {
+  const { state } = useSidebar();
   return (
-    <footer className="mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm md:hidden">
+    <footer
+      className={`mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm ${state === "collapsed" ? "" : "md:hidden"}`}
+    >
       <LegalLinks className="gap-x-5 gap-y-2" />
     </footer>
   );
@@ -595,6 +626,8 @@ interface AppShellProps {
   navId: NavId | null;
   /** The screen works only online (no copy on the device): the state chip says so while offline. */
   onlineOnly?: boolean;
+  /** The screen, or the tab of a screen, on screen; none on the 404. */
+  routeId?: RouteId;
   /** Pages that need data of an organization wait for it to be resolved. */
   requiresOrganization?: boolean;
   /** The new-version notice (ADR 0041), at the top of the content, beside the sidebar and never under it. */
@@ -611,6 +644,7 @@ export function AppShell({
   navId,
   onlineOnly = false,
   requiresOrganization = true,
+  routeId,
   updateNotice,
 }: AppShellProps) {
   const { billingSelfService, load, reload, select } = useOrganizationLoad();
@@ -628,7 +662,7 @@ export function AppShell({
     load.status !== "legal_acceptance_required";
   // the devices screen has its own panels for this (with the same button); the gate says it itself
   const showNotice =
-    sessionOver && navId !== "devices" && load.status !== "session_ended";
+    sessionOver && routeId !== "devices" && load.status !== "session_ended";
   const organization: CurrentOrganization | null =
     load.status === "ready" && !accessExpired
       ? {
@@ -688,7 +722,7 @@ export function AppShell({
           />
           <GraceNoticeSlot
             hidden={sessionOver}
-            onSubscription={navId === "subscription"}
+            onSubscription={routeId === "subscription"}
             organization={organization}
           />
           <OfflineAccessGate>

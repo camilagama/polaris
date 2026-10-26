@@ -5,17 +5,22 @@ const MOBILE_BREAKPOINT = 760;
 
 const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 0.02}px)`;
 
-/** Whether the window is narrower than the breakpoint, right from the first render (the app has no server render). */
-export function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(QUERY).matches
+/** Whether a media query matches, right from the first render (the app has no server render). */
+export function useMediaQuery(media: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(media).matches
   );
   useEffect(() => {
-    const query = window.matchMedia(QUERY);
-    const update = () => setIsMobile(query.matches);
+    const query = window.matchMedia(media);
+    const update = () => setMatches(query.matches);
     query.addEventListener("change", update);
     update();
     return () => query.removeEventListener("change", update);
-  }, []);
-  return isMobile;
+  }, [media]);
+  return matches;
+}
+
+/** Whether the window is narrower than the breakpoint, right from the first render. */
+export function useIsMobile(): boolean {
+  return useMediaQuery(QUERY);
 }

@@ -113,7 +113,7 @@ async function openProfiles(
   });
   await page.goto("/payment-profiles");
   await expect(
-    page.getByRole("heading", { exact: true, name: "Perfis de pagamento" })
+    page.getByRole("heading", { exact: true, name: "Formas de receber" })
   ).toBeVisible();
   return calls;
 }

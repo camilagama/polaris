@@ -1,5 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
+import { tabHref } from "../app-shell/navigation-model";
 import { clockPartsInTimezone } from "../lib/dates";
 import { formatCalendarDate } from "../lib/format";
 
@@ -55,7 +56,7 @@ export function legacyCheckoutReturnPath(
   }
   const value = new URLSearchParams(search).get("assinatura");
   return value === "concluida" || value === "cancelada" || value === "expirada"
-    ? `/subscription?retorno=${value}`
+    ? `${tabHref("settings", "assinatura")}&retorno=${value}`
     : null;
 }
 

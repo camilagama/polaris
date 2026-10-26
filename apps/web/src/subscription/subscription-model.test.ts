@@ -649,7 +649,7 @@ describe("checkout return", () => {
 
   it("moves the legacy return to the Assinatura", () => {
     expect(legacyCheckoutReturnPath("/", "?assinatura=concluida")).toBe(
-      "/subscription?retorno=concluida"
+      "/configuracoes?aba=assinatura&retorno=concluida"
     );
     expect(legacyCheckoutReturnPath("/sales", "?assinatura=concluida")).toBe(
       null

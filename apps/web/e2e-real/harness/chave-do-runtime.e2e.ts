@@ -37,8 +37,12 @@ test("a chave do runtime offline é a do projeto, e o preview serve o build do p
   await expect(
     page.getByRole("navigation").getByRole("link", { name: "Vender" }).first()
   ).toBeVisible();
+  // Aparelhos is a tab of Configurações, there only with the offline runtime on
+  await page.goto("/configuracoes");
+  const settingsTabs = page.getByRole("tablist", { name: "Configurações" });
+  await expect(settingsTabs).toBeVisible();
   await expect(
-    page.getByRole("navigation").getByRole("link", { name: "Aparelhos" })
+    settingsTabs.getByRole("tab", { exact: true, name: "Aparelhos" })
   ).toHaveCount(enabled ? 1 : 0);
   expect(await registered).toBe(enabled);
 });

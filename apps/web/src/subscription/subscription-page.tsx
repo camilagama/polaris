@@ -46,9 +46,10 @@ import {
   PixWaiting,
   WaitingLine,
 } from "./subscription-waiting";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 function Title() {
-  return <h1 className="text-title">Assinatura</h1>;
+  return <ScreenTitle>Assinatura</ScreenTitle>;
 }
 
 /** The screen for someone who may not open it: what it is not, and nothing to do (AS-19). */

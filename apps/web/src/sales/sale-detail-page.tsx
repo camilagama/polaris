@@ -29,7 +29,6 @@ import {
   cancelOffer,
   detailLoadErrorMessage,
   type SaleDetailView,
-  saleCustomerHref,
   saleDetailView,
 } from "./sale-history-model";
 import { SaleIdMissing } from "./sale-id-missing";
@@ -304,11 +303,6 @@ function ReadyDetailPanels({
         organizationId={organizationId}
         saleId={saleId}
       />
-      <p>
-        <a className={LINK} href={saleCustomerHref(saleId)}>
-          Abrir o ajuste de cliente em uma página própria
-        </a>
-      </p>
     </>
   );
 }

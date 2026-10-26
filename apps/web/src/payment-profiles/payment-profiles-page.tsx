@@ -38,6 +38,7 @@ import {
 } from "./payment-profile-draft";
 import { PaymentProfileForm } from "./payment-profile-form";
 import { PaymentProfileList } from "./payment-profile-list";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
@@ -527,7 +528,7 @@ export function PaymentProfilesPage() {
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
         <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="grid gap-1">
-            <h1 className="text-title">Perfis de pagamento</h1>
+            <ScreenTitle>Formas de receber</ScreenTitle>
             <p className="text-muted-foreground text-support">
               Organize métodos, parcelamento, prazo de recebimento e taxas por
               perfil.

@@ -1557,7 +1557,7 @@ test.describe("conexão com prova", () => {
   }) => {
     const server = await serveProfiles(page);
     await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
-    await start(page, "Perfis de pagamento");
+    await start(page, "Formas de receber");
     await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
     // the server saves it, but the answer never comes back, and the network goes with it
     await page.route("**/rpc/paymentProfile/create", async (route) => {
@@ -1631,7 +1631,7 @@ test.describe("conexão com prova", () => {
       await route.fallback();
     });
     await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
-    await start(page, "Perfis de pagamento");
+    await start(page, "Formas de receber");
     await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible({
       timeout: 15_000,
     });
@@ -1657,7 +1657,7 @@ test.describe("conexão com prova", () => {
       await route.fallback();
     });
     await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
-    await start(page, "Perfis de pagamento");
+    await start(page, "Formas de receber");
     const retry = page.getByRole("button", { name: "Tentar novamente" });
     await expect(retry).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(WITH_FORM)).toHaveCount(0);

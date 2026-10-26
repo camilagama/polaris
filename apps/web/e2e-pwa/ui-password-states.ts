@@ -161,7 +161,7 @@ export const passwordStates = {
     // no form: only the alert and "Cancelar"
     await page.getByLabel("Senha atual").waitFor({ state: "detached" });
     await page
-      .getByRole("link", { name: "Cancelar e voltar para Aparelhos" })
+      .getByRole("link", { name: "Cancelar e voltar para Formas de receber" })
       .waitFor();
     await showChangeAlone(page);
   },

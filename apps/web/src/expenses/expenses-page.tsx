@@ -18,6 +18,7 @@ import { ExpenseRulesPanel } from "./expense-rules-panel";
 import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
+import { ScreenTitle } from "../app-shell/screen-title";
 
 type StatusChange = "restore" | "void";
 
@@ -36,7 +37,7 @@ function savedMessage(
 function Heading() {
   return (
     <header className="grid gap-1">
-      <h1 className="text-title">Despesas</h1>
+      <ScreenTitle>Despesas</ScreenTitle>
       <p className="text-muted-foreground text-support">
         Cada despesa conta no mês de competência, não no dia do pagamento.
       </p>
@@ -186,7 +187,7 @@ export function ExpensesPage() {
         />
       ) : null}
 
-      {/* from 900 px, the form beside the list (as Perfis de pagamento); below, one column, the form first */}
+      {/* from 900 px, the form beside the list (as Formas de receber); below, one column, the form first */}
       <div className="grid items-start gap-4 min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
         <ExpenseForm
           categories={categories.state.categories}

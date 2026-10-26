@@ -276,9 +276,9 @@ test("no primeiro acesso sem aceite, o app vai sozinho a /aceite com a tela de d
   await page.evaluate(() =>
     window.localStorage.setItem("polaris.test.marker", "kept")
   );
-  await page.goto("/categories");
+  await page.goto("/products?aba=categorias");
 
-  await page.waitForURL("**/aceite?voltar=/categories");
+  await page.waitForURL("**/aceite?voltar=/products%3Faba%3Dcategorias");
   await expect(
     page.getByRole("heading", {
       name: "Termos de Uso e Política de Privacidade",
@@ -312,7 +312,7 @@ async function openCategories(page: Page, width: number) {
     }
     return route.abort("internetdisconnected");
   });
-  await page.goto("/categories");
+  await page.goto("/products?aba=categorias");
 }
 
 test("na lateral (a partir de 760 px), os links das duas páginas legais ficam no pé, uma vez, em outra aba (AC-70, P-23)", async ({
@@ -377,7 +377,7 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
     }
     return route.abort("internetdisconnected");
   });
-  await page.goto("/categories");
+  await page.goto("/products?aba=categorias");
   await page.getByLabel("Nova categoria").fill("Acessórios");
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
 
@@ -387,10 +387,10 @@ test("uma recusa por aceite com a tela em uso não navega: mostra o aviso fixo c
   );
   await expect(
     notice.getByRole("link", { name: READ_AND_ACCEPT })
-  ).toHaveAttribute("href", "/aceite?voltar=/categories");
+  ).toHaveAttribute("href", "/aceite?voltar=/products%3Faba%3Dcategorias");
   // it is not a refused session
   await expect(page.locator('[data-notice="session-ended"]')).toHaveCount(0);
-  expect(new URL(page.url()).pathname).toBe("/categories");
+  expect(new URL(page.url()).pathname).toBe("/products");
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
   // the error beside the button says what is missing, never "sua conta não tem acesso"
   await expect(page.getByRole("alert")).toContainText(

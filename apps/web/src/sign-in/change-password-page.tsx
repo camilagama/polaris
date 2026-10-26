@@ -12,9 +12,15 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Separator } from "@/ui/separator";
+import { tabHref } from "../app-shell/navigation-model";
 import { NotFoundPage } from "../app-shell/not-found-page";
+import { ScreenTitle, useInTab } from "../app-shell/screen-title";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
+import { canManageBilling } from "../lib/billing-access";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { signInPath } from "../lib/sign-in-path";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
+import { firstSettingsTab } from "../settings/settings-tabs";
 import { LogoutDialog } from "../offline/logout-dialog";
 import { useLogout } from "../offline/runtime/logout-control";
 import { useEntryMethods } from "./entry-methods";
@@ -32,7 +38,6 @@ import {
   CHANGE_BUTTON,
   CHANGE_BUTTON_PENDING,
   CHANGE_CANCEL,
-  CHANGE_CANCEL_LABEL,
   CHANGE_CARD_TITLE,
   CHANGE_DONE,
   CHANGE_NO_PASSWORD,
@@ -42,6 +47,7 @@ import {
   CHANGE_TITLE,
   CURRENT_PASSWORD_LABEL,
   CURRENT_PASSWORD_WRONG,
+  changeCancelLabel,
   changePausedText,
   failureText,
   NEW_PASSWORD_LABEL,
@@ -52,10 +58,8 @@ import {
   PASSWORD_RULE,
 } from "./password-texts";
 
-const ACCOUNT_SECURITY_PATH = "/conta/seguranca";
-/** "Cancelar" goes back to where the page is reached from, without saving. */
-const DEVICES_PATH = "/devices";
-/** A live but old login: "Sair" (the queue protected first), then back here, as in Aparelhos. */
+const ACCOUNT_SECURITY_PATH = tabHref("settings", "senha");
+/** A live but old login: "Sair" (the queue protected first), then back here, as the Aparelhos tab does. */
 const SIGN_IN_AGAIN = signInPath({
   reason: "recente",
   returnTo: ACCOUNT_SECURITY_PATH,
@@ -83,16 +87,27 @@ function UiBlock({ children }: { children: ReactNode }) {
   );
 }
 
-/** "Cancelar": back to Aparelhos without saving, a link in the look of an outline button. */
-function CancelLink() {
+/**
+ * "Cancelar": back to the first tab of Configurações this person has (the same list the screen draws, so never to one
+ * the menu does not offer, Aparelhos, which exists only with the offline runtime), without saving. A link in the look of an
+ * outline button.
+ */
+export function CancelLink() {
+  const { billingSelfService, organization } = useCurrentOrganization();
+  const tab = firstSettingsTab({
+    billing: canManageBilling(billingSelfService, organization.role),
+    offline: OFFLINE_RUNTIME_ENABLED,
+    // this page is the Senha tab: it exists only with the password on
+    passwordOn: true,
+  });
   return (
     <a
-      aria-label={CHANGE_CANCEL_LABEL}
+      aria-label={changeCancelLabel(tab.label)}
       className={cn(
         buttonVariants({ size: "lg", variant: "outline" }),
         "w-full sm:w-fit"
       )}
-      href={DEVICES_PATH}
+      href={tabHref("settings", tab.value)}
     >
       {CHANGE_CANCEL}
     </a>
@@ -352,18 +367,22 @@ function ChangePasswordForm() {
 export function ChangePasswordPage() {
   const { methods, retry } = useEntryMethods(undefined, false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // alone, the page takes the focus to its title; as a tab of Configurações the focus stays on the tab
+  const inTab = useInTab();
   useEffect(() => {
-    headingRef.current?.focus();
-  }, []);
+    if (!inTab) {
+      headingRef.current?.focus();
+    }
+  }, [inTab]);
   if (methods.state === "off") {
     return <NotFoundPage pathname={window.location.pathname} />;
   }
   return (
     <div className="grid max-w-[34rem]">
       <UiBlock>
-        <h1 className="text-title" ref={headingRef} tabIndex={-1}>
+        <ScreenTitle ref={headingRef} tabIndex={-1}>
           {CHANGE_TITLE}
-        </h1>
+        </ScreenTitle>
         <p className="text-pretty text-muted-foreground text-support">
           {CHANGE_SUPPORT}
         </p>

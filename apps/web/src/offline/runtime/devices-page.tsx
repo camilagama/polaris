@@ -44,8 +44,10 @@ import {
   useSessionEndedHere,
 } from "./session-ended";
 import { leaveSessionOver } from "./session-over";
+import { tabHref } from "../../app-shell/navigation-model";
+import { ScreenTitle } from "../../app-shell/screen-title";
 
-const DEVICES_PATH = "/devices";
+const DEVICES_PATH = tabHref("settings", "aparelhos");
 /** The lines of the screen that say why the buttons of the rows are off. */
 const OFFLINE_NOTICE_ID = "devices-offline";
 const RECOGNITION_ID = "devices-recognizing";
@@ -86,7 +88,7 @@ function SecuritySection() {
       </h2>
       <a
         className={buttonVariants({ variant: "outline" })}
-        href="/conta/seguranca"
+        href={tabHref("settings", "senha")}
       >
         Trocar senha
       </a>
@@ -525,14 +527,14 @@ export function DevicesPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <h1
-          className="text-title outline-none"
+        <ScreenTitle
+          className="outline-none"
           id={DEVICES_HEADING_ID}
           ref={headingRef}
           tabIndex={-1}
         >
           Aparelhos
-        </h1>
+        </ScreenTitle>
         <p className="text-muted-foreground text-support">
           Os aparelhos em que você usa o Polaris offline. Se perdeu um celular
           ou computador, revogue o aparelho: o servidor deixa de aceitar o que
