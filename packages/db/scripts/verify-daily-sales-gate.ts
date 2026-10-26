@@ -83,6 +83,7 @@ interface Store {
 interface PlanNode {
   "Index Name"?: string;
   "Node Type"?: string;
+  "Parent Relationship"?: string;
   Plans?: PlanNode[];
   "Relation Name"?: string;
 }
@@ -115,11 +116,21 @@ function scansOf(node: PlanNode, relation: string): PlanNode[] {
   ];
 }
 
-/** The indexes a scan reads: its own, or those of the bitmap index scans under a bitmap heap scan. */
+/**
+ * The indexes a scan reads: its own, or those of the bitmap index scans under
+ * a bitmap heap scan. The subplans of the row security policy (memberships,
+ * organizations) hang from the scan too, and are not how it reads the table.
+ */
 function indexesOf(node: PlanNode): string[] {
   return [
     ...(node["Index Name"] ? [node["Index Name"]] : []),
-    ...(node.Plans ?? []).flatMap(indexesOf),
+    ...(node.Plans ?? [])
+      .filter(
+        (child) =>
+          ["Member", "Outer"].includes(child["Parent Relationship"] ?? "") &&
+          (child["Node Type"] ?? "").startsWith("Bitmap")
+      )
+      .flatMap(indexesOf),
   ];
 }
 
