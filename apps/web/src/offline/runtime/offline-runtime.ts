@@ -667,6 +667,33 @@ export class OfflineRuntime {
     return run;
   }
 
+  /**
+   * Whether the open copy was pulled less than `maxAgeMs` ago (by this tab or another: the collections and
+   * their cursor are shared) and nothing waits to be sent. The scheduler skips the sync of a page load or
+   * of a return to the page then; anything off the plain ready state is not fresh.
+   */
+  async isFresh(maxAgeMs: number): Promise<boolean> {
+    const { stores } = this;
+    if (
+      !stores ||
+      this.snapshot.phase !== "ready" ||
+      this.snapshot.reason !== null ||
+      this.openLeaseEnded()
+    ) {
+      return false;
+    }
+    const meta = await stores.writer.readMeta();
+    if (!(meta && isLocalStoreReady(meta))) {
+      return false;
+    }
+    const age = this.now().getTime() - Date.parse(meta.updatedAt);
+    if (!(age >= 0 && age < maxAgeMs)) {
+      return false;
+    }
+    const queue = await stores.outbox.snapshot();
+    return queue.pending + queue.sending === 0;
+  }
+
   /** Tells the screens that read the local collections to read them again (call after writing to them). */
   localDataChanged(): void {
     this.set({ ...this.snapshot, dataVersion: this.snapshot.dataVersion + 1 });

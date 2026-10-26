@@ -158,7 +158,12 @@ export interface WorkerBindings {
    * staging isolation check enforces.
    */
   ROUTE_TIMING_ALL?: string;
+  /** Writes over `/rpc`, per session and per address (one binding, the same limit for both). */
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
+  /** Reads over `/rpc`, per address: wider than the session one, a whole store shares an address. */
+  RPC_READ_IP_RATE_LIMIT?: RateLimitBinding;
+  /** Reads over `/rpc`, per session. */
+  RPC_READ_RATE_LIMIT?: RateLimitBinding;
   /** A secret of a rotation, still accepted when comparing a retried offline command (ADR 0079). */
   SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;
   /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */

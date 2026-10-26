@@ -1,5 +1,5 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "../../lib/connection";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { attemptLogout } from "../logout-guard";
@@ -540,6 +540,35 @@ describe("starting", () => {
     expect(online.context()?.deviceId).toBe(uuid(701));
   });
 
+  it("a 503 from device.check at start (a killed Worker, the 1102) does not hold the opening: the device and the lease stay, nothing is registered again", async () => {
+    const w = world();
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+    await w.make().start(organizationId);
+    const device = w.keyValues.read("polaris.offline.device");
+    const lease = w.keyValues.read(leaseKeyName);
+    const registered = w.calls.registerDevice;
+    const issued = w.calls.issueLease;
+
+    w.failures.deviceIsMineError = Object.assign(new Error("unavailable"), {
+      code: "SERVICE_UNAVAILABLE",
+      status: 503,
+    });
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      legalAcceptanceRequired: false,
+      phase: "ready",
+      sessionRefused: false,
+    });
+    expect(runtime.context()?.deviceId).toBe(uuid(701));
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.calls.issueLease).toBe(issued);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.keyValues.read(leaseKeyName)).toBe(lease);
+    expect(w.wiped).toEqual([]);
+  });
+
   it("a session that changes hands while the app is open stops the first user's runtime without touching their data", async () => {
     const w = world();
     const runtime = w.make();
@@ -924,6 +953,83 @@ describe("syncing", () => {
     const runtime = w.make();
     await runtime.syncNow();
     expect(w.calls.push).toBe(0);
+  });
+});
+
+describe("whether the copy is fresh (the scheduler skips the sync of a page load by it)", () => {
+  // the pull stamps the copy with the browser's clock: these runtimes read the same one, at the world's time
+  const start = new Date("2026-10-14T12:00:00.000Z");
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(start);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const now = () => new Date();
+  function freshWorld() {
+    const w = world();
+    const runtime = w.make(null, { now });
+    const offset = {
+      set ms(value: number) {
+        vi.setSystemTime(start.getTime() + value);
+      },
+    };
+    return { offset, runtime, w };
+  }
+
+  it("is fresh right after a pull, and no longer a tick later", async () => {
+    const { offset, runtime } = freshWorld();
+    await runtime.start(organizationId);
+    // the first load's snapshot is old by now; the pull below stamps the copy again
+    offset.ms = 50_000;
+    expect(await runtime.isFresh(10_000)).toBe(false);
+    await runtime.syncNow();
+
+    offset.ms = 100_000;
+    expect(await runtime.isFresh(60_000)).toBe(true);
+    offset.ms = 110_001;
+    expect(await runtime.isFresh(60_000)).toBe(false);
+  });
+
+  it("is not fresh with something waiting to be sent", async () => {
+    const { runtime } = freshWorld();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    await queueProduct(runtime, "Camiseta", 1);
+
+    expect(await runtime.isFresh(60_000)).toBe(false);
+  });
+
+  it("is not fresh before it is ready, nor after a failed sync with nothing queued", async () => {
+    const { runtime, w } = freshWorld();
+    expect(await runtime.isFresh(60_000)).toBe(false);
+
+    await runtime.start(organizationId);
+    expect(await runtime.isFresh(60_000)).toBe(true);
+    // the pull fails on the server: the copy is as recent as the first load's, but the sync did not go through
+    const failing = Promise.reject(new Error("pull_failed"));
+    failing.catch(() => undefined);
+    w.gates.pull = failing;
+    await runtime.syncNow();
+    w.gates.pull = undefined;
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      counts: { pending: 0, sending: 0 },
+      reason: "sync_failed",
+    });
+    expect(await runtime.isFresh(60_000)).toBe(false);
+  });
+
+  it("a pull by the other tab makes this one fresh: the copy is shared", async () => {
+    const w = world();
+    const first = w.make(null, { now });
+    const second = w.make(null, { now });
+    await first.start(organizationId);
+    await second.start(organizationId);
+    await first.syncNow();
+
+    expect(await second.isFresh(60_000)).toBe(true);
   });
 });
 

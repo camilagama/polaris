@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { traverseContractProcedures } from "@orpc/server";
+import type { ProcedureMeta } from "@polaris/contracts";
+import { polarisContract } from "@polaris/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
 import { isTransientReadFailure, readWithRetry } from "./read-with-retry";
@@ -266,7 +269,22 @@ describe("what the real client throws for the runtime's own page", () => {
   });
 });
 
-/** The reads `readWithRetry` wraps today, as `router.procedure`: a new one is added here on purpose, after checking it only reads. */
+/** The procedures the contract declares `kind: "read"`, as `router.procedure`: the source of what may be repeated. */
+function readProceduresOfTheContract(): Set<string> {
+  const reads = new Set<string>();
+  traverseContractProcedures(
+    { path: [], router: polarisContract },
+    ({ contract, path }) => {
+      if ((contract["~orpc"].meta as ProcedureMeta).kind === "read") {
+        reads.add(path.join("."));
+      }
+    }
+  );
+  return reads;
+}
+const CONTRACT_READS = readProceduresOfTheContract();
+
+/** The reads `readWithRetry` wraps today, as `router.procedure`: a new one is added here on purpose, and the contract has to call it a read. */
 const READ_PROCEDURES = [
   "category.list",
   "customer.list",
@@ -399,12 +417,12 @@ function scan(text: string) {
   return { outside, recognized };
 }
 
-/** The violations of a set of source texts: uses outside the form, and procedures outside the closed list. */
+/** The violations of a set of source texts: uses outside the form, and procedures the contract does not declare a read. */
 function check(texts: string[]) {
   const scanned = texts.map(scan);
   const recognized = scanned.flatMap((file) => file.recognized);
   return {
-    notReads: recognized.filter((name) => !READ_PROCEDURES.includes(name)),
+    notReads: recognized.filter((name) => !CONTRACT_READS.has(name)),
     outside: scanned.reduce((sum, file) => sum + file.outside, 0),
     recognized,
   };
@@ -440,8 +458,11 @@ describe("where readWithRetry is used", () => {
     ).toBe(0);
   });
 
-  it("wraps only procedures of the closed list, and the list has no entry left over", () => {
+  it("wraps only procedures the contract declares a read, and the list of wrapped ones has no entry left over", () => {
     expect(result.notReads).toEqual([]);
+    expect(READ_PROCEDURES.filter((name) => !CONTRACT_READS.has(name))).toEqual(
+      []
+    );
     expect([...new Set(result.recognized)].sort()).toEqual(
       [...READ_PROCEDURES].sort()
     );
@@ -501,5 +522,11 @@ describe("where readWithRetry is used", () => {
       `${own}readWithRetry(() => orpcClient.sale.confirm(input))`,
     ]);
     expect(write.notReads).toEqual(["sale.confirm"]);
+    // `device.check` is a write in the contract (it promotes the session's link): a wrapper on it is refused
+    expect(
+      check([
+        `${own}readWithRetry(() => orpcClient.device.check({ deviceId }))`,
+      ]).notReads
+    ).toEqual(["device.check"]);
   });
 });

@@ -197,6 +197,10 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
     return progress;
   };
 
+  // WARNING: `goal.list` is a `read` for the rate limit (a wider bucket) only while what it writes stays
+  // idempotent, restricted to the caller's own principal and derived from a fact already recorded (the
+  // settlement of a period that ended; `verify-home-writes-gate` proves a second opening writes nothing).
+  // Any new effect with business meaning needs `kind: "write"` in the contract.
   const list = implementContract.goal.list.handler(
     async ({ context, input }) => {
       const started = Date.now();
