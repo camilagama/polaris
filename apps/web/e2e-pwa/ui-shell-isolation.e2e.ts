@@ -562,20 +562,6 @@ const SALE_DETAIL_SCREENS = [
         ).toBeVisible();
       }),
   },
-  {
-    name: "Cliente da venda no shell",
-    open: (page: Page) =>
-      openInShell(
-        page,
-        `/sales/customer?saleId=${DETAIL_SALE_ID}`,
-        async () => {
-          await expect(
-            page.getByRole("button", { name: "Remover cliente" })
-          ).toBeVisible();
-        },
-        saleDetailAnswers({ withReturn: true })
-      ),
-  },
 ];
 
 const fee = (mode: string, percentage: string | null) => ({

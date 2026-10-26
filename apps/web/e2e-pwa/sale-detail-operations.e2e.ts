@@ -11,7 +11,7 @@ import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * The real routes `/sales/detail` and `/sales/customer`, the API answered by the test (`page.route`, synthetic data
+ * The real route `/sales/detail` (the customer panel is part of it), the API answered by the test (`page.route`, synthetic data
  * only): the focus when a cancellation or a return changes step, and the customer panel that asks before it removes
  * and keeps a turned-off button reachable and with its reason (t260, on t255).
  */
@@ -22,8 +22,6 @@ const ORGANIZATION = {
   timezone: "America/Sao_Paulo",
 };
 const RPC_PREFIX = /^.*\/rpc\//;
-/** The words of the old form that asked for the identifier of the sale. */
-const OLD_FORM_WORDS = /UUID|identificador/i;
 const json = (body: unknown) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
@@ -137,7 +135,7 @@ async function openCustomer(
   const answers = saleDetailAnswers({ withReturn: true });
   const asked = await openInShell(
     page,
-    `/sales/customer?saleId=${DETAIL_SALE_ID}`,
+    `/sales/detail?saleId=${DETAIL_SALE_ID}`,
     {
       ...answers,
       ...more,
@@ -156,47 +154,6 @@ async function openCustomer(
   ).toBeVisible();
   return asked;
 }
-
-test.describe("the customer page opened without a sale", () => {
-  test("it asks for no identifier: it says to choose the sale in the history and links there", async ({
-    page,
-  }) => {
-    const asked = await openInShell(page, "/sales/customer", {});
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Cliente da venda" })
-    ).toBeVisible();
-    const main = page.getByRole("main");
-    await expect(
-      main.getByText(
-        "Escolha a venda no histórico para ver o detalhe e o cliente dela."
-      )
-    ).toBeVisible();
-    await expect(
-      main.getByRole("link", { name: "Abrir o histórico de vendas" })
-    ).toHaveAttribute("href", "/sales/history");
-    // nothing to type, and the word of the old form is gone
-    await expect(main.getByRole("textbox")).toHaveCount(0);
-    await expect(main.getByText(OLD_FORM_WORDS)).toHaveCount(0);
-    expect(asked.filter((name) => name.startsWith("sale/"))).toEqual([]);
-  });
-
-  test("an address that is not a sale says so and links to the history, with no call for the sale", async ({
-    page,
-  }) => {
-    const asked = await openInShell(page, "/sales/customer?saleId=abc", {});
-    const main = page.getByRole("main");
-    await expect(
-      main.getByText(
-        "Este endereço não aponta para uma venda. Escolha a venda no histórico."
-      )
-    ).toBeVisible();
-    await expect(
-      main.getByRole("link", { name: "Abrir o histórico de vendas" })
-    ).toHaveAttribute("href", "/sales/history");
-    await expect(main.getByRole("textbox")).toHaveCount(0);
-    expect(asked.filter((name) => name.startsWith("sale/"))).toEqual([]);
-  });
-});
 
 for (const width of FORM_WIDTHS) {
   test(`Trocar cliente at ${width} px: the dialog opens, cancels and saves, the whole screen on a phone`, async ({

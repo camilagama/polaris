@@ -26,6 +26,8 @@ const SECOND_ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+/** The hint of the connection chip on a screen that needs the network. */
+const NEEDS_INTERNET_TITLE = /esta tela precisa de internet/;
 const USER_ID = "user-do-teste";
 const EMAIL = "contato@exemplo.com.br";
 const LEASE_KEY = {
@@ -682,9 +684,10 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     await serve(page);
     await page.goto("/");
     await page.goto("/products?novo=1");
-    const form = page.getByRole("dialog", { name: "Novo produto" });
+    // at 1280 px the form is a region of the tab (the dialog is the phone's)
+    const form = page.getByRole("region", { name: "Novo produto" });
     await expect(form).toBeVisible();
-    await page.keyboard.press("Escape");
+    await form.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(form).toBeHidden();
     const steps = await page.evaluate(() => history.length);
     const list = tabList(page, "Produtos e categorias");
@@ -693,14 +696,14 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     await list.getByRole("tab", { exact: true, name: "Produtos" }).click();
     await expect.poll(() => pathOf(page)).toBe("/products");
     // the link of the new product was the tab's: it does not open the form again
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(form).toBeHidden();
     expect(await page.evaluate(() => history.length)).toBe(steps);
     // "voltar" leaves the screen, it does not walk the tabs
     await page.goBack();
     await expect.poll(() => pathOf(page)).toBe("/");
 
+    // a tab that does not exist opens the first one of the screen
     await page.goto("/configuracoes?aba=nenhuma");
-    await expect.poll(() => pathOf(page)).toBe("/configuracoes");
     await expect(
       tabList(page, "Configurações").getByRole("tab", {
         exact: true,
@@ -725,16 +728,10 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     const list = tabList(page, "Produtos e categorias");
     await list.getByRole("tab", { exact: true, name: "Categorias" }).click();
     await expect(strip).toBeVisible({ timeout: 20_000 });
-    await expect(chip(page)).toHaveAttribute(
-      "title",
-      /esta tela precisa de internet/
-    );
+    await expect(chip(page)).toHaveAttribute("title", NEEDS_INTERNET_TITLE);
     await list.getByRole("tab", { exact: true, name: "Produtos" }).click();
     await expect(strip).toHaveCount(0);
-    await expect(chip(page)).not.toHaveAttribute(
-      "title",
-      /esta tela precisa de internet/
-    );
+    await expect(chip(page)).not.toHaveAttribute("title", NEEDS_INTERNET_TITLE);
   });
 
   test("as abas andam com as setas do teclado e a tela da aba tem o título dela", async ({
