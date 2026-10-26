@@ -140,6 +140,7 @@ test("U-29: percentual inválido é dito no campo, com o limite aceito, sem 'Ten
   page,
 }) => {
   const calls = await openProfiles(page, []);
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Perfil novo");
   await page
     .getByRole("combobox", { name: "Como a taxa é informada" })
@@ -202,6 +203,7 @@ test("U-29: só a leitura que falhou oferece 'Tentar novamente'; o erro de salva
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Perfil novo");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   await expect.poll(() => calls.creates).toBe(1);

@@ -138,6 +138,7 @@ export const paymentStates = {
   /** A new profile sent with no name and a percentage of 150: both problems are said at the field. */
   async errors(page: Page) {
     await openProfilesLab(page);
+    await page.getByRole("button", { name: "Novo perfil" }).click();
     await page
       .getByRole("combobox", { name: "Como a taxa é informada" })
       .first()

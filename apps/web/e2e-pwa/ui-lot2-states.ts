@@ -123,6 +123,7 @@ async function openCustomers(page: Page) {
 }
 
 async function register(page: Page, name: string, phone: string) {
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.locator("#customer-name").fill(name);
   await page.locator("#customer-phone").fill(phone);
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
@@ -145,7 +146,7 @@ export const customerStates = {
     await page.getByText("Mesmo telefone").waitFor();
     await showScreenAlone(page);
   },
-  /** Two customers, one with a name that does not fit a line; the form is over the list. */
+  /** Two customers, one with a name that does not fit a line; the form that registered them is closed. */
   async list(page: Page) {
     await openCustomers(page);
     await register(page, "Ana Lima", "11912345678");

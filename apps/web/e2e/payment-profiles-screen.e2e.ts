@@ -2,6 +2,12 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
+  expectFormDialogLayout,
+  expectKeyboardKeepsMainButton,
+  FORM_WIDTHS,
+  sizeFor,
+} from "./form-dialog-checks";
+import {
   productionPolicy,
   serveUnderProductionCsp,
   watchCspViolations,
@@ -213,7 +219,12 @@ async function expectNoSidewaysScroll(page: Page) {
       // the root of the screen: the header with the title is its first child
       ?.closest("header")?.parentElement;
     const limit = window.innerWidth + 0.5;
-    const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
+    // the form is a dialog, in a portal outside the root of the screen: measured too when it is open
+    const dialogs = [...document.querySelectorAll("[role=dialog]")];
+    const inside = [root, ...dialogs].flatMap((box) => [
+      ...(box?.querySelectorAll("*") ?? []),
+    ]);
+    const boxes = inside.map((element) => ({
       right: element.getBoundingClientRect().right,
       text: (element.textContent ?? "").trim().slice(0, 40),
     }));
@@ -343,6 +354,7 @@ test("nome vazio é dito no campo, com o cursor nele, e nada vai ao servidor", a
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const name = page.getByLabel("Nome do perfil");
   await expect(page.getByText("Informe o nome do perfil.")).toBeVisible();
@@ -355,6 +367,7 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await chooseOption(
     page,
@@ -384,7 +397,7 @@ test("o crédito pede parcelas inteiras, o prazo só aceita dias inteiros e o va
   await expect(page.getByLabel("Número de parcelas")).toBeFocused();
 });
 
-test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carregando'", async ({
+test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lista não volta a 'Carregando'", async ({
   page,
 }) => {
   let created = false;
@@ -399,6 +412,7 @@ test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carr
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha da loja");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const notice = page.getByText("Perfil “Maquininha da loja” criado.");
@@ -407,8 +421,69 @@ test("um perfil criado é dito no alto, com o foco, e a lista não volta a 'Carr
     notice.locator("xpath=ancestor::div[@tabindex='-1']")
   ).toBeFocused();
   await expect(page.getByText("Maquininha da loja").last()).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // the next one starts empty
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(page.getByLabel("Nome do perfil")).toHaveValue("");
 });
+
+for (const width of FORM_WIDTHS) {
+  test(`Perfis a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
+    page,
+  }, testInfo) => {
+    onlyDesktop(testInfo.project.name);
+    await page.setViewportSize(sizeFor(width));
+    let creates = 0;
+    await openServerScreen(page, {
+      lists: [answer([])],
+      others: {
+        "paymentProfile/create": (route) => {
+          creates += 1;
+          return route.fulfill(rpc(MACHINE));
+        },
+      },
+    });
+    const openForm = page.getByRole("button", { name: "Novo perfil" });
+    await openForm.click();
+    const dialog = page.getByRole("dialog", { name: "Novo perfil" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Nome do perfil")).toBeFocused();
+    await expectFormDialogLayout(dialog, width);
+
+    await dialog.getByLabel("Nome do perfil").fill("Maquininha da loja");
+    if (width < 760) {
+      await expectKeyboardKeepsMainButton(
+        page,
+        dialog,
+        dialog.getByRole("button", { name: "Criar perfil" })
+      );
+    }
+
+    // Esc guarda o rascunho (só em memória): o formulário fecha, o foco volta e o mesmo formulário o traz de volta
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome do perfil")).toHaveValue(
+      "Maquininha da loja"
+    );
+
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(openForm).toBeFocused();
+    expect(creates).toBe(0);
+
+    await openForm.click();
+    await expect(dialog.getByLabel("Nome do perfil")).toHaveValue("");
+    await dialog.getByLabel("Nome do perfil").fill("Maquininha da loja");
+    await dialog.getByRole("button", { name: "Criar perfil" }).click();
+    await expect(
+      page.getByText("Perfil “Maquininha da loja” criado.")
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(creates).toBe(1);
+  });
+}
 
 test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
   page,
@@ -450,6 +525,7 @@ test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56
     lists: [answer([])],
     others: { "paymentProfile/create": (route) => route.fulfill(badRequest) },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await page.getByRole("button", { name: "Criar perfil" }).click();
   const refused = page.getByRole("alert").filter({
@@ -473,6 +549,7 @@ test("duas regras para o mesmo método são recusadas antes de enviar", async ({
       },
     },
   });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha");
   await page.getByRole("button", { name: "Adicionar regra" }).click();
   await page.getByRole("button", { name: "Criar perfil" }).click();

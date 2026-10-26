@@ -91,10 +91,20 @@ export const saleDetailStates = {
     await showScreenAlone(page);
   },
 
-  /** The customer page: the current customer, the list to change it, "Remover cliente" and the history. */
+  /** The customer page: the current customer, "Trocar cliente", "Remover cliente" and the history. */
   async customer(page: Page) {
     await openSaleLab(page, "sale-customer", "Cliente da venda");
     await page.getByRole("button", { name: "Remover cliente" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The form dialog of "Trocar cliente", open: the list of customers and the button that sends the choice, off. */
+  async customerChoose(page: Page) {
+    await openSaleLab(page, "sale-customer", "Cliente da venda");
+    await page
+      .getByRole("button", { exact: true, name: "Trocar cliente" })
+      .click();
+    await page.getByRole("dialog", { name: "Trocar cliente" }).waitFor();
     await showScreenAlone(page);
   },
   /** The detail as it opens: the receipt, the return made, the return and customer cards closed and the note on why the sale cannot be cancelled. */

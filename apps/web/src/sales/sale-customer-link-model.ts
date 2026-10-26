@@ -23,7 +23,7 @@ export interface SaleCustomerLinkChange {
 export const VALUES_UNCHANGED_NOTE =
   "Associar um cliente não altera os valores da venda: itens, preços, ajustes, pagamento e estoque continuam como foram confirmados.";
 
-const actionButtonLabels: Readonly<Record<LinkAction, string>> = {
+export const actionButtonLabels: Readonly<Record<LinkAction, string>> = {
   assign: "Associar cliente",
   reassign: "Trocar cliente",
   unassign: "Remover cliente",

@@ -41,6 +41,7 @@ async function start(page: Page, heading = "Clientes") {
 }
 
 async function register(page: Page, customer: { name: string; phone: string }) {
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.locator("#customer-name").fill(customer.name);
   await page.locator("#customer-phone").fill(customer.phone);
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
@@ -116,7 +117,9 @@ test("sem rede, cadastra e lista do aparelho, bloqueia a edição, e numa segund
   await expect(page.getByText("Cadastrar e editar funciona")).toBeVisible();
 
   await register(page, { name: "Bia Souza", phone: "11900000002" });
-  await expect(page.getByText("Cliente salvo neste aparelho.")).toBeVisible();
+  await expect(
+    page.getByText("Cliente “Bia Souza” salvo neste aparelho.")
+  ).toBeVisible();
   await expect(card(page, "Bia Souza")).toContainText("Aguardando envio");
   await expectCustomerItem(page, "Bia Souza", "Editar", "disabled");
   await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
@@ -180,6 +183,8 @@ async function editName(page: Page, from: string, to: string) {
   await (await customerMenuItem(page, from, "Editar")).click();
   await page.locator("#customer-name").fill(to);
   await page.getByRole("button", { name: "Salvar alterações" }).click();
+  // the form is a dialog that fades out; what comes next (a menu, the lab controls) waits for it to be gone
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o servidor a aplica quando a rede volta", async ({
@@ -1301,13 +1306,21 @@ for (const mode of ["offline", "mentindo"] as const) {
       ).toBeVisible();
       await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
       await expect(page.getByText("Tentar novamente")).toHaveCount(0);
+      await page.getByRole("button", { name: "Novo perfil" }).click();
       await page.getByLabel("Nome do perfil").fill("Maquininha");
       const create = page.getByRole("button", { name: "Criar perfil" });
       await expect(create).toHaveAttribute("aria-disabled", "true");
+      // the strip of the shell is under the veil of the form: the reason is said in the dialog, over the buttons
       await expect(create).toHaveAttribute(
         "aria-describedby",
-        "connection-required-text"
+        "connection-required-dialog-text"
       );
+      await expect(create).toHaveAccessibleDescription(
+        "Esta tela precisa de conexão. O que você digitou fica aqui enquanto esta página estiver aberta."
+      );
+      await expect(
+        page.getByRole("dialog").getByText("Sem internet.")
+      ).toBeVisible();
       // it also looks off (the Button base class), not just reads off
       await expect(create).toHaveCSS("opacity", "0.5");
       // focusable (the pattern of a control off with a reason): only the keyboard reaches it, since
@@ -1547,31 +1560,56 @@ test.describe("conexão com prova", () => {
       await page.route("**/health", cutNetwork);
       await route.abort("connectionreset");
     });
+    await page.getByRole("button", { name: "Novo perfil" }).click();
     await page.getByLabel("Nome do perfil").fill("Maquininha");
     await page.getByRole("button", { name: "Criar perfil" }).click();
+    // the doubt is said inside the dialog, which is where the person is, with the way to check
+    const dialog = page.getByRole("dialog", { name: "Novo perfil" });
     await expect(
-      page.getByText(
-        "A conexão caiu antes da resposta. Não sabemos se o perfil foi salvo. Quando a internet voltar, a lista é atualizada: confira antes de salvar de novo."
+      dialog.getByText(
+        "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve."
       )
     ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
-    await expect(
-      page.getByRole("button", { name: "Criar perfil" })
-    ).toBeVisible();
+    await expect(dialog.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
 
     await page.unroute("**/health", cutNetwork);
-    // the list read on the return shows the saved profile; the warning and the typed form stay to be checked
+    // the list read on the return shows the saved profile (under the form, which is still open, so it is found by
+    // its markup: the dialog hides the list from the reader)
     await expect(
-      page
-        .getByRole("region", { name: "Perfis cadastrados" })
-        .getByRole("listitem")
-        .filter({ hasText: "Maquininha" })
+      page.locator("li[data-profile-id]").filter({ hasText: "Maquininha" })
     ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+
+    // "Fechar e conferir" closes and keeps the draft: the list is there to be checked, and the doubt stays said
+    await dialog.getByRole("button", { name: "Fechar e conferir" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
-      page.getByText("Não sabemos se o perfil foi salvo", { exact: false })
+      page.getByRole("region", { name: "Perfis cadastrados" })
+    ).toContainText("Maquininha");
+    await expect(
+      page.getByText("Este perfil pode já ter sido salvo.")
     ).toBeVisible();
-    expect(server.creates).toBe(1); // read again, never sent again
+
+    // reopened: the draft is back with the doubt; sending it again first says the name is already on the list
+    await page.getByRole("button", { name: "Novo perfil" }).click();
+    await expect(dialog.getByLabel("Nome do perfil")).toHaveValue("Maquininha");
+    await expect(
+      dialog.getByText("Este perfil pode já ter sido salvo.")
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "Criar perfil" }).click();
+    await expect(
+      dialog.getByText("Já existe um perfil chamado “Maquininha” na lista.")
+    ).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(server.creates).toBe(1); // read again, never sent again, and not even the second press went
+    await expect(
+      dialog.getByRole("button", { name: "Criar mesmo assim" })
+    ).toBeVisible();
+    // "Cancelar" throws the draft and the doubt away
+    await dialog.getByRole("button", { exact: true, name: "Cancelar" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByText("Este perfil pode já ter sido salvo.")
+    ).toHaveCount(0);
   });
 
   test("Perfis: a leitura cortada uma vez repete sozinha e abre sem o erro", async ({

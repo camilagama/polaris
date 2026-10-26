@@ -320,6 +320,7 @@ async function queueCustomers(page: Page, count: number) {
   await page.context().setOffline(true);
   for (let n = 1; n <= count; n += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the operations are queued in order
+    await page.getByRole("button", { name: "Novo cliente" }).click();
     await page.locator("#customer-name").fill(`Cliente ${n}`);
     await page.locator("#customer-phone").fill(`1190000000${n}`);
     await page.getByRole("button", { name: "Cadastrar cliente" }).click();

@@ -1,10 +1,22 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
-import { type FormEvent, useCallback, useId } from "react";
+import { type FormEvent, type ReactNode, useCallback } from "react";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { FieldLegend, FieldSet } from "@/ui/field";
-import { connectionControlProps } from "../app-shell/connection-required-notice";
+import {
+  ConnectionRequiredDialogNotice,
+  connectionControlProps,
+  connectionDialogReasonId,
+} from "../app-shell/connection-required-notice";
 import {
   INSTALLMENT_PLAN_LABEL,
   INSTALLMENT_PLAN_OPTIONS,
@@ -249,106 +261,156 @@ interface PaymentProfileFormProps {
   editingName: string | null;
   /** The problems of the fields, by the id of the field. */
   errors: Readonly<Record<string, string>>;
+  /** What the last action said, drawn by the page: the dialog covers the top of the screen, so it is said inside. */
+  feedback: ReactNode;
+  /** Where the focus goes when the form closes: the notice, or the control that opened it. */
+  finalFocus: () => HTMLElement | boolean;
   onAddRule: () => void;
   onCancel: () => void;
+  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
+  confirmDuplicate: boolean;
+  /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
+  onClosed: () => void;
+  /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
+  onDismiss: () => void;
   /** Offline the submit button says why (the notice's sentence) and nothing leaves. */
   online: boolean;
   onNameChange: (name: string) => void;
   onRemoveRule: (draftId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateRule: (draftId: string, changes: Partial<RuleDraft>) => void;
+  open: boolean;
   pending: boolean;
 }
 
-function submitLabel(pending: boolean, editing: boolean): string {
+function submitLabel(
+  pending: boolean,
+  editing: boolean,
+  confirmDuplicate: boolean
+): string {
   if (pending) {
     return "Salvando…";
+  }
+  if (confirmDuplicate) {
+    return "Criar mesmo assim";
   }
   return editing ? "Salvar alterações" : "Criar perfil";
 }
 
-/** The form of a new profile, or of the edit of one: the name and the rules. */
+/**
+ * The form of a new profile, or of the edit of one, in a dialog (the whole screen on a phone): the name and the
+ * rules. Esc and "Fechar" close it and keep what was typed (in memory only: the next opening of the same form brings
+ * it back); only "Cancelar" and a saved profile throw it away. Nothing closes while a save is on its way, and a tap
+ * on the veil does nothing.
+ */
 export function PaymentProfileForm({
+  confirmDuplicate,
   draft,
   editingName,
   errors,
+  feedback,
+  finalFocus,
   onAddRule,
   onCancel,
+  onClosed,
+  onDismiss,
   onNameChange,
   onRemoveRule,
   onSubmit,
   onUpdateRule,
   online,
+  open,
   pending,
 }: PaymentProfileFormProps) {
-  const headingId = useId();
   const editing = editingName !== null;
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!(next || pending)) {
+        onDismiss();
+      }
+    },
+    [onDismiss, pending]
+  );
+  const handleOpenChangeComplete = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        onClosed();
+      }
+    },
+    [onClosed]
+  );
   return (
-    <Card aria-labelledby={headingId} role="region">
-      <form className="grid gap-4" noValidate onSubmit={onSubmit}>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle aria-level={2} id={headingId} role="heading">
-            {editing ? "Editar perfil" : "Novo perfil"}
-          </CardTitle>
-          {editing ? (
+    <Dialog
+      disablePointerDismissal
+      onOpenChange={handleOpenChange}
+      onOpenChangeComplete={handleOpenChangeComplete}
+      open={open}
+    >
+      <DialogContent finalFocus={finalFocus} layout="form">
+        <DialogForm onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Editar perfil" : "Novo perfil"}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            {feedback}
+            <TextField
+              error={errors[NAME_ID]}
+              id={NAME_ID}
+              label="Nome do perfil"
+              maxLength={100}
+              onChange={onNameChange}
+              value={draft.name}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-section">Regras de pagamento</h3>
+              <Button
+                id="payment-add-rule"
+                onClick={onAddRule}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Adicionar regra
+              </Button>
+            </div>
+            <div className="grid gap-4">
+              {draft.rules.map((rule, index) => (
+                <RuleEditor
+                  canRemove={draft.rules.length > 1}
+                  errors={errors}
+                  index={index}
+                  key={rule.draftId}
+                  onRemove={onRemoveRule}
+                  onUpdate={onUpdateRule}
+                  rule={rule}
+                />
+              ))}
+            </div>
+          </DialogBody>
+          <ConnectionRequiredDialogNotice online={online} />
+          <DialogFooter>
             <Button
               disabled={pending}
               onClick={onCancel}
-              size="sm"
               type="button"
               variant="outline"
             >
-              Cancelar edição
+              {editing ? "Cancelar edição" : "Cancelar"}
             </Button>
-          ) : null}
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <TextField
-            error={errors[NAME_ID]}
-            id={NAME_ID}
-            label="Nome do perfil"
-            maxLength={100}
-            onChange={onNameChange}
-            value={draft.name}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-section">Regras de pagamento</h3>
             <Button
-              id="payment-add-rule"
-              onClick={onAddRule}
-              size="sm"
-              type="button"
-              variant="outline"
+              {...connectionControlProps(online, connectionDialogReasonId)}
+              aria-busy={pending || undefined}
+              disabled={pending}
+              type="submit"
             >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Adicionar regra
+              {submitLabel(pending, editing, confirmDuplicate)}
             </Button>
-          </div>
-          <div className="grid gap-4">
-            {draft.rules.map((rule, index) => (
-              <RuleEditor
-                canRemove={draft.rules.length > 1}
-                errors={errors}
-                index={index}
-                key={rule.draftId}
-                onRemove={onRemoveRule}
-                onUpdate={onUpdateRule}
-                rule={rule}
-              />
-            ))}
-          </div>
-        </CardContent>
-        <CardContent className="flex flex-col-reverse gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
-          <Button
-            {...connectionControlProps(online)}
-            aria-busy={pending || undefined}
-            disabled={pending}
-            type="submit"
-          >
-            {submitLabel(pending, editing)}
-          </Button>
-        </CardContent>
-      </form>
-    </Card>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
   );
 }

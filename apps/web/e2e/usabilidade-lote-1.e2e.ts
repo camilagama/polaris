@@ -266,6 +266,7 @@ async function expectMarked(page: Page, selector: string) {
 }
 
 async function register(page: Page, name: string, phone: string) {
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.locator("#customer-name").fill(name);
   await page.locator("#customer-phone").fill(phone);
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
@@ -275,6 +276,7 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
   page,
 }) => {
   await openLab(page, "customers");
+  await page.getByRole("button", { name: "Novo cliente" }).click();
   await page.locator("#customer-name").fill("Sem Contato");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
 

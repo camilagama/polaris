@@ -4,8 +4,10 @@ import type {
 } from "@polaris/contracts";
 import {
   type FormEvent,
+  type MouseEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -95,8 +97,18 @@ export function CustomersPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [contactError, setContactError] = useState<string | null>(null);
+  // the form is a dialog: it opens for a new customer or for an edit, and the draft is only cleared once it has closed
+  const [formOpen, setFormOpen] = useState(false);
   const customerLoadSequence = useRef(0);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  // where the focus goes back to when the form closes without a message to read: what opened it
+  const originRef = useRef<() => HTMLElement | null>(() => null);
+  // the draft kept when the form was closed by Esc or "Fechar": "new", or the id of the customer being edited
+  const keptRef = useRef<string | null>(null);
+  const noticeRef = useRef<string | null>(null);
+  // a customer was just made: the notice offers "Cadastrar outro"
+  const [justCreated, setJustCreated] = useState(false);
   useReportUnsentWork(isCustomerDraftChanged(draft, editingCustomer));
   // any change of the form (typing, picking another customer, clearing) takes the contact error away
   useEffect(() => setContactError(null), [draft]);
@@ -235,6 +247,7 @@ export function CustomersPage() {
       setError(null);
       setLoadError(null);
       setStatus(nextStatus);
+      keptRef.current = null;
       setEditingCustomer(null);
       setDraft(emptyCustomerDraft);
       setDuplicateMatches([]);
@@ -243,12 +256,40 @@ export function CustomersPage() {
     [status]
   );
 
-  const handleEdit = useCallback((customer: CustomerReadModel) => {
-    setEditingCustomer(customer);
-    setDraft(draftOfCustomer(customer));
+  const handleNew = useCallback((event?: MouseEvent<HTMLElement>) => {
+    // what was pressed (the header button, the one of the empty list, or "Cadastrar outro" in the notice)
+    const pressed = event?.currentTarget;
+    originRef.current = () =>
+      pressed?.isConnected ? pressed : newButtonRef.current;
+    if (keptRef.current !== "new") {
+      setEditingCustomer(null);
+      setDraft(emptyCustomerDraft);
+    }
+    keptRef.current = null;
     setDuplicateMatches([]);
     setError(null);
     setNotice(null);
+    setJustCreated(false);
+    setFormOpen(true);
+  }, []);
+
+  const handleEdit = useCallback((customer: CustomerReadModel) => {
+    // the row's menu button that opened the edit (the menu itself is gone by the time the form closes)
+    const label = `Mais ações para ${customer.name}`;
+    originRef.current = () =>
+      Array.from(document.querySelectorAll<HTMLElement>("button")).find(
+        (button) => button.getAttribute("aria-label") === label
+      ) ?? null;
+    if (keptRef.current !== customer.id) {
+      setEditingCustomer(customer);
+      setDraft(draftOfCustomer(customer));
+    }
+    keptRef.current = null;
+    setDuplicateMatches([]);
+    setError(null);
+    setNotice(null);
+    setJustCreated(false);
+    setFormOpen(true);
   }, []);
 
   const handleUseExisting = useCallback(
@@ -275,17 +316,48 @@ export function CustomersPage() {
           ? "Cadastro existente selecionado. Ele continua arquivado até você restaurá-lo."
           : "Cadastro existente selecionado para revisão. Nenhum dado foi mesclado."
       );
+      // the button that was pressed is gone with the panel: the notice, in the form, is where the focus goes
+      focusFeedback();
     },
     [focusFeedback, syncStates, updateStates]
   );
 
+  /** "Cancelar": the form closes and what was typed is thrown away. */
   const handleCancelEdit = useCallback(() => {
-    setEditingCustomer(null);
-    setDraft(emptyCustomerDraft);
+    keptRef.current = null;
+    setFormOpen(false);
     setDuplicateMatches([]);
     setError(null);
     setNotice(null);
   }, []);
+
+  /** Esc and "Fechar": the form closes and the draft stays, in memory, for the next opening of the same form. */
+  const handleDismiss = useCallback(() => {
+    keptRef.current = editingCustomer?.id ?? "new";
+    setFormOpen(false);
+    setDuplicateMatches([]);
+    setError(null);
+    setNotice(null);
+  }, [editingCustomer]);
+
+  /** The form is empty again only once it has finished closing (and only when nothing was kept). */
+  const handleFormClosed = useCallback(() => {
+    setContactError(null);
+    if (keptRef.current === null) {
+      setEditingCustomer(null);
+      setDraft(emptyCustomerDraft);
+    }
+    // what the save said takes the focus, on the notice itself (not on the button inside it)
+    if (noticeRef.current) {
+      focusLater(() => feedbackRef.current?.focus());
+    }
+  }, []);
+
+  /** With a message to read the focus goes to it once the form is gone; without one, back to what opened the form. */
+  const finalFocus = useCallback(
+    () => (noticeRef.current ? false : (originRef.current() ?? true)),
+    []
+  );
 
   const findDraftDuplicates = useCallback(async () => {
     if (workspace) {
@@ -309,6 +381,7 @@ export function CustomersPage() {
   }, [draft.email, draft.phone, organizationId, workspace]);
 
   const persistCustomer = useCallback(async () => {
+    const madeName = draft.name.trim();
     const profile = {
       email: draft.email,
       name: draft.name,
@@ -358,24 +431,22 @@ export function CustomersPage() {
       });
       if (workspace.online) {
         workspace.runtime.syncNow().catch(() => undefined);
-        return "Cliente cadastrado.";
+        return `Cliente “${madeName}” cadastrado.`;
       }
-      return "Cliente salvo neste aparelho. Ele será enviado quando a conexão voltar.";
+      return `Cliente “${madeName}” salvo neste aparelho. Ele será enviado quando a conexão voltar.`;
     }
     await orpcClient.customer.create(profile);
-    return "Cliente cadastrado.";
+    return `Cliente “${madeName}” cadastrado.`;
   }, [draft, editingCustomer, organizationId, workspace]);
 
   /**
-   * Where the focus goes when a save ends. A new customer leaves the form empty and the cursor in the name, for the
-   * next one (the notice is a status, read where it is); an edit or a failure takes the person to the notice, since
-   * the form they were in no longer says what happened; a panel of possible duplicates keeps the focus where it was.
+   * Where the focus goes when a save ends. A failure is said in the form, which is still open, and takes the person to
+   * the alert; a save closes the form, and the focus goes to the notice when it has closed (`finalFocus`); a panel of
+   * possible duplicates keeps the focus where it was.
    */
   const settleFocus = useCallback(
-    (outcome: "created" | "duplicates" | "other") => {
-      if (outcome === "created") {
-        focusLater(() => document.getElementById("customer-name")?.focus());
-      } else if (outcome === "other") {
+    (outcome: "duplicates" | "failed" | "saved") => {
+      if (outcome === "failed") {
         focusFeedback();
       }
     },
@@ -410,7 +481,7 @@ export function CustomersPage() {
         failureAction = "duplicate-check";
       }
       // the panel of the possible duplicates is read by its own live region and the focus stays where it was (U-25)
-      let outcome: "created" | "duplicates" | "other" = "other";
+      let outcome: "duplicates" | "failed" | "saved" = "failed";
       try {
         if (needsDuplicateCheck) {
           const matches = await findDraftDuplicates();
@@ -422,10 +493,11 @@ export function CustomersPage() {
           failureAction = "save";
         }
         setNotice(await persistCustomer());
-        setEditingCustomer(null);
-        setDraft(emptyCustomerDraft);
+        setJustCreated(!editingCustomer);
+        keptRef.current = null;
+        setFormOpen(false);
         await refreshList();
-        outcome = editingCustomer ? "other" : "created";
+        outcome = "saved";
       } catch (caughtError) {
         setError(customerErrorMessage(caughtError, failureAction));
       } finally {
@@ -515,28 +587,60 @@ export function CustomersPage() {
     [handleLifecycle]
   );
 
+  noticeRef.current = notice;
   const isOffline = workspace !== null && !workspace.online;
-  const showForm = status === "active" || editingCustomer !== null;
+  const isPending = pendingAction !== null;
+  // the empty list has the button itself: not two of them
+  const emptyList =
+    status === "active" &&
+    !isLoading &&
+    loadError === null &&
+    customers.length === 0;
+  const newButton = useMemo(
+    () =>
+      status === "active" && !emptyList
+        ? { disabled: isPending, onClick: handleNew, ref: newButtonRef }
+        : null,
+    [emptyList, handleNew, isPending, status]
+  );
+  const noticeAction = useMemo(
+    () =>
+      justCreated
+        ? { label: "Cadastrar outro", onClick: handleNew }
+        : undefined,
+    [handleNew, justCreated]
+  );
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <CustomersHeader />
+      <CustomersHeader newButton={newButton} />
       {isOffline ? <OfflineNotice /> : null}
-      <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
-      {showForm ? (
-        <CustomerForm
-          contactError={contactError}
-          draft={draft}
-          duplicateMatches={duplicateMatches}
-          editingCustomer={editingCustomer}
-          isPending={pendingAction !== null}
-          onCancel={handleCancelEdit}
-          onChange={handleDraftChange}
-          onCreateAnyway={handleCreateAnyway}
-          onSubmit={handleSubmit}
-          onUseExisting={handleUseExisting}
-        />
-      ) : null}
+      {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
+      <ActionFeedback
+        error={formOpen ? null : error}
+        notice={formOpen ? null : notice}
+        noticeAction={formOpen ? undefined : noticeAction}
+        regionRef={feedbackRef}
+      />
+      <CustomerForm
+        contactError={contactError}
+        draft={draft}
+        duplicateMatches={duplicateMatches}
+        editingCustomer={editingCustomer}
+        error={formOpen ? error : null}
+        feedbackRef={feedbackRef}
+        finalFocus={finalFocus}
+        isPending={isPending}
+        notice={formOpen ? notice : null}
+        onCancel={handleCancelEdit}
+        onChange={handleDraftChange}
+        onClosed={handleFormClosed}
+        onCreateAnyway={handleCreateAnyway}
+        onDismiss={handleDismiss}
+        onSubmit={handleSubmit}
+        onUseExisting={handleUseExisting}
+        open={formOpen}
+      />
       <StatusNav
         disabled={pendingAction !== null}
         label="Estado dos clientes"
@@ -552,6 +656,7 @@ export function CustomersPage() {
           isLoading={isLoading}
           isOffline={isOffline}
           onAnonymize={handleAnonymize}
+          onNew={handleNew}
           onArchive={handleArchive}
           onEdit={handleEdit}
           onRestore={handleRestore}
