@@ -508,6 +508,73 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
+test("a data de competência a 360×600: 'Hoje' fica à vista sem rolar e tocar nele escolhe hoje", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await page.setViewportSize({ height: 600, width: 360 });
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await pickDate(page, "Data de competência", "2026-10-03");
+
+  // the field sits low in the form: little room is left for the popover
+  await datePickerButton(page, "Data de competência").evaluate((button) =>
+    button.scrollIntoView({ block: "end" })
+  );
+  const popup = await openDatePicker(page, "Data de competência");
+  const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+  // the popover is placed first and flipped and clamped a frame later: poll until it has settled
+  await expect
+    .poll(async () => {
+      const box = await popup.boundingBox();
+      return box && box.y >= 0 && box.y + box.height <= 600;
+    })
+    .toBe(true);
+  // "Hoje" is whole in the view with no scrolling: the popover itself does not scroll
+  await expect(today).toBeInViewport({ ratio: 1 });
+  const whole = await popup.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(whole.scrollHeight).toBeLessThanOrEqual(whole.clientHeight);
+
+  await today.click();
+  await expect(popup).toBeHidden();
+  await expect(
+    datePickerButton(page, "Data de competência")
+  ).toHaveAccessibleName(`Data de competência, ${TODAY_BR}`);
+});
+
+test("a data de competência com pouca altura (celular deitado): o mês rola dentro do popover e 'Hoje' continua à vista", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await page.setViewportSize({ height: 300, width: 360 });
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await datePickerButton(page, "Data de competência").evaluate((button) =>
+    button.scrollIntoView({ block: "center" })
+  );
+  const popup = await openDatePicker(page, "Data de competência");
+  await expect
+    .poll(async () => {
+      const box = await popup.boundingBox();
+      return box && box.y >= 0 && box.y + box.height <= 300;
+    })
+    .toBe(true);
+  // less room than the month needs: the month gives way, the footer stays
+  const month = await popup
+    .locator("[data-date-month]")
+    .evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+  expect(month.scrollHeight).toBeGreaterThan(month.clientHeight);
+  await expect(
+    popup.getByRole("button", { exact: true, name: "Hoje" })
+  ).toBeInViewport({ ratio: 1 });
+});
+
 test("o calendário da data de competência: o teclado abre, as setas andam, Enter escolhe e o foco volta ao botão", async ({
   page,
 }) => {
