@@ -39,6 +39,9 @@ const cards = {
   ticket: "20.00",
 };
 
+/** Every item line sold with a known cost: the cost coverage of the goods is "full". */
+const costs = { itemLines: 25, itemLinesWithUnknownCost: 0 };
+
 /** September: 10.00 and one sale a day (and the given result, when there is one). */
 const september = (extra: Pick = () => undefined, result?: string | null) =>
   days("2026-09-01", "2026-09-30", (date) => ({
@@ -266,7 +269,7 @@ describe("todaySeries", () => {
 
 describe("monthKpis: sales", () => {
   it("reads the cumulative value on a day, against the same days of the previous month", () => {
-    const kpis = monthKpis(september(), october(), TODAY, cards);
+    const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     const { sales } = kpis.read(16);
     expect(sales).toEqual({
       count: "17 vendas até 17/10",
@@ -279,7 +282,7 @@ describe("monthKpis: sales", () => {
   });
 
   it("reads the server's cards at rest", () => {
-    const kpis = monthKpis(september(), october(), TODAY, cards);
+    const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     expect(kpis.read(null).sales).toEqual({
       count: "25 vendas no mês",
       date: "1 a 25/10",
@@ -290,7 +293,7 @@ describe("monthKpis: sales", () => {
   });
 
   it("keeps the days from the 1st to today only", () => {
-    const kpis = monthKpis(september(), october(), TODAY, cards);
+    const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     expect(kpis.days).toHaveLength(25);
     expect(kpis.days.at(-1)?.date).toBe(TODAY);
   });
@@ -300,7 +303,8 @@ describe("monthKpis: sales", () => {
       september(() => ({ netSales: "0.00", salesCount: 0 })),
       october(),
       TODAY,
-      cards
+      cards,
+      costs
     );
     const { sales } = kpis.read(null);
     expect(sales.delta).toBeNull();
@@ -309,17 +313,19 @@ describe("monthKpis: sales", () => {
 
   it("never compares with less: a short B gives no chip", () => {
     const before = september().filter((day) => day.date <= "2026-09-20");
-    const { sales } = monthKpis(before, october(), TODAY, cards).read(null);
+    const { sales } = monthKpis(before, october(), TODAY, cards, costs).read(
+      null
+    );
     expect(sales.delta).toBeNull();
     expect(sales.note).toBeNull();
     // but a day inside the short B still compares
-    expect(monthKpis(before, october(), TODAY, cards).read(9).sales.note).toBe(
-      "vs. 1 a 10/09"
-    );
+    expect(
+      monthKpis(before, october(), TODAY, cards, costs).read(9).sales.note
+    ).toBe("vs. 1 a 10/09");
   });
 
   it("compares the 31st with the whole of a 30-day previous month", () => {
-    const kpis = monthKpis(september(), october(), "2026-10-31", cards);
+    const kpis = monthKpis(september(), october(), "2026-10-31", cards, costs);
     const { sales } = kpis.read(null);
     expect(sales.note).toBe("vs. 1 a 30/09");
     // 31 x 20,00 = 620,00 against 30 x 10,00 = 300,00
@@ -328,7 +334,7 @@ describe("monthKpis: sales", () => {
   });
 
   it("draws the sales as cumulative reais", () => {
-    const kpis = monthKpis(september(), october(), TODAY, cards);
+    const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     expect(kpis.series.sales).toHaveLength(25);
     expect(kpis.series.sales.slice(0, 3)).toEqual([20, 40, 60]);
     expect(kpis.series.sales.at(-1)).toBe(500);
@@ -347,14 +353,16 @@ describe("monthKpis: ticket", () => {
       september(),
       first("100.00").map((day) => ({ ...day, ...flat(day.date) })),
       TODAY,
-      cards
+      cards,
+      costs
     );
     expect(a.read(0).ticket.value).toBe("33.33");
     const b = monthKpis(
       september(),
       first("200.00").map((day) => ({ ...day, ...flat(day.date) })),
       TODAY,
-      cards
+      cards,
+      costs
     );
     expect(b.read(0).ticket.value).toBe("66.67");
   });
@@ -363,7 +371,9 @@ describe("monthKpis: ticket", () => {
     const month = october((date) =>
       date === "2026-10-01" ? { netSales: "100.00", salesCount: 3 } : undefined
     );
-    const { ticket } = monthKpis(september(), month, TODAY, cards).read(0);
+    const { ticket } = monthKpis(september(), month, TODAY, cards, costs).read(
+      0
+    );
     // 33,33 against 10,00
     expect(ticket).toEqual({
       count: "Média por venda de 01/10",
@@ -380,7 +390,7 @@ describe("monthKpis: ticket", () => {
         ? { netSales: "0.00", salesCount: 0 }
         : undefined
     );
-    const kpis = monthKpis(september(), month, TODAY, cards);
+    const kpis = monthKpis(september(), month, TODAY, cards, costs);
     const { ticket } = kpis.read(1);
     expect(ticket.value).toBeNull();
     expect(ticket.count).toBe("Sem vendas no período");
@@ -390,9 +400,13 @@ describe("monthKpis: ticket", () => {
   });
 
   it("reads the server's ticket at rest", () => {
-    const { ticket } = monthKpis(september(), october(), TODAY, cards).read(
-      null
-    );
+    const { ticket } = monthKpis(
+      september(),
+      october(),
+      TODAY,
+      cards,
+      costs
+    ).read(null);
     expect(ticket.value).toBe("20.00");
     expect(ticket.count).toBe("Média por venda no mês");
     expect(ticket.countNarrow).toBe("Média por venda");
@@ -402,12 +416,95 @@ describe("monthKpis: ticket", () => {
 });
 
 describe("monthKpis: result (AC-9)", () => {
+  it("with no cost of the goods known is a dash with its sentence, with no sparkline and no chip, as on the Resultado", () => {
+    // every item line sold without a cost: every day with a sale has a null result, and the server's card is the sales
+    const month = october(() => ({ operatingResult: null }));
+    const kpis = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      {
+        ...cards,
+        operatingResult: "500.00",
+      },
+      { itemLines: 25, itemLinesWithUnknownCost: 25 }
+    );
+    expect(kpis.result).toEqual({ kind: "noCost" });
+    expect(kpis.series.result).toBeNull();
+    expect(kpis.read(null).result).toEqual({
+      count: "Sem custo conhecido: o resultado não dá para estimar.",
+      date: "outubro inteiro",
+      delta: null,
+      note: null,
+      value: null,
+    });
+    for (const index of [3, 24]) {
+      expect(kpis.read(index).result.value).toBeNull();
+      expect(kpis.read(index).result.delta).toBeNull();
+    }
+    // the other cards keep their values
+    expect(kpis.read(null).sales.value).toBe("500.00");
+    expect(kpis.series.sales).toHaveLength(25);
+  });
+
+  it("with a partial or a full cost of the goods stays as it was", () => {
+    const month = october(
+      (date) => (date === "2026-10-10" ? { operatingResult: null } : undefined),
+      "5.00"
+    );
+    const partial = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      cards,
+      {
+        itemLines: 25,
+        itemLinesWithUnknownCost: 3,
+      }
+    );
+    expect(partial.result).toEqual({
+      kind: "incomplete",
+      total: 25,
+      unknown: 1,
+    });
+    expect(partial.read(null).result.value).toBe(cards.operatingResult);
+    const full = monthKpis(
+      september(undefined, "2.00"),
+      october(undefined, "5.00"),
+      TODAY,
+      cards,
+      costs
+    );
+    expect(full.result).toEqual({ kind: "known" });
+    expect(full.read(null).result.value).toBe("125.00");
+  });
+
+  it("with no item sold the cost is not missing: the result is the server's, as before", () => {
+    const kpis = monthKpis(
+      september(),
+      october(undefined, "5.00"),
+      TODAY,
+      cards,
+      {
+        itemLines: 0,
+        itemLinesWithUnknownCost: 0,
+      }
+    );
+    expect(kpis.result).toEqual({ kind: "known" });
+  });
+
   it("is incomplete, with no sparkline and no chip, when any day has an unknown result", () => {
     const month = october(
       (date) => (date === "2026-10-10" ? { operatingResult: null } : undefined),
       "5.00"
     );
-    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, cards);
+    const kpis = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      cards,
+      costs
+    );
     expect(kpis.result).toEqual({ kind: "incomplete", total: 25, unknown: 1 });
     expect(kpis.series.result).toBeNull();
     for (const index of [null, 3, 9, 20]) {
@@ -431,10 +528,16 @@ describe("monthKpis: result (AC-9)", () => {
         ? { operatingResult: "-3000.00" }
         : undefined;
     }, "5.00");
-    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, {
-      ...cards,
-      operatingResult: "-2875.00",
-    });
+    const kpis = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      {
+        ...cards,
+        operatingResult: "-2875.00",
+      },
+      costs
+    );
     const atRest = kpis.read(null).result;
     expect(atRest.value).toBe("-2875.00");
     expect(atRest.date).toBe("outubro inteiro");
@@ -448,12 +551,18 @@ describe("monthKpis: result (AC-9)", () => {
       (date) => (date === "2026-10-30" ? { operatingResult: null } : undefined),
       "5.00"
     );
-    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, cards);
+    const kpis = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      cards,
+      costs
+    );
     expect(kpis.result).toEqual({ kind: "known" });
   });
 
   it("is unsent when the days lack the field", () => {
-    const kpis = monthKpis(september(), october(), TODAY, cards);
+    const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     expect(kpis.result).toEqual({ kind: "unsent" });
     expect(kpis.series.result).toBeNull();
     expect(kpis.read(null).result.delta).toBeNull();
@@ -464,7 +573,8 @@ describe("monthKpis: result (AC-9)", () => {
       september(undefined, "2.00"),
       october(undefined, "5.00"),
       TODAY,
-      cards
+      cards,
+      costs
     );
     expect(kpis.result).toEqual({ kind: "known" });
     // 3 x 5,00 against 3 x 2,00
@@ -487,10 +597,16 @@ describe("monthKpis: result (AC-9)", () => {
         date === "2026-10-30" ? { operatingResult: "-3000.00" } : undefined,
       "5.00"
     );
-    const kpis = monthKpis(september(undefined, "2.00"), month, TODAY, {
-      ...cards,
-      operatingResult: "-2875.00",
-    });
+    const kpis = monthKpis(
+      september(undefined, "2.00"),
+      month,
+      TODAY,
+      {
+        ...cards,
+        operatingResult: "-2875.00",
+      },
+      costs
+    );
     const atRest = kpis.read(null).result;
     expect(atRest.value).toBe("125.00");
     expect(atRest.date).toBe("1 a 25/10");
@@ -500,19 +616,31 @@ describe("monthKpis: result (AC-9)", () => {
   });
 
   it("at rest, without the results of the days, says the server's card", () => {
-    const kpis = monthKpis(september(), october(), TODAY, {
-      ...cards,
-      operatingResult: "-2875.00",
-    });
+    const kpis = monthKpis(
+      september(),
+      october(),
+      TODAY,
+      {
+        ...cards,
+        operatingResult: "-2875.00",
+      },
+      costs
+    );
     expect(kpis.read(null).result.value).toBe("-2875.00");
     expect(kpis.read(null).result.date).toBe("outubro inteiro");
   });
 
   it("without the series (a copy kept before it), says the server's card, never a sum of no day", () => {
-    const kpis = monthKpis([], [], TODAY, {
-      ...cards,
-      operatingResult: "-5.00",
-    });
+    const kpis = monthKpis(
+      [],
+      [],
+      TODAY,
+      {
+        ...cards,
+        operatingResult: "-5.00",
+      },
+      costs
+    );
     expect(kpis.result).toEqual({ kind: "unsent" });
     expect(kpis.read(null).result.value).toBe("-5.00");
     expect(kpis.read(null).result.date).toBe("outubro inteiro");
@@ -523,7 +651,13 @@ describe("monthKpis: result (AC-9)", () => {
       (date) => (date === "2026-09-03" ? { operatingResult: null } : undefined),
       "2.00"
     );
-    const kpis = monthKpis(before, october(undefined, "5.00"), TODAY, cards);
+    const kpis = monthKpis(
+      before,
+      october(undefined, "5.00"),
+      TODAY,
+      cards,
+      costs
+    );
     expect(kpis.series.result).toHaveLength(25);
     // 1 to 02/09 is known, 1 to 03/09 is not
     expect(kpis.read(1).result.delta?.text).toBe("+R$ 6,00");

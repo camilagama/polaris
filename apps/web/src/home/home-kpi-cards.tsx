@@ -135,8 +135,8 @@ function MonthCards({
   const before = figures.before.daily ?? NO_DAYS;
   const month = figures.month.daily ?? NO_DAYS;
   const kpis = useMemo(
-    () => monthKpis(before, month, figures.today, cards),
-    [before, month, figures.today, cards]
+    () => monthKpis(before, month, figures.today, cards, quality),
+    [before, month, figures.today, cards, quality]
   );
   const [index, setIndex, clear] = useReading();
   const last = kpis.days.length - 1;
@@ -178,7 +178,8 @@ function MonthCards({
   const resultNegative = (kpis.read(null).result.value ?? "")
     .trim()
     .startsWith("-");
-  const incomplete = isIncompleteEstimate(quality);
+  const incomplete =
+    kpis.result.kind === "noCost" || isIncompleteEstimate(quality);
   return (
     <>
       <KpiCard
@@ -227,7 +228,11 @@ function MonthCards({
                 <IncompleteBadge />
               </span>
             ) : null}
-            {read.result.count}
+            {kpis.result.kind === "noCost" ? (
+              <span data-kpi-no-cost="">{read.result.count}</span>
+            ) : (
+              read.result.count
+            )}
             {kpis.result.kind === "incomplete" ? (
               <span className="mt-1 block" data-kpi-unknown="">
                 {unknownDaysText(kpis.result.unknown, kpis.result.total)}

@@ -7,7 +7,8 @@ import { addDays } from "./result-period";
 /**
  * The chain "Como chegamos a este resultado" with no cost of the goods known (Petković 26/10, T399-2; `cogsCoverageOf`
  * "none", from the item lines, t419): the subtotals from the CMV on show a dash and "Sem custo conhecido no período.",
- * as the cards do; the lines of entry keep their values. A partial cost, and every day null with some cost of the
+ * as the cards do; the CMV itself is a dash with "Nenhum dos N itens vendidos tem custo conhecido." (T399-3) and the
+ * bar of the parts is not drawn; the lines of entry keep their values. A partial cost, and every day null with some cost of the
  * goods known or only a fee unknown (cases a/b of t419), stay as they were.
  */
 
@@ -127,6 +128,17 @@ describe("the chain with no cost known", () => {
         "R$ 1.250,00"
       );
       expect(words(row(markup, "Vendas brutas"))).not.toContain("Sem custo");
+      const cogs = words(row(markup, "(−) Custo das mercadorias"));
+      expect(cogs).toContain("—");
+      expect(cogs).toContain("sem valor");
+      expect(cogs).toContain(
+        "Nenhum dos 25 itens vendidos tem custo conhecido."
+      );
+      expect(cogs).not.toContain("R$");
+      expect(markup).not.toContain("data-parts-bar");
+      expect(words(markup)).toContain(
+        "Sem o custo das mercadorias, a divisão dos custos não aparece."
+      );
     });
   }
 
@@ -146,6 +158,10 @@ describe("the chain with no cost known", () => {
         expect(text).toContain("R$ 1.250,00");
         expect(text).not.toContain("Sem custo conhecido");
       }
+      expect(words(row(markup, "(−) Custo das mercadorias"))).toContain(
+        "R$ 0,00"
+      );
+      expect(markup).toContain("data-parts-bar");
     });
   }
 
@@ -159,5 +175,7 @@ describe("the chain with no cost known", () => {
     expect(words(row(markup, "(−) Custo das mercadorias"))).toContain(
       "Não inclui 3 itens sem custo conhecido."
     );
+    expect(markup).toContain("data-parts-bar");
+    expect(words(markup)).not.toContain("a divisão dos custos não aparece");
   });
 });

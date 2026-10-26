@@ -876,6 +876,7 @@ export const SCREENS: UiScreen[] = [
   resultScreen("gráfico de vendas e custos e a tabela", resultStates.chart),
   resultScreen("metas", resultStates.goals, exerciseGoalOverlays),
   resultScreen("sem dados", resultStates.empty),
+  resultScreen("sem custo conhecido", resultStates.noCost),
   homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
