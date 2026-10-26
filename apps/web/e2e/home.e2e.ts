@@ -2138,6 +2138,31 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ]);
   });
 
+  test("cache diário: a loja recusa os números e a série do dia não é servida de novo sem o servidor", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    const dailyCalls = () =>
+      server.calls.filter((call) => call.procedure === "report/dailySales")
+        .length;
+    await openHome(page, server);
+    await expect(reading(page)).toHaveText(READING);
+    expect(dailyCalls()).toBe(1);
+
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+
+    // the access is back: the series of the day is asked of the server, not taken from the page or the device
+    server.broken.delete("report/periodSummary");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(dailyCalls).toBe(2);
+    await expect(reading(page)).toHaveText(READING);
+  });
+
   test("a série quebrada: o bloco diz o seu erro e Tentar novamente lê só a série; o resto fica", async ({
     page,
   }) => {

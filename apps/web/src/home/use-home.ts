@@ -520,7 +520,9 @@ export function useHome(
    * Without the figures it is not read: the map is drawn only beside them. The copy is written only after the answer,
    * with the guard asked then: a read still in flight when "Sair" starts writes nothing. A copy read on the store's
    * today is the series without asking again (one read a day per device, CPU-1e); only `force`, the gesture of
-   * "Tentar novamente", reads past it.
+   * "Tentar novamente", reads past it. It is served only with `figures` read from the server in this load, which asks
+   * the same capability as `dailySales` (`report:read`): a person who lost it gets the refusal there, and the refusal
+   * clears the series first.
    */
   const loadRhythm = useCallback(
     async (
