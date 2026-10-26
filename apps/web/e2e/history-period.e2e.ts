@@ -110,7 +110,10 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(page.getByText("posterior à data final")).toHaveCount(0);
       await expect
         .poll(() => lastAsked(asked))
-        .toMatchObject({ occurredFrom: "2026-10-05", occurredTo: "2026-10-12" });
+        .toMatchObject({
+          occurredFrom: "2026-10-05",
+          occurredTo: "2026-10-12",
+        });
 
       // a shortcut: "7 dias" is today and the six days before it
       const shortcuts = await openPeriod(page);
@@ -124,7 +127,10 @@ for (const viewport of FORM_VIEWPORTS) {
       );
       await expect
         .poll(() => lastAsked(asked))
-        .toMatchObject({ occurredFrom: "2026-10-08", occurredTo: "2026-10-14" });
+        .toMatchObject({
+          occurredFrom: "2026-10-08",
+          occurredTo: "2026-10-14",
+        });
 
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);

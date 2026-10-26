@@ -359,7 +359,9 @@ test("g) no celular o Histórico (a barra de filtros na tela) não pede o motion
       const motion = watchRequests(page, MOTION_CHUNK);
       await historyStates.filters(page);
       await expectPhone(page);
-      await page.getByRole("button", { name: "Tirar o filtro Situação" }).click();
+      await page
+        .getByRole("button", { name: "Tirar o filtro Situação" })
+        .click();
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(resolve))
       );

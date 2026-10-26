@@ -34,9 +34,9 @@ const apply = (
   filters: HistoryFilters,
   fieldId: string,
   value: FilterRule["value"] | null
-) =>
-  historyFilters(setRule(FIELDS, historyRules(filters), fieldId, value));
+) => historyFilters(setRule(FIELDS, historyRules(filters), fieldId, value));
 
+const PERIOD_PILL = /Período: [^"]*, editar/;
 const noop = () => undefined;
 const render = (filters: HistoryFilters, offline = false) =>
   renderToStaticMarkup(
@@ -67,7 +67,7 @@ describe("a barra de filtros do Histórico", () => {
     });
     expect(three).toContain("Situação: Confirmadas, editar");
     expect(three).toContain("Cliente: Maria, editar");
-    expect(three).toMatch(/Período: [^"]*, editar/);
+    expect(three).toMatch(PERIOD_PILL);
     expect(three).toContain("Limpar tudo");
   });
 
@@ -119,13 +119,11 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
       status: "cancelled",
       to: PERIOD.to,
     };
-    const without = historyFilters(
-      removeRule(historyRules(filters), "period")
-    );
+    const without = historyFilters(removeRule(historyRules(filters), "period"));
     expect(without).toEqual({ ...filters, from: "", to: "" });
-    expect(
-      historyListRequest("org", without, 0)
-    ).not.toHaveProperty("occurredFrom");
+    expect(historyListRequest("org", without, 0)).not.toHaveProperty(
+      "occurredFrom"
+    );
   });
 
   it("limpar tudo volta ao estado vazio, e só aparece com duas pílulas", () => {

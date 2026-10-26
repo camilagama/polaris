@@ -869,24 +869,29 @@ test.describe("histórico de vendas", () => {
     // no detail without a connection
     await expect(list.getByRole("link")).toHaveCount(0);
     // the search by item needs the server: it stays in the "Filtrar" menu with its reason, and cannot be chosen
-    const bar = page.getByRole("search", { exact: true, name: "Filtrar vendas" });
+    const bar = page.getByRole("search", {
+      exact: true,
+      name: "Filtrar vendas",
+    });
     const menu = page.getByRole("menu", { name: "Filtrar por" });
     await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-    await expect(menu.getByRole("menuitem", { name: /^Busca/ })).toHaveAttribute(
+    await expect(menu.getByRole("menuitem", { name: "Busca" })).toHaveAttribute(
       "aria-disabled",
       "true"
     );
-    await expect(menu.getByRole("menuitem", { name: /^Busca/ })).toContainText(
+    await expect(menu.getByRole("menuitem", { name: "Busca" })).toContainText(
       "Só com conexão"
     );
-    await menu.getByRole("menuitem", { name: /^Situação/ }).click();
+    await menu.getByRole("menuitem", { name: "Situação" }).click();
     const status = page.getByRole("dialog", { name: "Situação" });
-    await status.getByRole("button", { exact: true, name: "Canceladas" }).click();
+    await status
+      .getByRole("button", { exact: true, name: "Canceladas" })
+      .click();
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await bar.getByRole("button", { name: "Tirar o filtro Situação" }).click();
     await expect(list.getByRole("listitem")).toHaveCount(3);
     await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-    await menu.getByRole("menuitem", { name: /^Cliente/ }).click();
+    await menu.getByRole("menuitem", { name: "Cliente" }).click();
     const customer = page.getByRole("dialog", { name: "Cliente" });
     await customer.getByRole("textbox", { name: "Cliente" }).fill("angela");
     await customer.getByRole("button", { name: "Pronto" }).click();
@@ -896,10 +901,9 @@ test.describe("histórico de vendas", () => {
     // back online it is the server's history again, with the links
     await page.getByLabel("Rede disponível").check();
     await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-    await expect(menu.getByRole("menuitem", { name: /^Busca/ })).not.toHaveAttribute(
-      "aria-disabled",
-      "true"
-    );
+    await expect(
+      menu.getByRole("menuitem", { name: "Busca" })
+    ).not.toHaveAttribute("aria-disabled", "true");
   });
 });
 
