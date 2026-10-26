@@ -1,6 +1,6 @@
 import { Money } from "@polaris/domain/money/money";
-import { formatBrlAmount } from "../lib/format";
 import { NO_KNOWN_COST_RESULT } from "../dashboard/dashboard-model";
+import { formatBrlAmount } from "../lib/format";
 import {
   cogsCoverageOf,
   type StoredDay,

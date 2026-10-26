@@ -189,7 +189,7 @@ const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
 ]);
 
 /** What the CMV says when no cost of the goods is known: the dash, and that none of the items sold has a cost. */
-export function noKnownCostCogsNote(itemLines: number): string {
+function noKnownCostCogsNote(itemLines: number): string {
   return itemLines === 1
     ? "O item vendido não tem custo conhecido."
     : `Nenhum dos ${itemLines} itens vendidos tem custo conhecido.`;
@@ -286,7 +286,7 @@ export function chainRows(
         kind: line.kind,
         label: line.label,
         negative: false,
-        note: noKnownCostCogsNote(quality.itemLinesWithUnknownCost),
+        note: noKnownCostCogsNote(quality.itemLines),
         value: EMPTY_VALUE,
       };
     }

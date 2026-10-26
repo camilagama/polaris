@@ -63,30 +63,31 @@ export function PartsBar({
         </div>
       )}
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {parts.map((part) => (
-          <li className="flex items-center gap-1.5" key={part.id}>
-            <span
-              aria-hidden="true"
-              className={`size-2 shrink-0 rounded-full ${PART_COLORS[part.id]}`}
-            />
-            <span>{part.label}</span>
-            <span className="font-medium tabular-nums">
-              {part.value === null ? (
-                <>
-                  <span aria-hidden="true">{EMPTY_VALUE}</span>
-                  <span className="sr-only">sem valor</span>
-                </>
-              ) : (
-                <MoneyText text={formatBrlAmount(part.value)} />
-              )}
-            </span>
-            {partMark(part) ? (
-              <span className="text-warning text-xs italic">
-                {partMark(part)}
+        {parts.map((part) => {
+          const mark = partMark(part);
+          return (
+            <li className="flex items-center gap-1.5" key={part.id}>
+              <span
+                aria-hidden="true"
+                className={`size-2 shrink-0 rounded-full ${PART_COLORS[part.id]}`}
+              />
+              <span>{part.label}</span>
+              <span className="font-medium tabular-nums">
+                {part.value === null ? (
+                  <>
+                    <span aria-hidden="true">{EMPTY_VALUE}</span>
+                    <span className="sr-only">sem valor</span>
+                  </>
+                ) : (
+                  <MoneyText text={formatBrlAmount(part.value)} />
+                )}
               </span>
-            ) : null}
-          </li>
-        ))}
+              {mark ? (
+                <span className="text-warning text-xs italic">{mark}</span>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
       {total === null ? (
         <p className="text-muted-foreground text-support">
