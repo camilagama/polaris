@@ -22,7 +22,11 @@ import type { Outbox } from "../outbox/outbox";
 import { restorePendingProducts } from "../product-create";
 import type { LocalVariantReader } from "../sale-confirm";
 import type { LocalInventoryReader } from "../stock-commands";
-import { type PushFunction, syncOutbox } from "../sync-runner";
+import {
+  type PushFunction,
+  type SyncOutboxSummary,
+  syncOutbox,
+} from "../sync-runner";
 import { leaseStanding, leaseTimerDelay } from "./lease-standing";
 
 /**
@@ -232,6 +236,23 @@ function isSessionRefusal(error: unknown): boolean {
  */
 const QUIET_FAILURE_MS = 60_000;
 
+/** Why the pull of a run is aborted: "Sair" or an update needs the queue out and must not wait for the read gate. */
+const PULL_CUT = new DOMException("pull_cut", "AbortError");
+
+/** The error of a read that was cut on purpose (its own reason, or an abort the client wrapped). */
+function isPullCut(error: unknown, signal: AbortSignal): boolean {
+  if (!signal.aborted) {
+    return false;
+  }
+  for (let level = 0, next = error; level < 3 && next; level += 1) {
+    if (next === signal.reason || (next as Error).name === "AbortError") {
+      return true;
+    }
+    next = (next as Error).cause;
+  }
+  return false;
+}
+
 /** How the last sync ended, for "Sair": a try that got no answer blocks it as offline (ADR 0039). */
 type SyncOutcome = "answered" | "no_answer" | "not_run";
 
@@ -332,6 +353,10 @@ export class OfflineRuntime {
   private inFlight: Promise<void> | null = null;
   /** Ends the reads (the pull) of the run in flight; a send that needs the queue out does not wait for them. */
   private pullAbort: AbortController | null = null;
+  /** `trySend` is waiting for the run in flight: its pull is cut even if it has not got that far yet. */
+  private pullCutRequested = false;
+  /** Whether the run in flight pulls (a full sync) or only pushes (`trySend`). */
+  private inFlightPulls = true;
   private lastOutcome: SyncOutcome = "not_run";
   /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
   private failingSince: number | null = null;
@@ -421,7 +446,8 @@ export class OfflineRuntime {
       throw new Error("offline");
     }
     while (this.inFlight) {
-      this.pullAbort?.abort();
+      this.pullCutRequested = true;
+      this.pullAbort?.abort(PULL_CUT);
       // biome-ignore lint/performance/noAwaitInLoops: one run at a time, each one cut at its pull
       await this.inFlight.catch(() => undefined);
     }
@@ -683,13 +709,19 @@ export class OfflineRuntime {
 
   /** Sends what is queued and catches the local collections up. Single-flight. */
   syncNow(options: { pull?: boolean } = {}): Promise<void> {
+    const pull = options.pull !== false;
     if (this.inFlight) {
-      return this.inFlight;
+      // a run that only pushed is no sync for whoever asked for the pull: another one follows it
+      return pull && !this.inFlightPulls
+        ? this.inFlight.then(() => this.syncNow())
+        : this.inFlight;
     }
-    const run = this.runExclusive(options.pull !== false).finally(() => {
+    const run = this.runExclusive(pull).finally(() => {
       this.inFlight = null;
+      this.pullCutRequested = false;
     });
     this.inFlight = run;
+    this.inFlightPulls = pull;
     return run;
   }
 
@@ -1587,6 +1619,7 @@ export class OfflineRuntime {
       return;
     }
     // a try with the connection not proven is a real try: the screens stay as they are until it answers
+    const reasonBefore = this.snapshot.reason;
     this.set({
       ...this.snapshot,
       online: this.dependencies.isOnline(),
@@ -1609,6 +1642,9 @@ export class OfflineRuntime {
       }
       pullAbort = new AbortController();
       this.pullAbort = pullAbort;
+      if (this.isPullCutRequested()) {
+        pullAbort.abort(PULL_CUT);
+      }
       const source = this.dependencies.api.source(
         organizationId,
         pullAbort.signal
@@ -1630,17 +1666,7 @@ export class OfflineRuntime {
       this.mark("sync:phase:contagens");
       await this.refreshCounts();
       if (!pull) {
-        this.lastOutcome = "answered";
-        this.failingSince = null;
-        this.set({
-          ...this.snapshot,
-          legalAcceptanceRequired: false,
-          online: this.dependencies.isOnline(),
-          reason: null,
-          sessionRefused: false,
-          syncing: false,
-        });
-        this.channel?.post();
+        this.pushOnlyDone(summary.requests > 0, reasonBefore);
         return;
       }
       if (pullAbort.signal.aborted) {
@@ -1648,16 +1674,7 @@ export class OfflineRuntime {
         return;
       }
       pulling = true;
-      const meta = await stores.writer.readMeta();
-      if (isLocalStoreReady(meta) && meta?.cursor) {
-        // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
-        const caughtUp = summary.accepted > 0 || summary.discarded > 0;
-        this.mark(caughtUp ? "sync:phase:catchUp" : "sync:phase:pull");
-        await pullLocalChanges(source, stores.writer, meta.cursor);
-      } else {
-        this.mark("sync:phase:pull");
-        await bootstrapLocalStore(source, stores.writer);
-      }
+      await this.catchUp({ source, stores, summary });
       this.lastOutcome = "answered";
       this.failingSince = null;
       this.set({
@@ -1673,7 +1690,7 @@ export class OfflineRuntime {
       });
       this.channel?.post();
     } catch (error) {
-      if (pulling && pullAbort?.signal.aborted) {
+      if (pulling && pullAbort && isPullCut(error, pullAbort.signal)) {
         // someone needs the queue out and cut the pull: the push answered, the next sync catches up
         this.pullCut();
         await this.refreshCounts();
@@ -1683,6 +1700,52 @@ export class OfflineRuntime {
       return;
     }
     await this.refreshCounts(); // what was queued while the pull ran
+  }
+
+  /** Read at the time of the question: `trySend` may ask while the run is awaiting something else. */
+  private isPullCutRequested(): boolean {
+    return this.pullCutRequested;
+  }
+
+  /** The pull (or the first bootstrap) after the push: accepted or dropped commands, then the others' changes. */
+  private async catchUp(work: {
+    source: BootstrapSource;
+    stores: OpenedStores;
+    summary: SyncOutboxSummary;
+  }): Promise<void> {
+    const { source, stores, summary } = work;
+    const meta = await stores.writer.readMeta();
+    if (isLocalStoreReady(meta) && meta?.cursor) {
+      // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
+      const caughtUp = summary.accepted > 0 || summary.discarded > 0;
+      this.mark(caughtUp ? "sync:phase:catchUp" : "sync:phase:pull");
+      await pullLocalChanges(source, stores.writer, meta.cursor);
+    } else {
+      this.mark("sync:phase:pull");
+      await bootstrapLocalStore(source, stores.writer);
+    }
+  }
+
+  /**
+   * The end of a run that only pushed. Only a push that reached the server says anything about the acceptance or
+   * the failures; with the queue empty, what the screens showed before stays (the pull is not here to confirm it).
+   */
+  private pushOnlyDone(sent: boolean, reasonBefore: RuntimeSnapshot["reason"]) {
+    this.lastOutcome = "answered";
+    if (sent) {
+      this.failingSince = null;
+    }
+    this.set({
+      ...this.snapshot,
+      legalAcceptanceRequired: sent
+        ? false
+        : this.snapshot.legalAcceptanceRequired,
+      online: this.dependencies.isOnline(),
+      reason: sent ? null : reasonBefore,
+      sessionRefused: false,
+      syncing: false,
+    });
+    this.channel?.post();
   }
 
   /** The run ended at its pull, cut on purpose (`trySend`): not a failure, and not a catch-up either. */

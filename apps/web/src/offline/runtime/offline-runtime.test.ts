@@ -721,7 +721,7 @@ describe("starting", () => {
     expect(runtime.currentDeviceId()).toBeNull();
   });
 
-  describe("\"Sair\" with the reads of the tab held (the pause of a 429, the line full)", () => {
+  describe('"Sair" with the reads of the tab held (the pause of a 429, the line full)', () => {
     /** Four reads in flight and a 60 s pause: nothing goes through this gate until the (never firing) clock moves. */
     function heldGate(): ReadGate {
       const gate = createReadGate({
@@ -769,6 +769,40 @@ describe("starting", () => {
       expect(w.calls.pull).toBe(pulls + 1);
       await held; // the cut run ended by itself, not as a failure
       expect(runtime.getSnapshot().reason).toBeNull();
+    });
+  });
+
+  describe('the send of "Sair" and the full sync meeting each other', () => {
+    it("a Sair that arrives while the sync is still pushing cuts the pull that would come next", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      let release: () => void = () => undefined;
+      w.gates.push = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const pulls = w.calls.pull;
+      const full = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.push).toBeGreaterThan(0));
+      const sent = runtime.workSource().sync();
+      release();
+      await sent;
+      await full;
+      expect(w.calls.pull).toBe(pulls);
+    });
+
+    it("a full sync asked for while a send-only run is on its way follows it, with the pull", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      const pulls = w.calls.pull;
+      const sent = runtime.workSource().sync();
+      const full = runtime.syncNow();
+      await sent;
+      await full;
+      expect(w.calls.pull).toBe(pulls + 1);
     });
   });
 
