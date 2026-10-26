@@ -233,7 +233,10 @@
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://catalogo.araute.app",
-        "OFFLINE_LEASE_KEY_ID": "staging-1"
+        "OFFLINE_LEASE_KEY_ID": "staging-1",
+        // http_request_timed (with isolate.id/seq) on every /rpc and /api request, not only the critical routes:
+        // the per-route CPU measure of CPU-1e (ADR 0094, amended 26/10/2026). Staging only; production keeps "false".
+        "ROUTE_TIMING_ALL": "true"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
       "observability": {
@@ -377,7 +380,9 @@
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
-        "OFFLINE_LEASE_KEY_ID": "production-1"
+        "OFFLINE_LEASE_KEY_ID": "production-1",
+        // the timing of every route is a staging measure (ADR 0094); the isolation check refuses "true" here
+        "ROUTE_TIMING_ALL": "false"
       },
       "observability": {
         "enabled": true,

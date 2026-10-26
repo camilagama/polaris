@@ -16,6 +16,11 @@ import { countIsolateInvocation } from "../observability/isolate";
  * counts in `seq`, logged or not. Other routes emit nothing, so the volume in the Workers Logs stays small
  * (ADR 0094). The route is a pattern, never the URL: an oRPC call is `/rpc/<procedure>` (the arguments travel in
  * the body); anything that is not a critical route is not logged.
+ *
+ * `ROUTE_TIMING_ALL` = `"true"` (staging only, CPU-1e, ADR 0094 amended on 26/10/2026) widens the event to every
+ * `/rpc/*` and `/api/*` request, so a route can be measured by `isolate.seq` against another one in the same deploy.
+ * The label stays a pattern there too: a `/rpc` path that is not made of procedure names (a typo, a probe) is
+ * `/rpc/*`, and an `/api` path Hono cannot name is `/api/*`. Any other value, or none, keeps the critical routes only.
  */
 function routeLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
   const { path } = context.req;
@@ -26,6 +31,24 @@ function routeLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
     return routePath(context, -1);
   } catch {
     return path;
+  }
+}
+
+const PROCEDURE_PATH = /^\/rpc(?:\/[A-Za-z][A-Za-z0-9]{0,63}){1,4}$/;
+
+/** The label of a non-critical `/rpc` or `/api` request under `ROUTE_TIMING_ALL`, or null for any other path. */
+function wideRouteLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
+  const { path } = context.req;
+  if (path.startsWith("/rpc/")) {
+    return PROCEDURE_PATH.test(path) ? path : "/rpc/*";
+  }
+  if (!path.startsWith("/api/")) {
+    return null;
+  }
+  try {
+    return routePath(context, -1);
+  } catch {
+    return "/api/*";
   }
 }
 
@@ -49,8 +72,13 @@ export const routeTimingMiddleware: MiddlewareHandler<ServerEnv> = async (
     await next();
   } finally {
     try {
-      const route = routeLabel(context);
-      if (isCriticalRoute(route)) {
+      const label = routeLabel(context);
+      const route = isCriticalRoute(label)
+        ? label
+        : context.env?.ROUTE_TIMING_ALL === "true"
+          ? wideRouteLabel(context)
+          : null;
+      if (route !== null) {
         const httpStatus = context.res.status;
         wide.set({
           httpStatus,

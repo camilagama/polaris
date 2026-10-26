@@ -152,6 +152,12 @@ export interface WorkerBindings {
   QUEUE_DLQ?: QueueProducerBinding;
   QUEUE_MEDIA?: QueueProducerBinding;
   RESEND_API_KEY?: string;
+  /**
+   * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every `/rpc/*` and `/api/*` request instead of the
+   * critical routes only (CPU-1e, ADR 0094 amended). Set only in `env.staging`; production keeps `false`, which the
+   * staging isolation check enforces.
+   */
+  ROUTE_TIMING_ALL?: string;
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
   /** A secret of a rotation, still accepted when comparing a retried offline command (ADR 0079). */
   SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;

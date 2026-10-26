@@ -677,6 +677,11 @@ function checkProductionBlock(app, production, staging, problems) {
       );
     }
   }
+  if (production.vars?.ROUTE_TIMING_ALL === "true") {
+    problems.push(
+      `${app}: env.production vars.ROUTE_TIMING_ALL must not be "true" (the timing of every route is a staging measure, ADR 0094)`
+    );
+  }
   checkProductionHosts(app, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
