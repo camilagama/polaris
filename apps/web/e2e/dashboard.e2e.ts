@@ -734,7 +734,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
 
   const notice = copyNotice(page);
-  await expect(notice).toContainText(COPY_NOTICE);
+  await expect(notice).toContainText(COPY_NOTICE, { timeout: 15_000 });
   // nothing is waiting on the device, so no line about operations kept
   await expect(notice).not.toContainText("operações guardadas");
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -769,14 +769,17 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
   // a range never read has no copy at all: it opens only with a connection (AC-16)
   await rangeFields(page, "2026-08-01", "2026-08-31");
   await expect(page.getByRole("alert")).toContainText(
-    "Este período só abre com internet."
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
   await expect(copyNotice(page)).toHaveCount(0);
 
   // a month that was read shows its own copy, never the one of another period
   await choosePreset(page, "Mês passado");
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
   await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
@@ -794,20 +797,24 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   server.networkDown = true;
   await choosePreset(page, "Mês passado");
   await expect(page.getByRole("alert")).toContainText(
-    "Sem internet e sem números guardados neste aparelho."
+    "Sem internet e sem números guardados neste aparelho.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // the last 30 days is a window that moves: no copy, and the screen says why
   await choosePreset(page, "Últimos 30 dias");
   await expect(page.getByRole("alert")).toContainText(
-    "Este período só abre com internet."
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
   );
   await expect(page.locator("dl > [data-slot=card]")).toHaveCount(0);
 
   // this month was read: its copy is still there
   await choosePreset(page, "Este mês");
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
@@ -820,7 +827,9 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
 
   server.networkDown = true;
   await signIn(page, user);
-  await expect(copyNotice(page)).toContainText(COPY_NOTICE);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   // the goals are never copied: their tab shows its own load error
   await page.getByRole("tab", { name: "Metas" }).click();

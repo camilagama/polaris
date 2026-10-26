@@ -165,9 +165,7 @@ function Content({ period, state, thisYear, timezone }: ContentProps) {
   if (summary === null) {
     return state.isLoading ? (
       <CardNote
-        description={
-          <SlowReadNote className="block min-h-5" />
-        }
+        description={<SlowReadNote className="block min-h-5" />}
         loading
       >
         Carregando o resultado…
@@ -317,7 +315,9 @@ export function DashboardPage() {
           {state.summary && state.source === "cache" ? (
             <OfflineCopyNotice
               generatedAt={state.summary.generatedAt}
-              online={online ? { onRetry: refresh } : undefined}
+              online={
+                online && state.serverFailed ? { onRetry: refresh } : undefined
+              }
               timezone={organization.timezone}
               waitingOperations={snapshot ? waitingOperations(snapshot) : 0}
             />

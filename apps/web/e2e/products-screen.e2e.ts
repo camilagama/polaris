@@ -435,7 +435,8 @@ test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' a
     path: `/products?produto=${id(21)}`,
   });
   const alert = page.getByRole("alert");
-  await expect(alert).toHaveCount(1);
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
+  await expect(alert).toHaveCount(1, { timeout: 15_000 });
   await expect(alert).toContainText(
     "O catálogo está temporariamente indisponível."
   );
@@ -475,7 +476,8 @@ test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o 
     path: `/products?produto=${id(21)}`,
   });
   const alert = page.getByRole("alert");
-  await expect(alert).toHaveCount(1);
+  // three tries (~1.5 s and ~4 s between them) before the screen says it failed
+  await expect(alert).toHaveCount(1, { timeout: 15_000 });
   await expect(alert).toContainText(
     "Não foi possível abrir o produto. Tente novamente."
   );
@@ -626,8 +628,9 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e some q
   page,
 }) => {
   await openServerScreen(page, {
-    // the read tries once more by itself: only the second 503 reaches the screen
+    // the read tries twice more by itself (~1.5 s and ~4 s): only the third 503 reaches the screen
     lists: [
+      (route) => route.fulfill(unavailable),
       (route) => route.fulfill(unavailable),
       (route) => route.fulfill(unavailable),
       answer([product(1, "Camiseta do teste")]),
@@ -635,7 +638,8 @@ test("a lista que não carrega diz o motivo, oferece 'Tentar novamente' e some q
   });
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(
-    "O catálogo está temporariamente indisponível."
+    "O catálogo está temporariamente indisponível.",
+    { timeout: 15_000 }
   );
   // an error is not an empty catalog
   await expect(page.getByText("Nenhum produto ainda")).toHaveCount(0);

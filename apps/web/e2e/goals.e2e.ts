@@ -997,15 +997,16 @@ test("a primeira leitura das metas com 503 repete sozinha e abre sem o aviso", a
   expect(server.listCalls).toBe(2);
 });
 
-test("dois 503 seguidos nas metas mostram o erro, depois de uma única repetição", async ({
+test("três 503 seguidos nas metas mostram o erro, depois de duas repetições", async ({
   page,
 }) => {
   const server = new FakeGoalServer();
-  server.listUnavailable = 2;
+  server.listUnavailable = 3;
   await openGoals(page, server);
 
   await expect(page.getByRole("alert")).toContainText(
-    "As metas estão temporariamente indisponíveis. Tente novamente."
+    "As metas estão temporariamente indisponíveis. Tente novamente.",
+    { timeout: 15_000 }
   );
-  expect(server.listCalls).toBe(2);
+  expect(server.listCalls).toBe(3);
 });

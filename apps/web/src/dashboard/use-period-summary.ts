@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isNoAnswer } from "../lib/connection";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
@@ -23,6 +24,11 @@ export interface PeriodSummaryState {
   error: string | null;
   isLoading: boolean;
   /**
+   * The copy stands in because the server answered with a failure (a Worker killed for CPU, a 5xx), after every try:
+   * "Não foi possível atualizar agora". False when no answer came at all (the network, a portal).
+   */
+  serverFailed: boolean;
+  /**
    * `server` for figures the server just returned; `cache` for this device's
    * copy of the last confirmed result of the month, shown when the server
    * could not answer.
@@ -38,6 +44,7 @@ export interface PeriodSummaryState {
 const initialState: PeriodSummaryState = {
   error: null,
   isLoading: true,
+  serverFailed: false,
   source: "server",
   summary: null,
 };
@@ -71,11 +78,18 @@ function failedState(
       : null;
   // the copy never replaces figures on screen that are newer than it
   if (copy && !isOlderThan(copy, sameOnScreen)) {
-    return { error: null, isLoading: false, source: "cache", summary: copy };
+    return {
+      error: null,
+      isLoading: false,
+      serverFailed: !isNoAnswer(error),
+      source: "cache",
+      summary: copy,
+    };
   }
   return {
     error: periodSummaryErrorMessage(error, copyKept),
     isLoading: false,
+    serverFailed: false,
     source: current.source,
     summary: current.source === "cache" ? null : sameOnScreen,
   };
@@ -178,6 +192,7 @@ export function usePeriodSummary(
         setState({
           error: null,
           isLoading: false,
+          serverFailed: false,
           source: "server",
           summary,
         });
