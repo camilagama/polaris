@@ -14,6 +14,16 @@ const KEY_PREFIX = "polaris.offline.periodSummary.";
 /** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
+/** The copy of the Início's map (`home/rhythm-copy.ts`): the light daily series before the month, ~3 KB. */
+export const DAILY_SALES_COPY_KEY_PREFIX = "polaris.offline.dailySales.";
+
+/**
+ * The map's series of this page, by organization (`home/rhythm-copy.ts`): the daily cache that works with the offline
+ * runtime off too (nothing on the disk then), so going back to the Início after a sale does not read it again. It goes
+ * with the copies below; leaving the page (Sair) takes it anyway.
+ */
+export const dailySalesMemory = new Map<string, unknown>();
+
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
 /** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
@@ -351,16 +361,22 @@ export function readPeriodSummaryCache(
 }
 
 /**
- * Forgets the copies of one organization (the server refused this person its results): the months and the Início's.
+ * Forgets the copies of one organization (the server refused this person its results): the months and the Início's
+ * (its blocks and its map).
  */
 export function clearOrganizationResultCopies(
   preference: PreferenceStorage | null,
   organizationId: string
 ): void {
+  dailySalesMemory.delete(organizationId);
   try {
     for (const key of [
       ...keysWithPrefix(preference, organizationPrefix(organizationId)),
       ...keysWithPrefix(preference, `${HOME_COPY_KEY_PREFIX}${organizationId}`),
+      ...keysWithPrefix(
+        preference,
+        `${DAILY_SALES_COPY_KEY_PREFIX}${organizationId}`
+      ),
     ]) {
       preference?.removeItem(key);
     }
@@ -369,14 +385,16 @@ export function clearOrganizationResultCopies(
   }
 }
 
-/** Forgets the summaries of every organization and the Início's copies with them (the session ended). */
+/** Forgets the summaries of every organization and the Início's copies with them, the map's too (the session ended). */
 export function clearPeriodSummaryCaches(
   preference: PreferenceStorage | null
 ): void {
+  dailySalesMemory.clear();
   try {
     for (const key of [
       ...keysWithPrefix(preference, KEY_PREFIX),
       ...keysWithPrefix(preference, HOME_COPY_KEY_PREFIX),
+      ...keysWithPrefix(preference, DAILY_SALES_COPY_KEY_PREFIX),
     ]) {
       preference?.removeItem(key);
     }

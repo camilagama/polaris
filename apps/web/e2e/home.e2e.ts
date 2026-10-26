@@ -175,6 +175,9 @@ class FakeServer {
   /** How long each read of the Início takes to answer (ms), so the reads of an opening overlap. */
   latencyMs = 0;
 
+  /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
+  readonly held = new Map<string, Promise<void>>();
+
   constructor(scenario: Scenario) {
     this.scenario = scenario;
   }
@@ -281,6 +284,18 @@ class FakeServer {
     };
   }
 
+  /** The light series of the map: the first date and two positional arrays, one entry per date. */
+  dailySales(from: string, to: string) {
+    const net: string[] = [];
+    const count: number[] = [];
+    for (let day = from; day <= to; day = addDays(day, 1)) {
+      const [cents, sales] = this.scenario.days[day] ?? [0, 0];
+      net.push(money(cents));
+      count.push(sales);
+    }
+    return { count, from, net };
+  }
+
   balances(input: Record<string, unknown>) {
     const { stock } = this.scenario;
     let count = stock.all;
@@ -306,6 +321,8 @@ class FakeServer {
         return json(
           this.summary(String(input.from), String(input.to), input.topProducts)
         );
+      case "report/dailySales":
+        return json(this.dailySales(String(input.from), String(input.to)));
       case "goal/list":
         return json({ goals: this.scenario.goals });
       case "inventory/listBalances":
@@ -338,6 +355,7 @@ const WORKER_PATHS = /\/(rpc|api)\//;
 const HOME_PROCEDURES = new Set([
   "goal/list",
   "inventory/listBalances",
+  "report/dailySales",
   "report/periodSummary",
   "sale/list",
 ]);
@@ -360,6 +378,7 @@ async function serve(page: Page, server: FakeServer) {
     }
     const input = inputOf(route);
     server.calls.push({ input, procedure });
+    await server.held.get(procedure);
     const broken = server.broken.get(procedure);
     if (await server.platformAnswers(procedure, route)) {
       return;
@@ -681,6 +700,7 @@ test.describe("loja com venda", () => {
       "Precisa de atenção",
       "Meta",
       "Vendas por dia",
+      "Ritmo de vendas",
       "Mais vendidos do mês",
     ]);
     expect(
@@ -1488,9 +1508,9 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
 });
 
 const SYNCED = /sincronizado/i;
-const OFFLINE_KEYS = /^polaris\.offline\.(home|periodSummary)\./;
+const OFFLINE_KEYS = /^polaris\.offline\.(home|periodSummary|dailySales)\./;
 
-/** The keys of the Início's copy (A and B) in this browser. */
+/** The keys of the Início's copy (A, B and the map's series) in this browser. */
 const copyKeys = (page: Page) =>
   page.evaluate(
     (pattern) =>
@@ -1504,7 +1524,7 @@ const copyKeys = (page: Page) =>
 async function openWithCopy(page: Page, server: FakeServer) {
   await openHome(page, server);
   await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-  await expect.poll(() => copyKeys(page)).toHaveLength(2);
+  await expect.poll(() => copyKeys(page)).toHaveLength(3);
   // the offline runtime finished opening (a usable lease, the collections in place): a sale can be kept offline
   await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
     timeout: 20_000,
@@ -1831,7 +1851,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
       timeout: 20_000,
     });
-    await expect.poll(() => copyKeys(page)).toHaveLength(2);
+    await expect.poll(() => copyKeys(page)).toHaveLength(3);
     await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
       timeout: 20_000,
     });
@@ -1939,7 +1959,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);
   });
 
-  test("Sair apaga a cópia do Início antes de sair (A e B do aparelho)", async ({
+  test("Sair apaga a cópia do Início antes de sair (A, B e a série do mapa do aparelho)", async ({
     page,
   }) => {
     // "Sair" in the menu of the store card (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
@@ -1955,6 +1975,400 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect
       .poll(() => copyKeys(page).catch(() => ["navegando"]))
       .toEqual([]);
+  });
+
+  test("Sair com a leitura do mapa em voo: a resposta que chega depois não grava a série de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    let answerSeries: () => void = () => undefined;
+    server.held.set(
+      "report/dailySales",
+      new Promise((resolve) => {
+        answerSeries = resolve;
+      })
+    );
+    // what the page does to the device's storage and when the series reaches it, told from inside the page: while the
+    // page that "Sair" opens waits, the Início cannot be asked anything, but it still runs
+    const seen: string[] = [];
+    await page.exposeFunction("seenByTest", (what: string) => {
+      seen.push(what);
+    });
+    await page.addInitScript(() => {
+      const tell = (what: string) =>
+        (
+          window as unknown as { seenByTest: (what: string) => void }
+        ).seenByTest(what);
+      const { setItem } = Storage.prototype;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key.startsWith("polaris.offline.dailySales.")) {
+          tell("kept");
+        }
+        setItem.call(this, key, value);
+      };
+      const read = window.fetch;
+      window.fetch = async (...args) => {
+        const answer = await read(...args);
+        const url = args[0] instanceof Request ? args[0].url : String(args[0]);
+        if (url.includes("/rpc/report/dailySales")) {
+          tell("answered");
+        }
+        return answer;
+      };
+    });
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() =>
+        server.calls.some((call) => call.procedure === "report/dailySales")
+      )
+      .toBe(true);
+    // the page that "Sair" opens waits: the Início stays alive, already leaving, while the series comes
+    let leave: () => void = () => undefined;
+    const left = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      if (route.request().isNavigationRequest()) {
+        await left;
+      }
+      await route.fallback();
+    });
+    await page
+      .getByRole("button", { exact: true, name: "Loja, tema e Sair" })
+      .click();
+    await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
+    await expect.poll(() => server.signOutCalls).toBe(1);
+
+    answerSeries();
+    await expect.poll(() => seen).toContain("answered");
+    // the answer is read in the same turn; a real second more, and the copy was still not kept
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(seen).toEqual(["answered"]);
+    leave();
+    await expect
+      .poll(() => copyKeys(page).catch(() => ["navegando"]))
+      .toEqual([]);
+  });
+});
+
+test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
+  // Friday 23/10: the 26 weeks go from Sunday 26/04 to Saturday 24/10; the days that sold are those of SOLD
+  // at rest the map reads today; the best day (Sunday 18/10) has a line of its own under the legend
+  const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
+  const BEST_DAY_READING =
+    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
+  const rhythm = (page: Page) => region(page, "Ritmo de vendas");
+  const reading = (page: Page) => rhythm(page).locator("[data-rhythm-reading]");
+  const bestLine = (page: Page) => rhythm(page).locator("[data-rhythm-best]");
+  const dataCells = (page: Page) =>
+    rhythm(page).locator(
+      '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
+    );
+
+  test("a 1280 px: 26 semanas ao lado de Mais vendidos, hoje lido e o melhor dia em linha própria, os vazios com contorno e a camada acessível nossa", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    const map = rhythm(page);
+    await expect(map).toContainText(
+      "Últimas 26 semanas · um quadrado por dia, mais escuro é mais venda"
+    );
+    await expect(reading(page)).toHaveText(READING);
+    await expect(bestLine(page)).toHaveText("Melhor dia: 18/10, R$ 1.840,00");
+    // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
+    expect(
+      server.calls
+        .filter((call) => call.procedure === "report/dailySales")
+        .map((call) => [call.input.from, call.input.to])
+    ).toEqual([["2026-04-26", "2026-09-30"]]);
+    // the drawing of Bklit UI is hidden; the summary is ours
+    await expect(map.locator("[data-heatmap] svg")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    await expect(map.getByRole("img")).toHaveAttribute(
+      "aria-label",
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+    );
+    // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
+    // 24/10, to come, has no outline and no fill
+    await expect(dataCells(page)).toHaveCount(182);
+    await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
+    await expect(map).toContainText(
+      "Vazio: sem venda · até R$ 80,00 · até R$ 320,10 · até R$ 420,50 · acima"
+    );
+    // 3 weeks with a sale: the map says it is filling up
+    await expect(map).toContainText(
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda até agora."
+    );
+    await expect(map).toContainText("Média por dia da semana");
+    // beside Mais vendidos, under the chart, in the left 2/3
+    const mapBox = await map.boundingBox();
+    const topBox = await region(page, "Mais vendidos do mês").boundingBox();
+    const chartBox = await region(page, "Vendas por dia").boundingBox();
+    expect(Math.abs((mapBox?.y ?? 0) - (topBox?.y ?? 900))).toBeLessThan(2);
+    expect((mapBox?.x ?? 900) + (mapBox?.width ?? 0)).toBeLessThan(
+      topBox?.x ?? 0
+    );
+    expect(mapBox?.y ?? 0).toBeGreaterThan(
+      (chartBox?.y ?? 900) + (chartBox?.height ?? 0)
+    );
+    // the drawing fits its card: no cell beyond the right edge
+    const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
+    expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
+      (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
+    );
+    // "Ver os números": the days read, newest first
+    await map.getByRole("button", { name: "Ver os números" }).click();
+    await expect(map.getByRole("row")).toHaveCount(182);
+    await expect(map.getByRole("row").nth(1)).toContainText(
+      "23/10/2026R$ 320,102 vendas"
+    );
+    await expect(map.getByRole("row").nth(2)).toContainText(
+      "22/10/2026R$ 0,00sem venda"
+    );
+  });
+
+  test("o mouse lê o dia sob ele e, ao sair, volta para hoje", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(reading(page)).toHaveText(READING);
+    // the column of the week of 18/10 is the last, the 26th (index 25); Sunday is its 1st row
+    await dataCells(page)
+      .nth(25 * 7)
+      .hover();
+    await expect(reading(page)).toHaveText(BEST_DAY_READING);
+    await dataCells(page)
+      .nth(25 * 7 + 1)
+      .hover();
+    await expect(reading(page)).toHaveText("Segunda, 19/10 · sem venda");
+    await page.mouse.move(5, 5);
+    await expect(reading(page)).toHaveText(READING);
+  });
+
+  test("pelo teclado: cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    const slider = rhythm(page).getByRole("slider", {
+      name: "Dia do mapa de vendas",
+    });
+    await expect(slider).toHaveAttribute("aria-valuetext", READING);
+    await expect(slider).toHaveValue("180");
+    await slider.focus();
+    // the keyboard starts on today: down is Saturday 24/10, to come, so it stays; up is the day before
+    await page.keyboard.press("ArrowDown");
+    await expect(reading(page)).toHaveText(READING);
+    await page.keyboard.press("ArrowUp");
+    await expect(reading(page)).toHaveText("Quinta, 22/10 · sem venda");
+    await expect(slider).toHaveAttribute(
+      "aria-valuetext",
+      "Quinta, 22/10 · sem venda"
+    );
+    await page.keyboard.press("ArrowLeft");
+    await expect(reading(page)).toHaveText("Quinta, 15/10 · sem venda");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await expect(reading(page)).toHaveText("Terça, 13/10 · sem venda");
+    await page.keyboard.press("ArrowRight");
+    await expect(reading(page)).toHaveText(
+      "Terça, 20/10 · R$ 420,50 · 3 vendas"
+    );
+    // a week ahead stops at today: the days to come are not read
+    await page.keyboard.press("ArrowRight");
+    await expect(slider).toHaveAttribute("aria-valuetext", READING);
+    await page.keyboard.press("Home");
+    await expect(reading(page)).toHaveText("Domingo, 26/04 · sem venda");
+    // leaving the map, the reading goes back to today
+    await page.keyboard.press("Tab");
+    await expect(reading(page)).toHaveText(READING);
+  });
+
+  test("a 360 px: 13 semanas depois de Vendas por dia, células de até 18 px, nada passa da largura", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(SOLD));
+    const map = rhythm(page);
+    await expect(map).toContainText("Últimas 13 semanas");
+    await expect(dataCells(page)).toHaveCount(91);
+    await expect(reading(page)).toHaveText(READING);
+    const mapBox = await map.boundingBox();
+    const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
+    expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
+      (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
+    );
+    const cell = await dataCells(page).first().boundingBox();
+    expect(cell?.width ?? 0).toBeGreaterThanOrEqual(14);
+    expect(cell?.width ?? 99).toBeLessThanOrEqual(18);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+  });
+
+  test("Esconder valores: a leitura, a linha do melhor dia, a legenda e a frase escondem os reais e deixam as contagens", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    await page
+      .locator("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    const map = rhythm(page);
+    await expect(reading(page)).toHaveText(
+      "Sexta, 23/10 · R$ ••••valor escondido · 2 vendas · hoje"
+    );
+    await expect(bestLine(page)).toHaveText(
+      "Melhor dia: 18/10, R$ ••••valor escondido"
+    );
+    await expect(map).not.toContainText(AN_AMOUNT);
+    await expect(map.getByRole("img")).toHaveAttribute(
+      "aria-label",
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+    );
+    await expect(
+      map.getByRole("slider", { name: "Dia do mapa de vendas" })
+    ).toHaveAttribute(
+      "aria-valuetext",
+      "Sexta, 23/10 · valor escondido · 2 vendas · hoje"
+    );
+    await map.getByRole("button", { name: "Ver os números" }).click();
+    await expect(map).not.toContainText(AN_AMOUNT);
+    await expect(map.getByRole("row").nth(1)).toContainText("2 vendas");
+  });
+
+  test("cache diário (CPU-1e): duas aberturas no mesmo dia leem a série uma vez; no dia seguinte, de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    const dailyCalls = () =>
+      server.calls
+        .filter((call) => call.procedure === "report/dailySales")
+        .map((call) => [call.input.from, call.input.to]);
+    await openHome(page, server);
+    await expect(reading(page)).toHaveText(READING);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Object.keys(localStorage).some((key) =>
+            key.startsWith("polaris.offline.dailySales.")
+          )
+        )
+      )
+      .toBe(true);
+    const summaries = periodCalls(server).length;
+
+    // the second opening of the day: the figures are read again, the series comes from the copy of today
+    await page.reload();
+    await expect(reading(page)).toHaveText(READING, { timeout: 20_000 });
+    await expect
+      .poll(() => periodCalls(server).length)
+      .toBeGreaterThan(summaries);
+    expect(dailyCalls()).toEqual([["2026-04-26", "2026-09-30"]]);
+
+    // the next day of the store: the copy is of yesterday, the series is read again (the next 26 weeks)
+    server.now = NOON + 86_400_000;
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(rhythm(page)).toBeVisible({ timeout: 20_000 });
+    await expect.poll(dailyCalls).toEqual([
+      ["2026-04-26", "2026-09-30"],
+      ["2026-04-26", "2026-09-30"],
+    ]);
+  });
+
+  test("cache diário: a loja recusa os números e a série do dia não é servida de novo sem o servidor", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    const dailyCalls = () =>
+      server.calls.filter((call) => call.procedure === "report/dailySales")
+        .length;
+    await openHome(page, server);
+    await expect(reading(page)).toHaveText(READING);
+    expect(dailyCalls()).toBe(1);
+
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+
+    // the access is back: the series of the day is asked of the server, not taken from the page or the device
+    server.broken.delete("report/periodSummary");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(dailyCalls).toBe(2);
+    await expect(reading(page)).toHaveText(READING);
+  });
+
+  test("a série quebrada: o bloco diz o seu erro e Tentar novamente lê só a série; o resto fica", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    server.broken.set("report/dailySales", "500");
+    await openHome(page, server);
+    await expect(
+      page.getByText("Não foi possível carregar o ritmo de vendas.")
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(region(page, "Vendas por dia")).toBeVisible();
+    // never a map of zeros in the place of the unknown
+    await expect(rhythm(page)).toHaveCount(0);
+    const summaries = periodCalls(server).length;
+    server.broken.delete("report/dailySales");
+    await page.getByRole("button", { name: "Tentar novamente" }).click();
+    await expect(reading(page)).toHaveText(READING);
+    expect(periodCalls(server).length).toBe(summaries);
+  });
+
+  test("sem conexão: com a cópia da série, o mapa da cópia; sem ela, 'O mapa abre com internet.'", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.context().setOffline(true);
+    await expect(
+      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(reading(page)).toHaveText(READING);
+    await page.context().setOffline(false);
+
+    await reopenWithoutNetwork(page, server);
+    await expect(reading(page)).toHaveText(READING, { timeout: 20_000 });
+
+    await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("polaris.offline.dailySales.")) {
+          localStorage.removeItem(key);
+        }
+      }
+    });
+    await reopenWithoutNetwork(page, server);
+    await expect(rhythm(page)).toContainText("O mapa abre com internet.", {
+      timeout: 20_000,
+    });
+    await expect(rhythm(page).locator("[data-heatmap]")).toHaveCount(0);
+    // the rest of the copy stands
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
   });
 });
 

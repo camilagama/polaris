@@ -38,6 +38,12 @@ import { listFiles, precacheList } from "./service-worker-plugin";
  *   first script; it counts here and in no other line. The worker does not change: it precaches every file of the
  *   build, and no screen asks for a picker yet, so a production build has no such chunk until one does. A guard fails
  *   the build when a module of the calendar is in any other chunk (`calendarPlacementProblems`).
+ * - the heat map chunk (`heatmap-*.js`, t394), gzipped, 16 KB as the reference of the line (the estimate of the v7
+ *   review was 12 to 16 KB), which only warns, a line of its own, as the calendar's is: the map of the Início (Bklit
+ *   UI's `HeatmapChart`, its cells and patterns, `@visx/heatmap`) and the bars of the mean by weekday, loaded on demand
+ *   by the Início. What it shares with the charts (the sparkline, d3, `@visx/group`) stays in the charts chunk (the
+ *   group `charts` of the Vite configs, `SHARED_CHART_MODULE`), and `motion` in its own. A guard fails the build when
+ *   a module of the map is in any other chunk, as for the charts (`chartsPlacementProblems`).
  * What going past a line does is one mode for the six of them, `BUDGET_MODE`: "warn" until the cut step, the build
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
@@ -52,6 +58,8 @@ export const CHARTS_BUDGET_GZIP_BYTES = 8000;
 export const CALENDAR_BUDGET_GZIP_BYTES = 26_000;
 /** The motion chunk measures about 49.5 KB gzip (t385, without the React that the first build of t383 had put in it); a line like the calendar's, with some room. */
 export const MOTION_BUDGET_GZIP_BYTES = 56_000;
+/** The heat map chunk (t394): the estimate of the v7 review, 12 to 16 KB gzip; a reference that only warns. */
+export const HEATMAP_BUDGET_GZIP_BYTES = 16_000;
 export type BudgetMode = "warn" | "block";
 
 /**
@@ -102,7 +110,15 @@ const MOTION_CHUNK = /(^|\/)assets\/motion-[\w-]+\.js$/;
  * bar (`src/ui/filter-bar-motion.tsx`, loaded only at the `full` level of motion). Each comes by an `import()` of its own.
  */
 const MOTION_LOADER_CHUNK =
-  /(^|\/)assets\/(?:charts|filter-bar-motion)-[\w-]+\.js$/;
+  /(^|\/)assets\/(?:charts|filter-bar-motion|heatmap)-[\w-]+\.js$/;
+/** The chunk of the map of the Início: the one the `import()` of `src/ui/charts/heatmap.ts` makes (t394). */
+const HEATMAP_CHUNK = /(^|\/)assets\/heatmap-[\w-]+\.js$/;
+/**
+ * What belongs to the heat map chunk and to nothing else: its entry and the two components of `src/ui/charts/`, the
+ * heat map blocks of Bklit UI with the patterns only they use, and `@visx/heatmap`.
+ */
+export const HEATMAP_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?:heatmap|sales-heatmap|weekday-bars)|bklit[\\/]charts[\\/](?:heatmap[\\/][^\\/]+|patterns[\\/][^\\/]+|pattern-preset|visx-pattern|chart-scale))\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?@visx[\\/]heatmap[\\/])/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
  * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
@@ -115,6 +131,10 @@ const CHARTS_MODULE =
  * a chunk of its own, `motion-*.js`, which the charts chunk and the filter bar import. It belongs to that chunk or to the
  * charts chunk and to no other, so it never comes with the shell's first script.
  */
+/** A module of the charts that is not the map's: the charts chunk keeps it, even when the map imports it too (t394). */
+export function isSharedChartModule(id: string): boolean {
+  return CHARTS_MODULE.test(id) && !HEATMAP_MODULE.test(id);
+}
 export const MOTION_MODULE =
   /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:motion|framer-motion|motion-dom|motion-utils)[\\/]/;
 /** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
@@ -164,6 +184,8 @@ export interface PrecacheSize {
   /** The charts chunk (`CHARTS_CHUNK`): a line of its own, apart from the rest. */
   charts: number;
   fonts: number;
+  /** The heat map chunk (`HEATMAP_CHUNK`): a line of its own, apart from the charts and the rest (t394). */
+  heatmap: number;
   /** The interface infrastructure (see `INTERFACE_MODULE`); counts in the +40 KB line with `rest`. */
   interface: number;
   /** The motion chunk (`MOTION_CHUNK`): a line of its own, apart from the charts and the rest. */
@@ -245,6 +267,7 @@ export function measurePrecache(
   let calendar = 0;
   let charts = 0;
   let fonts = 0;
+  let heatmap = 0;
   let motion = 0;
   let primitives = 0;
   let infrastructure = 0;
@@ -264,6 +287,10 @@ export function measurePrecache(
       motion += gzip;
       continue;
     }
+    if (HEATMAP_CHUNK.test(path)) {
+      heatmap += gzip;
+      continue;
+    }
     if (CALENDAR_CHUNK.test(path)) {
       calendar += gzip;
       continue;
@@ -278,6 +305,7 @@ export function measurePrecache(
     calendar,
     charts,
     fonts,
+    heatmap,
     interface: infrastructure,
     motion,
     primitives,
@@ -298,8 +326,16 @@ export function chartsPlacementProblems(
   return chunks.flatMap((chunk) => {
     const inCharts = CHARTS_CHUNK.test(chunk.fileName);
     const inMotion = MOTION_CHUNK.test(chunk.fileName);
+    const inHeatmap = HEATMAP_CHUNK.test(chunk.fileName);
     return Object.keys(chunk.modules).flatMap((id) => {
       const name = id.replace(NODE_MODULES_PREFIX, "");
+      if (HEATMAP_MODULE.test(id)) {
+        return inHeatmap
+          ? []
+          : [
+              `heat map module ${name} is in ${chunk.fileName}, outside the heat map chunk`,
+            ];
+      }
       if (!inCharts && CHARTS_MODULE.test(id)) {
         return [
           `chart module ${name} is in ${chunk.fileName}, outside the charts chunk`,
@@ -404,6 +440,15 @@ export function motionLine(size: PrecacheSize): string {
   return `MOTION chunk ${size.motion} B gzip of ${MOTION_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
 }
 
+/** The line the build prints for the heat map chunk: how much of its line it uses, or that this build has none. */
+export function heatmapLine(size: PrecacheSize): string {
+  if (size.heatmap === 0) {
+    return `HEATMAP no heat map chunk in this build, 0 B of ${HEATMAP_BUDGET_GZIP_BYTES} B gzip`;
+  }
+  const left = HEATMAP_BUDGET_GZIP_BYTES - size.heatmap;
+  return `HEATMAP chunk ${size.heatmap} B gzip of ${HEATMAP_BUDGET_GZIP_BYTES} B (${left >= 0 ? `${left} B left` : `over by ${-left} B`})`;
+}
+
 /** The line the build prints for the calendar chunk: how much of its budget it uses, or that this build has none. */
 export function calendarLine(size: PrecacheSize): string {
   if (size.calendar === 0) {
@@ -474,6 +519,11 @@ function lineExcesses(size: PrecacheSize): LineExcess[] {
       total: size.calendar,
       unit: CALENDAR_BUDGET_GZIP_BYTES,
     },
+    {
+      name: "heat map chunk",
+      total: size.heatmap,
+      unit: HEATMAP_BUDGET_GZIP_BYTES,
+    },
   ];
   return lines
     .filter((line) => line.total > line.unit)
@@ -542,7 +592,12 @@ export function budgetWarnings(
 }
 
 /** The lines of the chunks that load on demand (charts, motion and calendar), for the build of the browser checks. */
-const CHUNK_LINES = ["charts chunk", "motion chunk", "calendar chunk"];
+const CHUNK_LINES = [
+  "charts chunk",
+  "motion chunk",
+  "calendar chunk",
+  "heat map chunk",
+];
 
 /** The chunk lines alone, for the build of the browser checks: a problem in "block", nothing in "warn". */
 export function chunkBudgetProblems(
@@ -646,6 +701,7 @@ export function precacheBudgetPlugin(
         this.info(chartsLine(size));
         this.info(motionLine(size));
         this.info(calendarLine(size));
+        this.info(heatmapLine(size));
         for (const warning of chunkBudgetWarnings(size, mode)) {
           this.warn(warning);
         }
@@ -675,6 +731,7 @@ export function precacheBudgetPlugin(
       this.info(chartsLine(size));
       this.info(motionLine(size));
       this.info(calendarLine(size));
+      this.info(heatmapLine(size));
       for (const warning of budgetWarnings(size, baseline, mode)) {
         this.warn(warning);
       }

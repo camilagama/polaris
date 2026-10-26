@@ -11,6 +11,7 @@ import {
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
 import { calendarDayInTimezone } from "../lib/dates";
+import type { DailySeries } from "./home-rhythm-model";
 import {
   copyStanding,
   type GoalView,
@@ -19,6 +20,7 @@ import {
   offlineGoal,
   storeToday,
 } from "./home-model";
+import { readRhythmCopy } from "./rhythm-copy";
 
 /**
  * The Início's copy on the device (desenho t269 v2, § 7.2; ADR 0056, emenda (ii)): A, the month, lives under the key
@@ -223,6 +225,8 @@ export interface OfflineHome {
       })
     | null;
   goal: OfflineGoal;
+  /** The map's series as kept (`rhythm-copy.ts`), beside the figures only; null without it ("O mapa abre com internet."). */
+  rhythm: DailySeries | null;
 }
 
 /**
@@ -233,6 +237,7 @@ export interface OfflineHome {
 const NOTHING: OfflineHome = {
   figures: null,
   goal: { kind: "online-only" },
+  rhythm: null,
 };
 
 const older = (a: string, b: string) => (Date.parse(a) < Date.parse(b) ? a : b);
@@ -278,6 +283,7 @@ export function offlineHome(
         todayShown: standing.todayShown && figures.today === deviceDay,
       },
       goal,
+      rhythm: readRhythmCopy(storage, organizationId),
     };
   } catch {
     // a copy that passed the checks and still does not add up is worth nothing: "sem números"

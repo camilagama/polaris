@@ -415,6 +415,7 @@ const READ_PROCEDURES = [
   "paymentProfile.list",
   "product.list",
   "publicCatalog.setup",
+  "report.dailySales",
   "report.periodSummary",
   "sale.get",
   "sale.getCustomerLink",

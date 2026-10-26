@@ -22,6 +22,8 @@ import {
   calendarPlacementProblems,
   chartsPlacementProblems,
   FONT_BUDGET_BYTES,
+  HEATMAP_BUDGET_GZIP_BYTES,
+  heatmapLine,
   interfaceShares,
   MOTION_BUDGET_GZIP_BYTES,
   measurePrecache,
@@ -117,6 +119,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     calendar: 0,
     charts: 0,
     fonts: 0,
+    heatmap: 0,
     interface: 0,
     motion: 0,
     primitives: 0,
@@ -229,6 +232,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       calendar: CALENDAR_BUDGET_GZIP_BYTES + 5,
       charts: CHARTS_BUDGET_GZIP_BYTES + 10,
       fonts: FONT_BUDGET_BYTES + 20,
+      heatmap: 0,
       interface: 0,
       motion: MOTION_BUDGET_GZIP_BYTES + 15,
       primitives: PRIMITIVES_BUDGET_GZIP_BYTES + 30,
@@ -273,6 +277,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       calendar: 0,
       charts: 0,
       fonts: 52_528,
+      heatmap: 0,
       interface: 0,
       motion: 0,
       primitives: 0,
@@ -367,6 +372,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
       calendar: 0,
       charts: 0,
       fonts: 0,
+      heatmap: 0,
       interface: 15_000,
       motion: 0,
       primitives: 0,
@@ -601,6 +607,7 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     calendar: 0,
     charts,
     fonts: 0,
+    heatmap: 0,
     interface: 0,
     motion: 0,
     primitives: 0,
@@ -948,6 +955,7 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
     calendar: 0,
     charts: 0,
     fonts: 0,
+    heatmap: 0,
     interface: 0,
     motion,
     primitives: 0,
@@ -1192,6 +1200,7 @@ describe("the calendar line (ADR 0103, amendment Datas, t363, t369)", () => {
     calendar,
     charts: 0,
     fonts: 0,
+    heatmap: 0,
     interface: 0,
     motion: 0,
     primitives: 0,
@@ -1316,5 +1325,97 @@ describe("the calendar line (ADR 0103, amendment Datas, t363, t369)", () => {
         { "app-abc.js": randomBytes(1_200_000) }
       ).error
     ).toEqual([]);
+  });
+});
+
+describe("the heat map line (ADR 0103, amendment of the map of the Início, t394)", () => {
+  const random = (length: number) =>
+    new Uint8Array(length).map((_, index) => (index * 7919) % 251);
+  const asSize = (heatmap: number) => ({
+    calendar: 0,
+    charts: 0,
+    fonts: 0,
+    heatmap,
+    interface: 0,
+    motion: 0,
+    primitives: 0,
+    rest: 0,
+  });
+
+  it("counts the heat map chunk in a line of its own: not in the rest, the interface share nor the charts", () => {
+    const files: Record<string, Uint8Array> = {
+      "assets/heatmap-Ab12_x.js": random(10_000),
+      "assets/index-abc.js": random(10_000),
+    };
+    const size = measurePrecache(
+      Object.keys(files),
+      (path) => files[path] as Uint8Array,
+      { interface: new Map([["assets/heatmap-Ab12_x.js", 1]]) }
+    );
+    expect(size.heatmap).toBeGreaterThan(0);
+    expect(size.charts).toBe(0);
+    expect(size.interface).toBe(0);
+    const without = measurePrecache(["assets/index-abc.js"], () =>
+      random(10_000)
+    );
+    expect(size.rest).toBe(without.rest);
+  });
+
+  it('passes at 16 000 B gzip; one byte past it warns in "warn" and fails in "block"', () => {
+    expect(HEATMAP_BUDGET_GZIP_BYTES).toBe(16_000);
+    expect(chunkBudgetProblems(asSize(16_000), "block")).toEqual([]);
+    expect(chunkBudgetProblems(asSize(16_001), "block")).toEqual([
+      expect.stringContaining("heat map chunk: 16001 B gzip, over the 16000 B"),
+    ]);
+    expect(chunkBudgetProblems(asSize(16_001), "warn")).toEqual([]);
+    expect(chunkBudgetWarnings(asSize(16_001), "warn")).toEqual([
+      expect.stringContaining("excess +1 B"),
+    ]);
+  });
+
+  it("prints the line the review greps for, or that the build has no chunk", () => {
+    expect(heatmapLine(asSize(0))).toBe(
+      "HEATMAP no heat map chunk in this build, 0 B of 16000 B gzip"
+    );
+    expect(heatmapLine(asSize(10_041))).toBe(
+      "HEATMAP chunk 10041 B gzip of 16000 B (5959 B left)"
+    );
+    expect(heatmapLine(asSize(16_100))).toContain("over by 100 B");
+  });
+
+  it("the heat map chunk may import the motion chunk, as the charts do; a screen may not", () => {
+    const chunks = [
+      {
+        fileName: "assets/index-a.js",
+        imports: [],
+        isEntry: true,
+        modules: {},
+      },
+      {
+        fileName: "assets/heatmap-b.js",
+        imports: ["assets/motion-c.js", "assets/charts-d.js"],
+        isDynamicEntry: true,
+        modules: {},
+      },
+      { fileName: "assets/motion-c.js", imports: [], modules: {} },
+      {
+        fileName: "assets/charts-d.js",
+        imports: ["assets/motion-c.js"],
+        isDynamicEntry: true,
+        modules: {},
+      },
+    ];
+    expect(motionLoadProblems(chunks)).toEqual([]);
+    expect(
+      motionLoadProblems([
+        ...chunks,
+        {
+          fileName: "assets/home-page-e.js",
+          imports: ["assets/motion-c.js"],
+          isDynamicEntry: true,
+          modules: {},
+        },
+      ])
+    ).toHaveLength(1);
   });
 });
