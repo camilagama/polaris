@@ -5,12 +5,17 @@ import type {
   ServerEnv,
   WorkerBindings,
 } from "../environment";
+import { traverseContractProcedures } from "@orpc/server";
+import type { ProcedureMeta } from "@polaris/contracts";
+import { polarisContract } from "@polaris/contracts";
+import { rpcRouter } from "../rpc/router";
 import {
   createRateLimitMiddleware,
   isMediaUploadRequest,
-  isRpcMutationRequest,
   mediaUploadRateLimitMiddleware,
-  rpcMutationRateLimitMiddleware,
+  RPC_WRITE_RULE,
+  rpcProcedureKind,
+  rpcRateLimitMiddleware,
 } from "./rate-limit";
 import { requestIdMiddleware } from "./request-id";
 
@@ -18,6 +23,7 @@ const secret = "a".repeat(32);
 const sessionToken = "session-token-value.signature";
 const clientAddress = "203.0.113.9";
 const bucketKeyPattern = /^rpc-mutation-(?:ip|session):[0-9a-f]{64}$/;
+const readKeyPattern = /^rpc-read-(?:ip|session):[0-9a-f]{64}$/;
 const mediaKeyPattern = /^media-upload-ip:/;
 
 function limiter(outcome: boolean | (() => Promise<{ success: boolean }>)) {
@@ -30,10 +36,7 @@ function limiter(outcome: boolean | (() => Promise<{ success: boolean }>)) {
   } satisfies RateLimitBinding;
 }
 
-function createApp(
-  middleware = rpcMutationRateLimitMiddleware,
-  path = "/rpc/*"
-) {
+function createApp(middleware = rpcRateLimitMiddleware, path = "/rpc/*") {
   const app = new Hono<ServerEnv>();
   app.use("*", requestIdMiddleware);
   app.use(path, middleware);
@@ -58,22 +61,106 @@ function post(
   return app.request(path, { headers, method: "POST" }, env);
 }
 
+/** Every procedure the given router serves, with the kind it declares (undefined when none). */
+function declaredKinds(
+  router: Parameters<typeof traverseContractProcedures>[0]["router"]
+): Map<string, unknown> {
+  const kinds = new Map<string, unknown>();
+  traverseContractProcedures({ path: [], router }, ({ contract, path }) => {
+    kinds.set(path.join("/"), (contract["~orpc"].meta as ProcedureMeta).kind);
+  });
+  return kinds;
+}
+
+/** The reads, spelled out: making a procedure a read (a wider bucket) shows up here, in review. */
+const READ_PROCEDURES = [
+  "account/legalStatus",
+  "billing/readPlan",
+  "category/list",
+  "customer/findPossibleDuplicates",
+  "customer/list",
+  "dataExport/list",
+  "dataExport/listClosed",
+  "device/check",
+  "device/list",
+  "expense/list",
+  "expense/listCategories",
+  "expense/listRules",
+  "goal/list",
+  "goal/targetChanges",
+  "inventory/getBalance",
+  "inventory/listBalances",
+  "organization/closedStatus",
+  "organization/listClosed",
+  "organization/listClosing",
+  "organization/listMine",
+  "paymentProfile/list",
+  "plan/operationalSelection",
+  "product/getVariants",
+  "product/list",
+  "report/dailySales",
+  "report/periodSummary",
+  "sale/get",
+  "sale/getCustomerLink",
+  "sale/list",
+  "sync/bootstrapPage",
+  "sync/getCursor",
+  "sync/pull",
+  "system/ping",
+];
+
 describe("request classification", () => {
+  it("every procedure the router serves declares read or write", () => {
+    const kinds = declaredKinds(rpcRouter);
+    const unclassified = [...kinds]
+      .filter(([, kind]) => kind !== "read" && kind !== "write")
+      .map(([path]) => path);
+
+    expect(kinds.size).toBeGreaterThan(90);
+    expect(unclassified).toEqual([]);
+    // the router serves exactly the contract, so the middleware's table (read from the contract) covers it
+    expect([...kinds.keys()].sort()).toEqual(
+      [...declaredKinds(polarisContract).keys()].sort()
+    );
+  });
+
+  it("the reads are exactly the procedures listed here", () => {
+    const reads = [...declaredKinds(polarisContract)]
+      .filter(([, kind]) => kind === "read")
+      .map(([path]) => path)
+      .sort();
+
+    expect(reads).toEqual(READ_PROCEDURES);
+  });
+
   it.each([
-    ["POST", "/rpc/sale/confirm", true],
-    ["POST", "/rpc/category/create", true],
-    ["POST", "/rpc/inventory/receiveStock", true],
-    ["POST", "/rpc/sale/list", false],
-    ["POST", "/rpc/sale/get", false],
-    ["POST", "/rpc/sale/getCustomerLink", false],
-    ["POST", "/rpc/customer/findPossibleDuplicates", false],
-    ["POST", "/rpc/system/ping", false],
-    ["POST", "/rpc/product/getawayRename", true],
-    ["POST", "/rpc/category/listing_cleanup", true],
-    ["GET", "/rpc/sale/confirm", false],
-  ])("%s %s counts as a mutation: %s", (method, path, expected) => {
+    ["POST", "/rpc/sale/confirm", "write"],
+    ["POST", "/rpc/category/create", "write"],
+    ["POST", "/rpc/inventory/receiveStock", "write"],
+    ["POST", "/rpc/sync/push", "write"],
+    // every page load confirms the device: its only write is the "last seen" and the session's link
+    ["POST", "/rpc/device/check", "read"],
+    ["POST", "/rpc/offline/issueLease", "write"],
+    ["POST", "/rpc/sale/list", "read"],
+    ["POST", "/rpc/sale/get", "read"],
+    ["POST", "/rpc/sale/getCustomerLink", "read"],
+    ["POST", "/rpc/customer/findPossibleDuplicates", "read"],
+    ["POST", "/rpc/system/ping", "read"],
+    // reads whose names the old pattern took for writes
+    ["POST", "/rpc/sync/pull", "read"],
+    ["POST", "/rpc/sync/bootstrapPage", "read"],
+    ["POST", "/rpc/report/periodSummary", "read"],
+    ["POST", "/rpc/report/dailySales", "read"],
+    // a path the contract does not know is a write, even with a read's name
+    ["POST", "/rpc/product/getawayRename", "write"],
+    ["POST", "/rpc/category/listing_cleanup", "write"],
+    ["POST", "/rpc/sale/list/extra", "write"],
+    ["POST", "/rpc/", "write"],
+    ["GET", "/rpc/sale/confirm", null],
+    ["OPTIONS", "/rpc/sale/confirm", null],
+  ])("%s %s is a %s", (method, path, expected) => {
     expect(
-      isRpcMutationRequest(new Request(`https://x.invalid${path}`, { method }))
+      rpcProcedureKind(new Request(`https://x.invalid${path}`, { method }))
     ).toBe(expected);
   });
 
@@ -181,12 +268,144 @@ describe("rate limit middleware", () => {
     expect(response.status).toBe(429);
   });
 
-  it("does not limit reads or other paths", async () => {
+  it("counts reads in their own buckets, never in the write one", async () => {
+    const write = limiter(false);
+    const readSession = limiter(true);
+    const readIp = limiter(true);
+    const app = createApp();
+    const env = bindings({
+      RPC_MUTATION_RATE_LIMIT: write,
+      RPC_READ_IP_RATE_LIMIT: readIp,
+      RPC_READ_RATE_LIMIT: readSession,
+    });
+    const headers = {
+      "cf-connecting-ip": clientAddress,
+      cookie: `better-auth.session_token=${sessionToken}`,
+    };
+
+    expect((await post(app, "/rpc/sync/pull", env, headers)).status).toBe(200);
+    expect(
+      (await post(app, "/rpc/report/periodSummary", env, headers)).status
+    ).toBe(200);
+    expect(write.limit).not.toHaveBeenCalled();
+    // the address in the address bucket, the session in the session one
+    const ipKeys = readIp.limit.mock.calls.map(([options]) => options.key);
+    const sessionKeys = readSession.limit.mock.calls.map(
+      ([options]) => options.key
+    );
+    expect(ipKeys).toHaveLength(2);
+    expect(sessionKeys).toHaveLength(2);
+    for (const key of [...ipKeys, ...sessionKeys]) {
+      expect(key).toMatch(readKeyPattern);
+      expect(key).not.toContain(clientAddress);
+      expect(key).not.toContain(sessionToken);
+    }
+    expect(ipKeys.every((key) => key.startsWith("rpc-read-ip:"))).toBe(true);
+    expect(
+      sessionKeys.every((key) => key.startsWith("rpc-read-session:"))
+    ).toBe(true);
+  });
+
+  it("counts writes only in the write bucket, by address and by session", async () => {
+    const write = limiter(true);
+    const readSession = limiter(false);
+    const readIp = limiter(false);
+    const response = await post(
+      createApp(),
+      "/rpc/sale/confirm",
+      bindings({
+        RPC_MUTATION_RATE_LIMIT: write,
+        RPC_READ_IP_RATE_LIMIT: readIp,
+        RPC_READ_RATE_LIMIT: readSession,
+      }),
+      {
+        "cf-connecting-ip": clientAddress,
+        cookie: `better-auth.session_token=${sessionToken}`,
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(write.limit).toHaveBeenCalledTimes(2);
+    expect(readIp.limit).not.toHaveBeenCalled();
+    expect(readSession.limit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the address", "rpc-read-ip", "ip"],
+    ["the session", "rpc-read-session", "session"],
+  ])(
+    "a read is refused when only %s bucket is exhausted",
+    async (_label, prefix, keyType) => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const deny = ({ key }: { key: string }) =>
+        Promise.resolve({ success: !key.startsWith(prefix) });
+      const readIp = limiter(true);
+      const readSession = limiter(true);
+      readIp.limit.mockImplementation(deny);
+      readSession.limit.mockImplementation(deny);
+      const response = await post(
+        createApp(),
+        "/rpc/sync/pull",
+        bindings({
+          RPC_READ_IP_RATE_LIMIT: readIp,
+          RPC_READ_RATE_LIMIT: readSession,
+        }),
+        {
+          "cf-connecting-ip": clientAddress,
+          cookie: `better-auth.session_token=${sessionToken}`,
+        }
+      );
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("60");
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: "read",
+          event: "rate_limited",
+          keyType,
+          route: "/rpc/sync/pull",
+        })
+      );
+    }
+  );
+
+  it("logs which bucket and which kind of key denied a write, never the key", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await post(
+      createApp(),
+      "/rpc/sale/confirm",
+      bindings({ RPC_MUTATION_RATE_LIMIT: limiter(false) }),
+      {
+        "cf-connecting-ip": clientAddress,
+        cookie: `better-auth.session_token=${sessionToken}`,
+      }
+    );
+
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bucket: "write",
+        event: "rate_limited",
+        keyType: "ip+session",
+        route: "/rpc/sale/confirm",
+      })
+    );
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain(clientAddress);
+    expect(logged).not.toContain(sessionToken);
+  });
+
+  it("does not limit GET or paths outside the middleware", async () => {
     const binding = limiter(false);
     const app = createApp();
-    const env = bindings({ RPC_MUTATION_RATE_LIMIT: binding });
+    const env = bindings({
+      RPC_MUTATION_RATE_LIMIT: binding,
+      RPC_READ_IP_RATE_LIMIT: binding,
+      RPC_READ_RATE_LIMIT: binding,
+    });
 
-    expect((await post(app, "/rpc/sale/list", env)).status).toBe(200);
     expect((await app.request("/rpc/sale/confirm", {}, env)).status).toBe(200);
     expect((await post(app, "/other", env)).status).toBe(200);
     expect(binding.limit).not.toHaveBeenCalled();
@@ -195,21 +414,22 @@ describe("rate limit middleware", () => {
   it("does not block when the binding is absent and warns once", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const app = createApp(
-      createRateLimitMiddleware({
-        applies: () => true,
-        binding: (env) => env.RPC_MUTATION_RATE_LIMIT,
-        scope: "rpc-mutation",
-      })
+      createRateLimitMiddleware({ rule: () => RPC_WRITE_RULE })
     );
+    const headers = { "cf-connecting-ip": clientAddress };
 
-    expect((await post(app, "/rpc/sale/confirm", bindings())).status).toBe(200);
-    expect((await post(app, "/rpc/sale/confirm", bindings())).status).toBe(200);
+    expect(
+      (await post(app, "/rpc/sale/confirm", bindings(), headers)).status
+    ).toBe(200);
+    expect(
+      (await post(app, "/rpc/sale/confirm", bindings(), headers)).status
+    ).toBe(200);
 
     expect(warn).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "rate_limit_binding_missing",
-        scope: "rpc-mutation",
+        scope: "rpc-mutation-ip",
       })
     );
   });
