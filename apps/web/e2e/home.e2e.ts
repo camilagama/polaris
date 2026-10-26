@@ -1859,7 +1859,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
         (
           window as unknown as { seenByTest: (what: string) => void }
         ).seenByTest(what);
-      const setItem = Storage.prototype.setItem;
+      const { setItem } = Storage.prototype;
       Storage.prototype.setItem = function (key: string, value: string) {
         if (key.startsWith("polaris.offline.dailySales.")) {
           tell("kept");
