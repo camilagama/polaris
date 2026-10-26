@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AreaChartProps } from "./area-chart";
+import type { RingChartProps } from "./ring-chart";
 import type { SparklineProps } from "./sparkline";
 
 /**
@@ -15,6 +16,7 @@ import type { SparklineProps } from "./sparkline";
  */
 export type { AreaChartProps } from "./area-chart";
 export type { ChartDatum } from "./chart-data";
+export type { RingChartProps } from "./ring-chart";
 export type { SparklineProps } from "./sparkline";
 
 /** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
@@ -142,4 +144,25 @@ export function OnDemandSparkline({
     return failed ?? null;
   }
   return <Reserved className={props.className} height={props.height ?? 32} />;
+}
+
+export function OnDemandRingChart({
+  failed,
+  ...props
+}: OnDemandProps & RingChartProps) {
+  const state = useCharts();
+  if (state.status === "ready") {
+    return <state.charts.RingChart {...props} />;
+  }
+  if (state.status === "failed") {
+    return failed ?? null;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("block", props.className)}
+      data-chart-loading=""
+      style={{ height: props.size, width: props.size }}
+    />
+  );
 }

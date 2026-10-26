@@ -575,7 +575,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "use o botão Sair: no celular ele está em Mais; em tela grande, no pé da barra lateral"
+    "use Sair: no celular ele está em Mais; em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();
@@ -750,7 +750,7 @@ test("sem conexão: um único aviso, tudo desabilitado, a confirmação aberta e
 
   await page.context().setOffline(false);
   await expect(page.getByText(OFFLINE_NOTICE)).toHaveCount(0);
-  await expect(firstDevice).toContainText("use o botão Sair");
+  await expect(firstDevice).toContainText("use Sair");
   await expect(
     page.getByRole("checkbox", { name: OTHER_SESSIONS })
   ).toBeChecked();

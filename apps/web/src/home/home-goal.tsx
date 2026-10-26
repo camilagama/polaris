@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
-import { Progress } from "@/ui/progress";
+import { OnDemandRingChart } from "@/ui/charts/on-demand";
 import {
   formatGoalPercent,
   formatGoalValue,
@@ -15,7 +15,13 @@ import {
   maskMoney,
   useHiddenValues,
 } from "../lib/hidden-values";
-import { type GoalView, goalPeriodShort, type OfflineGoal } from "./home-model";
+import {
+  type GoalProjection,
+  type GoalView,
+  goalDaysLeftText,
+  goalPeriodShort,
+  type OfflineGoal,
+} from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import type { Block } from "./use-home";
 
@@ -27,20 +33,140 @@ import type { Block } from "./use-home";
 const LINK =
   "touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
-  const { progress } = goal;
+/** The side of the ring of the goal, and the width of its arc (v7 § 3 item 9). */
+const RING_SIZE = 112;
+const RING_WIDTH = 10;
+
+/**
+ * The color of the ring: the color of the entity the goal measures (v7 § 5), green for the sales (net sales and number
+ * of sales) on the first tone of the green ramp, indigo for the estimated result on a faint tone of its own.
+ */
+function ringColors(kind: GoalReadModel["kind"]): {
+  color: "var(--chart-result)" | "var(--chart-sales)";
+  track: string;
+} {
+  return kind === "operating_result"
+    ? {
+        color: "var(--chart-result)",
+        track: "color-mix(in oklch, var(--chart-result) 18%, var(--card))",
+      }
+    : { color: "var(--chart-sales)", track: "var(--chart-heat-1)" };
+}
+
+/**
+ * The ring with the percent in its hole. The drawing (Bklit UI's `RingChart`, from the charts chunk) is `aria-hidden`;
+ * the box is one image whose name says it in words ("53,4% da meta: R$ 2.670,60 de R$ 5.000,00"), with the amounts
+ * hidden when the values are. Until the chunk arrives (or when it cannot) the hole with the percent stands alone.
+ */
+function GoalRing({
+  goal,
+  percent,
+  spoken,
+  width,
+}: {
+  goal: GoalReadModel;
+  percent: string;
+  spoken: string;
+  width: number;
+}) {
   const [hidden] = useHiddenValues();
-  const spokenProgress = progress
-    ? `${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}, ${formatGoalPercent(progress.percent)}`
-    : "";
-  let state: string | null = null;
+  return (
+    <div
+      aria-label={hidden ? maskMoney(spoken, MASKED_SPOKEN) : spoken}
+      className="relative grid shrink-0 place-items-center"
+      data-goal-ring=""
+      role="img"
+      style={{ height: RING_SIZE, width: RING_SIZE }}
+    >
+      <OnDemandRingChart
+        className="col-start-1 row-start-1"
+        progress={width / 100}
+        size={RING_SIZE}
+        strokeWidth={RING_WIDTH}
+        {...ringColors(goal.kind)}
+      />
+      <span
+        aria-hidden="true"
+        className="col-start-1 row-start-1 grid justify-items-center gap-0.5 text-center"
+      >
+        <span
+          className={cn(
+            "font-semibold tabular-nums leading-6 tracking-tight",
+            // "100,0%" fits the hole of 76 px at 20 px; a goal far past its target is written smaller
+            percent.length > 6 ? "text-base" : "text-xl"
+          )}
+        >
+          {percent}
+        </span>
+        <span className="text-muted-foreground text-xs">da meta</span>
+      </span>
+    </div>
+  );
+}
+
+function goalState(goal: GoalReadModel): string | null {
+  const { progress } = goal;
   if (goal.paused) {
-    state = "Pausada pelo plano: não é medida";
-  } else if (progress?.reached) {
-    state = "Meta atingida";
-  } else if (progress?.periodEnded) {
-    state = "O período desta meta acabou.";
+    return "Pausada pelo plano: não é medida";
   }
+  if (progress?.reached) {
+    return "Meta atingida";
+  }
+  if (progress?.periodEnded) {
+    return "O período desta meta acabou.";
+  }
+  return null;
+}
+
+/** The estimate under the amounts (v7 § 3 item 9): where the rhythm of the last 7 days takes the goal. */
+function ProjectionLine({ projection }: { projection: GoalProjection }) {
+  if (projection.kind === "no_sales") {
+    return (
+      <p
+        className="mt-1.5 text-muted-foreground text-support"
+        data-goal-projection="sem-venda"
+      >
+        Sem vendas nos últimos 7 dias para estimar.
+      </p>
+    );
+  }
+  if (projection.kind === "reaches") {
+    return (
+      <p className="mt-1.5 text-support" data-goal-projection="batida">
+        No ritmo dos últimos 7 dias, a meta é batida{" "}
+        {projection.onLastDay ? "até" : "em"} {projection.on}.{" "}
+        <span className="text-muted-foreground">Estimativa.</span>
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1.5 text-support" data-goal-projection="">
+      No ritmo dos últimos 7 dias, chega a{" "}
+      <span className="font-medium tabular-nums">
+        <MoneyText text={projection.value} />
+      </span>{" "}
+      em {projection.on}.{" "}
+      <span className="text-muted-foreground">Estimativa.</span>
+    </p>
+  );
+}
+
+function ActiveGoal({
+  daysLeft = null,
+  goal,
+  others,
+  projection = null,
+}: {
+  /** "faltam 6 dias", with a connection only. */
+  daysLeft?: string | null;
+  goal: GoalReadModel;
+  others: number;
+  /** The estimate by the rhythm of the last 7 days, with a connection and the daily series only. */
+  projection?: GoalProjection | null;
+}) {
+  const { progress } = goal;
+  const state = goalState(goal);
+  const period = goalPeriodShort(goal);
   return (
     <>
       <div className="grid gap-0.5">
@@ -51,29 +177,29 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
           ) : null}
         </p>
         <p className="text-muted-foreground text-support">
-          {goalPeriodShort(goal)}
+          {daysLeft ? `${period} · ${daysLeft}` : period}
         </p>
       </div>
       {progress && !goal.paused ? (
-        <Progress
-          aria-label={`Progresso de ${goalTitle(goal)}`}
-          aria-valuetext={
-            hidden ? maskMoney(spokenProgress, MASKED_SPOKEN) : spokenProgress
-          }
-          className="gap-1.5"
-          value={goalProgressWidth(progress.percent)}
-        >
-          <span className="flex w-full flex-wrap items-baseline justify-between gap-x-3 text-sm">
-            <span className="tabular-nums">
+        <div className="flex min-w-0 items-center gap-4">
+          <GoalRing
+            goal={goal}
+            percent={formatGoalPercent(progress.percent)}
+            spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+            width={goalProgressWidth(progress.percent)}
+          />
+          <div className="grid min-w-0 gap-0.5">
+            <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
+              <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
+            </p>
+            <p className="text-muted-foreground text-support tabular-nums">
               <MoneyText
-                text={`${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+                text={`de ${formatGoalValue(goal.kind, goal.target)}`}
               />
-            </span>
-            <span className="font-medium tabular-nums">
-              {formatGoalPercent(progress.percent)}
-            </span>
-          </span>
-        </Progress>
+            </p>
+            {projection ? <ProjectionLine projection={projection} /> : null}
+          </div>
+        </div>
       ) : null}
       {state ? <p className="text-support">{state}</p> : null}
       {others > 0 ? (
@@ -82,6 +208,53 @@ function ActiveGoal({ goal, others }: { goal: GoalReadModel; others: number }) {
         </a>
       ) : null}
     </>
+  );
+}
+
+/** No goal: the empty ring, dashed, and the way to set one (v7 § 3 item 9). */
+function NoGoal() {
+  const radius = RING_SIZE / 2 - 8 - RING_WIDTH / 2;
+  return (
+    <div className="flex min-w-0 items-center gap-4">
+      <div
+        aria-hidden="true"
+        className="relative grid shrink-0 place-items-center"
+        data-goal-ring="vazio"
+        style={{ height: RING_SIZE, width: RING_SIZE }}
+      >
+        <svg
+          aria-hidden="true"
+          className="col-start-1 row-start-1 text-border"
+          height={RING_SIZE}
+          viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
+          width={RING_SIZE}
+        >
+          <circle
+            cx={RING_SIZE / 2}
+            cy={RING_SIZE / 2}
+            fill="none"
+            r={radius}
+            stroke="currentColor"
+            strokeDasharray="4 5"
+            strokeWidth={RING_WIDTH}
+          />
+        </svg>
+        <span className="col-start-1 row-start-1 font-semibold text-lg text-muted-foreground">
+          —
+        </span>
+      </div>
+      <div className="grid min-w-0 justify-items-start gap-3">
+        <p className="text-muted-foreground">
+          Defina quanto quer vender no mês e acompanhe aqui.
+        </p>
+        <a
+          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
+          href="/dashboard?meta=nova"
+        >
+          Definir meta
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -142,10 +315,16 @@ function SettledGoal({
 export function GoalBlock({
   block,
   onRetry,
+  projection,
+  today,
   view,
 }: {
   block: Block<GoalReadModel[]>;
   onRetry: () => void;
+  /** The estimate of the active goal, when what it needs is known (`goalProjection`). */
+  projection: GoalProjection | null;
+  /** The store's today by the server's clock, for the days left; null when it is not known (no figures read). */
+  today: string | null;
   view: GoalView | null;
 }) {
   if (block.status === "hidden") {
@@ -167,20 +346,15 @@ export function GoalBlock({
   return (
     <HomeBlock id="home-goal" title="Meta">
       {view.kind === "active" ? (
-        <ActiveGoal goal={view.goal} others={view.others} />
+        <ActiveGoal
+          daysLeft={today ? goalDaysLeftText(view.goal, today) : null}
+          goal={view.goal}
+          others={view.others}
+          projection={projection}
+        />
       ) : null}
       {view.kind === "settled" ? <SettledGoal goal={view.goal} /> : null}
-      {view.kind === "none" ? (
-        <div className="grid gap-3">
-          <p className="text-muted-foreground">Nenhuma meta em andamento.</p>
-          <a
-            className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
-            href="/dashboard?meta=nova"
-          >
-            Definir meta
-          </a>
-        </div>
-      ) : null}
+      {view.kind === "none" ? <NoGoal /> : null}
     </HomeBlock>
   );
 }
