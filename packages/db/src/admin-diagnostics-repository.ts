@@ -77,7 +77,9 @@ export async function readActivationFunnel(
     throw new RangeError("invalid_weeks");
   }
   const { rows } = await client.query(
-    "SELECT public.admin_read_activation_funnel($1, $2) AS result",
+    // `clock_timestamp() AS at` is not read: a pooler that caches by the text of the statement cannot tell that a
+    // user function writes, and with it the statement is one it will not answer from a copy (no read without its event)
+    "SELECT public.admin_read_activation_funnel($1, $2) AS result, pg_catalog.clock_timestamp() AS at",
     [principalId, weeks]
   );
   return rows[0]?.result ?? null;

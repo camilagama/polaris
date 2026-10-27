@@ -30,7 +30,7 @@ import {
  *   2. the marker: marking and unmarking are audited in the same transaction, a call that changes nothing writes
  *      nothing, an unknown store and an inactive operator are refused, and the marker leaves with the organization;
  *   2b. the audited read: every call of the wrapper writes one `activation_funnel.read` event with the operator and
- *      nothing else (no store, no case, no entity, no detail, no number), a refused call writes none;
+ *      nothing else (no store, no case, no detail, no number; the entity is a fixed name), a refused call writes none;
  *   3. a fixture written by hand (the expected figures are in this file): the bands of the time to the first sale by
  *      `confirmed_at` (a sale dated two years back and a cancelled one count), the week of Brasília at the border of
  *      Sunday and Monday, the product deleted, internal stores out, cohorts of 1, 4, 5 and 6 stores, the
@@ -39,7 +39,9 @@ import {
  *      direct count of the rows, computed apart in this file, and its format is closed;
  *   5. the suppression on cohorts drawn at random: no value under 5, no complement under 5, no difference of two
  *      nested counts under 5, the bands all or none; the same for the stores active in a calendar week, whose
- *      complement is the stores that existed and did not sell (a case built so that only the complement is small);
+ *      complement is the stores that existed and did not sell (a case built so that only the complement is small),
+ *      and whose difference with the retention cells it contains (of the cohorts 1, 2 and 4 weeks older) is under
+ *      5 in no answer;
  *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the time of the call and the plan of
  *      the query inside (auto_explain), printed as gate notes.
  * The fixtures write sale headers without items (`session_replication_role = replica`) and load auto_explain, so the
@@ -276,6 +278,26 @@ function suppressionProblems(funnel: Funnel): string[] {
     }
     if (week.inProgress && week.stores.state !== "unavailable") {
       problems.push(`${week.week}: the current week shows a count`);
+    }
+    // the retention cells shown for the cohorts 1, 2 and 4 weeks older are inside this week: no difference under k
+    if (value !== null) {
+      const start = Date.parse(`${week.weekStart}T00:00:00Z`);
+      for (const [lag, key] of [
+        [1, "week2"],
+        [2, "week3"],
+        [4, "week5"],
+      ] as const) {
+        const older = funnel.cohorts.find(
+          (row) =>
+            Date.parse(`${row.weekStart}T00:00:00Z`) === start - lag * 7 * DAY
+        );
+        const inside = older ? shownValue(older.retention[key]) : null;
+        if (inside !== null && value - inside < K) {
+          problems.push(
+            `${week.week}: active stores - ${key} of the older cohort = ${value - inside}`
+          );
+        }
+      }
     }
   }
   for (const signup of funnel.signups) {
@@ -758,7 +780,7 @@ async function run() {
         principal_id: operator,
         support_case_id: null,
       })),
-      "the event holds the operator and the kind, with no store, no case, no entity, no detail and no number"
+      "the event holds the operator and the kind, with no store, no case, no detail and no number, and the fixed name of the entity"
     );
     for (const [principal, weeks, code] of [
       [disabled, 4, "42501"],
@@ -785,7 +807,7 @@ async function run() {
       "a refused read writes no event"
     );
     tests.push(
-      "every call of the audited read writes exactly one activation_funnel.read event, in the same transaction as the read, holding only the operator and the kind (no store, case, entity, detail or number, not even the weeks); an inactive or unknown operator (42501) and weeks out of 1 to 26 (22023) are refused and write none"
+      "every call of the audited read writes exactly one activation_funnel.read event, in the same transaction as the read, holding only the operator and the kind (no store, case, detail or number, not even the weeks); an inactive or unknown operator (42501) and weeks out of 1 to 26 (22023) are refused and write none"
     );
 
     // ------------------------------------------------- 3. the fixture written by hand
@@ -1295,27 +1317,25 @@ async function run() {
     // gate in these weeks is internal). The weeks cross the cohorts: cohort A sells again in weeks 2, 3 and 5 of its
     // own, the late band of a cut sells in the next week, and the borders at 7 days sell in the next week too.
     //  16 (A's week): the four first bands of A sell on Wednesday to Sunday: 5 + 5 + 5 + 5 = 20
-    //  15 (B's week): B's 4, A's up-to-7-days (Monday 09:00) 5 and A's later (day 12) 5 = 14
+    //  15 (B's week): B's 4, A's up-to-7-days (Monday 09:00) 5 and A's later (day 12) 5 = 14; hidden (see below)
     //  14 (C's week): C's 6 and the 5 of A's first band that sell again on day 15 = 11
     //  13 (D's week): D's 5 that sold in 5 minutes = 5, the smallest a week shows
     //  12 (borders): 15 at 10 minutes, 1 hour and 1 day, and 3 of A's second band that sell again on day 30 = 18
     //  11 (cut 2): 5 of the cut itself and 10 of the borders at 7 days and 7 days and 1 second = 15
     //  10 (cut 3): 5 of the cut itself and the 5 of cut 2 that sold later than 7 days = 10
     //   9 (cut 4): 5 of the cut itself, the 5 later ones sell in the next week = 5
-    //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7
+    //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7; hidden (see below)
     //  18 (F's week): 1 store sold: hidden; 17 (E's week): nobody sold: hidden, never 0
     const activeOf = (weeksAgo: number) =>
       byWeek(fixture.funnel, weeksAgo, fixture.clock).active.stores;
     for (const [weeksAgo, value] of [
       [WEEKS.a, 20],
-      [WEEKS.b, 14],
       [WEEKS.c, 11],
       [WEEKS.d, 5],
       [WEEKS.borders, 18],
       [WEEKS.cut2, 15],
       [WEEKS.cut3, 10],
       [WEEKS.cut4, 5],
-      [WEEKS.cut6, 7],
     ] as const) {
       assert.deepEqual(
         activeOf(weeksAgo),
@@ -1323,6 +1343,11 @@ async function run() {
         `${weeksAgo} weeks ago: stores active, counted by hand`
       );
     }
+    // 15 and 8 are counted above (14 and 7) but hidden: 10 of the 14 of week 15 are the stores of cohort A that sold in
+    // their week 2, a cell the answer shows, so the 4 left would be a small cell by difference; and 5 of the 7 of week
+    // 8 are the stores of cut 4 that sold in their week 2 (shown), which leaves 2
+    assert.deepEqual(activeOf(WEEKS.b), SUPPRESSED);
+    assert.deepEqual(activeOf(WEEKS.cut6), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.f), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.e), SUPPRESSED);
     // last week (the cohort whose 7 days are not over) is closed for the sales of the week: its 5 that sold show
@@ -1375,7 +1400,7 @@ async function run() {
       }
     }
     tests.push(
-      "the stores active in a calendar week (M6), counted by hand: 20, 14, 11, 5 (the smallest shown), 18, 15, 10, 5 and 7 in the weeks of the fixture (sales of the cohorts cross into the next weeks), last week's 5 show, a week with 1 or 0 active stores is hidden, never 0, and the current week is unavailable (week_not_closed); with 5 active stores and only 3 or 4 that existed and did not sell, the 5 are hidden (the complement would give the small cell away), with 5 and 5 both show"
+      "the stores active in a calendar week (M6), counted by hand: 20, 11, 5 (the smallest shown), 18, 15, 10 and 5 in the weeks of the fixture (sales of the cohorts cross into the next weeks); the weeks that count 14 and 7 are hidden because the retention cells they contain (10 and 5, shown for cohorts A and cut 4) leave 4 and 2 by difference; last week's 5 show, a week with 1 or 0 active stores is hidden, never 0, and the current week is unavailable (week_not_closed); with 5 active stores and only 3 or 4 that existed and did not sell, the 5 are hidden (the complement would give the small cell away), with 5 and 5 both show"
     );
 
     // marking one store of cohort A (a band of up to 10 minutes) moves the figures at the next read; unmarking brings them back
@@ -1592,10 +1617,40 @@ async function run() {
     const expected = {
       activeStores: labels.rows.map((week) => {
         const row = activeByWeek.get(week.start) ?? { active: 0, existing: 0 };
+        // the retention cells the answer shows that fall in this week (the cohort 1, 2 or 4 weeks older, in its week
+        // 2, 3 or 5), taken out of both sides: the stores that sold and the ones that did not
+        let overlapActive = 0;
+        let overlapIdle = 0;
+        for (const [lag, key] of [
+          [1, "r2"],
+          [2, "r3"],
+          [4, "r5"],
+        ] as const) {
+          const older = new Date(
+            Date.parse(`${week.start}T00:00:00Z`) - lag * 7 * DAY
+          )
+            .toISOString()
+            .slice(0, 10);
+          const tally = tallies.get(older);
+          const weekNumber = lag === 4 ? 5 : lag + 1;
+          if (
+            tally &&
+            Date.parse(`${older}T00:00:00Z`) + weekNumber * 7 * DAY <=
+              Date.parse(`${final.clock.currentWeek}T00:00:00Z`) &&
+            tally[key] >= K &&
+            tally.b - tally[key] >= K
+          ) {
+            overlapActive += tally[key];
+            overlapIdle += tally.n - tally[key];
+          }
+        }
         let stores: Cell = SUPPRESSED;
         if (week.start === final.clock.currentWeek) {
           stores = unavailable("week_not_closed");
-        } else if (row.active >= K && row.existing - row.active >= K) {
+        } else if (
+          row.active - overlapActive >= K &&
+          row.existing - row.active - overlapIdle >= K
+        ) {
           stores = shown(row.active);
         }
         return {
@@ -1646,8 +1701,15 @@ async function run() {
     const shownCells =
       JSON.stringify(funnel.cohorts).match(/"state":"shown"/g)?.length ?? 0;
     assert.ok(shownCells > 0, "the check looked at shown cells");
+    const shownActive = funnel.activeStores.filter(
+      (week) => week.stores.state === "shown"
+    ).length;
+    assert.ok(
+      shownActive > 0,
+      "the check looked at shown cells of the stores active in a week"
+    );
     tests.push(
-      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell) and on every other cohort: no value under 5 (the stores active in a week included), no complement and no difference of two nested counts under 5, bands all or none and adding up to the sales (${shownCells} shown cells checked)`
+      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell) and on every other cohort: no value under 5 (the stores active in a week included: ${shownActive} weeks shown), no complement and no difference of two nested counts under 5 (the active stores minus a retention cell they contain included), bands all or none and adding up to the sales (${shownCells} shown cells checked)`
     );
 
     // ------------------------------------------------- 6. the cost with 1,000 stores and 50,000 sales

@@ -16,7 +16,7 @@
 -- * `admin_read_activation_funnel(p_principal, p_weeks)`: the only way the Admin reaches the funnel. VOLATILE: it
 --   records one `activation_funnel.read` audit event (the operator, nothing else: no store, no number, no detail) in
 --   the same transaction and returns what `admin_activation_funnel` computed. The Admin runtime has no EXECUTE on the
---   STABLE function itself, so a read cannot skip the record (Rodrigo, PR 356: what a repeated read between two
+--   STABLE function itself, so a read cannot skip the record (Rodrigo: what a repeated read between two
 --   markings tells is what the record makes visible).
 -- * `admin_activation_funnel(p_weeks)`: weekly cohorts (ISO week of Brasília) of the stores created in the last
 --   `p_weeks` weeks (1 to 26, nothing else to choose), the verified sign-ups of the same weeks apart and the stores
@@ -124,7 +124,11 @@ $function$;--> statement-breakpoint
 --   purged nor internal and of any age (older than the window too), with at least one sale confirmed in the week
 --   (`sales.confirmed_at`). It is a cell of its own because the week crosses the cohorts, and the Admin reads no
 --   `sales`. Shown only when the active stores and the stores that existed that week and did not sell both hold k or
---   more: the complement of a small cell is a small cell too. The current week is `unavailable` (`week_not_closed`).
+--   more: the complement of a small cell is a small cell too. The week also contains cells that the cohorts show: the
+--   stores of cohort W-1 that sold in their week 2, of W-2 in their week 3 and of W-4 in their week 5 are active in W
+--   (and the others of those cohorts are idle). Every such retention cell that is shown is taken out of both sides
+--   before the test, so the difference between this series and the retention is never under k either. The current
+--   week is `unavailable` (`week_not_closed`).
 CREATE FUNCTION public.admin_activation_funnel(p_weeks integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -327,6 +331,21 @@ BEGIN
         LEFT JOIN scope ON scope.created_at < ((weeks.start + interval '7 days') AT TIME ZONE 'America/Sao_Paulo')
        GROUP BY weeks.start
     ),
+    -- the retention cells the answer shows, put on the calendar week they fall in: the stores of the cohort that sold
+    -- in it (r) and the ones that did not (n - r), both inside the series of that week
+    shown_retention AS (
+      SELECT tally.start + interval '7 days' AS week_start, tally.r2 AS r, tally.n - tally.r2 AS idle
+        FROM tallies AS tally
+       WHERE tally.week_2_closed AND tally.r2 >= k AND tally.b - tally.r2 >= k
+      UNION ALL
+      SELECT tally.start + interval '14 days', tally.r3, tally.n - tally.r3
+        FROM tallies AS tally
+       WHERE tally.week_3_closed AND tally.r3 >= k AND tally.b - tally.r3 >= k
+      UNION ALL
+      SELECT tally.start + interval '28 days', tally.r5, tally.n - tally.r5
+        FROM tallies AS tally
+       WHERE tally.week_5_closed AND tally.r5 >= k AND tally.b - tally.r5 >= k
+    ),
     accounts AS (
       SELECT pg_catalog.date_trunc('week', account.created_at AT TIME ZONE 'America/Sao_Paulo') AS week_start,
              EXISTS (
@@ -374,18 +393,26 @@ BEGIN
             'stores', CASE
               WHEN week_row.start = current_week
                 THEN '{"state": "unavailable", "reason": "week_not_closed"}'::jsonb
-              WHEN week_row.active >= k AND week_row.existing - week_row.active >= k
+              WHEN week_row.active - week_row.overlap_active >= k
+               AND week_row.existing - week_row.active - week_row.overlap_idle >= k
                 THEN pg_catalog.jsonb_build_object('state', 'shown', 'value', week_row.active)
               ELSE suppressed END
           ) ORDER BY week_row.start
         )
-        FROM activity AS week_row
+        FROM (
+          SELECT activity.*,
+                 COALESCE((SELECT pg_catalog.sum(shown.r) FROM shown_retention AS shown
+                            WHERE shown.week_start = activity.start), 0) AS overlap_active,
+                 COALESCE((SELECT pg_catalog.sum(shown.idle) FROM shown_retention AS shown
+                            WHERE shown.week_start = activity.start), 0) AS overlap_idle
+            FROM activity
+        ) AS week_row
       )
     )
   );
 END;
 $function$;--> statement-breakpoint
--- The audited read (Rodrigo, PR 356): the Worker of the Admin calls this one. The record and the answer are one
+-- The audited read (Rodrigo's review): the Worker of the Admin calls this one. The record and the answer are one
 -- transaction, so a read that is answered is a read that is recorded, and one that is refused (inactive operator,
 -- weeks out of 1 to 26) leaves nothing. Nothing of the answer goes into the record: no store, no count, no detail,
 -- and not even the number of weeks. The STABLE function below it stays the owner's: the Admin runtime cannot call it.
