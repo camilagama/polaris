@@ -20,7 +20,10 @@ import {
 interface ProductVariantsPanelProps {
   /** What was typed in the configuration before the dialog closed by Esc, × or the step back. */
   configurationDraft: VariantConfigurationDraft | null;
-  onConfigurationDraftChange: (draft: VariantConfigurationDraft | null) => void;
+  onConfigurationDraftChange: (
+    productId: string,
+    draft: VariantConfigurationDraft | null
+  ) => void;
   onProductUpdated: (product: ProductReadModel) => void;
   organizationId: string;
   product: ProductReadModel;
@@ -113,6 +116,14 @@ export function ProductVariantsPanel({
       current = false;
     };
   }, [organizationId, product.id, reloadVersion]);
+
+  // configured meanwhile (another device, or the read after a conflict): a draft of the first configuration is moot
+  const configured = configuration?.configured === true;
+  useEffect(() => {
+    if (configured && configurationDraft !== null) {
+      onConfigurationDraftChange(product.id, null);
+    }
+  }, [configurationDraft, configured, onConfigurationDraftChange, product.id]);
 
   const handleReload = useCallback(() => {
     setReloadVersion((version) => version + 1);

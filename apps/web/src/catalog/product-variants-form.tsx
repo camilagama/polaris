@@ -171,8 +171,11 @@ interface ConfigurationFormProps {
     product: ProductReadModel
   ) => void;
   onConflict: () => void;
-  /** Each change of what was typed (`null` when nothing is), for the dialog to keep it while it is closed. */
-  onDraftChange: (draft: VariantConfigurationDraft | null) => void;
+  /** Each change of what was typed for the product (`null` when nothing is), for the dialog to keep it while closed. */
+  onDraftChange: (
+    productId: string,
+    draft: VariantConfigurationDraft | null
+  ) => void;
   /** The SKU of the default variant was cleared from the warning: the configuration that came back. */
   onSkuCleared: (
     configuration: ProductVariantConfigurationReadModel,
@@ -201,6 +204,8 @@ export function ProductVariantConfigurationForm({
   const [variants, setVariants] = useState<VariantDraft[]>(initial.variants);
   const [isPending, setIsPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // a failure of the warning's button, said under the warning
+  const [clearError, setClearError] = useState<string | null>(null);
   // picked options, typed values or combinations that were not saved yet
   const unsaved = !isConfigurationDraftEmpty({
     selectedOptions,
@@ -210,8 +215,18 @@ export function ProductVariantConfigurationForm({
   useReportUnsentWork(unsaved);
   // the dialog keeps what was typed while it is closed by Esc, × or the step back, as it keeps the data
   useEffect(() => {
-    onDraftChange(unsaved ? { selectedOptions, valueLines, variants } : null);
-  }, [onDraftChange, selectedOptions, unsaved, valueLines, variants]);
+    onDraftChange(
+      product.id,
+      unsaved ? { selectedOptions, valueLines, variants } : null
+    );
+  }, [
+    onDraftChange,
+    product.id,
+    selectedOptions,
+    unsaved,
+    valueLines,
+    variants,
+  ]);
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
@@ -308,7 +323,7 @@ export function ProductVariantConfigurationForm({
           variants: variants.map((variant) => ({ values: variant.values })),
         });
         // saved: nothing typed is left to keep
-        onDraftChange(null);
+        onDraftChange(product.id, null);
         onConfigured(result.configuration, result.product);
       } catch (error: unknown) {
         setSaveError(variantErrorMessage(error));
@@ -340,7 +355,7 @@ export function ProductVariantConfigurationForm({
       return;
     }
     setIsPending(true);
-    setSaveError(null);
+    setClearError(null);
     try {
       const result = await orpcClient.product.setVariantSku({
         expectedVersion: configuration.productVersion,
@@ -356,7 +371,8 @@ export function ProductVariantConfigurationForm({
           ?.focus()
       );
     } catch (error: unknown) {
-      setSaveError(variantSkuErrorMessage(error));
+      setClearError(variantSkuErrorMessage(error));
+      // the variants are read again (and this form drawn again, from the kept draft): the warning comes back to try
       if (rpcErrorCode(error) === "CONFLICT") {
         onConflict();
       }
@@ -401,6 +417,11 @@ export function ProductVariantConfigurationForm({
               Limpar SKU da variante padrão
             </Button>
           </AlertDescription>
+        </Alert>
+      ) : null}
+      {clearError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{clearError}</AlertDescription>
         </Alert>
       ) : null}
 

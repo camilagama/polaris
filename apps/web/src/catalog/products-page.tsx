@@ -161,6 +161,16 @@ function keptVariantsOf(
   return kept !== null && kept.productId === productId ? kept.draft : null;
 }
 
+/** Variants kept for a product still in the list: one that left it (archived, removed) holds no work to warn about. */
+function isKeptFor(
+  kept: KeptVariants | null,
+  products: ProductReadModel[]
+): boolean {
+  return (
+    kept !== null && products.some((product) => product.id === kept.productId)
+  );
+}
+
 /** A new product refused because of its category: the category takes the focus, not the alert. */
 function isCategoryRefusal(
   cause: unknown,
@@ -192,9 +202,7 @@ export function ProductsPage() {
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   // the configuration of the variants typed in the dialog and not saved, kept like the data by Esc, × and the step back
   // (the dialog's popup leaves the page when it closes, and the form with it); "Cancelar" and its save drop it
-  const [variantsDraft, setVariantsDraft] = useState<KeptVariants | null>(
-    null
-  );
+  const [variantsDraft, setVariantsDraft] = useState<KeptVariants | null>(null);
   // counts the refusals of the chosen category: the form opens "Mais detalhes" and takes the focus to it
   const [categoryRefusal, setCategoryRefusal] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -474,17 +482,15 @@ export function ProductsPage() {
   }, []);
 
   const handleVariantsDraftChange = useCallback(
-    (next: VariantConfigurationDraft | null) => {
+    (productId: string, next: VariantConfigurationDraft | null) => {
       setVariantsDraft((current) => {
-        if (next === null) {
-          return null;
+        if (next !== null) {
+          return { draft: next, productId };
         }
-        return dialogProductId === null
-          ? current
-          : { draft: next, productId: dialogProductId };
+        return current?.productId === productId ? null : current;
       });
     },
-    [dialogProductId]
+    []
   );
 
   const handleVariantsUpdated = useCallback(
@@ -557,7 +563,9 @@ export function ProductsPage() {
       setStatus(value);
       clearMessages();
       // the variants typed for a product of the other list go with it
-      setVariantsDraft(null);
+      if (value !== status) {
+        setVariantsDraft(null);
+      }
       // the draft kept for a product of the other list goes with it (a new product's draft stays)
       if (keptRef.current !== null && keptRef.current !== "new") {
         keptRef.current = null;
@@ -565,7 +573,7 @@ export function ProductsPage() {
         setDraft(emptyDraft);
       }
     },
-    [clearMessages]
+    [clearMessages, status]
   );
 
   const dialogProduct =
@@ -591,7 +599,7 @@ export function ProductsPage() {
     isDraftChanged(
       draft,
       dialogProduct ? draftOf(dialogProduct) : emptyDraft
-    ) || variantsDraft !== null
+    ) || isKeptFor(variantsDraft, products)
   );
   const visibleProducts = filterByName(products, query);
   const isOffline = workspace !== null && !workspace.online;

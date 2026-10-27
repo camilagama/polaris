@@ -78,7 +78,10 @@ interface ProductDialogProps {
   /** The tabs other than "Dados" that hold work not saved yet (a save of the data must not close over it). */
   onUnsentTabsChange: (tabs: ProductTab[]) => void;
   /** Each change of what is typed in the configuration of the variants, kept by the page as the data are. */
-  onVariantsDraftChange: (draft: VariantConfigurationDraft | null) => void;
+  onVariantsDraftChange: (
+    productId: string,
+    draft: VariantConfigurationDraft | null
+  ) => void;
   open: boolean;
   organizationId: string;
   /** The product being changed; `null` is a new product. */
@@ -183,7 +186,10 @@ interface ProductTabsProps {
   onProductUpdated: (product: ProductReadModel) => void;
   onTabChange: (tab: ProductTab) => void;
   onUnsent: (tab: ProductTab, unsent: boolean) => void;
-  onVariantsDraftChange: (draft: VariantConfigurationDraft | null) => void;
+  onVariantsDraftChange: (
+    productId: string,
+    draft: VariantConfigurationDraft | null
+  ) => void;
   organizationId: string;
   product: ProductReadModel;
   tab: ProductTab;

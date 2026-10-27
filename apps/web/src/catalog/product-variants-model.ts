@@ -21,7 +21,7 @@ export const optionChoices: ReadonlyArray<
   ["size", "Tamanho"],
 ];
 
-export const emptyValueLines: Record<ProductVariantOptionName, string> = {
+const emptyValueLines: Record<ProductVariantOptionName, string> = {
   color: "",
   model: "",
   size: "",
