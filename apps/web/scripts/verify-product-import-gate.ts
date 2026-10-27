@@ -228,10 +228,11 @@ async function run() {
     // ======================================================================
     const first = [
       row("Camiseta Azul"),
-      row("Boné", { initialStock: null }),
-      row("Meia", {
+      row("Boné", {
         initialStock: { commandId: randomUUID(), quantity: 2, unitCost: null },
       }),
+      // without stock, so it can be deleted (a deleted product holds no stock)
+      row("Meia", { initialStock: null }),
     ];
     assert.deepEqual(await statuses(tenantA, first), [
       "created",
@@ -266,8 +267,13 @@ async function run() {
       [archivedId]
     );
     const meiaId = first[2]?.productId as string;
+    // archived, then deleted alone with the next version, as the tombstone guard of the database asks
     await admin.pool.query(
-      "UPDATE public.products SET archived_at = now(), deleted_at = now() WHERE id = $1",
+      "UPDATE public.products SET archived_at = now(), version = version + 1 WHERE id = $1",
+      [meiaId]
+    );
+    await admin.pool.query(
+      "UPDATE public.products SET deleted_at = now(), version = version + 1 WHERE id = $1",
       [meiaId]
     );
     assert.deepEqual(
