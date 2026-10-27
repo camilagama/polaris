@@ -158,6 +158,8 @@ export interface WorkerBindings {
    * staging isolation check enforces.
    */
   ROUTE_TIMING_ALL?: string;
+  /** Many rows in one call over `/rpc` (`kind: "bulk"`, the import), per session and per address: its own bucket. */
+  RPC_BULK_RATE_LIMIT?: RateLimitBinding;
   /** Writes over `/rpc`, per session and per address (one binding, the same limit for both). */
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
   /** Reads over `/rpc`, per address: wider than the session one, a whole store shares an address. */

@@ -133,6 +133,10 @@ describe("errors of the data", () => {
 
   it("an edit needs only the name: the stock is not edited there", () => {
     expect(productFormHasErrors({ ...emptyDraft, name: " " }, true)).toBe(true);
+    // a name of only characters of zero width shows empty, as the server takes it
+    expect(
+      productFormHasErrors({ ...emptyDraft, name: "\u200B\u2060" }, true)
+    ).toBe(true);
     expect(
       productFormHasErrors(
         { ...emptyDraft, name: "Boné", quantity: "abc" },
