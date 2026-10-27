@@ -49,6 +49,19 @@ describe("platform capabilities", () => {
     }
   });
 
+  it("declares the capability to mark a store as internal, held by the owner only", () => {
+    expect(PLATFORM_CAPABILITIES as readonly string[]).toContain(
+      "organization:classify"
+    );
+    expect(
+      hasPlatformCapability("platform_owner", "organization:classify")
+    ).toBe(true);
+    expect(
+      hasPlatformCapability("somebody_else", "organization:classify")
+    ).toBe(false);
+    expect(hasPlatformCapability("owner", "organization:classify")).toBe(false);
+  });
+
   it("declares the access log capability, held by the owner only", () => {
     expect(PLATFORM_CAPABILITIES as readonly string[]).toContain(
       "access_log:read"

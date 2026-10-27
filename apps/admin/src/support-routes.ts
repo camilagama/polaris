@@ -121,6 +121,13 @@ export interface SupportDependencies {
     grantId: string,
     bindings: AdminBindings
   ) => Promise<{ outcomeRecorded: boolean; revoked: boolean }>;
+  /** Marks or unmarks a store of Polaris itself (kept out of the activation funnel), audited; no case. */
+  classify: (
+    principalId: string,
+    organizationId: string,
+    internal: boolean,
+    bindings: AdminBindings
+  ) => Promise<{ changed: boolean; internal: boolean } | null>;
   suspend: (
     principalId: string,
     caseId: string,
@@ -479,6 +486,32 @@ export function supportRoutes(
         context.env
       );
       return context.json({ revoked });
+    }
+  );
+
+  routes.post(
+    "/organizations/:organizationId/classification",
+    requireCapability("organization:classify"),
+    async (context) => {
+      const organizationId = context.req.param("organizationId");
+      if (
+        organizationId.length > MAX_ID_LENGTH ||
+        controlCharacter(organizationId)
+      ) {
+        return notFound(context);
+      }
+      const body = await readBody(context);
+      if (!body || typeof body.internal !== "boolean") {
+        return invalid(context);
+      }
+      return context.json(
+        await dependencies.classify(
+          principalOf(context),
+          organizationId,
+          body.internal,
+          context.env
+        )
+      );
     }
   );
 

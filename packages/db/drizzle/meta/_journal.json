@@ -729,6 +729,13 @@
       "when": 1792984401466,
       "tag": "0104_indice_de_vendas_por_dia",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1793109138032,
+      "tag": "0105_funil_de_ativacao",
+      "breakpoints": true
     }
   ]
 }
