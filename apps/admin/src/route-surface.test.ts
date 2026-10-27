@@ -26,6 +26,7 @@ const NEVER = new Proxy(
 ) as unknown as AdminDependencies;
 const dependencies = {
   accessLog: NEVER,
+  activationFunnel: NEVER,
   refundWindow: NEVER,
   authenticate: () => {
     throw new Error("no token: never asked");
