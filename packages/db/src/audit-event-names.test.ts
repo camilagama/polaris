@@ -13,6 +13,12 @@ import { describe, expect, it } from "vitest";
  * `event_outbox` in the migrations must name the same ones (no type is written in the database and missing from the
  * domain, or the other way round). Log keys have no list in the code (each is a literal of a `logger` call), so there
  * is nothing to check for them here.
+ *
+ * Limits, said here so nobody trusts more than it does: the reader sees a CHECK written `CONSTRAINT "name" CHECK (...)`
+ * (what drizzle writes), not an unnamed one; the policies of the outbox are the union of what every migration wrote
+ * (a type that left the domain fails until the old policy is gone from the history, so it is a signal to look, not a
+ * proof of the final policy); the third audit table, `auth_security_audit_event`, types `event_type` with an enum, read
+ * from its CREATE TYPE and ADD VALUEs.
  */
 
 const EVENT_TYPE = /^[a-z][a-z_]*\.[a-z][a-z_]*$/;
@@ -191,6 +197,39 @@ function outboxTypesOfPolicies(migrations: readonly Migration[]): Set<string> {
   return types;
 }
 
+const AUTH_ENUM = "auth_security_audit_event_type";
+const AUTH_ENUM_CREATE = new RegExp(
+  String.raw`CREATE TYPE\s+(?:"?public"?\.)?"?${AUTH_ENUM}"?\s+AS ENUM\s*\(([^)]*)\)`,
+  "gi"
+);
+const AUTH_ENUM_ADD = new RegExp(
+  String.raw`ALTER TYPE\s+(?:"?public"?\.)?"?${AUTH_ENUM}"?\s+ADD VALUE\s+(?:IF NOT EXISTS\s+)?'([^']*)'`,
+  "gi"
+);
+
+/**
+ * The values of the enum that types `auth_security_audit_event_type` of the auth audit (an enum, not a CHECK), over
+ * every migration: Postgres never removes a value of an enum, so the union of the CREATE and of the ADD VALUEs is the
+ * final list.
+ */
+function authAuditTypes(migrations: readonly Migration[]): string[] {
+  const values: string[] = [];
+  for (const { sql } of migrations) {
+    const code = sql.replace(SQL_LINE_COMMENT, "");
+    for (const created of code.matchAll(AUTH_ENUM_CREATE)) {
+      values.push(
+        ...[...(created[1] ?? "").matchAll(QUOTED_LITERAL)].map(
+          (literal) => literal[1] ?? ""
+        )
+      );
+    }
+    for (const added of code.matchAll(AUTH_ENUM_ADD)) {
+      values.push(added[1] ?? "");
+    }
+  }
+  return values;
+}
+
 function offPattern(values: readonly string[]): string[] {
   return values.filter((value) => !EVENT_TYPE.test(value));
 }
@@ -204,7 +243,22 @@ const SHARED_ON_PURPOSE: Readonly<Record<string, string>> = {
 
 // Names that already stand in a merged migration and are off the pattern. Empty: none was found. A name added here
 // is "legado", with the reason, and goes to the body of the PR for the decision.
-const LEGACY_OFF_PATTERN: Readonly<Record<string, string>> = {};
+const LEGACY_AUTH_REASON =
+  "legado: value of the enum auth_security_audit_event_type, written before the convention (the auth audit is a log of snake_case facts of the sign-in, with no domain); renaming a value of an enum is a migration, out of this task, and goes to the body of the PR for the decision";
+const LEGACY_OFF_PATTERN: Readonly<Record<string, string>> = {
+  device_revoked: LEGACY_AUTH_REASON,
+  google_callback_failed: LEGACY_AUTH_REASON,
+  google_callback_succeeded: LEGACY_AUTH_REASON,
+  google_login_started: LEGACY_AUTH_REASON,
+  login_locked: LEGACY_AUTH_REASON,
+  login_unlocked: LEGACY_AUTH_REASON,
+  logout_failed: LEGACY_AUTH_REASON,
+  logout_succeeded: LEGACY_AUTH_REASON,
+  password_changed: LEGACY_AUTH_REASON,
+  password_reset_completed: LEGACY_AUTH_REASON,
+  password_set: LEGACY_AUTH_REASON,
+  unverified_user_deleted: LEGACY_AUTH_REASON,
+};
 
 const allMigrations = migrationsInJournalOrder();
 const checks = finalEventTypeChecks(allMigrations);
@@ -214,6 +268,13 @@ for (const [key, { values }] of checks) {
   for (const value of values) {
     auditNames.set(value, [...(auditNames.get(value) ?? []), key]);
   }
+}
+const authTypes = authAuditTypes(allMigrations);
+for (const value of authTypes) {
+  auditNames.set(value, [
+    ...(auditNames.get(value) ?? []),
+    `auth_security_audit_event.${AUTH_ENUM}`,
+  ]);
 }
 
 describe("the event types the migrations allow in the audit tables", () => {
@@ -237,6 +298,13 @@ describe("the event types the migrations allow in the audit tables", () => {
       expect(found?.values.length, key).toBeGreaterThan(20);
       expect(new Set(found?.values).size, key).toBe(found?.values.length);
     }
+  });
+
+  it("reads the enum of the auth audit, the third audit table, from its CREATE TYPE and its ADD VALUEs", () => {
+    expect(authTypes.length).toBeGreaterThan(10);
+    expect(new Set(authTypes).size).toBe(authTypes.length);
+    expect(authTypes).toContain("device_revoked");
+    expect(authTypes).toContain("unverified_user_deleted");
   });
 
   it("are all domain.action, but the legacy ones the list names", () => {
@@ -380,6 +448,17 @@ describe("the control cases, planted: the reader and the rules refuse them", () 
         body
       ).toThrow("not a list the reader parses");
     }
+  });
+
+  it("reads the enum of the auth audit and refuses a value of it that is off the pattern", () => {
+    const read = authAuditTypes([
+      {
+        name: "9000_enum",
+        sql: `CREATE TYPE "public"."${AUTH_ENUM}" AS ENUM('a.b', 'billing_x');--> statement-breakpoint\n-- ALTER TYPE "public"."${AUTH_ENUM}" ADD VALUE 'in_a_comment';--> statement-breakpoint\nALTER TYPE "public"."${AUTH_ENUM}" ADD VALUE IF NOT EXISTS 'Billing.X';--> statement-breakpoint\nALTER TYPE "public"."other_enum" ADD VALUE 'other.thing';`,
+      },
+    ]);
+    expect(read).toEqual(["a.b", "billing_x", "Billing.X"]);
+    expect(offPattern(read)).toEqual(["billing_x", "Billing.X"]);
   });
 
   it("finds a name shared by the audit and the outbox that no list allows", () => {

@@ -147,7 +147,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-closed-organization-readonly-gate.ts": {
     count: 10,
     reason:
-      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of hours or more from every boundary, no calendar day is worked out (the closure ages of 40, 80, 89 and 91 days against the 90-day wait)",
+      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of a day or more from every boundary (D is midnight in São Paulo, so the closest age is 88 days, not 89, whose margin goes down to 0 h), no calendar day is worked out (the closure ages of 40, 80, 88 and 91 days against the 90-day wait)",
   },
   "verify-daily-sales-gate.ts": {
     count: 1,
@@ -350,6 +350,15 @@ describe("the control cases, planted: the rule refuses them", () => {
     "new Date(undefined)": "const d = new Date(undefined);",
     "Temporal.Now": "const t = Temporal.Now.instant();",
     "the alias of Date": "const D = Date;",
+    "Date?.now()": "const t = Date?.now();",
+    "new globalThis.Date()": "const d = new globalThis.Date();",
+    "new (Date)()": "const d = new (Date)();",
+    "Reflect.construct(Date, [])": "const d = Reflect.construct(Date, []);",
+    "Date passed as a value": "run(Date);",
+    "Date passed as the second argument": "run(clock, Date);",
+    "Date taken apart": "let { now } = Date;",
+    "new Date(void 0)": "const d = new Date(void 0);",
+    "performance.timeOrigin": "const o = performance.timeOrigin;",
   };
   const harmless: Record<string, string> = {
     "a block comment": "/* new Date() */ const a = 1;",

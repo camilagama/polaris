@@ -765,10 +765,10 @@ async function run() {
       "not from D on"
     );
     const deadlineG = closureDeadlines(
-      new Date(Date.now() - 89 * 86_400_000),
+      new Date(Date.now() - 88 * 86_400_000),
       "America/Sao_Paulo"
     );
-    await age(orgG, new Date(Date.now() - 89 * 86_400_000));
+    await age(orgG, new Date(Date.now() - 88 * 86_400_000));
     assert.ok(deadlineG.deletableFrom.getTime() > Date.now());
     const caseG = await supportCase(orgG.organizationId);
     await owner.pool.query(
