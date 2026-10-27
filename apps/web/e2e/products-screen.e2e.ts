@@ -1069,7 +1069,7 @@ test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são
   await expect(repeated).toBeVisible();
 });
 
-test("variantes: 'Limpar SKU da variante padrão' no aviso limpa o SKU, o aviso some e o foco vai ao campo vazio", async ({
+test("variantes: 'Limpar SKU \"CAM-1\" da variante padrão' no aviso limpa o SKU, o aviso some e o foco vai ao campo vazio", async ({
   page,
 }) => {
   const skus: unknown[] = [];
@@ -1106,15 +1106,65 @@ test("variantes: 'Limpar SKU da variante padrão' no aviso limpa o SKU, o aviso 
   );
   await expect(warning).toBeVisible();
   await page
-    .getByRole("button", { name: "Limpar SKU da variante padrão" })
+    .getByRole("button", { name: 'Limpar SKU "CAM-1" da variante padrão' })
     .click();
   await expect(warning).toHaveCount(0);
+  // the action is said after it, naming the code that is gone
+  await expect(
+    page.getByText('SKU "CAM-1" apagado da variante padrão.')
+  ).toBeVisible();
   const sku = page.getByRole("textbox", { name: "SKU · Variante padrão" });
   await expect(sku).toHaveValue("");
   await expect(sku).toBeFocused();
   expect(skus).toMatchObject([{ sku: "", variantId: id(31) }]);
   // the option picked before the clear is still there, and the save of the variants is no longer held by the SKU
   await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
+});
+
+test("variantes: 'Salvar variantes' fica à vista acima do rodapé, no topo e no fim da rolagem", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: variantsOf,
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  const save = page.getByRole("button", { name: "Salvar variantes" });
+  await expect(save).toBeEnabled();
+  const body = page.locator('[data-slot="dialog-body"]');
+  const footer = page.locator('[data-slot="dialog-footer"]');
+  const expectNotCovered = async () => {
+    const box = await save.boundingBox();
+    const footerBox = await footer.boundingBox();
+    expect(box).not.toBeNull();
+    expect(footerBox).not.toBeNull();
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(
+      (footerBox?.y ?? 0) + 0.5
+    );
+    // what is at the centre of the button is the button: nothing is over it
+    expect(
+      await save.evaluate((element) => {
+        const { height, width, x, y } = element.getBoundingClientRect();
+        const top = document.elementFromPoint(x + width / 2, y + height / 2);
+        return top !== null && element.contains(top);
+      })
+    ).toBe(true);
+  };
+  const scrollBodyTo = (top: number) =>
+    body.evaluate((element, value) => {
+      element.scrollTop = value;
+    }, top);
+  await scrollBodyTo(0);
+  await expectNotCovered();
+  await scrollBodyTo(100_000);
+  await expectNotCovered();
 });
 
 test("variantes digitadas voltam depois do Esc e do Fechar; Cancelar as descarta", async ({
@@ -1278,11 +1328,17 @@ test("trocar de aba não perde o rascunho de nenhuma aba e não cria passo no hi
   await page.getByRole("checkbox", { name: "Cor" }).click();
   await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
   await dialog.getByRole("tab", { name: "Imagens" }).click();
+  // the picker is a button in Portuguese, and the name of the file is said beside it
+  await expect(
+    page.getByRole("button", { exact: true, name: "Escolher imagem" })
+  ).toBeVisible();
+  await expect(page.getByText("Nenhuma imagem escolhida")).toBeVisible();
   await page.getByLabel("Escolher imagem").setInputFiles({
     buffer: solidPng(900, 600),
     mimeType: "image/png",
     name: "foto.png",
   });
+  await expect(page.getByText("foto.png", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Enviar imagem" })
   ).toBeEnabled();

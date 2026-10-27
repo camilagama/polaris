@@ -24,14 +24,7 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/ui/field";
-import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
 import { Label } from "@/ui/label";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
@@ -64,6 +57,7 @@ import {
   describeCrop,
 } from "./media-crop-model";
 import { ProductMediaCropField } from "./product-media-crop";
+import { ProductMediaFilePicker } from "./product-media-file-picker";
 import {
   type ConfirmKind,
   type ConfirmRequest,
@@ -237,6 +231,7 @@ export function ProductMediaPanel({
   const focusRequest = useRef<FocusRequest | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileButtonRef = useRef<HTMLButtonElement | null>(null);
   const listHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const imagesBusy = running !== null || isUploading;
 
@@ -295,8 +290,8 @@ export function ProductMediaPanel({
     }
     focusRequest.current = null;
     if (request.type === "file") {
-      fileInputRef.current?.focus();
-      fileInputRef.current?.scrollIntoView?.({ block: "center" });
+      fileButtonRef.current?.focus();
+      fileButtonRef.current?.scrollIntoView?.({ block: "center" });
     } else if (request.type === "heading") {
       listHeadingRef.current?.focus();
     } else if (request.type === "keep") {
@@ -779,18 +774,13 @@ export function ProductMediaPanel({
 
       <form className="grid gap-4" onSubmit={handleUpload}>
         <Field>
-          <FieldLabel htmlFor="product-media-file">Escolher imagem</FieldLabel>
-          <InputGroup>
-            <InputGroupInput
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-              className="cursor-pointer file:me-3 file:cursor-pointer file:border-0 file:bg-transparent file:p-0 file:font-medium file:text-sm"
-              disabled={isPreparing || imagesBusy}
-              id="product-media-file"
-              onChange={handleFileChange}
-              ref={fileInputRef}
-              type="file"
-            />
-          </InputGroup>
+          <ProductMediaFilePicker
+            buttonRef={fileButtonRef}
+            disabled={isPreparing || imagesBusy}
+            fileName={preparedFile?.name ?? null}
+            inputRef={fileInputRef}
+            onChange={handleFileChange}
+          />
           <FieldDescription>
             JPEG, PNG e WebP; HEIC do iPhone é convertido neste aparelho. Até 20
             MB.

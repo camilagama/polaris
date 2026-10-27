@@ -208,6 +208,16 @@ export function duplicateSkuMessage(sku: string): string {
   return `O SKU ${sku.trim()} já está em uso por outra variante. Use outro código.`;
 }
 
+/** The button of the warning names the SKU it erases, so nobody clears a code without seeing which. */
+export function clearDefaultSkuLabel(sku: string): string {
+  return `Limpar SKU "${sku}" da variante padrão`;
+}
+
+/** Said after the button: the code that is gone (the field of the variant is empty and has the focus). */
+export function clearedDefaultSkuNotice(sku: string): string {
+  return `SKU "${sku}" apagado da variante padrão.`;
+}
+
 export function variantSkuErrorMessage(error: unknown): string {
   if (rpcErrorCode(error) === "CONFLICT") {
     return "O produto mudou. Atualize as variantes antes de tentar novamente.";
