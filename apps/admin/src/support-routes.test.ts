@@ -59,6 +59,9 @@ function support(
           reissue: 1,
         })
     ),
+    classify: vi.fn((_principal, _organization, internal) =>
+      Promise.resolve({ changed: true, internal })
+    ),
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
     // the purge confirms the organization named is the case's own (org_1)
     detail: vi.fn(() =>
@@ -572,6 +575,63 @@ describe("suspension and billing commands", () => {
         .status
     ).toBe(403);
     expect(other.support.suspend).not.toHaveBeenCalled();
+  });
+
+  it("marks and unmarks a store as internal, with the operator from the login and no case", async () => {
+    const { send, support: calls } = setup();
+    const marked = await send(
+      "POST",
+      "/api/organizations/org_1/classification",
+      { internal: true }
+    );
+    expect(marked.status).toBe(200);
+    expect(await marked.json()).toEqual({ changed: true, internal: true });
+    expect(calls.classify).toHaveBeenCalledWith(
+      principal.id,
+      "org_1",
+      true,
+      bindings
+    );
+    const unmarked = await send(
+      "POST",
+      "/api/organizations/org_1/classification",
+      { internal: false }
+    );
+    expect(await unmarked.json()).toEqual({ changed: true, internal: false });
+    for (const body of [{}, { internal: "true" }, { internal: 1 }]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+      const refused = await send(
+        "POST",
+        "/api/organizations/org_1/classification",
+        body
+      );
+      expect(refused.status).toBe(400);
+    }
+    expect(calls.classify).toHaveBeenCalledTimes(2);
+    const other = setup({}, "somebody_else");
+    expect(
+      (
+        await other.send("POST", "/api/organizations/org_1/classification", {
+          internal: true,
+        })
+      ).status
+    ).toBe(403);
+    expect(other.support.classify).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 to a store the database does not know", async () => {
+    const { send } = setup({
+      classify: vi.fn(() =>
+        Promise.reject(new InvalidSupportRequestError("unknown_organization"))
+      ),
+    });
+    const response = await send(
+      "POST",
+      "/api/organizations/nope/classification",
+      { internal: true }
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "unknown_organization" });
   });
 
   it("schedules the purge of a case's organization, with the operator from the login", async () => {

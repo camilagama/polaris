@@ -53,3 +53,29 @@ export async function readOrganizationDiagnostics(
   );
   return (rows[0]?.result ?? null) as RawDiagnostics | null;
 }
+
+/** How many weeks back the activation funnel may go: the only choice it takes (ADR 0071 amended). */
+export const ACTIVATION_FUNNEL_MAX_WEEKS = 26;
+
+/**
+ * The activation funnel of the stores (corte 2.4, ADR 0071 amended): counts by weekly cohort, suppressed under 5
+ * stores, with no store, person, amount or individual date. Returned as the database wrote it; the route validates
+ * it against its closed contract.
+ */
+export async function readActivationFunnel(
+  client: AdminQueryable,
+  weeks: number
+): Promise<unknown> {
+  if (
+    !Number.isInteger(weeks) ||
+    weeks < 1 ||
+    weeks > ACTIVATION_FUNNEL_MAX_WEEKS
+  ) {
+    throw new RangeError("invalid_weeks");
+  }
+  const { rows } = await client.query(
+    "SELECT public.admin_activation_funnel($1) AS result",
+    [weeks]
+  );
+  return rows[0]?.result ?? null;
+}

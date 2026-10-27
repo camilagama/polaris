@@ -190,7 +190,7 @@ export const platformAuditEvents = pgTable(
     ),
     check(
       "platform_audit_events_type_allowed",
-      sql`${table.eventType} IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read')`
+      sql`${table.eventType} IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal')`
     ),
     check(
       "platform_audit_events_detail_allowed",
@@ -232,6 +232,45 @@ export const platformAuditEvents = pgTable(
               AND EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = platform_audit_events.organization_id AND purge_scope.status = 'purge_pending')
               AND EXISTS (SELECT 1 FROM public.organization_purges AS purge_plan WHERE purge_plan.organization_id = platform_audit_events.organization_id
                             AND purge_plan.trigger = 'closure_period' AND purge_plan.purged_at IS NULL)))`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The stores of Polaris itself (QA, the owner's and the team's), kept out of the activation funnel (corte 2.4,
+ * ADR 0071 amended). A table of the platform, not a column of `organizations`: the tenant reads and inserts rows
+ * there, and this table has no grant to the tenant, billing or catalog roles. Only the Admin owner reads it, and
+ * only `admin_classify_organization` (audited) or the database owner (the QA seed) writes it. No personal data:
+ * the store, the instant and the operator who marked it (none when the seed did). It lives and dies with the row
+ * of the organization (cascade), which the purge keeps.
+ */
+export const platformInternalOrganizations = pgTable(
+  "platform_internal_organizations",
+  {
+    markedAt: timestamp("marked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    /** Null when the database owner marked it (the QA seed), never from the Admin. */
+    markedBy: uuid("marked_by").references(() => platformPrincipals.id),
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+  },
+  () => [
+    pgPolicy("platform_internal_organizations_admin_owner_select", {
+      for: "select",
+      to: ownerRole,
+      using: sql`true`,
+    }),
+    pgPolicy("platform_internal_organizations_admin_owner_insert", {
+      for: "insert",
+      to: ownerRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("platform_internal_organizations_admin_owner_delete", {
+      for: "delete",
+      to: ownerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();

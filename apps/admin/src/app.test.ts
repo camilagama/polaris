@@ -47,6 +47,7 @@ function noOperations() {
     revokeEntitlement: vi.fn(() =>
       Promise.resolve({ outcomeRecorded: true, revoked: false })
     ),
+    classify: vi.fn(() => Promise.resolve(null)),
     suspend: vi.fn(() => Promise.resolve(null)),
   };
 }

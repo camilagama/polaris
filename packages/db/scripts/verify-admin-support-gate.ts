@@ -46,8 +46,10 @@ const expectedDatabase =
 const issuer = "https://polaris-support-gate.cloudflareaccess.com";
 
 const ADMIN_FUNCTIONS = [
+  "admin_activation_funnel",
   "admin_audit_billing_command",
   "admin_cancel_organization_purge",
+  "admin_classify_organization",
   "admin_close_support_case",
   "admin_dismiss_closure_notice",
   "admin_grant_tenant_access",

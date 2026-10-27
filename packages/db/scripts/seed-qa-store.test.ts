@@ -3,6 +3,7 @@ import {
   assertOptions,
   assertQaTarget,
   MAX_SEED_DAYS,
+  markQaStoreInternal,
   type QueryClient,
   type SeedOptions,
 } from "./seed-qa-store";
@@ -198,5 +199,29 @@ describe("the seed options", () => {
     ["fractional variants", { variantsWithoutStock: 1.5 }],
   ] as const)("refuses %s before anything is written", (_label, broken) => {
     expect(() => assertOptions(options(broken))).toThrow("seed refused");
+  });
+});
+
+describe("the QA store is kept out of the activation funnel", () => {
+  it("marks the store as internal with no operator, and marking again changes nothing", async () => {
+    const statements: { text: string; values?: unknown[] | undefined }[] = [];
+    let marked = false;
+    const client: QueryClient = {
+      query: (text, values) => {
+        statements.push({ text, values });
+        const inserted = !marked;
+        marked = true;
+        return Promise.resolve({ rowCount: inserted ? 1 : 0, rows: [] });
+      },
+    };
+    expect(await markQaStoreInternal(client, ORG)).toBe(true);
+    expect(await markQaStoreInternal(client, ORG)).toBe(false);
+    expect(statements).toHaveLength(2);
+    for (const statement of statements) {
+      expect(statement.text).toBe(
+        "INSERT INTO public.platform_internal_organizations (organization_id) VALUES ($1) ON CONFLICT (organization_id) DO NOTHING"
+      );
+      expect(statement.values).toEqual([ORG]);
+    }
   });
 });

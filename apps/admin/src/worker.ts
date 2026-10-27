@@ -8,6 +8,7 @@ import {
 import {
   auditBillingCommand,
   cancelOrganizationPurge,
+  classifyOrganization,
   closeSupportCase,
   dismissClosureNotice,
   grantTenantAccess,
@@ -331,6 +332,10 @@ const dependencies: AdminDependencies = {
     suspend: (principalId, caseId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         suspendOrganization(client, principalId, caseId)
+      ),
+    classify: (principalId, organizationId, internal, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        classifyOrganization(client, principalId, organizationId, internal)
       ),
     open: (principalId, input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>

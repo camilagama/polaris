@@ -239,12 +239,16 @@ async function run() {
       product_media: ["organization_id", "product_id"],
       product_variants: ["organization_id", "product_id"],
       products: ["archived_at", "deleted_at", "id", "organization_id"],
+      // the activation funnel (0105, ADR 0071 amended): the server's instant of each sale and its store, nothing else
+      sales: ["confirmed_at", "organization_id"],
       sync_commands: [
         "organization_id",
         "outcome_code",
         "outcome_status",
         "received_at",
       ],
+      // the sign-ups of the activation funnel (0105): when and whether verified, never the e-mail, the name or the image
+      user: ["created_at", "email_verified", "id"],
     };
     // the tables the Admin's own functions keep (cases, grants, audit) are the owner's to write, and the
     // customers and principals are read for the support functions (ADR 0072)
@@ -312,6 +316,8 @@ async function run() {
       // every cancellation of a purge with its reason: the cancel function appends, nothing changes a row
       organization_purge_cancellations: [] as string[],
       platform_audit_events: [] as string[],
+      // the stores of Polaris itself, kept out of the funnel (0105): marked and unmarked, never changed
+      platform_internal_organizations: [] as string[],
       privacy_case_actions: [] as string[],
       privacy_cases: [
         "decision",
@@ -385,6 +391,9 @@ async function run() {
         "organization_purges:SELECT",
         "platform_audit_events:INSERT",
         "platform_audit_events:SELECT",
+        "platform_internal_organizations:DELETE",
+        "platform_internal_organizations:INSERT",
+        "platform_internal_organizations:SELECT",
         "privacy_case_actions:INSERT",
         "privacy_case_actions:SELECT",
         "privacy_cases:INSERT",
@@ -395,7 +404,7 @@ async function run() {
         "tenant_access_grants:INSERT",
         "tenant_access_grants:SELECT",
       ],
-      "table-level privileges only on the Admin's own tables (and read on the dead-letter queue), and never to change or delete"
+      "table-level privileges only on the Admin's own tables (and read on the dead-letter queue), and never to change or delete but the internal-store marker, which is unmarked by deleting its row"
     );
     const memberships = await owner.pool.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM pg_auth_members WHERE member = 'polaris_admin_owner'::regrole OR (roleid = 'polaris_admin_owner'::regrole AND (set_option OR inherit_option))"
@@ -432,6 +441,7 @@ async function run() {
       organization_purges: ["INSERT", "SELECT", "UPDATE"],
       organizations: ["SELECT", "UPDATE"],
       platform_audit_events: ["INSERT", "SELECT"],
+      platform_internal_organizations: ["DELETE", "INSERT", "SELECT"],
       privacy_case_actions: ["INSERT", "SELECT"],
       privacy_cases: ["INSERT", "SELECT", "UPDATE"],
       support_cases: ["INSERT", "SELECT", "UPDATE"],
@@ -444,8 +454,10 @@ async function run() {
     assert.deepEqual(
       runnable.rows.map((row) => row.name),
       [
+        "admin_activation_funnel",
         "admin_audit_billing_command",
         "admin_cancel_organization_purge",
+        "admin_classify_organization",
         "admin_close_support_case",
         "admin_dismiss_closure_notice",
         "admin_grant_tenant_access",
