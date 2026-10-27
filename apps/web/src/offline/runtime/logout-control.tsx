@@ -175,7 +175,7 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
         </p>
       ) : null}
       {blocked ? (
-        <div className="outline-none" ref={blockedRef} tabIndex={-1}>
+        <div className="focus-ring" ref={blockedRef} tabIndex={-1}>
           <LogoutDialog
             blocked={blocked}
             busy={busy}

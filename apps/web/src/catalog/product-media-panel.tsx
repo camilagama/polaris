@@ -888,7 +888,7 @@ export function ProductMediaPanel({
         className="grid gap-3 border-border border-t pt-4"
       >
         <h3
-          className="text-section outline-none"
+          className="focus-ring text-section"
           id="product-media-list-heading"
           ref={listHeadingRef}
           tabIndex={-1}
