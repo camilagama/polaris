@@ -103,8 +103,8 @@ export async function readActivationFunnel(
 
 /**
  * How long the funnel may run before the database cancels it (SQLSTATE 57014): it must not hold the database. The
- * gate measured about 200 ms with 1,000 stores more and 50,000 sales (CI, 27/10); 2 s leaves ten times that and still frees the connection well
- * before the connection's own 5 s.
+ * gate measured about 200 ms with 1,000 stores more and 50,000 sales (CI, 27/10); 2 s leaves ten times that and still
+ * frees the connection well before the connection's own 5 s.
  */
 export const ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS = 2000;
 const QUERY_CANCELED = "57014";
