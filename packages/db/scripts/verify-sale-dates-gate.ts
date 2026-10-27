@@ -9,6 +9,7 @@ import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { createDatabase } from "../src/client";
 import { getSale, listSales } from "../src/sale-query-repository";
 import { confirmSale } from "../src/sale-repository";
+import { runClock, shiftDay, storeDay } from "./gate-clock";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -29,14 +30,6 @@ const minutes = 60_000;
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
 type ErrorClass = abstract new (...args: never[]) => Error;
-
-/** Shifts a `YYYY-MM-DD` calendar date by whole days. */
-function shiftDay(day: string, days: number): string {
-  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + days))
-    .toISOString()
-    .slice(0, 10);
-}
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
@@ -212,8 +205,8 @@ async function run() {
       cost: "10.00",
       quantity: 100,
     });
-    const today = calendarDateInTimeZone(new Date(), saoPaulo);
-    const todayTokyo = calendarDateInTimeZone(new Date(), tokyo);
+    const today = storeDay(runClock, 0, saoPaulo);
+    const todayTokyo = storeDay(runClock, 0, tokyo);
 
     // ------------------------------- 1. the commercial date and its evidence
     const beforeSale = Date.now();

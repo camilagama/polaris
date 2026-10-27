@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { InventoryOccurredInFutureError } from "@polaris/domain/inventory/inventory";
-import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { SaleCancellationCommandConflictError } from "@polaris/domain/sales/sale-cancellation";
 import { SaleReturnCommandConflictError } from "@polaris/domain/sales/sale-return";
 import { sql } from "drizzle-orm";
@@ -22,6 +21,7 @@ import {
   TENANT_STATEMENT_TIMEOUT_MS,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { runClock, storeDay } from "./gate-clock";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -118,7 +118,7 @@ async function run() {
     });
     concurrent = concurrentDatabase;
     const rt = { adminPool: admin.pool, db: runtimeDatabase.db };
-    const today = calendarDateInTimeZone(new Date(), "America/Sao_Paulo");
+    const today = storeDay(runClock);
 
     const balance = async (tenant: TenantFixture, variantId: string) => {
       const result = await admin.pool.query<{
@@ -523,9 +523,7 @@ async function run() {
     );
 
     // ------------------ 7. operator-dated stock commands are never future
-    const tomorrow = new Date(Date.now() + 36 * 3_600_000)
-      .toISOString()
-      .slice(0, 10);
+    const tomorrow = storeDay(runClock, 1);
     await assert.rejects(
       () =>
         receive(tenantA, liveProduct.variantId, 1, { occurredOn: tomorrow }),

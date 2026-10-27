@@ -36,6 +36,7 @@ import {
   TenantAuthorizationError,
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
+import { runClock, storeDay } from "./gate-clock";
 import {
   createProductFixture,
   createTenantFixture,
@@ -1360,7 +1361,7 @@ async function run() {
       ordinal: 1,
       sizeBytes: 10,
     });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = storeDay(runClock);
     await privacyClient.recordDataExportFile(
       fileFor(askedE.id, orgE.organizationId, `polaris-dados-${today}.zip`)
     );
