@@ -171,3 +171,75 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
     25_000
   );
 });
+
+const PERIOD_SUMMARY_PATH = "/rpc/report/periodSummary";
+
+/**
+ * Journey 7b: the Resultado is read once in front of the person, and an expense written in the Despesas tab (a
+ * second tab of the same page, no reload) is in its "(−) Despesas do período" when the person comes back, to the cent,
+ * with no press on "Atualizar". With nothing written, coming back reads nothing again.
+ */
+test("despesa registrada na aba Despesas aparece no Resultado ao voltar, sem Atualizar", async ({
+  browser,
+}, testInfo) => {
+  const zone = extremeTimeZone(runT0());
+  const journey = await openJourney(browser, testInfo, "despesa-resultado", {
+    organization: { timezone: zone },
+  });
+  const { page } = journey;
+  const today = localDate(runT0(), zone);
+  const categoryName = "Energia";
+  let summaryReads = 0;
+  page.on("request", (request) => {
+    if (request.url().includes(PERIOD_SUMMARY_PATH)) {
+      summaryReads += 1;
+    }
+  });
+  const register = async (amount: string, description: string) => {
+    await page
+      .getByRole("button", { exact: true, name: "Nova despesa" })
+      .click();
+    const form = page.getByRole("dialog", { name: "Nova despesa" });
+    await form.getByLabel("Valor (R$)").fill(amount);
+    await choose(page, form, "Categoria", categoryName);
+    await pickDate(form, "Data de competência", today);
+    await form.getByLabel("Descrição").fill(description);
+    await form.getByRole("button", { name: "Registrar despesa" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  };
+  const expectExpensesOfPeriod = (expected: number) =>
+    expect
+      .poll(async () =>
+        cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())
+      )
+      .toBe(expected);
+
+  // the page opens on the Despesas tab: the Resultado was read there, with nothing in the month
+  await page.goto("/expenses");
+  await addCategory(page, categoryName);
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await register("1.234,56", "Conta de luz");
+
+  const tabs = page.getByRole("tablist", {
+    name: "Resultado, metas e despesas",
+  });
+  await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
+  await expect(chainValue(page, EXPENSES_OF_PERIOD)).toBeVisible();
+  await expectExpensesOfPeriod(123_456);
+
+  // a second expense, written from the other tab: the figure is the sum, not the one from before
+  await tabs.getByRole("tab", { exact: true, name: "Despesas" }).click();
+  await register("100,00", "Conta de água");
+  await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
+  await expectExpensesOfPeriod(133_456);
+
+  // nothing written: going to another tab and back asks the server for nothing
+  await page.waitForLoadState("networkidle");
+  const before = summaryReads;
+  await tabs.getByRole("tab", { exact: true, name: "Metas" }).click();
+  await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
+  await expect(chainValue(page, EXPENSES_OF_PERIOD)).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(summaryReads).toBe(before);
+});

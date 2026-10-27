@@ -299,10 +299,13 @@ export function DashboardPage() {
     [selection, today]
   );
   const copyMonth = copyMonthOf(selection.preset, period);
+  const [tab, handleTab] = useScreenTab("dashboard", RESULT_TABS);
+  // an expense written in the Despesas tab makes the read old: the Resultado reads it again when it is back in front
   const { refresh, state } = usePeriodSummary(
     organizationId,
     period,
-    copyMonth
+    copyMonth,
+    tab === "resultado"
   );
   // the period before is read only after the server answered for the period asked, with figures to compare
   const answered =
@@ -338,7 +341,6 @@ export function DashboardPage() {
   const [initialTab] = useState(
     () => requestedTab("dashboard", window.location.search).value
   );
-  const [tab, handleTab] = useScreenTab("dashboard", RESULT_TABS);
   // before the effects of the form dialog `?meta=nova` opens: on a phone it pushes its entry over this address
   useLayoutEffect(() => {
     // the links of the Início open the Metas tab: the address keeps it from now on
