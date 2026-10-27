@@ -524,9 +524,8 @@ export function ProductVariantConfigurationForm({
         </Alert>
       ) : null}
 
-      <div className="flex min-[30rem]:justify-end">
+      <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
         <Button
-          className="max-[29.99rem]:w-full"
           disabled={!validation.canAdd || isPending}
           onClick={handleAddCombination}
           type="button"
@@ -535,13 +534,7 @@ export function ProductVariantConfigurationForm({
           <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
           Adicionar combinação
         </Button>
-      </div>
-      {/* stuck to the bottom of the body that scrolls: on a short screen the fixed footer of the dialog takes the end of
-          the page, and this button stays above it, in view, wherever the form is scrolled to (the -bottom-4 is the
-          padding of the body, which a sticky box keeps inside: without it the page shows under the button) */}
-      <div className="sticky -bottom-4 z-10 flex bg-popover pt-2 pb-2 min-[30rem]:justify-end">
         <Button
-          className="max-[29.99rem]:w-full"
           disabled={!validation.canSubmit || defaultVariantHasSku || isPending}
           type="submit"
         >

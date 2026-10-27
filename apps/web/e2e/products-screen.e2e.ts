@@ -1121,7 +1121,7 @@ test("variantes: 'Limpar SKU \"CAM-1\" da variante padrão' no aviso limpa o SKU
   await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
 });
 
-test("variantes: 'Salvar variantes' fica à vista acima do rodapé, no topo e no fim da rolagem", async ({
+test("variantes: 'Salvar variantes' se alcança acima do rodapé, no fim da rolagem, a 320, 360 e 1280 px", async ({
   page,
 }) => {
   await openServerScreen(page, {
@@ -1161,24 +1161,22 @@ test("variantes: 'Salvar variantes' fica à vista acima do rodapé, no topo e no
     body.evaluate((element, value) => {
       element.scrollTop = value;
     }, top);
-  const expectAtBothEnds = async () => {
-    // the form is longer than the body: without the stuck row the button would be out of sight at the top
+  // at the end of the scroll the button is reached: above the fixed footer, with nothing over it
+  const expectReachable = async () => {
     expect(
       await body.evaluate(
         (element) => element.scrollHeight - element.clientHeight
       )
     ).toBeGreaterThan(0);
-    await scrollBodyTo(0);
-    await expectNotCovered();
     await scrollBodyTo(100_000);
     await expectNotCovered();
   };
   await page.setViewportSize({ height: 740, width: 360 });
-  await expectAtBothEnds();
+  await expectReachable();
   await page.setViewportSize({ height: 740, width: 320 });
-  await expectAtBothEnds();
+  await expectReachable();
   await page.setViewportSize({ height: 800, width: 1280 });
-  await expectAtBothEnds();
+  await expectReachable();
 });
 
 test("variantes digitadas voltam depois do Esc e do Fechar; Cancelar as descarta", async ({
