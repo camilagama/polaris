@@ -1,6 +1,7 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { StaticOrganizationProvider } from "../lib/current-organization";
 import { ProductVariantConfigurationForm } from "./product-variants-form";
 import { emptyConfigurationDraft } from "./product-variants-model";
 
@@ -27,16 +28,20 @@ const configuration = (sku: string | null) => ({
 
 function draw(sku: string | null) {
   return renderToStaticMarkup(
-    <ProductVariantConfigurationForm
-      configuration={configuration(sku)}
-      draft={{ ...emptyConfigurationDraft, selectedOptions: ["color"] }}
-      onConfigured={noop}
-      onConflict={noop}
-      onDraftChange={noop}
-      onSkuCleared={noop}
-      organizationId="o1"
-      product={{ id: "p1" } as ProductReadModel}
-    />
+    <StaticOrganizationProvider
+      organization={{ id: "o1", name: "Loja", role: "owner", timezone: "UTC" }}
+    >
+      <ProductVariantConfigurationForm
+        configuration={configuration(sku)}
+        draft={{ ...emptyConfigurationDraft, selectedOptions: ["color"] }}
+        onConfigured={noop}
+        onConflict={noop}
+        onDraftChange={noop}
+        onSkuCleared={noop}
+        organizationId="o1"
+        product={{ id: "p1" } as ProductReadModel}
+      />
+    </StaticOrganizationProvider>
   );
 }
 

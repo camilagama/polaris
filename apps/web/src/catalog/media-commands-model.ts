@@ -127,6 +127,8 @@ const networkMessage =
   "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro.";
 
 export interface MediaFailure {
+  /** The plan's limit that refused the image (corte 1.6, L2 and L3): the way to the Pro goes with the text. */
+  limit?: "images" | "productImages";
   message: string;
   /** The list on screen may be out of date: fetch it again. */
   reloadList: boolean;
@@ -209,12 +211,6 @@ function codeMessage(code: string): MediaFailure | null {
           "Este produto ou esta imagem não foi encontrado. Recarregamos a lista.",
         reloadList: true,
       };
-    case "entitlement_limit_reached":
-      return {
-        message:
-          "Seu plano atingiu o limite de imagens. Remova uma imagem para liberar um lugar e envie de novo.",
-        reloadList: true,
-      };
     case "product_media_limit":
       return {
         message:
@@ -261,6 +257,32 @@ function codeMessage(code: string): MediaFailure | null {
   }
 }
 
+/** The plan's limit of the images of the store (L2 of the corte 1.6). */
+export const STORE_IMAGES_LIMIT_REACHED =
+  "Seu plano chegou ao limite de imagens da loja. Remova uma imagem para liberar um lugar e envie de novo.";
+
+/** The plan's limit of the images of one product (L3): only an image of this product frees its place. */
+export const PRODUCT_IMAGES_LIMIT_REACHED =
+  "Este produto chegou ao limite de imagens do seu plano. Remova uma imagem dele para liberar um lugar e envie de novo.";
+
+/**
+ * The plan's limit, told apart by the `limit` the Worker sends: the product's own (`images.per_product.max`) or the
+ * store's (`images.active.max`, and a refusal that names none, as before).
+ */
+function limitFailure(limit: string | null): MediaFailure {
+  return limit === "images.per_product.max"
+    ? {
+        limit: "productImages",
+        message: PRODUCT_IMAGES_LIMIT_REACHED,
+        reloadList: true,
+      }
+    : {
+        limit: "images",
+        message: STORE_IMAGES_LIMIT_REACHED,
+        reloadList: true,
+      };
+}
+
 /**
  * Turns a failed media request into text for the person, never a raw code.
  * Errors that are not HTTP failures from the media client (domain checks on the
@@ -274,6 +296,9 @@ export function describeMediaFailure(
     return { message: sessionEndedMessage(context), reloadList: false };
   }
   if (error instanceof MediaUploadHttpError) {
+    if (error.code === "entitlement_limit_reached") {
+      return limitFailure(error.limit);
+    }
     return (
       codeMessage(error.code) ?? {
         message: defaultMessage(context),

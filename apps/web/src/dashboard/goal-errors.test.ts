@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { goalErrorMessage } from "./goal-errors";
+import {
+  GOAL_LIMIT_CANCEL_HINT,
+  GOAL_LIMIT_REACHED,
+  goalErrorMessage,
+} from "./goal-errors";
+
+/** Trying again never frees a place, and the text has no number. */
+const NOT_IN_LIMIT_TEXT = /Tente novamente|\d/;
 
 describe("goalErrorMessage", () => {
   it("explains the codes every goal request can fail with", () => {
@@ -39,6 +46,26 @@ describe("goalErrorMessage", () => {
     );
     expect(message).toContain("pausada");
     expect(message).not.toContain("mudou em outra solicitação");
+  });
+
+  it("says the plan's limit of goals on create, never 'try again' (L5 of the corte 1.6, AC-4)", () => {
+    const limit = {
+      code: "CONFLICT",
+      data: { reason: "entitlement_limit_reached" },
+    };
+    expect(goalErrorMessage(limit, "create")).toBe(GOAL_LIMIT_REACHED);
+    expect(GOAL_LIMIT_REACHED).toBe(
+      "Seu plano chegou ao limite de metas em andamento. Nada foi criado."
+    );
+    expect(goalErrorMessage(limit, "create")).not.toMatch(NOT_IN_LIMIT_TEXT);
+    // the paused goal keeps its text
+    expect(
+      goalErrorMessage(
+        { code: "CONFLICT", data: { reason: "goal_paused_by_plan" } },
+        "update"
+      )
+    ).toContain("está pausada");
+    expect(GOAL_LIMIT_CANCEL_HINT).toBe("Cancele uma meta para abrir lugar.");
   });
 
   it("explains a stale version or a goal that is no longer active", () => {

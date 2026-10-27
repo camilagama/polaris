@@ -17,6 +17,20 @@ export function replaceAddress(next: string): void {
   window.dispatchEvent(new Event(ADDRESS_EVENT));
 }
 
+/**
+ * Opens another screen of the app with no load of the page (corte 1.6, AC-7): a step in the history, so "voltar" comes
+ * back, and the shell draws the screen of the new address. What lives in memory (a draft kept by Esc) stays.
+ */
+export function navigateInApp(next: string): void {
+  window.history.pushState(null, "", next);
+  window.dispatchEvent(new Event(ADDRESS_EVENT));
+  window.scrollTo({ top: 0 });
+  // the link that was clicked left with the screen: the focus starts again at the content, as on a load of the page
+  window.setTimeout(() => {
+    document.getElementById("conteudo")?.focus({ preventScroll: true });
+  }, 0);
+}
+
 function subscribe(onChange: () => void): () => void {
   window.addEventListener(ADDRESS_EVENT, onChange);
   window.addEventListener("popstate", onChange);
