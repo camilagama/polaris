@@ -56,7 +56,7 @@ function SkuRow({
   variant,
 }: SkuRowProps) {
   const [sku, setSku] = useState(variant.sku ?? "");
-  // a SKU saved from elsewhere (the warning's "Limpar SKU da variante padrão") shows in the field: that button clears
+  // a SKU saved from elsewhere (the warning's "Limpar SKU … da variante padrão") shows in the field: that button clears
   // it; a reload of the variants draws the rows again, so nothing typed is kept across one anyway
   const [savedSku, setSavedSku] = useState(variant.sku);
   if (savedSku !== variant.sku) {

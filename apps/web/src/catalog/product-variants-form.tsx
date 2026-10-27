@@ -18,6 +18,8 @@ import { useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField } from "./product-fields";
 import {
+  clearDefaultSkuLabel,
+  clearedDefaultSkuNotice,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
   MAX_VARIANTS,
@@ -206,6 +208,8 @@ export function ProductVariantConfigurationForm({
   const [saveError, setSaveError] = useState<string | null>(null);
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
+  // what the warning's button did, said after it: the SKU that was erased
+  const [clearedNotice, setClearedNotice] = useState<string | null>(null);
   // picked options, typed values or combinations that were not saved yet
   const unsaved = !isConfigurationDraftEmpty({
     selectedOptions,
@@ -235,6 +239,7 @@ export function ProductVariantConfigurationForm({
   );
   const defaultVariantHasSku =
     defaultVariant !== undefined && defaultVariant.sku !== null;
+  const defaultSku = defaultVariant?.sku ?? null;
 
   const handleToggleOption = useCallback(
     (name: ProductVariantOptionName, isSelected: boolean) => {
@@ -256,6 +261,7 @@ export function ProductVariantConfigurationForm({
         })
       );
       setSaveError(null);
+      setClearedNotice(null);
     },
     []
   );
@@ -354,8 +360,10 @@ export function ProductVariantConfigurationForm({
     if (!defaultVariant || isPending) {
       return;
     }
+    const clearedSku = defaultVariant.sku;
     setIsPending(true);
     setClearError(null);
+    setClearedNotice(null);
     try {
       const result = await orpcClient.product.setVariantSku({
         expectedVersion: configuration.productVersion,
@@ -365,6 +373,9 @@ export function ProductVariantConfigurationForm({
         variantId: defaultVariant.id,
       });
       onSkuCleared(result.configuration, result.product);
+      if (clearedSku) {
+        setClearedNotice(clearedDefaultSkuNotice(clearedSku));
+      }
       focusLater(() =>
         document
           .getElementById(`product-variant-sku-${defaultVariant.id}`)
@@ -408,15 +419,21 @@ export function ProductVariantConfigurationForm({
             Limpe o SKU da variante padrão antes de configurar opções: a
             configuração a substitui.
             <Button
+              className="h-auto min-h-ctl-sm whitespace-normal py-1.5 text-start [overflow-wrap:anywhere]"
               disabled={isPending}
               onClick={handleClearDefaultSku}
               size="sm"
               type="button"
               variant="outline"
             >
-              Limpar SKU da variante padrão
+              {clearDefaultSkuLabel(defaultSku ?? "")}
             </Button>
           </AlertDescription>
+        </Alert>
+      ) : null}
+      {clearedNotice ? (
+        <Alert>
+          <AlertDescription>{clearedNotice}</AlertDescription>
         </Alert>
       ) : null}
       {clearError ? (

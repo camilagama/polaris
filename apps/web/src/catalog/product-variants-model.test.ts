@@ -1,6 +1,8 @@
 import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  clearDefaultSkuLabel,
+  clearedDefaultSkuNotice,
   duplicateSkuMessage,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
@@ -286,5 +288,19 @@ describe("draft of the configuration kept by the dialog", () => {
         variants: [{ values: {} }],
       })
     ).toBe(false);
+  });
+});
+
+describe("the SKU the warning's button erases", () => {
+  it("the button names the SKU of the default variant", () => {
+    expect(clearDefaultSkuLabel("ABC-123")).toBe(
+      'Limpar SKU "ABC-123" da variante padrão'
+    );
+  });
+
+  it("the notice after the action names it too", () => {
+    expect(clearedDefaultSkuNotice("ABC-123")).toBe(
+      'SKU "ABC-123" apagado da variante padrão.'
+    );
   });
 });
