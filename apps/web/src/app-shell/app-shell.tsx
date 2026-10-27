@@ -711,6 +711,8 @@ export function AppShell({
         <main
           className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
           id="conteudo"
+          // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
+          tabIndex={-1}
         >
           {updateNotice}
           <ShellNotices

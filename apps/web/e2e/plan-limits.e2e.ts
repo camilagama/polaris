@@ -106,7 +106,10 @@ async function openApp(page: Page, path: string, store: Store) {
       );
     }
     if (procedure === "billing/readPlan") {
-      return route.fulfill(rpc(planOf(store.state)));
+      // "unread": the read of the plan fails, and the notice goes without numbers and without the link (AC-6)
+      return store.state === "unread"
+        ? route.abort("internetdisconnected")
+        : route.fulfill(rpc(planOf(store.state)));
     }
     const handler = store.answers[procedure];
     return handler ? handler(route) : route.abort("internetdisconnected");
@@ -133,6 +136,11 @@ async function goToProAndBack(page: Page, link: Locator, back: RegExp) {
   await link.click();
   await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // the Assinatura is drawn, and the focus starts again at the content, as on a load of the page
+  await expect(
+    page.getByRole("tab", { name: "Assinatura", selected: true })
+  ).toBeVisible();
+  await expect(page.locator("#conteudo")).toBeFocused();
   expect(await stillTheSamePage(page)).toBe(true);
   await page.goBack();
   await expect(page).toHaveURL(back);
@@ -233,6 +241,8 @@ test("L1: configurar variantes no limite diz o limite, não 'o produto mudou', c
   for (const store of [
     { role: "cashier", state: "free", text: `${L1}${ASK_OWNER}` },
     { role: "owner", state: "active", text: L1 },
+    // the plan could not be read: the text alone, no number and no link, and nothing breaks (AC-6)
+    { role: "owner", state: "unread", text: L1 },
   ]) {
     // biome-ignore lint/performance/noAwaitInLoops: one store after the other, on the same page
     await page.unrouteAll({ behavior: "ignoreErrors" });

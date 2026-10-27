@@ -14,6 +14,7 @@ import { dialogEntries } from "@/ui/dialog-history";
 import { navigateInApp } from "../app-shell/address";
 import { tabHref } from "../app-shell/navigation-model";
 import { canManageBilling } from "../lib/billing-access";
+import { leaveForReturn } from "../lib/kept-for-return";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import {
@@ -134,16 +135,26 @@ export function LimitHelp({
   shown?: boolean;
 }) {
   const leave = useContext(LimitLeaveContext);
+  // a second tap while the first one is on its way does not open the Assinatura twice
+  const going = useRef<boolean>(false);
   const handleClick = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (!isPlainClick(event)) {
         return;
       }
       event.preventDefault();
+      if (going.current) {
+        return;
+      }
+      going.current = true;
       leave?.();
       // after the render that closed the dialog, and after the step back that takes its entry out of the history
       window.setTimeout(() => {
-        dialogEntries().afterSteps(() => navigateInApp(SUBSCRIPTION_HREF));
+        dialogEntries().afterSteps(() => {
+          leaveForReturn();
+          navigateInApp(SUBSCRIPTION_HREF);
+          going.current = false;
+        });
       }, 0);
     },
     [leave]

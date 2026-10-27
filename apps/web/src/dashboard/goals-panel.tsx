@@ -164,6 +164,24 @@ function GoalList({
   );
 }
 
+/** Under the refusal of a new goal by the plan's limit: the way to free a place, when there is one, and to the Pro. */
+function GoalLimitHelp({
+  canCancel,
+  help,
+}: {
+  canCancel: boolean;
+  help: LimitHelpView | null;
+}) {
+  return (
+    <>
+      {canCancel ? (
+        <span className="block">{GOAL_LIMIT_CANCEL_HINT}</span>
+      ) : null}
+      <LimitHelp help={help} />
+    </>
+  );
+}
+
 /** Goals of the organization: what to reach in a period, and how far along it is. Always open: hiding them saves nothing. */
 export function GoalsPanel({
   goals: { reload, state },
@@ -182,9 +200,10 @@ export function GoalsPanel({
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
   // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")
-  const draftStore = useRef<GoalDraft | null>(
-    takeKept<GoalDraft>(returnKey(organizationId)) ?? null
+  const [returned] = useState(
+    () => takeKept<GoalDraft>(returnKey(organizationId)) ?? null
   );
+  const draftStore = useRef<GoalDraft | null>(returned);
   useEffect(
     () => () => keepForReturn(returnKey(organizationId), draftStore.current),
     [organizationId]
@@ -201,6 +220,11 @@ export function GoalsPanel({
   }, [hasPaused, showPausedHelp]);
   // a goal in progress or paused takes a place, and cancelling it frees the place (T-3)
   const canCancel = state.goals.some((goal) => goal.status === "active");
+  // in the form, and above the list once the form was closed (Esc, or "Conhecer o Pro" on its way)
+  const limitExtra =
+    feedback?.text === GOAL_LIMIT_REACHED ? (
+      <GoalLimitHelp canCancel={canCancel} help={limitHelp} />
+    ) : null;
   const handleDraftChange = useCallback((draft: GoalDraft | null) => {
     draftStore.current = draft;
   }, []);
@@ -306,20 +330,14 @@ export function GoalsPanel({
         </div>
       </div>
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
-      <ActionNotice feedback={creating ? null : feedback} />
+      <ActionNotice
+        errorExtra={limitExtra}
+        feedback={creating ? null : feedback}
+      />
       <GoalCreateForm
         disabled={busy !== null}
         feedback={feedback?.kind === "error" ? feedback : null}
-        feedbackExtra={
-          feedback?.text === GOAL_LIMIT_REACHED ? (
-            <>
-              {canCancel ? (
-                <span className="block">{GOAL_LIMIT_CANCEL_HINT}</span>
-              ) : null}
-              <LimitHelp help={limitHelp} />
-            </>
-          ) : null
-        }
+        feedbackExtra={limitExtra}
         feedbackRef={feedbackRef}
         finalFocus={finalFocus}
         keptDraft={draftStore.current ?? undefined}

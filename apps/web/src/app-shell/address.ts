@@ -25,6 +25,10 @@ export function navigateInApp(next: string): void {
   window.history.pushState(null, "", next);
   window.dispatchEvent(new Event(ADDRESS_EVENT));
   window.scrollTo({ top: 0 });
+  // the link that was clicked left with the screen: the focus starts again at the content, as on a load of the page
+  window.setTimeout(() => {
+    document.getElementById("conteudo")?.focus({ preventScroll: true });
+  }, 0);
 }
 
 function subscribe(onChange: () => void): () => void {
