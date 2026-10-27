@@ -31,9 +31,13 @@ O item 2.4 do plano mede a ativação das lojas (cadastro, 1º produto, 1ª vend
   - o total de lojas da coorte e o de cadastros aparecem com 5 ou mais;
   - célula escondida é `suppressed`, sem valor e sem motivo (o motivo diria qual lado é pequeno); o que ainda não se sabe é `unavailable` com motivo (`activation_window_open` até cada loja da coorte ter tido seus 7 dias; `week_not_closed`), **nunca 0**.
 - **Sem parâmetro livre e nada guardado.** A única escolha é o número de semanas (1 a 26). Nada de janela por dia, filtro, ordenação ou intervalo: janelas escolhidas permitiriam isolar uma loja por diferença. A função calcula na hora e não grava (é `STABLE`); nenhuma tabela de resultado nem instantâneo.
-- **Limite residual aceito.** Ler a mesma coorte em dias diferentes mostra quando uma contagem passa de 5 para 6 (ou um número aparece). Com a supressão acima isso não diz qual loja; não vira dado por loja.
+- **Limites residuais.** A supressão vale para cada leitura; comparar leituras feitas antes e depois de uma mudança que o operador conhece pode isolar uma loja:
+  - a mesma coorte lida em dias diferentes mostra quando uma contagem passa de 5 para 6 (ou um número aparece); sozinho, isso não diz qual loja;
+  - **marcar ou desmarcar uma loja como interna muda a coorte dela na leitura seguinte**, e a diferença entre as duas leituras fala daquela loja. O controle é a auditoria do comando (cada marca e desmarca fica registrada com o operador) e o fato de o mesmo operador já poder pedir acesso temporário auditado; **aceitar este limite é decisão do Rodrigo e do Arrascaeta**, e registrar a leitura do funil (abaixo) o tornaria visível por inteiro;
+  - a loja purgada sai da conta, e quem cria lojas numa semana conhece as células que elas ocupam: as duas coisas, comparadas com uma leitura anterior, também dizem algo da coorte.
+- **`internalStoresExcluded` não é suprimido**, de propósito: é a contagem das lojas que o próprio time marcou, não atividade de cliente.
 - **A leitura não é auditada**, como o resto deste ADR: devolve só agregado suprimido. Registrar quem leu (sem conteúdo), para notar alguém varrendo a função, é sugestão do Rodrigo que não bloqueia; fica para a decisão do Arrascaeta.
-- **Custo.** Uma consulta por leitura: por loja da janela, a 1ª venda e três buscas de semana pelo `sales_organization_confirmed_idx` (só índice). Medida no gate com 1.000 lojas e 50.000 vendas (PostgreSQL 18 local): cerca de 70 ms por chamada, sem índice novo. A rota e o contrato estrito que a lê são do PR seguinte (t431).
+- **Custo.** Uma consulta por leitura: por loja da janela, a 1ª venda e três buscas de semana pelo `sales_organization_confirmed_idx` (só índice). Medida no gate com 1.000 lojas e 50.000 vendas (PostgreSQL 18 local): cerca de 70 ms por chamada, sem índice novo. Os cadastros leem `"user"` por varredura (não há índice em `created_at`); um índice só entra depois de uma medida com mais contas. A rota e o contrato estrito que a lê são do PR seguinte (t431).
 
 ## Consequências
 

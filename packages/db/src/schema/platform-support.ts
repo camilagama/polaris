@@ -241,8 +241,8 @@ export const platformAuditEvents = pgTable(
  * ADR 0071 amended). A table of the platform, not a column of `organizations`: the tenant reads and inserts rows
  * there, and this table has no grant to the tenant, billing or catalog roles. Only the Admin owner reads it, and
  * only `admin_classify_organization` (audited) or the database owner (the QA seed) writes it. No personal data:
- * the store, the instant and the operator who marked it (none when the seed did). It lives and dies with the row
- * of the organization (cascade), which the purge keeps.
+ * the store, the instant and the operator who marked it (none when the seed did). It leaves with the row of the
+ * organization (cascade); the purge keeps that row (status `purged`), so the marker survives the purge.
  */
 export const platformInternalOrganizations = pgTable(
   "platform_internal_organizations",

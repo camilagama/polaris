@@ -670,19 +670,35 @@ async function run() {
 
     // ------------------------------------------------- 3. the fixture written by hand
     // weeks far enough back for every week of retention to be closed, where no other gate creates stores or users
-    const WEEKS = { a: 16, b: 15, c: 14, d: 13, e: 17, f: 18 } as const;
+    // and the cuts 2, 3, 4 and 6 and the borders of the bands each in a week of its own; one cohort in the last week,
+    // whose 7 days are not over yet
+    const WEEKS = {
+      a: 16,
+      b: 15,
+      borders: 12,
+      c: 14,
+      cut2: 11,
+      cut3: 10,
+      cut4: 9,
+      cut6: 8,
+      d: 13,
+      e: 17,
+      f: 18,
+      open: 1,
+    } as const;
     const fixtureRange = await owner.pool.query<{
       stores: string[];
       users: number;
     }>(
       `WITH bounds AS (
          SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '18 weeks') AT TIME ZONE '${ZONE}' AS since,
-                (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '12 weeks') AT TIME ZONE '${ZONE}' AS until
+                (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '7 weeks') AT TIME ZONE '${ZONE}' AS users_until,
+                date_trunc('week', now() AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}' AS stores_until
        )
        SELECT ARRAY(SELECT o.id FROM public.organizations AS o, bounds
-                     WHERE o.created_at >= bounds.since AND o.created_at < bounds.until) AS stores,
+                     WHERE o.created_at >= bounds.since AND o.created_at < bounds.stores_until) AS stores,
               (SELECT count(*)::int FROM public."user" AS u, bounds
-                WHERE u.created_at >= bounds.since AND u.created_at < bounds.until) AS users`
+                WHERE u.created_at >= bounds.since AND u.created_at < bounds.users_until) AS users`
     );
     // a store of another gate in these weeks is kept out the way the funnel allows: marked as internal
     const strangers = fixtureRange.rows[0]?.stores ?? [];
@@ -916,6 +932,54 @@ async function run() {
       sales: ["5 days 1 minute"],
     });
 
+    // one cohort for each cut the hand fixtures above do not reach (cells: no product, product and no sale, bands)
+    const cohortOf = async (
+      weeksAgo: number,
+      cells: { p0: number; p1: number; bands: number[] }
+    ) => {
+      const minutes = [5, 30, 300, 4320, 14_400];
+      for (const _ of times(cells.p0, () => 0)) {
+        // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+        await createStore(weeksAgo, { created: "10 hours" });
+      }
+      for (const _ of times(cells.p1, () => 0)) {
+        // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+        await createStore(weeksAgo, { created: "10 hours", product: "live" });
+      }
+      for (const [band, count] of cells.bands.entries()) {
+        for (const _ of times(count, () => 0)) {
+          // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+          await createStore(weeksAgo, {
+            created: "10 hours",
+            product: "live",
+            sales: [`${600 + (minutes[band] as number)} minutes`],
+          });
+        }
+      }
+    };
+    // cut 2: a band of 2 and one of 3 hide the bands, and 5 activated and 5 later still show
+    await cohortOf(WEEKS.cut2, { bands: [2, 3, 0, 0, 5], p0: 5, p1: 5 });
+    // cut 3: no store sold later than 7 days, so the activation (all who sold) hides with the bands
+    await cohortOf(WEEKS.cut3, { bands: [5, 0, 0, 0, 0], p0: 5, p1: 5 });
+    // cut 4: 3 with nothing and 2 with a product only hide the product, and the rest shows
+    await cohortOf(WEEKS.cut4, { bands: [5, 0, 0, 0, 5], p0: 3, p1: 2 });
+    // cut 6: 3 with a product only and 2 that sold hide the sale; only the product shows
+    await cohortOf(WEEKS.cut6, { bands: [2, 0, 0, 0, 0], p0: 5, p1: 3 });
+    // the borders of the bands are inclusive: exactly 10 minutes, 1 hour, 1 day and 7 days, and 7 days and 1 second
+    for (const seconds of [600, 3600, 86_400, 604_800, 604_801]) {
+      for (const _ of times(5, () => 0)) {
+        // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+        await createStore(WEEKS.borders, {
+          created: "36000 seconds",
+          product: "live",
+          sales: [`${36_000 + seconds} seconds`],
+        });
+      }
+    }
+    await cohortOf(WEEKS.borders, { bands: [], p0: 5, p1: 5 });
+    // the last week: 5 with nothing, 5 with a product only, 5 sold; the 7 days of its stores are not over
+    await cohortOf(WEEKS.open, { bands: [5, 0, 0, 0, 0], p0: 5, p1: 5 });
+
     const byWeek = (
       source: Funnel,
       weeksAgo: number,
@@ -1008,6 +1072,96 @@ async function run() {
         withFirstSale: five,
         withoutSale: shown(7),
       }
+    );
+    const bandsOf = (cell: Cell) => ({
+      after7Days: cell,
+      upTo10Minutes: cell,
+      upTo1Day: cell,
+      upTo1Hour: cell,
+      upTo7Days: cell,
+    });
+    const cohortAt = (weeksAgo: number) => {
+      const { cohort } = byWeek(fixture.funnel, weeksAgo, fixture.clock);
+      return { stores: cohort.stores, ...activity(cohort) };
+    };
+    const closedRetention = (week2: Cell) => ({
+      week2,
+      week3: SUPPRESSED,
+      week5: SUPPRESSED,
+    });
+    assert.deepEqual(
+      cohortAt(WEEKS.cut2),
+      {
+        activatedIn7Days: five,
+        retention: closedRetention(five),
+        stores: shown(20),
+        timeToFirstSale: bandsOf(SUPPRESSED),
+        withFirstProduct: shown(15),
+        withFirstSale: shown(10),
+        withoutSale: shown(10),
+      },
+      "cut 2"
+    );
+    assert.deepEqual(
+      cohortAt(WEEKS.cut3),
+      {
+        activatedIn7Days: SUPPRESSED,
+        retention: closedRetention(SUPPRESSED),
+        stores: shown(15),
+        timeToFirstSale: bandsOf(SUPPRESSED),
+        withFirstProduct: shown(10),
+        withFirstSale: five,
+        withoutSale: shown(10),
+      },
+      "cut 3"
+    );
+    assert.deepEqual(
+      cohortAt(WEEKS.cut4),
+      {
+        activatedIn7Days: five,
+        retention: closedRetention(five),
+        stores: shown(15),
+        timeToFirstSale: bandsOf(SUPPRESSED),
+        withFirstProduct: SUPPRESSED,
+        withFirstSale: shown(10),
+        withoutSale: five,
+      },
+      "cut 4"
+    );
+    assert.deepEqual(
+      cohortAt(WEEKS.cut6),
+      { ...nothing, stores: shown(10), withFirstProduct: five },
+      "cut 6"
+    );
+    assert.deepEqual(
+      cohortAt(WEEKS.borders),
+      {
+        activatedIn7Days: shown(20),
+        retention: closedRetention(shown(10)),
+        stores: shown(35),
+        timeToFirstSale: bandsOf(five),
+        withFirstProduct: shown(30),
+        withFirstSale: shown(25),
+        withoutSale: shown(10),
+      },
+      "the borders of the bands are inclusive (7 days exactly is up to 7 days, and a sale at the creation hour 7 days later is week 2)"
+    );
+    const notClosed = unavailable("week_not_closed");
+    assert.deepEqual(
+      cohortAt(WEEKS.open),
+      {
+        activatedIn7Days: unavailable("activation_window_open"),
+        retention: { week2: notClosed, week3: notClosed, week5: notClosed },
+        stores: shown(15),
+        timeToFirstSale: bandsOf(unavailable("activation_window_open")),
+        withFirstProduct: shown(10),
+        withFirstSale: five,
+        withoutSale: shown(10),
+      },
+      "a cohort whose 7 days are not over"
+    );
+    tests.push(
+      "each cut the hand fixtures pick, with exact figures: every band (cut 1), activated and later without the bands (2), product and sale without the activation (3), the sale without the product (4 and 5), the product only (6), nothing (7); the borders of the bands are inclusive (exactly 10 minutes, 1 hour, 1 day and 7 days; 7 days and 1 second is later); in the last week the bands, the activation and the retention are unavailable with their reason, never 0"
     );
     tests.push(
       "a fixture counted by hand: cohort A (35 stores, 2 internal ones out) shows each band (5 each, by confirmed_at: a sale dated two years back and a cancelled one count), 30 with a product (a deleted one counts), 25 sold, 10 not yet, 20 activated in 7 days, 10 sold in week 2 (Sunday 23:30 and 22:00 of Brasília are still week 1, Monday 09:00 is week 2), 5 in week 3 and week 5 suppressed (3); its week has 42 verified sign-ups, 37 with a store; cohorts of 1 and 4 stores show nothing, of 5 and 6 only the count (every cell is 0 or all); in a cohort of 12 with 2 stores having a product and no sale, the product is hidden and the sale shows"
@@ -1176,6 +1330,20 @@ async function run() {
       tally.r3 += store.sale_weeks.includes(3) ? 1 : 0;
       tally.r5 += store.sale_weeks.includes(5) ? 1 : 0;
     }
+    const cutsSeen = new Set(
+      labels.rows.map((week) => {
+        const start = Date.parse(`${week.start}T00:00:00Z`);
+        return tierOf(
+          tallies.get(week.start) as Tally,
+          start + 14 * DAY <= final.clock.localNow
+        );
+      })
+    );
+    assert.deepEqual(
+      [...cutsSeen].sort(),
+      [1, 2, 3, 4, 5, 6, 7],
+      "every cut of the suppression is exercised by the rows"
+    );
     const signupOf = new Map(directSignups.rows.map((row) => [row.week, row]));
     const expected = {
       cohorts: labels.rows.map((week) =>

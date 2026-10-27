@@ -62,7 +62,8 @@ import {
  * (`platform_internal_organizations`, corte 2.4): a QA store never counts in
  * the activation funnel. The database owner writes the marker directly (no
  * operator, so `marked_by` stays null and no platform audit is written, as
- * when it registers a principal); the Admin's command unmarks it for a test.
+ * when it registers a principal); the Admin's command unmarks it for a test,
+ * and running the seed again on that store marks it again.
  *
  * The owner may date a sale at most 30 days back (ADR 0021). A sale of an
  * older day is confirmed 30 days later and then moved back by 30 days with

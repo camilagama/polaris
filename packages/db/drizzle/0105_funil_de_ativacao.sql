@@ -1,14 +1,15 @@
 -- The activation funnel of the stores, the database part (corte 2.4, PR A; ADR 0071 amended): a marker of the stores
 -- of Polaris itself, the audited command that sets it, and one aggregate function the Admin reads. Expand only (ADR
--- 0096): a new table, new column grants, three new policies, a wider check of the platform audit and two new functions;
+-- 0096): a new table, new column grants, five new policies, a wider check of the platform audit and two new functions;
 -- nothing is dropped, renamed or made NOT NULL, and no function the previous Worker calls is recreated.
 --
 -- * `platform_internal_organizations`: a store marked as internal (QA, the owner's, the team's) is kept out of every
 --   number of the funnel. A table of the platform, not a column of `organizations` (the tenant reads and inserts rows
 --   there: a column would need its own proof that a store never sees nor sets it) and never the `qa-` prefix of the
 --   name (typed by the customer). Forced row security; only the Admin owner
---   reads, inserts and deletes it, and nobody else holds a grant. No personal data; it lives and dies with the row of
---   the organization (cascade).
+--   reads, inserts and deletes it, and nobody else holds a grant. No personal data; it leaves with the row of the
+--   organization (cascade), which the purge keeps (status `purged`), so it survives the purge (and a purged store is
+--   out of the funnel anyway).
 -- * `admin_classify_organization`: marks or unmarks a store (capability `organization:classify`), audited in the same
 --   transaction (`organization.marked_internal` / `organization.unmarked_internal`); a call that changes nothing
 --   writes nothing.
@@ -19,7 +20,8 @@
 --   reason, never 0. STABLE: it writes nothing, and nothing is stored. To compute it the Admin owner gains a read of
 --   date and link columns only: `"user"` (id, created_at, email_verified; never the e-mail, the name or the image)
 --   and `sales` (organization_id, confirmed_at; never an amount, an item or the date of the business).
--- CREATE POLICY on `sales` and `"user"` takes an ACCESS EXCLUSIVE lock on two busy tables: better to fail and deploy
+-- CREATE POLICY on `sales` and `"user"` locks two busy tables, and the two foreign keys of the marker lock
+-- `organizations` and `platform_principals` against writes until the migrator commits: better to fail and deploy
 -- again than to queue every sale and every `/get-session` behind it.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 CREATE TABLE "platform_internal_organizations" (

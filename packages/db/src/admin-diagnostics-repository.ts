@@ -74,7 +74,9 @@ export async function readActivationFunnel(
     throw new RangeError("invalid_weeks");
   }
   const { rows } = await client.query(
-    "SELECT public.admin_activation_funnel($1) AS result",
+    // `clock_timestamp() AS at` is not read: it makes the statement one a caching pooler cannot answer from a copy,
+    // so a store marked or unmarked is in or out at the next read
+    "SELECT public.admin_activation_funnel($1) AS result, pg_catalog.clock_timestamp() AS at",
     [weeks]
   );
   return rows[0]?.result ?? null;

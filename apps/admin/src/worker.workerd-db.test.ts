@@ -439,6 +439,27 @@ describe("admin worker, whole chain, PostgreSQL", () => {
     });
   });
 
+  describe("internal store marker", () => {
+    it("marks and unmarks a store through the database, a repeat changes nothing, an unknown store is 404", async () => {
+      const path = `/api/organizations/${fixture.organizations.reactivate}/classification`;
+      const marked = await call("POST", path, { body: { internal: true } });
+      expect(marked).toEqual({
+        body: { changed: true, internal: true },
+        status: 200,
+      });
+      const again = await call("POST", path, { body: { internal: true } });
+      expect(again.body).toEqual({ changed: false, internal: true });
+      const unmarked = await call("POST", path, { body: { internal: false } });
+      expect(unmarked.body).toEqual({ changed: true, internal: false });
+      const unknown = await call(
+        "POST",
+        "/api/organizations/no-such-store/classification",
+        { body: { internal: true } }
+      );
+      expect(unknown.status).toBe(404);
+    });
+  });
+
   describe("suspension", () => {
     it("suspends once, shows it in the diagnostics, and does not touch another organization", async () => {
       const caseId = await openCase(fixture.organizations.suspend);
