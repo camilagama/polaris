@@ -1,13 +1,13 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
-import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 

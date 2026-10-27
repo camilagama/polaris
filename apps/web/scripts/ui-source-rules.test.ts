@@ -255,13 +255,73 @@ const FOCUS_ELSEWHERE: readonly {
     strings: 2,
     why: "o campo dentro do grupo: o anel (borda --ring e halo) é do grupo, via has-[…:focus-visible] (desenho v5.1)",
   },
+  {
+    file: "src/ui/popover.tsx",
+    strings: 1,
+    why: "o popup do popover não é o foco: o foco abre no primeiro controle de dentro, que tem o anel dele",
+  },
 ];
 
-const FOCUS_INDICATOR = /focus|has-\[/;
 const SOURCE_STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
+/** The utilities that take the outline away (`outline-hidden` keeps a transparent one for forced colors and draws nothing). */
+const NO_OUTLINE = new Set([
+  "outline-none",
+  "outline-hidden",
+  "outline-0",
+  "outline-transparent",
+]);
+const NO_OUTLINE_ARBITRARY = /^\[outline:(?:none|0)/;
+const BALANCED_TITLES =
+  /h1,[\s\S]*h6,\s*\.text-title,\s*\.text-section\s*\{\s*text-wrap:\s*balance;/;
+const IMPORTANT = /^!|!$/g;
+const FOCUS_VARIANT = /^(?:focus|focus-visible|focus-within)$/;
+const HAS_FOCUS_VARIANT = /^(?:group-|peer-)?has-\[.*:focus/;
+// what draws something the eye sees: a ring, an outline, a border, a background or a shadow (not `ring-0`)
+const VISIBLE_UTILITY = /^(?:ring|outline|border|bg|shadow)(?:-|$)/;
+
+/** A class split into its variants and its utility; a `:` inside brackets belongs to an arbitrary value or selector. */
+function splitClass(word: string) {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const char of word) {
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+    }
+    if (char === ":" && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  return { utility: current.replace(IMPORTANT, ""), variants: parts };
+}
+
+const removesOutline = (word: string) =>
+  NO_OUTLINE.has(splitClass(word).utility) || NO_OUTLINE_ARBITRARY.test(word);
+
+/** `focus-ring`, or a focus variant of something visible: `focus-visible:ring-3`, `focus:bg-accent`, `has-[:focus-visible]:border-ring`. */
+const drawsFocus = (word: string) => {
+  const { utility, variants } = splitClass(word);
+  if (utility === "focus-ring") {
+    return true;
+  }
+  return (
+    VISIBLE_UTILITY.test(utility) &&
+    !NO_OUTLINE.has(utility) &&
+    utility !== "ring-0" &&
+    variants.some(
+      (variant) =>
+        FOCUS_VARIANT.test(variant) || HAS_FOCUS_VARIANT.test(variant)
+    )
+  );
+};
 
 /** The class strings of a source that take the outline away without a ring of their own (t439). */
-export function outlineNoneFaults(path: string, text: string): string[] {
+export function outlineStrings(path: string, text: string): string[] {
   if (!TS_OR_TSX.test(path)) {
     return [];
   }
@@ -269,14 +329,23 @@ export function outlineNoneFaults(path: string, text: string): string[] {
     const words = (match[1] ?? match[2] ?? match[3] ?? "")
       .split(SPACES)
       .filter(Boolean);
-    const removesOutline = words.some(
-      (word) => word === "outline-none" || word.endsWith(":outline-none")
-    );
-    const hasRing = words.some(
-      (word) => !word.includes("outline-none") && FOCUS_INDICATOR.test(word)
-    );
-    return removesOutline && !hasRing ? [words.join(" ")] : [];
+    return words.some(removesOutline) && !words.some(drawsFocus)
+      ? [words.join(" ")]
+      : [];
   });
+}
+
+/** What is wrong between a file's strings without a ring and what the list says about it (nothing, when they agree). */
+export function focusListFaults(
+  path: string,
+  text: string,
+  list: readonly { file: string; strings: number }[]
+): string[] {
+  const found = outlineStrings(path, text).length;
+  const listed = list.find((entry) => entry.file === path)?.strings ?? 0;
+  return found === listed
+    ? []
+    : [`${found} string(s) sem anel de foco, e a lista diz ${listed}`];
 }
 
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
@@ -333,11 +402,9 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   );
 
   it.each(FOCUS_SCOPE)(
-    "%s: outline-none só com o anel de foco junto (ou na lista exata)",
+    "%s: tirar o contorno só com o anel de foco junto (ou na lista exata)",
     (path) => {
-      const expected =
-        FOCUS_ELSEWHERE.find((entry) => entry.file === path)?.strings ?? 0;
-      expect(outlineNoneFaults(path, read(path))).toHaveLength(expected);
+      expect(focusListFaults(path, read(path), FOCUS_ELSEWHERE)).toEqual([]);
     }
   );
 
@@ -347,12 +414,20 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
       "src/ui/dialog.tsx",
       "src/ui/dropdown-menu.tsx",
       "src/ui/input-group.tsx",
+      "src/ui/popover.tsx",
     ]);
     for (const entry of FOCUS_ELSEWHERE) {
-      expect(outlineNoneFaults(entry.file, read(entry.file))).toHaveLength(
+      expect(FOCUS_SCOPE, entry.file).toContain(entry.file);
+      expect(outlineStrings(entry.file, read(entry.file))).toHaveLength(
         entry.strings
       );
     }
+  });
+
+  it("os títulos quebram com text-wrap: balance, na camada base (t439)", () => {
+    const sheet = withoutComments(read(TOKEN_SHEET));
+    const base = sheet.slice(sheet.lastIndexOf("@layer base"));
+    expect(base).toMatch(BALANCED_TITLES);
   });
 
   it("com prefers-reduced-motion: reduce a base zera animação e transição (a medida está em e2e-pwa)", () => {
@@ -478,17 +553,53 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     'className="outline-none" tabIndex={-1}',
     'cn("text-section outline-none", className)',
     'className="md:outline-none"',
-  ])("%s: outline-none sem anel é reprovado", (text) => {
-    expect(outlineNoneFaults("src/x.tsx", text)).toHaveLength(1);
+    'className="outline-hidden"',
+    'className="outline-none!"',
+    'className="!outline-none"',
+    'className="outline-0 p-2"',
+    'className="outline-transparent"',
+    'className="[outline:none] p-2"',
+    // a focus variant of something that draws nothing is not a ring
+    'className="outline-none focus:text-red-500"',
+    'className="outline-none has-[>svg]:gap-1"',
+    'className="outline-none focus-visible:ring-0"',
+    'className="outline-none hover:bg-accent"',
+  ])("%s: tirar o contorno sem anel é reprovado", (text) => {
+    expect(outlineStrings("src/x.tsx", text)).toHaveLength(1);
   });
 
   it.each([
     'className="focus-ring grid gap-2"',
     'className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"',
     'className="outline-none has-[:focus-visible]:ring-3"',
-    'className="outline-none focus:bg-accent"',
+    'className="outline-none has-[[data-slot=control]:focus-visible]:border-ring"',
+    'className="outline-hidden focus:bg-accent"',
+    'className="outline-none focus-visible:outline-3 focus-visible:outline-ring"',
     '/* className="outline-none" in a comment */',
+    'className="outline-offset-2 outline-3"',
   ])("%s: passa na regra do foco", (text) => {
-    expect(outlineNoneFaults("src/x.tsx", text)).toEqual([]);
+    expect(outlineStrings("src/x.tsx", text)).toEqual([]);
+  });
+
+  it("a lista exata reprova o que saiu dela e o que entrou (controle plantado)", () => {
+    const one = [{ file: "src/ui/x.tsx", strings: 1 }];
+    const bare = 'const a = "outline-none"; const b = "outline-none p-2";';
+    const none = 'const a = "focus-ring p-2";';
+    // a file that is not in the list, with a string without a ring
+    expect(focusListFaults("src/ui/y.tsx", bare, one).join()).toContain(
+      "lista diz 0"
+    );
+    // more strings than the list says
+    expect(focusListFaults("src/ui/x.tsx", bare, one).join()).toContain(
+      "2 string(s)"
+    );
+    // an old entry: the file no longer has the string
+    expect(focusListFaults("src/ui/x.tsx", none, one).join()).toContain(
+      "0 string(s)"
+    );
+    // the list and the file agree
+    expect(
+      focusListFaults("src/ui/x.tsx", 'const a = "outline-none";', one)
+    ).toEqual([]);
   });
 });
