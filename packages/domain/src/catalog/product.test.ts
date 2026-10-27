@@ -82,6 +82,83 @@ describe("product text limits", () => {
   });
 });
 
+describe("forbidden characters in product text", () => {
+  // the control characters but the tab and the line breaks (U+0000 PostgreSQL refuses in text) and the
+  // controls that turn the direction of the text
+  const forbidden = [
+    "\u0000",
+    "\u0001",
+    "\u0008",
+    "\u000B",
+    "\u000C",
+    "\u000E",
+    "\u001B",
+    "\u001F",
+    "\u007F",
+    "\u202A",
+    "\u202B",
+    "\u202C",
+    "\u202D",
+    "\u202E",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069",
+    // the marks of the direction, through the Unicode class Bidi_Control
+    "\u061C",
+    "\u200E",
+    "\u200F",
+  ];
+
+  it.each(forbidden)("refuses %j in a name and in a description", (char) => {
+    expect(() => normalizeProductName(`Bolsa${char}azul`)).toThrow(
+      ProductNameError
+    );
+    expect(() => normalizeProductDescription(`Lona${char}forte`)).toThrow(
+      ProductDescriptionError
+    );
+  });
+
+  it.each(["\u200B", "\u200C\u200D", " \u2060 ", "\uFEFF", "\u200B \u200B"])(
+    "refuses a name of only characters of zero width (%j)",
+    (name) => {
+      expect(() => normalizeProductName(name)).toThrow(ProductNameError);
+    }
+  );
+
+  it("keeps a character of zero width inside a name that shows something", () => {
+    // the joiner of an emoji, and a break opportunity inside a long word
+    expect(normalizeProductName("Bolsa \u{1F469}\u200D\u{1F4BB}")).toBe(
+      "Bolsa \u{1F469}\u200D\u{1F4BB}"
+    );
+    expect(normalizeProductName("\u200BBolsa")).toBe("\u200BBolsa");
+    expect(normalizeProductDescription("\u200B")).toBe("\u200B");
+  });
+
+  it.each(["\t", "\n", "\r"])(
+    "refuses %j inside a name, which is one line",
+    (char) => {
+      expect(() => normalizeProductName(`Bolsa${char}azul`)).toThrow(
+        ProductNameError
+      );
+    }
+  );
+
+  it("keeps the neighbours of the forbidden ranges and the text as it came", () => {
+    expect(normalizeProductName("Bolsa \u202F \u2029 \u2065 \u2070 x")).toBe(
+      "Bolsa \u202F \u2029 \u2065 \u2070 x"
+    );
+    // a formula or HTML is text: nothing is neutralized on the way in
+    expect(normalizeProductName("=SOMA(A1)")).toBe("=SOMA(A1)");
+    expect(normalizeProductName("<script>x</script>")).toBe(
+      "<script>x</script>"
+    );
+    expect(normalizeProductDescription("linha 1\nlinha 2\tfim")).toBe(
+      "linha 1\nlinha 2\tfim"
+    );
+  });
+});
+
 describe("variant list price", () => {
   it("is optional and normalized to two decimals", () => {
     expect(normalizeVariantListPrice(null)).toBeNull();

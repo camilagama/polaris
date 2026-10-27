@@ -277,9 +277,42 @@ export class ProductDescriptionError extends Error {
   }
 }
 
+/**
+ * Characters no product text may hold: the controls of U+0000 to U+001F and U+007F (U+0000 PostgreSQL refuses in
+ * text, so the write would fail as a fault, not as a refusal), except the tab and the line breaks, which a
+ * description keeps; and the controls of the direction of the text (`Bidi_Control`: U+061C, U+200E, U+200F,
+ * U+202A to U+202E, U+2066 to U+2069), which make a name read differently on the list, the sale and the catalog
+ * than it was typed.
+ */
+const FORBIDDEN_PRODUCT_TEXT =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing the control characters is the point
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\p{Bidi_Control}]/u;
+/** A name is one line: a tab or a line break inside it is refused, never joined. */
+const NAME_LINE_BREAKS = /[\t\n\r]/;
+/**
+ * The characters of zero width (U+200B to U+200D, U+2060, U+FEFF): kept inside a name (the joiner of an emoji), but a
+ * name of nothing else shows empty on the list.
+ */
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/gu;
+
+/** Whether a text holds a character no product text may hold (a control character or a control of the direction). */
+export function hasForbiddenProductText(text: string): boolean {
+  return FORBIDDEN_PRODUCT_TEXT.test(text);
+}
+
+/** Whether a name shows nothing: empty, or only spaces and characters of zero width. */
+export function isBlankProductName(name: string): boolean {
+  return name.replace(ZERO_WIDTH, "").trim() === "";
+}
+
 export function normalizeProductName(name: string): string {
   const normalized = name.trim();
-  if (!normalized || normalized.length > MAX_PRODUCT_NAME_LENGTH) {
+  if (
+    isBlankProductName(normalized) ||
+    normalized.length > MAX_PRODUCT_NAME_LENGTH ||
+    hasForbiddenProductText(normalized) ||
+    NAME_LINE_BREAKS.test(normalized)
+  ) {
     throw new ProductNameError();
   }
   return normalized;
@@ -292,7 +325,10 @@ export function normalizeProductDescription(
     return null;
   }
   const normalized = description.trim();
-  if (normalized.length > MAX_PRODUCT_DESCRIPTION_LENGTH) {
+  if (
+    normalized.length > MAX_PRODUCT_DESCRIPTION_LENGTH ||
+    hasForbiddenProductText(normalized)
+  ) {
     throw new ProductDescriptionError();
   }
   return normalized || null;

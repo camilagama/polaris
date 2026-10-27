@@ -10,6 +10,7 @@ import type { WorkerBindings } from "./environment";
 import { TenantRequestContextError } from "./request-context-error";
 import {
   createTenantRequestContext,
+  createTenantRequestSequence,
   type TenantRequestContextDependencies,
   type TenantRequestContextInput,
   type TenantRequestSession,
@@ -68,6 +69,7 @@ function createFixture(session: TenantRequestSession | null) {
 
   return {
     context: createTenantRequestContext(dependencies),
+    sequence: createTenantRequestSequence(dependencies),
     createAuth,
     createDatabase: createDatabaseMock,
     database,
@@ -258,5 +260,61 @@ describe("tenant request context", () => {
 
     expect(fixture.createDatabase).toHaveBeenCalledOnce();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
+  });
+});
+
+describe("tenant request sequence", () => {
+  const session = {
+    session: { createdAt: new Date(), id: "session-1" },
+    user: { id: "session-user-42" },
+  };
+
+  it("reads the session once and authorizes each transaction of the sequence on its own", async () => {
+    const fixture = createFixture(session);
+
+    const result = await fixture.sequence({
+      bindings: baseInput.bindings,
+      capability: "product:create",
+      operation: async (inTransaction) => [
+        await inTransaction(async (_transaction, identity) => identity.userId),
+        await inTransaction(
+          async (_transaction, identity) => identity.capability
+        ),
+      ],
+      request: baseInput.request,
+      requestedOrganizationId: "org-requested-by-client",
+    });
+
+    expect(result).toEqual(["session-user-42", "product:create"]);
+    expect(fixture.getSession).toHaveBeenCalledOnce();
+    expect(fixture.runTransaction).toHaveBeenCalledTimes(2);
+    for (const [, input] of fixture.runTransaction.mock.calls) {
+      expect(input).toEqual({
+        authenticatedUserId: "session-user-42",
+        capability: "product:create",
+        requestedOrganizationId: "org-requested-by-client",
+        sessionId: "session-1",
+      });
+    }
+    expect(fixture.database.pool.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens no transaction without a session or with an organization that is not trimmed", async () => {
+    const operation = vi.fn(async () => "never");
+    const withoutSession = createFixture(null);
+    await expect(
+      withoutSession.sequence({ ...baseInput, operation })
+    ).rejects.toMatchObject({ code: "session_required" });
+
+    const fixture = createFixture(session);
+    await expect(
+      fixture.sequence({
+        ...baseInput,
+        operation,
+        requestedOrganizationId: " org ",
+      })
+    ).rejects.toBeInstanceOf(TenantRequestContextError);
+    expect(operation).not.toHaveBeenCalled();
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
   });
 });

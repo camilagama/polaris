@@ -18,6 +18,7 @@ import type {
 
 const MAX_IDENTITY_LENGTH = 512;
 const RPC_PREFIX = "/rpc/";
+const EDGE_SLASHES = /^\/|\/$/g;
 
 type KeyType = "ip" | "session";
 
@@ -68,11 +69,13 @@ export function rpcProcedureKind(request: Request): ProcedureKind | null {
   return procedureKinds.get(procedurePath(request)) ?? "write";
 }
 
+/** The procedure's path as oRPC matches it: one leading and one trailing slash do not name another procedure. */
 function procedurePath(request: Request): string {
   const { pathname } = new URL(request.url);
-  return pathname.startsWith(RPC_PREFIX)
+  const path = pathname.startsWith(RPC_PREFIX)
     ? pathname.slice(RPC_PREFIX.length)
     : pathname;
+  return path.replace(EDGE_SLASHES, "");
 }
 
 /** The procedure's route when the contract knows it; any other path is logged as one. */
@@ -290,6 +293,33 @@ const RPC_READ_RULE: RateLimitRule = {
   scope: "rpc-read",
 };
 
+/**
+ * Many rows in one call (the slices of a spreadsheet import, `kind: "bulk"`): a bucket of their own
+ * (`RPC_BULK_RATE_LIMIT`, per session and per address), with few calls per minute. Counted as one write, a call
+ * would multiply the write limit by its rows; counted as one write per row, it would leave the sales of the same
+ * session without quota. It spends neither: the write bucket stays whole for the sales during an import.
+ */
+const RPC_BULK_RULE: RateLimitRule = {
+  bindings: {
+    ip: (bindings) => bindings.RPC_BULK_RATE_LIMIT,
+    session: (bindings) => bindings.RPC_BULK_RATE_LIMIT,
+  },
+  bucket: "bulk",
+  scope: "rpc-bulk",
+};
+
+/** The bucket of each kind; a kind missing here counts as a write. */
+const RPC_RULES: Partial<Record<ProcedureKind, RateLimitRule>> = {
+  bulk: RPC_BULK_RULE,
+  read: RPC_READ_RULE,
+  write: RPC_WRITE_RULE,
+};
+
+/** The quota a kind of procedure counts against: a kind this table does not know is a write. */
+export function rpcRuleFor(kind: ProcedureKind): RateLimitRule {
+  return RPC_RULES[kind] ?? RPC_WRITE_RULE;
+}
+
 const MEDIA_UPLOAD_RULE: RateLimitRule = {
   bindings: {
     ip: (bindings) => bindings.MEDIA_UPLOAD_RATE_LIMIT,
@@ -306,7 +336,7 @@ export const rpcRateLimitMiddleware = createRateLimitMiddleware({
     if (kind === null) {
       return null;
     }
-    return kind === "read" ? RPC_READ_RULE : RPC_WRITE_RULE;
+    return rpcRuleFor(kind);
   },
 });
 

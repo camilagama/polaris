@@ -1,0 +1,525 @@
+import type {
+  ProductImportRowInput,
+  ProductImportRowResult,
+} from "@polaris/contracts";
+import { describe, expect, it, vi } from "vitest";
+import type { ImportReadyRow } from "./product-import-rows";
+import {
+  createImportRun,
+  IMPORT_SLICE_INTERVAL_MS,
+  type ImportRun,
+  type ImportSendDependencies,
+  runImport,
+  SLICE_STEP_UP_AFTER,
+  skipStuckRow,
+  summarizeImport,
+} from "./product-import-send";
+
+const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
+
+type SendInput = Parameters<ImportSendDependencies["send"]>[0];
+
+function readyRows(count: number): ImportReadyRow[] {
+  return Array.from({ length: count }, (_, index) => ({
+    categoryId: null,
+    description: null,
+    initialStock: index % 2 === 0 ? { quantity: 2, unitCost: null } : null,
+    listPrice: "10.00",
+    name: `Produto ${index + 1}`,
+    rowNumber: index + 2,
+    source: {
+      category: "",
+      description: "",
+      listPrice: "10,00",
+      name: `Produto ${index + 1}`,
+      quantity: "",
+      unitCost: "",
+    },
+  }));
+}
+
+let counter = 0;
+const newId = () => {
+  counter += 1;
+  return `0199c2d0-0000-7000-8000-${String(counter).padStart(12, "0")}`;
+};
+
+const created = (rows: ProductImportRowInput[]): ProductImportRowResult[] =>
+  rows.map((row) => ({
+    productId: row.productId,
+    rowNumber: row.rowNumber,
+    status: "created",
+  }));
+
+const rpcError = (code: string) =>
+  Object.assign(new Error(code), { code, defined: false });
+
+/** A clock that only moves when the run waits, and a record of every wait. */
+function fakeTime() {
+  let clock = 0;
+  const waits: number[] = [];
+  return {
+    now: () => clock,
+    wait: (ms: number) => {
+      waits.push(ms);
+      clock += ms;
+      return Promise.resolve();
+    },
+    waits,
+  };
+}
+
+function setup(
+  count: number,
+  send: ImportSendDependencies["send"],
+  extra: Partial<ImportSendDependencies> = {}
+) {
+  const run = createImportRun(readyRows(count), newId);
+  const time = fakeTime();
+  const dependencies: ImportSendDependencies = {
+    now: time.now,
+    organizationId,
+    retryAfterMs: () => null,
+    send,
+    wait: time.wait,
+    ...extra,
+  };
+  return { dependencies, run, time };
+}
+
+describe("the IDs of an import", () => {
+  it("names every product, variant and stock command once, all different", () => {
+    const run = createImportRun(readyRows(4), newId);
+    const ids = run.rows.flatMap((row) => [
+      row.productId,
+      row.variantId,
+      ...(row.initialStock ? [row.initialStock.commandId] : []),
+    ]);
+    expect(new Set([...ids, run.importId]).size).toBe(ids.length + 1);
+    expect(run.rows[1]?.initialStock).toBeNull();
+    expect(run.rows[0]).toMatchObject({
+      initialStock: { quantity: 2, unitCost: null },
+      listPrice: "10.00",
+      name: "Produto 1",
+      rowNumber: 2,
+    });
+    // nothing of the file goes with the row: only the fields of product.create and the row number
+    expect(Object.keys(run.rows[0] ?? {}).sort()).toEqual([
+      "categoryId",
+      "description",
+      "initialStock",
+      "listPrice",
+      "name",
+      "productId",
+      "rowNumber",
+      "variantId",
+    ]);
+  });
+});
+
+describe("runImport", () => {
+  it("sends slices of 10, one after the answer to the other, at the pace of the bucket", async () => {
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(60, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    expect(sent).toEqual([10, 10, 10, 10, 10, 10]);
+    expect(
+      send.mock.calls.every(([input]) => input.importId === run.importId)
+    ).toBe(true);
+    // never more than one slice in 6 s: 10 per minute, below the 12 of the bucket
+    expect(time.waits).toEqual(
+      Array.from({ length: 5 }, () => IMPORT_SLICE_INTERVAL_MS)
+    );
+    expect(summarizeImport(run)).toEqual({
+      entered: 60,
+      existing: 0,
+      failed: 0,
+      limitReached: 0,
+      pending: 0,
+    });
+  });
+
+  it("pauses for the Retry-After of a 429 and only then sends the same slice, once", async () => {
+    const slices: ProductImportRowInput[][] = [];
+    let refused = false;
+    const send = vi.fn((input: SendInput) => {
+      slices.push(input.rows);
+      if (!refused) {
+        refused = true;
+        return Promise.reject(rpcError("TOO_MANY_REQUESTS"));
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(3, send, {
+      retryAfterMs: () => 42_000,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    expect(time.waits).toEqual([42_000]);
+    expect(slices).toHaveLength(2);
+    expect(slices[1]).toEqual(slices[0]);
+  });
+
+  it("waits a minute after a 429 without Retry-After, and stops after three in a row", async () => {
+    const send = vi.fn(() => Promise.reject(rpcError("TOO_MANY_REQUESTS")));
+    const { dependencies, run, time } = setup(3, send);
+
+    expect(await runImport(run, dependencies)).toEqual({
+      kind: "rate_limited",
+    });
+    expect(time.waits).toEqual([60_000, 60_000]);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(run.nextIndex).toBe(0);
+  });
+
+  it("stops where it was after a lost answer, and continues from that slice with the same IDs", async () => {
+    const stored = new Set<string>();
+    let online = true;
+    const sent: ProductImportRowInput[][] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows);
+      // the second slice is saved, and then the connection drops before the answer
+      const results = input.rows.map(
+        (row): ProductImportRowResult => ({
+          productId: row.productId,
+          rowNumber: row.rowNumber,
+          status: stored.has(row.productId) ? "repeated" : "created",
+        })
+      );
+      for (const row of input.rows) {
+        stored.add(row.productId);
+      }
+      if (sent.length >= 2 && !online) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      if (sent.length === 1) {
+        online = false;
+      }
+      return Promise.resolve({ results });
+    });
+    const { dependencies, run } = setup(40, send);
+
+    const stop = await runImport(run, dependencies);
+    expect(stop.kind).toBe("interrupted");
+    // the slice was halved down to one row, that one was tried again twice, and the run stays at it
+    expect(sent.map((rows) => rows.length)).toEqual([10, 10, 5, 2, 1, 1, 1]);
+    expect(run.nextIndex).toBe(10);
+    expect(summarizeImport(run)).toMatchObject({ entered: 10, pending: 30 });
+
+    online = true;
+    const resumedAt = sent.length;
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    // continuing sends the rows of the slice that was cut one at a time, with the same IDs, then climbs a step
+    expect(sent.slice(resumedAt, resumedAt + 10)).toEqual(
+      (sent[1] ?? []).map((row) => [row])
+    );
+    expect(sent[resumedAt + 10]).toHaveLength(2);
+    expect(
+      [...run.results.values()].slice(10, 20).map((result) => result.status)
+    ).toEqual(Array.from({ length: 10 }, () => "repeated"));
+    expect(stored.size).toBe(40);
+    expect(summarizeImport(run)).toMatchObject({ entered: 40, pending: 0 });
+  });
+
+  it("never sends again right away on Retry-After: 0, and never waits past two minutes", async () => {
+    const retryAfter = [0, 3_600_000];
+    let calls = 0;
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      return calls <= 2
+        ? Promise.reject(rpcError("TOO_MANY_REQUESTS"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(2, send, {
+      retryAfterMs: () => retryAfter.shift() ?? null,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    // the 1 s of the floor, and then the rest of the pace of 6 s since the call refused
+    expect(time.waits).toEqual([1000, 5000, 120_000]);
+  });
+
+  it("keeps the pace after a 429 and across a continued run", async () => {
+    // a 429 that asks 1 s, an answer, a refusal that stops the run, and then every answer
+    const script = ["TOO_MANY_REQUESTS", null, "FORBIDDEN"];
+    const sentAt: number[] = [];
+    const time = fakeTime();
+    const send = vi.fn((input: SendInput) => {
+      sentAt.push(time.now());
+      const code = script.shift();
+      return code
+        ? Promise.reject(rpcError(code))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(25, send, {
+      now: time.now,
+      retryAfterMs: () => 1000,
+      wait: time.wait,
+    });
+
+    expect((await runImport(run, dependencies)).kind).toBe("refused");
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // 6 s between any two calls: the slice sent again after the 429, and the first call of the continued run
+    expect(sentAt).toEqual([0, 6000, 12_000, 18_000, 24_000]);
+  });
+
+  it("takes an answer without every row sent as no answer: nothing moves", async () => {
+    const send = vi.fn((input: SendInput) =>
+      Promise.resolve({ results: created(input.rows.slice(1)) })
+    );
+    const { dependencies, run } = setup(3, send);
+
+    const stop = await runImport(run, dependencies);
+    expect(stop.kind).toBe("interrupted");
+    expect(run.nextIndex).toBe(0);
+    expect(run.results.size).toBe(0);
+  });
+
+  it("finds a row that keeps failing alone, and goes on past it once it is left out", async () => {
+    const sent: number[][] = [];
+    const stuck = 5;
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.map((row) => row.rowNumber));
+      return input.rows.some((row) => row.rowNumber === stuck)
+        ? Promise.reject(rpcError("INTERNAL_SERVER_ERROR"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(12, send);
+
+    // halving the slice gets the rows before the stuck one in, and then the stuck one fails alone
+    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
+    expect(sent).toEqual([
+      [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      [2, 3, 4, 5, 6],
+      [2, 3],
+      [4, 5],
+      [4],
+      [5],
+      [5],
+      [5],
+    ]);
+    expect(run.nextIndex).toBe(3);
+
+    skipStuckRow(run);
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    expect(summarizeImport(run)).toEqual({
+      entered: 11,
+      existing: 0,
+      failed: 1,
+      limitReached: 0,
+      pending: 0,
+    });
+    expect(run.skipped).toEqual(new Set([stuck]));
+  });
+
+  it("halves the slice while the server fails it and stays at the size that goes through", async () => {
+    const sent: number[] = [];
+    const failed: number[] = [];
+    // the CPU limit of the Free plan: every slice of more than 2 rows dies on the platform
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      if (input.rows.length > 2) {
+        failed.push(input.rows.length);
+        return Promise.reject(rpcError("INTERNAL_SERVER_ERROR"));
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(60, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    const run2 = Array.from({ length: SLICE_STEP_UP_AFTER }, () => 2);
+    // 10 → 5 → 2, and only one try of 5 after each run of answered slices of 2
+    expect(sent).toEqual([10, 5, ...run2, 5, ...run2, 5, ...run2]);
+    expect(failed).toEqual([10, 5, 5, 5]);
+    // every call at the pace of the bucket, the failed ones too
+    expect(time.waits).toEqual(
+      Array.from({ length: sent.length - 1 }, () => IMPORT_SLICE_INTERVAL_MS)
+    );
+    expect(summarizeImport(run)).toMatchObject({ entered: 60, pending: 0 });
+    // the rows of a failed slice go again with the same IDs
+    const ids = send.mock.calls.flatMap(([input]) =>
+      input.rows.map((row) => row.productId)
+    );
+    expect(new Set(ids)).toEqual(new Set(run.rows.map((row) => row.productId)));
+  });
+
+  it("climbs one step after a run of answered slices, never more", async () => {
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      // two answers lost at the start, then the server answers everything
+      return sent.length <= 2
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(100, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    const repeat = (size: number) =>
+      Array.from({ length: SLICE_STEP_UP_AFTER }, () => size);
+    expect(sent).toEqual([10, 5, ...repeat(2), ...repeat(5), 10, 10, 10]);
+    expect(run.sliceSize).toBe(10);
+  });
+
+  it("takes the screen giving up during a call as an abort, never as a failure of the size", async () => {
+    const controller = new AbortController();
+    const send = vi.fn(() => {
+      controller.abort();
+      return Promise.reject(new DOMException("aborted", "AbortError"));
+    });
+    const { dependencies, run } = setup(30, send, {
+      signal: controller.signal,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    expect(send).toHaveBeenCalledOnce();
+    expect(run.sliceSize).toBe(10);
+  });
+
+  it("keeps the size it reached for the next run of the same import", async () => {
+    let calls = 0;
+    const sent: number[] = [];
+    const controller = new AbortController();
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      sent.push(input.rows.length);
+      if (calls === 1) {
+        return Promise.reject(rpcError("BAD_GATEWAY"));
+      }
+      controller.abort();
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(30, send, {
+      signal: controller.signal,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    const { signal: _gaveUp, ...again } = dependencies;
+    expect(await runImport(run, again)).toEqual({ kind: "done" });
+    expect(sent.slice(0, 3)).toEqual([10, 5, 5]);
+  });
+
+  it("stops at the plan's limit, sends nothing more and says why the rest did not enter", async () => {
+    const send = vi.fn((input: SendInput) =>
+      Promise.resolve({
+        results: input.rows.map(
+          (row, index): ProductImportRowResult =>
+            index < 5
+              ? {
+                  productId: row.productId,
+                  rowNumber: row.rowNumber,
+                  status: "created",
+                }
+              : { rowNumber: row.rowNumber, status: "limit_reached" }
+        ),
+      })
+    );
+    const { dependencies, run } = setup(60, send);
+
+    expect(await runImport(run, dependencies)).toEqual({
+      kind: "limit_reached",
+    });
+    expect(send).toHaveBeenCalledOnce();
+    expect(summarizeImport(run)).toEqual({
+      entered: 5,
+      existing: 0,
+      failed: 0,
+      limitReached: 55,
+      pending: 0,
+    });
+  });
+
+  it.each(["FORBIDDEN", "UNAUTHORIZED", "BAD_REQUEST"])(
+    "stops at a refusal of the call itself (%s), without sending it again",
+    async (code) => {
+      const send = vi.fn(() => Promise.reject(rpcError(code)));
+      const { dependencies, run } = setup(3, send);
+
+      const stop = await runImport(run, dependencies);
+
+      expect(stop.kind).toBe("refused");
+      expect(send).toHaveBeenCalledOnce();
+      expect(summarizeImport(run).pending).toBe(3);
+    }
+  );
+
+  it("counts each answer of the server for the summary", async () => {
+    const statuses: ProductImportRowResult["status"][] = [
+      "created",
+      "repeated",
+      "exists_by_name",
+      "invalid",
+      "conflict",
+    ];
+    const send = vi.fn((input: SendInput) =>
+      Promise.resolve({
+        results: input.rows.map((row, index): ProductImportRowResult => {
+          const status = statuses[index];
+          if (status === "invalid") {
+            return {
+              field: "listPrice",
+              reason: "invalid_variant_list_price",
+              rowNumber: row.rowNumber,
+              status,
+            };
+          }
+          if (status === "conflict") {
+            return {
+              reason: "product_create_conflict",
+              rowNumber: row.rowNumber,
+              status,
+            };
+          }
+          if (status === "exists_by_name") {
+            return { rowNumber: row.rowNumber, status };
+          }
+          return {
+            productId: row.productId,
+            rowNumber: row.rowNumber,
+            status: status === "repeated" ? "repeated" : "created",
+          };
+        }),
+      })
+    );
+    const progress: number[] = [];
+    const { dependencies, run } = setup(5, send, {
+      onProgress: (current: ImportRun) => progress.push(current.nextIndex),
+    });
+
+    await runImport(run, dependencies);
+
+    expect(progress).toEqual([5]);
+    expect(summarizeImport(run)).toEqual({
+      entered: 2,
+      existing: 1,
+      failed: 2,
+      limitReached: 0,
+      pending: 0,
+    });
+  });
+
+  it("stops when the screen gives up, between slices", async () => {
+    const controller = new AbortController();
+    const send = vi.fn((input: SendInput) => {
+      controller.abort();
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(30, send, {
+      signal: controller.signal,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    expect(send).toHaveBeenCalledOnce();
+    expect(run.nextIndex).toBe(10);
+  });
+});

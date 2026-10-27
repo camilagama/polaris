@@ -24,7 +24,16 @@ import {
   ProductVersionConflictError,
   transitionProductLifecycle,
 } from "@polaris/domain/catalog/product";
-import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { assertRoomFor } from "./entitlement-enforcement";
 import { categories } from "./schema/category";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
@@ -244,6 +253,74 @@ export async function countOrganizationVariants(
   return row?.total ?? 0;
 }
 
+/**
+ * The key two product names share when they differ only by case and repeated spaces ("Camiseta  Azul" and
+ * "camiseta azul"), computed by the database on both sides of every comparison so the import never holds a rule of
+ * its own in JavaScript.
+ */
+function productNameKey(name: SQL | string): SQL {
+  return sql`lower(btrim(regexp_replace((${name})::text, '[[:space:]]+', ' ', 'g')))`;
+}
+
+/**
+ * The import of a spreadsheet (corte 2.5) skips a row whose name a product of the store already has. Inside the
+ * transaction of the row, this takes the lock of the store and the name (two tabs importing the same name wait for
+ * each other) and then reads the products of the store with that name: an archived one counts, a deleted one does
+ * not. Returns their IDs, so the caller tells the repeat of its own row from a product that was already there.
+ */
+export async function lockProductNameAndFindProducts(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  name: string
+): Promise<string[]> {
+  await transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`polaris.product.name:${identity.organizationId}:`}::text || ${productNameKey(name)}, 0))`
+  );
+  const rows = await transaction
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, identity.organizationId),
+        isNull(products.deletedAt),
+        sql`${productNameKey(sql`${products.name}`)} = ${productNameKey(name)}`
+      )
+    );
+  return rows.map((row) => row.id);
+}
+
+/**
+ * The names of a list that a product of the store already has (archived counts, deleted does not), compared as
+ * `lockProductNameAndFindProducts` compares them; each name comes back as it was asked. Only information for the
+ * preview of an import: the transaction of each row decides.
+ */
+export async function findExistingProductNames(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  names: readonly string[]
+): Promise<string[]> {
+  if (names.length === 0) {
+    return [];
+  }
+  const result = await transaction.execute(sql`
+    WITH asked AS (
+      SELECT asked_name, ${productNameKey(sql`asked_name`)} AS name_key
+      FROM unnest(ARRAY[${sql.join(
+        names.map((name) => sql`${name}`),
+        sql`, `
+      )}]::text[]) AS asked(asked_name)
+    ),
+    held AS (
+      SELECT DISTINCT ${productNameKey(sql`${products.name}`)} AS name_key
+      FROM ${products}
+      WHERE ${products.organizationId} = ${identity.organizationId}
+        AND ${products.deletedAt} IS NULL
+    )
+    SELECT DISTINCT asked.asked_name FROM asked JOIN held USING (name_key)
+  `);
+  return (result.rows as { asked_name: string }[]).map((row) => row.asked_name);
+}
+
 /** What a product of this organization was created with: the product, its default variant and its first stock movement. */
 export interface ProductCreationRecord {
   /** The first movement of the variant when it is a receipt or an inventory count; the opening stock, if any. */
@@ -433,7 +510,12 @@ export async function updateProduct(
     throw new ProductVersionConflictError();
   }
 
-  const name = normalizeProductName(input.name);
+  // a name kept as it is is not checked again: a product written before a rule of the name (a tab, a mark of the
+  // direction) keeps its category and description editable, and only a new name has to follow the rule
+  const name =
+    input.name === existing.name
+      ? existing.name
+      : normalizeProductName(input.name);
   const description = normalizeProductDescription(input.description);
   if (input.categoryId !== existing.categoryId && input.categoryId) {
     await requireActiveCategory(

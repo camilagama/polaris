@@ -71,7 +71,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 
 ### Borda e segurança de rede
 
-- [ ] **Namespaces de rate limit** reservados com IDs únicos por conta (os IDs do `wrangler.jsonc` são marcadores) para os limites de autenticação e de e-mail, e para os novos limites de endpoints autenticados caros (upload de mídia), e os do `/rpc`: `RPC_MUTATION_RATE_LIMIT` (escritas) e, desde a t400, `RPC_READ_RATE_LIMIT` e `RPC_READ_IP_RATE_LIMIT` (leituras, por sessão e por endereço).
+- [ ] **Namespaces de rate limit** reservados com IDs únicos por conta (os IDs do `wrangler.jsonc` são marcadores) para os limites de autenticação e de e-mail, e para os novos limites de endpoints autenticados caros (upload de mídia), e os do `/rpc`: `RPC_MUTATION_RATE_LIMIT` (escritas) e, desde a t400, `RPC_READ_RATE_LIMIT` e `RPC_READ_IP_RATE_LIMIT` (leituras, por sessão e por endereço), e, desde a t431, `RPC_BULK_RATE_LIMIT` (chamadas de muitas linhas, `kind: "bulk"`: as fatias da importação de planilha; 12 por minuto por sessão e por endereço, namespaces `9x0023`).
 - [ ] **`public/_headers` e HSTS verificados em staging**: CSP, `frame-ancestors 'none'`, `X-Content-Type-Options`, `Referrer-Policy` e `Strict-Transport-Security` presentes na casca da SPA servida pelos Static Assets (que não passa pelo Worker). Registrar a resposta real, não a configuração.
 - [ ] Defesa CSRF por `Origin` no `/rpc` e atributos de cookie (`SameSite`, `Secure`, `HttpOnly`) verificados em staging.
 - [ ] O Worker usa o IP da borda (`cf-connecting-ip`) e não `X-Forwarded-For`; o contexto autenticado de `/rpc` confere o teto absoluto de sessão ([ADR 0017](../adr/0017-politica-de-sessao-e-conta.md)).

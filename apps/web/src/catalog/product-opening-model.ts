@@ -34,6 +34,7 @@ export interface OpeningValidation {
   value: ProductOpeningValue | null;
 }
 
+export const PRODUCT_NAME_REQUIRED = "Informe o nome do produto.";
 export const PRICE_INVALID = "Informe um valor em reais, como 59,90.";
 export const QUANTITY_INVALID =
   "Informe quantos você tem, só com números. Ex.: 10.";
