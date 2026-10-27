@@ -1184,7 +1184,9 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   await retry.click();
   await expect(retry).toHaveCount(0);
   await expect(
-    page.getByText("Nenhuma despesa neste período", { exact: false })
+    page.getByText(
+      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
+    )
   ).toBeVisible();
 });
 

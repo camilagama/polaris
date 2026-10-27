@@ -226,7 +226,7 @@ function emptyText(filters: ExpenseFilters): string {
   if (filters.status === "voided") {
     return "Nenhuma despesa anulada neste período.";
   }
-  return "Nenhuma despesa neste período. Use o formulário para registrar a primeira.";
+  return "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira.";
 }
 
 export function ExpenseList({

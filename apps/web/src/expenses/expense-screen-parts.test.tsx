@@ -117,7 +117,9 @@ describe("ExpenseList", () => {
   });
 
   it("the empty month and the empty voided tab say different things", () => {
-    expect(list(state({}))).toContain("Nenhuma despesa neste período.");
+    expect(list(state({}))).toContain(
+      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
+    );
     expect(list(state({}), "voided")).toContain(
       "Nenhuma despesa anulada neste período."
     );
