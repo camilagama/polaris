@@ -5,16 +5,17 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
 
 /**
- * The three advisories left out of the dependency audit (docs/runbooks/dependency-audit.md) need a Better Auth plugin
- * that production never loads. This test is what keeps that true: it fails when the `createBetterAuth` of production
- * receives any plugin. The `testUtils` of the tests does not count: they build their own instance.
+ * No Better Auth plugin in production without a security review first. The three advisories of better-auth 1.6.23
+ * (GHSA-965c-763c-88jm, GHSA-r4xp-prcw-77qf, GHSA-q84f-53jg-9ppm) were each in a plugin (Magic Link, OAuth Proxy,
+ * device authorization) and are fixed since the upgrade to 1.7 (t435); this test stays as the line every plugin crosses
+ * (docs/runbooks/dependency-audit.md): it fails when the `createBetterAuth` of production receives any plugin. The
+ * `testUtils` of the tests does not count: they build their own instance.
  */
 const EXPLANATION =
-  "Production passes a Better Auth plugin to createAuth. The dependency audit leaves out GHSA-965c-763c-88jm (critical), " +
-  "GHSA-r4xp-prcw-77qf and GHSA-q84f-53jg-9ppm only because no plugin is loaded in production. Magic Link by e-mail " +
-  "would make the critical GHSA-965c-763c-88jm exploitable on better-auth 1.6.23 (OAuth state used as a Magic Link). " +
-  "Upgrade better-auth (1.7.7 or newer) and remove the exception in docs/runbooks/dependency-audit.md before adding a plugin, " +
-  "and ask for the security review.";
+  "Production passes a Better Auth plugin to createAuth. Every plugin is new attack surface: the three advisories of " +
+  "better-auth 1.6.23 (GHSA-965c-763c-88jm critical, GHSA-r4xp-prcw-77qf, GHSA-q84f-53jg-9ppm) were all in plugins " +
+  "(Magic Link, OAuth Proxy, device authorization). Ask for the security review, then update this test and " +
+  "docs/runbooks/dependency-audit.md in the same pull request.";
 
 const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$|-test-support\.tsx?$/;

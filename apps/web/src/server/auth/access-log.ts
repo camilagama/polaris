@@ -1,6 +1,6 @@
 import { logger } from "@polaris/observability/logger";
 import { describeError, isSqlState } from "@polaris/observability/wide-event";
-import { getIp } from "better-auth/api";
+import { getIP } from "better-auth/api";
 import { isIP } from "node:net";
 
 /**
@@ -54,7 +54,7 @@ export function requestIp(headers: Headers | undefined | null): string | null {
   if (!raw || raw.includes("%") || isIP(raw) === 0) {
     return null;
   }
-  return getIp(new Headers({ [CLIENT_IP_HEADER]: raw }), {
+  return getIP(new Headers({ [CLIENT_IP_HEADER]: raw }), {
     advanced: {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER], ipv6Subnet: 128 },
     },
@@ -69,7 +69,7 @@ export function requestIpForSessionRow(
   if (!raw || raw.includes("%") || isIP(raw) === 0) {
     return null;
   }
-  return getIp(new Headers({ [CLIENT_IP_HEADER]: raw }), {
+  return getIP(new Headers({ [CLIENT_IP_HEADER]: raw }), {
     advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
   });
 }

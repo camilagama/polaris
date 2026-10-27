@@ -172,13 +172,7 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      # better-auth 1.6.23: three advisories that need a plugin production does not load (a test guards that);
-      # exception in docs/runbooks/dependency-audit.md, review on 2026-11-10 or when the 1.7.x upgrade merges
-      - run: >-
-          bun audit --audit-level=high
-          --ignore=GHSA-965c-763c-88jm
-          --ignore=GHSA-r4xp-prcw-77qf
-          --ignore=GHSA-q84f-53jg-9ppm
+      - run: bun audit --audit-level=high
 
   # The most expensive gate (about 25 minutes when it ran as one job). It runs on pull
   # requests that change something it exercises (not on prose or database-only changes)

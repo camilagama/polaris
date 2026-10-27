@@ -97,11 +97,10 @@ describe("the key of the sign-in lock", () => {
         created.set(spelling, found.user.id);
         continue;
       }
-      const user = await adapter.createUser({
-        email: spelling,
-        emailVerified: false,
-        name: "Test",
-      });
+      const user = await adapter.createUser(
+        { email: spelling, emailVerified: false, name: "Test" },
+        { method: "email-password" }
+      );
       created.set(spelling, user.id);
     }
     let fusedByBetterAuth = 0;

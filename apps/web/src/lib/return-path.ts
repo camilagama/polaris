@@ -6,9 +6,10 @@ const MAX_DECODE_ROUNDS = 3;
 // Paths the Worker answers itself (`run_worker_first`): the app never sends the person to one of them.
 const sensitivePrefixes = ["/api", "/rpc", "/health", "/ready", "/webhooks"];
 const SIGN_IN_PATH = "/entrar";
-// The characters Better Auth 1.6.23 accepts in a relative callback: a plain path and a query without
-// `( ) ! ~ * '`, which `encodeURIComponent` leaves alone. The app enforces it itself so that a hostile
-// value gets the same 403 whatever the library does with it.
+// The characters Better Auth 1.6 accepted in a relative callback: a plain path and a query without
+// `( ) ! ~ * '`, which `encodeURIComponent` leaves alone. Better Auth 1.7 accepts any relative URL that stays on
+// the origin, a wider set; the app keeps this narrower rule itself so that a hostile value gets the same 403
+// whatever the library does with it.
 const callbackPathPattern =
   /^\/(?!\/|\\|%2f|%5c)[\w\-.+/@]*(?:\?[\w\-.+/=&%@]*)?$/i;
 

@@ -147,6 +147,8 @@ const gates: Gate[] = [
   ["device-sessions", "verify-device-sessions-gate.ts"],
   // row security with FORCE on Better Auth's tables and the auth audit (0098): catalog, real logins, planted defects
   ["auth-tables-row-security", "verify-auth-tables-row-security-gate.ts"],
+  // one account per (provider_id, account_id) (0106): Better Auth 1.7 refuses a key held by two rows
+  ["account-key", "verify-account-key-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
@@ -361,6 +363,7 @@ const suites: Record<string, string[]> = {
     "offline-devices",
     "device-sessions",
     "auth-tables-row-security",
+    "account-key",
     "offline-lease",
     "sync-log",
     "bootstrap",
