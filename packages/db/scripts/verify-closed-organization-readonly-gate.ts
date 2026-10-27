@@ -36,6 +36,7 @@ import {
   TenantAuthorizationError,
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
+import { runClock, storeDay } from "./gate-clock";
 import {
   createProductFixture,
   createTenantFixture,
@@ -764,10 +765,10 @@ async function run() {
       "not from D on"
     );
     const deadlineG = closureDeadlines(
-      new Date(Date.now() - 89 * 86_400_000),
+      new Date(Date.now() - 88 * 86_400_000),
       "America/Sao_Paulo"
     );
-    await age(orgG, new Date(Date.now() - 89 * 86_400_000));
+    await age(orgG, new Date(Date.now() - 88 * 86_400_000));
     assert.ok(deadlineG.deletableFrom.getTime() > Date.now());
     const caseG = await supportCase(orgG.organizationId);
     await owner.pool.query(
@@ -1360,7 +1361,7 @@ async function run() {
       ordinal: 1,
       sizeBytes: 10,
     });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = storeDay(runClock);
     await privacyClient.recordDataExportFile(
       fileFor(askedE.id, orgE.organizationId, `polaris-dados-${today}.zip`)
     );

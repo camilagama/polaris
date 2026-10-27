@@ -17,6 +17,7 @@ import {
   type SyncCommandOutcome,
 } from "../src/sync-command-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
+import { runClock, storeDay } from "./gate-clock";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -42,13 +43,9 @@ const expectedDatabase =
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
-const DAY = 86_400_000;
 const hash = (n: number) => n.toString(16).padStart(64, "0");
-const calendarDate = (offsetDays: number) =>
-  // the organization's calendar (America/Sao_Paulo), not UTC's
-  new Date(Date.now() + offsetDays * DAY).toLocaleDateString("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  });
+// the organization's calendar (America/Sao_Paulo), not UTC's, on the clock fixed at the start of the run
+const calendarDate = (offsetDays: number) => storeDay(runClock, offsetDays);
 
 const classify = (error: unknown): string | null => {
   if (error instanceof ProductIdConflictError) {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { InsufficientStockError } from "@polaris/domain/inventory/inventory";
-import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import {
   SaleHasReturnsError,
   SaleNotReturnableError,
@@ -14,6 +13,7 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { getSale } from "../src/sale-query-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
+import { runClock, shiftDay, storeDay } from "./gate-clock";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -60,13 +60,6 @@ function formatCents(value: bigint): string {
   const whole = value / 100n;
   const fraction = (value % 100n).toString().padStart(2, "0");
   return `${whole}.${fraction}`;
-}
-
-function shiftDay(day: string, days: number): string {
-  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + days))
-    .toISOString()
-    .slice(0, 10);
 }
 
 async function run() {
@@ -542,7 +535,7 @@ async function run() {
     );
 
     // ------------------------------------- 7. a back-dated sale across it all
-    const today = calendarDateInTimeZone(new Date(), saoPaulo);
+    const today = storeDay(runClock, 0, saoPaulo);
     const backDay = shiftDay(today, -10);
     const retro = await sell(
       [
@@ -623,7 +616,7 @@ async function run() {
       receiveStock(transaction, identity, {
         commandId: randomUUID(),
         commandVersion: 1,
-        occurredOn: calendarDateInTimeZone(new Date(), saoPaulo),
+        occurredOn: storeDay(runClock, 0, saoPaulo),
         quantity: 7,
         unitCost: "11.00",
         variantId: p1.variantId,

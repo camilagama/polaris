@@ -5,7 +5,6 @@ import {
   InventoryVariantNotFoundError,
 } from "@polaris/domain/inventory/inventory";
 import {
-  calendarDateInTimeZone,
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
@@ -45,6 +44,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { runClock, shiftDay, storeDay } from "./gate-clock";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -63,19 +63,8 @@ import {
 
 const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 
-/** Shifts a `YYYY-MM-DD` calendar date by whole days. */
-function shiftDay(day: string, days: number): string {
-  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + days))
-    .toISOString()
-    .slice(0, 10);
-}
-
 /** A commercial day two days back in the organization's calendar: inside the retroactive window whenever the gate runs. */
-const saleDay = shiftDay(
-  calendarDateInTimeZone(new Date(), "America/Sao_Paulo"),
-  -2
-);
+const saleDay = storeDay(runClock, -2);
 const injectedFailureMessage = "pr43 gate injected failure";
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
