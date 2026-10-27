@@ -1,4 +1,5 @@
 import { env, exports } from "cloudflare:workers";
+import { activationFunnelResponse } from "@polaris/contracts/admin-activation-funnel";
 import { describe, expect, it } from "vitest";
 import { signAccessToken, type TokenOptions } from "./workerd-access";
 
@@ -436,6 +437,28 @@ describe("admin worker, whole chain, PostgreSQL", () => {
         });
         expect(answer.status).toBe(404);
       }
+    });
+  });
+
+  describe("activation funnel", () => {
+    // the gate counts the `activation_funnel.read` events of the owner afterwards: one per answered read, none for a
+    // refused one (ACTIVATION_FUNNEL_ANSWERED_READS in verify-admin-worker-gate.ts)
+    it("answers each read through the audited wrapper in the closed contract, and refuses what is not one", async () => {
+      // three answered reads: ACTIVATION_FUNNEL_ANSWERED_READS of the gate counts them, change both
+      for (const weeks of [1, 4, 26]) {
+        // biome-ignore lint/performance/noAwaitInLoops: Three reads, three events, in order.
+        const read = await call("GET", `/api/funnel?weeks=${weeks}`);
+        expect(read.status).toBe(200);
+        expect(activationFunnelResponse.parse(read.body)).toEqual(read.body);
+        expect(read.body.weeks).toBe(weeks);
+        expect(read.body.cohorts).toHaveLength(weeks);
+      }
+      expect((await call("GET", "/api/funnel?weeks=0")).status).toBe(400);
+      expect((await call("GET", "/api/funnel?weeks=27")).status).toBe(400);
+      const disabled = await call("GET", "/api/funnel?weeks=4", {
+        token: await signAccessToken({ subject: fixture.principals.disabled }),
+      });
+      expect(disabled.status).toBe(403);
     });
   });
 

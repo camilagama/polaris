@@ -61,6 +61,7 @@ function setup(
   const report = vi.fn();
   const dependencies: AdminDependencies = {
     accessLog: { read: vi.fn() },
+    activationFunnel: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
         email: null,
