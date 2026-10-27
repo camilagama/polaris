@@ -406,6 +406,18 @@
   * {
     @apply border-border;
   }
+  /* Titles break into lines of even length instead of leaving one word alone on the last (no effect where the browser
+     does not know `balance`; a utility such as `text-nowrap` or `text-pretty` still wins, it is above this layer). */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .text-title,
+  .text-section {
+    text-wrap: balance;
+  }
   ::selection {
     background: color-mix(in oklch, var(--mark) 24%, transparent);
   }

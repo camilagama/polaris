@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
@@ -286,11 +287,15 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
     }),
   });
   await menuOf(page, "Camisetas").click();
-  await page.getByRole("menuitem", { exact: true, name: "Remover" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("menuitem", { exact: true, name: "Remover" })
+  );
   const confirmation = page.getByRole("group", {
     name: "Confirmar remoção de Camisetas",
   });
-  await expect(confirmation).toBeFocused();
+  // the confirmation of the row takes the focus, and the keyboard sees it (t439)
+  await expectFocusRing(confirmation);
   await expect(confirmation).toContainText(
     "O histórico de vendas continua igual."
   );

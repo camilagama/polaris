@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { mediaAsset, mediaListBody, solidPng } from "./media-fixtures";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -230,10 +231,12 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   ).toBeFocused();
 
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Remover imagem" })
-    .click();
+  await activateByKeyboard(
+    page,
+    page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Remover imagem" })
+  );
   await expect(
     page.getByText(
       "Imagem 2 removida do produto. Um lugar foi liberado no plano."
@@ -241,9 +244,10 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   ).toBeVisible();
   expect(removed).toBe(1);
   await expect(page.getByText("Imagem 1 de 1")).toBeVisible();
-  await expect(
+  // the heading of the list takes the focus, and the keyboard sees it (t439)
+  await expectFocusRing(
     page.getByRole("heading", { level: 3, name: "Imagens associadas" })
-  ).toBeFocused();
+  );
 });
 
 test("a lista de imagens que não carrega diz o motivo e oferece 'Tentar novamente', nunca o vazio", async ({

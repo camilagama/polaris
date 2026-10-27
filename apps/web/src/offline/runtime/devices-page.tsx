@@ -528,7 +528,7 @@ export function DevicesPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <ScreenTitle
-          className="outline-none"
+          className="focus-ring"
           id={DEVICES_HEADING_ID}
           ref={headingRef}
           tabIndex={-1}

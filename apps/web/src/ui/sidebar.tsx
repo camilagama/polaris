@@ -415,7 +415,7 @@ function SidebarRail() {
   return (
     <button
       aria-hidden="true"
-      className="absolute inset-y-0 -right-2 z-20 flex w-4 cursor-w-resize border-0 bg-transparent p-0 motion-full:transition-all motion-full:ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[collapsible=icon]:cursor-e-resize"
+      className="absolute inset-y-0 -right-2 z-20 flex w-4 cursor-w-resize border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] motion-full:after:transition-colors motion-full:after:ease-linear hover:after:bg-sidebar-border group-data-[collapsible=icon]:cursor-e-resize"
       data-sidebar="rail"
       data-slot="sidebar-rail"
       onClick={toggleSidebar}
