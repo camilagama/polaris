@@ -32,16 +32,16 @@ Data: 27/10/2026. Versões fixadas: `e2e` 0.21.3, `@e2e-dev/web` 0.15.3 (`playwr
 
 `pilha/com-pilha.sh` monta a pilha do e2e-real (runbook `docs/runbooks/e2e-real.md`) sem o Playwright:
 
-1. `vite build` num diretório próprio (`dist-e2e/agente`) e `vite preview` (workerd), com o **ambiente fechado** de `previewEnvironment` (`env -i`).
+1. `vite build` num diretório próprio (`dist-e2e/agente`), refeito a cada chamada porque o preview segue o ponteiro `.wrangler/deploy`, e `vite preview` (workerd), com o **ambiente fechado** de `previewEnvironment` (`env -i`). Ao sair, o script apaga o build e o ponteiro, como o teardown do e2e-real.
 2. `pilha/preparar.ts` cria o banco do run, os 7 logins por binding e as lojas fictícias:
    - uma por área (`bb-venda`, `bb-estoque`, `bb-despesas`) e duas para os testes de achado (`bb-achados-1` e `-2`);
    - cada uma tem Camiseta básica, Boné aba curva e Meia cano alto com estoque, mais uma venda de 2 camisetas;
    - os dados entram pela própria `/rpc` (`e2e-real/seed.ts`).
 3. Roda o comando dado e derruba o preview.
 
-O preview e o `preparar.ts` rodam **sem a chave** (`env -i` e `env -u`); só o comando do `e2e` a recebe.
+O preview e o `preparar.ts` rodam **sem a chave** (`env -i` e `env -u`). Só o comando do `e2e` a recebe, e o script o roda com `E2E_TELEMETRY_DISABLED=1` imposto e sem a URL do dono do banco. O script também recusa um `E2E_AGENT_STATE` dentro do repositório.
 
-- **PostgreSQL:** um cluster próprio e descartável, o PostgreSQL 18 do `~/pgtest` com `initdb` em `/tmp`, na porta 5442 e só no loopback. **Não** usei o `~/pgtest` da porta 5432, que é da área db (a t435 rodava em paralelo). O harness cria e apaga papéis no cluster (`polaris_pr11_runtime`), e isso poderia derrubar os gates de outra tarefa.
+- **PostgreSQL:** um cluster próprio e descartável (o papel `polaris_pr11_runtime` que o harness cria fica nele até o cluster ser apagado), o PostgreSQL 18 do `~/pgtest` com `initdb` em `/tmp`, na porta 5442 e só no loopback. **Não** usei o `~/pgtest` da porta 5432, que é da área db (a t435 rodava em paralelo). O harness cria e apaga papéis no cluster (`polaris_pr11_runtime`), e isso poderia derrubar os gates de outra tarefa.
 - **Entrada:** nem senha nem Google. Uso o cookie de sessão do `testUtils` do Better Auth, feito no Node com o segredo do run, como as fixtures do e2e-real.
   - `tests/sessoes.setup.e2e.ts` põe o cookie com `browser.setCookies` e salva a sessão (`session.save`). O explore usa `--session <loja>`.
   - O valor do cookie também está em `secrets` da config, que o `e2e` troca por `<secret:...>` em relatório e saída.
@@ -96,9 +96,9 @@ Sobre a cobertura:
 | 3ª | "400,00" | "R$ 300,00" |
 | 4ª | "500,00" | "R$ 400,00" |
 
-  O passo do agente é provado antes, pela descrição da despesa visível na lista.
+  O passo do agente é provado antes, pela descrição da despesa visível na lista. Entre a 1ª e a 2ª linha houve uma execução descartada (ver "Cache de replay"), que também registrou R$ 100,00.
 - **Causa provável:** `apps/web/src/dashboard/use-period-summary.ts` lê o período só quando a tela monta ou quando o período muda (`useEffect` sobre `load`). `dashboard-page.tsx` mantém o hook fora dos painéis das abas, então trocar de aba não relê, e registrar despesa não invalida a leitura.
-- **Já coberto?** Não. `e2e-real/jornadas/despesa.e2e.ts` registra em `/expenses` e depois faz `page.goto("/dashboard")`, uma carga nova da tela.
+- **Já coberto?** Não. `e2e-real/jornadas/despesa.e2e.ts` registra em `/expenses` e depois faz `page.goto("/dashboard")`, uma carga nova da tela. Também não há teste da troca de aba em `apps/web/e2e/` nem em `apps/web/e2e-pwa/`.
 - **Documentado?** Não: o DESIGN.md (§ Despesas e § Resultado) descreve o "Atualizar", não a leitura antiga ao trocar de aba.
 - **Severidade:** é o mesmo fluxo que o DESIGN.md desenha (Despesas é aba do Resultado). O lojista vê "Nenhuma despesa registrada neste período" logo depois de registrar uma.
 
@@ -107,7 +107,8 @@ Sobre a cobertura:
 - **Onde:** `/sales`, ajuste Desconto em Percentual (%) = 150.
 - **Observado:** "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo." O valor é positivo e o tipo é desconto: a frase não explica o erro.
 - **Prova:** `ASSERTION_FAILED` em `getByText(/100\s?%/)`, com 0 nós. O passo do agente é provado antes por `toHaveValue("150")` no campo.
-- **Causa:** `apps/web/src/sales/sale-form-model.ts:1278` (`calculationIssue`). Todo `InvalidSaleAdjustmentError` vira a mensagem genérica, inclusive o teto de percentual do domínio (`InvalidPercentageError`, em `packages/domain/src/sales/sale-adjustments.ts`). O teto foi decidido em `docs/business-rules/sales.md`.
+- **Causa:** `apps/web/src/sales/sale-form-model.ts:1279` (`calculationIssue`). Todo `InvalidSaleAdjustmentError` vira a mensagem genérica, inclusive o teto de percentual do domínio: `InvalidPercentageError`, com `MAX_RATE_PERCENTAGE_POINTS = 100` em `packages/domain/src/money/money.ts`, traduzido em `packages/domain/src/sales/sale-adjustments.ts`. A mesma frase volta na recusa do servidor (`invalid_sale_adjustment`, `sale-form-model.ts:1824`), e uma correção precisa tratar os dois caminhos.
+- **Documentação:** o teto foi decidido em `docs/business-rules/sales.md`, que diz que os valores ficam em `money.md` "quando implementados". O `money.md` ainda não traz o limite de 100%.
 - **Ressalva:** "dizer 100%" é a minha leitura do esperado. O texto certo é decisão de UX ou produto.
 
 Nenhuma correção foi feita (fora do escopo). Os dois testes têm a tag `bugbash` e falham até a correção.
@@ -145,6 +146,13 @@ O que os artefatos guardam, todos fora do git (`.e2e/` está no `.gitignore`):
 - **O que foi para a Anthropic:** a instrução, a árvore de acessibilidade e as capturas pedidas das telas locais, com dados fictícios. O cookie não foi: o setup roda sem modelo e o valor é `secret`.
 - **Risco a vigiar:** o explore **não tem lista de origens permitidas**. O agente pode seguir um link para fora e levar os segredos do passo. Aqui a pilha é local e os links externos são só os textos legais.
 
+## Depois da revisão
+
+Os scripts mudaram depois das execuções acima: build sempre refeito e apagado ao sair, telemetria imposta pelo script, validação do diretório de estado, `chmod` do `preview.env`, nome do secret por cookie e erro para nome de loja inválido. A versão final foi conferida só sem modelo, com o teste de fumaça (2 de 2 passaram). Ficaram de fora:
+
+- `toContainText("100,00")` também aceitaria "1.100,00";
+- os testes usam o relógio real (`Date.now()`, "competência neste mês"). Ao virarem specs do e2e-real, passam a usar o `T0` fixo, com um caso perto da meia-noite de São Paulo.
+
 ## Ferramenta: o que atrapalhou
 
 1. **Sonnet 5.5 e o thinking:** um passo da sessão (b) morreu com `MODEL_PROVIDER_FAILED`, porque a API recusou a assinatura de um bloco de thinking ("The `tools` list differs from the one this block was created with"). A documentação do `e2e` diz que trata o caso, mas não tratou.
@@ -163,7 +171,7 @@ O que os artefatos guardam, todos fora do git (`.e2e/` está no `.gitignore`):
 
 **Por que sim:**
 
-- Em cerca de US$ 0,84 e menos de 10 min de relógio de exploração, achou um bug de comportamento que a suíte de 75 specs não cobre. O explorador cruza números entre telas, e o e2e-real recarrega a página entre os passos.
+- Em cerca de US$ 0,84 e menos de 10 min de relógio de exploração, achou um bug de comportamento que os specs de Playwright existentes (75, pelo número do enunciado) não cobrem. O explorador cruza números entre telas, e o e2e-real recarrega a página entre os passos.
 - O custo por sessão (US$ 0,25 a 0,30) é baixo.
 - A pilha local não muda: o `com-pilha.sh` reaproveita o harness do e2e-real.
 
@@ -192,8 +200,8 @@ export PATH=<node 24>/bin:$PATH E2E_AGENT_STATE=<dir fora do repo, 0700> \
 cd apps/web
 env -u E2E_ANTHROPIC_API_KEY CI=true bun e2e-agent/pilha/preparar.ts banco
 E2E_AGENT_LOJAS="bb-venda bb-estoque bb-despesas bb-achados-1 bb-achados-2" \
-  e2e-agent/pilha/com-pilha.sh --construir -- sh -c 'cd e2e-agent && E2E_TELEMETRY_DISABLED=1 bunx e2e run tests/fumaca.e2e.ts'
-e2e-agent/pilha/com-pilha.sh -- sh -c 'cd e2e-agent && E2E_TELEMETRY_DISABLED=1 bunx e2e explore "<objetivo>" --session bb-despesas --agent explorador --max-steps 2 --timeout 900000 --output .e2e/bugbash/despesas --video on --reporter list,markdown'
-e2e-agent/pilha/com-pilha.sh -- sh -c 'cd e2e-agent && E2E_TELEMETRY_DISABLED=1 bunx e2e run tests/bugbash'
+  e2e-agent/pilha/com-pilha.sh -- sh -c 'cd e2e-agent && bunx e2e run tests/fumaca.e2e.ts'
+e2e-agent/pilha/com-pilha.sh -- sh -c 'cd e2e-agent && bunx e2e explore "<objetivo>" --session bb-despesas --agent explorador --max-steps 2 --timeout 900000 --output .e2e/bugbash/despesas --video on --reporter list,markdown'
+e2e-agent/pilha/com-pilha.sh -- sh -c 'cd e2e-agent && bunx e2e run tests/bugbash'
 env -u E2E_ANTHROPIC_API_KEY CI=true bun e2e-agent/pilha/preparar.ts limpar
 ```

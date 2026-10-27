@@ -128,13 +128,15 @@ async function main(): Promise<void> {
     const origin = `http://127.0.0.1:${rest[0] ?? "4321"}`;
     const environment = previewEnvironment(owner, run, origin, false);
     // só nomes e valores do ambiente fechado, um por linha, para `env -i` do script; vai para arquivo 0600
+    const previewFile = join(stateDir as string, "preview.env");
     writeFileSync(
-      join(stateDir as string, "preview.env"),
+      previewFile,
       Object.entries(environment)
         .map(([name, value]) => `${name}=${value}`)
         .join("\n"),
       { mode: 0o600 }
     );
+    chmodSync(previewFile, 0o600);
     return;
   }
   if (command === "semear") {
@@ -147,7 +149,13 @@ async function main(): Promise<void> {
       : {};
     const now = new Date();
     for (const store of rest) {
-      if (!storePattern.test(store) || sessions[store]) {
+      if (!storePattern.test(store)) {
+        throw new Error(
+          `Nome de loja recusado: ${store} (bb-<letras, dígitos e hífen>).`
+        );
+      }
+      // já semeada; uma semeadura que falhou no meio só se refaz com `limpar` e `banco` (o usuário tem id fixo)
+      if (sessions[store]) {
         continue;
       }
       // biome-ignore lint/performance/noAwaitInLoops: uma loja de cada vez, no limite de taxa do preview

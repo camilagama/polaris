@@ -30,7 +30,10 @@ const sessions: Record<string, StoredSession> =
 
 const secrets = Object.fromEntries(
   Object.entries(sessions).flatMap(([store, session]) =>
-    session.cookies.map((cookie) => [`sessao-${store}`, cookie.value])
+    session.cookies.map((cookie) => [
+      `sessao-${store}-${cookie.name}`,
+      cookie.value,
+    ])
   )
 );
 
