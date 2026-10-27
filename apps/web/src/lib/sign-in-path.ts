@@ -17,7 +17,7 @@ const errors: readonly string[] = [
   "limite",
 ] satisfies SignInError[];
 
-/** `encodeURIComponent` leaves `! ' ( ) * ~` alone; Better Auth 1.6.23 does not accept them in a callback. */
+/** `encodeURIComponent` leaves `! ' ( ) * ~` alone; the callback rule of the app (`return-path.ts`) does not accept them. */
 function encodeAll(value: string): string {
   return encodeURIComponent(value).replace(
     /[!'()*~]/g,
@@ -73,7 +73,7 @@ export interface SocialSignInRequest {
 
 /**
  * The body of `POST /api/auth/sign-in/social` (ADR 0100). The destination travels inside `voltar`,
- * fully encoded, because the callback of Better Auth 1.6.23 takes only `[\w-.+/=&%@]`. A destination
+ * fully encoded, because the callback rule of the app takes only `[\w-.+/=&%@]` (Better Auth 1.6's own). A destination
  * that does not fit goes to the start. The client never sends an `idToken`.
  */
 export function buildSocialSignInRequest(

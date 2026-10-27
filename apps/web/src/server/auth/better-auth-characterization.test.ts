@@ -209,6 +209,23 @@ describe("Better Auth as the Polaris uses it (characterization, t435)", () => {
       }
     });
 
+    // Since 1.7 the Drizzle adapter checks the schema when an instance starts and logs a mismatch as an error
+    // (here, `better_auth_internal_error` on every isolate). The check reads only the Drizzle schema, no connection.
+    it("passes the schema check of the Drizzle adapter with the production configuration", async () => {
+      const auth = createBetterAuth({
+        auditEventWriter: () => Promise.resolve(),
+        baseURL,
+        database: {} as never,
+        secret: testSecret,
+      });
+      const context = (await auth.$context) as unknown as {
+        explicitSchemaCheck?: () => Promise<void>;
+      };
+
+      expect(context.explicitSchemaCheck).toBeTypeOf("function");
+      await expect(context.explicitSchemaCheck?.()).resolves.toBeUndefined();
+    });
+
     it("keys an account by provider and account ID, the columns account_id and provider_id, with no issuer", async () => {
       const { auth } = createHarness();
       const { tables } = (await auth.$context) as unknown as {
@@ -290,7 +307,11 @@ describe("Better Auth as the Polaris uses it (characterization, t435)", () => {
         "2001:0db8:abcd:0012:3456:789a:bcde:f012",
         "2001:0db8:abcd:0012:0000:0000:0000:0000",
       ],
-      ["2001:DB8::1", "2001:0db8:0000:0000:0000:0000:0000:0001", "2001:0db8:0000:0000:0000:0000:0000:0000"],
+      [
+        "2001:DB8::1",
+        "2001:0db8:0000:0000:0000:0000:0000:0001",
+        "2001:0db8:0000:0000:0000:0000:0000:0000",
+      ],
       ["::ffff:203.0.113.7", "203.0.113.7", "203.0.113.7"],
     ])(
       "reads %s whole for the log (%s) and by its network for the session row (%s)",

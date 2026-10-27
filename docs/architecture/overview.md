@@ -36,7 +36,7 @@ Instantes são guardados em UTC; datas de negócio usam o fuso da organização 
 
 ## Identidade e ownership do domínio
 
-Better Auth é responsável por identidade, credenciais e sessões; organização, membership, capabilities, billing e entitlements são dados do domínio Polaris ([ADR 0004](../adr/0004-separar-autenticacao-de-tenancy.md)). O cliente pode solicitar uma organização, mas não autorizar seu próprio acesso. A política de sessão e de conta está no [ADR 0017](../adr/0017-politica-de-sessao-e-conta.md); as capabilities finas, atribuídas só ao owner na V1, no [ADR 0022](../adr/0022-capabilities-finas-apenas-owner.md).
+Better Auth é responsável por identidade, credenciais e sessões; organização, membership, capabilities, billing e entitlements são dados do domínio Polaris ([ADR 0004](../adr/0004-separar-autenticacao-de-tenancy.md)). O cliente pode solicitar uma organização, mas não autorizar seu próprio acesso. A política de sessão e de conta está no [ADR 0017](../adr/0017-politica-de-sessao-e-conta.md); as capabilities finas, atribuídas só ao owner na V1, no [ADR 0022](../adr/0022-capabilities-finas-apenas-owner.md). As tabelas do Better Auth (`user`, `account`, `session`, `verification`) são do Polaris, com migrations, RLS e grants próprios; o schema segue o do Better Auth 1.7, que é o da 1.6. Cada `account` tem uma chave única `(provider_id, account_id)` (migration 0106): o Better Auth 1.7 acha a conta por essa chave e recusa uma chave em duas linhas.
 
 ## Auditoria
 

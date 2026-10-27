@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /** Better Auth's runtime (0041): the whole of `session`, with no `app.*` setting on its connection. */
@@ -187,6 +188,12 @@ export const account = pgTable(
   // its candidates, so it never hides an account of a candidate (its NOT EXISTS stays closed)
   (table) => [
     index("account_user_id_idx").on(table.userId),
+    // One account per key (0106): Better Auth 1.7 finds an account by provider and account ID and refuses a key held
+    // by two rows, so a duplicate (two first sign-ins with Google at once) would lock its person out for good
+    uniqueIndex("account_provider_id_account_id_key").on(
+      table.providerId,
+      table.accountId
+    ),
     pgPolicy("account_auth_runtime_all", {
       for: "all",
       to: authRuntimeRole,

@@ -10,6 +10,7 @@ import { createBetterAuth, databaseVerificationLinkRecorder } from "./auth";
 import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
 import { handleBetterAuthRequest } from "./auth/handler";
+import { googleTestProfile } from "./auth/google-profile-test-support";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./auth/legal-acceptance-test-support";
 import {
   hostileRedirectTargets,
@@ -47,11 +48,10 @@ const testGoogleProvider: GoogleOptions = {
   clientSecret: "google-test-secret",
   disableIdTokenSignIn: true,
   getUserInfo: async () => ({
-    data: { sub: "google-subject-1" },
+    data: googleTestProfile("google-subject-1", "google@example.invalid", true),
     user: {
       email: "google@example.invalid",
       emailVerified: true,
-      id: "google-subject-1",
       name: "Google Test User",
     },
   }),
@@ -1058,20 +1058,19 @@ describe("Google OAuth and security audit", () => {
 
     const authContext = (await auth.$context) as unknown as {
       internalAdapter: {
-        findAccountByProviderId: (
-          accountId: string,
-          providerId: string
-        ) => Promise<{
+        findAccountByKey: (key: {
+          accountId: string;
+          providerId: string;
+        }) => Promise<{
           accessToken?: string | null;
           idToken?: string | null;
         } | null>;
       };
     };
-    const googleAccount =
-      await authContext.internalAdapter.findAccountByProviderId(
-        "google-subject-1",
-        "google"
-      );
+    const googleAccount = await authContext.internalAdapter.findAccountByKey({
+      accountId: "google-subject-1",
+      providerId: "google",
+    });
     expect(sessionResponse.status).toBe(200);
     expect(sessionBody.user?.id).toBeTruthy();
     expect(sessionBody.session?.token).toBeTruthy();
@@ -1300,17 +1299,16 @@ describe("Google OAuth and security audit", () => {
     );
     const authContext = (await auth.$context) as unknown as {
       internalAdapter: {
-        findAccountByProviderId: (
-          accountId: string,
-          providerId: string
-        ) => Promise<{ id: string } | null>;
+        findAccountByKey: (key: {
+          accountId: string;
+          providerId: string;
+        }) => Promise<{ id: string } | null>;
       };
     };
-    const googleAccount =
-      await authContext.internalAdapter.findAccountByProviderId(
-        "google-subject-1",
-        "google"
-      );
+    const googleAccount = await authContext.internalAdapter.findAccountByKey({
+      accountId: "google-subject-1",
+      providerId: "google",
+    });
 
     expect(response.status).not.toBe(200);
     expect(getTokenCalls()).toBe(0);

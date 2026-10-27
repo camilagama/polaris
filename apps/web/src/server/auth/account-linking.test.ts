@@ -11,6 +11,7 @@ import {
   handleSetPasswordRequest,
 } from "../auth/handler";
 import type { WorkerBindings } from "../environment";
+import { googleTestProfile } from "./google-profile-test-support";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 import {
   hostileRedirectTargets,
@@ -64,11 +65,14 @@ function createGoogleProvider({
     getUserInfo: () => {
       googleUserEmails.push(googleProfile.email);
       return Promise.resolve({
-        data: { sub: "google-subject-1" },
+        data: googleTestProfile(
+          "google-subject-1",
+          googleProfile.email,
+          googleProfile.emailVerified
+        ),
         user: {
           email: googleProfile.email,
           emailVerified: googleProfile.emailVerified,
-          id: "google-subject-1",
           name: "Google Test User",
         },
       });
@@ -329,10 +333,10 @@ async function findGoogleAccount(
 ) {
   const authContext = (await auth.$context) as unknown as {
     internalAdapter: {
-      findAccountByProviderId: (
-        accountId: string,
-        providerId: string
-      ) => Promise<{
+      findAccountByKey: (key: {
+        accountId: string;
+        providerId: string;
+      }) => Promise<{
         accessToken?: string | null;
         id: string;
         idToken?: string | null;
@@ -340,10 +344,10 @@ async function findGoogleAccount(
       } | null>;
     };
   };
-  return authContext.internalAdapter.findAccountByProviderId(
-    "google-subject-1",
-    "google"
-  );
+  return authContext.internalAdapter.findAccountByKey({
+    accountId: "google-subject-1",
+    providerId: "google",
+  });
 }
 
 describe("Google and password account linking", () => {
