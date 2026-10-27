@@ -2432,7 +2432,6 @@ Origem: o corte 2.5 (Everton), o desenho do Filipe (T-1 a T-6) e as condições 
 | Medida de CPU | Em revisão | `wrangler dev` local contra PostgreSQL falso (CPU do `workerd`, mediana/p95 em ms): `get-session` 18,9/24,2; `product.create` 52,3/59,1; `importBatch` 1 linha 53,1/58,6; 10 linhas 340,8/387,7; 25 linhas 790,6/923,2. Na razão de staging (2,7), 1 linha ≈ 20 ms e 10 ≈ 126 ms: o teto de 10 ms do Free não cabe nem com uma linha. Medida no staging: Juan, depois do merge. |
 | Provas | Em revisão | Unidade: `product-import-csv.test.ts`, `product-import-rows.test.ts` (paridade com o formulário), `product-import-send.test.ts`, `product-import-failed-csv.test.ts`, `product-import-router.test.ts` (AC-4, AC-5, AC-6, AC-7, schema), `rate-limit.test.ts`, `product.test.ts`. Gate `product-import` (PostgreSQL 18 do CI): trava por nome com duas fatias ao mesmo tempo, arquivado e removido, RLS entre lojas, U+0000, limite do Free, e o `update` de um produto com nome antigo fora da regra (descrição editável, nome novo inválido recusado). O gate `product-opening-stock` entrou na suíte `ci` (estava registrado e fora dela). |
 
-
 ### Checagens determinísticas do dreaming: nomes de evento e relógio solto nos gates (t438; sem migration)
 
 | Item | Estado | Detalhe |
