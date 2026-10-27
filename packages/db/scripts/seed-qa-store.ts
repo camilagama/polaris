@@ -58,6 +58,13 @@ import {
  *   needs the store to leave the paid plan with more goals than the Free
  *   allows: that is billing, which this script never touches.
  *
+ * Before any of it, the store is marked as internal
+ * (`platform_internal_organizations`, corte 2.4): a QA store never counts in
+ * the activation funnel. The database owner writes the marker directly (no
+ * operator, so `marked_by` stays null and no platform audit is written, as
+ * when it registers a principal); the Admin's command unmarks it for a test,
+ * and running the seed again on that store marks it again.
+ *
  * The owner may date a sale at most 30 days back (ADR 0021). A sale of an
  * older day is confirmed 30 days later and then moved back by 30 days with
  * an UPDATE of `sales.occurred_at` and `sales.occurred_on` only (the stock
@@ -179,6 +186,22 @@ export async function assertQaTarget(
     environment: staging ? "staging" : "local",
     organizationName: store.name,
   };
+}
+
+/**
+ * Marks the QA store as internal, so the activation funnel leaves it out (corte 2.4, ADR 0071 amended). Run as
+ * the database owner, who bypasses the forced row security of the marker (BYPASSRLS on Neon, a superuser
+ * locally); no operator, so `marked_by` is null. Marking again changes nothing.
+ */
+export async function markQaStoreInternal(
+  client: QueryClient,
+  organizationId: string
+): Promise<boolean> {
+  const result = await client.query(
+    "INSERT INTO public.platform_internal_organizations (organization_id) VALUES ($1) ON CONFLICT (organization_id) DO NOTHING",
+    [organizationId]
+  );
+  return result.rowCount === 1;
 }
 
 /** A small deterministic generator (Park-Miller), so two runs with the same options make the same shape. */
@@ -543,6 +566,10 @@ export async function seedQaStore(
   options: SeedOptions
 ): Promise<SeedReport> {
   assertOptions(options);
+  await markQaStoreInternal(
+    pool as unknown as QueryClient,
+    options.organizationId
+  );
   const as: As = (capability, operation) =>
     withAuthorizedTenantTransaction(
       db,

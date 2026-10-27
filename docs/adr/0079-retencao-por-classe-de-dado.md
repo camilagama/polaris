@@ -124,6 +124,10 @@ O usuário pediu: "10 anos é muita coisa, diminua se possível dentro da lei". 
 - **Risco aceito:** o STJ aplica o prazo de 10 anos do Código Civil, art. 205, à responsabilidade contratual (EREsp 1.280.825/RJ, 2018). Uma ação do lojista entre o 6º e o 10º ano depois do fim do contrato acharia o Polaris sem a prova do aceite. O **legal hold** continua suspendendo o apagamento (fiscalização, processo ou pedido judicial). A validação por advogado segue recomendada (`legalReview: pending`), sem bloquear.
 - **Onde mudou:** `retention.ts` (`legal_acceptance` e a classe nova), o texto dos termos e da política de privacidade (versão 1, ainda rascunho, com o SHA-256 novo em `LEGAL_DOCUMENTS`), `docs/business-rules/privacy.md` e `authentication.md`, o [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), os comentários do schema e de `purge-datasets.ts` e o gate `unverified-user-purge`. Nenhuma migration: o prazo é do registro de retenção no domínio, que nenhuma função do banco lê.
 
+### Nota de 27/10/2026: o marcador de loja interna não é classe nova
+
+`platform_internal_organizations` (o funil de ativação, [ADR 0071](0071-admin-diagnostico-sem-acesso-ao-tenant.md) emendado em 27/10/2026) guarda só a loja, o instante e o operador que a marcou: um dado operacional da plataforma, sem dado pessoal nem texto livre. Não tem prazo próprio nem job: vive com a linha da organização e sai com ela (chave estrangeira em cascata). O purge mantém a linha da organização, então o marcador sobrevive ao purge (está na lista do que sobrevive, `PURGE_SURVIVING_TABLES`), e a loja purgada já fica fora do funil. Fica fora da exportação do tenant.
+
 ## Consequências
 
 - Um prazo novo ou um job novo começa por mudar a política no registro (de `proposta` para `aprovada`, com a fonte) e por um ADR ou regra que a aprove. É uma convenção: o job deve ler o prazo por `approvedRetention` (ou `retentionExpiry`, para meses corridos), que recusa classe não aprovada, e se declarar em `RETENTION_PURGE_JOBS`, cuja coerência com o registro um teste confere; o teste não enxerga um job que ignore o registro.

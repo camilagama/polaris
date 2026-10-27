@@ -80,6 +80,8 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
     organization_purge_cancellations:
       "histórico interno do purge, da plataforma",
     organization_purges: "processo interno do purge, da plataforma",
+    platform_internal_organizations:
+      "marcador da plataforma (loja interna, fora do funil de ativação), sem dado do tenant: lido só pelas funções do Admin",
     platform_audit_events: "da plataforma, não do tenant",
     queue_dead_letters:
       "eventos mortos do outbox, só IDs opacos: mecanismo interno de operação",

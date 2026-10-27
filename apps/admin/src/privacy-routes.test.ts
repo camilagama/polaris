@@ -82,6 +82,7 @@ function setup(
       reveal: vi.fn(),
       revoke: vi.fn(),
       revokeEntitlement: vi.fn(),
+      classify: vi.fn(),
       suspend: vi.fn(),
     } as never,
   };

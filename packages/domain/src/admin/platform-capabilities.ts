@@ -20,6 +20,8 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "operational_incident:read",
   "operational_incident:retry",
   "access_log:read",
+  // marks or unmarks a store of Polaris itself (QA, the team's), kept out of the activation funnel (ADR 0071 amended)
+  "organization:classify",
 ] as const);
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];

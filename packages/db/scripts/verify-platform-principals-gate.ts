@@ -250,7 +250,8 @@ async function run() {
             'admin_privacy_record_identity', 'admin_privacy_record_role', 'admin_privacy_record_scope', 'admin_privacy_resolve',
             'admin_list_operational_incidents', 'admin_read_operational_incident', 'admin_retry_dead_letter', 'admin_read_auth_access_log',
             'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold', 'admin_list_organization_legal_holds',
-            'admin_reissue_closure_notice', 'admin_dismiss_closure_notice', 'admin_read_refund_window'
+            'admin_reissue_closure_notice', 'admin_dismiss_closure_notice', 'admin_read_refund_window',
+            'admin_classify_organization', 'admin_read_activation_funnel'
           )
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );

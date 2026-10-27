@@ -227,6 +227,14 @@ gates.push(
     name: "environment-marker",
     script: "verify-environment-marker-gate.ts",
   },
+  // the activation funnel (corte 2.4, ADR 0071 amended): its fixtures write sale headers without items and its measure
+  // loads auto_explain, both only for a superuser, so the job's Postgres only
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "activation-funnel",
+    script: "verify-activation-funnel-gate.ts",
+  },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
   // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
   {
@@ -325,6 +333,7 @@ const suites: Record<string, string[]> = {
     "admin-diagnostics",
     "admin-support",
     "admin-suspension",
+    "activation-funnel",
     "admin-worker",
     "privacy-cases",
     "data-export",
@@ -449,6 +458,7 @@ const suites: Record<string, string[]> = {
     "admin-diagnostics",
     "admin-support",
     "admin-suspension",
+    "activation-funnel",
     "admin-worker",
   ],
   // Phase 10 (privacy): grows with every gate of the phase.

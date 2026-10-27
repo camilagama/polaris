@@ -281,6 +281,24 @@ export function suspendOrganization(
 }
 
 /**
+ * Marks (`internal` true) or unmarks a store as one of Polaris itself, kept out of the activation funnel (corte 2.4,
+ * ADR 0071 amended). No case: the store is the platform's own. Audited in the same transaction when the marker
+ * changed; `changed` false when it was already so. An unknown store is `unknown_organization`.
+ */
+export function classifyOrganization(
+  client: AdminQueryable,
+  principalId: string,
+  organizationId: string,
+  internal: boolean
+) {
+  return call<{ changed: boolean; internal: boolean }>(
+    client,
+    "public.admin_classify_organization($1, $2, $3)",
+    [principalId, organizationId, internal]
+  );
+}
+
+/**
  * Schedules the purge of the case's organization (plan PR107, ADR 0081): only a `closed` one whose
  * recovery window is over, and only when the operator names that same organization (a confirmation). The delay after the window comes from the retention registry (none while
  * the retention of a closed organization is proposed). Scheduling again is not a change.

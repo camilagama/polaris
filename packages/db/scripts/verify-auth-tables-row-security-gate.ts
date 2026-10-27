@@ -54,6 +54,7 @@ const UNVERIFIED_OWNER = "polaris_unverified_user_owner";
 const ONBOARDING_OWNER = "polaris_onboarding_owner";
 const NOTICE_OWNER = "polaris_notice_recipient_owner";
 const DEVICE_OWNER = "polaris_device_session_owner";
+const ADMIN_OWNER = "polaris_admin_owner";
 const TABLES = [
   "account",
   "auth_security_audit_event",
@@ -173,6 +174,8 @@ const EXPECTED_POLICIES: PolicyRow[] = [
     UNVERIFIED_OWNER,
     ofUnverified("session")
   ),
+  // the sign-ups of the activation funnel (0105, ADR 0071 amended): three columns, counted by week, never a row out
+  policy("user.user_admin_owner_select", "SELECT", ADMIN_OWNER, "true"),
   policy("user.user_auth_runtime_all", "ALL", AUTH_RUNTIME, "true", "true"),
   policy(
     "user.user_notice_recipient_owner_select",
@@ -228,7 +231,10 @@ const EXPECTED_POLICIES: PolicyRow[] = [
   ),
 ];
 
-/** The grants of the four tables to `polaris_*` roles and PUBLIC, the ones of before 0098 (`table grantee PRIVILEGE (column)`). */
+/**
+ * The grants of the four tables to `polaris_*` roles and PUBLIC, the ones of before 0098 plus the three columns of
+ * `"user"` the activation funnel counts (0105) (`table grantee PRIVILEGE (column)`).
+ */
 const EXPECTED_GRANTS = [
   "account polaris_auth_runtime DELETE",
   "account polaris_auth_runtime INSERT",
@@ -242,6 +248,9 @@ const EXPECTED_GRANTS = [
   "auth_security_audit_event polaris_unverified_user_owner INSERT (outcome)",
   "auth_security_audit_event polaris_unverified_user_owner INSERT (request_id)",
   "auth_security_audit_event polaris_unverified_user_owner INSERT (subject_id)",
+  "user polaris_admin_owner SELECT (created_at)",
+  "user polaris_admin_owner SELECT (email_verified)",
+  "user polaris_admin_owner SELECT (id)",
   "user polaris_auth_runtime DELETE",
   "user polaris_auth_runtime INSERT",
   "user polaris_auth_runtime SELECT",
@@ -451,7 +460,7 @@ async function run() {
     assert.deepEqual(
       grants.rows.map((row) => row.grant),
       EXPECTED_GRANTS,
-      "the grants of the four tables are the ones of before 0098"
+      "the grants of the four tables are the ones of before 0098, plus the funnel's three columns of 0105"
     );
     assertClean(await findViolations(admin));
     const types = (

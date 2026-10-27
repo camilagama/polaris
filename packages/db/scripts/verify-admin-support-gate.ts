@@ -48,6 +48,7 @@ const issuer = "https://polaris-support-gate.cloudflareaccess.com";
 const ADMIN_FUNCTIONS = [
   "admin_audit_billing_command",
   "admin_cancel_organization_purge",
+  "admin_classify_organization",
   "admin_close_support_case",
   "admin_dismiss_closure_notice",
   "admin_grant_tenant_access",
@@ -68,6 +69,7 @@ const ADMIN_FUNCTIONS = [
   "admin_privacy_record_scope",
   "admin_privacy_resolve",
   "admin_reactivate_organization",
+  "admin_read_activation_funnel",
   "admin_read_auth_access_log",
   "admin_read_operational_incident",
   "admin_read_refund_window",
