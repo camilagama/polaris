@@ -2,6 +2,8 @@ import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   duplicateSkuMessage,
+  emptyConfigurationDraft,
+  isConfigurationDraftEmpty,
   isDuplicateSkuError,
   MAX_VARIANTS,
   optionLabel,
@@ -228,7 +230,7 @@ describe("mensagens de erro das variantes", () => {
       "O produto não existe mais nesta loja."
     );
     expect(variantErrorMessage(refusal("CONFLICT"))).toContain(
-      "Atualize a lista"
+      "Confira as variantes"
     );
     expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
       "temporariamente indisponível"
@@ -260,5 +262,29 @@ describe("mensagens de erro das variantes", () => {
     expect(variantSkuErrorMessage(refusal("NOT_FOUND"))).toBe(
       variantErrorMessage(refusal("NOT_FOUND"))
     );
+  });
+});
+
+describe("draft of the configuration kept by the dialog", () => {
+  it("is empty with nothing picked or typed, and not with an option, a value line or a combination", () => {
+    expect(isConfigurationDraftEmpty(emptyConfigurationDraft)).toBe(true);
+    expect(
+      isConfigurationDraftEmpty({
+        ...emptyConfigurationDraft,
+        selectedOptions: ["color"],
+      })
+    ).toBe(false);
+    expect(
+      isConfigurationDraftEmpty({
+        ...emptyConfigurationDraft,
+        valueLines: { ...emptyConfigurationDraft.valueLines, size: "P" },
+      })
+    ).toBe(false);
+    expect(
+      isConfigurationDraftEmpty({
+        ...emptyConfigurationDraft,
+        variants: [{ values: {} }],
+      })
+    ).toBe(false);
   });
 });

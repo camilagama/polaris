@@ -80,7 +80,7 @@ describe("mensagem de erro de produto", () => {
       ).toContain("categoria selecionada");
     }
     const neutral =
-      "Não foi possível cadastrar o produto agora. Atualize a lista e tente novamente.";
+      "Não foi possível cadastrar o produto agora. Tente novamente.";
     for (const error of [
       refusal("CONFLICT"),
       refusal("CONFLICT", "motivo_que_nao_existe"),
@@ -94,7 +94,7 @@ describe("mensagem de erro de produto", () => {
   it("o produto repetido com outros dados diz que já foi cadastrado, e não culpa a categoria", () => {
     const repeated = refusal("CONFLICT", "product_create_conflict");
     expect(productErrorMessage(repeated, "create")).toBe(
-      "Este produto já foi cadastrado, com outros dados. Veja a lista e confira antes de cadastrar de novo."
+      "Este produto já foi cadastrado, com outros dados. Feche e confira na lista antes de cadastrar de novo."
     );
     expect(isProductAlreadyCreated(repeated)).toBe(true);
     expect(isProductAlreadyCreated(refusal("CONFLICT"))).toBe(false);
