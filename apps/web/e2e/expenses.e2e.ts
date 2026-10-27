@@ -371,6 +371,9 @@ class FakeExpenseServer {
         if (procedure === "expense/update") {
           found.amount = Number(input.amount).toFixed(2);
           found.description = String(input.description);
+          if (typeof input.competenceOn === "string") {
+            found.competenceOn = input.competenceOn;
+          }
         } else {
           const voiding = procedure === "expense/void";
           found.status = voiding ? "voided" : "active";
@@ -444,13 +447,25 @@ async function choose(
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }
 
+const newExpenseButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Nova despesa" });
 const expenseForm = (page: Page) =>
-  page.getByRole("region", { exact: true, name: "Nova despesa" });
+  page.getByRole("dialog", { exact: true, name: "Nova despesa" });
 
+/** "Nova despesa" at the top of Lançamentos opens the form in its dialog. */
+async function openNewExpense(page: Page) {
+  await newExpenseButton(page).click();
+  await expect(expenseForm(page)).toBeVisible();
+}
+
+/** Fills the form of a new expense, opening its dialog when it is not open yet. */
 async function fillExpense(
   page: Page,
   values: { amount: string; description: string; category: string }
 ) {
+  if (!(await expenseForm(page).isVisible())) {
+    await openNewExpense(page);
+  }
   await page.getByLabel("Valor (R$)").fill(values.amount);
   await choose(page, expenseForm(page), "Categoria", values.category);
   await page.getByLabel("Descrição").fill(values.description);
@@ -485,6 +500,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await page.setViewportSize(viewport);
     const server = new FakeExpenseServer();
     await openExpenses(page, server);
+    await openNewExpense(page);
 
     await expect(
       datePickerButton(page, "Data de competência")
@@ -521,6 +537,7 @@ test("a data de competência a 360×600: 'Hoje' fica à vista sem rolar e tocar 
   await page.setViewportSize({ height: 600, width: 360 });
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
+  await openNewExpense(page);
   await pickDate(page, "Data de competência", "2026-10-03");
 
   // the field sits low in the form: little room is left for the popover
@@ -568,6 +585,7 @@ test("a data de competência com pouca altura (celular deitado): o mês rola den
   await page.setViewportSize({ height: 300, width: 360 });
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
+  await openNewExpense(page);
   await datePickerButton(page, "Data de competência").evaluate((button) =>
     button.scrollIntoView({ block: "center" })
   );
@@ -597,6 +615,7 @@ test("o calendário da data de competência: o teclado abre, as setas andam, Ent
   await page.clock.setFixedTime(new Date(NOW));
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
+  await openNewExpense(page);
 
   await datePickerButton(page, "Data de competência").focus();
   await page.keyboard.press("Enter");
@@ -708,17 +727,23 @@ test("uma categoria com nome já usado é recusada com a mensagem da tela", asyn
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
 
-  await page.getByRole("button", { name: "Categorias de despesa" }).click();
-  await page.getByLabel("Nome da categoria").fill("aluguel");
-  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "Nova categoria" })
+    .click();
+  const form = page.getByRole("dialog", { name: "Nova categoria" });
+  await form.getByLabel("Nome da categoria").fill("aluguel");
+  await form.getByRole("button", { name: "Adicionar categoria" }).click();
 
+  // the refusal is said inside the dialog, which stays open with what was typed
   await expect(
-    page.getByText("Já existe uma categoria com esse nome")
+    form.getByText("Já existe uma categoria com esse nome")
   ).toBeVisible();
+  await expect(form.getByLabel("Nome da categoria")).toHaveValue("aluguel");
 });
 
 const rulesPanel = (page: Page) =>
-  page.getByRole("region", { name: "Despesas recorrentes" });
+  page.getByRole("tabpanel", { name: "Recorrentes" });
 const listedExpense = (page: Page, text: string) =>
   page
     .getByRole("region", { name: "Despesas do período" })
@@ -726,14 +751,18 @@ const listedExpense = (page: Page, text: string) =>
     .filter({ hasText: text });
 
 async function openRulesPanel(page: Page) {
-  await page.getByRole("button", { name: "Despesas recorrentes" }).click();
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+}
+
+async function openLaunches(page: Page) {
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
 }
 
 /** Creates a monthly rule that started three months before today. */
 async function createMonthlyRule(page: Page, description: string) {
   const panel = rulesPanel(page);
   await panel.getByRole("button", { name: "Nova despesa recorrente" }).click();
-  // the form is a dialog, outside the region of the panel
+  // the form is a dialog, outside the panel
   const form = page.getByRole("dialog", { name: "Nova despesa recorrente" });
   await form.getByLabel("Valor de cada ocorrência (R$)").fill("1.200");
   await choose(page, form, "Categoria", "Aluguel");
@@ -759,6 +788,14 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   // everything missed was generated at once: July to October
   expect(server.expenses).toHaveLength(4);
   expect(server.expenses.every((e) => e.recurringRuleId !== null)).toBe(true);
+  const rule = rulesPanel(page).locator("article").filter({
+    hasText: "Assinatura do sistema",
+  });
+  await expect(rule).toContainText("Todo mês");
+  await expect(rule).toContainText("Começa em 14/07/2026");
+  await expect(rule).toContainText("Próxima: 14/11/2026");
+
+  await openLaunches(page);
   const occurrence = listedExpense(page, "Assinatura do sistema");
   await expect(occurrence).toHaveCount(1);
   await expect(occurrence).toContainText("R$ 1.200,00");
@@ -769,13 +806,6 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   await expect(page.getByText("Total do período").locator("..")).toContainText(
     "1.200,00"
   );
-
-  const rule = rulesPanel(page).locator("article").filter({
-    hasText: "Assinatura do sistema",
-  });
-  await expect(rule).toContainText("Todo mês");
-  await expect(rule).toContainText("Começa em 14/07/2026");
-  await expect(rule).toContainText("Próxima: 14/11/2026");
 });
 
 for (const width of FORM_WIDTHS) {
@@ -942,6 +972,7 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(rule).toContainText("Próxima: 14/11/2026");
   // nothing new was generated by pausing and resuming
   expect(server.expenses).toHaveLength(4);
+  await openLaunches(page);
   await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
 });
 
@@ -1153,24 +1184,235 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   await retry.click();
   await expect(retry).toHaveCount(0);
   await expect(
-    page.getByText("Nenhuma despesa neste período", { exact: false })
+    page.getByText(
+      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
+    )
   ).toBeVisible();
 });
 
-test("fechar e abrir um painel recolhível não perde o que foi digitado nele", async ({
+const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
+const VER_CATEGORIES = /[?&]ver=categorias(&|$)/;
+const VER_ANY = /[?&]ver=/;
+const LAB_SCREEN = /screen=expenses/;
+
+const segmented = (page: Page) =>
+  page.getByRole("tablist", { name: "Lançamentos, recorrentes e categorias" });
+
+test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, endereço e controle", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
-  const trigger = page.getByRole("button", { name: "Categorias de despesa" });
-  await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByLabel("Nome da categoria")).toBeHidden();
+  await expect(segmented(page).getByRole("tab")).toHaveText([
+    "Lançamentos",
+    "Recorrentes",
+    "Categorias",
+  ]);
+  // no `ver`: Lançamentos, with the month at the top and the way to a new expense
+  await expect(
+    segmented(page).getByRole("tab", { name: "Lançamentos" })
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#expense-month")).toBeVisible();
+  await expect(newExpenseButton(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Categorias de despesa" })
+  ).toHaveCount(0);
 
-  await trigger.click();
-  await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  await page.getByLabel("Nome da categoria").fill("Frete");
-  await trigger.click();
-  await expect(page.getByLabel("Nome da categoria")).toBeHidden();
-  await trigger.click();
-  await expect(page.getByLabel("Nome da categoria")).toHaveValue("Frete");
+  // the control writes the part in the address, in place: "voltar" leaves the screen, it does not walk the parts
+  const steps = await page.evaluate(() => history.length);
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await expect(page).toHaveURL(VER_RECURRING);
+  await expect(rulesPanel(page)).toBeVisible();
+  await expect(
+    rulesPanel(page).getByRole("button", { name: "Nova despesa recorrente" })
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await expect(page).toHaveURL(VER_CATEGORIES);
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "Categorias" })
+      .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await expect(page).not.toHaveURL(VER_ANY);
+  expect(await page.evaluate(() => history.length)).toBe(steps);
+
+  // the arrows walk the parts, as the other tabs of the app
+  await page.getByRole("tab", { name: "Lançamentos" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name: "Recorrentes" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+
+  // the address opens a part: what was ticked in another survives (the three stay mounted)
+  await rulesPanel(page)
+    .getByRole("checkbox", { name: "Mostrar pausadas" })
+    .check();
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await expect(
+    rulesPanel(page).getByRole("checkbox", { name: "Mostrar pausadas" })
+  ).toBeChecked();
+});
+
+test("o endereço abre o segmento, e um ?ver= inválido cai em Lançamentos sem passo no histórico", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  // the lab keeps its own query: the part goes beside it, and the screen reads it on its first paint
+  for (const [ver, tab] of [
+    ["recorrentes", "Recorrentes"],
+    ["categorias", "Categorias"],
+  ] as const) {
+    // biome-ignore lint/performance/noAwaitInLoops: one address at a time
+    await page.evaluate((value) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("ver", value);
+      history.replaceState(history.state, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, ver);
+    await expect(page.getByRole("tab", { name: tab })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  }
+  const steps = await page.evaluate(() => history.length);
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("ver", "xyz");
+    history.replaceState(history.state, "", url);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByRole("tab", { name: "Lançamentos" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(page).not.toHaveURL(VER_ANY);
+  await expect(page).toHaveURL(LAB_SCREEN);
+  expect(await page.evaluate(() => history.length)).toBe(steps);
+});
+
+test("despesa no diálogo: Nova despesa e Editar abrem o formulário, Esc guarda o rascunho e o foco volta ao gatilho", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+
+  await openNewExpense(page);
+  const form = expenseForm(page);
+  await expect(form.getByLabel("Valor (R$)")).toBeFocused();
+  await form.getByLabel("Valor (R$)").fill("80");
+  // Esc closes keeping the draft (in memory): the focus goes back to "Nova despesa", and it brings the draft back
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeFocused();
+  await openNewExpense(page);
+  await expect(form.getByLabel("Valor (R$)")).toHaveValue("80");
+  // "Cancelar" throws it away
+  await form.getByRole("button", { exact: true, name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeFocused();
+  await openNewExpense(page);
+  await expect(form.getByLabel("Valor (R$)")).toHaveValue("");
+
+  await fillExpense(page, {
+    amount: "80",
+    category: "Marketing",
+    description: "Panfletos",
+  });
+  await form.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  await expect(row(page, "Panfletos")).toContainText("R$ 80,00");
+
+  // "Editar" of the row: the same dialog with the expense, and the focus back on that "Editar"
+  const edit = page.getByRole("button", { name: "Editar despesa Panfletos" });
+  await edit.click();
+  const editForm = page.getByRole("dialog", { name: "Editar despesa" });
+  await expect(editForm.getByLabel("Valor (R$)")).toHaveValue("80,00");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(edit).toBeFocused();
+  await edit.click();
+  await editForm.getByLabel("Valor (R$)").fill("95");
+  await editForm.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Despesa atualizada.")).toBeVisible();
+  await expect(row(page, "Panfletos")).toContainText("R$ 95,00");
+  expect(server.expenses[0]?.amount).toBe("95.00");
+
+  // saved into another month, the row leaves the list: the focus goes to "Nova despesa", not to the page
+  await edit.click();
+  await pickDate(editForm, "Data de competência", "2026-09-15");
+  await editForm.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page, "Panfletos")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeFocused();
+});
+
+test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome e o foco volta ao gatilho", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  const panel = page.getByRole("tabpanel", { name: "Categorias" });
+  const newCategory = panel.getByRole("button", {
+    exact: true,
+    name: "Nova categoria",
+  });
+
+  await newCategory.click();
+  const form = page.getByRole("dialog", { name: "Nova categoria" });
+  await expect(form.getByRole("combobox", { name: "Grupo" })).toBeFocused();
+  // the name is required: said beside the field, with the focus on it, and nothing sent
+  await form.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(form.getByText("Informe o nome da categoria.")).toBeVisible();
+  await expect(form.getByLabel("Nome da categoria")).toBeFocused();
+  await choose(page, form, "Grupo", "Comercial");
+  await form.getByLabel("Nome da categoria").fill("Frete");
+  await form.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(panel.getByText("Categoria criada.")).toBeVisible();
+  await expect(newCategory).toBeFocused();
+  await expect(
+    panel
+      .getByRole("region", { name: "Comercial" })
+      .getByText("Frete", { exact: true })
+  ).toBeVisible();
+
+  const rename = panel.getByRole("button", {
+    name: "Renomear categoria Frete",
+  });
+  await rename.click();
+  const renameForm = page.getByRole("dialog", { name: "Renomear categoria" });
+  // only the name: the group of a category does not change
+  await expect(renameForm.getByRole("combobox")).toHaveCount(0);
+  await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue("Frete");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(rename).toBeFocused();
+  // another device changed it meanwhile: the conflict is said inside the dialog, which keeps what was typed, and
+  // saving again goes with the version the list read again
+  const stored = server.categories.find((item) => item.name === "Frete");
+  if (stored) {
+    stored.version += 1;
+  }
+  await rename.click();
+  await renameForm.getByLabel("Nome da categoria").fill("Frete e entregas");
+  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await expect(renameForm.getByRole("alert")).toBeVisible();
+  await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue(
+    "Frete e entregas"
+  );
+  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(panel.getByText("Categoria renomeada.")).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Renomear categoria Frete e entregas" })
+  ).toBeFocused();
 });

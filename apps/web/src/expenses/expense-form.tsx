@@ -11,17 +11,32 @@ import {
   type ChangeEvent,
   type FormEvent,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
-import { connectionControlProps } from "../app-shell/connection-required-notice";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import {
+  ConnectionRequiredDialogNotice,
+  connectionControlProps,
+  connectionDialogReasonId,
+} from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { DateField } from "../sales/sale-fields";
-import { ExpenseCategorySelect, ExpenseTextField } from "./expense-fields";
+import {
+  ActionNotice,
+  ExpenseCategorySelect,
+  ExpenseTextField,
+} from "./expense-fields";
 import {
   EXPENSE_DRAFT_FIELDS,
   type ExpenseDraft,
@@ -32,13 +47,20 @@ import {
   moneyInputText,
   validateExpenseDraft,
 } from "./expense-model";
+import type { Feedback } from "./use-command-runner";
 
 interface ExpenseFormProps {
   /** Every category, archived ones included. */
   categories: readonly ExpenseCategoryReadModel[];
   disabled: boolean;
   editing: ExpenseReadModel | null;
+  /** What the last command said while the form is open: the dialog covers the top of the screen. */
+  feedback: Feedback | null;
+  /** What was typed and kept when the form was closed by Esc or "Fechar", for the same expense or a new one. */
+  keptDraft?: ExpenseDraft | undefined;
   onCancel: () => void;
+  /** Every change of the draft, so the screen can keep it when the form closes; `null` while it is as it started. */
+  onDraftChange: (draft: ExpenseDraft | null) => void;
   /** Resolves true when the expense was saved. */
   onSave: (input: ExpenseInput) => Promise<boolean>;
   /** This form is the command being sent. */
@@ -73,8 +95,6 @@ function isDraftField(name: string): name is ExpenseDraftField {
   return (EXPENSE_DRAFT_FIELDS as readonly string[]).includes(name);
 }
 
-const FORM_TITLE_ID = "expense-form-title";
-
 function fieldId(field: ExpenseDraftField): string {
   return `expense-${field}`;
 }
@@ -87,27 +107,37 @@ function submitLabel(saving: boolean, editing: boolean): string {
 }
 
 /**
- * Creates an expense, or edits the one given. The parent gives it a new `key`
- * to start over (a different expense, or a new one after saving).
+ * The content of the form dialog (the whole screen on a phone): creates an expense, or edits the one given. It lives
+ * only while the dialog does, so each opening starts from the expense (or from a blank one); the parent also gives
+ * it a new `key` for a different expense.
  */
 export function ExpenseForm({
   categories,
   disabled,
   editing,
+  feedback,
+  keptDraft,
   onCancel,
+  onDraftChange,
   onSave,
   saving,
   today,
 }: ExpenseFormProps) {
-  const [draft, setDraft] = useState<ExpenseDraft>(() =>
-    draftFrom(editing, today)
+  const [draft, setDraft] = useState<ExpenseDraft>(
+    () => keptDraft ?? draftFrom(editing, today)
   );
   const [errors, setErrors] = useState<ExpenseDraftErrors>({});
   // the form starts over under a new key, so what it started with is fixed for its life
   const [initialDraft] = useState<ExpenseDraft>(() =>
     draftFrom(editing, today)
   );
-  useReportUnsentWork(isExpenseDraftChanged(draft, initialDraft));
+  const changed = isExpenseDraftChanged(draft, initialDraft);
+  // an Esc without typing keeps nothing: only a draft that differs from the start is worth bringing back
+  useEffect(
+    () => onDraftChange(changed ? draft : null),
+    [changed, draft, onDraftChange]
+  );
+  useReportUnsentWork(changed);
   const online = useConnectionOnline();
 
   // Active categories only; the one the edited expense already has stays
@@ -160,96 +190,91 @@ export function ExpenseForm({
   );
 
   return (
-    <Card aria-labelledby={FORM_TITLE_ID} role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <CardTitle aria-level={2} id={FORM_TITLE_ID} role="heading">
-          {editing ? "Editar despesa" : "Nova despesa"}
-        </CardTitle>
-        {editing ? (
-          <Button
-            disabled={disabled}
-            onClick={onCancel}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Cancelar edição
-          </Button>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid gap-4 md:grid-cols-2"
-          noValidate
-          onSubmit={handleSubmit}
-        >
-          <ExpenseTextField
-            disabled={disabled}
-            error={errors.amount}
-            id={fieldId("amount")}
-            inputMode="decimal"
-            label="Valor (R$)"
-            name="amount"
-            onChange={handleChange}
-            placeholder="0,00"
-            value={draft.amount}
-          />
-          <ExpenseCategorySelect
-            categories={selectable}
-            disabled={disabled}
-            error={errors.categoryId}
-            id={fieldId("categoryId")}
-            label="Categoria"
-            onChange={handleCategory}
-            placeholder="Escolha uma categoria"
-            value={draft.categoryId}
-          />
-          <DateField
-            disabled={disabled}
-            error={errors.competenceOn}
-            hint="O mês a que a despesa se refere, não o dia do pagamento."
-            id={fieldId("competenceOn")}
-            label="Data de competência"
-            min={EARLIEST_EXPENSE_COMPETENCE}
-            onChange={handleCompetence}
-            today={today}
-            value={draft.competenceOn}
-          />
-          <ExpenseTextField
-            disabled={disabled}
-            error={errors.payee}
-            id={fieldId("payee")}
-            label="Favorecido"
-            maxLength={MAX_EXPENSE_PAYEE_LENGTH}
-            name="payee"
-            onChange={handleChange}
-            optional
-            value={draft.payee}
-          />
-          <ExpenseTextField
-            className="md:col-span-2"
-            disabled={disabled}
-            error={errors.description}
-            hint="Compra de estoque e taxas já registradas na venda não entram aqui."
-            id={fieldId("description")}
-            label="Descrição"
-            maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
-            name="description"
-            onChange={handleChange}
-            value={draft.description}
-          />
-          <div className="flex justify-end md:col-span-2">
-            <Button
-              {...connectionControlProps(online)}
-              className="h-auto min-h-ctl-md whitespace-normal"
-              disabled={disabled}
-              type="submit"
-            >
-              {submitLabel(saving, editing !== null)}
-            </Button>
+    <DialogForm onSubmit={handleSubmit}>
+      <DialogHeader>
+        <DialogTitle>{editing ? "Editar despesa" : "Nova despesa"}</DialogTitle>
+      </DialogHeader>
+      <DialogBody className="md:grid-cols-2">
+        {feedback ? (
+          <div className="md:col-span-2">
+            <ActionNotice feedback={feedback} />
           </div>
-        </form>
-      </CardContent>
-    </Card>
+        ) : null}
+        <ExpenseTextField
+          disabled={disabled}
+          error={errors.amount}
+          id={fieldId("amount")}
+          inputMode="decimal"
+          label="Valor (R$)"
+          name="amount"
+          onChange={handleChange}
+          placeholder="0,00"
+          value={draft.amount}
+        />
+        <ExpenseCategorySelect
+          categories={selectable}
+          disabled={disabled}
+          error={errors.categoryId}
+          id={fieldId("categoryId")}
+          label="Categoria"
+          onChange={handleCategory}
+          placeholder="Escolha uma categoria"
+          value={draft.categoryId}
+        />
+        <DateField
+          disabled={disabled}
+          error={errors.competenceOn}
+          hint="O mês a que a despesa se refere, não o dia do pagamento."
+          id={fieldId("competenceOn")}
+          label="Data de competência"
+          min={EARLIEST_EXPENSE_COMPETENCE}
+          onChange={handleCompetence}
+          today={today}
+          value={draft.competenceOn}
+        />
+        <ExpenseTextField
+          disabled={disabled}
+          error={errors.payee}
+          id={fieldId("payee")}
+          label="Favorecido"
+          maxLength={MAX_EXPENSE_PAYEE_LENGTH}
+          name="payee"
+          onChange={handleChange}
+          optional
+          value={draft.payee}
+        />
+        <ExpenseTextField
+          className="md:col-span-2"
+          disabled={disabled}
+          error={errors.description}
+          hint="Compra de estoque e taxas já registradas na venda não entram aqui."
+          id={fieldId("description")}
+          label="Descrição"
+          maxLength={MAX_EXPENSE_DESCRIPTION_LENGTH}
+          name="description"
+          onChange={handleChange}
+          value={draft.description}
+        />
+      </DialogBody>
+      <ConnectionRequiredDialogNotice online={online} />
+      <DialogFooter>
+        <Button
+          disabled={disabled}
+          onClick={onCancel}
+          type="button"
+          variant="outline"
+        >
+          Cancelar
+        </Button>
+        <Button
+          {...connectionControlProps(online, connectionDialogReasonId)}
+          className="h-auto min-h-ctl-md whitespace-normal"
+          disabled={disabled}
+          type="submit"
+        >
+          {submitLabel(saving, editing !== null)}
+        </Button>
+      </DialogFooter>
+    </DialogForm>
   );
 }

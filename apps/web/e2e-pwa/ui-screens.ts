@@ -332,8 +332,8 @@ async function exerciseSalePayment(page: Page) {
 
 /** The files of the expenses screen on the new interface (the month picker is Despesas' only). */
 const EXPENSE_SOURCES = [
-  "src/expenses/collapsible-section.tsx",
   "src/expenses/expense-categories-panel.tsx",
+  "src/expenses/expense-category-form.tsx",
   "src/expenses/expense-fields.tsx",
   "src/expenses/expense-form.tsx",
   "src/expenses/expense-list.tsx",
@@ -872,7 +872,11 @@ export const SCREENS: UiScreen[] = [
   expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
   expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
-  expenseScreen("recorrentes e categorias abertas", expenseStates.sections),
+  expenseScreen("recorrentes e o diálogo da regra", expenseStates.rules),
+  expenseScreen(
+    "categorias e o diálogo da categoria",
+    expenseStates.categories
+  ),
   resultScreen("mês incompleto e gráfico de vendas", resultStates.list),
   resultScreen("gráfico de vendas e custos e a tabela", resultStates.chart),
   resultScreen("metas", resultStates.goals, exerciseGoalOverlays),

@@ -1523,31 +1523,49 @@ test.describe("P-2: Categorias e Despesas sem conexão", () => {
     await openLab(page, `user-${crypto.randomUUID()}`, "expenses");
     await start(page, "Despesas");
     await expect(page.getByText("Aluguel de outubro")).toBeVisible();
-    await page.getByLabel("Descrição").fill("Internet");
+    // the form is a dialog: what is typed and closed by Esc stays for the next opening
+    const newExpense = page.getByRole("button", {
+      exact: true,
+      name: "Nova despesa",
+    });
+    await newExpense.click();
+    const form = page.getByRole("dialog", { name: "Nova despesa" });
+    await form.getByLabel("Descrição").fill("Internet");
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
     await rede(page, "offline");
     await page
       .getByRole("button", { exact: true, name: "Sincronizar" })
       .click();
     await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
 
-    const save = page.getByRole("button", { name: "Registrar despesa" });
     const voidIt = page.getByRole("button", {
       name: "Anular despesa Aluguel de outubro",
     });
-    await expectOffWithReason(save);
     await expectOffWithReason(voidIt);
-    await save.focus();
-    await page.keyboard.press("Enter");
     await voidIt.focus();
+    await page.keyboard.press("Enter");
+    // "Nova despesa" and "Editar" only open the form: they stay on
+    await expect(newExpense).not.toHaveAttribute("aria-disabled", "true");
+    await expect(
+      page.getByRole("button", { name: "Editar despesa Aluguel de outubro" })
+    ).not.toHaveAttribute("aria-disabled", "true");
+
+    // inside the dialog the reason is the dialog's own notice
+    await newExpense.click();
+    const save = form.getByRole("button", { name: "Registrar despesa" });
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    await expect(save).toHaveAttribute(
+      "aria-describedby",
+      "connection-required-dialog-text"
+    );
+    await expect(save).toHaveCSS("opacity", "0.5");
+    await save.focus();
     await page.keyboard.press("Enter");
     // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
     await page.waitForTimeout(500);
     expect(sent).toEqual([]);
-    await expect(page.getByLabel("Descrição")).toHaveValue("Internet");
-    // "Editar" only opens the form: it stays on
-    await expect(
-      page.getByRole("button", { name: "Editar despesa Aluguel de outubro" })
-    ).not.toHaveAttribute("aria-disabled", "true");
+    await expect(form.getByLabel("Descrição")).toHaveValue("Internet");
   });
 });
 

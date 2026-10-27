@@ -730,31 +730,41 @@ const openExpenses = (
 
 const EXPENSE_SCREENS = [
   {
-    // the form with its errors, the month picker, the category filter, the tabs, the total and a row
+    // the month picker, the category filter, the tabs, the total and a row, under the form of a new expense with its errors
     name: "Despesas no shell: lista e erros do formulário",
     open: (page: Page) =>
       openExpenses(page, async () => {
+        await page
+          .getByRole("button", { exact: true, name: "Nova despesa" })
+          .click();
         await page.getByRole("button", { name: "Registrar despesa" }).click();
         await expect(page.locator("#expense-description-error")).toBeVisible();
       }),
   },
   {
-    // both closed sections open: the checkboxes, a rule row, the form of a new rule and the categories
-    name: "Despesas no shell: recorrentes e categorias",
+    // the Recorrentes part: the checkbox, a rule row and the form of a new rule
+    name: "Despesas no shell: recorrentes",
     open: (page: Page) =>
       openExpenses(page, async () => {
-        await page
-          .getByRole("button", { name: "Despesas recorrentes" })
-          .click();
-        await page
-          .getByRole("button", { name: "Categorias de despesa" })
-          .click();
+        await page.getByRole("tab", { name: "Recorrentes" }).click();
         await page
           .getByRole("button", { name: "Nova despesa recorrente" })
           .click();
         await expect(
           page.getByLabel("Valor de cada ocorrência (R$)")
         ).toBeVisible();
+      }),
+  },
+  {
+    // the Categorias part: the checkbox, the categories by group and the form of a new category
+    name: "Despesas no shell: categorias",
+    open: (page: Page) =>
+      openExpenses(page, async () => {
+        await page.getByRole("tab", { name: "Categorias" }).click();
+        await page
+          .getByRole("button", { exact: true, name: "Nova categoria" })
+          .click();
+        await expect(page.getByLabel("Nome da categoria")).toBeVisible();
       }),
   },
 ];

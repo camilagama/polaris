@@ -12,7 +12,6 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel, formatMonthLabel } from "./expense-model";
-import { MonthPicker } from "./month-picker";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -26,25 +25,18 @@ const statusTabs: ReadonlyArray<readonly [ExpenseStatusFilter, string]> = [
 
 interface ExpenseFiltersBarProps {
   categories: readonly ExpenseCategoryReadModel[];
-  /** The store's current month, YYYY-MM. */
-  currentMonth: string;
   filters: ExpenseFilters;
   onChange: (filters: ExpenseFilters) => void;
 }
 
-/** Month, category and status of the list. */
+/** Category and status of the list (the month is above the list, at the top of Lançamentos). */
 export function ExpenseFiltersBar({
   categories,
-  currentMonth,
   filters,
   onChange,
 }: ExpenseFiltersBarProps) {
-  const { categoryId, month, status } = filters;
+  const { categoryId, status } = filters;
 
-  const handleMonth = useCallback(
-    (value: string) => onChange({ ...filters, month: value }),
-    [filters, onChange]
-  );
   const handleStatus = useCallback(
     (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
     [filters, onChange]
@@ -56,23 +48,15 @@ export function ExpenseFiltersBar({
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-4 min-[30rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:items-end">
-        <MonthPicker
-          currentMonth={currentMonth}
-          id="expense-month"
-          label="Mês de competência"
-          month={month}
-          onChange={handleMonth}
-        />
-        <ExpenseCategorySelect
-          allLabel="Todas as categorias"
-          categories={categories}
-          id="expense-category-filter"
-          label="Categoria"
-          onChange={handleCategory}
-          value={categoryId}
-        />
-      </div>
+      <ExpenseCategorySelect
+        allLabel="Todas as categorias"
+        categories={categories}
+        className="min-[30rem]:max-w-80"
+        id="expense-category-filter"
+        label="Categoria"
+        onChange={handleCategory}
+        value={categoryId}
+      />
       <StatusNav
         label="Situação das despesas"
         onSelect={handleStatus}
@@ -144,7 +128,10 @@ function ExpenseCard({
   const thisBusy = busyKey?.endsWith(expense.id) ?? false;
 
   return (
-    <article className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center">
+    <article
+      className="grid gap-x-4 gap-y-2 py-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto] min-[30rem]:items-center"
+      data-expense-id={expense.id}
+    >
       <div className="grid min-w-0 gap-0.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h3
@@ -196,6 +183,7 @@ function ExpenseCard({
             <>
               <Button
                 aria-label={`Editar despesa ${expense.description}`}
+                data-expense-edit=""
                 disabled={isBusy}
                 onClick={handleEdit}
                 size="sm"
@@ -238,7 +226,7 @@ function emptyText(filters: ExpenseFilters): string {
   if (filters.status === "voided") {
     return "Nenhuma despesa anulada neste período.";
   }
-  return "Nenhuma despesa neste período. Use o formulário para registrar a primeira.";
+  return "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira.";
 }
 
 export function ExpenseList({

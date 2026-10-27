@@ -3,9 +3,10 @@ import type {
   ExpenseRuleReadModel,
 } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Card, CardContent } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
@@ -13,7 +14,6 @@ import { connectionControlProps } from "../app-shell/connection-required-notice"
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { orpcClient } from "../lib/orpc";
-import { CollapsibleSection } from "./collapsible-section";
 import { ActionNotice, ListNote, LoadError } from "./expense-fields";
 import { expenseGroupLabel } from "./expense-model";
 import { ExpenseRuleForm } from "./expense-rule-form";
@@ -24,6 +24,7 @@ import {
 } from "./expense-rule-model";
 import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import { type ExpenseRulesState, useExpenseRules } from "./use-expense-rules";
+import { useFormDialog } from "./use-form-dialog";
 
 interface ExpenseRulesPanelProps {
   /** Every category, archived ones included. */
@@ -38,9 +39,6 @@ interface ExpenseRulesPanelProps {
   /** The organization's today, YYYY-MM-DD. */
   today: string;
 }
-
-/** The form is closed (null), creating a rule, or editing one. */
-type FormTarget = ExpenseRuleReadModel | "new" | null;
 
 function nextOccurrenceText(rule: ExpenseRuleReadModel): string {
   if (rule.nextOccurrenceOn === null) {
@@ -291,7 +289,17 @@ function RulesIntro() {
   );
 }
 
-/** Secondary section: rules that launch an expense every week, month or year. */
+/** What opened the form (or, when its row left the list, the button of a new one): "Nova despesa recorrente" or the "Editar" of the rule. */
+function ruleFormOrigin(next: ExpenseRuleReadModel | "new") {
+  return next === "new"
+    ? () => document.querySelector<HTMLElement>("[data-rule-new]")
+    : () =>
+        document.querySelector<HTMLElement>(
+          `[data-rule-id="${next.id}"] [data-rule-edit]`
+        ) ?? document.querySelector<HTMLElement>("[data-rule-new]");
+}
+
+/** The Recorrentes part of the Despesas tab: rules that launch an expense every week, month or year. */
 export function ExpenseRulesPanel({
   categories,
   onChanged,
@@ -306,54 +314,17 @@ export function ExpenseRulesPanel({
     upsert,
   });
   const [showPaused, setShowPaused] = useState(false);
-  // the form is a dialog: `target` says what it holds and stays until it has closed, so it does not turn into
-  // another form while it fades
-  const [target, setTarget] = useState<FormTarget>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [formCount, setFormCount] = useState(0);
-  // where the focus goes back to when the form closes: what opened it
-  const originRef = useRef<() => HTMLElement | null>(() => null);
-
-  // what was typed when the form was closed by Esc or "Fechar", for the next opening of the same form; in memory only
-  const draftStore = useRef<{ draft: RuleDraft; key: string } | null>(null);
-  const draftKey = useRef("");
-  const handleDraftChange = useCallback((draft: RuleDraft | null) => {
-    draftStore.current = draft && { draft, key: draftKey.current };
-  }, []);
-  /** "Cancelar", a saved rule: the form closes and what was typed is thrown away. */
-  const closeForm = useCallback(() => {
-    draftStore.current = null;
-    setFormOpen(false);
-  }, []);
-  /** Esc and "Fechar": the form closes and the draft stays. */
-  const dismissForm = useCallback(() => setFormOpen(false), []);
-  /** The form is gone: the next one starts from nothing. */
-  const handleFormClosed = useCallback(() => {
-    setTarget(null);
-    setFormCount((count) => count + 1);
-  }, []);
-  const openForm = useCallback(
-    (next: ExpenseRuleReadModel | "new") => {
-      clearFeedback();
-      originRef.current =
-        next === "new"
-          ? () => document.querySelector<HTMLElement>("[data-rule-new]")
-          : () =>
-              document.querySelector<HTMLElement>(
-                `[data-rule-id="${next.id}"] [data-rule-edit]`
-              );
-      setTarget(next);
-      setFormOpen(true);
-    },
-    [clearFeedback]
-  );
-  const finalFocus = useCallback(() => originRef.current() ?? true, []);
+  const form = useFormDialog<ExpenseRuleReadModel, RuleDraft>({
+    busy: busy !== null,
+    onOpen: clearFeedback,
+    originOf: ruleFormOrigin,
+  });
+  const { close: closeForm, editing, openForm } = form;
   const handleNew = useCallback(() => openForm("new"), [openForm]);
   const handleRetry = useCallback(() => {
     reload();
   }, [reload]);
 
-  const editing = target === "new" ? null : target;
   const handleSave = useCallback(
     async (input: RuleCreateInput) => {
       const outcome = await save(editing, input);
@@ -373,97 +344,64 @@ export function ExpenseRulesPanel({
     },
     [closeForm, editing?.id, toggle]
   );
-
-  const handleOpenChange = useCallback(
-    (next: boolean) => {
-      if (!next && busy === null) {
-        dismissForm();
-      }
-    },
-    [busy, dismissForm]
-  );
-  const handleOpenChangeComplete = useCallback(
-    (next: boolean) => {
-      if (!next) {
-        handleFormClosed();
-      }
-    },
-    [handleFormClosed]
-  );
   const isSaving =
     busy === "rule-create" || (busy?.startsWith("rule-save:") ?? false);
-  const formKey = useMemo(() => {
-    if (target === null) {
-      return "closed";
-    }
-    return target === "new"
-      ? `new:${formCount}`
-      : `${target.id}:${target.version}`;
-  }, [formCount, target]);
-  // the kept draft is the one of the same rule (or of a new one): another rule starts from its own data
-  const keptKey = target === "new" ? "new" : (target?.id ?? "");
-  draftKey.current = keptKey;
-  const keptDraft =
-    draftStore.current?.key === keptKey ? draftStore.current.draft : undefined;
 
   return (
-    <CollapsibleSection id="expense-rules" title="Despesas recorrentes">
-      <RulesIntro />
-      {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
-      <ActionNotice feedback={formOpen ? null : feedback} />
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-          <Checkbox
-            checked={showPaused}
-            id="expense-rules-paused"
-            onCheckedChange={setShowPaused}
-          />
-          <FieldLabel htmlFor="expense-rules-paused">
-            Mostrar pausadas
-          </FieldLabel>
-        </Field>
-        <Button
-          data-rule-new=""
-          disabled={busy !== null}
-          onClick={handleNew}
-          type="button"
-          variant="outline"
-        >
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
-          Nova despesa recorrente
-        </Button>
-      </div>
-      <Dialog
-        disablePointerDismissal
-        onOpenChange={handleOpenChange}
-        onOpenChangeComplete={handleOpenChangeComplete}
-        open={formOpen}
-      >
-        <DialogContent finalFocus={finalFocus} layout="form">
-          <ExpenseRuleForm
-            categories={categories}
+    <Card>
+      <CardContent className="grid gap-4">
+        <RulesIntro />
+        {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
+        <ActionNotice feedback={form.open ? null : feedback} />
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+            <Checkbox
+              checked={showPaused}
+              id="expense-rules-paused"
+              onCheckedChange={setShowPaused}
+            />
+            <FieldLabel htmlFor="expense-rules-paused">
+              Mostrar pausadas
+            </FieldLabel>
+          </Field>
+          <Button
+            data-rule-new=""
             disabled={busy !== null}
-            editing={editing}
-            feedback={feedback?.kind === "error" ? feedback : null}
-            key={formKey}
-            keptDraft={keptDraft}
-            onCancel={closeForm}
-            onDraftChange={handleDraftChange}
-            onSave={handleSave}
-            saving={isSaving}
-            today={today}
-          />
-        </DialogContent>
-      </Dialog>
-      <RuleList
-        busyKey={busy}
-        onEdit={openForm}
-        onRetry={handleRetry}
-        onToggle={handleToggle}
-        rules={state.rules}
-        showPaused={showPaused}
-        state={state}
-      />
-    </CollapsibleSection>
+            onClick={handleNew}
+            type="button"
+            variant="outline"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova despesa recorrente
+          </Button>
+        </div>
+        <Dialog disablePointerDismissal {...form.dialog}>
+          <DialogContent finalFocus={form.finalFocus} layout="form">
+            <ExpenseRuleForm
+              categories={categories}
+              disabled={busy !== null}
+              editing={editing}
+              feedback={feedback?.kind === "error" ? feedback : null}
+              key={form.formKey}
+              keptDraft={form.keptDraft}
+              onCancel={closeForm}
+              onDraftChange={form.onDraftChange}
+              onSave={handleSave}
+              saving={isSaving}
+              today={today}
+            />
+          </DialogContent>
+        </Dialog>
+        <RuleList
+          busyKey={busy}
+          onEdit={openForm}
+          onRetry={handleRetry}
+          onToggle={handleToggle}
+          rules={state.rules}
+          showPaused={showPaused}
+          state={state}
+        />
+      </CardContent>
+    </Card>
   );
 }
