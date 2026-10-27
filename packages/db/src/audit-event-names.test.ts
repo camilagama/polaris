@@ -9,8 +9,10 @@ import { describe, expect, it } from "vitest";
  * things: the type of a hint in the outbox is not reused as the type of an audit row with another meaning.
  *
  * The audit lists are read from the migrations, the way the database holds them: the last form of each CHECK after
- * every DROP and ADD, in the order of the journal. The outbox types are the ones of the domain, which the policies of
- * the database repeat.
+ * every DROP and ADD, in the order of the journal. The outbox types are the ones of the domain, and the policies of
+ * `event_outbox` in the migrations must name the same ones (no type is written in the database and missing from the
+ * domain, or the other way round). Log keys have no list in the code (each is a literal of a `logger` call), so there
+ * is nothing to check for them here.
  */
 
 const EVENT_TYPE = /^[a-z][a-z_]*\.[a-z][a-z_]*$/;
@@ -22,17 +24,30 @@ interface Migration {
   sql: string;
 }
 
+interface EventTypeCheck {
+  migration: string;
+  values: string[];
+}
+
 const STATEMENT_BREAKPOINT = "--> statement-breakpoint";
-const DROP_CONSTRAINT =
-  /ALTER TABLE (?:ONLY )?(?:public\.)?"?(\w+)"? DROP CONSTRAINT (?:IF EXISTS )?"?(\w+)"?/gi;
-// `CONSTRAINT "name" CHECK ("table"."event_type" IN ('a.b', 'c.d'))`, in an ADD or inside a CREATE TABLE
-const EVENT_TYPE_CHECK =
-  /CONSTRAINT "(\w+)" CHECK \(\s*"(\w+)"\."event_type" IN \(([^)]*)\)\s*\)/g;
-// a CHECK that opens with `event_type IN (...)` is a list of allowed types; one that only mentions event_type inside
-// another condition (the actor coherence of 0087) restricts a subset of the list and is not one
-const CHECK_STARTS_WITH_EVENT_TYPE =
-  /CONSTRAINT "\w+" CHECK \(\s*(?:"?\w+"?\.)?"?event_type"? IN \(/;
+const ALTER_TABLE = /ALTER TABLE (?:ONLY )?(?:"?public"?\.)?"?(\w+)"?/i;
+const CREATE_TABLE =
+  /CREATE TABLE (?:IF NOT EXISTS )?(?:"?public"?\.)?"?(\w+)"?/i;
+const DROP_TABLE = /DROP TABLE (?:IF EXISTS )?(?:"?public"?\.)?"?(\w+)"?/gi;
+const DROP_CONSTRAINT = /DROP CONSTRAINT (?:IF EXISTS )?"?(\w+)"?/gi;
+// `CONSTRAINT "name" CHECK (`: the body of a CHECK runs to the next CONSTRAINT or the end of the statement
+const CHECK_START = /CONSTRAINT\s+"?(\w+)"?\s+CHECK\s*\(/gi;
+const EVENT_TYPE_WORD = /\bevent_type\b/i;
+// a CHECK that opens with `event_type IN ('a.b', 'c.d')`, the column alone or as "table"."event_type"
+const LIST_CHECK =
+  /^\s*(?:"?(\w+)"?\.)?"?event_type"?\s+IN\s*\(([^)]*)\)\s*\)/i;
 const QUOTED_LITERAL = /'([^']*)'/g;
+const JOURNAL_TAG = /^\d{4}_/;
+
+// CHECKs that mention event_type and do not list the allowed types (a pattern of characters, a limit, or a rule on a
+// subset of the list). Exact, each with its reason: any other CHECK of event_type that is not a list makes the reader
+// throw.
+const NOT_A_LIST: Readonly<Record<string, string>> = {};
 
 function migrationsInJournalOrder(): Migration[] {
   const journal = JSON.parse(
@@ -52,35 +67,102 @@ function migrationsInJournalOrder(): Migration[] {
     });
 }
 
+function tableOf(statement: string): string | undefined {
+  return ALTER_TABLE.exec(statement)?.[1] ?? CREATE_TABLE.exec(statement)?.[1];
+}
+
+/** The CHECKs of the statement that mention event_type: constraint name, table and the text of the body. */
+function eventTypeChecksOf(
+  statement: string
+): { body: string; constraint: string; table: string | undefined }[] {
+  const starts = [...statement.matchAll(CHECK_START)];
+  return starts
+    .map((start, position) => ({
+      body: statement.slice(
+        (start.index ?? 0) + start[0].length - 1,
+        starts[position + 1]?.index ?? statement.length
+      ),
+      constraint: start[1] ?? "",
+      table: tableOf(statement),
+    }))
+    .filter(({ body }) => EVENT_TYPE_WORD.test(body));
+}
+
 /**
  * The CHECKs of `event_type` that list values, as they stand after the last migration: `table.constraint` -> values
- * (with the migration that wrote the CHECK). A statement that has a CHECK on `event_type` this reader cannot parse
- * throws, so a new way of writing it never passes unread.
+ * (with the migration that wrote the CHECK). A CHECK of event_type that is not such a list and is not in
+ * `NOT_A_LIST` throws, so a new way of writing it (`= ANY(ARRAY[...])`, `event_type = 'a' OR ...`, another case)
+ * never passes unread.
  */
 function finalEventTypeChecks(
   migrations: readonly Migration[]
-): Map<string, { migration: string; values: string[] }> {
-  const checks = new Map<string, { migration: string; values: string[] }>();
+): Map<string, EventTypeCheck> {
+  const checks = new Map<string, EventTypeCheck>();
+  const forget = (table: string, constraint?: string) => {
+    for (const key of [...checks.keys()]) {
+      const sameTable = key.startsWith(`${table}.`);
+      if (sameTable && (!constraint || key === `${table}.${constraint}`)) {
+        checks.delete(key);
+      }
+    }
+  };
   for (const { name, sql } of migrations) {
     for (const statement of sql.split(STATEMENT_BREAKPOINT)) {
-      for (const drop of statement.matchAll(DROP_CONSTRAINT)) {
-        checks.delete(`${drop[1]}.${drop[2]}`);
+      for (const drop of statement.matchAll(DROP_TABLE)) {
+        forget(drop[1] ?? "");
       }
-      const found = [...statement.matchAll(EVENT_TYPE_CHECK)];
-      for (const [, constraint, table, list] of found) {
-        const values = [...(list ?? "").matchAll(QUOTED_LITERAL)].map(
+      for (const drop of statement.matchAll(DROP_CONSTRAINT)) {
+        forget(tableOf(statement) ?? "", drop[1]);
+      }
+      for (const check of eventTypeChecksOf(statement)) {
+        const list = LIST_CHECK.exec(check.body);
+        if (!list) {
+          if (!(check.constraint in NOT_A_LIST)) {
+            throw new Error(
+              `${name}: the CHECK ${check.constraint} on event_type is not a list the reader parses`
+            );
+          }
+          continue;
+        }
+        const values = [...(list[2] ?? "").matchAll(QUOTED_LITERAL)].map(
           (literal) => literal[1] ?? ""
         );
-        checks.set(`${table}.${constraint}`, { migration: name, values });
-      }
-      if (CHECK_STARTS_WITH_EVENT_TYPE.test(statement) && found.length === 0) {
-        throw new Error(
-          `${name}: a CHECK of event_type that the reader does not parse`
-        );
+        checks.set(`${list[1] ?? check.table}.${check.constraint}`, {
+          migration: name,
+          values,
+        });
       }
     }
   }
   return checks;
+}
+
+const POLICY_ON_OUTBOX =
+  /^\s*(?:CREATE|ALTER) POLICY\s+"?\w+"?\s+ON\s+(?:"?public"?\.)?"?event_outbox"?/i;
+// `type = 'a.b'` and `"event_outbox"."type" IN ('a.b', 'c.d')`; `entity_type` is another word
+const POLICY_TYPE = /\btype"?\s*(?:=\s*'([^']+)'|IN\s*\(([^)]*)\))/gi;
+
+/** The types the policies on `event_outbox` name, over every migration. */
+function outboxTypesOfPolicies(migrations: readonly Migration[]): Set<string> {
+  const types = new Set<string>();
+  for (const { sql } of migrations) {
+    for (const statement of sql.split(STATEMENT_BREAKPOINT)) {
+      if (!POLICY_ON_OUTBOX.test(statement)) {
+        continue;
+      }
+      for (const found of statement.matchAll(POLICY_TYPE)) {
+        const literals = found[1]
+          ? [found[1]]
+          : [...(found[2] ?? "").matchAll(QUOTED_LITERAL)].map(
+              (literal) => literal[1] ?? ""
+            );
+        for (const literal of literals) {
+          types.add(literal);
+        }
+      }
+    }
+  }
+  return types;
 }
 
 function offPattern(values: readonly string[]): string[] {
@@ -113,18 +195,20 @@ describe("the event types the migrations allow in the audit tables", () => {
       "platform_audit_events.platform_audit_events_type_allowed",
       "tenant_audit_event.tenant_audit_event_type_registered",
     ]);
-    // the last migration that rebuilt each one, and a list that is not empty
-    expect(
-      checks.get("platform_audit_events.platform_audit_events_type_allowed")
-        ?.migration
-    ).toBe("0105_funil_de_ativacao");
-    expect(
-      checks.get("tenant_audit_event.tenant_audit_event_type_registered")
-        ?.migration
-    ).toBe("0100_autosservico_de_cobranca");
-    for (const { values } of checks.values()) {
-      expect(values.length).toBeGreaterThan(20);
-      expect(new Set(values).size).toBe(values.length);
+    // written by a migration no older than the one that last rebuilt it when this was written: a newer one that
+    // rebuilds it again is no reason to touch the test
+    const oldest: Record<string, string> = {
+      "platform_audit_events.platform_audit_events_type_allowed":
+        "0105_funil_de_ativacao",
+      "tenant_audit_event.tenant_audit_event_type_registered":
+        "0100_autosservico_de_cobranca",
+    };
+    for (const [key, floor] of Object.entries(oldest)) {
+      const found = checks.get(key);
+      expect(found?.migration, key).toMatch(JOURNAL_TAG);
+      expect((found?.migration ?? "") >= floor, key).toBe(true);
+      expect(found?.values.length, key).toBeGreaterThan(20);
+      expect(new Set(found?.values).size, key).toBe(found?.values.length);
     }
   });
 
@@ -132,23 +216,29 @@ describe("the event types the migrations allow in the audit tables", () => {
     const off = offPattern([...auditNames.keys()]);
     expect(off.sort()).toEqual(Object.keys(LEGACY_OFF_PATTERN).sort());
   });
+
+  it("have a reason for every CHECK of event_type that is not a list", () => {
+    for (const [constraint, reason] of Object.entries(NOT_A_LIST)) {
+      expect(reason.length, constraint).toBeGreaterThan(10);
+    }
+  });
 });
 
 describe("the event types of the outbox", () => {
   it("are all domain.action, but the legacy ones the list names", () => {
     expect(OUTBOX_EVENT_TYPES.length).toBeGreaterThan(0);
     expect(offPattern(OUTBOX_EVENT_TYPES).sort()).toEqual(
-      Object.keys(LEGACY_OFF_PATTERN).filter((name) =>
-        (OUTBOX_EVENT_TYPES as readonly string[]).includes(name)
-      )
+      Object.keys(LEGACY_OFF_PATTERN)
+        .filter((name) =>
+          (OUTBOX_EVENT_TYPES as readonly string[]).includes(name)
+        )
+        .sort()
     );
   });
 
-  it("are written by a migration (a policy or a function), so the domain list does not drift alone", () => {
-    const all = allMigrations.map(({ sql }) => sql).join("\n");
-    for (const type of OUTBOX_EVENT_TYPES) {
-      expect(all, type).toContain(`'${type}'`);
-    }
+  it("are the ones the policies of event_outbox name, no more and no less", () => {
+    const named = outboxTypesOfPolicies(allMigrations);
+    expect([...named].sort()).toEqual([...OUTBOX_EVENT_TYPES].sort());
   });
 });
 
@@ -176,14 +266,13 @@ describe("the control cases, planted: the reader and the rules refuse them", () 
     name,
     sql: `ALTER TABLE "${table}" ADD CONSTRAINT "${table}_type_allowed" CHECK ("${table}"."event_type" IN (${list}));`,
   });
+  const key = "tenant_audit_event.tenant_audit_event_type_allowed";
 
   it("refuses a log key (billing_x) and a capitalized name (Billing.X) in a CHECK", () => {
     const read = finalEventTypeChecks([
       planted("9000_planted", "'billing.ok', 'billing_x', 'Billing.X'"),
     ]);
-    const values = read.get(
-      "tenant_audit_event.tenant_audit_event_type_allowed"
-    )?.values;
+    const values = read.get(key)?.values;
     expect(values).toEqual(["billing.ok", "billing_x", "Billing.X"]);
     expect(offPattern(values ?? [])).toEqual(["billing_x", "Billing.X"]);
   });
@@ -202,49 +291,82 @@ describe("the control cases, planted: the reader and the rules refuse them", () 
         sql: `ALTER TABLE "tenant_audit_event" DROP CONSTRAINT "tenant_audit_event_type_allowed";--> statement-breakpoint\n${planted("", "'a.two'").sql}`,
       },
     ]);
-    expect(
-      read.get("tenant_audit_event.tenant_audit_event_type_allowed")
-    ).toEqual({ migration: "9001_second", values: ["a.two"] });
-    const dropped = finalEventTypeChecks([
-      planted("9000_first", "'a.one'"),
-      {
-        name: "9001_second",
-        sql: `ALTER TABLE "tenant_audit_event" DROP CONSTRAINT "tenant_audit_event_type_allowed";`,
-      },
-    ]);
-    expect(dropped.size).toBe(0);
+    expect(read.get(key)).toEqual({
+      migration: "9001_second",
+      values: ["a.two"],
+    });
   });
 
-  it("reads a CHECK inside a CREATE TABLE", () => {
+  it("forgets a CHECK that a DROP removed and nothing added back", () => {
+    for (const drop of [
+      `ALTER TABLE "tenant_audit_event" DROP CONSTRAINT "tenant_audit_event_type_allowed";`,
+      "ALTER TABLE public.tenant_audit_event DROP CONSTRAINT IF EXISTS tenant_audit_event_type_allowed;",
+      `ALTER TABLE "public"."tenant_audit_event" DROP CONSTRAINT "other", DROP CONSTRAINT "tenant_audit_event_type_allowed";`,
+      `DROP TABLE "tenant_audit_event";`,
+    ]) {
+      const read = finalEventTypeChecks([
+        planted("9000_first", "'a.one'"),
+        { name: "9001_drop", sql: drop },
+      ]);
+      expect(read.size, drop).toBe(0);
+    }
+  });
+
+  it("reads a CHECK inside a CREATE TABLE, in lower case and without quotes", () => {
     const read = finalEventTypeChecks([
       {
         name: "9000_create",
         sql: `CREATE TABLE "t" (\n\t"event_type" text NOT NULL,\n\tCONSTRAINT "t_type_allowed" CHECK ("t"."event_type" IN ('a.b', 'billing_x'))\n);`,
       },
+      {
+        name: "9001_by_hand",
+        sql: "alter table u add constraint u_type check (event_type in ('c.d', 'e_f'));",
+      },
     ]);
     expect(read.get("t.t_type_allowed")?.values).toEqual(["a.b", "billing_x"]);
+    expect(read.get("u.u_type")?.values).toEqual(["c.d", "e_f"]);
   });
 
-  it("throws on a CHECK of event_type it cannot parse", () => {
-    expect(() =>
-      finalEventTypeChecks([
-        {
-          name: "9000_odd",
-          sql: `ALTER TABLE "t" ADD CONSTRAINT "t_odd" CHECK ("event_type" IN ('a.b'));`,
-        },
-      ])
-    ).toThrow("does not parse");
+  it("throws on a CHECK of event_type it cannot read as a list", () => {
+    for (const body of [
+      `("event_type" = ANY (ARRAY['a.b']))`,
+      `("t"."event_type" = 'a.b' OR "t"."event_type" = 'billing_x')`,
+      "((event_type)::text IN ('a.b'))",
+    ]) {
+      expect(
+        () =>
+          finalEventTypeChecks([
+            {
+              name: "9000_odd",
+              sql: `ALTER TABLE "t" ADD CONSTRAINT "t_odd" CHECK ${body};`,
+            },
+          ]),
+        body
+      ).toThrow("not a list the reader parses");
+    }
   });
 
   it("finds a name shared by the audit and the outbox that no list allows", () => {
     const read = finalEventTypeChecks([
       planted("9000_planted", "'billing.renewal_cancel_requested'"),
     ]);
-    const planted_names = new Set(
-      [...read.values()].flatMap(({ values }) => values)
-    );
-    const shared = OUTBOX_EVENT_TYPES.filter((type) => planted_names.has(type));
+    const names = new Set([...read.values()].flatMap(({ values }) => values));
+    const shared = OUTBOX_EVENT_TYPES.filter((type) => names.has(type));
     expect(shared).toEqual(["billing.renewal_cancel_requested"]);
     expect(Object.keys(SHARED_ON_PURPOSE)).not.toContain(shared[0]);
+  });
+
+  it("finds a type in a policy of event_outbox that the domain does not list, and ignores the policy of another table", () => {
+    const read = outboxTypesOfPolicies([
+      {
+        name: "9000_policy",
+        sql: [
+          `CREATE POLICY "p" ON "event_outbox" AS PERMISSIVE FOR INSERT TO "r" WITH CHECK ("event_outbox"."type" IN ('a.b', 'billing_x') AND entity_type = 'z.z');`,
+          "CREATE POLICY q ON public.event_outbox FOR SELECT USING (type = 'c.d');",
+          `CREATE POLICY "o" ON "other_table" FOR SELECT USING (type = 'ignored.here');`,
+        ].join(STATEMENT_BREAKPOINT),
+      },
+    ]);
+    expect([...read].sort()).toEqual(["a.b", "billing_x", "c.d"]);
   });
 });

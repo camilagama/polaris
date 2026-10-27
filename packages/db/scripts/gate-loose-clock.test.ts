@@ -10,13 +10,12 @@ import { countLooseClock } from "./gate-clock-scan";
  * Paulo); a gate that needs "now" for a row the database compares with its own clock (an expiry, a lease, an elapsed
  * time) says so in the list below.
  *
- * The test reads every `.ts` of `packages/db/scripts` that is not a test, not only `verify-*-gate.ts`: a read moved
- * to a support file would pass otherwise. A use that is not in the list fails, and so does a list that says more uses
+ * The test reads every `.ts` of `packages/db/scripts` and of its subfolders, tests included, not only
+ * `verify-*-gate.ts`: a read moved to a support file or to a test would pass otherwise. A use that is not in the list fails, and so does a list that says more uses
  * than the file has: the list is exact, and each entry carries its reason. A new use is a decision, written here.
  */
 
 const SCRIPTS_DIR = new URL("./", import.meta.url);
-const IS_TEST = /\.test\.ts$/;
 const IS_GATE = /^verify-.*-gate\.ts$/;
 
 /** The list of what is allowed, per file: how many reads and why. */
@@ -52,8 +51,9 @@ function looseClockProblems(
 
 function scriptSources(): Record<string, string> {
   return Object.fromEntries(
-    readdirSync(SCRIPTS_DIR)
-      .filter((name) => name.endsWith(".ts") && !IS_TEST.test(name))
+    readdirSync(SCRIPTS_DIR, { recursive: true })
+      .map(String)
+      .filter((name) => name.endsWith(".ts"))
       .sort()
       .map((name) => [name, readFileSync(new URL(name, SCRIPTS_DIR), "utf8")])
   );
@@ -92,7 +92,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-access-log-gate.ts": {
     count: 5,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "windows of the read set as offsets from one reading of the clock (31 days less or plus a minute, one reading so the window is exact), and the drift of a row time against the clock; no calendar day",
   },
   "verify-activation-funnel-gate.ts": {
     count: 3,
@@ -102,7 +102,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-admin-diagnostics-gate.ts": {
     count: 1,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "the drift of the instant the function answers against the clock, with one hour of margin; no calendar day",
   },
   "verify-admin-suspension-gate.ts": {
     count: 4,
@@ -157,7 +157,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-data-export-gate.ts": {
     count: 1,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "the hours left to a ready export, asserted between 23.5 and 24.01; elapsed time, no calendar day",
   },
   "verify-dead-letter-gate.ts": {
     count: 1,
@@ -166,7 +166,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-deletion-ledger-gate.ts": {
     count: 2,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "the lower bound of an insert time (read before the command) and an instant one hour ahead; elapsed time, no calendar day",
   },
   "verify-device-sessions-gate.ts": {
     count: 2,
@@ -176,17 +176,17 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-entitlement-grants-gate.ts": {
     count: 10,
     reason:
-      "an expiry, lease or availability set at an offset from now, which the database compares with its own clock; the rule is in elapsed time, never in a calendar day; the sweeps of the function under test take the instant (hands the instant to the function under test, which compares it with rows the database stamps with its own now(); no calendar day)",
+      "expiries set as offsets of days or seconds from now, and the sweeps of the function under test, which take the instant as an argument; no calendar day",
   },
   "verify-entitlements-gate.ts": {
     count: 1,
     reason:
-      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of hours or more from every boundary, no calendar day is worked out",
+      "a creation time one minute back, so it is never in the future of the server clock; no calendar day",
   },
   "verify-event-outbox-gate.ts": {
     count: 2,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "a lower bound read before the insert and the availability of the event within 60 seconds of now; elapsed time, no calendar day",
   },
   "verify-gate4-sales-core.ts": {
     count: 1,
@@ -196,7 +196,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-offline-customer-gate.ts": {
     count: 1,
     reason:
-      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of hours or more from every boundary, no calendar day is worked out",
+      "a creation time one minute back, so it is never in the future of the server clock; no calendar day",
   },
   "verify-offline-devices-gate.ts": {
     count: 4,
@@ -211,7 +211,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-offline-product-gate.ts": {
     count: 1,
     reason:
-      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of hours or more from every boundary, no calendar day is worked out",
+      "a creation time one minute back, so it is never in the future of the server clock; no calendar day",
   },
   "verify-offline-sale-gate.ts": {
     count: 4,
@@ -221,7 +221,7 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-offline-stock-gate.ts": {
     count: 1,
     reason:
-      "a row aged by an offset in hours or days from now; the rules are in elapsed time and the gate keeps a margin of hours or more from every boundary, no calendar day is worked out",
+      "a creation time one minute back, so it is never in the future of the server clock; no calendar day",
   },
   "verify-operational-selection-gate.ts": {
     count: 9,
@@ -231,12 +231,12 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-organization-closure-gate.ts": {
     count: 1,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "a recovery deadline the function sets: the gate asserts it lies more than the window minus one minute ahead of now; no calendar day",
   },
   "verify-privacy-cases-gate.ts": {
     count: 4,
     reason:
-      "the day a request arrived, set as an offset in days from now, with the deadlines worked out by the database from that instant (margin of days)",
+      "the arrival of a request 400, 20 and 3 days back and one hour ahead (the refusal of the future), with the deadlines worked out by the database from that instant; margins of days apart from the hour, which is the point of that case",
   },
   "verify-public-catalog-gate.ts": {
     count: 1,
@@ -276,18 +276,19 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
   "verify-web-worker-gate.ts": {
     count: 1,
     reason:
-      "measures elapsed time or drift against the database clock, with margins of seconds to minutes, or reads one instant for a window; no calendar day",
+      "one reading of the clock for the request time of the export event; no calendar day",
   },
 };
 
 describe("the loose clock in the scripts of packages/db", () => {
   const sources = scriptSources();
 
-  it("reads every script that is not a test, the gates among them", () => {
+  it("reads every script, the gates and the tests among them", () => {
     const names = Object.keys(sources);
     expect(names.length).toBeGreaterThan(60);
     expect(names).toContain("verify-economics-gate.ts");
     expect(names).toContain("gate-clock.ts");
+    expect(names).toContain("gate-loose-clock.test.ts");
     expect(names.filter((name) => IS_GATE.test(name)).length).toBeGreaterThan(
       50
     );
@@ -361,6 +362,11 @@ describe("the control cases, planted: the rule refuses them", () => {
     "new Date(Date.UTC(...))": "const d = new Date(Date.UTC(2026, 9, 27));",
     "new Date(value)": "const d = new Date(value);",
     "the type": "const d: Date = value;",
+    "an array of Date": "const xs: Date[] = [];",
+    "a type alias of Date": "type Clock = Date;",
+    "a method of another object": "const t = faker.Date.now();",
+    "a division": "const q = a / b; const r = c / d;",
+    "Date.UTC in a condition": "const { UTC } = Date.UTC ? Date : null;",
   };
 
   for (const [name, source] of Object.entries(forbidden)) {

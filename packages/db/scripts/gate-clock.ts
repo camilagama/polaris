@@ -38,7 +38,10 @@ export function storeDay(
   return shiftDay(calendarDateInTimeZone(clock(), timeZone), offsetDays);
 }
 
-/** Noon of a store day, as the instant a command carries: the same day in the store calendar and in UTC. */
+/**
+ * Noon of a store day, as the instant a command carries: the same day in the store calendar and in UTC. For today it
+ * is still ahead before 12:00 in São Paulo and a sale would be refused as future: use it for yesterday and earlier.
+ */
 export function storeNoon(day: string): string {
   return `${day}T15:00:00.000Z`;
 }

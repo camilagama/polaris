@@ -523,10 +523,11 @@ async function run() {
     );
 
     // ------------------ 7. operator-dated stock commands are never future
-    const tomorrow = storeDay(runClock, 1);
+    // two days ahead of the day the run started: still the future if the run crosses midnight
+    const futureDay = storeDay(runClock, 2);
     await assert.rejects(
       () =>
-        receive(tenantA, liveProduct.variantId, 1, { occurredOn: tomorrow }),
+        receive(tenantA, liveProduct.variantId, 1, { occurredOn: futureDay }),
       InventoryOccurredInFutureError
     );
     await assert.rejects(
@@ -539,7 +540,7 @@ async function run() {
             writeOffStock(transaction, identity, {
               commandId: randomUUID(),
               commandVersion: 1,
-              occurredOn: tomorrow,
+              occurredOn: futureDay,
               quantity: 1,
               reasonCode: "damaged",
               variantId: liveProduct.variantId,
@@ -558,7 +559,7 @@ async function run() {
               commandId: randomUUID(),
               commandVersion: 1,
               expectedVersion: 0,
-              occurredOn: tomorrow,
+              occurredOn: futureDay,
               physicalQuantity: 1,
               variantId: liveProduct.variantId,
             })

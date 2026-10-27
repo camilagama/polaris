@@ -1,17 +1,30 @@
 /**
- * What reads the time of day in a TypeScript source (t438): `Date.now`, `new Date()` (also `new Date`, `new
- * Date(undefined)`), `Date()` without `new`, `Date["now"]`, the alias `= Date;` and `Temporal.Now`. Comments, the text
- * of strings and templates and regular expressions are blanked first, so the words in prose do not count; the code in
- * a `${}` stays. The rule that uses it is `gate-loose-clock.test.ts`.
+ * What reads the time of day in a TypeScript source (t438): `Date.now` (also `Date?.now`, `Date["now"]`, `Date.now`
+ * as a value), `new Date()` (also `new Date`, `new Date(undefined)`, `new globalThis.Date()`, `new (Date)()`), `Date()`
+ * without `new`, `Reflect.construct(Date, ...)`, `Date` taken as a value (`const D = Date`, `run(Date)`),
+ * `Temporal.Now` and `performance.timeOrigin`. Comments, the text of strings and templates and regular expressions
+ * are blanked first, so the words in prose do not count; the code in a `${}` stays.
+ *
+ * Not caught, and said here so nobody trusts it: a clock reached through an import of another package (a helper
+ * that returns the time), `Intl.DateTimeFormat().format()` with no argument and `Date` renamed through a function.
+ * The rule that uses it is `gate-loose-clock.test.ts`.
  */
+// `Date` as the global (alone, or as `globalThis.Date`), not `x.Date` of some other object
+const DATE = String.raw`(?:(?<![.\w])|(?<=globalThis\s*\.\s*))Date`;
 const LOOSE_CLOCK = [
-  /\bDate\s*\.\s*now\b/g,
-  /\bnew\s+Date\s*\(\s*(?:undefined|void\s+0)?\s*\)/g,
-  /\bnew\s+Date\b(?!\s*\()/g,
-  /(?<!new\s+)(?<![.\w])Date\s*\(\s*\)/g,
-  /\bDate\s*\[/g,
-  /[=]\s*(?:globalThis\s*\.\s*)?Date\s*[;,]/g,
+  new RegExp(String.raw`${DATE}\s*(?:\?\.|\.)\s*now\b`, "g"),
+  /\bnew\s+(?:\w+\s*\.\s*)*Date\s*\(\s*(?:undefined|void\s+0)?\s*\)/g,
+  /\bnew\s+(?:\w+\s*\.\s*)*Date\b(?!\s*\()/g,
+  /\bnew\s*\(\s*Date\s*\)/g,
+  new RegExp(String.raw`(?<!new\s+)${DATE}\s*\(\s*\)`, "g"),
+  new RegExp(String.raw`${DATE}\s*\[(?!\s*\])`, "g"),
+  /\bReflect\s*\.\s*construct\s*\(\s*Date\b/g,
+  // `const D = Date`, `let { now } = Date` (not `type X = Date;`, not `= Date.UTC`)
+  /\b(?:const|let|var)\s+[\w{},\s:]*=\s*(?:globalThis\s*\.\s*)?Date\b(?!\s*[.([])/g,
+  // `run(Date)`, `run(a, Date)`
+  /[(,]\s*Date\s*[,)]/g,
   /\bTemporal\s*\.\s*Now\b/g,
+  /\bperformance\s*\.\s*timeOrigin\b/g,
 ];
 
 const NOT_NEWLINE = /[^\n]/g;
@@ -52,6 +65,10 @@ function endOfRegex(source: string, from: number): number {
 
 function opensRegex(before: string): boolean {
   const last = before.trimEnd();
+  // `i++ / 2` and `i-- / 2` divide: the operand ended
+  if (last.endsWith("++") || last.endsWith("--")) {
+    return false;
+  }
   return (
     last === "" ||
     REGEX_AFTER.has(last.slice(-1)) ||
