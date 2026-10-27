@@ -13,6 +13,7 @@ import { cancelSale } from "../src/sale-cancellation-repository";
 import { getSale } from "../src/sale-query-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
+import { runClock, storeDay } from "./gate-clock";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -59,9 +60,7 @@ const DEFAULT_RUNS = 20;
 // the runner stops a gate after 30 minutes; at up to 0.7 s a sequence this fits
 const MAX_RUNS = 2000;
 const VARIANTS = 2;
-const OCCURRED_ON = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Sao_Paulo",
-}).format(new Date());
+const OCCURRED_ON = storeDay(runClock);
 const SCALE = 1_000_000n;
 // the limits of inventory.md (a PostgreSQL integer balance; 18 integer digits of cost), written here and not imported
 const MAX_QUANTITY = 2_147_483_647;

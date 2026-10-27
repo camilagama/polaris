@@ -17,6 +17,7 @@ import { cancelSale } from "../src/sale-cancellation-repository";
 import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
+import { runClock, storeDay, storeNoon } from "./gate-clock";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -462,7 +463,7 @@ async function run() {
       rt,
       tenantA,
       [{ quantity: 1, variantId: itemProduct.variantId }],
-      { occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString() }
+      { occurredAt: storeNoon(storeDay(runClock, -10)) }
     );
     const recent = await confirmPlainSale(rt, tenantA, [
       { quantity: 1, variantId: itemProduct.variantId },
@@ -521,11 +522,8 @@ async function run() {
       );
     const ids = (result: Awaited<ReturnType<typeof history>>) =>
       result.sales.map((sale) => sale.id);
-    const day = (offset: number) =>
-      // the organization's calendar (America/Sao_Paulo), not UTC's
-      new Date(Date.now() + offset * 86_400_000).toLocaleDateString("en-CA", {
-        timeZone: "America/Sao_Paulo",
-      });
+    // the organization's calendar (America/Sao_Paulo), not UTC's, on the clock fixed at the start of the run
+    const day = (offset: number) => storeDay(runClock, offset);
     const all = await history();
     for (const sale of [old, recent, toCancel, toReturn]) {
       assert.ok(ids(all).includes(sale.sale.id));
