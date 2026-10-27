@@ -377,7 +377,7 @@ function ProductDialogBody({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <div className={FORM_ELEMENT_CLASS}>
-        <DialogBody ref={bodyRef}>
+        <DialogBody className="scroll-pb-20" ref={bodyRef}>
           <ActionFeedback
             error={error}
             errorExtra={errorExtra}

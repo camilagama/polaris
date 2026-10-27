@@ -59,6 +59,7 @@ export function ProductMediaFilePicker({
         <span
           className="min-w-0 text-muted-foreground text-support [overflow-wrap:anywhere]"
           id={FILE_NAME_ID}
+          role="status"
         >
           {fileName ?? NO_IMAGE_CHOSEN}
         </span>
@@ -69,7 +70,6 @@ export function ProductMediaFilePicker({
         aria-label="Escolher imagem"
         className="sr-only"
         disabled={disabled}
-        id="product-media-file"
         onChange={onChange}
         ref={setInput}
         tabIndex={-1}

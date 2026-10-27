@@ -261,6 +261,7 @@ export function ProductVariantConfigurationForm({
         })
       );
       setSaveError(null);
+      setClearedNotice(null);
     },
     []
   );

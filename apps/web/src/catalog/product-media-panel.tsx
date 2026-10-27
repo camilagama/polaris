@@ -777,7 +777,9 @@ export function ProductMediaPanel({
           <ProductMediaFilePicker
             buttonRef={fileButtonRef}
             disabled={isPreparing || imagesBusy}
-            fileName={preparedFile?.name ?? null}
+            fileName={
+              isPreparing ? "Preparando…" : (preparedFile?.name ?? null)
+            }
             inputRef={fileInputRef}
             onChange={handleFileChange}
           />

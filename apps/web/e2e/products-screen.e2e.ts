@@ -1161,10 +1161,24 @@ test("variantes: 'Salvar variantes' fica à vista acima do rodapé, no topo e no
     body.evaluate((element, value) => {
       element.scrollTop = value;
     }, top);
-  await scrollBodyTo(0);
-  await expectNotCovered();
-  await scrollBodyTo(100_000);
-  await expectNotCovered();
+  const expectAtBothEnds = async () => {
+    // the form is longer than the body: without the stuck row the button would be out of sight at the top
+    expect(
+      await body.evaluate(
+        (element) => element.scrollHeight - element.clientHeight
+      )
+    ).toBeGreaterThan(0);
+    await scrollBodyTo(0);
+    await expectNotCovered();
+    await scrollBodyTo(100_000);
+    await expectNotCovered();
+  };
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expectAtBothEnds();
+  await page.setViewportSize({ height: 740, width: 320 });
+  await expectAtBothEnds();
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await expectAtBothEnds();
 });
 
 test("variantes digitadas voltam depois do Esc e do Fechar; Cancelar as descarta", async ({
