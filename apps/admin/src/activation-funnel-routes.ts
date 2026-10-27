@@ -197,6 +197,34 @@ export function activationFunnelView(
   };
 }
 
+/**
+ * The answer to send, or null when the database's is not the closed shape: a key more or less, a count under k, a
+ * list that is not one row per week asked for, or numbers no share can be made of. Nothing of it is thrown or logged.
+ */
+function closedView(
+  answer: unknown,
+  weeks: number
+): ActivationFunnelResponse | null {
+  const raw = rawActivationFunnel.safeParse(answer);
+  if (
+    !raw.success ||
+    raw.data.weeks !== weeks ||
+    raw.data.cohorts.length !== weeks ||
+    raw.data.signups.length !== weeks ||
+    raw.data.activeStores.length !== weeks
+  ) {
+    return null;
+  }
+  try {
+    const view = activationFunnelResponse.safeParse(
+      activationFunnelView(raw.data)
+    );
+    return view.success ? view.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function activationFunnelRoutes(
   dependencies: ActivationFunnelDependencies,
   requireCapability: (
@@ -228,24 +256,28 @@ export function activationFunnelRoutes(
     if (weeks === null) {
       return context.json({ error: "invalid_request" }, 400);
     }
+    // every read is written down and counted: a link on another site must not spend the operator's reads
+    if (context.req.header("sec-fetch-site") === "cross-site") {
+      return context.json({ error: "forbidden" }, 403);
+    }
     const principalId = context.get("principal").id;
     const turn = limiter.take(principalId);
     if (!turn.allowed) {
-      report("activation_funnel_rate_limited");
+      // the operator's id, not a customer's: who is sweeping is what the alert is for
+      report("activation_funnel_rate_limited", { principal: principalId });
       context.header("Retry-After", String(turn.retryAfterSeconds));
       return context.json({ error: "rate_limited" }, 429);
     }
-    const answer = rawActivationFunnel.safeParse(
-      await dependencies.read(principalId, weeks, context.env)
+    const view = closedView(
+      await dependencies.read(principalId, weeks, context.env),
+      weeks
     );
-    if (!(answer.success && answer.data.weeks === weeks)) {
+    if (view === null) {
       // the shape is closed: an answer of another shape is not passed on, and what it held is not logged
       report("activation_funnel_unexpected_shape");
       return context.json({ error: "internal_error" }, 500);
     }
-    return context.json(
-      activationFunnelResponse.parse(activationFunnelView(answer.data))
-    );
+    return context.json(view);
   });
 
   return routes;

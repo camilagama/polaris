@@ -60,8 +60,22 @@ const notClosed = {
   state: "unavailable" as const,
 };
 
-/** Two cohorts as the function writes them: a closed one with every cell shown, and the current one. */
+/** One row a week as the function writes them: closed weeks with numbers shown, then the current one. */
 function raw(weeks = 2): RawActivationFunnel {
+  const answer = twoWeeks(weeks);
+  const pad = <T>([closed, current]: T[]): T[] => [
+    ...Array.from({ length: weeks - 1 }, () => closed as T),
+    current as T,
+  ];
+  return {
+    ...answer,
+    activeStores: pad(answer.activeStores),
+    cohorts: pad(answer.cohorts),
+    signups: pad(answer.signups),
+  };
+}
+
+function twoWeeks(weeks: number): RawActivationFunnel {
   return {
     activeStores: [
       {
@@ -184,7 +198,7 @@ function setup(
       }),
       bindings
     );
-  return { get, read, report };
+  return { app, get, read, report };
 }
 
 describe("GET /api/funnel", () => {
@@ -237,6 +251,7 @@ describe("GET /api/funnel", () => {
         const response = await get(query);
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({ error: "invalid_request" });
+        expect(response.headers.get("cache-control")).toBe("no-store");
         expect(read).not.toHaveBeenCalled();
       }
     );
@@ -285,6 +300,40 @@ describe("GET /api/funnel", () => {
       },
     ],
     ["another number of weeks", raw(3)],
+    [
+      "a count under k shown (a regression of the suppression)",
+      {
+        ...raw(),
+        activeStores: [
+          { ...raw().activeStores[0], stores: shown(4) },
+          raw().activeStores[1],
+        ],
+      },
+    ],
+    [
+      "0 shown",
+      {
+        ...raw(),
+        signups: [
+          { ...raw().signups[0], withStore: shown(0) },
+          raw().signups[1],
+        ],
+      },
+    ],
+    [
+      "one row fewer than the weeks asked for",
+      { ...raw(), activeStores: [raw().activeStores[0]] },
+    ],
+    [
+      "a part over its whole",
+      {
+        ...raw(),
+        signups: [
+          { ...raw().signups[0], withStore: shown(31) },
+          raw().signups[1],
+        ],
+      },
+    ],
     ["nothing", null],
   ])(
     "refuses a database answer with %s, logging none of it",
@@ -294,9 +343,25 @@ describe("GET /api/funnel", () => {
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({ error: "internal_error" });
       expect(report).toHaveBeenCalledWith("activation_funnel_unexpected_shape");
+      expect(response.headers.get("cache-control")).toBe("no-store");
       expect(JSON.stringify(report.mock.calls)).not.toContain("org-1");
     }
   );
+
+  it("refuses a read started from another site with 403, without spending a read", async () => {
+    const { app, read } = setup();
+    const response = await app.fetch(
+      new Request("https://admin.example.invalid/api/funnel?weeks=2", {
+        headers: {
+          "cf-access-jwt-assertion": "token",
+          "sec-fetch-site": "cross-site",
+        },
+      }),
+      bindings
+    );
+    expect(response.status).toBe(403);
+    expect(read).not.toHaveBeenCalled();
+  });
 
   it("answers 503 when the database cancels the read for its time", async () => {
     const { get, report } = setup(
@@ -306,6 +371,7 @@ describe("GET /api/funnel", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "unavailable" });
     expect(report).toHaveBeenCalledWith("activation_funnel_timeout");
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   it(`answers 429 with Retry-After after ${ACTIVATION_FUNNEL_READS_PER_HOUR} reads of the same operator, without reading`, async () => {
@@ -320,7 +386,9 @@ describe("GET /api/funnel", () => {
     expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(refused.headers.get("cache-control")).toBe("no-store");
     expect(read).toHaveBeenCalledTimes(ACTIVATION_FUNNEL_READS_PER_HOUR);
-    expect(report).toHaveBeenCalledWith("activation_funnel_rate_limited");
+    expect(report).toHaveBeenCalledWith("activation_funnel_rate_limited", {
+      principal: principal.id,
+    });
   });
 });
 

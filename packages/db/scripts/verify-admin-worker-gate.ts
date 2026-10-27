@@ -33,7 +33,7 @@ const expectedDatabase =
 const TEAM_DOMAIN = "polaris-test.cloudflareaccess.com";
 const ISSUER = `https://${TEAM_DOMAIN}`;
 const VITEST_TIMEOUT_MS = 5 * 60_000;
-/** The reads of GET /api/funnel that worker.workerd-db.test.ts expects answered (weeks 1, 4 and 26). */
+/** The reads of GET /api/funnel that worker.workerd-db.test.ts answers (its loop over weeks 1, 4 and 26): change both. */
 const ACTIVATION_FUNNEL_ANSWERED_READS = 3;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const failureLine =
@@ -314,11 +314,12 @@ async function run() {
     const funnelReads = await owner.pool.query<{
       detail: string | null;
       entity_id: string | null;
+      entity_type: string | null;
       organization_id: string | null;
       principal_id: string;
       support_case_id: string | null;
     }>(
-      "SELECT principal_id, organization_id, support_case_id, entity_id, detail FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read' AND principal_id = ANY($1)",
+      "SELECT principal_id, organization_id, support_case_id, entity_type, entity_id, detail FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read' AND principal_id = ANY($1)",
       [[ownerId, disabledId]]
     );
     assert.equal(
@@ -330,6 +331,7 @@ async function run() {
       assert.equal(row.principal_id, ownerId);
       assert.equal(row.organization_id, null);
       assert.equal(row.support_case_id, null);
+      assert.equal(row.entity_type, "activation_funnel");
       assert.equal(row.entity_id, null);
       assert.equal(row.detail, null, "the funnel's event holds no content");
     }

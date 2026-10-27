@@ -9,7 +9,8 @@ import { z } from "zod";
  * - `activationFunnelResponse`: what the route sends. A number the function did not show is `null` with a `reason`,
  *   never 0; a percentage is computed only between two numbers the function showed, and is `null` with the reason of
  *   the missing side otherwise. No store, person, amount or individual date; the only dates are the week starts and
- *   the instant of the read.
+ *   the instant of the read. `internalStoresExcluded` is an exact count, not suppressed: the stores the team marked as
+ *   its own, not a customer's activity (ADR 0071 amended).
  */
 
 // The pages run under a CSP without 'unsafe-eval' and the Worker never allows it: no code generation (as in ./index).
@@ -20,12 +21,14 @@ export const ACTIVATION_FUNNEL_MINIMUM_STORES = 5;
 export const ACTIVATION_FUNNEL_TIMEZONE = "America/Sao_Paulo";
 
 const count = z.number().int().nonnegative();
+/** A count the function shows is never under k: a smaller one is a regression of the suppression, refused here too. */
+const shownCount = z.number().int().min(ACTIVATION_FUNNEL_MINIMUM_STORES);
 const weekLabel = z.string().regex(/^\d{4}-W\d{2}$/);
 const weekStart = z.iso.date();
 const unavailableReason = z.enum(["activation_window_open", "week_not_closed"]);
 
 const rawCell = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("shown"), value: count }).strict(),
+  z.object({ state: z.literal("shown"), value: shownCount }).strict(),
   z.object({ state: z.literal("suppressed") }).strict(),
   z
     .object({ reason: unavailableReason, state: z.literal("unavailable") })
@@ -98,7 +101,7 @@ export const activationFunnelReason = z.enum([
 
 /** A count: the number the function showed, or `null` with the reason; never 0 in its place. */
 const funnelCount = z.union([
-  z.object({ reason: z.null(), value: count }).strict(),
+  z.object({ reason: z.null(), value: shownCount }).strict(),
   z.object({ reason: activationFunnelReason, value: z.null() }).strict(),
 ]);
 
