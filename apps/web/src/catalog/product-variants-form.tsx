@@ -4,7 +4,13 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -16,6 +22,12 @@ import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
+import {
+  LimitHelp,
+  useLimitFocus,
+  useLimitHelp,
+} from "../subscription/limit-help";
+import { isLimitReached } from "../subscription/limit-help-model";
 import { ProductTextAreaField } from "./product-fields";
 import {
   clearDefaultSkuLabel,
@@ -32,6 +44,7 @@ import {
   type VariantConfigurationDraft,
   type VariantDraft,
   validateVariantDrafts,
+  VARIANT_LIMIT_REACHED,
   variantErrorMessage,
   variantSkuErrorMessage,
 } from "./product-variants-model";
@@ -206,6 +219,10 @@ export function ProductVariantConfigurationForm({
   const [variants, setVariants] = useState<VariantDraft[]>(initial.variants);
   const [isPending, setIsPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // the plan's limit refused the save (L1 of the corte 1.6): the way to the Pro goes with the text, which takes the focus
+  const limitHelp = useLimitHelp();
+  const saveErrorRef = useRef<HTMLDivElement>(null);
+  const focusLimit = useLimitFocus(saveErrorRef);
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
   // what the warning's button did, said after it: the SKU that was erased
@@ -333,7 +350,11 @@ export function ProductVariantConfigurationForm({
         onConfigured(result.configuration, result.product);
       } catch (error: unknown) {
         setSaveError(variantErrorMessage(error));
-        if (rpcErrorCode(error) === "CONFLICT") {
+        if (isLimitReached(error)) {
+          // nothing changed on the server: the form stays as typed, with the way to the Pro
+          limitHelp.show("variants");
+          focusLimit();
+        } else if (rpcErrorCode(error) === "CONFLICT") {
           onConflict();
         }
       } finally {
@@ -343,6 +364,8 @@ export function ProductVariantConfigurationForm({
     [
       configuration.productVersion,
       defaultVariantHasSku,
+      focusLimit,
+      limitHelp.show,
       onConflict,
       onConfigured,
       onDraftChange,
@@ -519,8 +542,14 @@ export function ProductVariantConfigurationForm({
         </Alert>
       ) : null}
       {saveError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{saveError}</AlertDescription>
+        <Alert ref={saveErrorRef} tabIndex={-1} variant="destructive">
+          <AlertDescription>
+            {saveError}
+            <LimitHelp
+              help={limitHelp.help}
+              shown={saveError === VARIANT_LIMIT_REACHED}
+            />
+          </AlertDescription>
         </Alert>
       ) : null}
 

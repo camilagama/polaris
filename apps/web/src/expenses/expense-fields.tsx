@@ -2,7 +2,13 @@ import type { ExpenseCategoryReadModel } from "@polaris/contracts";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { type ChangeEvent, type ComponentProps, useCallback } from "react";
+import {
+  type ChangeEvent,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+  useCallback,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
@@ -171,15 +177,33 @@ export function ExpenseCategorySelect({
   );
 }
 
-/** A success note (`status`) or an error (`alert`), or nothing: no gap is drawn without a message. */
-export function ActionNotice({ feedback }: { feedback: Feedback | null }) {
+/**
+ * A success note (`status`) or an error (`alert`), or nothing: no gap is drawn without a message. An error may carry
+ * more under its text (the way to the Pro of a plan's limit) and take the focus (`errorRef`).
+ */
+export function ActionNotice({
+  errorExtra,
+  errorRef,
+  feedback,
+}: {
+  errorExtra?: ReactNode;
+  errorRef?: Ref<HTMLDivElement> | undefined;
+  feedback: Feedback | null;
+}) {
   if (!feedback) {
     return null;
   }
   return feedback.kind === "error" ? (
-    <Alert variant="destructive">
+    <Alert
+      ref={errorRef}
+      tabIndex={errorRef ? -1 : undefined}
+      variant="destructive"
+    >
       <CircleAlertIcon aria-hidden="true" />
-      <AlertDescription>{feedback.text}</AlertDescription>
+      <AlertDescription>
+        {feedback.text}
+        {errorExtra}
+      </AlertDescription>
     </Alert>
   ) : (
     <Alert>

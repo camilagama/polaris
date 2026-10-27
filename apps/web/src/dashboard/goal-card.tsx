@@ -20,6 +20,8 @@ import {
 import { Progress, ProgressValue } from "@/ui/progress";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
+import { LimitHelp } from "../subscription/limit-help";
+import type { LimitHelpView } from "../subscription/limit-help-model";
 import { GoalEditForm } from "./goal-form";
 import { GoalHistoryBody, GoalHistoryToggle } from "./goal-history";
 import {
@@ -44,6 +46,8 @@ interface GoalCardProps {
   onCancel: (goal: GoalReadModel) => Promise<GoalOutcome>;
   onSave: (goal: GoalReadModel, input: GoalEditInput) => Promise<GoalOutcome>;
   organizationId: string;
+  /** What goes with a goal paused by the plan: the way to the Pro (corte 1.6). */
+  pausedHelp?: LimitHelpView | null;
   timezone: string | null;
   /** The organization's today, YYYY-MM-DD. */
   today: string;
@@ -85,7 +89,13 @@ function progressTargetText(goal: GoalReadModel): string {
   return goal.target === "1" ? `${text} venda` : `${text} vendas`;
 }
 
-function GoalProgress({ goal }: { goal: GoalReadModel }) {
+function GoalProgress({
+  goal,
+  pausedHelp = null,
+}: {
+  goal: GoalReadModel;
+  pausedHelp?: LimitHelpView | null;
+}) {
   const { progress } = goal;
   const [hidden] = useHiddenValues();
   const targetText = progressTargetText(goal);
@@ -96,6 +106,7 @@ function GoalProgress({ goal }: { goal: GoalReadModel }) {
         andamento do que você tem, então esta meta está pausada: ela não é
         medida nem pode ser editada, mas continua aqui. Você pode cancelá-la, ou
         ela volta quando o plano permitir.
+        <LimitHelp help={pausedHelp} />
       </p>
     );
   }
@@ -340,6 +351,7 @@ export function ActiveGoalCard({
   onCancel,
   onSave,
   organizationId,
+  pausedHelp = null,
   timezone,
   today,
 }: GoalCardProps) {
@@ -379,7 +391,7 @@ export function ActiveGoalCard({
     <Card>
       <CardContent className="grid gap-3">
         <GoalHeader goal={goal} today={today} />
-        <GoalProgress goal={goal} />
+        <GoalProgress goal={goal} pausedHelp={pausedHelp} />
         {mode === "edit" ? (
           <GoalEditForm
             disabled={busyKey !== null}

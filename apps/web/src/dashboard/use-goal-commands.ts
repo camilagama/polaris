@@ -3,10 +3,12 @@ import { useCallback, useState } from "react";
 import type { Feedback } from "../expenses/use-command-runner";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
+import { isLimitReached } from "../subscription/limit-help-model";
 import { type GoalAction, goalErrorMessage } from "./goal-errors";
 import type { GoalCreateInput, GoalEditInput } from "./goal-model";
 
-export type GoalOutcome = "conflict" | "failed" | "ok";
+/** `limit`: the plan's limit refused the new goal; nothing changed, and the form keeps what was typed. */
+export type GoalOutcome = "conflict" | "failed" | "limit" | "ok";
 
 /**
  * The commands of the goals panel, one at a time: the busy key disables the
@@ -40,8 +42,12 @@ export function useGoalCommands(
           kind: "error",
           text: goalErrorMessage(caughtError, action),
         });
-        outcome =
-          rpcErrorCode(caughtError) === "CONFLICT" ? "conflict" : "failed";
+        if (isLimitReached(caughtError)) {
+          outcome = "limit";
+        } else {
+          outcome =
+            rpcErrorCode(caughtError) === "CONFLICT" ? "conflict" : "failed";
+        }
       }
       if (outcome !== "failed") {
         await reload();

@@ -24,14 +24,38 @@ export interface PrepareMediaUploadFileDependencies {
 
 export class MediaUploadHttpError extends Error {
   readonly code: string;
+  /** The plan's limit a `entitlement_limit_reached` names (`images.active.max`, `images.per_product.max`), or null. */
+  readonly limit: string | null;
   readonly status: number;
 
-  constructor(code: string, status: number, cause?: unknown) {
+  constructor(
+    code: string,
+    status: number,
+    cause?: unknown,
+    limit: string | null = null
+  ) {
     super(code, cause === undefined ? undefined : { cause });
     this.name = "MediaUploadHttpError";
     this.code = code;
+    this.limit = limit;
     this.status = status;
   }
+}
+
+/** The `limit` of the Worker's error body (`{ error: { code, limit } }`), when it has one. */
+function errorLimitOf(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "error" in payload &&
+    typeof payload.error === "object" &&
+    payload.error !== null &&
+    "limit" in payload.error &&
+    typeof payload.error.limit === "string"
+  ) {
+    return payload.error.limit;
+  }
+  return null;
 }
 
 export interface UploadProductMediaInput {
@@ -93,7 +117,12 @@ export async function uploadProductMedia(
       typeof payload.error.code === "string"
         ? payload.error.code
         : "media_upload_failed";
-    throw new MediaUploadHttpError(code, response.status);
+    throw new MediaUploadHttpError(
+      code,
+      response.status,
+      undefined,
+      errorLimitOf(payload)
+    );
   }
 
   try {

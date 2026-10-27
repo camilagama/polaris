@@ -50,6 +50,13 @@ export function createDialogEntries(history: EntryHistory, load: string) {
   const waiting: DialogEntry[] = [];
   let stepsOnTheWay = 0;
   let opened = 0;
+  // what waits for the steps back of the stack to land (a navigation after a dialog closed)
+  const afterLanding: Array<() => void> = [];
+  const runAfterLanding = () => {
+    for (const run of afterLanding.splice(0)) {
+      run();
+    }
+  };
 
   const stepBack = () => {
     stepsOnTheWay += 1;
@@ -116,6 +123,17 @@ export function createDialogEntries(history: EntryHistory, load: string) {
         for (const entry of waiting.splice(0)) {
           write(entry);
         }
+        runAfterLanding();
+      }
+    },
+    /**
+     * Runs once the steps back the stack asked for have landed: a new entry pushed before that would be the one the
+     * step takes. With no step on the way, it runs now.
+     */
+    afterSteps(run: () => void) {
+      afterLanding.push(run);
+      if (stepsOnTheWay === 0) {
+        runAfterLanding();
       }
     },
     /** After a step back: is the entry of this dialog gone? A dialog over it does not take it. */

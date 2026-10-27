@@ -38,6 +38,11 @@ import { orpcClient } from "../lib/orpc";
 import { useReportUnsentWork } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
+  LimitHelp,
+  useLimitFocus,
+  useLimitHelp,
+} from "../subscription/limit-help";
+import {
   describeMediaFailure,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
@@ -46,10 +51,12 @@ import {
   type MoveDirection,
   movedAssetOrder,
   movedNotice,
+  PRODUCT_IMAGES_LIMIT_REACHED,
   removedNotice,
   replacementAbandonedText,
   replacementDoneText,
   replacementPendingText,
+  STORE_IMAGES_LIMIT_REACHED,
 } from "./media-commands-model";
 import {
   adjustCropWithKey,
@@ -150,6 +157,14 @@ function mediaFailure(
   return describeMediaFailure(context, error);
 }
 
+/** The text on screen is a refusal by the plan's limit: the way to the Pro goes with it, only while it shows. */
+function isImageLimitText(error: string): boolean {
+  return (
+    error === STORE_IMAGES_LIMIT_REACHED ||
+    error === PRODUCT_IMAGES_LIMIT_REACHED
+  );
+}
+
 function variantLabel(variant: {
   isDefault: boolean;
   values: Array<{ optionValueName: string }>;
@@ -217,6 +232,11 @@ export function ProductMediaPanel({
   const [isPreparing, setIsPreparing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // the plan's limit refused the image (L2, L3 of the corte 1.6): the way to the Pro goes with the text, which takes
+  // the focus; the picked photo stays, to send once a place is free
+  const limitHelp = useLimitHelp();
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const focusLimit = useLimitFocus(errorRef);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -317,11 +337,15 @@ export function ProductMediaPanel({
     (context: MediaFailureContext, cause: unknown) => {
       const failure = mediaFailure(context, cause);
       setError(failure.message);
+      if (failure.limit) {
+        limitHelp.show(failure.limit);
+        focusLimit();
+      }
       if (failure.reloadList) {
         loadAssets(true);
       }
     },
-    [loadAssets]
+    [focusLimit, limitHelp.show, loadAssets]
   );
 
   useEffect(
@@ -745,8 +769,11 @@ export function ProductMediaPanel({
   return (
     <div className="grid gap-4" ref={panelRef}>
       {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+        <Alert ref={errorRef} tabIndex={-1} variant="destructive">
+          <AlertDescription>
+            {error}
+            <LimitHelp help={limitHelp.help} shown={isImageLimitText(error)} />
+          </AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
