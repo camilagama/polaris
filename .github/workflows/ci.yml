@@ -172,12 +172,10 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      # braces has no fixed release; exception in docs/runbooks/dependency-audit.md, review on 2026-11-18
       # better-auth 1.6.23: three advisories that need a plugin production does not load (a test guards that);
       # exception in docs/runbooks/dependency-audit.md, review on 2026-11-10 or when the 1.7.x upgrade merges
       - run: >-
           bun audit --audit-level=high
-          --ignore=GHSA-vfj7-8cjw-p6xm
           --ignore=GHSA-965c-763c-88jm
           --ignore=GHSA-r4xp-prcw-77qf
           --ignore=GHSA-q84f-53jg-9ppm
