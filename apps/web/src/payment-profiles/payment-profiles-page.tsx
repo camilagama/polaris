@@ -111,7 +111,11 @@ function ActionFeedback({
     return null;
   }
   return (
-    <div className="focus-ring grid gap-2" ref={regionRef} tabIndex={-1}>
+    <div
+      className="focus-ring grid gap-2 rounded-lg"
+      ref={regionRef}
+      tabIndex={-1}
+    >
       {error ? (
         <Alert variant="destructive">
           <CircleAlertIcon aria-hidden="true" />
