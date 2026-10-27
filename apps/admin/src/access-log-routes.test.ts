@@ -51,6 +51,7 @@ function setup(
   const report = vi.fn();
   const dependencies: AdminDependencies = {
     accessLog: { read },
+    activationFunnel: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
         email: null,
@@ -248,6 +249,7 @@ describe("reading the access log", () => {
     const get = await createAdminApp({
       ...({} as AdminDependencies),
       accessLog: { read },
+      activationFunnel: { read: vi.fn() },
       authenticate: vi.fn(() =>
         Promise.resolve({
           email: null,

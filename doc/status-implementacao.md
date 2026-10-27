@@ -2396,6 +2396,16 @@ Origem: o `429 rate_limited` do QA de 26/10 no staging, só com leituras, e os p
 | Leitura auditada | Em revisão | `admin_read_activation_funnel(p_principal, p_weeks)`, `VOLATILE`, `SECURITY DEFINER`: grava um evento `activation_funnel.read` (só o operador; sem loja, caso, detalhe nem número) e devolve a função `STABLE`, que o papel do Admin não executa direto. A rota do PR B chama só o wrapper. |
 | Limites | Registrados | A rota JSON do funil e o contrato estrito são o PR B (t431); percentuais não estão na função (a rota os calcula só entre números mostrados). |
 
+### Funil de ativação, PR B (Admin): rota JSON `GET /api/funnel` (t433; corte 2.4; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Rota | Em revisão | `GET /api/funnel?weeks=N` no Admin, capacidade `platform:read`; `weeks` inteiro de 1 a 26 escrito sem zero à esquerda, e nenhum outro parâmetro (sem janela nem filtro por loja): fora disso, 400. Sem login 401, login que não é principal ou sem a capacidade 403; `Cache-Control: no-store` em toda resposta. Sem tela: o operador lê o JSON no navegador atrás do Access (a tela fica para a Fase 9, com os AC-12 e AC-13). |
+| Leitura auditada | Em revisão | Só `admin_read_activation_funnel` (um evento `activation_funnel.read` do operador por leitura respondida, sem conteúdo), numa transação com `SET LOCAL statement_timeout = 2000` (cancelada, 503 `unavailable` e nada gravado); a rota não chama a função `STABLE` nem lê tabela. |
+| Contrato | Em revisão | `@polaris/contracts/admin-activation-funnel`, zod estrito na entrada (o que a função devolve) e na saída: número não mostrado é `null` com `reason` (`suppressed`, `activation_window_open`, `week_not_closed`), nunca 0; percentual (uma casa) só entre dois números mostrados, senão `null` com o motivo do lado que falta; `updatedAt` (instante da leitura), `internalStoresExcluded` e `notCounted` (lojas internas, lojas apagadas, cadastros incluem contas internas). Resposta do banco de outra forma: 500 sem registrar o conteúdo. |
+| Limite de taxa | Em revisão | 30 leituras por hora deslizante por operador, contadas no isolate do Worker (o Admin não tinha limitador e o binding de rate limit do Workers só conta em 10 ou 60 s); acima disso 429 com `Retry-After`, sem ler. Dois isolates contam à parte; o registro completo continua sendo o evento de auditoria. |
+| Provas | Em revisão | `activation-funnel-routes.test.ts` (401, 403 sem principal e sem capacidade, 400 em weeks 0/27/texto/vazio/zero à esquerda/repetido/parâmetro a mais, 200 com `no-store` e contrato, 429, `null` + `reason` nunca 0, percentual nulo com um lado suprimido, contrato recusa chave a mais), `admin-diagnostics-repository.test.ts` (transação, timeout, só o wrapper) e, no CI (PostgreSQL 18), o gate `admin-worker`: três leituras pelo `fetch` real gravam três eventos do operador sem loja, caso nem conteúdo; as recusadas, nenhum. |
+
 ### Limites do plano levam ao Pro, nos cinco lugares que faltavam (t429; corte 1.6; sem migration)
 
 | Item | Estado | Detalhe |

@@ -33,6 +33,8 @@ const expectedDatabase =
 const TEAM_DOMAIN = "polaris-test.cloudflareaccess.com";
 const ISSUER = `https://${TEAM_DOMAIN}`;
 const VITEST_TIMEOUT_MS = 5 * 60_000;
+/** The reads of GET /api/funnel that worker.workerd-db.test.ts expects answered (weeks 1, 4 and 26). */
+const ACTIVATION_FUNNEL_ANSWERED_READS = 3;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const failureLine =
   /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
@@ -307,6 +309,32 @@ async function run() {
       ),
       0,
       "the disabled operator left nothing"
+    );
+    // every answered read of the activation funnel left one event of its operator, with nothing in it; a refused one none
+    const funnelReads = await owner.pool.query<{
+      detail: string | null;
+      entity_id: string | null;
+      organization_id: string | null;
+      principal_id: string;
+      support_case_id: string | null;
+    }>(
+      "SELECT principal_id, organization_id, support_case_id, entity_id, detail FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read' AND principal_id = ANY($1)",
+      [[ownerId, disabledId]]
+    );
+    assert.equal(
+      funnelReads.rows.length,
+      ACTIVATION_FUNNEL_ANSWERED_READS,
+      "one event per answered read of the funnel"
+    );
+    for (const row of funnelReads.rows) {
+      assert.equal(row.principal_id, ownerId);
+      assert.equal(row.organization_id, null);
+      assert.equal(row.support_case_id, null);
+      assert.equal(row.entity_id, null);
+      assert.equal(row.detail, null, "the funnel's event holds no content");
+    }
+    tests.push(
+      "each answered read of GET /api/funnel left one activation_funnel.read event of the owner, with no store, case or content; the refused ones (weeks out of range, a disabled operator) left none"
     );
     // the disabled operator's attempt at a suspension left the organization alone
     assert.equal(await status(orgA.organizationId), "active");

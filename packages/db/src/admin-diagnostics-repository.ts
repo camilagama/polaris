@@ -76,11 +76,35 @@ export async function readActivationFunnel(
   ) {
     throw new RangeError("invalid_weeks");
   }
-  const { rows } = await client.query(
-    // `clock_timestamp() AS at` is not read: a pooler that caches by the text of the statement cannot tell that a
-    // user function writes, and with it the statement is one it will not answer from a copy (no read without its event)
-    "SELECT public.admin_read_activation_funnel($1, $2) AS result, pg_catalog.clock_timestamp() AS at",
-    [principalId, weeks]
-  );
-  return rows[0]?.result ?? null;
+  // one transaction so that the timeout is this read's own (SET LOCAL ends with it, and the pooled connection goes
+  // back without it); a read cancelled by it rolls back with its event
+  await client.query("BEGIN", []);
+  try {
+    await client.query(
+      `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`,
+      []
+    );
+    const { rows } = await client.query(
+      // `clock_timestamp() AS at` is not read: a pooler that caches by the text of the statement cannot tell that a
+      // user function writes, and with it the statement is one it will not answer from a copy (no read without its event)
+      "SELECT public.admin_read_activation_funnel($1, $2) AS result, pg_catalog.clock_timestamp() AS at",
+      [principalId, weeks]
+    );
+    await client.query("COMMIT", []);
+    return rows[0]?.result ?? null;
+  } catch (error: unknown) {
+    await client.query("ROLLBACK", []).catch(() => undefined);
+    if ((error as { code?: unknown } | null)?.code === QUERY_CANCELED) {
+      throw new Error("activation_funnel_timeout", { cause: error });
+    }
+    throw error;
+  }
 }
+
+/**
+ * How long the funnel may run before the database cancels it (SQLSTATE 57014): it must not hold the database. The
+ * gate measured about 70 ms with 1,000 stores and 50,000 sales; 2 s leaves room and still frees the connection well
+ * before the connection's own 5 s.
+ */
+export const ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS = 2000;
+const QUERY_CANCELED = "57014";
