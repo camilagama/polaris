@@ -121,11 +121,21 @@ describe("AC-1: the same rules as the form of a new product", () => {
     expect(result.ready.map((row) => row.name.length)).toEqual([200]);
   });
 
+  it("refuses a name of only characters of zero width as a name left empty", () => {
+    const result = preview("Nome;Descrição\n\u200B\u2060;x\nok\u200D;\n");
+    expect(result.refused.map((row) => [row.rowNumber, row.errors])).toEqual([
+      [2, [{ column: "name", message: PRODUCT_NAME_REQUIRED }]],
+    ]);
+    expect(result.ready.map((row) => row.name)).toEqual(["ok\u200D"]);
+  });
+
   it.each([
     ["U+0000", "\u0000"],
     ["U+202E", "\u202E"],
     ["U+2066", "\u2066"],
     ["U+2069", "\u2069"],
+    ["U+200F", "\u200F"],
+    ["U+061C", "\u061C"],
   ])(
     "refuses %s in a name or a description, by the rule the server keeps",
     (_label, char) => {

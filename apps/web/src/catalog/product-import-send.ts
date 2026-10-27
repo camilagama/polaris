@@ -16,10 +16,13 @@ import type { ImportReadyRow } from "./product-import-rows";
  * device (AC-7), and nothing goes to the offline queue.
  *
  * A 429 pauses for the time the server asked (`Retry-After`) and sends the same slice once after it, never right
- * away. A failure that may have taken effect (no answer, a fault of the server) is tried again a few times and then
- * stops the run where it was: `runImport` again continues from that slice, one row at a time, so a row that keeps
- * failing is found alone and `skipStuckRow` can leave it out without holding back the rows after it. The plan's
- * refusal stops it for good and says so, for the screen's notice of the limit (corte 1.6).
+ * away. A failure that may have taken effect (no answer, a fault of the server, as the CPU limit of the Free plan
+ * killing a slice too big) halves the slice (10 → 5 → 2 → 1) and sends the rows again from the same place, with the
+ * same IDs; the size stays at the smallest one that went through, so the slices after it do not pay the failure
+ * again, and climbs one step only after `SLICE_STEP_UP_AFTER` slices in a row without a failure. A row that fails
+ * alone is tried again a few times and then stops the run where it was, so `skipStuckRow` can leave it out without
+ * holding back the rows after it. The plan's refusal stops it for good and says so, for the screen's notice of the
+ * limit (corte 1.6).
  */
 
 /** At most one slice every 6 s: 10 calls per minute, below the 12 of the bucket. */
@@ -31,19 +34,26 @@ const RATE_LIMITED_MIN_MS = 1000;
 const RATE_LIMITED_MAX_MS = 120_000;
 /** The 429s in a row before the run stops (another tab is importing too). */
 const MAX_RATE_LIMITED_IN_A_ROW = 3;
-/** The waits before sending again a slice whose answer did not come. */
+/** The waits before sending again a single row whose answer did not come (a bigger slice is halved instead). */
 const TRANSIENT_RETRY_MS = [2000, 5000] as const;
+/**
+ * The slices in a row without a failure before the size climbs one step: 10 slices, a minute at the pace of the
+ * import. Where only the smaller size goes through, at most one call in 11 fails trying the bigger one again.
+ */
+export const SLICE_STEP_UP_AFTER = 10;
 
 export interface ImportRun {
   readonly importId: string;
   /** The index of the first row not answered yet: where a stopped run continues. */
   nextIndex: number;
-  /** Up to this index the rows go one at a time: the slice there stopped without an answer. */
-  oneByOneUntil: number;
+  /** The slices answered in a row since the last failure or step up: at `SLICE_STEP_UP_AFTER`, the size climbs. */
+  answeredInARow: number;
   readonly results: Map<number, ProductImportRowResult>;
   readonly rows: readonly ProductImportRowInput[];
   /** The rows left out by `skipStuckRow`: they never had an answer, so they may or may not have entered. */
   readonly skipped: Set<number>;
+  /** The size of the next slice: the biggest one at first, halved by a failure, one step up after a run of answers. */
+  sliceSize: number;
 }
 
 /** A new import of the ready rows, with every ID named now, once. */
@@ -52,9 +62,9 @@ export function createImportRun(
   newId: () => string = uuidv7
 ): ImportRun {
   return {
+    answeredInARow: 0,
     importId: newId(),
     nextIndex: 0,
-    oneByOneUntil: 0,
     results: new Map(),
     rows: rows.map((row) => ({
       categoryId: row.categoryId,
@@ -69,6 +79,7 @@ export function createImportRun(
       variantId: newId(),
     })),
     skipped: new Set(),
+    sliceSize: PRODUCT_IMPORT_BATCH_MAX_ROWS,
   };
 }
 
@@ -111,6 +122,7 @@ export interface ImportSendDependencies {
     rows: ProductImportRowInput[];
   }) => Promise<{ results: ProductImportRowResult[] }>;
   signal?: AbortSignal;
+  /** The biggest slice, capped by the contract's. */
   sliceSize?: number;
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -145,9 +157,11 @@ function isTransient(error: unknown): boolean {
 
 type SliceOutcome =
   | { kind: "answered"; results: ProductImportRowResult[] }
-  | Exclude<ImportStop, { kind: "done" | "limit_reached" }>;
+  /** No answer, or a fault of the server: the slice may have entered. */
+  | { error: unknown; kind: "failed" }
+  | Exclude<ImportStop, { kind: "done" | "limit_reached" | "interrupted" }>;
 
-/** One slice, sent until it has an answer, a 429 pause and the retries of a lost answer included. */
+/** One slice, sent until it has an answer or fails, the 429 pauses included. */
 async function sendSlice(
   run: ImportRun,
   rows: ProductImportRowInput[],
@@ -155,7 +169,6 @@ async function sendSlice(
   wait: NonNullable<ImportSendDependencies["wait"]>
 ): Promise<SliceOutcome> {
   let rateLimited = 0;
-  let transient = 0;
   for (;;) {
     if (dependencies.signal?.aborted) {
       return { kind: "aborted" };
@@ -187,15 +200,9 @@ async function sendSlice(
         );
         continue;
       }
-      if (!isTransient(error)) {
-        return { error, kind: "refused" };
-      }
-      const delay = TRANSIENT_RETRY_MS[transient];
-      if (delay === undefined) {
-        return { error, kind: "interrupted" };
-      }
-      transient += 1;
-      await wait(delay, dependencies.signal);
+      return isTransient(error)
+        ? { error, kind: "failed" }
+        : { error, kind: "refused" };
     }
   }
 }
@@ -232,6 +239,15 @@ function recordAnswer(
   return true;
 }
 
+/** The sizes a slice goes through, from the biggest down to 1, each half of the one before: 10, 5, 2, 1. */
+function sliceSteps(biggest: number): number[] {
+  const steps: number[] = [];
+  for (let size = Math.max(1, biggest); size >= 1; size = Math.floor(size / 2)) {
+    steps.push(size);
+  }
+  return steps;
+}
+
 /** Sends the rows of the run from where it stopped, a slice at a time, until every row has its answer or it stops. */
 export async function runImport(
   run: ImportRun,
@@ -239,11 +255,16 @@ export async function runImport(
 ): Promise<ImportStop> {
   const wait = dependencies.wait ?? waitFor;
   const now = dependencies.now ?? Date.now;
-  const sliceSize = Math.min(
-    dependencies.sliceSize ?? PRODUCT_IMPORT_BATCH_MAX_ROWS,
-    PRODUCT_IMPORT_BATCH_MAX_ROWS
+  const steps = sliceSteps(
+    Math.min(
+      dependencies.sliceSize ?? PRODUCT_IMPORT_BATCH_MAX_ROWS,
+      PRODUCT_IMPORT_BATCH_MAX_ROWS
+    )
   );
+  const biggest = steps[0] ?? 1;
+  run.sliceSize = Math.min(run.sliceSize, biggest);
   let lastSentAt: number | null = null;
+  let retries = 0;
   while (run.nextIndex < run.rows.length) {
     if (lastSentAt !== null) {
       const elapsed = now() - lastSentAt;
@@ -252,13 +273,23 @@ export async function runImport(
         await wait(IMPORT_SLICE_INTERVAL_MS - elapsed, dependencies.signal);
       }
     }
-    const size = run.nextIndex < run.oneByOneUntil ? 1 : sliceSize;
-    const rows = run.rows.slice(run.nextIndex, run.nextIndex + size);
+    const rows = run.rows.slice(run.nextIndex, run.nextIndex + run.sliceSize);
     lastSentAt = now();
     const outcome = await sendSlice(run, rows, dependencies, wait);
-    if (outcome.kind === "interrupted" && rows.length > 1) {
-      // the next run finds the row that stops the slice, if it is one, by sending them one at a time
-      run.oneByOneUntil = run.nextIndex + rows.length;
+    if (outcome.kind === "failed") {
+      run.answeredInARow = 0;
+      if (rows.length > 1) {
+        // half of what failed, and it stays there: the same rows go again, at the pace, with the same IDs
+        run.sliceSize = steps.find((size) => size < rows.length) ?? 1;
+        continue;
+      }
+      const delay = TRANSIENT_RETRY_MS[retries];
+      if (delay === undefined) {
+        return { error: outcome.error, kind: "interrupted" };
+      }
+      retries += 1;
+      await wait(delay, dependencies.signal);
+      continue;
     }
     if (outcome.kind !== "answered") {
       return outcome;
@@ -271,6 +302,15 @@ export async function runImport(
       };
     }
     run.nextIndex += rows.length;
+    retries = 0;
+    run.answeredInARow += 1;
+    if (run.answeredInARow >= SLICE_STEP_UP_AFTER) {
+      // one step up at a time: a failure there halves it again
+      run.answeredInARow = 0;
+      const current = run.sliceSize;
+      run.sliceSize =
+        steps.filter((size) => size > current).at(-1) ?? current;
+    }
     dependencies.onProgress?.(run);
     if (outcome.results.some((result) => result.status === "limit_reached")) {
       markLimitReached(run);

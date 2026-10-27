@@ -104,6 +104,10 @@ describe("forbidden characters in product text", () => {
     "\u2067",
     "\u2068",
     "\u2069",
+    // the marks of the direction, through the Unicode class Bidi_Control
+    "\u061C",
+    "\u200E",
+    "\u200F",
   ];
 
   it.each(forbidden)("refuses %j in a name and in a description", (char) => {
@@ -113,6 +117,25 @@ describe("forbidden characters in product text", () => {
     expect(() => normalizeProductDescription(`Lona${char}forte`)).toThrow(
       ProductDescriptionError
     );
+  });
+
+  it.each([
+    "\u200B",
+    "\u200C\u200D",
+    " \u2060 ",
+    "\uFEFF",
+    "\u200B \u200B",
+  ])("refuses a name of only characters of zero width (%j)", (name) => {
+    expect(() => normalizeProductName(name)).toThrow(ProductNameError);
+  });
+
+  it("keeps a character of zero width inside a name that shows something", () => {
+    // the joiner of an emoji, and a break opportunity inside a long word
+    expect(normalizeProductName("Bolsa \u{1F469}\u200D\u{1F4BB}")).toBe(
+      "Bolsa \u{1F469}\u200D\u{1F4BB}"
+    );
+    expect(normalizeProductName("\u200BBolsa")).toBe("\u200BBolsa");
+    expect(normalizeProductDescription("\u200B")).toBe("\u200B");
   });
 
   it.each(["\t", "\n", "\r"])(

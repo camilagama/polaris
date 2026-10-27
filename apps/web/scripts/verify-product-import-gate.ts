@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { ProductImportRowInput } from "@polaris/contracts";
 import { createDatabase } from "@polaris/db/client";
+import { ProductNameError } from "@polaris/domain/catalog/product";
 import {
   inventoryCount,
   organizationToday,
@@ -12,6 +13,7 @@ import {
   findExistingProductNames,
   lockProductNameAndFindProducts,
   readProductCreation,
+  updateProduct,
 } from "@polaris/db/product-repository";
 import {
   type TenantRequestIdentity,
@@ -377,6 +379,52 @@ async function run() {
     });
     tests.push(
       "U+0000 and the characters that turn the text are refused rows and the slice goes on; a formula and HTML are kept as the text they came as"
+    );
+
+    // ======================================================================
+    // 5b. A name written before the rule keeps the product editable; a new name follows the rule
+    // ======================================================================
+    const legacyId =
+      hostile.results[3]?.status === "created"
+        ? hostile.results[3].productId
+        : "";
+    // a name the rule refuses now, as an older version wrote it
+    const legacyName = "Bolsa\tantiga\u200F";
+    await admin.pool.query(
+      "UPDATE public.products SET name = $2 WHERE id = $1",
+      [legacyId, legacyName]
+    );
+    const legacyVersion = await scalar(
+      "SELECT version::text AS n FROM public.products WHERE id = $1",
+      legacyId
+    );
+    const edited = await inTransactionOf(tenantA, "product:update")(
+      (transaction, identity) =>
+        updateProduct(transaction, identity, {
+          categoryId: null,
+          description: "nova descrição",
+          expectedVersion: legacyVersion,
+          id: legacyId,
+          name: legacyName,
+        })
+    );
+    assert.equal(edited.changed, true);
+    assert.equal(edited.product.name, legacyName);
+    assert.equal(edited.product.description, "nova descrição");
+    await assert.rejects(
+      inTransactionOf(tenantA, "product:update")((transaction, identity) =>
+        updateProduct(transaction, identity, {
+          categoryId: null,
+          description: "nova descrição",
+          expectedVersion: legacyVersion + 1,
+          id: legacyId,
+          name: "Bolsa\u202Enova",
+        })
+      ),
+      ProductNameError
+    );
+    tests.push(
+      "a product whose name an older rule let in keeps its description editable; changing the name to one the rule refuses is refused"
     );
 
     // ======================================================================

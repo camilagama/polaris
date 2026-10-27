@@ -1,6 +1,7 @@
 import type { CategoryReadModel } from "@polaris/contracts";
 import {
   hasForbiddenProductText,
+  isBlankProductName,
   MAX_PRODUCT_DESCRIPTION_LENGTH,
   MAX_PRODUCT_NAME_LENGTH,
 } from "@polaris/domain/catalog/product";
@@ -263,7 +264,8 @@ function sourceOf(
 
 function nameErrors(name: string): string | null {
   const trimmed = name.trim();
-  if (trimmed === "") {
+  // a name of only characters of zero width shows empty: the server refuses it as it refuses an empty one
+  if (isBlankProductName(trimmed)) {
     return PRODUCT_NAME_REQUIRED;
   }
   if (trimmed.length > MAX_PRODUCT_NAME_LENGTH) {

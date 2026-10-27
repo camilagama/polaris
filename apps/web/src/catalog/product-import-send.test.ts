@@ -10,6 +10,7 @@ import {
   type ImportRun,
   type ImportSendDependencies,
   runImport,
+  SLICE_STEP_UP_AFTER,
   skipStuckRow,
   summarizeImport,
 } from "./product-import-send";
@@ -207,19 +208,19 @@ describe("runImport", () => {
 
     const stop = await runImport(run, dependencies);
     expect(stop.kind).toBe("interrupted");
-    // the slice was tried again twice, and the run stays at it
-    expect(sent).toHaveLength(4);
+    // the slice was halved down to one row, that one was tried again twice, and the run stays at it
+    expect(sent.map((rows) => rows.length)).toEqual([10, 10, 5, 2, 1, 1, 1]);
     expect(run.nextIndex).toBe(10);
     expect(summarizeImport(run)).toMatchObject({ entered: 10, pending: 30 });
 
     online = true;
     const resumedAt = sent.length;
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
-    // continuing sends the rows of the slice that was cut one at a time, with the same IDs, then slices again
+    // continuing sends the rows of the slice that was cut one at a time, with the same IDs, then climbs a step
     expect(sent.slice(resumedAt, resumedAt + 10)).toEqual(
       (sent[1] ?? []).map((row) => [row])
     );
-    expect(sent[resumedAt + 10]).toHaveLength(10);
+    expect(sent[resumedAt + 10]).toHaveLength(2);
     expect(
       [...run.results.values()].slice(10, 20).map((result) => result.status)
     ).toEqual(Array.from({ length: 10 }, () => "repeated"));
@@ -267,12 +268,18 @@ describe("runImport", () => {
     });
     const { dependencies, run } = setup(12, send);
 
+    // halving the slice gets the rows before the stuck one in, and then the stuck one fails alone
     expect((await runImport(run, dependencies)).kind).toBe("interrupted");
-    expect(run.nextIndex).toBe(0);
-    sent.length = 0;
-    // again: one row at a time over the slice that stopped, so the rows before the stuck one enter
-    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
-    expect(sent.slice(0, 3)).toEqual([[2], [3], [4]]);
+    expect(sent).toEqual([
+      [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      [2, 3, 4, 5, 6],
+      [2, 3],
+      [4, 5],
+      [4],
+      [5],
+      [5],
+      [5],
+    ]);
     expect(run.nextIndex).toBe(3);
 
     skipStuckRow(run);
@@ -285,6 +292,81 @@ describe("runImport", () => {
       pending: 0,
     });
     expect(run.skipped).toEqual(new Set([stuck]));
+  });
+
+  it("halves the slice while the server fails it and stays at the size that goes through", async () => {
+    const sent: number[] = [];
+    const failed: number[] = [];
+    // the CPU limit of the Free plan: every slice of more than 2 rows dies on the platform
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      if (input.rows.length > 2) {
+        failed.push(input.rows.length);
+        return Promise.reject(rpcError("INTERNAL_SERVER_ERROR"));
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(60, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    const run2 = Array.from({ length: SLICE_STEP_UP_AFTER }, () => 2);
+    // 10 → 5 → 2, and only one try of 5 after each run of answered slices of 2
+    expect(sent).toEqual([10, 5, ...run2, 5, ...run2, 5, ...run2]);
+    expect(failed).toEqual([10, 5, 5, 5]);
+    // every call at the pace of the bucket, the failed ones too
+    expect(time.waits).toEqual(
+      Array.from({ length: sent.length - 1 }, () => IMPORT_SLICE_INTERVAL_MS)
+    );
+    expect(summarizeImport(run)).toMatchObject({ entered: 60, pending: 0 });
+    // the rows of a failed slice go again with the same IDs
+    const ids = send.mock.calls.flatMap(([input]) =>
+      input.rows.map((row) => row.productId)
+    );
+    expect(new Set(ids)).toEqual(new Set(run.rows.map((row) => row.productId)));
+  });
+
+  it("climbs one step after a run of answered slices, never more", async () => {
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      // two answers lost at the start, then the server answers everything
+      return sent.length <= 2
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(100, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    const repeat = (size: number) =>
+      Array.from({ length: SLICE_STEP_UP_AFTER }, () => size);
+    expect(sent).toEqual([10, 5, ...repeat(2), ...repeat(5), 10, 10, 10]);
+    expect(run.sliceSize).toBe(10);
+  });
+
+  it("keeps the size it reached for the next run of the same import", async () => {
+    let calls = 0;
+    const sent: number[] = [];
+    const controller = new AbortController();
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      sent.push(input.rows.length);
+      if (calls === 1) {
+        return Promise.reject(rpcError("BAD_GATEWAY"));
+      }
+      controller.abort();
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(30, send, {
+      signal: controller.signal,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    expect(await runImport(run, { ...dependencies, signal: undefined })).toEqual(
+      { kind: "done" }
+    );
+    expect(sent.slice(0, 3)).toEqual([10, 5, 5]);
   });
 
   it("stops at the plan's limit, sends nothing more and says why the rest did not enter", async () => {

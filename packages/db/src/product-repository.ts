@@ -510,7 +510,12 @@ export async function updateProduct(
     throw new ProductVersionConflictError();
   }
 
-  const name = normalizeProductName(input.name);
+  // a name kept as it is is not checked again: a product written before a rule of the name (a tab, a mark of the
+  // direction) keeps its category and description editable, and only a new name has to follow the rule
+  const name =
+    input.name === existing.name
+      ? existing.name
+      : normalizeProductName(input.name);
   const description = normalizeProductDescription(input.description);
   if (input.categoryId !== existing.categoryId && input.categoryId) {
     await requireActiveCategory(
