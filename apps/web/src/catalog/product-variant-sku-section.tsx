@@ -56,6 +56,14 @@ function SkuRow({
   variant,
 }: SkuRowProps) {
   const [sku, setSku] = useState(variant.sku ?? "");
+  // a SKU saved from elsewhere (the warning's "Limpar SKU da variante padrão") shows in the field, unless it was typed
+  const [shownSku, setShownSku] = useState(variant.sku);
+  if (shownSku !== variant.sku) {
+    setShownSku(variant.sku);
+    if (sku === (shownSku ?? "")) {
+      setSku(variant.sku ?? "");
+    }
+  }
   const inputRef = useRef<HTMLInputElement>(null);
   useReportUnsentWork(sku !== (variant.sku ?? ""));
   // the refused SKU is said at this field, and the focus goes to it (the row is disabled while the save is in flight)

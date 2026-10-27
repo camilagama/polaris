@@ -4,20 +4,22 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
-import { type FormEvent, useCallback, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { Label } from "@/ui/label";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { useReportUnsentWork } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField } from "./product-fields";
 import {
-  emptyValueLines,
+  emptyConfigurationDraft,
+  isConfigurationDraftEmpty,
   MAX_VARIANTS,
   optionChoices,
   optionLabel,
@@ -25,9 +27,11 @@ import {
   parseOptionValues,
   productOptionValues,
   selectedOptionNames,
+  type VariantConfigurationDraft,
   type VariantDraft,
   validateVariantDrafts,
   variantErrorMessage,
+  variantSkuErrorMessage,
 } from "./product-variants-model";
 
 interface OptionCheckboxProps {
@@ -160,11 +164,20 @@ function CombinationRow({
 
 interface ConfigurationFormProps {
   configuration: ProductVariantConfigurationReadModel;
+  /** What was typed before the dialog closed by Esc, × or the step back; `null` starts empty. */
+  draft: VariantConfigurationDraft | null;
   onConfigured: (
     configuration: ProductVariantConfigurationReadModel,
     product: ProductReadModel
   ) => void;
   onConflict: () => void;
+  /** Each change of what was typed (`null` when nothing is), for the dialog to keep it while it is closed. */
+  onDraftChange: (draft: VariantConfigurationDraft | null) => void;
+  /** The SKU of the default variant was cleared from the warning: the configuration that came back. */
+  onSkuCleared: (
+    configuration: ProductVariantConfigurationReadModel,
+    product: ProductReadModel
+  ) => void;
   organizationId: string;
   product: ProductReadModel;
 }
@@ -172,30 +185,41 @@ interface ConfigurationFormProps {
 /** The first configuration of the options and of the sellable combinations of a product. */
 export function ProductVariantConfigurationForm({
   configuration,
+  draft,
   onConflict,
   onConfigured,
+  onDraftChange,
+  onSkuCleared,
   organizationId,
   product,
 }: ConfigurationFormProps) {
+  const initial = draft ?? emptyConfigurationDraft;
   const [selectedOptions, setSelectedOptions] = useState<
     ProductVariantOptionName[]
-  >([]);
-  const [valueLines, setValueLines] = useState(emptyValueLines);
-  const [variants, setVariants] = useState<VariantDraft[]>([]);
+  >(initial.selectedOptions);
+  const [valueLines, setValueLines] = useState(initial.valueLines);
+  const [variants, setVariants] = useState<VariantDraft[]>(initial.variants);
   const [isPending, setIsPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // picked options, typed values or combinations that were not saved yet
-  useReportUnsentWork(
-    selectedOptions.length > 0 ||
-      variants.length > 0 ||
-      isDraftChanged(valueLines, emptyValueLines)
-  );
+  const unsaved = !isConfigurationDraftEmpty({
+    selectedOptions,
+    valueLines,
+    variants,
+  });
+  useReportUnsentWork(unsaved);
+  // the dialog keeps what was typed while it is closed by Esc, × or the step back, as it keeps the data
+  useEffect(() => {
+    onDraftChange(unsaved ? { selectedOptions, valueLines, variants } : null);
+  }, [onDraftChange, selectedOptions, unsaved, valueLines, variants]);
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
-  const defaultVariantHasSku = configuration.variants.some(
-    (variant) => variant.isDefault && variant.sku !== null
+  const defaultVariant = configuration.variants.find(
+    (variant) => variant.isDefault
   );
+  const defaultVariantHasSku =
+    defaultVariant !== undefined && defaultVariant.sku !== null;
 
   const handleToggleOption = useCallback(
     (name: ProductVariantOptionName, isSelected: boolean) => {
@@ -283,6 +307,8 @@ export function ProductVariantConfigurationForm({
           organizationId,
           variants: variants.map((variant) => ({ values: variant.values })),
         });
+        // saved: nothing typed is left to keep
+        onDraftChange(null);
         onConfigured(result.configuration, result.product);
       } catch (error: unknown) {
         setSaveError(variantErrorMessage(error));
@@ -298,6 +324,7 @@ export function ProductVariantConfigurationForm({
       defaultVariantHasSku,
       onConflict,
       onConfigured,
+      onDraftChange,
       optionNames,
       optionValues,
       organizationId,
@@ -306,6 +333,45 @@ export function ProductVariantConfigurationForm({
       variants,
     ]
   );
+
+  /** The warning's way out: the SKU of the default variant is cleared (saved empty), and its field takes the focus. */
+  const handleClearDefaultSku = useCallback(async () => {
+    if (!defaultVariant || isPending) {
+      return;
+    }
+    setIsPending(true);
+    setSaveError(null);
+    try {
+      const result = await orpcClient.product.setVariantSku({
+        expectedVersion: configuration.productVersion,
+        organizationId,
+        productId: product.id,
+        sku: "",
+        variantId: defaultVariant.id,
+      });
+      onSkuCleared(result.configuration, result.product);
+      focusLater(() =>
+        document
+          .getElementById(`product-variant-sku-${defaultVariant.id}`)
+          ?.focus()
+      );
+    } catch (error: unknown) {
+      setSaveError(variantSkuErrorMessage(error));
+      if (rpcErrorCode(error) === "CONFLICT") {
+        onConflict();
+      }
+    } finally {
+      setIsPending(false);
+    }
+  }, [
+    configuration.productVersion,
+    defaultVariant,
+    isPending,
+    onConflict,
+    onSkuCleared,
+    organizationId,
+    product.id,
+  ]);
 
   return (
     <form
@@ -322,9 +388,18 @@ export function ProductVariantConfigurationForm({
       </div>
       {defaultVariantHasSku && selectedOptions.length > 0 ? (
         <Alert variant="warning">
-          <AlertDescription>
+          <AlertDescription className="grid justify-items-start gap-2">
             Limpe o SKU da variante padrão antes de configurar opções: a
             configuração a substitui.
+            <Button
+              disabled={isPending}
+              onClick={handleClearDefaultSku}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Limpar SKU da variante padrão
+            </Button>
           </AlertDescription>
         </Alert>
       ) : null}

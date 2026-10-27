@@ -33,6 +33,7 @@ import {
   productFormHasErrors,
 } from "./product-form";
 import { ProductMediaPanel } from "./product-media-panel";
+import type { VariantConfigurationDraft } from "./product-variants-model";
 import { ProductVariantsPanel } from "./product-variants-panel";
 import { ActionFeedback } from "./products-page-parts";
 
@@ -50,6 +51,8 @@ const OFFLINE_REASON_ID = "product-dialog-offline-reason";
 
 interface ProductDialogProps {
   categories: CategoryReadModel[];
+  /** Counts the refusals of the chosen category: the data open "Mais detalhes" with the focus on the category. */
+  categoryRefusal: number;
   draft: ProductDraft;
   /** What the last action said: the dialog covers the top of the screen, so it is said here while it is open. */
   error: string | null;
@@ -74,11 +77,15 @@ interface ProductDialogProps {
   onTabChange: (tab: ProductTab) => void;
   /** The tabs other than "Dados" that hold work not saved yet (a save of the data must not close over it). */
   onUnsentTabsChange: (tabs: ProductTab[]) => void;
+  /** Each change of what is typed in the configuration of the variants, kept by the page as the data are. */
+  onVariantsDraftChange: (draft: VariantConfigurationDraft | null) => void;
   open: boolean;
   organizationId: string;
   /** The product being changed; `null` is a new product. */
   product: ProductReadModel | null;
   tab: ProductTab;
+  /** The configuration of the variants typed for this product and kept by Esc, × or the step back. */
+  variantsDraft: VariantConfigurationDraft | null;
 }
 
 /** Said in the dialog while there is no connection: the strip of the shell and of the page are under its veil. */
@@ -121,14 +128,14 @@ interface TabLabelProps {
 }
 
 /** The name of a tab, with the mark of an error in it (an icon, and the words for a screen reader). */
-function TabLabel({ invalid, label }: TabLabelProps) {
+export function TabLabel({ invalid, label }: TabLabelProps) {
   return (
     <>
       {label}
       {invalid ? (
         <>
           <CircleAlertIcon aria-hidden="true" className="text-destructive" />
-          <span className="sr-only">(com erro)</span>
+          <span className="sr-only"> (com erro)</span>
         </>
       ) : null}
     </>
@@ -154,21 +161,18 @@ function TabScope({
   return <UnsentWorkScope value={report}>{children}</UnsentWorkScope>;
 }
 
+/** Without a connection the strip at the top of the body says it: the line under the title does not repeat it. */
 function dialogTexts(
   editing: boolean,
-  offlineEdit: boolean,
   isPending: boolean
 ): { description: string; submitLabel: string } {
   let submitLabel = editing ? "Salvar alterações" : "Cadastrar produto";
   if (isPending) {
     submitLabel = "Salvando…";
   }
-  let description = "Um passo só: o produto pode nascer com o estoque.";
-  if (editing) {
-    description = offlineEdit
-      ? "Produto · sem internet, nada é enviado agora"
-      : "Produto";
-  }
+  const description = editing
+    ? "Produto"
+    : "Um passo só: o produto pode nascer com o estoque.";
   return { description, submitLabel };
 }
 
@@ -179,9 +183,11 @@ interface ProductTabsProps {
   onProductUpdated: (product: ProductReadModel) => void;
   onTabChange: (tab: ProductTab) => void;
   onUnsent: (tab: ProductTab, unsent: boolean) => void;
+  onVariantsDraftChange: (draft: VariantConfigurationDraft | null) => void;
   organizationId: string;
   product: ProductReadModel;
   tab: ProductTab;
+  variantsDraft: VariantConfigurationDraft | null;
 }
 
 /** The tabs of a product that exists; an archived one has no images (as its menu). */
@@ -191,9 +197,11 @@ function ProductTabs({
   onProductUpdated,
   onTabChange,
   onUnsent,
+  onVariantsDraftChange,
   organizationId,
   product,
   tab,
+  variantsDraft,
 }: ProductTabsProps) {
   // a tab is drawn the first time it opens (its reads start then) and stays, hidden, so what was typed in it is kept
   const [seen, setSeen] = useState<ReadonlySet<ProductTab>>(
@@ -236,6 +244,8 @@ function ProductTabs({
         {seen.has("variantes") ? (
           <TabScope onUnsent={onUnsent} tab="variantes">
             <ProductVariantsPanel
+              configurationDraft={variantsDraft}
+              onConfigurationDraftChange={onVariantsDraftChange}
               onProductUpdated={onProductUpdated}
               organizationId={organizationId}
               product={product}
@@ -270,6 +280,7 @@ type BodyProps = Omit<
  */
 function ProductDialogBody({
   categories,
+  categoryRefusal,
   draft,
   error,
   errorExtra,
@@ -283,9 +294,11 @@ function ProductDialogBody({
   onSubmit,
   onTabChange,
   onUnsentTabsChange,
+  onVariantsDraftChange,
   organizationId,
   product,
   tab,
+  variantsDraft,
 }: BodyProps) {
   const editing = product !== null;
   const [showRequired, setShowRequired] = useState(false);
@@ -338,6 +351,7 @@ function ProductDialogBody({
   const form = (
     <ProductForm
       categories={categories}
+      categoryRefusal={categoryRefusal}
       draft={draft}
       editing={editing}
       onChange={onChange}
@@ -346,11 +360,7 @@ function ProductDialogBody({
     />
   );
 
-  const { description, submitLabel } = dialogTexts(
-    editing,
-    offlineEdit,
-    isPending
-  );
+  const { description, submitLabel } = dialogTexts(editing, isPending);
 
   return (
     <>
@@ -376,9 +386,11 @@ function ProductDialogBody({
               onProductUpdated={onProductUpdated}
               onTabChange={onTabChange}
               onUnsent={handleUnsent}
+              onVariantsDraftChange={onVariantsDraftChange}
               organizationId={organizationId}
               product={product}
               tab={tab}
+              variantsDraft={variantsDraft}
             />
           ) : (
             form

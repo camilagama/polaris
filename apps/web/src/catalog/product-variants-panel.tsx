@@ -13,10 +13,14 @@ import { ProductVariantConfigurationForm } from "./product-variants-form";
 import {
   MAX_VARIANTS,
   optionLabel,
+  type VariantConfigurationDraft,
   variantErrorMessage,
 } from "./product-variants-model";
 
 interface ProductVariantsPanelProps {
+  /** What was typed in the configuration before the dialog closed by Esc, × or the step back. */
+  configurationDraft: VariantConfigurationDraft | null;
+  onConfigurationDraftChange: (draft: VariantConfigurationDraft | null) => void;
   onProductUpdated: (product: ProductReadModel) => void;
   organizationId: string;
   product: ProductReadModel;
@@ -70,6 +74,8 @@ function ConfiguredVariants({
  * options. Each part saves by its own button, as before the dialog; the dialog's title names the product.
  */
 export function ProductVariantsPanel({
+  configurationDraft,
+  onConfigurationDraftChange,
   onProductUpdated,
   organizationId,
   product,
@@ -165,8 +171,11 @@ export function ProductVariantsPanel({
     content = (
       <ProductVariantConfigurationForm
         configuration={configuration}
+        draft={configurationDraft}
         onConfigured={handleConfigured}
         onConflict={handleConflict}
+        onDraftChange={onConfigurationDraftChange}
+        onSkuCleared={handleSkuUpdated}
         organizationId={organizationId}
         product={product}
       />

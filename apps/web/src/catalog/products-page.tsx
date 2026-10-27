@@ -18,18 +18,21 @@ import {
   type NewProductIds,
   newProductIds,
 } from "./product-commands";
+import { ProductDialog, type ProductTab } from "./product-dialog";
 import {
+  isCategoryUnavailable,
   isProductAlreadyCreated,
   type ProductAction,
   type ProductLimitHelp,
   productErrorMessage,
 } from "./product-errors";
-import { ProductDialog, type ProductTab } from "./product-dialog";
 import { emptyDraft, type ProductDraft } from "./product-form";
 import { LimitHelp, useLimitHelp } from "./product-limit-help";
 import { ProductList, type ProductListStatus } from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
+import type { VariantConfigurationDraft } from "./product-variants-model";
+import type { ProductLinkFailure } from "./products-link-model";
 import {
   ActionFeedback,
   LoadErrorNotice,
@@ -41,7 +44,6 @@ import {
 } from "./products-page-parts";
 import { StatusNav } from "./screen-parts";
 import { useProductsData } from "./use-products-data";
-import type { ProductLinkFailure } from "./products-link-model";
 import { useProductsLink } from "./use-products-link";
 
 /** The data of a product as the form shows it, to edit or to compare with what was typed. */
@@ -146,6 +148,27 @@ function linkFeedbackError(
   return { fromLink: false, message: error, onRetry: undefined };
 }
 
+/** The variants typed and kept for a product, if they are of the product the dialog shows. */
+interface KeptVariants {
+  draft: VariantConfigurationDraft;
+  productId: string;
+}
+
+function keptVariantsOf(
+  kept: KeptVariants | null,
+  productId: string | null
+): VariantConfigurationDraft | null {
+  return kept !== null && kept.productId === productId ? kept.draft : null;
+}
+
+/** A new product refused because of its category: the category takes the focus, not the alert. */
+function isCategoryRefusal(
+  cause: unknown,
+  action: "create" | "update"
+): boolean {
+  return action === "create" && isCategoryUnavailable(cause);
+}
+
 export function ProductsPage() {
   const { billingSelfService, organization, organizationId } =
     useCurrentOrganization();
@@ -167,6 +190,13 @@ export function ProductsPage() {
   // the version a save that kept the dialog open answered with, until the list read again brings it
   const savedVersionRef = useRef<{ id: string; version: number } | null>(null);
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
+  // the configuration of the variants typed in the dialog and not saved, kept like the data by Esc, × and the step back
+  // (the dialog's popup leaves the page when it closes, and the form with it); "Cancelar" and its save drop it
+  const [variantsDraft, setVariantsDraft] = useState<KeptVariants | null>(
+    null
+  );
+  // counts the refusals of the chosen category: the form opens "Mais detalhes" and takes the focus to it
+  const [categoryRefusal, setCategoryRefusal] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   // the product the last action archived: the notice offers to restore it
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
@@ -205,6 +235,17 @@ export function ProductsPage() {
       feedbackRef.current?.focus();
     }
   }, [feedbackFocus]);
+  /** After a save: the alert takes the focus, or the category when the category was refused (the form moves it). */
+  const focusAfterSave = useCallback(
+    (categoryRefused: boolean) => {
+      if (categoryRefused) {
+        setCategoryRefusal((count) => count + 1);
+      } else {
+        focusFeedback();
+      }
+    },
+    [focusFeedback]
+  );
 
   /** What the last action said goes away when another starts. */
   const clearMessages = useCallback(() => {
@@ -225,6 +266,10 @@ export function ProductsPage() {
         newProductNames.current = null;
         setDraft(product ? draftOf(product) : emptyDraft);
       }
+      // the variants typed for this product come back; those of another are dropped, as its data
+      setVariantsDraft((current) =>
+        current?.productId === product?.id ? current : null
+      );
       keptRef.current = null;
       // back to where the person was: the menu of the product, or the button that opens a new one
       originRef.current = () =>
@@ -261,6 +306,8 @@ export function ProductsPage() {
         return;
       }
       const action = editingProduct ? "update" : "create";
+      // a refusal of the category takes the focus to the category instead of the alert
+      let categoryRefused = false;
       setPendingAction(action);
       setError(null);
       setNotice(null);
@@ -318,17 +365,18 @@ export function ProductsPage() {
         }
         setError(productErrorMessage(cause, action));
         showLimitHelp(cause, action);
+        categoryRefused = isCategoryRefusal(cause, action);
         refresh();
       } finally {
         setPendingAction(null);
-        focusFeedback();
+        focusAfterSave(categoryRefused);
       }
     },
     [
       dialogProductId,
       draft,
       showLimitHelp,
-      focusFeedback,
+      focusAfterSave,
       organization.timezone,
       organizationId,
       products,
@@ -378,6 +426,7 @@ export function ProductsPage() {
   /** "Cancelar": the dialog closes and what was typed is thrown away. */
   const handleCancelDialog = useCallback(() => {
     keptRef.current = null;
+    setVariantsDraft(null);
     setDialogOpen(false);
     setError(null);
     setNotice(null);
@@ -401,6 +450,8 @@ export function ProductsPage() {
 
   /** The draft is empty again only once the dialog has finished closing (and only when nothing was kept). */
   const handleDialogClosed = useCallback(() => {
+    // on purpose, `dialogProductId` outlives an Esc that kept a draft: the page-wide unsent sign compares the kept data
+    // with that product, and a product that left the list drops its draft (handleStatus)
     if (keptRef.current === null) {
       newProductNames.current = null;
       setDialogProductId(null);
@@ -421,6 +472,20 @@ export function ProductsPage() {
   const handleUnsentTabs = useCallback((tabs: ProductTab[]) => {
     unsentTabsRef.current = tabs;
   }, []);
+
+  const handleVariantsDraftChange = useCallback(
+    (next: VariantConfigurationDraft | null) => {
+      setVariantsDraft((current) => {
+        if (next === null) {
+          return null;
+        }
+        return dialogProductId === null
+          ? current
+          : { draft: next, productId: dialogProductId };
+      });
+    },
+    [dialogProductId]
+  );
 
   const handleVariantsUpdated = useCallback(
     (_product: ProductReadModel) => {
@@ -491,6 +556,8 @@ export function ProductsPage() {
     (value: ProductListStatus) => {
       setStatus(value);
       clearMessages();
+      // the variants typed for a product of the other list go with it
+      setVariantsDraft(null);
       // the draft kept for a product of the other list goes with it (a new product's draft stays)
       if (keptRef.current !== null && keptRef.current !== "new") {
         keptRef.current = null;
@@ -521,7 +588,10 @@ export function ProductsPage() {
   }, [dialogOpen, dialogProductId, dialogShown]);
   // typed and not sent: the form against an empty one, or against the product being edited
   useReportUnsentWork(
-    isDraftChanged(draft, dialogProduct ? draftOf(dialogProduct) : emptyDraft)
+    isDraftChanged(
+      draft,
+      dialogProduct ? draftOf(dialogProduct) : emptyDraft
+    ) || variantsDraft !== null
   );
   const visibleProducts = filterByName(products, query);
   const isOffline = workspace !== null && !workspace.online;
@@ -566,6 +636,7 @@ export function ProductsPage() {
         {/* the dialog of a product that exists opens once the product is in the list (an address can name it first) */}
         <ProductDialog
           categories={categories}
+          categoryRefusal={categoryRefusal}
           draft={draft}
           error={dialogShown ? feedbackError.message : null}
           errorExtra={
@@ -584,10 +655,12 @@ export function ProductsPage() {
           onSubmit={handleSubmit}
           onTabChange={setDialogTab}
           onUnsentTabsChange={handleUnsentTabs}
+          onVariantsDraftChange={handleVariantsDraftChange}
           open={dialogShown}
           organizationId={organizationId}
           product={dialogProduct}
           tab={dialogTab}
+          variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
         />
 
         <ProductSearch onChange={setQuery} value={query} />

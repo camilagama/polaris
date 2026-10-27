@@ -33,6 +33,16 @@ const CATEGORY_REASONS: ReadonlySet<string> = new Set([
   "category_lifecycle_conflict",
 ]);
 
+/** The registration was refused because of the chosen category: the form opens it, for another to be picked. */
+export function isCategoryUnavailable(error: unknown): boolean {
+  const reason = rpcErrorReason(error);
+  return (
+    rpcErrorCode(error) === "CONFLICT" &&
+    reason !== undefined &&
+    CATEGORY_REASONS.has(reason)
+  );
+}
+
 export function isProductLimitReached(error: unknown): boolean {
   return (
     rpcErrorCode(error) === "CONFLICT" &&
@@ -104,8 +114,7 @@ export function productErrorMessage(
     return PRODUCT_LIMIT_REACHED;
   }
   if (code === "CONFLICT" && action === "create") {
-    const reason = rpcErrorReason(error);
-    return reason !== undefined && CATEGORY_REASONS.has(reason)
+    return isCategoryUnavailable(error)
       ? "A categoria selecionada não está mais disponível. Escolha outra em Mais detalhes e tente novamente."
       : PRODUCT_CREATE_UNKNOWN_CONFLICT;
   }

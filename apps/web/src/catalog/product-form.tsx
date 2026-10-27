@@ -1,13 +1,20 @@
 import type { CategoryReadModel } from "@polaris/contracts";
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUpIcon from "lucide-react/dist/esm/icons/chevron-up";
-import { type FormEvent, useCallback, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import {
   Collapsible,
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/ui/collapsible";
+import { focusLater } from "../lib/focus";
 import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
 import {
@@ -52,6 +59,8 @@ export function productFormHasErrors(
 
 interface ProductFormProps {
   categories: CategoryReadModel[];
+  /** Counts the refusals of the chosen category: each one opens "Mais detalhes" and takes the focus to the category. */
+  categoryRefusal: number;
   draft: ProductDraft;
   editing: boolean;
   onChange: (field: keyof ProductDraft, value: string) => void;
@@ -67,6 +76,7 @@ interface ProductFormProps {
  */
 export function ProductForm({
   categories,
+  categoryRefusal,
   draft,
   editing,
   onChange,
@@ -76,6 +86,17 @@ export function ProductForm({
   const [detailsOpen, setDetailsOpen] = useState(
     editing || draft.categoryId !== "" || draft.description !== ""
   );
+  // a refusal of the category (the alert at the top says it) opens the details and puts the person on the category; the
+  // count the form was born with is an older refusal, already handled
+  const handledRefusal = useRef(categoryRefusal);
+  useEffect(() => {
+    if (categoryRefusal === handledRefusal.current) {
+      return;
+    }
+    handledRefusal.current = categoryRefusal;
+    setDetailsOpen(true);
+    focusLater(() => document.getElementById("product-category")?.focus());
+  }, [categoryRefusal]);
   const nameError =
     showRequired && draft.name.trim() === "" ? NAME_REQUIRED : undefined;
   // only a new product has a price and a stock to say: an edit changes the name, the category and the description

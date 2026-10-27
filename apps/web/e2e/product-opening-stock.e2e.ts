@@ -384,6 +384,41 @@ test("o produto já cadastrado com outros dados diz isso e não culpa a categori
   expect(bodies[1]?.productId).not.toBe(bodies[0]?.productId);
 });
 
+test("a categoria recusada abre 'Mais detalhes' e leva o foco à Categoria, com o motivo no alerta", async ({
+  page,
+}) => {
+  const bodies = await openScreen(page, {
+    creates: [
+      (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: { reason: "product_category_unavailable" },
+              defined: false,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    ],
+  });
+  await openForm(page);
+  const details = page.getByRole("button", { name: "Mais detalhes" });
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await page.getByLabel("Nome do produto").fill("Camiseta");
+  await submit(page).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "A categoria selecionada não está mais disponível. Escolha outra em Mais detalhes e tente novamente."
+  );
+  await expect(details).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Categoria" })
+  ).toBeFocused();
+  expect(bodies).toHaveLength(1);
+});
+
 test("o limite de variantes do plano diz isso, mantém o que foi digitado, leva o foco à mensagem e o envio seguinte repete o mesmo produto (corte 61b, AC-5)", async ({
   page,
 }) => {

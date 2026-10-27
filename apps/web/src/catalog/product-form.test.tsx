@@ -28,6 +28,7 @@ function draw(editingProduct: ProductReadModel | null): string {
   return renderToStaticMarkup(
     <ProductForm
       categories={[]}
+      categoryRefusal={0}
       draft={{ ...emptyDraft, name: editingProduct?.name ?? "" }}
       editing={editingProduct !== null}
       onChange={noop}

@@ -1069,6 +1069,94 @@ test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são
   await expect(repeated).toBeVisible();
 });
 
+test("variantes: 'Limpar SKU da variante padrão' no aviso limpa o SKU, o aviso some e o foco vai ao campo vazio", async ({
+  page,
+}) => {
+  const skus: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) =>
+        route.fulfill(
+          rpc({
+            ...CONFIGURATION,
+            variants: [{ ...CONFIGURATION.variants[0], sku: "CAM-1" }],
+          })
+        ),
+      "product/setVariantSku": (route) => {
+        const { json } = route.request().postDataJSON() as {
+          json: { sku: string; variantId: string };
+        };
+        skus.push(json);
+        return route.fulfill(
+          rpc({
+            changed: true,
+            configuration: { ...CONFIGURATION, productVersion: 2 },
+            product: { ...product(1, "Camiseta do teste"), version: 2 },
+          })
+        );
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  const warning = page.getByText(
+    "Limpe o SKU da variante padrão antes de configurar opções: a configuração a substitui."
+  );
+  await expect(warning).toBeVisible();
+  await page
+    .getByRole("button", { name: "Limpar SKU da variante padrão" })
+    .click();
+  await expect(warning).toHaveCount(0);
+  const sku = page.getByRole("textbox", { name: "SKU · Variante padrão" });
+  await expect(sku).toHaveValue("");
+  await expect(sku).toBeFocused();
+  expect(skus).toMatchObject([{ sku: "", variantId: id(31) }]);
+  // the option picked before the clear is still there, and the save of the variants is no longer held by the SKU
+  await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
+});
+
+test("variantes digitadas voltam depois do Esc e do Fechar; Cancelar as descarta", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: variantsOf,
+  });
+  const openVariants = async () => {
+    await menuOf(page, "Camiseta do teste").click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await expect(page.getByRole("checkbox", { name: "Cor" })).toBeVisible();
+  };
+  const color = page.getByRole("checkbox", { name: "Cor" });
+  const values = page.getByLabel("Valores de Cor");
+  await openVariants();
+  await color.click();
+  await values.fill("Azul\nPreta");
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await expect(page.getByText("Combinação 1")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(color).toBeChecked();
+  await expect(values).toHaveValue("Azul\nPreta");
+  await expect(page.getByText("Combinação 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(values).toHaveValue("Azul\nPreta");
+
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(color).not.toBeChecked();
+  await expect(values).toHaveCount(0);
+  await expect(page.getByText("Nenhuma combinação adicionada.")).toBeVisible();
+});
+
 test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícone; o sucesso é status e o conflito oferece 'Atualizar variantes'", async ({
   page,
 }) => {
@@ -1231,7 +1319,10 @@ test("erro numa aba que não está à vista: salvar abre a aba Dados marcada, co
   await dialog.getByRole("tab", { name: "Variantes" }).click();
   await expect(page.getByLabel("Nome do produto")).toBeHidden();
   await dialog.getByRole("button", { name: "Salvar alterações" }).click();
-  const data = dialog.getByRole("tab", { name: "Dados (com erro)" });
+  const data = dialog.getByRole("tab", {
+    exact: true,
+    name: "Dados (com erro)",
+  });
   await expect(data).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
   await expect(page.getByLabel("Nome do produto")).toHaveAttribute(
