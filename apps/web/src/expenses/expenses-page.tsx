@@ -1,6 +1,6 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -92,6 +92,22 @@ export function ExpensesPage() {
     originOf: expenseFormOrigin,
   });
   const { close: closeForm, editing, openForm } = form;
+  // the expense just saved from its "Editar": once the list has reloaded, a row that left it (saved into another
+  // month) leaves the focus on nothing if it had already gone back to that "Editar" (a phone closes the dialog before
+  // the list reloads), so it goes to "Nova despesa"
+  const [savedEdit, setSavedEdit] = useState<{ id: string } | null>(null);
+  useEffect(() => {
+    if (savedEdit === null) {
+      return;
+    }
+    const active = document.activeElement;
+    if (
+      (active === null || active === document.body) &&
+      document.querySelector(`[data-expense-id="${savedEdit.id}"]`) === null
+    ) {
+      document.querySelector<HTMLElement>("[data-expense-new]")?.focus();
+    }
+  }, [savedEdit]);
 
   const handleSave = useCallback(
     async (input: ExpenseInput) => {
@@ -123,6 +139,9 @@ export function ExpensesPage() {
       }
       closeForm();
       await refresh();
+      if (target) {
+        setSavedEdit({ id: target.id });
+      }
       if (outcome === "conflict") {
         await reloadCategories();
       }
