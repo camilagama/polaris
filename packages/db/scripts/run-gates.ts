@@ -162,6 +162,8 @@ const gates: Gate[] = [
     "product-opening-stock",
     "../../../apps/web/scripts/verify-product-opening-stock-gate.ts",
   ],
+  // lives in apps/web: the import of a spreadsheet, a row per transaction with the lock of the name (corte 2.5)
+  ["product-import", "../../../apps/web/scripts/verify-product-import-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
@@ -359,6 +361,9 @@ const suites: Record<string, string[]> = {
     "offline-stock",
     "offline-sale",
     "offline-e2e",
+    // the creation of a product with its opening stock, and the import that runs it a row at a time
+    "product-opening-stock",
+    "product-import",
     "inventory",
     "customers",
     "media-upload",

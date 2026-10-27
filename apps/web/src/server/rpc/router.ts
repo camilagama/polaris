@@ -84,6 +84,7 @@ import {
   deleteProduct,
   getProductVariants,
   listProducts,
+  findExistingProductNames,
   readProductCreation,
   restoreProduct,
   setProductVariantListPrice,
@@ -302,7 +303,10 @@ import { TenantRequestContextError } from "../request-context-error";
 import {
   type TenantRequestContextInput,
   withTenantRequestContext,
+  withTenantRequestSequence,
 } from "../tenant-request-context";
+import type { ImportProductBatchDependencies } from "../use-cases/import-product-batch";
+import { createProductImportRpcHandlers } from "./product-import-handlers";
 import {
   CreateInitialOrganizationError,
   createInitialOrganization,
@@ -434,6 +438,11 @@ interface RpcRouterDependencies {
   updateProduct: typeof updateProduct;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
+  /** One session, several tenant transactions (the rows of an import); tests give a fake one. */
+  withTenantRequestSequence: typeof withTenantRequestSequence;
+  /** The name lock, the date and the use case of each imported row; tests replace any of them. */
+  importProductBatch: Partial<Omit<ImportProductBatchDependencies, "creation">>;
+  findExistingProductNames: typeof findExistingProductNames;
   writeOffStock: typeof writeOffStock;
 }
 
@@ -1517,6 +1526,32 @@ export function createRpcRouter(
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });
+  const productImportHandlers = createProductImportRpcHandlers({
+    creation: {
+      createProduct: createTenantProduct,
+      inventoryCount: overrides.inventoryCount ?? inventoryCount,
+      readProductCreation,
+      receiveStock: receiveTenantStock,
+    },
+    findExistingProductNames: overrides.findExistingProductNames,
+    importProductBatch: {
+      ...(overrides.createProductWithOpeningStock
+        ? {
+            createProductWithOpeningStock:
+              overrides.createProductWithOpeningStock,
+          }
+        : {}),
+      ...(overrides.organizationToday
+        ? { organizationToday: overrides.organizationToday }
+        : {}),
+      ...overrides.importProductBatch,
+    },
+    requestAuditId,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+    withTenantRequestSequence:
+      overrides.withTenantRequestSequence ?? withTenantRequestSequence,
+  });
   const paymentProfileHandlers = createPaymentProfileRpcHandlers({
     ...overrides,
     withTenantRequestContext: tenantRequest,
@@ -2128,7 +2163,9 @@ export function createRpcRouter(
         create: createProductRecord,
         delete: deleteProductRecord,
         getVariants: getProductVariantsRecord,
+        importBatch: productImportHandlers.importBatch,
         list: listProduct,
+        namesExisting: productImportHandlers.namesExisting,
         restore: restoreProductRecord,
         setVariantListPrice: setProductVariantListPriceRecord,
         setVariantSku: setProductVariantSkuRecord,

@@ -82,6 +82,45 @@ describe("product text limits", () => {
   });
 });
 
+describe("forbidden characters in product text", () => {
+  // U+0000 (PostgreSQL refuses it in text) and the controls that turn the direction of the text
+  const forbidden = [
+    "\u0000",
+    "\u202A",
+    "\u202B",
+    "\u202C",
+    "\u202D",
+    "\u202E",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069",
+  ];
+
+  it.each(forbidden)("refuses %j in a name and in a description", (char) => {
+    expect(() => normalizeProductName(`Bolsa${char}azul`)).toThrow(
+      ProductNameError
+    );
+    expect(() => normalizeProductDescription(`Lona${char}forte`)).toThrow(
+      ProductDescriptionError
+    );
+  });
+
+  it("keeps the neighbours of the forbidden ranges and the text as it came", () => {
+    expect(normalizeProductName("Bolsa \u202F \u2029 \u2065 \u2070 x")).toBe(
+      "Bolsa \u202F \u2029 \u2065 \u2070 x"
+    );
+    // a formula or HTML is text: nothing is neutralized on the way in
+    expect(normalizeProductName("=SOMA(A1)")).toBe("=SOMA(A1)");
+    expect(normalizeProductName("<script>x</script>")).toBe(
+      "<script>x</script>"
+    );
+    expect(normalizeProductDescription("linha 1\nlinha 2\tfim")).toBe(
+      "linha 1\nlinha 2\tfim"
+    );
+  });
+});
+
 describe("variant list price", () => {
   it("is optional and normalized to two decimals", () => {
     expect(normalizeVariantListPrice(null)).toBeNull();

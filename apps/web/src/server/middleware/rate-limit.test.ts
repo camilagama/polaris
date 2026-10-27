@@ -15,6 +15,7 @@ import {
   mediaUploadRateLimitMiddleware,
   RPC_WRITE_RULE,
   rpcProcedureKind,
+  rpcRuleFor,
   rpcRateLimitMiddleware,
 } from "./rate-limit";
 import { requestIdMiddleware } from "./request-id";
@@ -98,6 +99,7 @@ const READ_PROCEDURES = [
   "plan/operationalSelection",
   "product/getVariants",
   "product/list",
+  "product/namesExisting",
   "publicCatalog/setup",
   "report/dailySales",
   "report/periodSummary",
@@ -111,10 +113,12 @@ const READ_PROCEDURES = [
 ];
 
 describe("request classification", () => {
-  it("every procedure the router serves declares read or write", () => {
+  it("every procedure the router serves declares read, write or bulk", () => {
     const kinds = declaredKinds(rpcRouter);
     const unclassified = [...kinds]
-      .filter(([, kind]) => kind !== "read" && kind !== "write")
+      .filter(
+        ([, kind]) => kind !== "read" && kind !== "write" && kind !== "bulk"
+      )
       .map(([path]) => path);
 
     expect(kinds.size).toBeGreaterThan(90);
@@ -134,7 +138,29 @@ describe("request classification", () => {
     expect(reads).toEqual(READ_PROCEDURES);
   });
 
+  it("the bulk procedures are exactly the import of a spreadsheet", () => {
+    const bulk = [...declaredKinds(polarisContract)]
+      .filter(([, kind]) => kind === "bulk")
+      .map(([path]) => path);
+
+    expect(bulk).toEqual(["product/importBatch"]);
+    // the preview's read of the names is a read, not a bulk call
+    expect(declaredKinds(polarisContract).get("product/namesExisting")).toBe(
+      "read"
+    );
+  });
+
+  it("a kind without a bucket of its own counts as a write", () => {
+    expect(rpcRuleFor("bulk").bucket).toBe("bulk");
+    expect(rpcRuleFor("read").bucket).toBe("read");
+    expect(rpcRuleFor("write")).toBe(RPC_WRITE_RULE);
+    // a kind added to the contract and not to the table of buckets never escapes the write quota
+    expect(rpcRuleFor("export" as never)).toBe(RPC_WRITE_RULE);
+  });
+
   it.each([
+    ["POST", "/rpc/product/importBatch", "bulk"],
+    ["POST", "/rpc/product/namesExisting", "read"],
     ["POST", "/rpc/sale/confirm", "write"],
     ["POST", "/rpc/category/create", "write"],
     ["POST", "/rpc/inventory/receiveStock", "write"],
@@ -374,6 +400,69 @@ describe("rate limit middleware", () => {
       );
     }
   );
+
+  it("counts an import slice only in the bulk bucket, and a sale only in the write one", async () => {
+    const write = limiter(true);
+    const bulk = limiter(true);
+    const app = createApp();
+    const env = bindings({
+      RPC_BULK_RATE_LIMIT: bulk,
+      RPC_MUTATION_RATE_LIMIT: write,
+    });
+    const headers = {
+      "cf-connecting-ip": clientAddress,
+      cookie: `better-auth.session_token=${sessionToken}`,
+    };
+
+    expect(
+      (await post(app, "/rpc/product/importBatch", env, headers)).status
+    ).toBe(200);
+    expect(write.limit).not.toHaveBeenCalled();
+    const bulkKeys = bulk.limit.mock.calls.map(([options]) => options.key);
+    expect(bulkKeys).toHaveLength(2);
+    expect(bulkKeys.map((key) => key.split(":")[0]).sort()).toEqual([
+      "rpc-bulk-ip",
+      "rpc-bulk-session",
+    ]);
+    for (const key of bulkKeys) {
+      expect(key).not.toContain(clientAddress);
+      expect(key).not.toContain(sessionToken);
+    }
+
+    expect((await post(app, "/rpc/sale/confirm", env, headers)).status).toBe(
+      200
+    );
+    expect(bulk.limit).toHaveBeenCalledTimes(2);
+    expect(write.limit).toHaveBeenCalledTimes(2);
+  });
+
+  it("an exhausted bulk bucket refuses the import with Retry-After and leaves the sale its quota", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const app = createApp();
+    const env = bindings({
+      RPC_BULK_RATE_LIMIT: limiter(false),
+      RPC_MUTATION_RATE_LIMIT: limiter(true),
+    });
+    const headers = {
+      "cf-connecting-ip": clientAddress,
+      cookie: `better-auth.session_token=${sessionToken}`,
+    };
+
+    const refused = await post(app, "/rpc/product/importBatch", env, headers);
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("retry-after")).toBe("60");
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bucket: "bulk",
+        event: "rate_limited",
+        keyType: "ip+session",
+        route: "/rpc/product/importBatch",
+      })
+    );
+    expect((await post(app, "/rpc/sale/confirm", env, headers)).status).toBe(
+      200
+    );
+  });
 
   it("logs which bucket and which kind of key denied a write, never the key", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

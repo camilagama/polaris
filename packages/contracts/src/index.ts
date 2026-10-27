@@ -65,6 +65,127 @@ const product = z.object({
 
 export type ProductReadModel = z.infer<typeof product>;
 
+/**
+ * The import of a spreadsheet (corte 2.5): the browser reads the file and sends only the rows it accepted, a slice at
+ * a time; the file never reaches the server. One call carries at most `PRODUCT_IMPORT_BATCH_MAX_ROWS` rows (a call
+ * with more is refused whole, never cut), each row is created in its own transaction by the same use case as
+ * `product.create`, and the answer says what happened to each row.
+ */
+export const PRODUCT_IMPORT_BATCH_MAX_ROWS = 10;
+/** The names one `product.namesExisting` asks about: the rows of one file. */
+export const PRODUCT_IMPORT_MAX_NAMES = 500;
+
+const productImportRowNumber = z.number().int().positive().max(1_000_000);
+
+const productImportRow = z
+  .object({
+    categoryId: z.string().uuid().nullable(),
+    description: z.string().max(5000).nullable(),
+    // the IDs are born once per import, so sending the slice again repeats it instead of duplicating it
+    initialStock: z
+      .object({
+        commandId: z.string().uuid(),
+        quantity: z.number().int().positive().max(2_147_483_647),
+        unitCost: z.string().trim().min(1).max(64).nullable(),
+      })
+      .strict()
+      .nullable(),
+    listPrice: z.string().trim().min(1).max(64).nullable(),
+    name: productNameSchema,
+    productId: z.string().uuid(),
+    // the row of the file, as the person sees it in the spreadsheet: the answer names it back
+    rowNumber: productImportRowNumber,
+    variantId: z.string().uuid(),
+  })
+  .strict();
+
+export type ProductImportRowInput = z.infer<typeof productImportRow>;
+
+/** The fields a row of the import can be refused by: the columns of the spreadsheet. */
+export const PRODUCT_IMPORT_FIELDS = [
+  "name",
+  "listPrice",
+  "quantity",
+  "unitCost",
+  "category",
+  "description",
+] as const;
+
+/** A refusal said as a code, never an echo of the value (AC-7). */
+const productImportReason = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*$/)
+  .max(64);
+
+const productImportRowResult = z.discriminatedUnion("status", [
+  // created now, or already created by an earlier send of the same row: both are rows that entered
+  z.object({
+    productId: z.string().uuid(),
+    rowNumber: productImportRowNumber,
+    status: z.literal("created"),
+  }),
+  z.object({
+    productId: z.string().uuid(),
+    rowNumber: productImportRowNumber,
+    status: z.literal("repeated"),
+  }),
+  // a product of the same name exists in the store (an archived one too, or an earlier row of the file): skipped
+  z.object({
+    rowNumber: productImportRowNumber,
+    status: z.literal("exists_by_name"),
+  }),
+  // the plan has no room: this row and the rest of the slice were not tried
+  z.object({
+    rowNumber: productImportRowNumber,
+    status: z.literal("limit_reached"),
+  }),
+  z.object({
+    field: z.enum(PRODUCT_IMPORT_FIELDS),
+    reason: productImportReason,
+    rowNumber: productImportRowNumber,
+    status: z.literal("invalid"),
+  }),
+  // the IDs of the row were already used with other data: the send is not a repeat
+  z.object({
+    reason: productImportReason,
+    rowNumber: productImportRowNumber,
+    status: z.literal("conflict"),
+  }),
+]);
+
+export type ProductImportRowResult = z.infer<typeof productImportRowResult>;
+export type ProductImportRowStatus = ProductImportRowResult["status"];
+
+/** No two rows of a slice share a row number or an ID: a repeat inside one call would be a conflict with itself. */
+function distinctImportRows(
+  rows: readonly ProductImportRowInput[],
+  context: z.RefinementCtx
+): void {
+  const rowNumbers = new Set<number>();
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const rowIds = [row.productId, row.variantId];
+    if (row.initialStock) {
+      rowIds.push(row.initialStock.commandId);
+    }
+    if (
+      rowNumbers.has(row.rowNumber) ||
+      rowIds.some((id) => ids.has(id.toLowerCase())) ||
+      new Set(rowIds.map((id) => id.toLowerCase())).size !== rowIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "duplicate_import_row",
+      });
+      return;
+    }
+    rowNumbers.add(row.rowNumber);
+    for (const id of rowIds) {
+      ids.add(id.toLowerCase());
+    }
+  }
+}
+
 const publicCatalogProfile = z.object({
   description: z.string().nullable(),
   /** The Instagram name without the @. */
@@ -1491,9 +1612,11 @@ const legalAcceptanceStatus = z.object({
  * write, and so is `device.check`: it promotes the session's link to the device (ADR 0048), and once per
  * page load fits the write bucket. `read` = no effect asked for by the user; it may do idempotent, bounded
  * maintenance, proven by a gate (today only `goal.list`, which settles the goals whose period ended;
- * `verify-home-writes-gate`).
+ * `verify-home-writes-gate`). `bulk` = a write of many rows in one call (today only `product.importBatch`): it
+ * counts in a bucket of its own, with few calls per minute, so it neither stands for one write in the write
+ * bucket (it would multiply that limit by its rows) nor spends the quota the sales share.
  */
-export type ProcedureKind = "read" | "write";
+export type ProcedureKind = "bulk" | "read" | "write";
 
 export interface ProcedureMeta {
   kind?: ProcedureKind;
@@ -1502,6 +1625,7 @@ export interface ProcedureMeta {
 const procedure = oc.$meta<ProcedureMeta>({});
 const readProcedure = procedure.meta({ kind: "read" });
 const writeProcedure = procedure.meta({ kind: "write" });
+const bulkProcedure = procedure.meta({ kind: "bulk" });
 
 export const polarisContract = {
   // The acceptance of the Terms of Use and of the Privacy Policy (ADR 0100). Per user, never per
@@ -2414,6 +2538,23 @@ export const polarisContract = {
         })
       )
       .output(productVariantConfiguration),
+    // A slice of a spreadsheet import: its own rate-limit bucket (`bulk`), never the one of the writes, so a
+    // sale made during the import keeps the whole write quota and one call never stands for one write.
+    importBatch: bulkProcedure
+      .input(
+        z
+          .object({
+            importId: z.string().uuid(),
+            organizationId: z.string().trim().min(1),
+            rows: z
+              .array(productImportRow)
+              .min(1)
+              .max(PRODUCT_IMPORT_BATCH_MAX_ROWS)
+              .superRefine(distinctImportRows),
+          })
+          .strict()
+      )
+      .output(z.object({ results: z.array(productImportRowResult) })),
     list: readProcedure
       .input(
         z.object({
@@ -2424,6 +2565,18 @@ export const polarisContract = {
         })
       )
       .output(z.object({ products: z.array(product) })),
+    // The names of a file that a product of the store already has (an archived one too), for the preview of an
+    // import: only information, the transaction of each row decides. Compared without case and repeated spaces.
+    namesExisting: readProcedure
+      .input(
+        z
+          .object({
+            names: z.array(z.string().max(200)).max(PRODUCT_IMPORT_MAX_NAMES),
+            organizationId: z.string().trim().min(1),
+          })
+          .strict()
+      )
+      .output(z.object({ names: z.array(z.string()) })),
     restore: writeProcedure
       .input(
         z.object({

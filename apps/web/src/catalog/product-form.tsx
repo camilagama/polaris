@@ -19,6 +19,7 @@ import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
 import {
   emptyOpeningDraft,
+  PRODUCT_NAME_REQUIRED,
   type ProductOpeningDraft,
   validateOpening,
 } from "./product-opening-model";
@@ -41,7 +42,6 @@ export const PRODUCT_FORM_ID = "product-form";
 
 /** The choice that clears the category: the Select has no empty value of its own. */
 const NO_CATEGORY = "none";
-const NAME_REQUIRED = "Informe o nome do produto.";
 
 /**
  * Whether the data cannot be sent as typed: no name, or (only for a new product, the only one with a price and a
@@ -98,7 +98,7 @@ export function ProductForm({
     focusLater(() => document.getElementById("product-category")?.focus());
   }, [categoryRefusal]);
   const nameError =
-    showRequired && draft.name.trim() === "" ? NAME_REQUIRED : undefined;
+    showRequired && draft.name.trim() === "" ? PRODUCT_NAME_REQUIRED : undefined;
   // only a new product has a price and a stock to say: an edit changes the name, the category and the description
   const opening = editing ? null : validateOpening(draft);
   const openingErrors = showRequired ? (opening?.errors ?? {}) : {};

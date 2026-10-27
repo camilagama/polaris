@@ -277,9 +277,25 @@ export class ProductDescriptionError extends Error {
   }
 }
 
+/**
+ * Characters no product text may hold: U+0000, which PostgreSQL refuses in text (the write would fail as a fault,
+ * not as a refusal), and the controls that turn the direction of the text (U+202A to U+202E, U+2066 to U+2069),
+ * which make a name read differently on the list, the sale and the catalog than it was typed.
+ */
+const FORBIDDEN_PRODUCT_TEXT = /[\u0000\u202A-\u202E\u2066-\u2069]/u;
+
+/** Whether a text holds a character no product text may hold (`FORBIDDEN_PRODUCT_TEXT`). */
+export function hasForbiddenProductText(text: string): boolean {
+  return FORBIDDEN_PRODUCT_TEXT.test(text);
+}
+
 export function normalizeProductName(name: string): string {
   const normalized = name.trim();
-  if (!normalized || normalized.length > MAX_PRODUCT_NAME_LENGTH) {
+  if (
+    !normalized ||
+    normalized.length > MAX_PRODUCT_NAME_LENGTH ||
+    hasForbiddenProductText(normalized)
+  ) {
     throw new ProductNameError();
   }
   return normalized;
@@ -292,7 +308,10 @@ export function normalizeProductDescription(
     return null;
   }
   const normalized = description.trim();
-  if (normalized.length > MAX_PRODUCT_DESCRIPTION_LENGTH) {
+  if (
+    normalized.length > MAX_PRODUCT_DESCRIPTION_LENGTH ||
+    hasForbiddenProductText(normalized)
+  ) {
     throw new ProductDescriptionError();
   }
   return normalized || null;
