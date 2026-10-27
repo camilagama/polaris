@@ -1,4 +1,5 @@
 import type { CategoryReadModel } from "@polaris/contracts";
+import { isBlankProductName } from "@polaris/domain/catalog/product";
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUpIcon from "lucide-react/dist/esm/icons/chevron-up";
 import {
@@ -52,7 +53,7 @@ export function productFormHasErrors(
   editing: boolean
 ): boolean {
   return (
-    draft.name.trim() === "" ||
+    isBlankProductName(draft.name) ||
     (!editing && validateOpening(draft).value === null)
   );
 }
@@ -98,7 +99,7 @@ export function ProductForm({
     focusLater(() => document.getElementById("product-category")?.focus());
   }, [categoryRefusal]);
   const nameError =
-    showRequired && draft.name.trim() === ""
+    showRequired && isBlankProductName(draft.name)
       ? PRODUCT_NAME_REQUIRED
       : undefined;
   // only a new product has a price and a stock to say: an edit changes the name, the category and the description

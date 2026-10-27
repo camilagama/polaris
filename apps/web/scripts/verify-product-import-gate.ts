@@ -398,21 +398,26 @@ async function run() {
       "SELECT version::text AS n FROM public.products WHERE id = $1",
       legacyId
     );
-    const edited = await inTransactionOf(tenantA, "product:update")(
-      (transaction, identity) =>
-        updateProduct(transaction, identity, {
-          categoryId: null,
-          description: "nova descrição",
-          expectedVersion: legacyVersion,
-          id: legacyId,
-          name: legacyName,
-        })
+    const edited = await inTransactionOf(
+      tenantA,
+      "product:update"
+    )((transaction, identity) =>
+      updateProduct(transaction, identity, {
+        categoryId: null,
+        description: "nova descrição",
+        expectedVersion: legacyVersion,
+        id: legacyId,
+        name: legacyName,
+      })
     );
     assert.equal(edited.changed, true);
     assert.equal(edited.product.name, legacyName);
     assert.equal(edited.product.description, "nova descrição");
     await assert.rejects(
-      inTransactionOf(tenantA, "product:update")((transaction, identity) =>
+      inTransactionOf(
+        tenantA,
+        "product:update"
+      )((transaction, identity) =>
         updateProduct(transaction, identity, {
           categoryId: null,
           description: "nova descrição",

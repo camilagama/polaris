@@ -242,7 +242,33 @@ describe("runImport", () => {
     });
 
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
-    expect(time.waits).toEqual([1000, 120_000]);
+    // the 1 s of the floor, and then the rest of the pace of 6 s since the call refused
+    expect(time.waits).toEqual([1000, 5000, 120_000]);
+  });
+
+  it("keeps the pace after a 429 and across a continued run", async () => {
+    // a 429 that asks 1 s, an answer, a refusal that stops the run, and then every answer
+    const script = ["TOO_MANY_REQUESTS", null, "FORBIDDEN"];
+    const sentAt: number[] = [];
+    const time = fakeTime();
+    const send = vi.fn((input: SendInput) => {
+      sentAt.push(time.now());
+      const code = script.shift();
+      return code
+        ? Promise.reject(rpcError(code))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(25, send, {
+      now: time.now,
+      retryAfterMs: () => 1000,
+      wait: time.wait,
+    });
+
+    expect((await runImport(run, dependencies)).kind).toBe("refused");
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // 6 s between any two calls: the slice sent again after the 429, and the first call of the continued run
+    expect(sentAt).toEqual([0, 6000, 12_000, 18_000, 24_000]);
   });
 
   it("takes an answer without every row sent as no answer: nothing moves", async () => {
@@ -345,6 +371,21 @@ describe("runImport", () => {
     expect(run.sliceSize).toBe(10);
   });
 
+  it("takes the screen giving up during a call as an abort, never as a failure of the size", async () => {
+    const controller = new AbortController();
+    const send = vi.fn(() => {
+      controller.abort();
+      return Promise.reject(new DOMException("aborted", "AbortError"));
+    });
+    const { dependencies, run } = setup(30, send, {
+      signal: controller.signal,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    expect(send).toHaveBeenCalledOnce();
+    expect(run.sliceSize).toBe(10);
+  });
+
   it("keeps the size it reached for the next run of the same import", async () => {
     let calls = 0;
     const sent: number[] = [];
@@ -363,9 +404,8 @@ describe("runImport", () => {
     });
 
     expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
-    expect(await runImport(run, { ...dependencies, signal: undefined })).toEqual(
-      { kind: "done" }
-    );
+    const { signal: _gaveUp, ...again } = dependencies;
+    expect(await runImport(run, again)).toEqual({ kind: "done" });
     expect(sent.slice(0, 3)).toEqual([10, 5, 5]);
   });
 

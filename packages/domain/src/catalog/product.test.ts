@@ -119,15 +119,12 @@ describe("forbidden characters in product text", () => {
     );
   });
 
-  it.each([
-    "\u200B",
-    "\u200C\u200D",
-    " \u2060 ",
-    "\uFEFF",
-    "\u200B \u200B",
-  ])("refuses a name of only characters of zero width (%j)", (name) => {
-    expect(() => normalizeProductName(name)).toThrow(ProductNameError);
-  });
+  it.each(["\u200B", "\u200C\u200D", " \u2060 ", "\uFEFF", "\u200B \u200B"])(
+    "refuses a name of only characters of zero width (%j)",
+    (name) => {
+      expect(() => normalizeProductName(name)).toThrow(ProductNameError);
+    }
+  );
 
   it("keeps a character of zero width inside a name that shows something", () => {
     // the joiner of an emoji, and a break opportunity inside a long word
