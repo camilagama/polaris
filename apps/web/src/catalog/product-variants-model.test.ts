@@ -19,6 +19,9 @@ import {
   variantSkuErrorMessage,
 } from "./product-variants-model";
 
+/** The limit text blames no change of the product, and has no number and no archiving. */
+const NOT_IN_LIMIT_TEXT = /mudou|já foram configuradas|\d|arquiv/;
+
 const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
     code,
@@ -233,6 +236,19 @@ describe("mensagens de erro das variantes", () => {
     );
     expect(variantErrorMessage(refusal("CONFLICT"))).toContain(
       "Confira as variantes"
+    );
+    // the plan's limit is said as the limit, never as "the product changed" (L1 of the corte 1.6, AC-1)
+    expect(
+      variantErrorMessage(refusal("CONFLICT", "entitlement_limit_reached"))
+    ).toBe("Seu plano chegou ao limite de variantes. Nada foi alterado.");
+    expect(
+      variantErrorMessage(refusal("CONFLICT", "entitlement_limit_reached"))
+    ).not.toMatch(NOT_IN_LIMIT_TEXT);
+    // the other conflicts keep their text
+    expect(
+      variantErrorMessage(refusal("CONFLICT", "product_version_conflict"))
+    ).toBe(
+      "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente."
     );
     expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
       "temporariamente indisponível"

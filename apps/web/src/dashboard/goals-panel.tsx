@@ -2,12 +2,23 @@ import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
+import { keepForReturn, takeKept } from "../lib/kept-for-return";
+import { LimitHelp, useLimitHelp } from "../subscription/limit-help";
+import type { LimitHelpView } from "../subscription/limit-help-model";
 import { ActiveGoalCard, SettledGoalCard } from "./goal-card";
+import { GOAL_LIMIT_CANCEL_HINT, GOAL_LIMIT_REACHED } from "./goal-errors";
 import { GoalCreateForm } from "./goal-form";
 import {
   type GoalCreateInput,
@@ -33,11 +44,15 @@ interface GoalsPanelProps {
 
 const HEADING_ID = "goals-heading";
 
+const returnKey = (organizationId: string) => `goals:${organizationId}`;
+
 interface GoalListProps {
   busyKey: string | null;
   goals: readonly GoalReadModel[];
   onCancel: (goal: GoalReadModel) => Promise<GoalOutcome>;
   onRetry: () => void;
+  /** What goes with a goal paused by the plan: the way to the Pro (corte 1.6). */
+  pausedHelp: LimitHelpView | null;
   onSave: (goal: GoalReadModel, input: GoalEditInput) => Promise<GoalOutcome>;
   organizationId: string;
   state: GoalsState;
@@ -64,6 +79,7 @@ function GoalList({
   onRetry,
   onSave,
   organizationId,
+  pausedHelp,
   state,
   timezone,
   today,
@@ -115,6 +131,7 @@ function GoalList({
                   onCancel={onCancel}
                   onSave={onSave}
                   organizationId={organizationId}
+                  pausedHelp={pausedHelp}
                   timezone={timezone}
                   today={today}
                 />
@@ -163,8 +180,27 @@ export function GoalsPanel({
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
 
-  // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only
-  const draftStore = useRef<GoalDraft | null>(null);
+  // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
+  // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")
+  const draftStore = useRef<GoalDraft | null>(
+    takeKept<GoalDraft>(returnKey(organizationId)) ?? null
+  );
+  useEffect(
+    () => () => keepForReturn(returnKey(organizationId), draftStore.current),
+    [organizationId]
+  );
+  // the plan's limit refused the new goal (L5 of the corte 1.6), or a goal is paused by the plan: the way to the Pro
+  const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
+  const { help: pausedHelp, show: showPausedHelp } = useLimitHelp();
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const hasPaused = state.goals.some((goal) => goal.paused);
+  useEffect(() => {
+    if (hasPaused) {
+      showPausedHelp("goals");
+    }
+  }, [hasPaused, showPausedHelp]);
+  // a goal in progress or paused takes a place, and cancelling it frees the place (T-3)
+  const canCancel = state.goals.some((goal) => goal.status === "active");
   const handleDraftChange = useCallback((draft: GoalDraft | null) => {
     draftStore.current = draft;
   }, []);
@@ -211,12 +247,16 @@ export function GoalsPanel({
   const handleSave = useCallback(
     async (input: GoalCreateInput) => {
       const outcome = await create(input);
-      if (outcome !== "failed") {
+      if (outcome === "limit") {
+        // nothing was created: the form stays as typed, and the refusal takes the focus with the way to the Pro
+        showLimitHelp("goals");
+        focusLater(() => feedbackRef.current?.focus());
+      } else if (outcome !== "failed") {
         closeForm();
       }
       return outcome === "ok";
     },
-    [closeForm, create]
+    [closeForm, create, showLimitHelp]
   );
   // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the heading
   const handleCancel = useCallback(
@@ -270,6 +310,17 @@ export function GoalsPanel({
       <GoalCreateForm
         disabled={busy !== null}
         feedback={feedback?.kind === "error" ? feedback : null}
+        feedbackExtra={
+          feedback?.text === GOAL_LIMIT_REACHED ? (
+            <>
+              {canCancel ? (
+                <span className="block">{GOAL_LIMIT_CANCEL_HINT}</span>
+              ) : null}
+              <LimitHelp help={limitHelp} />
+            </>
+          ) : null
+        }
+        feedbackRef={feedbackRef}
         finalFocus={finalFocus}
         keptDraft={draftStore.current ?? undefined}
         month={month}
@@ -288,6 +339,7 @@ export function GoalsPanel({
         onRetry={handleRetry}
         onSave={update}
         organizationId={organizationId}
+        pausedHelp={pausedHelp}
         state={state}
         timezone={timezone}
         today={today}

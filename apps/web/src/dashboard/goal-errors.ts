@@ -3,6 +3,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { isLimitReached } from "../subscription/limit-help-model";
 
 export type GoalAction = "cancel" | "create" | "history" | "load" | "update";
 
@@ -19,6 +20,16 @@ const CONFLICT_MESSAGES: Partial<Record<GoalAction, string>> = {
   update:
     "Esta meta mudou em outra solicitação ou já não está em andamento, então não foi alterada. A lista foi atualizada; abra a meta de novo para editar.",
 };
+
+/** The plan's limit of goals in progress refused the new one (L5 of the corte 1.6): never "try again". */
+export const GOAL_LIMIT_REACHED =
+  "Seu plano chegou ao limite de metas em andamento. Nada foi criado.";
+
+/**
+ * Said after the limit only when a goal in progress or paused can be cancelled: a cancelled goal frees its place, a
+ * goal paused by the plan still takes one (T-3 of the corte 1.6).
+ */
+export const GOAL_LIMIT_CANCEL_HINT = "Cancele uma meta para abrir lugar.";
 
 function fallbackMessage(action: GoalAction): string {
   if (action === "load") {
@@ -56,6 +67,9 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
   }
   if (code === "BAD_REQUEST") {
     return BAD_REQUEST_MESSAGES[action] ?? fallbackMessage(action);
+  }
+  if (action === "create" && isLimitReached(error)) {
+    return GOAL_LIMIT_REACHED;
   }
   if (code === "CONFLICT") {
     if (rpcErrorReason(error) === "goal_paused_by_plan") {

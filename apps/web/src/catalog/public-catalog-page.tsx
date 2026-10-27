@@ -17,6 +17,7 @@ import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
 import { useReportUnsentWork } from "../lib/unsent-work";
+import { LimitHelp, useLimitHelp } from "../subscription/limit-help";
 import { LoadErrorNotice } from "./products-page-parts";
 import {
   type ProfileFieldError,
@@ -205,6 +206,13 @@ export function PublicCatalogPage() {
   const setup = loaded?.setup ?? null;
   const profile = setup?.profile ?? null;
   const planBlocks = setup !== null && !setup.enabled;
+  // the plan does not include the catalog (L4 of the corte 1.6): the notice gains the way to the Pro
+  const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
+  useEffect(() => {
+    if (planBlocks) {
+      showLimitHelp("catalog");
+    }
+  }, [planBlocks, showLimitHelp]);
   const shown = useMemo(
     () => new Set(setup?.publishedProductIds ?? []),
     [setup]
@@ -324,6 +332,7 @@ export function PublicCatalogPage() {
             O catálogo público faz parte do plano Pro. Você pode ver o que já
             está guardado, mas só poderá salvar o perfil e escolher produtos
             quando o plano incluir.
+            <LimitHelp help={limitHelp} />
           </AlertDescription>
         </Alert>
       ) : null}

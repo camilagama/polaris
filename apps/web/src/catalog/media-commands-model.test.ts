@@ -8,10 +8,15 @@ import {
   isMediaSessionEnded,
   movedAssetOrder,
   movedNotice,
+  PRODUCT_IMAGES_LIMIT_REACHED,
   removeConfirmationText,
   removedNotice,
   replaceConfirmationText,
+  STORE_IMAGES_LIMIT_REACHED,
 } from "./media-commands-model";
+
+/** A limit text of the plan says no "maximum", no number and no archiving. */
+const NOT_IN_LIMIT_TEXT = /máximo|\d|arquiv/i;
 
 const ids = ["a", "b", "c"];
 const priceWords = /R\$|preço|pagar|assin/i;
@@ -168,6 +173,50 @@ describe("describeMediaFailure", () => {
     expect(failure.message).toContain("pausado");
     expect(failure.message).toContain("Nada foi perdido");
     expect(failure.message).not.toMatch(priceWords);
+  });
+
+  it("tells the three refusals of a full place apart, each true (corte 1.6, AC-2)", () => {
+    const limited = (limit: string | null) =>
+      describeMediaFailure(
+        "upload",
+        new MediaUploadHttpError(
+          "entitlement_limit_reached",
+          409,
+          undefined,
+          limit
+        )
+      );
+    const store = limited("images.active.max");
+    expect(store).toEqual({
+      limit: "images",
+      message: STORE_IMAGES_LIMIT_REACHED,
+      reloadList: true,
+    });
+    expect(store.message).toBe(
+      "Seu plano chegou ao limite de imagens da loja. Remova uma imagem para liberar um lugar e envie de novo."
+    );
+    const product = limited("images.per_product.max");
+    expect(product).toEqual({
+      limit: "productImages",
+      message: PRODUCT_IMAGES_LIMIT_REACHED,
+      reloadList: true,
+    });
+    expect(product.message).toBe(
+      "Este produto chegou ao limite de imagens do seu plano. Remova uma imagem dele para liberar um lugar e envie de novo."
+    );
+    // the plan's limit never says "the maximum" (the Pro has more), nor a number, a price or archiving
+    for (const failure of [store, product]) {
+      expect(failure.message).not.toMatch(NOT_IN_LIMIT_TEXT);
+      expect(failure.message).not.toMatch(priceWords);
+    }
+    // the technical ceiling (20) keeps its own text, with no way to the Pro: no plan changes it
+    const ceiling = describeMediaFailure("upload", http("product_media_limit"));
+    expect(ceiling.limit).toBeUndefined();
+    expect(ceiling.message).toBe(
+      "Este produto já tem o máximo de imagens. Remova uma imagem para liberar um lugar e envie de novo."
+    );
+    // a limit refusal without its key reads as the store's, as before
+    expect(limited(null).limit).toBe("images");
   });
 
   it("explains the per-product limit on upload", () => {

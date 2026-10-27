@@ -7,6 +7,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { isLimitReached } from "../subscription/limit-help-model";
 
 /* What the variants panel decides without drawing: the option names, the values typed one per line, the
    validation of the combinations and the sentences of its errors. */
@@ -168,6 +169,10 @@ export function validateVariantDrafts(
   };
 }
 
+/** The plan's active-variant limit refused the configuration (L1 of the corte 1.6): the limit, never "the product changed". */
+export const VARIANT_LIMIT_REACHED =
+  "Seu plano chegou ao limite de variantes. Nada foi alterado.";
+
 export function variantErrorMessage(error: unknown, subject?: string): string {
   const unaccepted = legalAcceptanceMessage(error, subject);
   if (unaccepted !== undefined) {
@@ -185,6 +190,9 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
   }
   if (code === "NOT_FOUND") {
     return "O produto não existe mais nesta loja.";
+  }
+  if (isLimitReached(error)) {
+    return VARIANT_LIMIT_REACHED;
   }
   if (code === "CONFLICT") {
     return "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente.";
