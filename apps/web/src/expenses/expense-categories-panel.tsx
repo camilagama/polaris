@@ -199,16 +199,23 @@ export function ExpenseCategoriesPanel({
   });
   const { close: closeForm, editing, openForm } = form;
   const handleNew = useCallback(() => openForm("new"), [openForm]);
+  // a name already used comes back as a conflict, as a version changed elsewhere: the list is read again and the
+  // form stays open with what was typed and the message inside, as the row's own form did; renaming again goes with
+  // the version just read
   const handleSave = useCallback(
     async (draft: CategoryDraft) => {
-      const outcome = editing
-        ? await rename(editing, draft.name)
+      const current =
+        editing &&
+        (state.categories.find((category) => category.id === editing.id) ??
+          editing);
+      const outcome = current
+        ? await rename(current, draft.name)
         : await create(draft.group, draft.name);
-      if (outcome !== "failed") {
+      if (outcome === "ok") {
         closeForm();
       }
     },
-    [closeForm, create, editing, rename]
+    [closeForm, create, editing, rename, state.categories]
   );
   const sections = useMemo(
     () =>

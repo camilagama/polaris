@@ -1394,8 +1394,19 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(rename).toBeFocused();
+  // another device changed it meanwhile: the conflict is said inside the dialog, which keeps what was typed, and
+  // saving again goes with the version the list read again
+  const stored = server.categories.find((item) => item.name === "Frete");
+  if (stored) {
+    stored.version += 1;
+  }
   await rename.click();
   await renameForm.getByLabel("Nome da categoria").fill("Frete e entregas");
+  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await expect(renameForm.getByRole("alert")).toBeVisible();
+  await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue(
+    "Frete e entregas"
+  );
   await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(panel.getByText("Categoria renomeada.")).toBeVisible();
