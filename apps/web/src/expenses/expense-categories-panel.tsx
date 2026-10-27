@@ -168,14 +168,14 @@ function useCategoryCommands({
   return { busy, clearFeedback, create, feedback, rename, toggle };
 }
 
-/** What opened the form: "Nova categoria" or the "Renomear" of the category. */
+/** What opened the form (or, when its row left the list, the button of a new one): "Nova categoria" or the "Renomear" of the category. */
 function categoryFormOrigin(next: ExpenseCategoryReadModel | "new") {
   return next === "new"
     ? () => document.querySelector<HTMLElement>("[data-category-new]")
     : () =>
         document.querySelector<HTMLElement>(
           `[data-category-id="${next.id}"] [data-category-rename]`
-        );
+        ) ?? document.querySelector<HTMLElement>("[data-category-new]");
 }
 
 /** The Categorias part of the Despesas tab: the categories of the organization, by group. */

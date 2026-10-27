@@ -55,14 +55,14 @@ function Heading() {
 
 const LIST_TITLE_ID = "expense-list-title";
 
-/** What opened the form: "Nova despesa" or the "Editar" of the expense. */
+/** What opened the form (or, when its row left the list, the button of a new one): "Nova despesa" or the "Editar" of the expense. */
 function expenseFormOrigin(next: ExpenseReadModel | "new") {
   return next === "new"
     ? () => document.querySelector<HTMLElement>("[data-expense-new]")
     : () =>
         document.querySelector<HTMLElement>(
           `[data-expense-id="${next.id}"] [data-expense-edit]`
-        );
+        ) ?? document.querySelector<HTMLElement>("[data-expense-new]");
 }
 
 /**

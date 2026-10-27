@@ -371,6 +371,9 @@ class FakeExpenseServer {
         if (procedure === "expense/update") {
           found.amount = Number(input.amount).toFixed(2);
           found.description = String(input.description);
+          if (typeof input.competenceOn === "string") {
+            found.competenceOn = input.competenceOn;
+          }
         } else {
           const voiding = procedure === "expense/void";
           found.status = voiding ? "voided" : "active";
@@ -1293,6 +1296,7 @@ test("o endereço abre o segmento, e um ?ver= inválido cai em Lançamentos sem 
 test("despesa no diálogo: Nova despesa e Editar abrem o formulário, Esc guarda o rascunho e o foco volta ao gatilho", async ({
   page,
 }) => {
+  await page.clock.setFixedTime(new Date(NOW));
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
 
@@ -1338,6 +1342,14 @@ test("despesa no diálogo: Nova despesa e Editar abrem o formulário, Esc guarda
   await expect(page.getByText("Despesa atualizada.")).toBeVisible();
   await expect(row(page, "Panfletos")).toContainText("R$ 95,00");
   expect(server.expenses[0]?.amount).toBe("95.00");
+
+  // saved into another month, the row leaves the list: the focus goes to "Nova despesa", not to the page
+  await edit.click();
+  await pickDate(editForm, "Data de competência", "2026-09-15");
+  await editForm.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page, "Panfletos")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeFocused();
 });
 
 test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome e o foco volta ao gatilho", async ({

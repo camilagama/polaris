@@ -289,14 +289,14 @@ function RulesIntro() {
   );
 }
 
-/** What opened the form: "Nova despesa recorrente" or the "Editar" of the rule. */
+/** What opened the form (or, when its row left the list, the button of a new one): "Nova despesa recorrente" or the "Editar" of the rule. */
 function ruleFormOrigin(next: ExpenseRuleReadModel | "new") {
   return next === "new"
     ? () => document.querySelector<HTMLElement>("[data-rule-new]")
     : () =>
         document.querySelector<HTMLElement>(
           `[data-rule-id="${next.id}"] [data-rule-edit]`
-        );
+        ) ?? document.querySelector<HTMLElement>("[data-rule-new]");
 }
 
 /** The Recorrentes part of the Despesas tab: rules that launch an expense every week, month or year. */
