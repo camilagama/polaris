@@ -6,7 +6,8 @@ import { WORKER_MARK } from "./worker-mark";
 
 /**
  * The images panel of the products screen on the components of src/ui (v5.1), in the real route with the API answered
- * by the test (the server mode, no offline runtime): it opens on the product's menu and takes the focus, the ends of
+ * by the test (the server mode, no offline runtime): it opens on the product's menu, in the tab "Imagens" of the product
+ * dialog, and the tab takes the focus; the ends of
  * the list cannot move, a move sends the whole order and the focus stays on the same image, removing asks first and
  * then says what happened, a list that does not load is not an empty list, and a send without internet says so in the
  * words of the shop. The panel's own states are measured in the guardrails (`e2e-pwa/ui-product-states.ts`).
@@ -135,16 +136,15 @@ const list =
   (route) =>
     route.fulfill(api(mediaListBody(count)));
 
-test("abre pelo menu e leva o foco ao título, com as imagens vistas e as pontas da lista sem movimento", async ({
+test("abre pelo menu na aba Imagens do produto, com o foco na aba, com as imagens vistas e as pontas da lista sem movimento", async ({
   page,
 }) => {
   await openMediaPanel(page, { lists: [list(3)] });
-  // the panel opens away from the row: the focus goes to the block that names the product
+  // the dialog of the product opens on its tab "Imagens", which takes the focus
   await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
-    })
-  ).toHaveCount(1);
+    page.getByRole("dialog", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Imagens" })).toBeFocused();
   await expect(page.getByText("Imagem 1 de 3")).toBeVisible();
   await expect(page.getByText("1000 × 800 · 0,3 MB").first()).toBeVisible();
   const first = page.getByRole("img", { name: "Camiseta do teste, imagem 1" });
@@ -306,7 +306,7 @@ test("enviar sem internet diz 'Sem internet' e que repetir é seguro, e a imagem
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
     const panel = document.querySelector(
-      '[aria-labelledby="product-media-heading"]'
+      '[role="tabpanel"][data-slot="tabs-content"]:not([hidden])'
     );
     const limit = window.innerWidth + 0.5;
     const boxes = [...(panel?.querySelectorAll("*") ?? [])].map((element) => ({

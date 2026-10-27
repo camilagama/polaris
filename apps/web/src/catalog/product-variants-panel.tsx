@@ -3,22 +3,9 @@ import type {
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import {
-  type ReactNode,
-  type Ref,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
@@ -26,13 +13,17 @@ import { ProductVariantConfigurationForm } from "./product-variants-form";
 import {
   MAX_VARIANTS,
   optionLabel,
+  type VariantConfigurationDraft,
   variantErrorMessage,
 } from "./product-variants-model";
 
 interface ProductVariantsPanelProps {
-  /** Where the focus goes when the panel opens: the title, which names what the person is about to edit. */
-  headingRef?: Ref<HTMLDivElement>;
-  onClose: () => void;
+  /** What was typed in the configuration before the dialog closed by Esc, × or the step back. */
+  configurationDraft: VariantConfigurationDraft | null;
+  onConfigurationDraftChange: (
+    productId: string,
+    draft: VariantConfigurationDraft | null
+  ) => void;
   onProductUpdated: (product: ProductReadModel) => void;
   organizationId: string;
   product: ProductReadModel;
@@ -81,9 +72,13 @@ function ConfiguredVariants({
   );
 }
 
+/**
+ * The tab "Variantes" of the product dialog: the SKU and the price of each variant, and the first configuration of the
+ * options. Each part saves by its own button, as before the dialog; the dialog's title names the product.
+ */
 export function ProductVariantsPanel({
-  headingRef,
-  onClose,
+  configurationDraft,
+  onConfigurationDraftChange,
   onProductUpdated,
   organizationId,
   product,
@@ -122,6 +117,14 @@ export function ProductVariantsPanel({
     };
   }, [organizationId, product.id, reloadVersion]);
 
+  // configured meanwhile (another device, or the read after a conflict): a draft of the first configuration is moot
+  const configured = configuration?.configured === true;
+  useEffect(() => {
+    if (configured && configurationDraft !== null) {
+      onConfigurationDraftChange(product.id, null);
+    }
+  }, [configurationDraft, configured, onConfigurationDraftChange, product.id]);
+
   const handleReload = useCallback(() => {
     setReloadVersion((version) => version + 1);
   }, []);
@@ -158,29 +161,20 @@ export function ProductVariantsPanel({
   let content: ReactNode = null;
   if (isLoading) {
     content = (
-      <CardContent>
-        <p className="text-muted-foreground text-support" role="status">
-          Carregando variantes…
-        </p>
-      </CardContent>
+      <p className="text-muted-foreground text-support" role="status">
+        Carregando variantes…
+      </p>
     );
   } else if (loadError) {
     content = (
-      <CardContent>
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {loadError}
-            <Button
-              onClick={handleReload}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              Tentar novamente
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </CardContent>
+      <Alert variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {loadError}
+          <Button onClick={handleReload} size="sm" type="button" variant="link">
+            Tentar novamente
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   } else if (configuration?.configured) {
     content = <ConfiguredVariants configuration={configuration} />;
@@ -188,43 +182,25 @@ export function ProductVariantsPanel({
     content = (
       <ProductVariantConfigurationForm
         configuration={configuration}
+        draft={configurationDraft}
         onConfigured={handleConfigured}
         onConflict={handleConflict}
+        onDraftChange={onConfigurationDraftChange}
+        onSkuCleared={handleSkuUpdated}
         organizationId={organizationId}
         product={product}
       />
     );
   }
 
+  // no card around it: the sections keep their rules between them, without the side spacing of a card
   return (
-    <Card aria-labelledby="product-variants-heading" role="region">
-      <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
-        <div
-          className="grid gap-0.5 outline-none"
-          ref={headingRef}
-          tabIndex={-1}
-        >
-          <CardTitle
-            aria-level={2}
-            className="[overflow-wrap:anywhere]"
-            id="product-variants-heading"
-            role="heading"
-          >
-            {product.name}
-          </CardTitle>
-          <CardDescription>Variantes</CardDescription>
-        </div>
-        <Button onClick={onClose} size="sm" type="button" variant="ghost">
-          Fechar
-        </Button>
-      </CardHeader>
+    <div className="grid gap-4 [--card-spacing:0px] [&>:first-child]:border-t-0 [&>:first-child]:pt-0">
       {notice ? (
-        <CardContent>
-          <Alert>
-            <CircleCheckIcon aria-hidden="true" />
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        </CardContent>
+        <Alert>
+          <CircleCheckIcon aria-hidden="true" />
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
       ) : null}
       {ready ? (
         <>
@@ -245,6 +221,6 @@ export function ProductVariantsPanel({
         </>
       ) : null}
       {content}
-    </Card>
+    </div>
   );
 }

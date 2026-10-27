@@ -56,6 +56,13 @@ function SkuRow({
   variant,
 }: SkuRowProps) {
   const [sku, setSku] = useState(variant.sku ?? "");
+  // a SKU saved from elsewhere (the warning's "Limpar SKU da variante padrão") shows in the field: that button clears
+  // it; a reload of the variants draws the rows again, so nothing typed is kept across one anyway
+  const [savedSku, setSavedSku] = useState(variant.sku);
+  if (savedSku !== variant.sku) {
+    setSavedSku(variant.sku);
+    setSku(variant.sku ?? "");
+  }
   const inputRef = useRef<HTMLInputElement>(null);
   useReportUnsentWork(sku !== (variant.sku ?? ""));
   // the refused SKU is said at this field, and the focus goes to it (the row is disabled while the save is in flight)
@@ -68,9 +75,9 @@ function SkuRow({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const savedSku = await onSave(variant.id, sku);
-      if (savedSku !== undefined) {
-        setSku(savedSku ?? "");
+      const answered = await onSave(variant.id, sku);
+      if (answered !== undefined) {
+        setSku(answered ?? "");
       }
     },
     [onSave, sku, variant.id]

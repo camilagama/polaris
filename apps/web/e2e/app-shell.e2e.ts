@@ -700,8 +700,8 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     await serve(page);
     await page.goto("/");
     await page.goto("/products?novo=1");
-    // at 1280 px the form is a region of the tab (the dialog is the phone's)
-    const form = page.getByRole("region", { name: "Novo produto" });
+    // the new product opens in its dialog (F3.3), over the tab
+    const form = page.getByRole("dialog", { name: "Novo produto" });
     await expect(form).toBeVisible();
     await form.getByRole("button", { exact: true, name: "Cancelar" }).click();
     await expect(form).toBeHidden();

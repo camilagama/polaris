@@ -21,7 +21,7 @@ export const optionChoices: ReadonlyArray<
   ["size", "Tamanho"],
 ];
 
-export const emptyValueLines: Record<ProductVariantOptionName, string> = {
+const emptyValueLines: Record<ProductVariantOptionName, string> = {
   color: "",
   model: "",
   size: "",
@@ -31,6 +31,33 @@ const optionValueLineBreak = /\r?\n/;
 
 export interface VariantDraft {
   values: Partial<Record<ProductVariantOptionName, string | undefined>>;
+}
+
+/**
+ * What was picked and typed in the first configuration of the options and not saved yet. The dialog's Esc, × and step
+ * back keep it in memory for the next opening of the same product, as the data; "Cancelar" and the save drop it.
+ */
+export interface VariantConfigurationDraft {
+  selectedOptions: ProductVariantOptionName[];
+  valueLines: Record<ProductVariantOptionName, string>;
+  variants: VariantDraft[];
+}
+
+export const emptyConfigurationDraft: VariantConfigurationDraft = {
+  selectedOptions: [],
+  valueLines: emptyValueLines,
+  variants: [],
+};
+
+/** Whether anything was picked or typed: a draft with nothing in it is not work to keep. */
+export function isConfigurationDraftEmpty(
+  draft: VariantConfigurationDraft
+): boolean {
+  return (
+    draft.selectedOptions.length === 0 &&
+    draft.variants.length === 0 &&
+    Object.values(draft.valueLines).every((lines) => lines === "")
+  );
 }
 
 export type ProductVariantReadModel =
@@ -160,7 +187,7 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
     return "O produto não existe mais nesta loja.";
   }
   if (code === "CONFLICT") {
-    return "O produto mudou ou as variantes já foram configuradas. Atualize a lista.";
+    return "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O catálogo está temporariamente indisponível. Tente novamente.";

@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { solidPng } from "./media-fixtures";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -110,11 +111,22 @@ async function openProductsLab(page: Page, stored = "claro", search = "") {
     "Iniciar: ok (ready)",
     { timeout: 20_000 }
   );
-  await expect(
-    page.getByRole("heading", { exact: true, name: "Produtos" })
-  ).toBeVisible();
+  await expect(screenOrDialog(page)).toBeVisible();
   await expect(page.getByText("Calça jeans")).toBeVisible();
 }
+
+/**
+ * The screen is there: its title or, when an address opened a product, the dialog (a modal dialog takes the rest of
+ * the page out of the accessibility tree, the title with it).
+ */
+const screenOrDialog = (page: Page) =>
+  page
+    .getByRole("heading", { exact: true, level: 1, name: "Produtos" })
+    .or(page.getByRole("dialog"));
+
+/** The list's tab of a status, read from the markup: under an open dialog it is out of the accessibility tree. */
+const statusTab = (page: Page, name: string) =>
+  page.locator('[role="tab"]', { hasText: name });
 
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
@@ -157,12 +169,11 @@ async function useEveryControl(page: Page) {
   // the variants: the options, the values and a combination
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Variantes" }).click();
-  // the panel opens away from the row: the focus goes to the block that names the product
+  // the dialog of the product opens on its tab "Variantes", which takes the focus (the arrows go to the others)
   await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
-    })
-  ).toHaveCount(1);
+    page.getByRole("dialog", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
   await page.getByRole("checkbox", { name: "Cor" }).click();
   await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
   await page.getByRole("button", { name: "Adicionar combinação" }).click();
@@ -218,9 +229,15 @@ for (const theme of THEMES) {
 /** No box of the screen ends beyond the right edge of the window (the page may hide it, so boxes are measured). */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
-    const root = document.querySelector(".products-page");
+    // the screen and, when open, the product dialog (a portal outside the screen)
+    const roots = document.querySelectorAll(
+      '.products-page, [data-slot="dialog-content"]'
+    );
     const limit = window.innerWidth + 0.5;
-    const boxes = [...(root?.querySelectorAll("*") ?? [])].map((element) => ({
+    const elements = [...roots].flatMap((root) => [
+      ...root.querySelectorAll("*"),
+    ]);
+    const boxes = elements.map((element) => ({
       right: element.getBoundingClientRect().right,
       text: (element.textContent ?? "").trim().slice(0, 40),
     }));
@@ -234,7 +251,7 @@ async function expectNoSidewaysScroll(page: Page) {
   expect(found.past).toEqual([]);
 }
 
-test("a 320 px nada transborda: a lista, o formulário com erro, as variantes e a pendência sem conexão", async ({
+test("a 320 px nada transborda: a lista, o formulário com erro, as variantes, as imagens e a pendência sem conexão", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
@@ -254,6 +271,11 @@ test("a 320 px nada transborda: a lista, o formulário com erro, as variantes e 
   await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
   await page.getByRole("button", { name: "Adicionar combinação" }).click();
   await expectNoSidewaysScroll(page);
+  await page.getByRole("tab", { name: "Imagens" }).click();
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Imagens associadas" })
+  ).toBeVisible();
+  await expectNoSidewaysScroll(page);
   await page.getByRole("button", { name: "Fechar" }).click();
 
   await page.getByLabel("Rede disponível").uncheck();
@@ -270,36 +292,32 @@ test("a 320 px nada transborda: a lista, o formulário com erro, as variantes e 
 
 // ---- the addresses in the lab: the product is looked up in the copy on the device ----------------------------
 
-test("?produto=<uuid> no aparelho: abre o painel do produto ativo e o do arquivado, e o que não existe diz 'não encontrado'", async ({
+test("?produto=<uuid> no aparelho: abre o produto ativo e o arquivado na aba Variantes", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page, "claro", `&produto=${id(21)}`);
   await expect(
-    page.getByRole("region", { name: "Camiseta do teste" })
+    page.getByRole("dialog", { name: "Camiseta do teste" })
   ).toBeVisible();
-  await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
-    })
-  ).toHaveCount(1);
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
 
-  // an archived one: the tab changes and the panel of that product opens
+  // an archived one: the list's tab changes and the dialog of that product opens
   await page.goto(
     `/offline-screens-lab?screen=products&catalog=seeded&produto=${id(26)}`
   );
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
   await expect(
-    page.getByRole("region", { name: "Jaqueta de inverno" })
+    page.getByRole("dialog", { name: "Jaqueta de inverno" })
   ).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Arquivados" })).toHaveAttribute(
+  await expect(statusTab(page, "Arquivados")).toHaveAttribute(
     "aria-selected",
     "true"
   );
 });
 
-test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre painel", async ({
+test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre o produto", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
@@ -307,23 +325,19 @@ test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e n
   await expect(page.getByRole("alert")).toHaveText(
     "Produto não encontrado. Escolha um produto na lista."
   );
-  await expect(page.getByRole("region")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await bodyMarkup(page)).not.toContain(id(99));
 });
 
-test("?novo=1 no aparelho abre o formulário de um produto novo com o foco no título", async ({
+test("?novo=1 no aparelho abre o produto novo num passo só, sem abas, com o cursor no nome", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page, "claro", "&novo=1");
-  await expect(
-    page.getByRole("region", { name: "Novo produto" })
-  ).toBeVisible();
-  await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Novo produto" }),
-    })
-  ).toHaveCount(1);
+  const dialog = page.getByRole("dialog", { name: "Novo produto" });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+  await expect(dialog.getByRole("tablist")).toHaveCount(0);
 });
 
 // ---- the real route, with the API answered here ---------------------------------------------------------------
@@ -368,10 +382,7 @@ async function openServerScreen(
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
   await page.goto(path);
-  // the h1 of the screen; the tab Produtos has its own h2 under it
-  await expect(
-    page.getByRole("heading", { exact: true, level: 1, name: "Produtos" })
-  ).toBeVisible();
+  await expect(screenOrDialog(page)).toBeVisible();
 }
 
 const answer = (products: unknown[]) => (route: Route) =>
@@ -395,7 +406,7 @@ const variantsOf = {
   "product/getVariants": (route: Route) => route.fulfill(rpc(CONFIGURATION)),
 };
 
-test("?produto=<uuid> abre o painel do produto, rola até ele e leva o foco ao título", async ({
+test("?produto=<uuid> abre o produto na aba Variantes, com o foco na aba", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 740, width: 360 });
@@ -407,20 +418,18 @@ test("?produto=<uuid> abre o painel do produto, rola até ele e leva o foco ao t
     others: variantsOf,
     path: `/products?produto=${id(21)}`,
   });
-  const panel = page.getByRole("region", { name: "Produto 01" });
-  await expect(panel).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Produto 01" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("tab", { name: "Variantes" })).toBeFocused();
   await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Produto 01" }),
-    })
-  ).toHaveCount(1);
-  await expect(panel.getByRole("heading", { level: 2 })).toBeInViewport();
+    dialog.getByRole("heading", { name: "Produto 01" })
+  ).toBeInViewport();
   // closing it gives the focus back to the row, as when it is opened by the menu
-  await panel.getByRole("button", { name: "Fechar" }).click();
+  await dialog.getByRole("button", { name: "Fechar" }).click();
   await expect(menuOf(page, "Produto 01")).toBeFocused();
 });
 
-test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' abre o painel com o foco no título", async ({
+test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' abre o produto com o foco na aba", async ({
   page,
 }) => {
   const catalog = [product(1, "Camiseta do teste")];
@@ -444,20 +453,17 @@ test("?produto=<uuid> com o servidor fora: um alerta só, e 'Tentar novamente' a
   await expect(page.getByText("Não foi possível abrir o produto.")).toHaveCount(
     0
   );
-  await expect(page.getByRole("region")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   server.up = true;
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
-  const panel = page.getByRole("region", { name: "Camiseta do teste" });
-  await expect(panel).toBeVisible();
   await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
-    })
-  ).toHaveCount(1);
+    page.getByRole("dialog", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o próprio 'Tentar novamente' e abre o painel", async ({
+test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o próprio 'Tentar novamente' e abre o produto", async ({
   page,
 }) => {
   const catalog = [product(1, "Camiseta do teste")];
@@ -488,17 +494,13 @@ test("?produto=<uuid> que só a leitura do produto não consegue: o aviso tem o 
   linkUp = true;
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(
-    page.getByRole("region", { name: "Camiseta do teste" })
+    page.getByRole("dialog", { name: "Camiseta do teste" })
   ).toBeVisible();
-  await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Camiseta do teste" }),
-    })
-  ).toHaveCount(1);
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o painel dele", async ({
+test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o produto, sem a aba Imagens", async ({
   page,
 }) => {
   const archived = product(1, "Jaqueta de inverno", "archived");
@@ -510,12 +512,14 @@ test("?produto=<uuid> de um produto arquivado abre a aba Arquivados e o painel d
     path: `/products?produto=${id(21)}`,
   });
   await expect(
-    page.getByRole("region", { name: "Jaqueta de inverno" })
+    page.getByRole("dialog", { name: "Jaqueta de inverno" })
   ).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Arquivados" })).toHaveAttribute(
+  await expect(statusTab(page, "Arquivados")).toHaveAttribute(
     "aria-selected",
     "true"
   );
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Imagens" })).toHaveCount(0);
 });
 
 for (const [label, productId] of [
@@ -541,9 +545,9 @@ for (const [label, productId] of [
     await expect(alert).toHaveText(
       "Produto não encontrado. Escolha um produto na lista."
     );
-    // the alert takes the focus (as the result of any action), and no panel opens
+    // the alert takes the focus (as the result of any action), and no product opens
     await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
-    await expect(page.getByRole("region")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("Calça jeans")).toBeVisible();
     expect(await bodyMarkup(page)).not.toContain(productId);
     expect(await bodyMarkup(page)).not.toContain("Calça removida");
@@ -557,7 +561,7 @@ for (const value of [
   `${id(21)}x`,
   "00000000-0000-0000-0000-000000000000",
 ]) {
-  test(`?produto=${value || "(vazio)"} não é um endereço de produto: a lista abre sem painel, sem aviso e sem o valor`, async ({
+  test(`?produto=${value || "(vazio)"} não é um endereço de produto: a lista abre sem o produto, sem aviso e sem o valor`, async ({
     page,
   }) => {
     await openServerScreen(page, {
@@ -567,14 +571,14 @@ for (const value of [
     });
     await expect(page.getByText("Camiseta do teste")).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.getByRole("region")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     if (value !== "") {
       expect(await bodyMarkup(page)).not.toContain(value);
     }
   });
 }
 
-test("?novo=1 abre o formulário de um produto novo, rola até ele e leva o foco ao título; o próximo Tab chega ao nome", async ({
+test("?novo=1 abre o produto novo na tela inteira do celular, com o título à vista e o cursor no nome", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 740, width: 360 });
@@ -582,15 +586,11 @@ test("?novo=1 abre o formulário de um produto novo, rola até ele e leva o foco
     lists: [answer([])],
     path: "/products?novo=1",
   });
-  const form = page.getByRole("region", { name: "Novo produto" });
-  await expect(form).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Novo produto" });
+  await expect(dialog).toBeVisible();
   await expect(
-    page.locator(":focus").filter({
-      has: page.getByRole("heading", { level: 2, name: "Novo produto" }),
-    })
-  ).toHaveCount(1);
-  await expect(form.getByRole("heading", { level: 2 })).toBeInViewport();
-  await page.keyboard.press("Tab");
+    dialog.getByRole("heading", { name: "Novo produto" })
+  ).toBeInViewport();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });
 
@@ -602,7 +602,7 @@ test("depois de ?novo=1, abrir o formulário pelo botão volta a levar o foco ao
     path: "/products?novo=1",
   });
   await expect(
-    page.getByRole("region", { name: "Novo produto" })
+    page.getByRole("dialog", { name: "Novo produto" })
   ).toBeVisible();
   await page.getByRole("button", { name: "Cancelar" }).click();
   await page.getByRole("button", { name: "Novo produto" }).first().click();
@@ -618,7 +618,7 @@ for (const value of ["", "0", "true", "2", "<script>alert(1)</script>"]) {
       path: `/products?novo=${encodeURIComponent(value)}`,
     });
     await expect(page.getByText("Camiseta do teste")).toBeVisible();
-    await expect(page.getByRole("region")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     if (value.startsWith("<")) {
       expect(await bodyMarkup(page)).not.toContain(value);
     }
@@ -1069,6 +1069,94 @@ test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são
   await expect(repeated).toBeVisible();
 });
 
+test("variantes: 'Limpar SKU da variante padrão' no aviso limpa o SKU, o aviso some e o foco vai ao campo vazio", async ({
+  page,
+}) => {
+  const skus: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) =>
+        route.fulfill(
+          rpc({
+            ...CONFIGURATION,
+            variants: [{ ...CONFIGURATION.variants[0], sku: "CAM-1" }],
+          })
+        ),
+      "product/setVariantSku": (route) => {
+        const { json } = route.request().postDataJSON() as {
+          json: { sku: string; variantId: string };
+        };
+        skus.push(json);
+        return route.fulfill(
+          rpc({
+            changed: true,
+            configuration: { ...CONFIGURATION, productVersion: 2 },
+            product: { ...product(1, "Camiseta do teste"), version: 2 },
+          })
+        );
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  const warning = page.getByText(
+    "Limpe o SKU da variante padrão antes de configurar opções: a configuração a substitui."
+  );
+  await expect(warning).toBeVisible();
+  await page
+    .getByRole("button", { name: "Limpar SKU da variante padrão" })
+    .click();
+  await expect(warning).toHaveCount(0);
+  const sku = page.getByRole("textbox", { name: "SKU · Variante padrão" });
+  await expect(sku).toHaveValue("");
+  await expect(sku).toBeFocused();
+  expect(skus).toMatchObject([{ sku: "", variantId: id(31) }]);
+  // the option picked before the clear is still there, and the save of the variants is no longer held by the SKU
+  await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
+});
+
+test("variantes digitadas voltam depois do Esc e do Fechar; Cancelar as descarta", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: variantsOf,
+  });
+  const openVariants = async () => {
+    await menuOf(page, "Camiseta do teste").click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await expect(page.getByRole("checkbox", { name: "Cor" })).toBeVisible();
+  };
+  const color = page.getByRole("checkbox", { name: "Cor" });
+  const values = page.getByLabel("Valores de Cor");
+  await openVariants();
+  await color.click();
+  await values.fill("Azul\nPreta");
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await expect(page.getByText("Combinação 1")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(color).toBeChecked();
+  await expect(values).toHaveValue("Azul\nPreta");
+  await expect(page.getByText("Combinação 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(values).toHaveValue("Azul\nPreta");
+
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await openVariants();
+  await expect(color).not.toBeChecked();
+  await expect(values).toHaveCount(0);
+  await expect(page.getByText("Nenhuma combinação adicionada.")).toBeVisible();
+});
+
 test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícone; o sucesso é status e o conflito oferece 'Atualizar variantes'", async ({
   page,
 }) => {
@@ -1140,4 +1228,298 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
   await expect(skuSection.getByRole("status")).toHaveText("SKU salvo.");
   await expect(skuSection.getByRole("alert")).toHaveCount(0);
+});
+
+// ---- the product in tabs, Dados · Variantes · Imagens, inside the form dialog (F3.3) ----------------------------
+
+/** The lab's network, switched by its own control under the veil of the dialog (a click by the page, not a tap). */
+const setLabNetwork = (page: Page, online: boolean) =>
+  page.getByLabel("Rede disponível").evaluate((box, on) => {
+    if ((box as HTMLInputElement).checked !== on) {
+      (box as HTMLInputElement).click();
+    }
+  }, online);
+
+test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Tab sai do grupo", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page);
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
+  await expect(
+    dialog.getByRole("tablist", { name: "Partes do produto" })
+  ).toBeVisible();
+  // each panel is named by its tab
+  await expect(dialog.getByRole("tabpanel", { name: "Dados" })).toBeVisible();
+  await expectTabsKeyboard(page, "Partes do produto", ["Dados", "Variantes"]);
+  await dialog.getByRole("tab", { name: "Dados" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    dialog.getByRole("tabpanel", { name: "Variantes" })
+  ).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByRole("tab", { name: "Imagens" })).toBeFocused();
+  await expect(dialog.getByRole("tabpanel", { name: "Imagens" })).toBeVisible();
+});
+
+test("trocar de aba não perde o rascunho de nenhuma aba e não cria passo no histórico", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page);
+  const steps = await page.evaluate(() => window.history.length);
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
+  await page.getByLabel("Nome do produto").fill("Camiseta azul");
+  await dialog.getByRole("tab", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
+  await dialog.getByRole("tab", { name: "Imagens" }).click();
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(900, 600),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await expect(
+    page.getByRole("button", { name: "Enviar imagem" })
+  ).toBeEnabled();
+  await dialog.getByRole("tab", { name: "Dados" }).click();
+  await expect(page.getByLabel("Nome do produto")).toHaveValue("Camiseta azul");
+  await dialog.getByRole("tab", { name: "Variantes" }).click();
+  await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
+  await expect(page.getByLabel("Valores de Cor")).toHaveValue("Azul\nPreta");
+  await dialog.getByRole("tab", { name: "Imagens" }).click();
+  await expect(
+    page.getByRole("button", { name: "Enviar imagem" })
+  ).toBeEnabled();
+  expect(await page.evaluate(() => window.history.length)).toBe(steps);
+});
+
+test("erro numa aba que não está à vista: salvar abre a aba Dados marcada, com o foco no campo, e nada é enviado", async ({
+  page,
+}) => {
+  let updates = 0;
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      ...variantsOf,
+      "product/update": (route) => {
+        updates += 1;
+        return route.abort("internetdisconnected");
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
+  await page.getByLabel("Nome do produto").fill("");
+  await dialog.getByRole("tab", { name: "Variantes" }).click();
+  await expect(page.getByLabel("Nome do produto")).toBeHidden();
+  await dialog.getByRole("button", { name: "Salvar alterações" }).click();
+  const data = dialog.getByRole("tab", {
+    exact: true,
+    name: "Dados (com erro)",
+  });
+  await expect(data).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+  await expect(page.getByLabel("Nome do produto")).toHaveAttribute(
+    "aria-invalid",
+    "true"
+  );
+  await expect(dialog.getByText("Informe o nome do produto.")).toBeVisible();
+  // the mark stays on the tab while the error is there, and goes with it
+  await dialog.getByRole("tab", { name: "Variantes" }).click();
+  await expect(data).toBeVisible();
+  await dialog.getByRole("tab", { name: "Dados" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta");
+  await expect(
+    dialog.getByRole("tab", { name: "Dados (com erro)" })
+  ).toHaveCount(0);
+  expect(updates).toBe(0);
+});
+
+test("salvar os dados com variantes por salvar na outra aba não fecha o diálogo e diz o que falta", async ({
+  page,
+}) => {
+  const shirt = product(1, "Camiseta do teste");
+  await openServerScreen(page, {
+    lists: [answer([shirt])],
+    others: {
+      ...variantsOf,
+      "product/update": (route) =>
+        route.fulfill(
+          rpc({
+            changed: true,
+            product: { ...shirt, name: "Camiseta nova", version: 2 },
+          })
+        ),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByRole("tab", { name: "Dados" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta nova");
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+  const notice = page.getByText(
+    "Produto “Camiseta nova” atualizado. Variantes ainda têm alterações sem salvar."
+  );
+  await expect(notice).toBeVisible();
+  await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("tab", { name: "Variantes" }).click();
+  await expect(page.getByRole("checkbox", { name: "Cor" })).toBeChecked();
+});
+
+test("no celular, o voltar fecha o produto e guarda o rascunho; Cancelar o descarta", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: variantsOf,
+  });
+  const address = page.url();
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta guardada");
+  // the tabs change in place: the step back closes the dialog, it does not walk back through the tabs
+  await page.getByRole("tab", { name: "Variantes" }).click();
+  await page.getByRole("tab", { name: "Dados" }).click();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(page.url()).toBe(address);
+  await expect(menuOf(page, "Camiseta do teste")).toBeFocused();
+
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await expect(page.getByLabel("Nome do produto")).toHaveValue(
+    "Camiseta guardada"
+  );
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await expect(page.getByLabel("Nome do produto")).toHaveValue(
+    "Camiseta do teste"
+  );
+});
+
+test("sem internet no produto aberto: a faixa com 'Tentar agora', Salvar desligado com o motivo e a imagem escolhida continua", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  let updates = 0;
+  await page.route("**/rpc/product/update", (route) => {
+    updates += 1;
+    return route.abort("internetdisconnected");
+  });
+  await openProductsLab(page);
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Imagens" }).click();
+  const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(900, 600),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await expect(
+    page.getByRole("button", {
+      name: "Área de recorte. Arraste ou use as setas para ajustar.",
+    })
+  ).toBeVisible();
+
+  await setLabNetwork(page, false);
+  await expect(dialog.getByText("Sem internet.")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Tentar agora" })
+  ).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Salvar alterações" });
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAccessibleDescription(
+    "Sem internet: salvar precisa de conexão."
+  );
+  await save.click({ force: true });
+  // the picked image and its crop are still there, on the device
+  await expect(
+    page.getByRole("button", {
+      name: "Área de recorte. Arraste ou use as setas para ajustar.",
+    })
+  ).toBeVisible();
+  await dialog.getByRole("tab", { name: "Dados" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta offline");
+  await page.getByLabel("Nome do produto").press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  expect(updates).toBe(0);
+
+  await setLabNetwork(page, true);
+  await expect(dialog.getByText("Sem internet.")).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("sem internet, o produto novo continua num passo só e cadastrar funciona no aparelho", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page);
+  await setLabNetwork(page, false);
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Novo produto" });
+  await expect(
+    dialog.getByText("Cadastrar funciona e é enviado depois.")
+  ).toBeVisible();
+  await expect(dialog.getByRole("tablist")).toHaveCount(0);
+  await page.getByLabel("Nome do produto").fill("Boné de lona");
+  await page.getByLabel("Quantos você tem agora").fill("3");
+  const create = dialog.getByRole("button", { name: "Cadastrar produto" });
+  await expect(create).not.toHaveAttribute("aria-disabled", "true");
+  await create.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.locator("[data-product-id]").filter({ hasText: "Boné de lona" })
+  ).toContainText("Aguardando envio");
+});
+
+test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem virar um produto novo", async ({
+  page,
+}) => {
+  const shirt = product(1, "Camiseta do teste");
+  const catalog = { products: [shirt] as unknown[] };
+  await openServerScreen(page, {
+    lists: [(route) => answer(catalog.products)(route)],
+    others: {
+      ...variantsOf,
+      "product/setVariantSku": (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: undefined,
+              defined: false,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await page.getByLabel("Nome do produto").fill("Camiseta mudada");
+  // archived elsewhere: the next read of the list no longer has it ("Atualizar variantes" reads the list again)
+  catalog.products = [];
+  await page.getByRole("tab", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  await skuSection.getByRole("textbox").fill("CAM-1");
+  await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
+  await skuSection.getByRole("button", { name: "Atualizar variantes" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Novo produto" })).toHaveCount(
+    0
+  );
 });

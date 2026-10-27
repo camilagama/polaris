@@ -16,7 +16,6 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
-  type Ref,
   useCallback,
   useEffect,
   useRef,
@@ -24,13 +23,6 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Field,
@@ -80,9 +72,6 @@ import {
 } from "./product-media-list";
 
 interface ProductMediaPanelProps {
-  /** Where the focus goes when the panel opens: the title, which names what the person is about to edit. */
-  headingRef?: Ref<HTMLDivElement>;
-  onClose: () => void;
   organizationId: string;
   product: ProductReadModel;
 }
@@ -212,9 +201,8 @@ function VariantOption({
   );
 }
 
+/** The tab "Imagens" of the product dialog: sending, cutting and ordering the images, each command on its own. */
 export function ProductMediaPanel({
-  headingRef,
-  onClose,
   organizationId,
   product,
 }: ProductMediaPanelProps) {
@@ -760,161 +748,136 @@ export function ProductMediaPanel({
   }
 
   return (
-    <Card aria-labelledby="product-media-heading" ref={panelRef} role="region">
-      <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
-        <div
-          className="grid gap-0.5 outline-none"
-          ref={headingRef}
+    <div className="grid gap-4" ref={panelRef}>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      {notice ? (
+        <Alert>
+          <CircleCheckIcon aria-hidden="true" />
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {replacementPending ? (
+        <Alert variant="warning">
+          <AlertDescription className="grid justify-items-start gap-3">
+            {replacementPendingText}
+            <Button
+              disabled={isUploading}
+              onClick={handleAbandonReplacement}
+              type="button"
+              variant="outline"
+            >
+              Desistir da substituição
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <form className="grid gap-4" onSubmit={handleUpload}>
+        <Field>
+          <FieldLabel htmlFor="product-media-file">Escolher imagem</FieldLabel>
+          <InputGroup>
+            <InputGroupInput
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+              className="cursor-pointer file:me-3 file:cursor-pointer file:border-0 file:bg-transparent file:p-0 file:font-medium file:text-sm"
+              disabled={isPreparing || imagesBusy}
+              id="product-media-file"
+              onChange={handleFileChange}
+              ref={fileInputRef}
+              type="file"
+            />
+          </InputGroup>
+          <FieldDescription>
+            JPEG, PNG e WebP; HEIC do iPhone é convertido neste aparelho. Até 20
+            MB.
+          </FieldDescription>
+        </Field>
+
+        {isPreparing ? (
+          <p className="text-muted-foreground text-support" role="status">
+            Preparando a imagem para recorte…
+          </p>
+        ) : null}
+
+        {previewUrl ? (
+          <ProductMediaCropField
+            adjusting={adjusting}
+            announcement={cropAnnouncement}
+            crop={crop}
+            dimensions={previewDimensions}
+            disabled={isUploading}
+            onKeyDown={handleCropPreviewKeyDown}
+            onPointerCancel={handleCropPointerCancel}
+            onPointerDown={handleCropPointerDown}
+            onPointerMove={handleCropPointerMove}
+            onPointerUp={handleCropPointerUp}
+            onToggleAdjusting={handleToggleAdjusting}
+            onUseFullImage={handleUseFullImage}
+            previewUrl={previewUrl}
+          />
+        ) : null}
+
+        {availableVariants.length > 0 ? (
+          <FieldSet>
+            <div className="grid gap-0.5">
+              <FieldLegend className="mb-0" variant="label">
+                Associar também às variantes
+              </FieldLegend>
+              <FieldDescription>
+                A imagem continua no produto e também aparece nas variantes
+                marcadas.
+              </FieldDescription>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {availableVariants.map((variant) => (
+                <VariantOption
+                  checked={selectedVariantIds.includes(variant.id)}
+                  disabled={isUploading}
+                  key={variant.id}
+                  label={variantLabel(variant)}
+                  onToggle={handleVariantToggle}
+                  variantId={variant.id}
+                />
+              ))}
+            </div>
+          </FieldSet>
+        ) : null}
+        {availableVariants.length === 0 && variants?.configured === false ? (
+          <p className="text-muted-foreground text-support">
+            Configure as variantes do produto para associar imagens a
+            combinações específicas.
+          </p>
+        ) : null}
+
+        <div className="flex min-[30rem]:justify-end">
+          <Button
+            className="max-[29.99rem]:w-full"
+            disabled={!preparedFile || isPreparing || imagesBusy}
+            type="submit"
+          >
+            {uploadButtonLabel}
+          </Button>
+        </div>
+      </form>
+
+      <section
+        aria-labelledby="product-media-list-heading"
+        className="grid gap-3 border-border border-t pt-4"
+      >
+        <h3
+          className="text-section outline-none"
+          id="product-media-list-heading"
+          ref={listHeadingRef}
           tabIndex={-1}
         >
-          <CardTitle
-            aria-level={2}
-            className="[overflow-wrap:anywhere]"
-            id="product-media-heading"
-            role="heading"
-          >
-            {product.name}
-          </CardTitle>
-          <CardDescription>Imagens</CardDescription>
-        </div>
-        <Button onClick={onClose} size="sm" type="button" variant="ghost">
-          Fechar
-        </Button>
-      </CardHeader>
-
-      <CardContent className="grid gap-4">
-        {error ? (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-        {notice ? (
-          <Alert>
-            <CircleCheckIcon aria-hidden="true" />
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {replacementPending ? (
-          <Alert variant="warning">
-            <AlertDescription className="grid justify-items-start gap-3">
-              {replacementPendingText}
-              <Button
-                disabled={isUploading}
-                onClick={handleAbandonReplacement}
-                type="button"
-                variant="outline"
-              >
-                Desistir da substituição
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <form className="grid gap-4" onSubmit={handleUpload}>
-          <Field>
-            <FieldLabel htmlFor="product-media-file">
-              Escolher imagem
-            </FieldLabel>
-            <InputGroup>
-              <InputGroupInput
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-                className="cursor-pointer file:me-3 file:cursor-pointer file:border-0 file:bg-transparent file:p-0 file:font-medium file:text-sm"
-                disabled={isPreparing || imagesBusy}
-                id="product-media-file"
-                onChange={handleFileChange}
-                ref={fileInputRef}
-                type="file"
-              />
-            </InputGroup>
-            <FieldDescription>
-              JPEG, PNG e WebP; HEIC do iPhone é convertido neste aparelho. Até
-              20 MB.
-            </FieldDescription>
-          </Field>
-
-          {isPreparing ? (
-            <p className="text-muted-foreground text-support" role="status">
-              Preparando a imagem para recorte…
-            </p>
-          ) : null}
-
-          {previewUrl ? (
-            <ProductMediaCropField
-              adjusting={adjusting}
-              announcement={cropAnnouncement}
-              crop={crop}
-              dimensions={previewDimensions}
-              disabled={isUploading}
-              onKeyDown={handleCropPreviewKeyDown}
-              onPointerCancel={handleCropPointerCancel}
-              onPointerDown={handleCropPointerDown}
-              onPointerMove={handleCropPointerMove}
-              onPointerUp={handleCropPointerUp}
-              onToggleAdjusting={handleToggleAdjusting}
-              onUseFullImage={handleUseFullImage}
-              previewUrl={previewUrl}
-            />
-          ) : null}
-
-          {availableVariants.length > 0 ? (
-            <FieldSet>
-              <div className="grid gap-0.5">
-                <FieldLegend className="mb-0" variant="label">
-                  Associar também às variantes
-                </FieldLegend>
-                <FieldDescription>
-                  A imagem continua no produto e também aparece nas variantes
-                  marcadas.
-                </FieldDescription>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                {availableVariants.map((variant) => (
-                  <VariantOption
-                    checked={selectedVariantIds.includes(variant.id)}
-                    disabled={isUploading}
-                    key={variant.id}
-                    label={variantLabel(variant)}
-                    onToggle={handleVariantToggle}
-                    variantId={variant.id}
-                  />
-                ))}
-              </div>
-            </FieldSet>
-          ) : null}
-          {availableVariants.length === 0 && variants?.configured === false ? (
-            <p className="text-muted-foreground text-support">
-              Configure as variantes do produto para associar imagens a
-              combinações específicas.
-            </p>
-          ) : null}
-
-          <div className="flex min-[30rem]:justify-end">
-            <Button
-              className="max-[29.99rem]:w-full"
-              disabled={!preparedFile || isPreparing || imagesBusy}
-              type="submit"
-            >
-              {uploadButtonLabel}
-            </Button>
-          </div>
-        </form>
-
-        <section
-          aria-labelledby="product-media-list-heading"
-          className="grid gap-3 border-border border-t pt-4"
-        >
-          <h3
-            className="text-section outline-none"
-            id="product-media-list-heading"
-            ref={listHeadingRef}
-            tabIndex={-1}
-          >
-            Imagens associadas
-          </h3>
-          {list}
-        </section>
-      </CardContent>
-    </Card>
+          Imagens associadas
+        </h3>
+        {list}
+      </section>
+    </div>
   );
 }
