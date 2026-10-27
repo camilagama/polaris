@@ -40,6 +40,7 @@ import { createBillingStore } from "@polaris/db/billing-store";
 import { renewalBlocksPurge } from "@polaris/domain/billing/renewal-cancellation";
 import {
   listOrganizations,
+  readActivationFunnel,
   readOrganizationDiagnostics,
 } from "@polaris/db/admin-diagnostics-repository";
 import {
@@ -139,6 +140,12 @@ const dependencies: AdminDependencies = {
     read: (principalId, request, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         readAuthAccessLog(client, principalId, request)
+      ),
+  },
+  activationFunnel: {
+    read: (principalId, weeks, bindings) =>
+      withAdminDatabase(connectionOf(bindings), (client) =>
+        readActivationFunnel(client, principalId, weeks)
       ),
   },
   authenticate: async (token, bindings) => {

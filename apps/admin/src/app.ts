@@ -18,6 +18,10 @@ import { defaultCacheControl, securityHeaders } from "@polaris/http-security";
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
 import {
+  type ActivationFunnelDependencies,
+  activationFunnelRoutes,
+} from "./activation-funnel-routes";
+import {
   type AccessLogDependencies,
   accessLogRoutes,
 } from "./access-log-routes";
@@ -69,6 +73,8 @@ export interface AdminDependencies {
   };
   /** The record of access to the application, read for a court order (ADR 0092). */
   accessLog: AccessLogDependencies;
+  /** The activation funnel of the stores, aggregate and audited (corte 2.4, ADR 0071 amended). */
+  activationFunnel: ActivationFunnelDependencies;
   /** Operational incidents (dead letters, outbox events past the attempt cap) and the retry of a dead event (ADR 0085). */
   incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
@@ -293,6 +299,14 @@ export function createAdminApp(dependencies: AdminDependencies) {
         return context.json({ error: "plan_catalog_incomplete" }, 503);
       }
     }
+  );
+  api.route(
+    "/",
+    activationFunnelRoutes(
+      dependencies.activationFunnel,
+      requireCapability,
+      dependencies.report
+    )
   );
   api.route(
     "/",

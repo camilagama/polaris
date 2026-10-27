@@ -12,6 +12,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -413,12 +414,14 @@ test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lis
   });
   await page.getByRole("button", { name: "Novo perfil" }).click();
   await page.getByLabel("Nome do perfil").fill("Maquininha da loja");
-  await page.getByRole("button", { name: "Criar perfil" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Criar perfil" })
+  );
   const notice = page.getByText("Perfil “Maquininha da loja” criado.");
   await expect(notice).toBeVisible();
-  await expect(
-    notice.locator("xpath=ancestor::div[@tabindex='-1']")
-  ).toBeFocused();
+  // the region of the notice takes the focus, and the keyboard sees it (t439)
+  await expectFocusRing(notice.locator("xpath=ancestor::div[@tabindex='-1']"));
   await expect(page.getByText("Maquininha da loja").last()).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the next one starts empty

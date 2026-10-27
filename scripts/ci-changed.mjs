@@ -71,8 +71,12 @@ const E2E_RELEVANT = [
   /^scripts\/(ci-changed|e2e-flaky-report)\.mjs$/,
 ];
 
-/** Files that can change which dependencies are installed. */
+/**
+ * Files that can change which dependencies are installed, or the audit that checks them (the `--ignore` list lives
+ * in ci.yml: a change to it must run the audit, or the exceptions never get exercised).
+ */
 const DEPENDENCY_FILES = [
+  /^\.github\/workflows\/ci\.yml$/,
   /(^|\/)package\.json$/,
   /^bun\.lock$/,
   /^bunfig\.toml$/,

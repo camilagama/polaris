@@ -276,10 +276,14 @@ describe("which CI jobs a change affects", () => {
       "apps/web/package.json",
       "packages/db/package.json",
       ".bun-version",
+      ".github/workflows/ci.yml",
     ]) {
       expect(classifyChanges([file]).dependencies).toBe(true);
     }
     expect(classifyChanges(["apps/web/src/x.ts"]).dependencies).toBe(false);
+    expect(
+      classifyChanges([".github/workflows/e2e-real.yml"]).dependencies
+    ).toBe(false);
   });
 
   it("treats a lockfile change as relevant to the browser gate even next to database changes", () => {

@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -427,14 +428,14 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   expect(state.revokeBodies).toHaveLength(0);
   expect(state.devices).toHaveLength(2);
 
-  await confirmButton(page).click();
+  await activateByKeyboard(page, confirmButton(page));
   await expect(
     page.getByText("Aparelho revogado. 1 permissão de uso offline cancelada.")
   ).toBeVisible();
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
-  // the confirmation is gone: the focus stays on the page, not on the body
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
+  // the confirmation is gone: the focus stays on the page, not on the body, and the keyboard sees where it is (t439)
+  await expectFocusRing(page.getByRole("heading", { name: "Aparelhos" }));
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
