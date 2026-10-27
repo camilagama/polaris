@@ -88,4 +88,34 @@ describe("the CSV of the rows that failed", () => {
     expect(csv).not.toContain("\n=cmd");
     expect(csv).not.toContain(",=cmd");
   });
+
+  it("lists the rows the preview found in the store and the rows of the run with no answer", () => {
+    const result = preview("Nome\nBoné\nMeia\nLuva\n");
+    const run = createImportRun(result.ready.slice(1), newId);
+    const [meia] = run.rows;
+    if (!meia) {
+      throw new Error("expected a row");
+    }
+    run.results.set(meia.rowNumber, {
+      productId: meia.productId,
+      rowNumber: meia.rowNumber,
+      status: "created",
+    });
+
+    const rows = failedImportRows({
+      duplicates: [],
+      existing: result.ready.slice(0, 1),
+      refused: [],
+      run,
+      sources: new Map(result.ready.map((row) => [row.rowNumber, row.source])),
+    });
+
+    expect(rows.map((row) => [row.rowNumber, row.reason])).toEqual([
+      [2, "Já existe um produto com este nome."],
+      [
+        4,
+        "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.",
+      ],
+    ]);
+  });
 });

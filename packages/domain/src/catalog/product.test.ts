@@ -83,9 +83,18 @@ describe("product text limits", () => {
 });
 
 describe("forbidden characters in product text", () => {
-  // U+0000 (PostgreSQL refuses it in text) and the controls that turn the direction of the text
+  // the control characters but the tab and the line breaks (U+0000 PostgreSQL refuses in text) and the
+  // controls that turn the direction of the text
   const forbidden = [
     "\u0000",
+    "\u0001",
+    "\u0008",
+    "\u000B",
+    "\u000C",
+    "\u000E",
+    "\u001B",
+    "\u001F",
+    "\u007F",
     "\u202A",
     "\u202B",
     "\u202C",
@@ -105,6 +114,15 @@ describe("forbidden characters in product text", () => {
       ProductDescriptionError
     );
   });
+
+  it.each(["\t", "\n", "\r"])(
+    "refuses %j inside a name, which is one line",
+    (char) => {
+      expect(() => normalizeProductName(`Bolsa${char}azul`)).toThrow(
+        ProductNameError
+      );
+    }
+  );
 
   it("keeps the neighbours of the forbidden ranges and the text as it came", () => {
     expect(normalizeProductName("Bolsa \u202F \u2029 \u2065 \u2070 x")).toBe(

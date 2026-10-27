@@ -140,10 +140,11 @@ describe("cutting the text into records", () => {
     ).toBe("ok");
   });
 
-  it("keeps a cell just past the longest field, so it is refused by its length and not cut", () => {
+  // never cut: a cut cell could lose the text after leading spaces; the 1 MB of the file bounds the memory
+  it("keeps a long cell whole, so it is refused by its length and not cut", () => {
     const parsed = parseCsv(`Nome;Descrição\nA;"${"d".repeat(900_000)}"\n`);
     expect(parsed.kind === "ok" && parsed.records[0]?.cells[1]?.length).toBe(
-      5001
+      900_000
     );
   });
 

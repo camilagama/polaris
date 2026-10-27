@@ -278,16 +278,20 @@ export class ProductDescriptionError extends Error {
 }
 
 /**
- * Characters no product text may hold: U+0000, which PostgreSQL refuses in text (the write would fail as a fault,
- * not as a refusal), and the controls that turn the direction of the text (U+202A to U+202E, U+2066 to U+2069),
+ * Characters no product text may hold: the controls of U+0000 to U+001F and U+007F (U+0000 PostgreSQL refuses in
+ * text, so the write would fail as a fault, not as a refusal), except the tab and the line breaks, which a
+ * description keeps; and the controls that turn the direction of the text (U+202A to U+202E, U+2066 to U+2069),
  * which make a name read differently on the list, the sale and the catalog than it was typed.
  */
-const NULL_CHARACTER = "\u0000";
-const DIRECTION_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
+const FORBIDDEN_PRODUCT_TEXT =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing the control characters is the point
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/u;
+/** A name is one line: a tab or a line break inside it is refused, never joined. */
+const NAME_LINE_BREAKS = /[\t\n\r]/;
 
-/** Whether a text holds a character no product text may hold (U+0000 or a control of the direction). */
+/** Whether a text holds a character no product text may hold (a control character or a control of the direction). */
 export function hasForbiddenProductText(text: string): boolean {
-  return text.includes(NULL_CHARACTER) || DIRECTION_CONTROLS.test(text);
+  return FORBIDDEN_PRODUCT_TEXT.test(text);
 }
 
 export function normalizeProductName(name: string): string {
@@ -295,7 +299,8 @@ export function normalizeProductName(name: string): string {
   if (
     !normalized ||
     normalized.length > MAX_PRODUCT_NAME_LENGTH ||
-    hasForbiddenProductText(normalized)
+    hasForbiddenProductText(normalized) ||
+    NAME_LINE_BREAKS.test(normalized)
   ) {
     throw new ProductNameError();
   }

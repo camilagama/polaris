@@ -10,6 +10,7 @@ import {
   type ImportRun,
   type ImportSendDependencies,
   runImport,
+  skipStuckRow,
   summarizeImport,
 } from "./product-import-send";
 
@@ -214,13 +215,76 @@ describe("runImport", () => {
     online = true;
     const resumedAt = sent.length;
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
-    // the first slice sent on continuing is the one that was cut, with the same IDs
-    expect(sent[resumedAt]).toEqual(sent[1]);
+    // continuing sends the rows of the slice that was cut one at a time, with the same IDs, then slices again
+    expect(sent.slice(resumedAt, resumedAt + 10)).toEqual(
+      (sent[1] ?? []).map((row) => [row])
+    );
+    expect(sent[resumedAt + 10]).toHaveLength(10);
     expect(
       [...run.results.values()].slice(10, 20).map((result) => result.status)
     ).toEqual(Array.from({ length: 10 }, () => "repeated"));
     expect(stored.size).toBe(40);
     expect(summarizeImport(run)).toMatchObject({ entered: 40, pending: 0 });
+  });
+
+  it("never sends again right away on Retry-After: 0, and never waits past two minutes", async () => {
+    const retryAfter = [0, 3_600_000];
+    let calls = 0;
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      return calls <= 2
+        ? Promise.reject(rpcError("TOO_MANY_REQUESTS"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(2, send, {
+      retryAfterMs: () => retryAfter.shift() ?? null,
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    expect(time.waits).toEqual([1000, 120_000]);
+  });
+
+  it("takes an answer without every row sent as no answer: nothing moves", async () => {
+    const send = vi.fn((input: SendInput) =>
+      Promise.resolve({ results: created(input.rows.slice(1)) })
+    );
+    const { dependencies, run } = setup(3, send);
+
+    const stop = await runImport(run, dependencies);
+    expect(stop.kind).toBe("interrupted");
+    expect(run.nextIndex).toBe(0);
+    expect(run.results.size).toBe(0);
+  });
+
+  it("finds a row that keeps failing alone, and goes on past it once it is left out", async () => {
+    const sent: number[][] = [];
+    const stuck = 5;
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.map((row) => row.rowNumber));
+      return input.rows.some((row) => row.rowNumber === stuck)
+        ? Promise.reject(rpcError("INTERNAL_SERVER_ERROR"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run } = setup(12, send);
+
+    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
+    expect(run.nextIndex).toBe(0);
+    sent.length = 0;
+    // again: one row at a time over the slice that stopped, so the rows before the stuck one enter
+    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
+    expect(sent.slice(0, 3)).toEqual([[2], [3], [4]]);
+    expect(run.nextIndex).toBe(3);
+
+    skipStuckRow(run);
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    expect(summarizeImport(run)).toEqual({
+      entered: 11,
+      existing: 0,
+      failed: 1,
+      limitReached: 0,
+      pending: 0,
+    });
+    expect(run.skipped).toEqual(new Set([stuck]));
   });
 
   it("stops at the plan's limit, sends nothing more and says why the rest did not enter", async () => {

@@ -17,14 +17,18 @@ import type { ImportReadyRow } from "./product-import-rows";
  *
  * A 429 pauses for the time the server asked (`Retry-After`) and sends the same slice once after it, never right
  * away. A failure that may have taken effect (no answer, a fault of the server) is tried again a few times and then
- * stops the run where it was: `runImport` again continues from that slice. The plan's refusal stops it for good and
- * says so, for the screen's notice of the limit (corte 1.6).
+ * stops the run where it was: `runImport` again continues from that slice, one row at a time, so a row that keeps
+ * failing is found alone and `skipStuckRow` can leave it out without holding back the rows after it. The plan's
+ * refusal stops it for good and says so, for the screen's notice of the limit (corte 1.6).
  */
 
 /** At most one slice every 6 s: 10 calls per minute, below the 12 of the bucket. */
 export const IMPORT_SLICE_INTERVAL_MS = 6000;
 /** The wait after a 429 whose `Retry-After` did not come through. */
 const RATE_LIMITED_FALLBACK_MS = 60_000;
+/** The bounds of the wait after a 429: never right away, never longer than the window of the bucket twice. */
+const RATE_LIMITED_MIN_MS = 1000;
+const RATE_LIMITED_MAX_MS = 120_000;
 /** The 429s in a row before the run stops (another tab is importing too). */
 const MAX_RATE_LIMITED_IN_A_ROW = 3;
 /** The waits before sending again a slice whose answer did not come. */
@@ -34,8 +38,12 @@ export interface ImportRun {
   readonly importId: string;
   /** The index of the first row not answered yet: where a stopped run continues. */
   nextIndex: number;
+  /** Up to this index the rows go one at a time: the slice there stopped without an answer. */
+  oneByOneUntil: number;
   readonly results: Map<number, ProductImportRowResult>;
   readonly rows: readonly ProductImportRowInput[];
+  /** The rows left out by `skipStuckRow`: they never had an answer, so they may or may not have entered. */
+  readonly skipped: Set<number>;
 }
 
 /** A new import of the ready rows, with every ID named now, once. */
@@ -46,6 +54,7 @@ export function createImportRun(
   return {
     importId: newId(),
     nextIndex: 0,
+    oneByOneUntil: 0,
     results: new Map(),
     rows: rows.map((row) => ({
       categoryId: row.categoryId,
@@ -59,7 +68,20 @@ export function createImportRun(
       rowNumber: row.rowNumber,
       variantId: newId(),
     })),
+    skipped: new Set(),
   };
+}
+
+/**
+ * Leaves out the row where a stopped run is, so the rows after it go on: for a row that, sent alone, kept stopping
+ * the run without an answer. It is never answered, so it goes to the file of the rows that failed.
+ */
+export function skipStuckRow(run: ImportRun): void {
+  const row = run.rows[run.nextIndex];
+  if (row !== undefined) {
+    run.skipped.add(row.rowNumber);
+    run.nextIndex += 1;
+  }
 }
 
 export type ImportStop =
@@ -154,7 +176,13 @@ async function sendSlice(
         }
         // the refused call ran nothing: the same slice goes again, only after the time the server asked
         await wait(
-          dependencies.retryAfterMs() ?? RATE_LIMITED_FALLBACK_MS,
+          Math.min(
+            Math.max(
+              dependencies.retryAfterMs() ?? RATE_LIMITED_FALLBACK_MS,
+              RATE_LIMITED_MIN_MS
+            ),
+            RATE_LIMITED_MAX_MS
+          ),
           dependencies.signal
         );
         continue;
@@ -185,6 +213,25 @@ function markLimitReached(run: ImportRun): void {
   run.nextIndex = run.rows.length;
 }
 
+/** Keeps the answer of each row of the slice; false, keeping nothing, when a row sent has no answer. */
+function recordAnswer(
+  run: ImportRun,
+  rows: readonly ProductImportRowInput[],
+  results: readonly ProductImportRowResult[]
+): boolean {
+  const answered = new Map(results.map((result) => [result.rowNumber, result]));
+  const ordered = rows.map((row) => answered.get(row.rowNumber));
+  if (ordered.some((result) => result === undefined)) {
+    return false;
+  }
+  for (const result of ordered) {
+    if (result) {
+      run.results.set(result.rowNumber, result);
+    }
+  }
+  return true;
+}
+
 /** Sends the rows of the run from where it stopped, a slice at a time, until every row has its answer or it stops. */
 export async function runImport(
   run: ImportRun,
@@ -205,14 +252,23 @@ export async function runImport(
         await wait(IMPORT_SLICE_INTERVAL_MS - elapsed, dependencies.signal);
       }
     }
-    const rows = run.rows.slice(run.nextIndex, run.nextIndex + sliceSize);
+    const size = run.nextIndex < run.oneByOneUntil ? 1 : sliceSize;
+    const rows = run.rows.slice(run.nextIndex, run.nextIndex + size);
     lastSentAt = now();
     const outcome = await sendSlice(run, rows, dependencies, wait);
+    if (outcome.kind === "interrupted" && rows.length > 1) {
+      // the next run finds the row that stops the slice, if it is one, by sending them one at a time
+      run.oneByOneUntil = run.nextIndex + rows.length;
+    }
     if (outcome.kind !== "answered") {
       return outcome;
     }
-    for (const result of outcome.results) {
-      run.results.set(result.rowNumber, result);
+    if (!recordAnswer(run, rows, outcome.results)) {
+      // an answer without every row sent is not an answer: nothing moves, and the same slice goes again
+      return {
+        error: new Error("incomplete_import_answer"),
+        kind: "interrupted",
+      };
     }
     run.nextIndex += rows.length;
     dependencies.onProgress?.(run);
@@ -229,7 +285,7 @@ export interface ImportSummary {
   entered: number;
   /** Skipped: a product of the same name was already there. */
   existing: number;
-  /** Refused by the server, with the field (`invalid`) or as a repeat with other data (`conflict`). */
+  /** Refused by the server, with the field (`invalid`) or as a repeat with other data (`conflict`), or left out. */
   failed: number;
   limitReached: number;
   /** Not answered yet: what a stopped run still has to send. */
@@ -245,6 +301,10 @@ export function summarizeImport(run: ImportRun): ImportSummary {
     pending: 0,
   };
   for (const row of run.rows) {
+    if (run.skipped.has(row.rowNumber)) {
+      summary.failed += 1;
+      continue;
+    }
     switch (run.results.get(row.rowNumber)?.status) {
       case "created":
       case "repeated":

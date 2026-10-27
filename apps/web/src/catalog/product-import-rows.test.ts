@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   AMBIGUOUS_VALUE,
   DESCRIPTION_TOO_LONG,
+  EXTRA_CELLS,
   FORBIDDEN_CHARACTER,
   IMPORT_FILE_PROBLEM_MESSAGES,
   type ImportPreview,
+  NAME_LINE_BREAK,
   NAME_TOO_LONG,
   previewImport,
   splitExisting,
@@ -136,6 +138,21 @@ describe("AC-1: the same rules as the form of a new product", () => {
     }
   );
 
+  it("refuses a name in several lines, a control character and more cells than the header", () => {
+    const result = preview(
+      'Nome;Descrição\n"Bolsa\nazul";x\nBo\u0001né;x\nMeia;linha 1\tfim\nLuva;x;sobra\n'
+    );
+    expect(result.refused.map((row) => [row.rowNumber, row.errors])).toEqual([
+      [2, [{ column: "name", message: NAME_LINE_BREAK }]],
+      [3, [{ column: "name", message: FORBIDDEN_CHARACTER }]],
+      [5, [{ column: null, message: EXTRA_CELLS }]],
+    ]);
+    // a tab inside a description is text, as in the form
+    expect(result.ready.map((row) => row.description)).toEqual([
+      "linha 1\tfim",
+    ]);
+  });
+
   it("refuses a value longer than product.create takes, without reading it", () => {
     const result = preview(`${HEADER}\nA;${"1".repeat(65)};;\n`);
     expect(result.refused[0]?.errors).toEqual([
@@ -173,8 +190,10 @@ describe("AC-2: values as a spreadsheet in Brazil writes them", () => {
       listPrice: AMBIGUOUS_VALUE,
     });
     expect(
-      importOne({ listPrice: "1.234", quantity: "2", unitCost: "0.500" }).errors
+      importOne({ listPrice: "1.234", quantity: "2", unitCost: "2.500" }).errors
     ).toEqual({ listPrice: AMBIGUOUS_VALUE, unitCost: AMBIGUOUS_VALUE });
+    // a group of thousands never starts with 0: "0.500" is half a real
+    expect(spreadsheetDecimal("0.500")).toEqual({ kind: "ok", text: "0.500" });
   });
 
   it("reads a file saved by Excel in Portuguese: Windows-1252, ; and CRLF", () => {

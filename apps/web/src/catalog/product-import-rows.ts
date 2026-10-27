@@ -171,8 +171,9 @@ export const IMPORT_FILE_PROBLEM_MESSAGES: Record<ImportFileProblem, string> = {
 export const NAME_TOO_LONG = `O nome pode ter até ${MAX_PRODUCT_NAME_LENGTH} caracteres.`;
 export const DESCRIPTION_TOO_LONG = `A descrição pode ter até ${MAX_PRODUCT_DESCRIPTION_LENGTH} caracteres.`;
 export const FORBIDDEN_CHARACTER =
-  "Tem um caractere que não pode ser usado (o nulo ou um que inverte o texto).";
-export const NAME_LINE_BREAK = "O nome não pode ter quebra de linha nem tabulação.";
+  "Tem um caractere que não pode ser usado (de controle ou que inverte o texto).";
+export const NAME_LINE_BREAK =
+  "O nome não pode ter quebra de linha nem tabulação.";
 export const EXTRA_CELLS =
   "A linha tem mais colunas que o cabeçalho. Confira se um valor com vírgula está entre aspas.";
 export const AMBIGUOUS_VALUE =

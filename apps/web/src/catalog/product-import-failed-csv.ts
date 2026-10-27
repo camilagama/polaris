@@ -46,6 +46,10 @@ const STATUS_MESSAGES: Partial<Record<ProductImportRowStatus, string>> = {
   exists_by_name: "Já existe um produto com este nome.",
   limit_reached: "O plano chegou ao limite de variantes.",
 };
+/** A row of the run with no answer: the run stopped before it, or it was left out after stopping it. */
+const NOT_ANSWERED =
+  "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.";
+const EXISTING = STATUS_MESSAGES.exists_by_name ?? "";
 
 /** What a row that did not enter says in the column "Motivo". */
 function importResultMessage(result: ProductImportRowResult): string | null {
@@ -64,6 +68,8 @@ interface FailedRow {
 /** The rows of a file that did not enter: refused in the preview, repeated in the file, or refused by the server. */
 export function failedImportRows(input: {
   duplicates: readonly ImportDuplicateRow[];
+  /** The rows the preview left out because the store has a product of that name (`splitExisting`). */
+  existing?: readonly { rowNumber: number }[];
   refused: readonly ImportRefusedRow[];
   run: ImportRun | null;
   /** The cells of each row the run sent, by its row number. */
@@ -87,11 +93,20 @@ export function failedImportRows(input: {
       source: row.source,
     })),
   ];
-  for (const result of input.run?.results.values() ?? []) {
-    const reason = importResultMessage(result);
-    const source = input.sources.get(result.rowNumber);
-    if (reason !== null && source !== undefined) {
-      failed.push({ reason, rowNumber: result.rowNumber, source });
+  const withSource = (rowNumber: number, reason: string) => {
+    const source = input.sources.get(rowNumber);
+    if (source !== undefined) {
+      failed.push({ reason, rowNumber, source });
+    }
+  };
+  for (const row of input.existing ?? []) {
+    withSource(row.rowNumber, EXISTING);
+  }
+  for (const row of input.run?.rows ?? []) {
+    const result = input.run?.results.get(row.rowNumber);
+    const reason = result ? importResultMessage(result) : NOT_ANSWERED;
+    if (reason !== null) {
+      withSource(row.rowNumber, reason);
     }
   }
   return failed.sort((a, b) => a.rowNumber - b.rowNumber);
