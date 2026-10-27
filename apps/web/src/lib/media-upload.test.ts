@@ -159,8 +159,41 @@ describe("prepareMediaUploadFile", () => {
       )
     ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
       code: "unsupported_media_image",
+      limit: null,
       status: 415,
     });
+  });
+
+  it("keeps the plan's limit the Worker names, to tell the store's from the product's (corte 1.6)", async () => {
+    for (const limit of ["images.active.max", "images.per_product.max"]) {
+      const fetcher = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: { code: "entitlement_limit_reached", limit },
+            }),
+            { headers: { "content-type": "application/json" }, status: 409 }
+          )
+      );
+      // biome-ignore lint/performance/noAwaitInLoops: one limit after the other
+      await expect(
+        uploadProductMedia(
+          {
+            crop: { height: 1, width: 1, x: 0, y: 0 },
+            file: new File(["image"], "product.jpg", { type: "image/jpeg" }),
+            organizationId: "org-1",
+            origin: "https://polaris.example.invalid",
+            productId: "0199c2d0-0000-7000-8000-000000000001",
+            uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
+          },
+          fetcher
+        )
+      ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
+        code: "entitlement_limit_reached",
+        limit,
+        status: 409,
+      });
+    }
   });
 });
 

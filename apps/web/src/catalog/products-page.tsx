@@ -10,8 +10,15 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import { keepForReturn, takeKept } from "../lib/kept-for-return";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import {
+  LimitHelp,
+  LimitLeaveScope,
+  useLimitHelp,
+} from "../subscription/limit-help";
+import { isLimitReached } from "../subscription/limit-help-model";
 import {
   createProduct,
   keepLocalRow,
@@ -22,12 +29,11 @@ import { ProductDialog, type ProductTab } from "./product-dialog";
 import {
   isCategoryUnavailable,
   isProductAlreadyCreated,
+  PRODUCT_LIMIT_REACHED,
   type ProductAction,
-  type ProductLimitHelp,
   productErrorMessage,
 } from "./product-errors";
 import { emptyDraft, type ProductDraft } from "./product-form";
-import { LimitHelp, useLimitHelp } from "./product-limit-help";
 import { ProductList, type ProductListStatus } from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
@@ -171,6 +177,33 @@ function isKeptFor(
   );
 }
 
+/**
+ * What the page kept when the app took the person to another screen with no load ("Conhecer o Pro"): the draft closed
+ * as by Esc, and the variants typed, back on "voltar" (corte 1.6, AC-7).
+ */
+interface ProductsReturn {
+  dialogProductId: string | null;
+  draft: ProductDraft;
+  keptKey: string | null;
+  names: NewProductIds | null;
+  variantsDraft: KeptVariants | null;
+}
+
+const returnKey = (organizationId: string) => `products:${organizationId}`;
+
+const NOTHING_KEPT: ProductsReturn = {
+  dialogProductId: null,
+  draft: emptyDraft,
+  keptKey: null,
+  names: null,
+  variantsDraft: null,
+};
+
+/** What the page keeps when it leaves the tree: only a draft kept by Esc, or variants typed. */
+function toKeep(state: ProductsReturn): ProductsReturn | null {
+  return state.keptKey === null && state.variantsDraft === null ? null : state;
+}
+
 /** A new product refused because of its category: the category takes the focus, not the alert. */
 function isCategoryRefusal(
   cause: unknown,
@@ -180,49 +213,59 @@ function isCategoryRefusal(
 }
 
 export function ProductsPage() {
-  const { billingSelfService, organization, organizationId } =
-    useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
   const [status, setStatus] = useState<ProductListStatus>("active");
   const { categories, isLoading, loadError, products, refresh, syncStates } =
     useProductsData(workspace, organizationId, status);
   const [query, setQuery] = useState("");
+  // what the page kept when it was left for another screen of the app, back once
+  const [returned] = useState(
+    () => takeKept<ProductsReturn>(returnKey(organizationId)) ?? NOTHING_KEPT
+  );
   // the product dialog: a new product (`null`) or one that exists, on one of its tabs
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogProductId, setDialogProductId] = useState<string | null>(null);
+  const [dialogProductId, setDialogProductId] = useState<string | null>(
+    returned.dialogProductId
+  );
   const [dialogTab, setDialogTab] = useState<ProductTab>("dados");
   // the draft kept when the dialog was closed by Esc, "Fechar" or the step back: "new", or the id of the product
-  const keptRef = useRef<string | null>(null);
+  const keptRef = useRef<string | null>(returned.keptKey);
   // where the focus goes back to when the dialog closes without a message to read: what opened it
   const originRef = useRef<() => HTMLElement | null>(() => null);
   // the tabs of the dialog with work not saved yet: a save of the data does not close the dialog over it
   const unsentTabsRef = useRef<ProductTab[]>([]);
   // the version a save that kept the dialog open answered with, until the list read again brings it
   const savedVersionRef = useRef<{ id: string; version: number } | null>(null);
-  const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
+  const [draft, setDraft] = useState<ProductDraft>(returned.draft);
   // the configuration of the variants typed in the dialog and not saved, kept like the data by Esc, × and the step back
   // (the dialog's popup leaves the page when it closes, and the form with it); "Cancelar" and its save drop it
-  const [variantsDraft, setVariantsDraft] = useState<KeptVariants | null>(null);
+  const [variantsDraft, setVariantsDraft] = useState<KeptVariants | null>(
+    returned.variantsDraft
+  );
   // counts the refusals of the chosen category: the form opens "Mais detalhes" and takes the focus to it
   const [categoryRefusal, setCategoryRefusal] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   // the product the last action archived: the notice offers to restore it
   const [undoProduct, setUndoProduct] = useState<ProductReadModel | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // what goes with the plan's limit refusal (stage 2 of the corte 61b); shown only while that error is shown
-  const [limitHelp, setLimitHelp] = useState<ProductLimitHelp>(null);
-  const showLimitHelp = useLimitHelp(setLimitHelp, {
-    billingSelfService,
-    organizationId,
-    role: organization.role,
-  });
+  // what goes with the plan's limit refusal (corte 61b, corte 1.6); shown only while that error is shown
+  const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
+  const showLimitHelpOn = useCallback(
+    (cause: unknown, action: "create" | "update") => {
+      if (action === "create" && isLimitReached(cause)) {
+        showLimitHelp("variants");
+      }
+    },
+    [showLimitHelp]
+  );
   // the product of the address could not be read: what to say and whether trying again can help
   const [linkFailure, setLinkFailure] = useState<ProductLinkFailure | null>(
     null
   );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   // the names of the product the open form creates: born with the first try, kept for its retries, dropped with the form
-  const newProductNames = useRef<NewProductIds | null>(null);
+  const newProductNames = useRef<NewProductIds | null>(returned.names);
   const rootRef = useRef<HTMLDivElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -372,7 +415,7 @@ export function ProductsPage() {
           newProductNames.current = null;
         }
         setError(productErrorMessage(cause, action));
-        showLimitHelp(cause, action);
+        showLimitHelpOn(cause, action);
         categoryRefused = isCategoryRefusal(cause, action);
         refresh();
       } finally {
@@ -383,7 +426,7 @@ export function ProductsPage() {
     [
       dialogProductId,
       draft,
-      showLimitHelp,
+      showLimitHelpOn,
       focusAfterSave,
       organization.timezone,
       organizationId,
@@ -601,6 +644,19 @@ export function ProductsPage() {
       dialogProduct ? draftOf(dialogProduct) : emptyDraft
     ) || isKeptFor(variantsDraft, products)
   );
+  // the page leaves the tree when the app opens another screen with no load: a kept draft waits for "voltar"
+  const toReturn = useRef<ProductsReturn | null>(null);
+  toReturn.current = toKeep({
+    dialogProductId,
+    draft,
+    keptKey: keptRef.current,
+    names: newProductNames.current,
+    variantsDraft,
+  });
+  useEffect(
+    () => () => keepForReturn(returnKey(organizationId), toReturn.current),
+    [organizationId]
+  );
   const visibleProducts = filterByName(products, query);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
@@ -610,6 +666,8 @@ export function ProductsPage() {
     listIsShown,
     handleRetryLink
   );
+  const shownLimitHelp =
+    feedbackError.message === PRODUCT_LIMIT_REACHED ? limitHelp : null;
   // the person is taken to the alert of the address when it appears (not before: the list's own may replace it)
   const linkAlertShown = feedbackError.fromLink;
   useEffect(() => {
@@ -630,9 +688,7 @@ export function ProductsPage() {
         {/* while the dialog is open it covers this part of the screen: what the actions say is said inside it */}
         <ActionFeedback
           error={dialogShown ? null : feedbackError.message}
-          errorExtra={
-            <LimitHelp error={feedbackError.message} help={limitHelp} />
-          }
+          errorExtra={<LimitHelp help={shownLimitHelp} />}
           notice={dialogShown ? null : notice}
           onRetryError={feedbackError.onRetry}
           onUndo={undoProduct ? handleUndoArchive : undefined}
@@ -641,35 +697,36 @@ export function ProductsPage() {
           undoReasonId={isOffline ? OFFLINE_NOTICE_ID : undefined}
         />
 
-        {/* the dialog of a product that exists opens once the product is in the list (an address can name it first) */}
-        <ProductDialog
-          categories={categories}
-          categoryRefusal={categoryRefusal}
-          draft={draft}
-          error={dialogShown ? feedbackError.message : null}
-          errorExtra={
-            <LimitHelp error={feedbackError.message} help={limitHelp} />
-          }
-          feedbackRef={feedbackRef}
-          finalFocus={finalFocus}
-          isOffline={isOffline}
-          isPending={pendingAction === "create" || pendingAction === "update"}
-          notice={dialogShown ? notice : null}
-          onCancel={handleCancelDialog}
-          onChange={handleDraftChange}
-          onClosed={handleDialogClosed}
-          onDismiss={handleDismissDialog}
-          onProductUpdated={handleVariantsUpdated}
-          onSubmit={handleSubmit}
-          onTabChange={setDialogTab}
-          onUnsentTabsChange={handleUnsentTabs}
-          onVariantsDraftChange={handleVariantsDraftChange}
-          open={dialogShown}
-          organizationId={organizationId}
-          product={dialogProduct}
-          tab={dialogTab}
-          variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
-        />
+        {/* the dialog of a product that exists opens once the product is in the list (an address can name it first);
+            "Conhecer o Pro" inside it closes it as Esc does, keeping the draft */}
+        <LimitLeaveScope value={handleDismissDialog}>
+          <ProductDialog
+            categories={categories}
+            categoryRefusal={categoryRefusal}
+            draft={draft}
+            error={dialogShown ? feedbackError.message : null}
+            errorExtra={<LimitHelp help={shownLimitHelp} />}
+            feedbackRef={feedbackRef}
+            finalFocus={finalFocus}
+            isOffline={isOffline}
+            isPending={pendingAction === "create" || pendingAction === "update"}
+            notice={dialogShown ? notice : null}
+            onCancel={handleCancelDialog}
+            onChange={handleDraftChange}
+            onClosed={handleDialogClosed}
+            onDismiss={handleDismissDialog}
+            onProductUpdated={handleVariantsUpdated}
+            onSubmit={handleSubmit}
+            onTabChange={setDialogTab}
+            onUnsentTabsChange={handleUnsentTabs}
+            onVariantsDraftChange={handleVariantsDraftChange}
+            open={dialogShown}
+            organizationId={organizationId}
+            product={dialogProduct}
+            tab={dialogTab}
+            variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
+          />
+        </LimitLeaveScope>
 
         <ProductSearch onChange={setQuery} value={query} />
         <StatusNav

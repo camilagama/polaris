@@ -9,6 +9,7 @@ import { ScreenTitle } from "../app-shell/screen-title";
 import { ScreenTabList } from "../app-shell/screen-tabs";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
 import { ActionNotice, LoadError } from "./expense-fields";
@@ -63,6 +64,13 @@ function expenseFormOrigin(next: ExpenseReadModel | "new") {
         document.querySelector<HTMLElement>(
           `[data-expense-id="${next.id}"] [data-expense-edit]`
         ) ?? document.querySelector<HTMLElement>("[data-expense-new]");
+}
+
+/** The focus fell to the page (what had it left the list): "Nova despesa" takes it. */
+function focusNewWhenLost() {
+  if (document.activeElement === document.body) {
+    document.querySelector<HTMLElement>("[data-expense-new]")?.focus();
+  }
 }
 
 /**
@@ -123,6 +131,9 @@ export function ExpensesPage() {
       }
       closeForm();
       await refresh();
+      // the dialog may have finished closing before the list was read again: the focus went back to the "Editar" of a
+      // row the save took out of the list (another month), and fell to the page with it
+      focusLater(focusNewWhenLost);
       if (outcome === "conflict") {
         await reloadCategories();
       }

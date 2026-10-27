@@ -3,6 +3,8 @@ import { MAX_GOAL_NAME_LENGTH } from "@polaris/domain/goals/goal";
 import {
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
   useState,
@@ -32,6 +34,7 @@ import { formatMonthLabel } from "../expenses/expense-model";
 import type { Feedback } from "../expenses/use-command-runner";
 import { focusLater } from "../lib/focus";
 import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { LimitLeaveScope } from "../subscription/limit-help";
 import { DateRangeField, describedBy, FieldTexts } from "../sales/sale-fields";
 import {
   GOAL_DRAFT_FIELDS,
@@ -169,6 +172,10 @@ interface GoalCreateFormProps {
   disabled: boolean;
   /** What the last command said while the form is open: the dialog covers the top of the screen. */
   feedback: Feedback | null;
+  /** Under the error: what goes with the plan's limit (corte 1.6, L5). */
+  feedbackExtra?: ReactNode | undefined;
+  /** The error takes the focus through it (the plan's limit). */
+  feedbackRef?: Ref<HTMLDivElement> | undefined;
   /** Where the focus goes when the form closes: what opened it. */
   finalFocus: () => HTMLElement | boolean;
   /** What was typed and kept when the form was closed by Esc or "Fechar". */
@@ -234,7 +241,10 @@ export function GoalCreateForm({
   return (
     <Dialog disablePointerDismissal onOpenChange={handleOpenChange} open={open}>
       <DialogContent finalFocus={finalFocus} layout="form">
-        <GoalCreateContent onCancel={onCancel} {...content} />
+        {/* "Conhecer o Pro" closes the form as Esc does, keeping the draft (corte 1.6, AC-7) */}
+        <LimitLeaveScope value={onDismiss}>
+          <GoalCreateContent onCancel={onCancel} {...content} />
+        </LimitLeaveScope>
       </DialogContent>
     </Dialog>
   );
@@ -243,6 +253,8 @@ export function GoalCreateForm({
 function GoalCreateContent({
   disabled,
   feedback,
+  feedbackExtra,
+  feedbackRef,
   keptDraft,
   month,
   onCancel,
@@ -319,7 +331,11 @@ function GoalCreateContent({
       <DialogBody className="md:grid-cols-2">
         {feedback ? (
           <div className="md:col-span-2">
-            <ActionNotice feedback={feedback} />
+            <ActionNotice
+              errorExtra={feedbackExtra}
+              errorRef={feedbackRef}
+              feedback={feedback}
+            />
           </div>
         ) : null}
         <GoalKindSelect

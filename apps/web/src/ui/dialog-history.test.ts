@@ -123,6 +123,26 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     expect(entryOf(history.state)).toBeNull();
   });
 
+  it("uma navegação depois do fechamento espera o passo atrás chegar, e o voltar seguinte volta à tela (corte 1.6, AC-7)", () => {
+    const { history, stack } = setUp([null, null]);
+    const dialog = openDialog(history, stack);
+    dialog.closeItself();
+    const ran: number[] = [];
+    // pushed now, the new address would be the entry the queued step takes
+    stack.afterSteps(() => {
+      ran.push(history.index);
+      history.pushState({ assinatura: true });
+    });
+    expect(ran).toEqual([]);
+    history.land();
+    expect(ran).toEqual([1]);
+    expect(history.state).toEqual({ assinatura: true });
+    expect(history.entries).toEqual([null, null, { assinatura: true }]);
+    // with no step on the way it runs at once
+    stack.afterSteps(() => ran.push(-1));
+    expect(ran).toEqual([1, -1]);
+  });
+
   it("Esc, ×, Cancelar e Salvar retiram a própria entrada: não sobra voltar morto", () => {
     const { history, stack } = setUp([null, null]);
     const dialog = openDialog(history, stack);
