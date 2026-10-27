@@ -6,7 +6,7 @@ import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
-import { Money } from "@polaris/domain/money/money";
+import { MAX_RATE_PERCENTAGE_POINTS, Money } from "@polaris/domain/money/money";
 import {
   CONFIRM_SALE_COMMAND_VERSION,
   MAX_FUTURE_CLOCK_SKEW_MS,
@@ -1260,7 +1260,33 @@ function resolveProfile(
   return { kind: "profile", profile };
 }
 
-function calculationIssue(error: unknown): Issue {
+const invalidAdjustmentMessage =
+  "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.";
+const nonZeroDigit = /[1-9]/;
+const percentageCapMessage = `O percentual vai até ${MAX_RATE_PERCENTAGE_POINTS}%.`;
+
+/** True when a percentage adjustment is above the domain cap on rates (100 points). */
+function hasPercentageAboveCap(
+  adjustments: SaleCommandBody["adjustments"]
+): boolean {
+  return adjustments.some((adjustment) => {
+    if (adjustment.value.type !== "percentage") {
+      return false;
+    }
+    const [whole = "0", fraction = ""] = adjustment.value.percentage.split(".");
+    const wholePoints = Number(whole);
+    return (
+      wholePoints > MAX_RATE_PERCENTAGE_POINTS ||
+      (wholePoints === MAX_RATE_PERCENTAGE_POINTS &&
+        nonZeroDigit.test(fraction))
+    );
+  });
+}
+
+function calculationIssue(
+  error: unknown,
+  adjustments: SaleCommandBody["adjustments"]
+): Issue {
   if (error instanceof SaleDiscountExceedsSubtotalError) {
     return {
       empty: false,
@@ -1280,8 +1306,9 @@ function calculationIssue(error: unknown): Issue {
     return {
       empty: false,
       key: formFieldKeys.adjustments,
-      message:
-        "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.",
+      message: hasPercentageAboveCap(adjustments)
+        ? percentageCapMessage
+        : invalidAdjustmentMessage,
     };
   }
   return {
@@ -1305,7 +1332,7 @@ function calculateTotals(
       })),
     });
   } catch (error) {
-    issues.push(calculationIssue(error));
+    issues.push(calculationIssue(error, adjustments));
     return null;
   }
 }
@@ -1820,8 +1847,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "invalid_sale_adjustment",
     {
-      message:
-        "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.",
+      message: invalidAdjustmentMessage,
     },
   ],
   [
@@ -1908,11 +1934,26 @@ export function isDefiniteRejection(error: unknown): boolean {
   return definiteFailure(rpcErrorCode(error)) !== null;
 }
 
+/** The server does not say why it refused an adjustment: the cap is known from what was sent. */
+function refusalMessage(
+  reason: string | null,
+  message: string,
+  sentAdjustments: SaleCommandBody["adjustments"]
+): string {
+  return reason === "invalid_sale_adjustment" &&
+    hasPercentageAboveCap(sentAdjustments)
+    ? percentageCapMessage
+    : message;
+}
+
 /**
  * Maps an oRPC error to a message and to what the page should do next. A known
  * `data.reason` on a 400/404/409 refines the generic per-code message.
  */
-export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
+export function mapSaleSubmitError(
+  error: unknown,
+  sentAdjustments: SaleCommandBody["adjustments"] = []
+): SaleSubmitFailure {
   // a definite refusal like any FORBIDDEN, so the items stay on the screen; the shell offers `/aceite`
   if (isLegalAcceptanceRefusal(error)) {
     return failure(
@@ -1932,7 +1973,8 @@ export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
     if (!(outcome && refinable)) {
       return { ...byCode, reason: refinable ? reason : null };
     }
-    return failure(byCode.kind, outcome.message, {
+    const message = refusalMessage(reason, outcome.message, sentAdjustments);
+    return failure(byCode.kind, message, {
       discardAttempt: outcome.discardAttempt ?? false,
       reason,
       refreshData: outcome.refreshData ?? false,
@@ -2265,8 +2307,11 @@ export function startSubmission(state: SubmissionState): SubmissionState {
 }
 
 /** Definite failures unlock editing; an unknown outcome locks the sale. */
-export function failSubmission(error: unknown): SubmissionState {
-  const mapped = mapSaleSubmitError(error);
+export function failSubmission(
+  error: unknown,
+  sentAdjustments?: SaleCommandBody["adjustments"]
+): SubmissionState {
+  const mapped = mapSaleSubmitError(error, sentAdjustments);
   return mapped.unknownOutcome
     ? { confirmingDiscard: false, failure: mapped, phase: "locked" }
     : { failure: mapped, phase: "failed" };

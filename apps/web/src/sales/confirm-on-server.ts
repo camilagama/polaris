@@ -19,7 +19,7 @@ export async function confirmOnServer(
       submission: confirmSubmission(sale),
     };
   } catch (error) {
-    const submission = failSubmission(error);
+    const submission = failSubmission(error, prepared.request.adjustments);
     return {
       attempt: attemptAfterFailure(submission, prepared.attempt),
       completed: false,
