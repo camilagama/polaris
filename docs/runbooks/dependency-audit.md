@@ -4,7 +4,7 @@ Procedimento e registro de exceções do job "Dependency audit" do CI, que roda 
 
 ## Gatilho
 
-- O job falhou no CI, ou alguém mudou `package.json`/`bun.lock`.
+- O job falhou no CI, ou alguém mudou `package.json`/`bun.lock` (o job também roda quando o próprio `.github/workflows/ci.yml` muda, para exercitar os `--ignore`).
 - Passou o prazo de revisão de uma exceção.
 
 ## Procedimento
@@ -40,11 +40,13 @@ O responsável pelo CI decide aceitar uma exceção que dure além do prazo (o `
 
 | Aviso | Pacote | Caminho | Runtime? | Por que não há correção | Revisar até |
 | --- | --- | --- | --- | --- | --- |
-| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) (high, DoS por esgotamento de pilha com padrões aninhados em excesso, afeta `<=3.0.3`) | `braces@3.0.3` | `ultracite > find-workspaces > fast-glob > micromatch > braces` | Não: só ferramenta de desenvolvimento (`ultracite`, usada por `bun run fix`) | A 3.0.3 é a última versão publicada de `braces`; não há versão corrigida para o `override` ou para `bun audit fix`. | 2026-11-18 |
+| [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm) (critical, estado do OAuth usado como Magic Link, afeta `>=1.4.0-beta.18 <1.7.7`; exige também um login social, e o Polaris tem o Google, por isso o Magic Link seria o caso perigoso) | `better-auth@1.6.23` | `apps/web` (direta) | Sim, mas o caminho exige o plugin Magic Link, que nenhum código de produção carrega | Nenhuma versão 1.6 corrige; a correção está na 1.7.7 ou mais nova, cuja subida exige migration na tabela `account` (tarefa própria). | 2026-11-10 |
+| [GHSA-r4xp-prcw-77qf](https://github.com/advisories/GHSA-r4xp-prcw-77qf) (high, OAuth Proxy, afeta `>=1.5.0-beta.12 <1.7.7`) | `better-auth@1.6.23` | `apps/web` (direta) | Sim, mas exige o plugin OAuth Proxy, que não é carregado | Idem (1.7.7 ou mais nova). | 2026-11-10 |
+| [GHSA-q84f-53jg-9ppm](https://github.com/advisories/GHSA-q84f-53jg-9ppm) (high, aprovação do login de dispositivo, afeta `>=1.3.8-beta.3 <1.7.0-rc.3`) | `better-auth@1.6.23` | `apps/web` (direta) | Sim, mas exige o plugin `deviceAuthorization()`, que não é carregado | Nenhuma versão 1.6 corrige; a correção está na 1.7.0 ou mais nova. | 2026-11-10 |
 
-Justificativa do risco: `braces` só expande os padrões de glob que o `ultracite` monta a partir de arquivos do próprio repositório, na máquina de quem desenvolve; não há entrada de rede ou de usuário, e o pacote não entra em nenhum Worker nem no navegador. O pior efeito é a ferramenta local travar.
+Justificativa dos três avisos do `better-auth` (parecer do Rodrigo, 27/10/2026): nenhum é explorável hoje, porque cada um exige um plugin que o Polaris não usa (Magic Link, OAuth Proxy, `deviceAuthorization`). O `bun audit` acusa pela versão do pacote, não pelo uso. O `better-auth` chega ao runtime, o que o passo 4 do procedimento não aceita como exceção; ela existe por decisão do Arrascaeta (t434), com o parecer do Rodrigo, só por causa do teste de guarda abaixo e do prazo curto. **Condição de validade: nenhum plugin do Better Auth em produção.** O teste `apps/web/src/server/auth/no-plugins-in-production.test.ts` falha se o `createBetterAuth` de produção receber qualquer plugin (o `testUtils` dos testes fica fora), se algum arquivo de produção importar `better-auth/plugins` ou `@better-auth/*` (em `auth.ts` só passa a linha que repassa a chave `plugins`) e se surgir um arquivo novo que construa a instância sem entrar na lista do teste; a mensagem avisa que o Magic Link por e-mail tornaria explorável o aviso crítico GHSA-965c. Quem propuser um plugin (por exemplo, entrar por link no e-mail) sobe antes o `better-auth` para a 1.7.7 ou mais nova, remove estas três exceções e pede revisão de segurança.
 
-Na revisão: rodar `bun pm view braces versions`; reavaliar também os overrides (tabela seguinte); se houver versão acima da 3.0.3, aplicar o passo 3 e remover a linha da tabela. Se o `ultracite` deixar de depender de `braces`, remover também.
+**Revisão em 2026-11-10 (mesmo que a 1.7.7 ainda não tenha saído), ou antes, quando a tarefa de subida do `better-auth` para a 1.7.x for mesclada** (ela remove as três linhas e os três `--ignore`). Na revisão, reavaliar também os overrides (tabela seguinte). A subida é maior que um bump: o 1.7 torna `issuer` obrigatório na tabela `account` e exige migration expand-only, ajuste do adaptador e revisão de RLS.
 
 ## Overrides vigentes
 
