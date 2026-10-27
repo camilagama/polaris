@@ -47,7 +47,14 @@ const JOURNAL_TAG = /^\d{4}_/;
 // CHECKs that mention event_type and do not list the allowed types (a pattern of characters, a limit, or a rule on a
 // subset of the list). Exact, each with its reason: any other CHECK of event_type that is not a list makes the reader
 // throw.
-const NOT_A_LIST: Readonly<Record<string, string>> = {};
+const NOT_A_LIST: Readonly<Record<string, string>> = {
+  "tenant_audit_event.tenant_audit_event_type_format":
+    "a pattern of characters and a length (the shape of the name), not the list of the allowed ones: the list is the CHECK tenant_audit_event_type_registered",
+  "queue_dead_letters.queue_dead_letters_event_type_format":
+    "a pattern of characters and a length on the type of a dead letter, which is an outbox type: the outbox list is read from the domain",
+  "platform_audit_events.platform_audit_events_actor_coherent":
+    "a rule that ties the actor to a subset of the types (which ones carry an actor), not the list of the allowed ones: the list is platform_audit_events_type_allowed",
+};
 
 function migrationsInJournalOrder(): Migration[] {
   const journal = JSON.parse(
@@ -79,7 +86,7 @@ function eventTypeChecksOf(
   return starts
     .map((start, position) => ({
       body: statement.slice(
-        (start.index ?? 0) + start[0].length - 1,
+        (start.index ?? 0) + start[0].length,
         starts[position + 1]?.index ?? statement.length
       ),
       constraint: start[1] ?? "",
@@ -94,15 +101,20 @@ function eventTypeChecksOf(
  * `NOT_A_LIST` throws, so a new way of writing it (`= ANY(ARRAY[...])`, `event_type = 'a' OR ...`, another case)
  * never passes unread.
  */
-function finalEventTypeChecks(
-  migrations: readonly Migration[]
-): Map<string, EventTypeCheck> {
+function readEventTypeChecks(migrations: readonly Migration[]): {
+  checks: Map<string, EventTypeCheck>;
+  unread: Map<string, string>;
+} {
   const checks = new Map<string, EventTypeCheck>();
+  // the CHECKs of event_type that are not a list and still stand: `table.constraint` -> migration
+  const unread = new Map<string, string>();
   const forget = (table: string, constraint?: string) => {
-    for (const key of [...checks.keys()]) {
-      const sameTable = key.startsWith(`${table}.`);
-      if (sameTable && (!constraint || key === `${table}.${constraint}`)) {
-        checks.delete(key);
+    for (const found of [checks, unread]) {
+      for (const key of [...found.keys()]) {
+        const sameTable = key.startsWith(`${table}.`);
+        if (sameTable && (!constraint || key === `${table}.${constraint}`)) {
+          found.delete(key);
+        }
       }
     }
   };
@@ -117,11 +129,7 @@ function finalEventTypeChecks(
       for (const check of eventTypeChecksOf(statement)) {
         const list = LIST_CHECK.exec(check.body);
         if (!list) {
-          if (!(check.constraint in NOT_A_LIST)) {
-            throw new Error(
-              `${name}: the CHECK ${check.constraint} on event_type is not a list the reader parses`
-            );
-          }
+          unread.set(`${check.table}.${check.constraint}`, name);
           continue;
         }
         const values = [...(list[2] ?? "").matchAll(QUOTED_LITERAL)].map(
@@ -134,9 +142,26 @@ function finalEventTypeChecks(
       }
     }
   }
+  return { checks, unread };
+}
+
+function finalEventTypeChecks(
+  migrations: readonly Migration[]
+): Map<string, EventTypeCheck> {
+  const { checks, unread } = readEventTypeChecks(migrations);
+  // only a CHECK that stands after the last migration has to be readable: one a later migration drops is history
+  for (const [key, name] of unread) {
+    if (!(key in NOT_A_LIST)) {
+      throw new Error(
+        `${name}: the CHECK ${key} on event_type is not a list the reader parses`
+      );
+    }
+  }
   return checks;
 }
 
+// a comment line of the migration before the statement (or inside it) is not code: a type named in prose does not count
+const SQL_LINE_COMMENT = /--[^\n]*/g;
 const POLICY_ON_OUTBOX =
   /^\s*(?:CREATE|ALTER) POLICY\s+"?\w+"?\s+ON\s+(?:"?public"?\.)?"?event_outbox"?/i;
 // `type = 'a.b'` and `"event_outbox"."type" IN ('a.b', 'c.d')`; `entity_type` is another word
@@ -147,10 +172,11 @@ function outboxTypesOfPolicies(migrations: readonly Migration[]): Set<string> {
   const types = new Set<string>();
   for (const { sql } of migrations) {
     for (const statement of sql.split(STATEMENT_BREAKPOINT)) {
-      if (!POLICY_ON_OUTBOX.test(statement)) {
+      const code = statement.replace(SQL_LINE_COMMENT, "");
+      if (!POLICY_ON_OUTBOX.test(code)) {
         continue;
       }
-      for (const found of statement.matchAll(POLICY_TYPE)) {
+      for (const found of code.matchAll(POLICY_TYPE)) {
         const literals = found[1]
           ? [found[1]]
           : [...(found[2] ?? "").matchAll(QUOTED_LITERAL)].map(
@@ -182,6 +208,7 @@ const LEGACY_OFF_PATTERN: Readonly<Record<string, string>> = {};
 
 const allMigrations = migrationsInJournalOrder();
 const checks = finalEventTypeChecks(allMigrations);
+const unreadKeys = [...readEventTypeChecks(allMigrations).unread.keys()];
 const auditNames = new Map<string, string[]>();
 for (const [key, { values }] of checks) {
   for (const value of values) {
@@ -221,6 +248,15 @@ describe("the event types the migrations allow in the audit tables", () => {
     for (const [constraint, reason] of Object.entries(NOT_A_LIST)) {
       expect(reason.length, constraint).toBeGreaterThan(10);
     }
+    expect(Object.keys(NOT_A_LIST).sort()).toEqual([
+      "platform_audit_events.platform_audit_events_actor_coherent",
+      "queue_dead_letters.queue_dead_letters_event_type_format",
+      "tenant_audit_event.tenant_audit_event_type_format",
+    ]);
+    // an entry whose CHECK no longer stands is a leftover: the exception goes with the cause
+    expect(
+      Object.keys(NOT_A_LIST).filter((key) => !unreadKeys.includes(key))
+    ).toEqual([]);
   });
 });
 
@@ -364,9 +400,10 @@ describe("the control cases, planted: the reader and the rules refuse them", () 
           `CREATE POLICY "p" ON "event_outbox" AS PERMISSIVE FOR INSERT TO "r" WITH CHECK ("event_outbox"."type" IN ('a.b', 'billing_x') AND entity_type = 'z.z');`,
           "CREATE POLICY q ON public.event_outbox FOR SELECT USING (type = 'c.d');",
           `CREATE POLICY "o" ON "other_table" FOR SELECT USING (type = 'ignored.here');`,
+          "-- the hint `prose.only` is named here\nCREATE POLICY r ON public.event_outbox FOR INSERT WITH CHECK (type = 'e.f'); -- and `tail.only`",
         ].join(STATEMENT_BREAKPOINT),
       },
     ]);
-    expect([...read].sort()).toEqual(["a.b", "billing_x", "c.d"]);
+    expect([...read].sort()).toEqual(["a.b", "billing_x", "c.d", "e.f"]);
   });
 });
