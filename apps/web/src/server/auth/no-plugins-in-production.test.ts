@@ -6,7 +6,7 @@ import type { WorkerBindings } from "../environment";
 
 /**
  * The three advisories left out of the dependency audit (docs/runbooks/dependency-audit.md) need a Better Auth plugin
- * that production never loads. This test is what keeps that true: it fails when the `createAuth` of production
+ * that production never loads. This test is what keeps that true: it fails when the `createBetterAuth` of production
  * receives any plugin. The `testUtils` of the tests does not count: they build their own instance.
  */
 const EXPLANATION =
@@ -22,8 +22,24 @@ const TEST_FILE = /\.test\.tsx?$|-test-support\.tsx?$/;
 const PLUGIN_USE =
   /["']better-auth\/plugins(?:\/[^"']*)?["']|["']@better-auth\/(?!core)[^"']*["']|\bplugins\s*:|\{\s*plugins\s*[,}]/;
 
-/** Declares the option and forwards it to Better Auth; what it receives is what the runtime tests above watch. */
-const FORWARDS_PLUGINS = "server/auth.ts";
+/**
+ * The one line of `server/auth.ts` that forwards the `plugins` option to Better Auth; what it receives is what the
+ * runtime tests watch. It is the only thing the scan lets through there: a plugin import in the same file still fails.
+ */
+const FORWARDS_PLUGINS_FILE = "server/auth.ts";
+const FORWARDS_PLUGINS_LINE = "...(plugins ? { plugins } : {}),";
+
+// every non-test file under src that mentions the builders (a definition, a call or an import); the text scan only
+// sees src, and the runtime tests above are what watch what is really passed
+const BUILDS_BETTER_AUTH = /\b(?:createBetterAuth|betterAuth)\b/;
+const BUILDERS = [
+  "server/auth.ts",
+  "server/auth/handler.ts",
+  "server/authenticated-request-context.ts",
+];
+const BUILDER_EXPLANATION =
+  "A new file builds a Better Auth instance. Add it to the tests above that run it (so they see its plugins) " +
+  "and to BUILDERS in this file.";
 
 const captured = vi.hoisted(() => ({
   options: [] as { plugins?: unknown }[],
@@ -127,6 +143,7 @@ describe("no Better Auth plugin runs in production", () => {
     const root = fileURLToPath(new URL("../..", import.meta.url));
     const offenders: string[] = [];
     const scanned: string[] = [];
+    const builders: string[] = [];
     const walk = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
@@ -136,12 +153,18 @@ describe("no Better Auth plugin runs in production", () => {
           SOURCE_FILE.test(entry.name) &&
           !TEST_FILE.test(entry.name)
         ) {
-          scanned.push(relative(root, path));
-          if (
-            relative(root, path) !== FORWARDS_PLUGINS &&
-            PLUGIN_USE.test(readFileSync(path, "utf8"))
-          ) {
-            offenders.push(relative(root, path));
+          const name = relative(root, path);
+          const source = readFileSync(path, "utf8");
+          scanned.push(name);
+          if (BUILDS_BETTER_AUTH.test(source)) {
+            builders.push(name);
+          }
+          const inspected =
+            name === FORWARDS_PLUGINS_FILE
+              ? source.replace(FORWARDS_PLUGINS_LINE, "")
+              : source;
+          if (PLUGIN_USE.test(inspected)) {
+            offenders.push(name);
           }
         }
       }
@@ -153,5 +176,11 @@ describe("no Better Auth plugin runs in production", () => {
       expect.arrayContaining(["server/auth.ts", "server/auth/handler.ts"])
     );
     expect(offenders, EXPLANATION).toEqual([]);
+    // the forwarding line must still be there, or the exemption above guards nothing
+    expect(
+      readFileSync(join(root, FORWARDS_PLUGINS_FILE), "utf8"),
+      "server/auth.ts no longer forwards plugins with the expected line"
+    ).toContain(FORWARDS_PLUGINS_LINE);
+    expect(builders.sort(), BUILDER_EXPLANATION).toEqual(BUILDERS);
   });
 });
