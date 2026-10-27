@@ -22,12 +22,15 @@ import {
 
 /**
  * The activation funnel of the stores on a real PostgreSQL 18 (corte 2.4, PR A; ADR 0071 amended):
- *   1. who reaches what: only the Admin role runs `admin_activation_funnel` and `admin_classify_organization`; the
- *      tenant, billing and catalog roles neither run them nor read or write `platform_internal_organizations`; the
- *      Admin role still reads no table; the funnel takes only the number of weeks (1 to 26), is STABLE (it cannot
- *      write) and the owner reads no e-mail, name, amount or date of the business;
+ *   1. who reaches what: only the Admin role runs `admin_read_activation_funnel` (the audited wrapper) and
+ *      `admin_classify_organization`, and it cannot run the STABLE `admin_activation_funnel` itself; the tenant,
+ *      billing and catalog roles run none of them nor read or write `platform_internal_organizations`; the Admin
+ *      role still reads no table; the funnel takes only the number of weeks (1 to 26), is STABLE (it cannot write)
+ *      and the owner reads no e-mail, name, amount or date of the business;
  *   2. the marker: marking and unmarking are audited in the same transaction, a call that changes nothing writes
  *      nothing, an unknown store and an inactive operator are refused, and the marker leaves with the organization;
+ *   2b. the audited read: every call of the wrapper writes one `activation_funnel.read` event with the operator and
+ *      nothing else (no store, no case, no entity, no detail, no number), a refused call writes none;
  *   3. a fixture written by hand (the expected figures are in this file): the bands of the time to the first sale by
  *      `confirmed_at` (a sale dated two years back and a cancelled one count), the week of Brasília at the border of
  *      Sunday and Monday, the product deleted, internal stores out, cohorts of 1, 4, 5 and 6 stores, the
@@ -35,7 +38,8 @@ import {
  *   4. the whole answer (every cohort of the 26 weeks, every store of every gate before this one) is the same as a
  *      direct count of the rows, computed apart in this file, and its format is closed;
  *   5. the suppression on cohorts drawn at random: no value under 5, no complement under 5, no difference of two
- *      nested counts under 5, the bands all or none;
+ *      nested counts under 5, the bands all or none; the same for the stores active in a calendar week, whose
+ *      complement is the stores that existed and did not sell (a case built so that only the complement is small);
  *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the time of the call and the plan of
  *      the query inside (auto_explain), printed as gate notes.
  * The fixtures write sale headers without items (`session_replication_role = replica`) and load auto_explain, so the
@@ -83,7 +87,15 @@ interface Signup {
   withStore: Cell;
 }
 
+interface ActiveWeek {
+  inProgress: boolean;
+  stores: Cell;
+  week: string;
+  weekStart: string;
+}
+
 interface Funnel {
+  activeStores: ActiveWeek[];
   cohorts: Cohort[];
   generatedAt: string;
   internalStoresExcluded: number;
@@ -255,6 +267,17 @@ function suppressionProblems(funnel: Funnel): string[] {
       problems.push(`${cohort.week}: the bands do not add up to the sales`);
     }
   }
+  for (const week of funnel.activeStores) {
+    const value = shownValue(week.stores);
+    if (value !== null && value < K) {
+      problems.push(
+        `${week.week}: a count of active stores under k (${value})`
+      );
+    }
+    if (week.inProgress && week.stores.state !== "unavailable") {
+      problems.push(`${week.week}: the current week shows a count`);
+    }
+  }
   for (const signup of funnel.signups) {
     const u = shownValue(signup.accounts);
     const s = shownValue(signup.withStore);
@@ -353,10 +376,20 @@ async function run() {
     };
     const asAdmin = <T>(operation: (client: Client) => Promise<T>) =>
       connect(adminLoginUrl, operation);
+    const principals = await owner.pool.query<{ id: string }>(
+      `INSERT INTO public.platform_principals (issuer, subject, role, status)
+       VALUES ($1, $2, 'platform_owner', 'active'), ($1, $3, 'platform_owner', 'disabled')
+       RETURNING id`,
+      [issuer, `funnel-${randomUUID()}`, `funnel-${randomUUID()}`]
+    );
+    const [operator, disabled] = principals.rows.map((row) => row.id) as [
+      string,
+      string,
+    ];
     /** The answer and the database's clock of the same transaction (the same now()). */
     const read = (weeks = ACTIVATION_FUNNEL_MAX_WEEKS) =>
       asAdmin(async (client) => {
-        await client.query("BEGIN READ ONLY");
+        await client.query("BEGIN");
         try {
           const clock = await client.query<{
             current_week: string;
@@ -365,7 +398,11 @@ async function run() {
             `SELECT to_char(date_trunc('week', now() AT TIME ZONE '${ZONE}'), 'YYYY-MM-DD') AS current_week,
                     to_char(now() AT TIME ZONE '${ZONE}', 'YYYY-MM-DD"T"HH24:MI:SS.US') AS local_now`
           );
-          const funnel = (await readActivationFunnel(client, weeks)) as Funnel;
+          const funnel = (await readActivationFunnel(
+            client,
+            operator,
+            weeks
+          )) as Funnel;
           return {
             clock: {
               currentWeek: clock.rows[0]?.current_week as string,
@@ -389,6 +426,7 @@ async function run() {
     for (const [label, url] of others) {
       for (const statement of [
         "SELECT public.admin_activation_funnel(4)",
+        "SELECT public.admin_read_activation_funnel(gen_random_uuid(), 4)",
         "SELECT public.admin_classify_organization(gen_random_uuid(), 'x', true)",
         "SELECT 1 FROM public.platform_internal_organizations",
         "INSERT INTO public.platform_internal_organizations (organization_id) VALUES ('x')",
@@ -402,6 +440,14 @@ async function run() {
         );
       }
     }
+    await expectSqlState(
+      () =>
+        asAdmin((client) =>
+          client.query("SELECT public.admin_activation_funnel(4)")
+        ),
+      "42501",
+      "the Admin role cannot run the aggregate function itself, only the audited wrapper"
+    );
     for (const statement of [
       "SELECT 1 FROM public.platform_internal_organizations",
       "INSERT INTO public.platform_internal_organizations (organization_id) VALUES ('x')",
@@ -451,7 +497,7 @@ async function run() {
               has_function_privilege('public', p.oid, 'EXECUTE') AS public_execute
          FROM pg_proc AS p
         WHERE p.pronamespace = 'public'::regnamespace
-          AND p.proname IN ('admin_activation_funnel', 'admin_classify_organization')
+          AND p.proname IN ('admin_activation_funnel', 'admin_classify_organization', 'admin_read_activation_funnel')
         ORDER BY 1`
     );
     assert.deepEqual(functions.rows, [
@@ -469,6 +515,15 @@ async function run() {
         config: "search_path=pg_catalog, public, pg_temp",
         definer: true,
         name: "admin_classify_organization",
+        owner: "polaris_admin_owner",
+        public_execute: false,
+        volatility: "v",
+      },
+      {
+        arguments: "p_principal uuid, p_weeks integer",
+        config: "search_path=pg_catalog, public, pg_temp",
+        definer: true,
+        name: "admin_read_activation_funnel",
         owner: "polaris_admin_owner",
         public_execute: false,
         volatility: "v",
@@ -497,7 +552,10 @@ async function run() {
       await expectSqlState(
         () =>
           asAdmin((client) =>
-            client.query("SELECT public.admin_activation_funnel($1)", [weeks])
+            client.query("SELECT public.admin_read_activation_funnel($1, $2)", [
+              operator,
+              weeks,
+            ])
           ),
         "22023",
         `${weeks} weeks is refused`
@@ -506,10 +564,17 @@ async function run() {
     await expectSqlState(
       () =>
         asAdmin((client) =>
-          client.query("SELECT public.admin_activation_funnel(NULL)")
+          client.query("SELECT public.admin_read_activation_funnel($1, NULL)", [
+            operator,
+          ])
         ),
       "22023",
       "no number of weeks is refused"
+    );
+    await expectSqlState(
+      () => owner.pool.query("SELECT public.admin_activation_funnel(27)"),
+      "22023",
+      "the aggregate function refuses it too"
     );
     // nothing is kept: the migration made one table, the marker, and the function cannot write (STABLE)
     const migration = readFileSync(
@@ -523,20 +588,10 @@ async function run() {
     assert.equal(one.funnel.cohorts.length, 1);
     assert.equal(one.funnel.signups.length, 1);
     tests.push(
-      "only the Admin role runs the funnel and the marker command (tenant, billing, catalog and PUBLIC cannot), nobody but the Admin owner reaches the marker table (forced row security), the Admin role still reads no table, both functions are SECURITY DEFINER of polaris_admin_owner with search_path ending in pg_temp, the funnel takes only the number of weeks (1 to 26, anything else 22023), is STABLE and keeps nothing, and the owner reads only sales.confirmed_at, sales.organization_id, user.created_at, user.email_verified and user.id there"
+      "only the Admin role runs the audited read of the funnel and the marker command (tenant, billing, catalog and PUBLIC cannot, and not even the Admin role runs the aggregate function itself), nobody but the Admin owner reaches the marker table (forced row security), the Admin role still reads no table, the three functions are SECURITY DEFINER of polaris_admin_owner with search_path ending in pg_temp, the funnel takes only the number of weeks (1 to 26, anything else 22023), is STABLE and keeps nothing (the wrapper is VOLATILE), and the owner reads only sales.confirmed_at, sales.organization_id, user.created_at, user.email_verified and user.id there"
     );
 
     // ------------------------------------------------- 2. the marker command
-    const principals = await owner.pool.query<{ id: string }>(
-      `INSERT INTO public.platform_principals (issuer, subject, role, status)
-       VALUES ($1, $2, 'platform_owner', 'active'), ($1, $3, 'platform_owner', 'disabled')
-       RETURNING id`,
-      [issuer, `funnel-${randomUUID()}`, `funnel-${randomUUID()}`]
-    );
-    const [operator, disabled] = principals.rows.map((row) => row.id) as [
-      string,
-      string,
-    ];
     const bare = randomUUID();
     await owner.pool.query(
       "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, 'Gate funil marcador', 'America/Sao_Paulo')",
@@ -636,7 +691,7 @@ async function run() {
       bare,
     ]);
     assert.deepEqual(await markedRow(), [], "the marker left with the store");
-    // the platform audit allows exactly the list of 0100 plus the two of the marker
+    // the platform audit allows exactly the list of 0100 plus the two of the marker and the read of the funnel
     const constraint = await owner.pool.query<{ definition: string }>(
       "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'platform_audit_events_type_allowed'"
     );
@@ -662,10 +717,75 @@ async function run() {
         ...typesOf(line0100),
         "organization.marked_internal",
         "organization.unmarked_internal",
+        "activation_funnel.read",
       ].sort()
     );
     tests.push(
-      "an active operator marks and unmarks a store, each change audited in the same transaction (operator, store, no case, no detail) and a repeated call changes and writes nothing; an inactive or unknown operator (42501), an unknown store and a null choice (22023) are refused with no audit; the marker leaves with the organization (cascade); the audit check is the list of 0100 plus the two types of the marker"
+      "an active operator marks and unmarks a store, each change audited in the same transaction (operator, store, no case, no detail) and a repeated call changes and writes nothing; an inactive or unknown operator (42501), an unknown store and a null choice (22023) are refused with no audit; the marker leaves with the organization (cascade); the audit check is the list of 0100 plus the two types of the marker and the read of the funnel"
+    );
+
+    // ------------------------------------------------- 2b. the audited read
+    const readEvents = async () =>
+      (
+        await owner.pool.query<Record<string, unknown>>(
+          `SELECT actor, detail, entity_id, entity_type, event_type, organization_id, principal_id, support_case_id
+             FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read' ORDER BY id`
+        )
+      ).rows;
+    const eventsBefore = (await readEvents()).length;
+    for (const [index, weeks] of [
+      1,
+      4,
+      ACTIVATION_FUNNEL_MAX_WEEKS,
+    ].entries()) {
+      // biome-ignore lint/performance/noAwaitInLoops: Calls, in order.
+      await read(weeks);
+      assert.equal(
+        (await readEvents()).length,
+        eventsBefore + index + 1,
+        "each read writes exactly one event"
+      );
+    }
+    assert.deepEqual(
+      (await readEvents()).slice(eventsBefore),
+      Array.from({ length: 3 }, () => ({
+        actor: "principal",
+        detail: null,
+        entity_id: null,
+        entity_type: "activation_funnel",
+        event_type: "activation_funnel.read",
+        organization_id: null,
+        principal_id: operator,
+        support_case_id: null,
+      })),
+      "the event holds the operator and the kind, with no store, no case, no entity, no detail and no number"
+    );
+    for (const [principal, weeks, code] of [
+      [disabled, 4, "42501"],
+      [randomUUID(), 4, "42501"],
+      [operator, 0, "22023"],
+      [operator, ACTIVATION_FUNNEL_MAX_WEEKS + 1, "22023"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+      await expectSqlState(
+        () =>
+          asAdmin((client) =>
+            client.query("SELECT public.admin_read_activation_funnel($1, $2)", [
+              principal,
+              weeks,
+            ])
+          ),
+        code,
+        `the read is refused (${code})`
+      );
+    }
+    assert.equal(
+      (await readEvents()).length,
+      eventsBefore + 3,
+      "a refused read writes no event"
+    );
+    tests.push(
+      "every call of the audited read writes exactly one activation_funnel.read event, in the same transaction as the read, holding only the operator and the kind (no store, case, entity, detail or number, not even the weeks); an inactive or unknown operator (42501) and weeks out of 1 to 26 (22023) are refused and write none"
     );
 
     // ------------------------------------------------- 3. the fixture written by hand
@@ -992,8 +1112,12 @@ async function run() {
         .slice(0, 10);
       const cohort = source.cohorts.find((row) => row.weekStart === start);
       const signup = source.signups.find((row) => row.weekStart === start);
-      assert.ok(cohort && signup, `the week ${start} is in the answer`);
-      return { cohort, signup };
+      const active = source.activeStores.find((row) => row.weekStart === start);
+      assert.ok(
+        cohort && signup && active,
+        `the week ${start} is in the answer`
+      );
+      return { active, cohort, signup };
     };
     const fixture = await read();
     const A = byWeek(fixture.funnel, WEEKS.a, fixture.clock);
@@ -1167,6 +1291,93 @@ async function run() {
       "a fixture counted by hand: cohort A (35 stores, 2 internal ones out) shows each band (5 each, by confirmed_at: a sale dated two years back and a cancelled one count), 30 with a product (a deleted one counts), 25 sold, 10 not yet, 20 activated in 7 days, 10 sold in week 2 (Sunday 23:30 and 22:00 of Brasília are still week 1, Monday 09:00 is week 2), 5 in week 3 and week 5 suppressed (3); its week has 42 verified sign-ups, 37 with a store; cohorts of 1 and 4 stores show nothing, of 5 and 6 only the count (every cell is 0 or all); in a cohort of 12 with 2 stores having a product and no sale, the product is hidden and the sale shows"
     );
 
+    // the stores active by calendar week (M6), counted by hand from the sales of the fixture (every store of another
+    // gate in these weeks is internal). The weeks cross the cohorts: cohort A sells again in weeks 2, 3 and 5 of its
+    // own, the late band of a cut sells in the next week, and the borders at 7 days sell in the next week too.
+    //  16 (A's week): the four first bands of A sell on Wednesday to Sunday: 5 + 5 + 5 + 5 = 20
+    //  15 (B's week): B's 4, A's up-to-7-days (Monday 09:00) 5 and A's later (day 12) 5 = 14
+    //  14 (C's week): C's 6 and the 5 of A's first band that sell again on day 15 = 11
+    //  13 (D's week): D's 5 that sold in 5 minutes = 5, the smallest a week shows
+    //  12 (borders): 15 at 10 minutes, 1 hour and 1 day, and 3 of A's second band that sell again on day 30 = 18
+    //  11 (cut 2): 5 of the cut itself and 10 of the borders at 7 days and 7 days and 1 second = 15
+    //  10 (cut 3): 5 of the cut itself and the 5 of cut 2 that sold later than 7 days = 10
+    //   9 (cut 4): 5 of the cut itself, the 5 later ones sell in the next week = 5
+    //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7
+    //  18 (F's week): 1 store sold: hidden; 17 (E's week): nobody sold: hidden, never 0
+    const activeOf = (weeksAgo: number) =>
+      byWeek(fixture.funnel, weeksAgo, fixture.clock).active.stores;
+    for (const [weeksAgo, value] of [
+      [WEEKS.a, 20],
+      [WEEKS.b, 14],
+      [WEEKS.c, 11],
+      [WEEKS.d, 5],
+      [WEEKS.borders, 18],
+      [WEEKS.cut2, 15],
+      [WEEKS.cut3, 10],
+      [WEEKS.cut4, 5],
+      [WEEKS.cut6, 7],
+    ] as const) {
+      assert.deepEqual(
+        activeOf(weeksAgo),
+        shown(value),
+        `${weeksAgo} weeks ago: stores active, counted by hand`
+      );
+    }
+    assert.deepEqual(activeOf(WEEKS.f), SUPPRESSED);
+    assert.deepEqual(activeOf(WEEKS.e), SUPPRESSED);
+    // last week (the cohort whose 7 days are not over) is closed for the sales of the week: its 5 that sold show
+    assert.deepEqual(activeOf(WEEKS.open), shown(5));
+    assert.deepEqual(
+      fixture.funnel.activeStores.at(-1),
+      {
+        inProgress: true,
+        stores: unavailable("week_not_closed"),
+        week: fixture.funnel.cohorts.at(-1)?.week,
+        weekStart: fixture.funnel.cohorts.at(-1)?.weekStart,
+      },
+      "the current week is unavailable, never a count"
+    );
+    // the complementary suppression: 5 stores sold in week 10, and of the stores that existed and did not sell only
+    // 3, 4 or 5 are left (everything else is marked internal inside a transaction that is rolled back): at 3 and 4 the
+    // 5 active stores are hidden, because the complement would give the small cell away, and at 5 both show
+    const cutThree = fixtureStores[String(WEEKS.cut3)] as string[];
+    const sellers = cutThree.slice(10, 15);
+    for (const [idle, expectedCell] of [
+      [3, SUPPRESSED],
+      [4, SUPPRESSED],
+      [5, shown(5)],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: Scenarios, in order.
+      const client = await owner.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `INSERT INTO public.platform_internal_organizations (organization_id)
+           SELECT id FROM public.organizations WHERE id <> ALL($1::text[]) ON CONFLICT DO NOTHING`,
+          [[...sellers, ...cutThree.slice(0, idle)]]
+        );
+        const only = await client.query<{ result: Funnel }>(
+          "SELECT public.admin_activation_funnel(26) AS result"
+        );
+        const week = only.rows[0]?.result.activeStores.find(
+          (row) =>
+            row.weekStart ===
+            byWeek(fixture.funnel, WEEKS.cut3, fixture.clock).active.weekStart
+        );
+        assert.deepEqual(
+          week?.stores,
+          expectedCell,
+          `5 active stores and ${idle} that existed without selling`
+        );
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+    }
+    tests.push(
+      "the stores active in a calendar week (M6), counted by hand: 20, 14, 11, 5 (the smallest shown), 18, 15, 10, 5 and 7 in the weeks of the fixture (sales of the cohorts cross into the next weeks), last week's 5 show, a week with 1 or 0 active stores is hidden, never 0, and the current week is unavailable (week_not_closed); with 5 active stores and only 3 or 4 that existed and did not sell, the 5 are hidden (the complement would give the small cell away), with 5 and 5 both show"
+    );
+
     // marking one store of cohort A (a band of up to 10 minutes) moves the figures at the next read; unmarking brings them back
     const moved = cohortA[10] as string;
     await asAdmin((client) =>
@@ -1174,6 +1385,14 @@ async function run() {
     );
     const afterMark = await read();
     const markedA = byWeek(afterMark.funnel, WEEKS.a, afterMark.clock).cohort;
+    assert.deepEqual(
+      [
+        byWeek(afterMark.funnel, WEEKS.a, afterMark.clock).active.stores,
+        byWeek(afterMark.funnel, WEEKS.c, afterMark.clock).active.stores,
+      ],
+      [shown(19), shown(10)],
+      "the marked store leaves the stores active of week 1 and of week 3 of its cohort"
+    );
     assert.deepEqual(
       {
         activatedIn7Days: markedA.activatedIn7Days,
@@ -1202,7 +1421,7 @@ async function run() {
       A.cohort
     );
     tests.push(
-      "marking a counted store as internal takes it out at the next read (35 to 34 stores, a band of 4 hides all five bands, 19 activated) and counts it among the internal ones; unmarking brings cohort A back as it was"
+      "marking a counted store as internal takes it out at the next read (35 to 34 stores, a band of 4 hides all five bands, 19 activated, one less active store in each of the two weeks it sold) and counts it among the internal ones; unmarking brings cohort A back as it was"
     );
 
     // ------------------------------------------------- 5 (drawn first, so 4 covers it too). random cohorts
@@ -1241,6 +1460,7 @@ async function run() {
     const final = await read();
     const { funnel } = final;
     assert.deepEqual(Object.keys(funnel).sort(), [
+      "activeStores",
       "cohorts",
       "generatedAt",
       "internalStoresExcluded",
@@ -1291,6 +1511,27 @@ async function run() {
         WHERE u.email_verified
           AND date_trunc('week', u.created_at AT TIME ZONE '${ZONE}') >= date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks'
         GROUP BY 1`
+    );
+    // the stores active in each week, counted another way: the sales grouped by the week of `confirmed_at` (the
+    // function asks, store by store, whether one falls in the week), and the stores that existed by the week of creation
+    const directActive = await owner.pool.query<{
+      active: number;
+      existing: number;
+      start: string;
+    }>(
+      `WITH counted AS (
+         SELECT o.id, o.created_at FROM public.organizations AS o
+          WHERE o.status <> 'purged'
+            AND o.id NOT IN (SELECT i.organization_id FROM public.platform_internal_organizations AS i)
+       )
+       SELECT to_char(w, 'YYYY-MM-DD') AS start,
+              (SELECT count(DISTINCT s.organization_id)::int FROM public.sales AS s JOIN counted AS c ON c.id = s.organization_id
+                WHERE date_trunc('week', s.confirmed_at AT TIME ZONE '${ZONE}') = w) AS active,
+              (SELECT count(*)::int FROM counted AS c
+                WHERE date_trunc('week', c.created_at AT TIME ZONE '${ZONE}') <= w) AS existing
+         FROM generate_series(date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks',
+                              date_trunc('week', now() AT TIME ZONE '${ZONE}'), interval '7 days') AS w
+        ORDER BY w`
     );
     const labels = await owner.pool.query<{ label: string; start: string }>(
       `SELECT to_char(w, 'YYYY-MM-DD') AS start, to_char(w, 'IYYY-"W"IW') AS label
@@ -1345,7 +1586,25 @@ async function run() {
       "every cut of the suppression is exercised by the rows"
     );
     const signupOf = new Map(directSignups.rows.map((row) => [row.week, row]));
+    const activeByWeek = new Map(
+      directActive.rows.map((row) => [row.start, row])
+    );
     const expected = {
+      activeStores: labels.rows.map((week) => {
+        const row = activeByWeek.get(week.start) ?? { active: 0, existing: 0 };
+        let stores: Cell = SUPPRESSED;
+        if (week.start === final.clock.currentWeek) {
+          stores = unavailable("week_not_closed");
+        } else if (row.active >= K && row.existing - row.active >= K) {
+          stores = shown(row.active);
+        }
+        return {
+          inProgress: week.start === final.clock.currentWeek,
+          stores,
+          week: week.label,
+          weekStart: week.start,
+        };
+      }),
       cohorts: labels.rows.map((week) =>
         expectedCohort(week, tallies.get(week.start) as Tally, final.clock)
       ),
@@ -1373,12 +1632,13 @@ async function run() {
       assert.ok(!leaked.includes(id), "no identifier in the answer");
     }
     assert.ok(!leaked.includes("@example.invalid"), "no e-mail in the answer");
+    assert.equal(funnel.activeStores.length, ACTIVATION_FUNNEL_MAX_WEEKS);
     const cohortKeys = new Set(
       funnel.cohorts.map((row) => Object.keys(row).sort().join())
     );
     assert.equal(cohortKeys.size, 1, "every cohort has the same closed keys");
     tests.push(
-      `the whole answer of 26 weeks (${direct.rows.length} counted stores, from every gate before this one and the fixtures) equals a direct count of the rows computed apart (first sale by ORDER BY, weeks of sale by date_trunc, the cut chosen again in this file), with the same reasons of "unavailable"; the format is closed and holds no identifier or e-mail`
+      `the whole answer of 26 weeks (${direct.rows.length} counted stores, from every gate before this one and the fixtures) equals a direct count of the rows computed apart (first sale by ORDER BY, weeks of sale by date_trunc, the cut chosen again in this file, the stores active in each calendar week by the sales grouped by week and the complement by the week of creation), with the same reasons of "unavailable"; the format is closed and holds no identifier or e-mail`
     );
 
     const problems = suppressionProblems(funnel);
@@ -1387,7 +1647,7 @@ async function run() {
       JSON.stringify(funnel.cohorts).match(/"state":"shown"/g)?.length ?? 0;
     assert.ok(shownCells > 0, "the check looked at shown cells");
     tests.push(
-      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell) and on every other cohort: no value under 5, no complement and no difference of two nested counts under 5, bands all or none and adding up to the sales (${shownCells} shown cells checked)`
+      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell) and on every other cohort: no value under 5 (the stores active in a week included), no complement and no difference of two nested counts under 5, bands all or none and adding up to the sales (${shownCells} shown cells checked)`
     );
 
     // ------------------------------------------------- 6. the cost with 1,000 stores and 50,000 sales

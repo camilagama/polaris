@@ -251,7 +251,7 @@ async function run() {
             'admin_list_operational_incidents', 'admin_read_operational_incident', 'admin_retry_dead_letter', 'admin_read_auth_access_log',
             'admin_place_organization_legal_hold', 'admin_release_organization_legal_hold', 'admin_list_organization_legal_holds',
             'admin_reissue_closure_notice', 'admin_dismiss_closure_notice', 'admin_read_refund_window',
-            'admin_classify_organization', 'admin_activation_funnel'
+            'admin_classify_organization', 'admin_read_activation_funnel'
           )
           AND has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE')`
     );

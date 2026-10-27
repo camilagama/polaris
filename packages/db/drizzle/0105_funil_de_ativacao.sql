@@ -1,6 +1,6 @@
 -- The activation funnel of the stores, the database part (corte 2.4, PR A; ADR 0071 amended): a marker of the stores
 -- of Polaris itself, the audited command that sets it, and one aggregate function the Admin reads. Expand only (ADR
--- 0096): a new table, new column grants, five new policies, a wider check of the platform audit and two new functions;
+-- 0096): a new table, new column grants, five new policies, a wider check of the platform audit and three new functions;
 -- nothing is dropped, renamed or made NOT NULL, and no function the previous Worker calls is recreated.
 --
 -- * `platform_internal_organizations`: a store marked as internal (QA, the owner's, the team's) is kept out of every
@@ -13,8 +13,14 @@
 -- * `admin_classify_organization`: marks or unmarks a store (capability `organization:classify`), audited in the same
 --   transaction (`organization.marked_internal` / `organization.unmarked_internal`); a call that changes nothing
 --   writes nothing.
+-- * `admin_read_activation_funnel(p_principal, p_weeks)`: the only way the Admin reaches the funnel. VOLATILE: it
+--   records one `activation_funnel.read` audit event (the operator, nothing else: no store, no number, no detail) in
+--   the same transaction and returns what `admin_activation_funnel` computed. The Admin runtime has no EXECUTE on the
+--   STABLE function itself, so a read cannot skip the record (Rodrigo, PR 356: what a repeated read between two
+--   markings tells is what the record makes visible).
 -- * `admin_activation_funnel(p_weeks)`: weekly cohorts (ISO week of Brasília) of the stores created in the last
---   `p_weeks` weeks (1 to 26, nothing else to choose), and the verified sign-ups of the same weeks apart. Only counts,
+--   `p_weeks` weeks (1 to 26, nothing else to choose), the verified sign-ups of the same weeks apart and the stores
+--   active in each calendar week (the weeks cross the cohorts, so a cell of their own). Only counts,
 --   each one shown only when it and every cell it could be told apart from hold at least 5 stores (k = 5, Rodrigo's
 --   conditions on the amendment): anything else is `suppressed`, and what cannot be known yet is `unavailable` with a
 --   reason, never 0. STABLE: it writes nothing, and nothing is stored. To compute it the Admin owner gains a read of
@@ -34,7 +40,7 @@ ALTER TABLE "platform_internal_organizations" ENABLE ROW LEVEL SECURITY;--> stat
 ALTER TABLE "platform_audit_events" DROP CONSTRAINT "platform_audit_events_type_allowed";--> statement-breakpoint
 ALTER TABLE "platform_internal_organizations" ADD CONSTRAINT "platform_internal_organizations_marked_by_platform_principals_id_fk" FOREIGN KEY ("marked_by") REFERENCES "public"."platform_principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "platform_internal_organizations" ADD CONSTRAINT "platform_internal_organizations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal'));--> statement-breakpoint
+ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_type_allowed" CHECK ("platform_audit_events"."event_type" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal', 'activation_funnel.read'));--> statement-breakpoint
 CREATE POLICY "platform_internal_organizations_admin_owner_select" ON "platform_internal_organizations" AS PERMISSIVE FOR SELECT TO "polaris_admin_owner" USING (true);--> statement-breakpoint
 CREATE POLICY "platform_internal_organizations_admin_owner_insert" ON "platform_internal_organizations" AS PERMISSIVE FOR INSERT TO "polaris_admin_owner" WITH CHECK (true);--> statement-breakpoint
 CREATE POLICY "platform_internal_organizations_admin_owner_delete" ON "platform_internal_organizations" AS PERMISSIVE FOR DELETE TO "polaris_admin_owner" USING (true);--> statement-breakpoint
@@ -114,6 +120,11 @@ $function$;--> statement-breakpoint
 --   reason (a reason would tell which side was small).
 -- * Unavailable, never 0: the bands and the activation until every store of the cohort has had its 7 days
 --   (`activation_window_open`); a week of retention not yet closed (`week_not_closed`).
+-- * Active stores (M6), by calendar week (Monday to Sunday of Brasília), only for a closed week: the stores, neither
+--   purged nor internal and of any age (older than the window too), with at least one sale confirmed in the week
+--   (`sales.confirmed_at`). It is a cell of its own because the week crosses the cohorts, and the Admin reads no
+--   `sales`. Shown only when the active stores and the stores that existed that week and did not sell both hold k or
+--   more: the complement of a small cell is a small cell too. The current week is `unavailable` (`week_not_closed`).
 CREATE FUNCTION public.admin_activation_funnel(p_weeks integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -291,6 +302,31 @@ BEGIN
              ) AS cohort
         FROM tiered AS tally_row
     ),
+    scope AS (
+      SELECT organization.id, organization.created_at
+        FROM public.organizations AS organization
+       WHERE organization.status <> 'purged'
+         AND NOT EXISTS (
+           SELECT 1 FROM public.platform_internal_organizations AS internal
+            WHERE internal.organization_id = organization.id
+         )
+    ),
+    activity AS (
+      SELECT weeks.start,
+             pg_catalog.count(scope.id) AS existing,
+             pg_catalog.count(*) FILTER (
+               WHERE weeks.start < current_week
+                 AND EXISTS (
+                   SELECT 1 FROM public.sales AS sale
+                    WHERE sale.organization_id = scope.id
+                      AND sale.confirmed_at >= (weeks.start AT TIME ZONE 'America/Sao_Paulo')
+                      AND sale.confirmed_at < ((weeks.start + interval '7 days') AT TIME ZONE 'America/Sao_Paulo')
+                 )
+             ) AS active
+        FROM weeks
+        LEFT JOIN scope ON scope.created_at < ((weeks.start + interval '7 days') AT TIME ZONE 'America/Sao_Paulo')
+       GROUP BY weeks.start
+    ),
     accounts AS (
       SELECT pg_catalog.date_trunc('week', account.created_at AT TIME ZONE 'America/Sao_Paulo') AS week_start,
              EXISTS (
@@ -328,28 +364,73 @@ BEGIN
         )
         FROM signups AS signup
       ),
-      'cohorts', (SELECT pg_catalog.jsonb_agg(cohort.cohort ORDER BY cohort.start) FROM cohorts AS cohort)
+      'cohorts', (SELECT pg_catalog.jsonb_agg(cohort.cohort ORDER BY cohort.start) FROM cohorts AS cohort),
+      'activeStores', (
+        SELECT pg_catalog.jsonb_agg(
+          pg_catalog.jsonb_build_object(
+            'week', pg_catalog.to_char(week_row.start, 'IYYY-"W"IW'),
+            'weekStart', pg_catalog.to_char(week_row.start, 'YYYY-MM-DD'),
+            'inProgress', week_row.start = current_week,
+            'stores', CASE
+              WHEN week_row.start = current_week
+                THEN '{"state": "unavailable", "reason": "week_not_closed"}'::jsonb
+              WHEN week_row.active >= k AND week_row.existing - week_row.active >= k
+                THEN pg_catalog.jsonb_build_object('state', 'shown', 'value', week_row.active)
+              ELSE suppressed END
+          ) ORDER BY week_row.start
+        )
+        FROM activity AS week_row
+      )
     )
   );
 END;
 $function$;--> statement-breakpoint
+-- The audited read (Rodrigo, PR 356): the Worker of the Admin calls this one. The record and the answer are one
+-- transaction, so a read that is answered is a read that is recorded, and one that is refused (inactive operator,
+-- weeks out of 1 to 26) leaves nothing. Nothing of the answer goes into the record: no store, no count, no detail,
+-- and not even the number of weeks. The STABLE function below it stays the owner's: the Admin runtime cannot call it.
+CREATE FUNCTION public.admin_read_activation_funnel(p_principal uuid, p_weeks integer)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $function$
+BEGIN
+  PERFORM public.admin_require_principal(p_principal);
+  IF p_weeks IS NULL OR p_weeks < 1 OR p_weeks > 26 THEN
+    RAISE EXCEPTION 'invalid_weeks' USING ERRCODE = '22023';
+  END IF;
+  PERFORM public.admin_record_audit(
+    p_principal, 'activation_funnel.read', NULL, NULL, 'activation_funnel', NULL, NULL
+  );
+  RETURN public.admin_activation_funnel(p_weeks);
+END;
+$function$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.admin_classify_organization(uuid, text, boolean) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.admin_activation_funnel(integer) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_activation_funnel(integer) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime, polaris_admin_runtime;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.admin_read_activation_funnel(uuid, integer) FROM PUBLIC, polaris_pr11_runtime, polaris_billing_runtime, polaris_catalog_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.admin_classify_organization(uuid, text, boolean) TO polaris_admin_runtime;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.admin_activation_funnel(integer) TO polaris_admin_runtime;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.admin_read_activation_funnel(uuid, integer) TO polaris_admin_runtime;--> statement-breakpoint
 RESET ROLE;--> statement-breakpoint
 REVOKE polaris_admin_owner FROM CURRENT_USER;--> statement-breakpoint
 REVOKE CREATE ON SCHEMA public FROM polaris_admin_owner;--> statement-breakpoint
--- The end state, as 0100 checks its own (a REVOKE or an ALTER without the right is only a WARNING on Neon): the two
--- functions belong to the Admin owner, it kept no CREATE on public, the migrator kept no SET or INHERIT on it, and the
--- marker has forced row security and no grant to anybody but the Admin owner.
+-- The end state, as 0100 checks its own (a REVOKE or an ALTER without the right is only a WARNING on Neon): the three
+-- functions belong to the Admin owner and the Admin runtime reaches the funnel only through the audited read, the owner
+-- kept no CREATE on public, the migrator kept no SET or INHERIT on it, and the marker has forced row security and no
+-- grant to anybody but the Admin owner.
 DO $end_state$
 BEGIN
   IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p
        WHERE p.oid IN ('public.admin_classify_organization(uuid, text, boolean)'::regprocedure,
-                       'public.admin_activation_funnel(integer)'::regprocedure)
-         AND p.proowner = 'polaris_admin_owner'::regrole AND p.prosecdef) <> 2 THEN
+                       'public.admin_activation_funnel(integer)'::regprocedure,
+                       'public.admin_read_activation_funnel(uuid, integer)'::regprocedure)
+         AND p.proowner = 'polaris_admin_owner'::regrole AND p.prosecdef) <> 3 THEN
     RAISE EXCEPTION 'the new functions do not have their owner';
+  END IF;
+  IF pg_catalog.has_function_privilege('polaris_admin_runtime', 'public.admin_activation_funnel(integer)', 'EXECUTE')
+     OR NOT pg_catalog.has_function_privilege('polaris_admin_runtime', 'public.admin_read_activation_funnel(uuid, integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'the Admin runtime must reach the funnel only through the audited read';
   END IF;
   IF pg_catalog.has_schema_privilege('polaris_admin_owner', 'public', 'CREATE') THEN
     RAISE EXCEPTION 'polaris_admin_owner kept CREATE on schema public';

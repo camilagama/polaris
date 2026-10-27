@@ -58,12 +58,15 @@ export async function readOrganizationDiagnostics(
 export const ACTIVATION_FUNNEL_MAX_WEEKS = 26;
 
 /**
- * The activation funnel of the stores (corte 2.4, ADR 0071 amended): counts by weekly cohort, suppressed under 5
- * stores, with no store, person, amount or individual date. Returned as the database wrote it; the route validates
- * it against its closed contract.
+ * The activation funnel of the stores (corte 2.4, ADR 0071 amended): counts by weekly cohort and by calendar week,
+ * suppressed under 5 stores, with no store, person, amount or individual date. Read through the audited wrapper: one
+ * `activation_funnel.read` event of the operator (no content) in the same transaction, so there is no read without
+ * its record (the Admin runtime cannot call the aggregate function itself). Returned as the database wrote it; the
+ * route validates it against its closed contract.
  */
 export async function readActivationFunnel(
   client: AdminQueryable,
+  principalId: string,
   weeks: number
 ): Promise<unknown> {
   if (
@@ -74,10 +77,8 @@ export async function readActivationFunnel(
     throw new RangeError("invalid_weeks");
   }
   const { rows } = await client.query(
-    // `clock_timestamp() AS at` is not read: it makes the statement one a caching pooler cannot answer from a copy,
-    // so a store marked or unmarked is in or out at the next read
-    "SELECT public.admin_activation_funnel($1) AS result, pg_catalog.clock_timestamp() AS at",
-    [weeks]
+    "SELECT public.admin_read_activation_funnel($1, $2) AS result",
+    [principalId, weeks]
   );
   return rows[0]?.result ?? null;
 }

@@ -454,7 +454,6 @@ async function run() {
     assert.deepEqual(
       runnable.rows.map((row) => row.name),
       [
-        "admin_activation_funnel",
         "admin_audit_billing_command",
         "admin_cancel_organization_purge",
         "admin_classify_organization",
@@ -478,6 +477,7 @@ async function run() {
         "admin_privacy_record_scope",
         "admin_privacy_resolve",
         "admin_reactivate_organization",
+        "admin_read_activation_funnel",
         "admin_read_auth_access_log",
         "admin_read_operational_incident",
         "admin_read_refund_window",
