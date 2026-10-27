@@ -127,8 +127,9 @@ $function$;--> statement-breakpoint
 --   more: the complement of a small cell is a small cell too. The week also contains cells that the cohorts show: the
 --   stores of cohort W-1 that sold in their week 2, of W-2 in their week 3 and of W-4 in their week 5 are active in W
 --   (and the others of those cohorts are idle). Every such retention cell that is shown is taken out of both sides
---   before the test, so the difference between this series and the retention is never under k either. The current
---   week is `unavailable` (`week_not_closed`).
+--   before the test, so the difference between this series and the retention is never under k either; the cohorts are
+--   computed 4 weeks before the first week asked for, so the verdict of a week is the same in every window. The
+--   current week is `unavailable` (`week_not_closed`).
 CREATE FUNCTION public.admin_activation_funnel(p_weeks integer)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -141,16 +142,24 @@ DECLARE
   local_now timestamp := pg_catalog.now() AT TIME ZONE 'America/Sao_Paulo';
   current_week timestamp := pg_catalog.date_trunc('week', pg_catalog.now() AT TIME ZONE 'America/Sao_Paulo');
   first_week timestamp;
+  calc_first timestamp;
   suppressed constant jsonb := '{"state": "suppressed"}'::jsonb;
 BEGIN
   IF p_weeks IS NULL OR p_weeks < 1 OR p_weeks > 26 THEN
     RAISE EXCEPTION 'invalid_weeks' USING ERRCODE = '22023';
   END IF;
   first_week := current_week - (p_weeks - 1) * interval '7 days';
+  calc_first := first_week - interval '28 days';
   RETURN (
     WITH weeks AS (
       SELECT week.start
         FROM pg_catalog.generate_series(first_week, current_week, interval '7 days') AS week(start)
+    ),
+    -- the cohorts are computed 4 weeks before the first week asked for (the retention of week 5 reaches that far) and
+    -- shown only from it: which retention cells are inside a week of the series then never depends on `p_weeks`
+    calc_weeks AS (
+      SELECT week.start
+        FROM pg_catalog.generate_series(calc_first, current_week, interval '7 days') AS week(start)
     ),
     stores AS (
       SELECT organization.id, organization.created_at,
@@ -160,7 +169,7 @@ BEGIN
                 WHERE internal.organization_id = organization.id
              ) AS internal
         FROM public.organizations AS organization
-       WHERE organization.created_at >= (first_week AT TIME ZONE 'America/Sao_Paulo')
+       WHERE organization.created_at >= (calc_first AT TIME ZONE 'America/Sao_Paulo')
          AND organization.status <> 'purged'
     ),
     marks AS (
@@ -220,7 +229,7 @@ BEGIN
              weeks.start + interval '14 days' <= current_week AS week_2_closed,
              weeks.start + interval '21 days' <= current_week AS week_3_closed,
              weeks.start + interval '35 days' <= current_week AS week_5_closed
-        FROM weeks
+        FROM calc_weeks AS weeks
         LEFT JOIN marks ON marks.cohort = weeks.start
        GROUP BY weeks.start
     ),
@@ -305,6 +314,7 @@ BEGIN
                )
              ) AS cohort
         FROM tiered AS tally_row
+       WHERE tally_row.start >= first_week
     ),
     scope AS (
       SELECT organization.id, organization.created_at
@@ -368,7 +378,10 @@ BEGIN
       'weeks', p_weeks,
       'timezone', 'America/Sao_Paulo',
       'generatedAt', pg_catalog.now(),
-      'internalStoresExcluded', (SELECT pg_catalog.count(*) FROM stores WHERE stores.internal),
+      'internalStoresExcluded', (
+        SELECT pg_catalog.count(*) FROM stores
+         WHERE stores.internal AND stores.created_at >= (first_week AT TIME ZONE 'America/Sao_Paulo')
+      ),
       'signups', (
         SELECT pg_catalog.jsonb_agg(
           pg_catalog.jsonb_build_object(

@@ -1362,6 +1362,38 @@ async function run() {
       },
       "the current week is unavailable, never a count"
     );
+    // the answer of a week does not depend on the window asked: week 15 is hidden by the retention cell of cohort A (16
+    // weeks ago), and it still is when A is the first cohort outside a window of 16 weeks (or only 2, 5 or 20), so two
+    // reads with different windows cannot be subtracted to isolate the small cell; the cohorts do not change either
+    const windows = await Promise.all(
+      [2, 5, 16, 20].map((weeks) => read(weeks))
+    );
+    const sixteen = windows[2]?.funnel.activeStores[0];
+    assert.equal(
+      sixteen?.weekStart,
+      byWeek(fixture.funnel, WEEKS.b, fixture.clock).active.weekStart
+    );
+    assert.deepEqual(sixteen?.stores, SUPPRESSED);
+    for (const { funnel: shorter } of windows) {
+      for (const row of shorter.activeStores) {
+        assert.deepEqual(
+          row,
+          fixture.funnel.activeStores.find(
+            (week) => week.weekStart === row.weekStart
+          ),
+          `${row.week}: the same in a shorter window`
+        );
+      }
+      for (const row of shorter.cohorts) {
+        assert.deepEqual(
+          row,
+          fixture.funnel.cohorts.find(
+            (cohort) => cohort.weekStart === row.weekStart
+          ),
+          `${row.week}: the cohort is the same in a shorter window`
+        );
+      }
+    }
     // the complementary suppression: 5 stores sold in week 10, and of the stores that existed and did not sell only
     // 3, 4 or 5 are left (everything else is marked internal inside a transaction that is rolled back): at 3 and 4 the
     // 5 active stores are hidden, because the complement would give the small cell away, and at 5 both show
@@ -1400,7 +1432,7 @@ async function run() {
       }
     }
     tests.push(
-      "the stores active in a calendar week (M6), counted by hand: 20, 11, 5 (the smallest shown), 18, 15, 10 and 5 in the weeks of the fixture (sales of the cohorts cross into the next weeks); the weeks that count 14 and 7 are hidden because the retention cells they contain (10 and 5, shown for cohorts A and cut 4) leave 4 and 2 by difference; last week's 5 show, a week with 1 or 0 active stores is hidden, never 0, and the current week is unavailable (week_not_closed); with 5 active stores and only 3 or 4 that existed and did not sell, the 5 are hidden (the complement would give the small cell away), with 5 and 5 both show"
+      "the stores active in a calendar week (M6), counted by hand: 20, 11, 5 (the smallest shown), 18, 15, 10 and 5 in the weeks of the fixture (sales of the cohorts cross into the next weeks); the weeks that count 14 and 7 are hidden because the retention cells they contain (10 and 5, shown for cohorts A and cut 4) leave 4 and 2 by difference; last week's 5 show, the same weeks and cohorts come out in a window of 2, 5, 16 and 20 weeks as in 26, a week with 1 or 0 active stores is hidden, never 0, and the current week is unavailable (week_not_closed); with 5 active stores and only 3 or 4 that existed and did not sell, the 5 are hidden (the complement would give the small cell away), with 5 and 5 both show"
     );
 
     // marking one store of cohort A (a band of up to 10 minutes) moves the figures at the next read; unmarking brings them back
@@ -1504,7 +1536,7 @@ async function run() {
       sale_weeks: number[];
     }>(
       `WITH horizon AS (
-         SELECT date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks' AS first_week
+         SELECT date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '29 weeks' AS first_week
        )
        SELECT to_char(date_trunc('week', o.created_at AT TIME ZONE '${ZONE}'), 'YYYY-MM-DD') AS cohort,
               (SELECT extract(epoch FROM s.confirmed_at - o.created_at)::float8
@@ -1558,12 +1590,16 @@ async function run() {
                               date_trunc('week', now() AT TIME ZONE '${ZONE}'), interval '7 days') AS w
         ORDER BY w`
     );
+    // the cohorts are counted 4 weeks before the window (the function computes them there too, for the retention cells
+    // that fall inside the first weeks of the series) and compared only from the window on
     const labels = await owner.pool.query<{ label: string; start: string }>(
       `SELECT to_char(w, 'YYYY-MM-DD') AS start, to_char(w, 'IYYY-"W"IW') AS label
-         FROM generate_series(date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks',
+         FROM generate_series(date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '29 weeks',
                               date_trunc('week', now() AT TIME ZONE '${ZONE}'), interval '7 days') AS w
         ORDER BY w`
     );
+    const windowLabels = labels.rows.slice(4);
+    assert.equal(windowLabels.length, ACTIVATION_FUNNEL_MAX_WEEKS);
     const tallies = new Map<string, Tally>();
     for (const week of labels.rows) {
       tallies.set(week.start, {
@@ -1597,7 +1633,7 @@ async function run() {
       tally.r5 += store.sale_weeks.includes(5) ? 1 : 0;
     }
     const cutsSeen = new Set(
-      labels.rows.map((week) => {
+      windowLabels.map((week) => {
         const start = Date.parse(`${week.start}T00:00:00Z`);
         return tierOf(
           tallies.get(week.start) as Tally,
@@ -1615,7 +1651,7 @@ async function run() {
       directActive.rows.map((row) => [row.start, row])
     );
     const expected = {
-      activeStores: labels.rows.map((week) => {
+      activeStores: windowLabels.map((week) => {
         const row = activeByWeek.get(week.start) ?? { active: 0, existing: 0 };
         // the retention cells the answer shows that fall in this week (the cohort 1, 2 or 4 weeks older, in its week
         // 2, 3 or 5), taken out of both sides: the stores that sold and the ones that did not
@@ -1660,12 +1696,12 @@ async function run() {
           weekStart: week.start,
         };
       }),
-      cohorts: labels.rows.map((week) =>
+      cohorts: windowLabels.map((week) =>
         expectedCohort(week, tallies.get(week.start) as Tally, final.clock)
       ),
       internalStoresExcluded: internalCount.rows[0]?.count,
       k: K,
-      signups: labels.rows.map((week) => {
+      signups: windowLabels.map((week) => {
         const row = signupOf.get(week.start) ?? { s: 0, u: 0 };
         return {
           accounts: row.u >= K ? shown(row.u) : SUPPRESSED,
