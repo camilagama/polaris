@@ -18,6 +18,7 @@ import type {
 
 const MAX_IDENTITY_LENGTH = 512;
 const RPC_PREFIX = "/rpc/";
+const EDGE_SLASHES = /^\/|\/$/g;
 
 type KeyType = "ip" | "session";
 
@@ -68,11 +69,13 @@ export function rpcProcedureKind(request: Request): ProcedureKind | null {
   return procedureKinds.get(procedurePath(request)) ?? "write";
 }
 
+/** The procedure's path as oRPC matches it: one leading and one trailing slash do not name another procedure. */
 function procedurePath(request: Request): string {
   const { pathname } = new URL(request.url);
-  return pathname.startsWith(RPC_PREFIX)
+  const path = pathname.startsWith(RPC_PREFIX)
     ? pathname.slice(RPC_PREFIX.length)
     : pathname;
+  return path.replace(EDGE_SLASHES, "");
 }
 
 /** The procedure's route when the contract knows it; any other path is logged as one. */

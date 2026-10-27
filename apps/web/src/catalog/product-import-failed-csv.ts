@@ -44,7 +44,7 @@ const FIELD_MESSAGES: Record<ImportColumn, string> = {
 const STATUS_MESSAGES: Partial<Record<ProductImportRowStatus, string>> = {
   conflict: "Esta linha já foi enviada com outros dados.",
   exists_by_name: "Já existe um produto com este nome.",
-  limit_reached: "O plano chegou ao limite de produtos.",
+  limit_reached: "O plano chegou ao limite de variantes.",
 };
 
 /** What a row that did not enter says in the column "Motivo". */
@@ -72,8 +72,10 @@ export function failedImportRows(input: {
   const failed: FailedRow[] = [
     ...input.refused.map((row) => ({
       reason: row.errors
-        .map(
-          (error) => `${IMPORT_COLUMN_LABELS[error.column]}: ${error.message}`
+        .map((error) =>
+          error.column === null
+            ? error.message
+            : `${IMPORT_COLUMN_LABELS[error.column]}: ${error.message}`
         )
         .join(" "),
       rowNumber: row.rowNumber,

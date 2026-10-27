@@ -66,6 +66,10 @@ const HEADER_ALIASES: Record<ImportColumn, readonly string[]> = {
 
 const DIACRITICS = /\p{M}/gu;
 const SPACES = /\s+/g;
+/** The spaces the database's `[[:space:]]` takes for sure: the ASCII ones (a no-break space is a character of the name). */
+const ASCII_SPACES = /[ \t\n\v\f\r]+/g;
+const NAME_BREAKS = /[\t\n\r]/;
+const EDGE_SPACE = /^ | $/g;
 const HEADER_DECORATION = /[*:]+$/;
 
 function headerKey(header: string): string {
@@ -85,15 +89,20 @@ const COLUMN_OF_HEADER = new Map<string, ImportColumn>(
   )
 );
 
-/** The key two names share when they differ only by case and repeated spaces, as the server compares them. */
+/**
+ * The key two names share when they differ only by case and repeated spaces, for the preview: the repeats of the
+ * file and the categories. The decision is the server's (`lockProductNameAndFindProducts` compares in SQL); this one
+ * only collapses the ASCII spaces, so it never takes two names the database tells apart for the same one.
+ */
 function importNameKey(name: string): string {
-  return name.replace(SPACES, " ").trim().toLowerCase();
+  return name.replace(ASCII_SPACES, " ").replace(EDGE_SPACE, "").toLowerCase();
 }
 
 export type ImportSourceCells = Record<ImportColumn, string>;
 
 interface ImportRowError {
-  column: ImportColumn;
+  /** `null` when the error is of the whole row (more cells than the header). */
+  column: ImportColumn | null;
   message: string;
 }
 
@@ -162,7 +171,10 @@ export const IMPORT_FILE_PROBLEM_MESSAGES: Record<ImportFileProblem, string> = {
 export const NAME_TOO_LONG = `O nome pode ter até ${MAX_PRODUCT_NAME_LENGTH} caracteres.`;
 export const DESCRIPTION_TOO_LONG = `A descrição pode ter até ${MAX_PRODUCT_DESCRIPTION_LENGTH} caracteres.`;
 export const FORBIDDEN_CHARACTER =
-  "Tem um caractere que não pode ser usado (de controle ou que inverte o texto).";
+  "Tem um caractere que não pode ser usado (o nulo ou um que inverte o texto).";
+export const NAME_LINE_BREAK = "O nome não pode ter quebra de linha nem tabulação.";
+export const EXTRA_CELLS =
+  "A linha tem mais colunas que o cabeçalho. Confira se um valor com vírgula está entre aspas.";
 export const AMBIGUOUS_VALUE =
   "Valor ambíguo: escreva 1234 ou 1.234,00 (a vírgula separa os centavos).";
 export const VALUE_TOO_LONG = "O valor é longo demais.";
@@ -174,7 +186,8 @@ const CURRENCY = /^R\$\s*/i;
 const BRAZILIAN_THOUSANDS = /^\d{1,3}(?:\.\d{3})+,\d+$/;
 const ENGLISH_THOUSANDS = /^\d{1,3}(?:,\d{3})+\.\d+$/;
 const DOTTED_THOUSANDS = /^\d{1,3}(?:\.\d{3}){2,}$/;
-const AMBIGUOUS_DOT = /^\d{1,3}\.\d{3}$/;
+// a group of thousands never starts with 0: "0.125" is a cost with three decimals, not a thousand
+const AMBIGUOUS_DOT = /^[1-9]\d{0,2}\.\d{3}$/;
 const NO_BREAK_SPACE = /\u00A0/g;
 
 type Prepared = { kind: "ambiguous" } | { kind: "ok"; text: string };
@@ -255,7 +268,11 @@ function nameErrors(name: string): string | null {
   if (trimmed.length > MAX_PRODUCT_NAME_LENGTH) {
     return NAME_TOO_LONG;
   }
-  return hasForbiddenProductText(trimmed) ? FORBIDDEN_CHARACTER : null;
+  if (hasForbiddenProductText(trimmed)) {
+    return FORBIDDEN_CHARACTER;
+  }
+  // the form's field is one line: a name that a spreadsheet cell carried in several lines is refused, never joined
+  return NAME_BREAKS.test(trimmed) ? NAME_LINE_BREAK : null;
 }
 
 function descriptionErrors(description: string): string | null {
@@ -358,6 +375,11 @@ function readRow(
   };
 }
 
+/** Whether a record has text past the last column of the header. */
+function hasExtraCells(cells: readonly string[], columns: number): boolean {
+  return cells.slice(columns).some((cell) => cell.trim() !== "");
+}
+
 /** The active categories of the store by name, compared without case or repeated spaces. */
 function categoriesByName(
   categories: readonly Pick<CategoryReadModel, "id" | "name" | "status">[]
@@ -401,6 +423,15 @@ export function previewImport(
   const firstRowOfName = new Map<string, number>();
   for (const record of parsed.records) {
     const source = sourceOf(record.cells, columns.positions);
+    if (hasExtraCells(record.cells, parsed.header.length)) {
+      // "59,90" without quotes in a file of commas: the cells after it moved, and no column can be trusted
+      refused.push({
+        errors: [{ column: null, message: EXTRA_CELLS }],
+        rowNumber: record.rowNumber,
+        source,
+      });
+      continue;
+    }
     const reading = readRow(record.rowNumber, source, byName);
     if (reading.kind === "refused") {
       refused.push(reading.row);

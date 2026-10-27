@@ -160,6 +160,9 @@ describe("request classification", () => {
 
   it.each([
     ["POST", "/rpc/product/importBatch", "bulk"],
+    // oRPC takes one trailing slash off: the bucket is the procedure's, never the write one by default
+    ["POST", "/rpc/product/importBatch/", "bulk"],
+    ["POST", "/rpc/sale/list/", "read"],
     ["POST", "/rpc/product/namesExisting", "read"],
     ["POST", "/rpc/sale/confirm", "write"],
     ["POST", "/rpc/category/create", "write"],

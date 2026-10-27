@@ -13,11 +13,6 @@
 export const IMPORT_MAX_BYTES = 1024 * 1024;
 export const IMPORT_MAX_ROWS = 500;
 export const IMPORT_MAX_COLUMNS = 50;
-/**
- * The longest cell kept as it came: the longest field of `product.create` (the description, 5000) and one more, so
- * a longer cell is still refused by its length and never cut in silence.
- */
-const MAX_KEPT_CELL = 5001;
 
 type SpreadsheetEncoding = "utf-16be" | "utf-16le" | "utf-8" | "windows-1252";
 
@@ -138,9 +133,7 @@ class CsvReader {
   }
 
   append(char: string): void {
-    if (this.cell.length < MAX_KEPT_CELL) {
-      this.cell += char;
-    }
+    this.cell += char;
   }
 
   endCell(): Step {

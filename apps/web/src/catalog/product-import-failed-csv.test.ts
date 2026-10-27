@@ -81,7 +81,7 @@ describe("the CSV of the rows that failed", () => {
       [2, "Preço de tabela: Informe um valor em reais, como 59,90."],
       [4, "Nome repetido na linha 3."],
       [5, "Já existe um produto com este nome."],
-      [6, "O plano chegou ao limite de produtos."],
+      [6, "O plano chegou ao limite de variantes."],
     ]);
     const csv = failedImportCsv(rows);
     expect(csv).toContain(`'=cmd|' /C calc'!A0,abc,`);
