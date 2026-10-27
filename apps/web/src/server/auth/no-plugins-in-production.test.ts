@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
 
@@ -17,8 +18,12 @@ const EXPLANATION =
 
 const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$|-test-support\.tsx?$/;
+// a plugin import, or a `plugins` key or shorthand handed to something (the type of the option is `plugins?:`)
 const PLUGIN_USE =
-  /["']better-auth\/plugins["']|["']@better-auth\/[^"']*["']|\bplugins\s*:/;
+  /["']better-auth\/plugins(?:\/[^"']*)?["']|["']@better-auth\/(?!core)[^"']*["']|\bplugins\s*:|\{\s*plugins\s*[,}]/;
+
+/** Declares the option and forwards it to Better Auth; what it receives is what the runtime tests above watch. */
+const FORWARDS_PLUGINS = "server/auth.ts";
 
 const captured = vi.hoisted(() => ({
   options: [] as { plugins?: unknown }[],
@@ -55,6 +60,23 @@ const bindings: WorkerBindings = {
   HYPERDRIVE: { connectionString: "postgresql://tenant.invalid/neondb" },
 };
 
+/** Each branch of the handler that adds options (Google, e-mail and password) is a place a plugin could hide. */
+const configurations: [string, WorkerBindings][] = [
+  ["without Google and without e-mail", bindings],
+  [
+    "with Google and with e-mail and password",
+    {
+      ...bindings,
+      AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+      BETTER_AUTH_SECRET: "g".repeat(32),
+      EMAIL_PASSWORD_AUTH_ENABLED: "true",
+      GOOGLE_CLIENT_ID: "client-id.invalid",
+      GOOGLE_CLIENT_SECRET: "client-secret",
+      RESEND_API_KEY: "re_invalid",
+    },
+  ],
+];
+
 function hasPlugins(options: { plugins?: unknown }) {
   return Array.isArray(options.plugins)
     ? options.plugins.length > 0
@@ -62,19 +84,22 @@ function hasPlugins(options: { plugins?: unknown }) {
 }
 
 describe("no Better Auth plugin runs in production", () => {
-  it("the /api/auth/* handler builds Better Auth without plugins", async () => {
-    captured.options.length = 0;
+  it.each(configurations)(
+    "the /api/auth/* handler builds Better Auth without plugins, %s",
+    async (_name, withBindings) => {
+      captured.options.length = 0;
 
-    await handleBetterAuthRequest(
-      new Request("https://polaris.example.invalid/api/auth/get-session"),
-      bindings,
-      "no-plugins",
-      vi.fn()
-    );
+      await handleBetterAuthRequest(
+        new Request("https://polaris.example.invalid/api/auth/get-session"),
+        withBindings,
+        "no-plugins",
+        vi.fn()
+      );
 
-    expect(captured.options.length, "the handler built no instance").toBe(1);
-    expect(captured.options.some(hasPlugins), EXPLANATION).toBe(false);
-  });
+      expect(captured.options.length, "the handler built no instance").toBe(1);
+      expect(captured.options.some(hasPlugins), EXPLANATION).toBe(false);
+    }
+  );
 
   it("the session read of the request context builds Better Auth without plugins", async () => {
     captured.options.length = 0;
@@ -86,7 +111,7 @@ describe("no Better Auth plugin runs in production", () => {
     });
 
     await context({
-      bindings: { ...bindings, BETTER_AUTH_SECRET: "q".repeat(32) },
+      bindings,
       operation: () => Promise.resolve(null),
       request: new Request("https://polaris.example.invalid/rpc/x"),
     }).catch(() => undefined);
@@ -99,8 +124,9 @@ describe("no Better Auth plugin runs in production", () => {
   });
 
   it("no production file hands Better Auth a plugin", () => {
-    const root = join(import.meta.dirname, "..", "..");
+    const root = fileURLToPath(new URL("../..", import.meta.url));
     const offenders: string[] = [];
+    const scanned: string[] = [];
     const walk = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
@@ -108,15 +134,24 @@ describe("no Better Auth plugin runs in production", () => {
           walk(path);
         } else if (
           SOURCE_FILE.test(entry.name) &&
-          !TEST_FILE.test(entry.name) &&
-          PLUGIN_USE.test(readFileSync(path, "utf8"))
+          !TEST_FILE.test(entry.name)
         ) {
-          offenders.push(relative(root, path));
+          scanned.push(relative(root, path));
+          if (
+            relative(root, path) !== FORWARDS_PLUGINS &&
+            PLUGIN_USE.test(readFileSync(path, "utf8"))
+          ) {
+            offenders.push(relative(root, path));
+          }
         }
       }
     };
     walk(root);
 
+    // a scan that read nothing proves nothing
+    expect(scanned).toEqual(
+      expect.arrayContaining(["server/auth.ts", "server/auth/handler.ts"])
+    );
     expect(offenders, EXPLANATION).toEqual([]);
   });
 });
