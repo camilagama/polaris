@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { isDailySeries } from "../home/home-rhythm-model";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { isNoAnswer } from "../lib/connection";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
+import {
+  periodSummaryStaleVersion,
+  subscribePeriodSummaryStale,
+} from "../lib/period-summary-stale";
 import {
   clearPeriodSummaryCaches,
   isPeriodSummary,
@@ -144,11 +155,16 @@ function copyFor(
  *
  * Reading another period keeps the figures already on screen until the answer comes (AC-3), and a failure never leaves
  * the figures of another period in their place.
+ *
+ * A write that changes the figures (`markPeriodSummaryStale`) makes the read old: when `active` (the Resultado is in
+ * front) and the connection is there, it is read again, once per write (a read that fails spends the mark: "Atualizar"
+ * is the way to try again); with no connection or another tab in front it waits, and reads when both are met. With nothing written there is no read beyond the one of the period.
  */
 export function usePeriodSummary(
   organizationId: string,
   period: Period,
-  copyMonth: string | null
+  copyMonth: string | null,
+  active = true
 ) {
   const { from, to } = period;
   const [state, setState] = useState<PeriodSummaryState>(initialState);
@@ -158,8 +174,17 @@ export function usePeriodSummary(
   const sessionRefused = useRef(false);
   sessionRefused.current = snapshot?.sessionRefused ?? false;
   const shownOrganization = useRef(organizationId);
+  // the writes seen when the last read started: a write after it leaves the read old
+  const readVersion = useRef(periodSummaryStaleVersion());
+  const staleVersion = useSyncExternalStore(
+    subscribePeriodSummaryStale,
+    periodSummaryStaleVersion,
+    periodSummaryStaleVersion
+  );
+  const online = useConnectionOnline();
 
   const load = useCallback(async () => {
+    readVersion.current = periodSummaryStaleVersion();
     sequence.current += 1;
     const requestSequence = sequence.current;
     const asked: Period = { from, to };
@@ -224,6 +249,13 @@ export function usePeriodSummary(
       sequence.current += 1;
     };
   }, [load]);
+
+  // a read the effect above just started has already taken the version, so it is not asked twice
+  useEffect(() => {
+    if (active && online && staleVersion !== readVersion.current) {
+      load();
+    }
+  }, [active, load, online, staleVersion]);
 
   return { refresh: load, state };
 }

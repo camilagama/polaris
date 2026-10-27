@@ -40,7 +40,7 @@ Plano: Fase 13, T-125a (POL-60). As jornadas abrem o app de verdade no Chromium 
 | `jornadas/cliente.e2e.ts` | cadastro, lista, uma linha na organização, cliente associado a uma venda |
 | `jornadas/venda.e2e.ts` | venda com dois itens, desconto percentual e dinheiro contra o oráculo em centavos (`oracle.ts`, inteiros, sem importar o domínio); duplo toque gera uma venda; estoque, movimento e snapshot de custo; data local da venda no fuso extremo; casos de arredondamento a–e (meia-alta, um arredondamento por ajuste, percentuais sem compor) |
 | `jornadas/devolucao.e2e.ts` | venda de 2 itens (2 variantes): devolução parcial da 2ª linha pelo detalhe (o saldo dela volta e o da 1ª não muda, venda inalterada, devolver a mais recusado, Resultado em centavos); cancelamento (o saldo das duas linhas volta inteiro, a venda sai do Resultado do mês) |
-| `jornadas/despesa.e2e.ts` | despesa avulsa do mês no Resultado em centavos; a de outro mês (calculada) não entra; despesa recorrente no fuso extremo: a que começa hoje gera uma ocorrência (em centavos, no Resultado) e a que começa amanhã não (`organizationToday`) |
+| `jornadas/despesa.e2e.ts` | despesa avulsa do mês no Resultado em centavos; a de outro mês (calculada) não entra; despesa recorrente no fuso extremo: a que começa hoje gera uma ocorrência (em centavos, no Resultado) e a que começa amanhã não (`organizationToday`); a despesa registrada na aba Despesas aparece no Resultado ao voltar à aba, em centavos, sem "Atualizar", e voltar sem escrita não relê |
 
 O projeto `runtime-ligado` roda cliente, venda e a chave. Todos os outros dependem do projeto `pilha`: se a pilha falhar, nenhuma jornada começa.
 
