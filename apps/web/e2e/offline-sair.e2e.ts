@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { deviceFamilyLabel } from "../src/server/device-family-label";
+import { activateByKeyboard, expectActiveElementRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -525,7 +526,10 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
     await expect(menu).toBeVisible();
     // "Sair" is the last item, apart from the theme and the stores
     await expect(menu.getByRole("menuitem").last()).toHaveText("Sair");
-    await menu.getByRole("menuitem", { exact: true, name: "Sair" }).click();
+    await activateByKeyboard(
+      page,
+      menu.getByRole("menuitem", { exact: true, name: "Sair" })
+    );
     await expect(menu).toBeHidden();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect.poll(() => sendAsked).toBe(true);
@@ -547,6 +551,8 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
           document.activeElement?.querySelector('[role="alertdialog"]') !== null
       )
     ).toBe(true);
+    // the keyboard sees it: the focus of the warning has the ring (t439)
+    await expectActiveElementRing(page);
     expect(server.log).not.toContain("sign-out");
     expect(server.log.some((line) => line.startsWith("revokeCurrent"))).toBe(
       false

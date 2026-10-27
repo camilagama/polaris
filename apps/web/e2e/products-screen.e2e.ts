@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -725,10 +726,15 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   });
   await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill("Bolsa de couro");
-  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Cadastrar produto" })
+  );
   const notice = page.getByText("Produto “Bolsa de couro” cadastrado.");
   await expect(notice).toBeVisible();
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
+  // the region of the notice has the ring of the keyboard (t439)
+  await expectFocusRing(page.locator(":focus").filter({ has: notice }));
   await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Bolsa de couro"
