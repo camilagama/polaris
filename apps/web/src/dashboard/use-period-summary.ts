@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { isDailySeries } from "../home/home-rhythm-model";
-import { browserConnection } from "../lib/browser-connection";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { isNoAnswer } from "../lib/connection";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
@@ -157,8 +157,8 @@ function copyFor(
  * the figures of another period in their place.
  *
  * A write that changes the figures (`markPeriodSummaryStale`) makes the read old: when `active` (the Resultado is in
- * front) and the connection is there, it is read again, once per write; with no connection or another tab in front it
- * waits. With nothing written there is no read beyond the one of the period.
+ * front) and the connection is there, it is read again, once per write (a read that fails spends the mark: "Atualizar"
+ * is the way to try again); with no connection or another tab in front it waits, and reads when both are met. With nothing written there is no read beyond the one of the period.
  */
 export function usePeriodSummary(
   organizationId: string,
@@ -178,8 +178,10 @@ export function usePeriodSummary(
   const readVersion = useRef(periodSummaryStaleVersion());
   const staleVersion = useSyncExternalStore(
     subscribePeriodSummaryStale,
+    periodSummaryStaleVersion,
     periodSummaryStaleVersion
   );
+  const online = useConnectionOnline();
 
   const load = useCallback(async () => {
     readVersion.current = periodSummaryStaleVersion();
@@ -250,14 +252,10 @@ export function usePeriodSummary(
 
   // a read the effect above just started has already taken the version, so it is not asked twice
   useEffect(() => {
-    if (
-      active &&
-      staleVersion !== readVersion.current &&
-      browserConnection.isOnline()
-    ) {
+    if (active && online && staleVersion !== readVersion.current) {
       load();
     }
-  }, [active, load, staleVersion]);
+  }, [active, load, online, staleVersion]);
 
   return { refresh: load, state };
 }

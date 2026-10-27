@@ -174,6 +174,22 @@ test("despesa recorrente: a que começa hoje no fuso da loja é lançada, a que 
 
 const PERIOD_SUMMARY_PATH = "/rpc/report/periodSummary";
 
+/** Waits until `count` stops moving for a second: a count taken before that may still be missing a read on its way. */
+async function settled(count: () => number): Promise<void> {
+  let last = -1;
+  await expect
+    .poll(
+      async () => {
+        const stable = count() === last;
+        last = count();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return stable;
+      },
+      { timeout: 15_000 }
+    )
+    .toBe(true);
+}
+
 /**
  * Journey 7b: the Resultado is read once in front of the person, and an expense written in the Despesas tab (a
  * second tab of the same page, no reload) is in its "(−) Despesas do período" when the person comes back, to the cent,
@@ -234,12 +250,12 @@ test("despesa registrada na aba Despesas aparece no Resultado ao voltar, sem Atu
   await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
   await expectExpensesOfPeriod(133_456);
 
-  // nothing written: going to another tab and back asks the server for nothing
-  await page.waitForLoadState("networkidle");
+  // nothing written: going to another tab and back asks the server for nothing (the reads in flight settle first)
+  await settled(() => summaryReads);
   const before = summaryReads;
   await tabs.getByRole("tab", { exact: true, name: "Metas" }).click();
   await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  await settled(() => summaryReads);
   expect(summaryReads).toBe(before);
 });
