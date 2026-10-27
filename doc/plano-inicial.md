@@ -57,7 +57,7 @@ Esta emenda registra o que entrou depois de 20/10 e a ordem de execução que o 
 - **F4 Distribuição:** site mínimo e os 10 primeiros convites.
 - **F5 Go-live técnico:** t208, backup e ensaio de restauração, Gate 5 no BrowserStack, Access e MFA do Admin, e a flag offline só depois do Gate 5.
 
-**Decisões do usuário de 23/10** (`preferencias-usuario.md`, seção 23/10):
+**Decisões do usuário de 23/10**:
 - Receita primeiro, no dev interno, com o Início e a ativação em paralelo, no externo.
 - Gráficos: biblioteca de gráficos a decidir em ADR (F0.3). Até lá, cores só dos tokens, movimento que respeita `prefers-reduced-motion` e números legíveis sem o gráfico.
 - shadcn primeiro: componente que o registro tem entra uma vez em `src/ui`; nada de cópia à mão nas telas.

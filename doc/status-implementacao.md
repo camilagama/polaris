@@ -1,6 +1,6 @@
 ﻿# Polaris — acompanhamento da implementação
 
-Atualizado em 20 de outubro de 2026.
+Atualizado em 27 de outubro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
