@@ -14,11 +14,12 @@ const HIDDEN_ICON = /<svg[^>]*aria-hidden="true"/;
 describe("name of a tab of the product", () => {
   it("with an error: the icon is hidden and the words ' (com erro)' follow the name", () => {
     const markup = renderToStaticMarkup(<TabLabel invalid label="Dados" />);
+    // what a reader reads: "Dados", the icon (hidden, no text) and " (com erro)"
     expect(markup.startsWith("Dados<svg")).toBe(true);
     expect(markup).toMatch(HIDDEN_ICON);
-    expect(markup).toContain('<span class="sr-only"> (com erro)</span>');
-    // what a reader reads: the text without the tags, the icon having none
-    expect(markup.replace(/<[^>]+>/g, "")).toBe("Dados (com erro)");
+    expect(
+      markup.endsWith('</svg><span class="sr-only"> (com erro)</span>')
+    ).toBe(true);
   });
 
   it("without an error: only the name", () => {
