@@ -19,11 +19,7 @@ export const IMPORT_MAX_COLUMNS = 50;
  */
 const MAX_KEPT_CELL = 5001;
 
-type SpreadsheetEncoding =
-  | "utf-16be"
-  | "utf-16le"
-  | "utf-8"
-  | "windows-1252";
+type SpreadsheetEncoding = "utf-16be" | "utf-16le" | "utf-8" | "windows-1252";
 
 export type DecodedSpreadsheet =
   | { encoding: SpreadsheetEncoding; kind: "ok"; text: string }

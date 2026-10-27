@@ -98,7 +98,9 @@ export function ProductForm({
     focusLater(() => document.getElementById("product-category")?.focus());
   }, [categoryRefusal]);
   const nameError =
-    showRequired && draft.name.trim() === "" ? PRODUCT_NAME_REQUIRED : undefined;
+    showRequired && draft.name.trim() === ""
+      ? PRODUCT_NAME_REQUIRED
+      : undefined;
   // only a new product has a price and a stock to say: an edit changes the name, the category and the description
   const opening = editing ? null : validateOpening(draft);
   const openingErrors = showRequired ? (opening?.errors ?? {}) : {};

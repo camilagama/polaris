@@ -24,7 +24,16 @@ import {
   ProductVersionConflictError,
   transitionProductLifecycle,
 } from "@polaris/domain/catalog/product";
-import { and, asc, eq, gt, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { assertRoomFor } from "./entitlement-enforcement";
 import { categories } from "./schema/category";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
@@ -309,9 +318,7 @@ export async function findExistingProductNames(
     )
     SELECT DISTINCT asked.asked_name FROM asked JOIN held USING (name_key)
   `);
-  return (result.rows as { asked_name: string }[]).map(
-    (row) => row.asked_name
-  );
+  return (result.rows as { asked_name: string }[]).map((row) => row.asked_name);
 }
 
 /** What a product of this organization was created with: the product, its default variant and its first stock movement. */

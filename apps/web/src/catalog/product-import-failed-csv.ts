@@ -48,9 +48,7 @@ const STATUS_MESSAGES: Partial<Record<ProductImportRowStatus, string>> = {
 };
 
 /** What a row that did not enter says in the column "Motivo". */
-function importResultMessage(
-  result: ProductImportRowResult
-): string | null {
+function importResultMessage(result: ProductImportRowResult): string | null {
   if (result.status === "invalid") {
     return FIELD_MESSAGES[result.field];
   }

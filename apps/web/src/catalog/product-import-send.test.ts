@@ -128,9 +128,7 @@ describe("runImport", () => {
 
     expect(sent).toEqual([10, 10, 10, 10, 10, 10]);
     expect(
-      send.mock.calls.every(
-        ([input]) => input.importId === run.importId
-      )
+      send.mock.calls.every(([input]) => input.importId === run.importId)
     ).toBe(true);
     // never more than one slice in 6 s: 10 per minute, below the 12 of the bucket
     expect(time.waits).toEqual(

@@ -84,7 +84,7 @@ import {
   deleteProduct,
   getProductVariants,
   listProducts,
-  findExistingProductNames,
+  type findExistingProductNames,
   readProductCreation,
   restoreProduct,
   setProductVariantListPrice,
