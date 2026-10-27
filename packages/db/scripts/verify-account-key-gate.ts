@@ -222,7 +222,7 @@ async function run() {
       await holder.query("BEGIN");
       // a sign-up in flight: its ROW EXCLUSIVE lock on account conflicts with the SHARE lock of the migration
       await holder.query("LOCK TABLE public.account IN ROW EXCLUSIVE MODE");
-      const started = Date.now();
+      const started = performance.now();
       // the index stays: the migration gives up at its LOCK TABLE, before it would reach the CREATE INDEX
       await inRolledBackTransaction(owner, async (client) => {
         await expectSqlState(
@@ -231,7 +231,7 @@ async function run() {
           "the migration gives up when a write holds account"
         );
       });
-      const waited = Date.now() - started;
+      const waited = Math.round(performance.now() - started);
       assert.ok(
         waited >= 9000 && waited < 30_000,
         `it gives up after its lock_timeout of 10 s (waited ${waited} ms)`

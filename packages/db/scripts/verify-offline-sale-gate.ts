@@ -40,6 +40,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { runClock, storeDay } from "./gate-clock";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -590,7 +591,7 @@ async function run() {
         await receiveStock(transaction, identity, {
           commandId: randomUUID(),
           commandVersion: 1,
-          occurredOn: new Date(Date.now() - 2 * DAY).toISOString().slice(0, 10),
+          occurredOn: storeDay(runClock, -2),
           quantity: 60,
           unitCost: "8.00",
           variantId: shirt.variantId,
