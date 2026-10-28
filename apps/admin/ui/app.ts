@@ -10,7 +10,11 @@ import { organizationsView } from "./views/organizations";
  * Hiding an area is only for the operator's sake: every route asks for its capability again (AC-3). Nothing is kept
  * in the browser, nothing runs on a timer and nothing is read before the operator asks, except `whoami`.
  */
-export async function mountAdmin(root: HTMLElement, fetchJson: Fetch) {
+export async function mountAdmin(
+  root: HTMLElement,
+  fetchJson: Fetch,
+  now: () => Date = () => new Date()
+) {
   const dom = createDom(root.ownerDocument);
   const api = createApi(fetchJson);
   const notice = createNotice(dom);
@@ -50,7 +54,7 @@ export async function mountAdmin(root: HTMLElement, fetchJson: Fetch) {
     );
     return;
   }
-  const store = diagnosticsView(dom, api);
+  const store = diagnosticsView(dom, api, now);
   dom.fill(
     main,
     organizationsView(dom, api, (organization) => store.show(organization)),

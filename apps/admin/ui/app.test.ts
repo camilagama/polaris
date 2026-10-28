@@ -169,7 +169,11 @@ declare function setImmediate(callback: () => void): unknown;
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /** The page mounted on a fresh document; `answers` are given in the order the page asks. */
-async function mount(answers: Answer[], who: Answer = json(OWNER)) {
+async function mount(
+  answers: Answer[],
+  who: Answer = json(OWNER),
+  now: () => Date = () => new Date("2026-10-28T15:07:00.000Z")
+) {
   const document = new FakeDocument();
   const root = document.createElement("div");
   document.body.append(root);
@@ -186,7 +190,7 @@ async function mount(answers: Answer[], who: Answer = json(OWNER)) {
     }
     return typeof answer === "function" ? answer() : Promise.resolve(answer);
   };
-  await mountAdmin(root as unknown as HTMLElement, fetchJson);
+  await mountAdmin(root as unknown as HTMLElement, fetchJson, now);
   await flush();
   const search = async (text: string) => {
     byId(root, "busca").value = text;
@@ -420,11 +424,15 @@ describe("searching for a store (AC-4, AC-11)", () => {
 });
 
 describe("a store's diagnostics (AC-5)", () => {
-  async function opened(report: Answer) {
-    const page = await mount([
-      json({ next: null, organizations: [summary({ id: "org/1 ?x" })] }),
-      report,
-    ]);
+  async function opened(report: Answer, now?: () => Date) {
+    const page = await mount(
+      [
+        json({ next: null, organizations: [summary({ id: "org/1 ?x" })] }),
+        report,
+      ],
+      json(OWNER),
+      now
+    );
     await page.search("Loja");
     buttons(page.root, "Ver loja")[0]?.click();
     await flush();
@@ -447,6 +455,32 @@ describe("a store's diagnostics (AC-5)", () => {
       "/api/organizations?limit=25&query=Loja",
       "/api/organizations/org%2F1%20%3Fx/diagnostics",
     ]);
+  });
+
+  it("says when the report was read, in the one line a screen reader hears, and nothing else", async () => {
+    const { section } = await opened(json(diagnostics()));
+    const lines = allElements(section).filter(
+      (element) => element.getAttribute("role") === "status"
+    );
+    expect(lines.map((line) => line.textContent)).toEqual([
+      "Lida em 28/10/2026 12:07",
+    ]);
+    expect(visibleText(section)).not.toContain("Loja carregada");
+  });
+
+  it.each([
+    ["2026-10-28T02:59:00.000Z", "Lida em 27/10/2026 23:59"],
+    ["2026-10-28T03:00:00.000Z", "Lida em 28/10/2026 00:00"],
+    ["2026-10-28T15:07:00.000Z", "Lida em 28/10/2026 12:07"],
+  ])("reads %s as Brasília time, 24 h", async (instant, line) => {
+    const { section } = await opened(
+      json(diagnostics()),
+      () => new Date(instant)
+    );
+    const status = allElements(section).find(
+      (element) => element.getAttribute("role") === "status"
+    );
+    expect(status?.textContent).toBe(line);
   });
 
   it("shows plan, subscription, end of access and the last billing fact field by field", async () => {

@@ -6,6 +6,7 @@ import {
   attentionText,
   billingStateText,
   brasiliaDay,
+  brasiliaMoment,
   cycleText,
   entitlementText,
   grantValueText,
@@ -122,9 +123,15 @@ function subheading(dom: Dom, text: string) {
 
 /**
  * Loja (AC-5): the diagnostics as the server reports them, field by field. The page computes nothing of its own:
- * no state from a date, no plan from a state, no total; a code it does not know is said to be unknown.
+ * no state from a date, no plan from a state, no total; a code it does not know is said to be unknown. The one
+ * line left once the report is in tells when it was read (the support needs the moment), and it is the same line a
+ * screen reader hears.
  */
-export function diagnosticsView(dom: Dom, api: Api): DiagnosticsView {
+export function diagnosticsView(
+  dom: Dom,
+  api: Api,
+  now: () => Date
+): DiagnosticsView {
   const notice = createNotice(dom);
   const title = dom.el("h2", { id: "loja-titulo", tabindex: "-1" }, "Loja");
   const body = dom.el("div", { class: "report" });
@@ -181,7 +188,7 @@ export function diagnosticsView(dom: Dom, api: Api): DiagnosticsView {
         notice.alert(PROBLEM_TEXT[answer.problem]);
         return;
       }
-      notice.status("Loja carregada.");
+      notice.status(`Lida em ${brasiliaMoment(now())}`);
       render(answer.data);
     },
   };

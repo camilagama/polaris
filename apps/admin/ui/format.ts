@@ -20,6 +20,24 @@ export function brasiliaDay(moment: string | null): string {
   return Number.isNaN(date.getTime()) ? "—" : DAY.format(date);
 }
 
+const MOMENT = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  month: "2-digit",
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+});
+
+/** A moment as dd/mm/aaaa HH:mm in Brasília (24 h; midnight is 00:00, never 24:00). */
+export function brasiliaMoment(moment: Date): string {
+  const parts = MOMENT.formatToParts(moment);
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}`;
+}
+
 const BILLING_STATES: Readonly<Record<string, string>> = {
   active: "Pro ativo",
   free: "Free",
