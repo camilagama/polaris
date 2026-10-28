@@ -678,15 +678,24 @@ describe("the e-mail and password flows of the web worker", () => {
   /** The Worker's own `fetch`, with the bindings of the flows, and the background tasks (the e-mails) waited for. */
   async function call(
     path: string,
-    options: { body?: unknown; cookie?: string; ip: string; method?: string }
+    options: {
+      body?: unknown;
+      cookie?: string;
+      ip: string;
+      method?: string;
+      stream?: ReadableStream<Uint8Array>;
+    }
   ) {
     const method =
-      options.method ?? (options.body === undefined ? "GET" : "POST");
+      options.method ??
+      (options.body === undefined && options.stream === undefined
+        ? "GET"
+        : "POST");
     const headers = new Headers({
       "cf-connecting-ip": options.ip,
       origin: ORIGIN,
     });
-    if (options.body !== undefined) {
+    if (options.body !== undefined || options.stream !== undefined) {
       headers.set("content-type", "application/json");
     }
     if (options.cookie) {
@@ -702,9 +711,12 @@ describe("the e-mail and password flows of the web worker", () => {
         ...(options.body === undefined
           ? {}
           : { body: JSON.stringify(options.body) }),
+        ...(options.stream === undefined
+          ? {}
+          : { body: options.stream, duplex: "half" }),
         headers,
         method,
-      }),
+      } as RequestInit),
       bindingsWith(AUTH_BINDINGS),
       context
     );
@@ -882,6 +894,83 @@ describe("the e-mail and password flows of the web worker", () => {
         seq: expect.any(Number),
       });
     }
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("cuts a signed-in call that grows past the ceiling while it is read: 413, and the valid call at its start does not run", async () => {
+    const network = fakeNetwork();
+    const address = email("body-cut");
+    const ip = "198.51.100.18";
+    await verifiedUser(network, address, ip);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const created = await call("/rpc/organization/createInitial", {
+      body: {
+        json: { name: "Loja do corte", timezone: "America/Sao_Paulo" },
+      },
+      cookie,
+      ip,
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      (await created.json()) as { json: { organization: { id: string } } }
+    ).json.organization.id;
+    const categoriesOf = async () => {
+      const listed = await call("/rpc/category/list", {
+        body: { json: { organizationId, status: "all" } },
+        cookie,
+        ip,
+      });
+      expect(listed.status).toBe(200);
+      return (
+        (await listed.json()) as { json: { categories: { name: string }[] } }
+      ).json.categories.map((category) => category.name);
+    };
+    const createCategory = (name: string) =>
+      JSON.stringify({ json: { name, organizationId } });
+    // the same call, whole and within the ceiling, is accepted: the setup (session, organization, capability) is valid
+    const control = await call("/rpc/category/create", {
+      body: { json: { name: "Controle", organizationId } },
+      cookie,
+      ip,
+    });
+    expect(control.status).toBe(200);
+    expect(await categoriesOf()).toEqual(["Controle"]);
+
+    // a valid call, then blanks up to past the ceiling, in chunks of 64 KiB and with no Content-Length: what is read
+    // up to the ceiling is still valid JSON, so only the error of the stream keeps the procedure from running
+    const KIB = 1024;
+    const bytes = new Uint8Array(513 * KIB).fill(32);
+    const valid = new TextEncoder().encode(createCategory("Cortada"));
+    bytes.set(valid);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= bytes.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(bytes.slice(sent, sent + 64 * KIB));
+        sent += 64 * KIB;
+      },
+    });
+    const events = loggedEvents();
+
+    const response = await call("/rpc/category/create", {
+      cookie,
+      ip,
+      stream,
+    });
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({
+      error: { code: "payload_too_large" },
+    });
+    expect(
+      events().filter((entry) => entry.event === "rpc_payload_too_large")
+    ).toEqual([expect.objectContaining({ cut: "stream", declared: "absent" })]);
+    // the procedure did not run: the category of the cut call does not exist
+    expect(await categoriesOf()).toEqual(["Controle"]);
     expect(network.strangers).toEqual([]);
   });
 

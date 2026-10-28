@@ -13,7 +13,6 @@ import {
 } from "@polaris/domain/inventory/write-off-stock";
 import { DecimalAmount } from "@polaris/domain/money/money";
 import { isCalendarDate } from "../lib/dates";
-import { isDraftChanged } from "../lib/unsent-work";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -25,6 +24,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { isDraftChanged } from "../lib/unsent-work";
 import {
   costText,
   retarget,
@@ -839,6 +839,10 @@ function genericFailure(code: string | undefined): StockFailure {
       );
     case "BAD_REQUEST":
       return stockFailure(invalidDataMessage);
+    case "PAYLOAD_TOO_LARGE":
+      return stockFailure(
+        "O movimento de estoque não foi registrado: o pedido ficou grande demais. Recarregue a página e tente de novo."
+      );
     case "NOT_FOUND":
       return stockFailure(variantGoneMessage, { reloadList: true });
     default:

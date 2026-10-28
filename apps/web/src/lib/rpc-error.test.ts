@@ -29,6 +29,7 @@ describe("rpc error helpers", () => {
       "CONFLICT",
       "FORBIDDEN",
       "NOT_FOUND",
+      "PAYLOAD_TOO_LARGE",
       "UNAUTHORIZED",
     ]) {
       expect(isDefiniteRpcRejection({ code })).toBe(true);
