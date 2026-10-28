@@ -1800,7 +1800,7 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
     await openHome(page, server, NOON - DAY);
     await expect(region(page, "Vendas hoje")).toContainText("22/10");
     await expect.poll(() => copyKeys(page)).toHaveLength(3);
-    // the copy was read on 22/10; the server is now on 23/10 while the device still thinks it is 22/10: the copy is
+    // the copy was read on the eve of the server's day while the device clock still says that eve: the copy is
     // the device's today, not the store's, and the month's answer says so
     server.now = NOON;
     await page.reload();

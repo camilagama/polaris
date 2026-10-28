@@ -20,7 +20,7 @@ const OTHER = "0199c2d0-0000-7000-8000-00000000a002";
 const ZONE = "America/Sao_Paulo";
 const DAY = 86_400_000;
 const KEY = `${HOME_COPY_KEY_PREFIX}${ORG}`;
-/** 23/10 at noon of the store (UTC-3), and the same period B of that day. */
+/** Noon of the store (UTC-3) on the day the copies are read, and the period B of that day. */
 const TODAY = "2026-10-23";
 const READ_AT = "2026-10-23T15:00:00.000Z";
 const PERIOD = homePeriods(TODAY).before;

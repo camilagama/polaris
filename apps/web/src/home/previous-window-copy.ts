@@ -9,7 +9,7 @@ import { type Period, storeToday } from "./home-model";
 
 /**
  * The "janela anterior" (B) of the Início, taken from what the server last said instead of read again (ADR 0056,
- * emenda de 28/10). B is the days before the open month: it only changes with a late return, a late cancellation or an
+ * emenda sobre a janela anterior). B is the days before the open month: it only changes with a late return, a late cancellation or an
  * expense with a past competence, so the Início reads it once per store's day. It is taken only when the copy was read
  * on the store's today and is of exactly the period asked for; any other copy is as good as none. The month and today
  * (A) are never taken from here, and neither is any other screen: Resultado, Histórico and Meta read the server.
