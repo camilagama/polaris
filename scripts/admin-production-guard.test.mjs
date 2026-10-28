@@ -57,9 +57,28 @@ const ALLOWED_KEYS = {
     "name",
     "observability",
     "preview_urls",
+    "rules",
     "workers_dev",
   ],
 };
+/**
+ * The one module rule (corte admin-tela-v1, D-2): the page's script and sheet built by `build:ui` are embedded as text.
+ * Any other rule could make a file into code the Worker runs, so the rule is checked whole.
+ */
+const PAGE_TEXT_RULES = [
+  { fallthrough: false, globs: ["**/ui/generated/*.txt"], type: "Text" },
+];
+
+/** JSON with the keys of every object sorted, so the order a file writes them in does not matter. */
+function sortedJson(value) {
+  return JSON.stringify(value, (_key, item) =>
+    item !== null && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
+        )
+      : item
+  );
+}
 
 /** What is wrong with a block of the wrangler file, as the guard sees it. */
 function problemsOf(label, block, allowedKeys) {
@@ -76,6 +95,14 @@ function problemsOf(label, block, allowedKeys) {
         `${label}: the key ${key} is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)`
       );
     }
+  }
+  if (
+    block.rules !== undefined &&
+    sortedJson(block.rules) !== sortedJson(PAGE_TEXT_RULES)
+  ) {
+    problems.push(
+      `${label}: the module rules must be only the page's text rule`
+    );
   }
   if (block.main !== undefined && block.main !== WORKER_ENTRY) {
     problems.push(`${label}: main must be ${WORKER_ENTRY}`);
@@ -174,6 +201,23 @@ describe("admin Worker production guard (wrangler file)", () => {
         env: { ...config.env, preview: { workers_dev: true } },
       };
       expect(allProblems(extra).length).toBeGreaterThan(0);
+    });
+
+    it.each([
+      [
+        "a rule that makes the page files code",
+        [{ globs: ["**/ui/generated/*.txt"], type: "ESModule" }],
+      ],
+      [
+        "a second rule",
+        [...PAGE_TEXT_RULES, { globs: ["**/*.wasm"], type: "CompiledWasm" }],
+      ],
+      [
+        "a wider glob",
+        [{ fallthrough: false, globs: ["**/*.txt"], type: "Text" }],
+      ],
+    ])("refuses %s at the top level", (_name, rules) => {
+      expect(allProblems({ ...config, rules }).length).toBeGreaterThan(0);
     });
 
     it("refuses a route at the top level or in staging", () => {

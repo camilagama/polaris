@@ -99,7 +99,7 @@ export function labelName(name: string, limit = NAME_LIMIT): string {
 }
 
 /** A name a store owner typed, for the line where it is shown: visible controls, cut to `NAME_LIMIT`. */
-export function shownName(name: string): string {
+function shownName(name: string): string {
   return cut(visible(name), NAME_LIMIT);
 }
 
