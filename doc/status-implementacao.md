@@ -2555,7 +2555,6 @@ Origem: o item 4 das melhorias de qualidade aprovadas pelo usuário em 28/10 (de
 | Documentação | Em revisão | Emenda do ADR 0098, linha `client_error_log` no ADR 0079 e no registro de retenção (`packages/domain/src/privacy/retention.ts`, proposta), item do `privacy.md`, runbook `erros-do-navegador.md`. |
 | Pendências | Registrado | O deploy do staging precisa de `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no build (workflow, do responsável). Ligar em produção é item do checklist. O script e o cron de leitura são outra tarefa. |
 
-
 ### O Início reaproveita a janela anterior do dia (t480; emenda de 28/10 do ADR 0056; sem migration)
 
 Origem: D2 do desenho do `report.periodSummary` (Filipe), aceito pelo Everton com quatro condições, que são o escopo. O `periodSummary` é a rota mais cara do app no Workers Free e o Início o chamava duas vezes por carga.
