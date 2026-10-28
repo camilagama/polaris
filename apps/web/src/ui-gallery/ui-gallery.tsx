@@ -55,6 +55,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
 import {
@@ -656,6 +657,50 @@ export function UiGallery() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            </div>
+          </Section>
+
+          <Section title="Ajuda (i)">
+            {/* The cards clip their overflow, as in the app: the popup is in a portal and must come out whole. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Resultado estimado
+                    </CardTitle>
+                    <HelpTip about="Resultado estimado">
+                      Vendas menos custos, taxas e despesas de 1 a 23/10.
+                      Compara com 1 a 23/09.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Ticket médio
+                    </CardTitle>
+                    <HelpTip
+                      about="Ticket médio"
+                      link={{ href: "/dashboard", label: "Ver o resultado" }}
+                    >
+                      Vendas líquidas divididas pelo número de vendas.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </Section>
 
