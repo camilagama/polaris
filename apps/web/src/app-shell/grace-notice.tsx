@@ -10,8 +10,12 @@ import { useNow } from "../lib/use-now";
 import {
   graceNotice,
   type PlanNoticeFacts,
+  noPlanReadBackoff,
+  type PlanReadBackoff,
   planNoticeIsOld,
-  planNoticeRetryDelayMs,
+  planReadBackoffFor,
+  planReadFailed,
+  planReadSucceeded,
   type RememberedNotice,
   rememberedPlanNotice,
   rememberPlanNotice,
@@ -42,9 +46,10 @@ function usePlanNoticeFacts(
   const remembered = JSON.parse(text) as RememberedNotice | null;
   const old = planNoticeIsOld(remembered, now.getTime());
   const reading = useRef(false);
-  // the reads that failed in a row, and the first instant the next one may start
-  const failed = useRef({ failures: 0, retryAt: 0 });
+  // the wait after the reads that failed in a row, of the store it was counted for (never carried to another)
+  const failed = useRef<PlanReadBackoff>(noPlanReadBackoff(organizationId));
   useEffect(() => {
+    failed.current = planReadBackoffFor(failed.current, organizationId);
     if (
       !(enabled && online && readsItself && old) ||
       reading.current ||
@@ -56,16 +61,15 @@ function usePlanNoticeFacts(
     orpcClient.billing
       .readPlan({ organizationId })
       .then((plan) => {
-        failed.current = { failures: 0, retryAt: 0 };
+        failed.current = planReadSucceeded(failed.current, organizationId);
         rememberPlanNotice(organizationId, plan);
       })
       .catch(() => {
-        const failures = failed.current.failures + 1;
-        failed.current = {
-          failures,
-          // from the minute that started the read, so the wait is not stretched by the answer's delay
-          retryAt: now.getTime() + planNoticeRetryDelayMs(failures),
-        };
+        failed.current = planReadFailed(
+          failed.current,
+          organizationId,
+          now.getTime()
+        );
       })
       .finally(() => {
         reading.current = false;
