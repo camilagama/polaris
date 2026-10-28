@@ -23,6 +23,7 @@
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {
+    "basic-ftp": "6.2.3",
     "cheerio": {
       "undici": "7.30.1"
     },

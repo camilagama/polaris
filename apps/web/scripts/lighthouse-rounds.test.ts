@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  contendedByPage,
   median,
+  missingByPage,
   type Round,
   readRounds,
   roundOf,
@@ -78,16 +78,16 @@ describe("the rounds of the Lighthouse run", () => {
     expect(median([3000])).toBe(3000);
   });
 
-  it("calls a round contended when the machine ran under 85% of its fastest speed, and counts them per page", () => {
+  it("asks, per page, for as many rounds as it lacks at the speed of the machine", () => {
     const rounds = [
       round(SIGN_IN, "a", 1300),
-      round(SIGN_IN, "b", 1105),
-      round(SIGN_IN, "c", 1104),
+      round(SIGN_IN, "b", 1260),
+      round(SIGN_IN, "c", 1000),
       round(HOME, "d", 513),
       round(HOME, "e", 900),
       round(HOME, "f", 1250),
     ];
-    expect(contendedByPage(rounds)).toEqual(
+    expect(missingByPage(rounds)).toEqual(
       new Map([
         [SIGN_IN, 1],
         [HOME, 2],
@@ -95,11 +95,30 @@ describe("the rounds of the Lighthouse run", () => {
     );
   });
 
+  it("asks for nothing once the slow rounds have been replaced by fast ones", () => {
+    const rounds = [
+      round(HOME, "slow", 513),
+      round(HOME, "a", 1180),
+      round(HOME, "b", 1250),
+      round(HOME, "c", 1313),
+    ];
+    expect(missingByPage(rounds).size).toBe(0);
+  });
+
   it("asks for nothing when every round ran at the speed of the machine", () => {
     const rounds = [1180, 1250, 1313].map((speed, index) =>
       round(HOME, String(index), speed)
     );
-    expect(contendedByPage(rounds).size).toBe(0);
+    expect(missingByPage(rounds).size).toBe(0);
+  });
+
+  it("keeps asking while only slow rounds exist, as many as the page lacks", () => {
+    const rounds = [
+      round(HOME, "a", 1300),
+      round(HOME, "b", 600),
+      round(HOME, "c", 590),
+    ];
+    expect(missingByPage(rounds)).toEqual(new Map([[HOME, 2]]));
   });
 
   it("keeps the three rounds on the fastest CPU of each page and names the rest to drop", () => {
@@ -127,8 +146,8 @@ describe("the rounds of the Lighthouse run", () => {
       round(HOME, "d", 1200, 5000),
     ];
     expect(summaryTable(rounds).split("\n").slice(2)).toEqual([
-      "| /entrar | 3 | 3500 | 120 | 0.050 | 300000 | 5.7% |",
-      "| / (Início) | 1 | 5000 | 120 | 0.050 | 300000 | 0.0% |",
+      "| /entrar | 3 | 3500 | 120 | 0.050 | 300000 | 5.7% | 1200 a 1200 |",
+      "| / (Início) | 1 | 5000 | 120 | 0.050 | 300000 | 0.0% | 1200 a 1200 |",
     ]);
   });
 });

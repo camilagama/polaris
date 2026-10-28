@@ -10,8 +10,9 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import {
   CONTENDED_BELOW,
-  contendedByPage,
+  missingByPage,
   readRounds,
+  ROUNDS_PER_PAGE,
   summaryTable,
   surplusFiles,
 } from "./lighthouse-rounds.mjs";
@@ -40,13 +41,18 @@ if (!existsSync(chrome)) {
     "The Chromium of Playwright is not installed: run `bunx playwright install chromium`."
   );
 }
-const rc = readFileSync(`${appRoot}lighthouserc.json`, "utf8");
+const rcText = readFileSync(`${appRoot}lighthouserc.json`, "utf8");
 for (const port of [WEB_OUT, WEB_IN, CATALOG]) {
-  if (!rc.includes(`127.0.0.1:${port}`)) {
+  if (!rcText.includes(`127.0.0.1:${port}`)) {
     throw new Error(
       `lighthouserc.json does not use the port ${port} of this script.`
     );
   }
+}
+if (JSON.parse(rcText).ci.collect.numberOfRuns !== ROUNDS_PER_PAGE) {
+  throw new Error(
+    `lighthouserc.json asks for another number of rounds than the ${ROUNDS_PER_PAGE} that lighthouse-rounds.mjs keeps.`
+  );
 }
 
 const children = [];
@@ -163,12 +169,12 @@ function collect() {
     status === 0 && attempt < EXTRA_ATTEMPTS;
     attempt += 1
   ) {
-    const again = contendedByPage(readRounds(reports));
+    const again = missingByPage(readRounds(reports));
     if (again.size === 0) {
       break;
     }
     process.stdout.write(
-      `Rodadas com a CPU disputada (benchmarkIndex abaixo de ${CONTENDED_BELOW * 100}% do melhor): repetindo ${[...again.values()].reduce((sum, count) => sum + count, 0)}.\n`
+      `Rodadas com a CPU disputada (benchmarkIndex abaixo de ${CONTENDED_BELOW * 100}% da mais rápida): faltam ${[...again.values()].reduce((sum, count) => sum + count, 0)}.\n`
     );
     for (const [url, count] of again) {
       status ||= lhci(

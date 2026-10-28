@@ -72,8 +72,9 @@ export const UI_TEST_PACKAGES = [
 ] as const;
 
 /**
- * Everything apps/web depended on before this floor existed. These are not interface packages; the list
- * only freezes the set, so a new name (of any kind) cannot enter without editing this file.
+ * What apps/web depends on that is not an interface package: what it depended on before this floor existed and the
+ * development tools added since, each with its own change. The list only freezes the set, so a new name (of any
+ * kind) cannot enter without editing this file.
  */
 export const BASELINE_PACKAGES = [
   "@cloudflare/vite-plugin",

@@ -74,9 +74,30 @@ interface Asset {
   type: string;
 }
 
+/**
+ * What Workers Static Assets leaves out of what it serves: the patterns of `.assetsignore` (here `*.map`,
+ * `wrangler.json`, `.dev.vars`), and its own configuration files.
+ */
+function ignoredBy(patterns: string[]) {
+  return (path: string) =>
+    path === "/.assetsignore" ||
+    path === "/_headers" ||
+    patterns.some((pattern) =>
+      pattern.startsWith("*")
+        ? path.endsWith(pattern.slice(1))
+        : path === `/${pattern}`
+    );
+}
+
 /** Every file of the build, read once and gzipped once (the same level every run, as the precache budget measures). */
 function readClient(withClock: boolean) {
   const assets = new Map<string, Asset>();
+  const ignored = ignoredBy(
+    readFileSync(join(CLIENT, ".assetsignore"), "utf8")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
   const walk = (directory: string, prefix: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -84,6 +105,9 @@ function readClient(withClock: boolean) {
         continue;
       }
       const path = `${prefix}/${entry.name}`;
+      if (ignored(path)) {
+        continue;
+      }
       const extension = extname(entry.name);
       let body = readFileSync(join(directory, entry.name));
       if (withClock && path === "/theme-init.js") {
@@ -125,13 +149,23 @@ const ok = (value: unknown): Reply => ({
   status: 200,
 });
 
+const BODY_LIMIT = 65_536;
+
 function readBody(incoming: IncomingMessage) {
   return new Promise<string>((done) => {
     const chunks: Buffer[] = [];
-    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let size = 0;
+    incoming.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= BODY_LIMIT) {
+        chunks.push(chunk);
+      }
+    });
     incoming.on("end", () => done(Buffer.concat(chunks).toString("utf8")));
   });
 }
+
+const NOT_FOUND: Reply = { body: "{}", status: 404 };
 
 /** The reads of the Início, from the fixtures of the e2e-pwa; any other call of the Worker is a 404. */
 function rpcReply(asked: string, input: string): Reply {
@@ -139,9 +173,14 @@ function rpcReply(asked: string, input: string): Reply {
     return ok({ json: { organizations: [ORGANIZATION] }, meta: [] });
   }
   if (!HOME_READS.includes(asked)) {
-    return { body: "{}", status: 404 };
+    return NOT_FOUND;
   }
-  const sent = JSON.parse(input || "{}") as { json?: Record<string, unknown> };
+  let sent: { json?: Record<string, unknown> };
+  try {
+    sent = JSON.parse(input || "{}");
+  } catch {
+    return { body: "{}", status: 400 };
+  }
   const served = answer(asked, sent.json ?? {}, {
     failing: false,
     fresh: false,
@@ -160,13 +199,18 @@ async function workerReply(
   if (pathname === "/api/auth/get-session") {
     return ok(signedIn ? { session: { id: "s" }, user: { id: "u" } } : null);
   }
+  // the methods of the production Worker today: the password is off, so no form and no challenge on /entrar
+  if (pathname === "/api/auth-methods") {
+    return ok({ emailPassword: false, google: true, turnstileSiteKey: null });
+  }
   if (pathname.startsWith("/rpc/")) {
     const input = await readBody(incoming);
     return signedIn
       ? rpcReply(pathname.replace(RPC_PREFIX, ""), input)
-      : { body: "{}", status: 404 };
+      : NOT_FOUND;
   }
-  return null;
+  // the Worker's own paths never answer with the page
+  return pathname.startsWith("/api/") ? NOT_FOUND : null;
 }
 
 function sendAsset(
@@ -222,17 +266,34 @@ function webServer(withLogin: boolean) {
   });
 }
 
-/** A 1 x 1 gray PNG, as the fixture build of the catalog has no bucket for the photos. */
+/**
+ * A 1 x 1 gray PNG for every photo: the fixture build has no bucket. Too sparse for Chrome to count it as the largest
+ * contentful paint (under 0.05 bits per pixel), so the LCP of the store is its text. A photo of real size makes the
+ * LCP the lazy-loaded image, and the median of the simulated LCP then jumps between two values from one run to the next.
+ */
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mO8c+fOfwAIBAPD5uLZNgAAAABJRU5ErkJggg==",
   "base64"
 );
-const PHOTO_ROUTE = /\/m\/[^/]+\/[^/?]+/;
+const PHOTO_ROUTE = /^\/(?:[^/]+\/)?m\/[^/]+\/[^/?]+/;
+
+/**
+ * The stylesheet of the catalog answers this long after it is asked for. The first paint waits for it, while the scripts
+ * are asked for at the top of the page; over a real network the first paint comes a round trip or more after that
+ * request. Here the stylesheet arrives within milliseconds, so the first paint came before or after the scripts were
+ * asked for from one round to the next, and the Lantern graph of the FCP and the LCP held them or not: the simulated
+ * LCP of the page jumped by about a second while the LCP the browser saw was the same.
+ */
+const STYLESHEET_DELAY_MS = 600;
+const STYLESHEET = /\.css$/;
 
 /** In front of the catalog Worker of the fixture build: its photos answered here, the rest passed on, gzipped like the edge does. */
 function catalogServer() {
   return createServer((incoming, response) => {
     const path = incoming.url ?? "/";
+    const delay = STYLESHEET.test(new URL(path, "http://localhost").pathname)
+      ? STYLESHEET_DELAY_MS
+      : 0;
     if (PHOTO_ROUTE.test(path)) {
       return send(
         response,
@@ -261,15 +322,19 @@ function catalogServer() {
           const out = gzipped ? gzipSync(body, { level: 9 }) : body;
           // the body is whole here, so the upstream's chunked framing no longer applies
           const { "transfer-encoding": _chunked, ...passed } = reply.headers;
-          send(
-            response,
-            reply.statusCode ?? 502,
-            {
-              ...(passed as Record<string, string>),
-              "content-length": out.length,
-              ...(gzipped ? { "content-encoding": "gzip" } : {}),
-            },
-            out
+          setTimeout(
+            () =>
+              send(
+                response,
+                reply.statusCode ?? 502,
+                {
+                  ...(passed as Record<string, string>),
+                  "content-length": out.length,
+                  ...(gzipped ? { "content-encoding": "gzip" } : {}),
+                },
+                out
+              ),
+            delay
           );
         });
       }

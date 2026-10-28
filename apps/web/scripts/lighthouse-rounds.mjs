@@ -37,16 +37,29 @@ export function readRounds(directory) {
     );
 }
 
+/** The speed (`benchmarkIndex`) a round has to reach: a share of the fastest one seen in the run. */
+function speedBar(rounds) {
+  return Math.max(...rounds.map((round) => round.benchmark)) * CONTENDED_BELOW;
+}
+
 /**
- * The rounds measured while the machine was slower than at its best (a neighbor on the same cores, which scales the
- * work of every task by the CPU slowdown and moves the LCP and the TBT by seconds), by page: how many to run again.
+ * How many rounds each page still needs: the rounds measured while the machine was slower than at its best (a neighbor
+ * on the same cores scales the work of every task by the CPU slowdown and moves the LCP and the TBT by seconds) do not
+ * count, and a page asks for as many as it lacks to have `ROUNDS_PER_PAGE` that do.
  */
-export function contendedByPage(rounds) {
-  const fastest = Math.max(...rounds.map((round) => round.benchmark));
-  const missing = new Map();
+export function missingByPage(rounds) {
+  const bar = speedBar(rounds);
+  const good = new Map();
   for (const round of rounds) {
-    if (round.benchmark < fastest * CONTENDED_BELOW) {
-      missing.set(round.url, (missing.get(round.url) ?? 0) + 1);
+    good.set(
+      round.url,
+      (good.get(round.url) ?? 0) + (round.benchmark >= bar ? 1 : 0)
+    );
+  }
+  const missing = new Map();
+  for (const [url, count] of good) {
+    if (count < ROUNDS_PER_PAGE) {
+      missing.set(url, ROUNDS_PER_PAGE - count);
     }
   }
   return missing;
@@ -74,8 +87,8 @@ const label = (url) => {
 /** The medians per page and how far apart the rounds of the LCP were (the median is what the assertions read), as a Markdown table. */
 export function summaryTable(rounds) {
   const lines = [
-    "| Página | Rodadas | LCP (ms) | TBT (ms) | CLS | JS (B, gzip) | LCP: menor a maior |",
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Página | Rodadas | LCP (ms) | TBT (ms) | CLS | JS (B, gzip) | LCP: menor a maior | benchmarkIndex: menor a maior |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const url of new Set(rounds.map((round) => round.url))) {
     const own = rounds.filter((round) => round.url === url);
@@ -83,7 +96,7 @@ export function summaryTable(rounds) {
     const lcp = of("lcp");
     const spread = (Math.max(...lcp) - Math.min(...lcp)) / median(lcp);
     lines.push(
-      `| ${label(url)} | ${own.length} | ${Math.round(median(lcp))} | ${Math.round(median(of("tbt")))} | ${median(of("cls")).toFixed(3)} | ${median(of("js"))} | ${(spread * 100).toFixed(1)}% |`
+      `| ${label(url)} | ${own.length} | ${Math.round(median(lcp))} | ${Math.round(median(of("tbt")))} | ${median(of("cls")).toFixed(3)} | ${median(of("js"))} | ${(spread * 100).toFixed(1)}% | ${Math.round(Math.min(...of("benchmark")))} a ${Math.round(Math.max(...of("benchmark")))} |`
     );
   }
   return lines.join("\n");

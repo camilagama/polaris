@@ -12,6 +12,6 @@ export interface Round {
 export function median(values: number[]): number;
 export function roundOf(file: string, lhr: unknown): Round;
 export function readRounds(directory: string): Round[];
-export function contendedByPage(rounds: Round[]): Map<string, number>;
+export function missingByPage(rounds: Round[]): Map<string, number>;
 export function surplusFiles(rounds: Round[]): string[];
 export function summaryTable(rounds: Round[]): string;
