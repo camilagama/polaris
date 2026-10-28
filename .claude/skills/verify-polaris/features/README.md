@@ -5,7 +5,7 @@ Esta pasta é a fonte mantida para verificar o que a pessoa vê e faz no app web
 ## Condições de partida
 
 - Instância de pé e saudável: `verify.sh launch` terminou com `DOCTOR OK` e `verify.sh doctor` continua OK (`V=.claude/skills/verify-polaris/scripts/verify.sh`).
-- A loja da receita está semeada: `vazia` vem do launch; `vendas` e `limite` com `$V seed <loja>`. O drive usa a loja de `VERIFY_LOJA` (padrão `vazia`).
+- A loja da receita está semeada: `vazia` vem do launch; `vendas`, `limite` e `pro` com `$V seed <loja>`. O drive usa a loja de `VERIFY_LOJA` (padrão `vazia`). `pro` é a loja do plano Pro (a única que escreve offline) e só mostra o offline numa instância `launch --runtime`.
 - Nunca dirija uma instância que este run não subiu nem uma que o doctor reprovou.
 
 ## Convenções
@@ -54,7 +54,7 @@ Fora do menu: [outros endereços](outros-enderecos.md) (Pendências, entrada, p�
 ## Gotchas de toda a pilha
 
 - **Build velha.** O preview serve o build do momento do launch. Mudou código em `apps/` ou `packages/`? O doctor reprova a linha "the build is the worktree's": `cleanup` e `launch`.
-- **Sem conexão na pilha real.** As lojas são Free, e o Free não escreve offline: com `context.setOffline(true)` a barra mostra "Offline indisponível neste aparelho" e as telas que leem do servidor dizem "Não foi possível carregar …: a conexão falhou. Tente novamente." com o botão "Tentar novamente". `page.goto`/`page.reload` sem rede dá página em branco se o service worker ainda não controla a aba: só existe worker com `launch --runtime`, e a aba passa a ser controlada depois de `navigator.serviceWorker.ready` e uma recarga com rede. Fluxos offline de verdade: modo offline do `SKILL.md`.
+- **Sem conexão na pilha real.** As lojas `vazia`, `vendas` e `limite` são Free, e o Free não escreve offline (a `pro` escreve, com `launch --runtime`: ver [Vender](vender.md)): com `context.setOffline(true)` a barra mostra "Offline indisponível neste aparelho" e as telas que leem do servidor dizem "Não foi possível carregar …: a conexão falhou. Tente novamente." com o botão "Tentar novamente". `page.goto`/`page.reload` sem rede dá página em branco se o service worker ainda não controla a aba: só existe worker com `launch --runtime`, e a aba passa a ser controlada depois de `navigator.serviceWorker.ready` e uma recarga com rede. Fluxos offline de verdade: a loja `pro` e o modo offline do `SKILL.md`.
 - **Serviços externos.** Entrar com o Google, e-mail, cobrança (Asaas, Woovi), mídia (R2), cron e fila não rodam aqui. A sessão das lojas vem do `testUtils` do Better Auth, no Node, com o segredo do run.
 - **Limite de taxa.** 120 escritas por minuto por sessão e endereço. Cada loja tem o seu `cf-connecting-ip`; um drive que cria dezenas de itens em sequência pode receber 429.
 - **Data.** As vendas semeadas em dias anteriores aparecem como "Retroativa" no Histórico, e o primeiro item da lista da loja `vendas` recém-semeada é a de 6 dias atrás (a última registrada pela semeadura), não a de hoje.
