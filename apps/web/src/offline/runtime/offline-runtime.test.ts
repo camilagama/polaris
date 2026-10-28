@@ -2421,6 +2421,23 @@ describe("conexão com prova (F7)", () => {
         sessionRefused: false,
       });
     });
+
+    it("a 413 on the one command left keeps it queued, as 'sync_failed' and not as a rejection", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = Object.assign(new Error("too large"), {
+        code: "PAYLOAD_TOO_LARGE",
+        status: 413,
+      });
+
+      await runtime.syncNow();
+
+      expect(runtime.getSnapshot()).toMatchObject({
+        counts: { pending: 1, rejected: 0, sending: 0 },
+        reason: "sync_failed",
+        sessionRefused: false,
+      });
+    });
   });
 
   describe("the state never stops the real try", () => {

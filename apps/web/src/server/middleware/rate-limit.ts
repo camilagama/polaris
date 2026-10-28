@@ -79,7 +79,7 @@ function procedurePath(request: Request): string {
 }
 
 /** The procedure's route when the contract knows it; any other path is logged as one. */
-function rpcRoute(request: Request): string {
+export function rpcRoute(request: Request): string {
   const path = procedurePath(request);
   return procedureKinds.has(path) ? `${RPC_PREFIX}${path}` : "/rpc/<unknown>";
 }
