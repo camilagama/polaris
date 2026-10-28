@@ -4,6 +4,7 @@
   "description": "Vendas, estoque e resultado da sua loja.",
   "lang": "pt-BR",
   "dir": "ltr",
+  "prefer_related_applications": false,
   "start_url": "/",
   "scope": "/",
   "id": "/",

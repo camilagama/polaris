@@ -4,7 +4,8 @@ type Cell = Node | string;
 
 /**
  * A table with its headers. On a narrow screen the stylesheet stacks each row and labels each cell with its header
- * (`data-label`, shown by CSS), so the page never scrolls sideways (AC-15).
+ * (`data-label`, shown by CSS), so the page never scrolls sideways (AC-15); the funnel's tables are the exception and
+ * scroll inside their own region (`funnelTable`).
  */
 export function table(
   dom: Dom,

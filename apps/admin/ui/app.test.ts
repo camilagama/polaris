@@ -1,73 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
-import { mountAdmin } from "./app";
 import { NAME_LIMIT } from "./dom";
 import {
   allElements,
   buttons,
   byId,
   byTag,
-  FakeDocument,
   type FakeElement,
   visibleText,
 } from "./test-dom";
-import type {
-  OrganizationDiagnostics,
-  OrganizationSummary,
-  WhoAmI,
-} from "./types";
+import {
+  accessRedirect,
+  alertOf,
+  type Answer,
+  flush,
+  json,
+  mount,
+  OWNER,
+  summary,
+} from "./test-page";
+import type { OrganizationDiagnostics } from "./types";
 
 /**
  * The Admin page in a small DOM (ui/test-dom.ts), against a simulated API: what it asks the server, what it shows
  * and how it fails (corte admin-tela-v1, AC-3 to AC-6, AC-11, AC-12 and AC-14). Nothing here sets a clock: the page
  * has no timer, and the dates are fixed instants checked in Brasília.
  */
-
-interface Call {
-  init: RequestInit;
-  path: string;
-}
-
-type Answer = Response | Error | (() => Promise<Response>);
-
-const OWNER: WhoAmI = {
-  capabilities: [
-    "organization:diagnose",
-    "platform:read",
-    "support_case:manage",
-    "billing:operate",
-  ],
-  principal: {
-    emailSnapshot: "dona@polaris.example",
-    id: "0199a0a0-0000-7000-8000-000000000001",
-    role: "platform_owner",
-  },
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-
-/** The answer Access gives a `fetch` with `redirect: "manual"` once its session is over. */
-const accessRedirect = () =>
-  ({ ok: false, status: 0, type: "opaqueredirect" }) as Response;
-
-function summary(
-  overrides: Partial<OrganizationSummary> = {}
-): OrganizationSummary {
-  return {
-    accessEndsAt: null,
-    billingState: "free",
-    createdAt: "2026-10-01T12:00:00.000Z",
-    id: "org-free-1",
-    name: "Loja da Ana",
-    planInForce: "free",
-    status: "active",
-    ...overrides,
-  };
-}
 
 function diagnostics(
   overrides: {
@@ -162,50 +120,6 @@ function withoutControls(text: string): string {
     })
     .join("");
 }
-
-// the tests run in Node; the page's own types are the browser's, which have no setImmediate
-declare function setImmediate(callback: () => void): unknown;
-
-const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
-
-/** The page mounted on a fresh document; `answers` are given in the order the page asks. */
-async function mount(
-  answers: Answer[],
-  who: Answer = json(OWNER),
-  now: () => Date = () => new Date("2026-10-28T15:07:00.000Z")
-) {
-  const document = new FakeDocument();
-  const root = document.createElement("div");
-  document.body.append(root);
-  const calls: Call[] = [];
-  const queue = [who, ...answers];
-  const fetchJson = (path: string, init: RequestInit) => {
-    calls.push({ init, path });
-    const answer = queue.shift();
-    if (answer === undefined) {
-      throw new Error(`unexpected request to ${path}`);
-    }
-    if (answer instanceof Error) {
-      return Promise.reject(answer);
-    }
-    return typeof answer === "function" ? answer() : Promise.resolve(answer);
-  };
-  await mountAdmin(root as unknown as HTMLElement, fetchJson, now);
-  await flush();
-  const search = async (text: string) => {
-    byId(root, "busca").value = text;
-    buttons(root, "Buscar")[0]?.click();
-    await flush();
-  };
-  return { calls, document, queue, root, search };
-}
-
-const alertOf = (root: FakeElement) =>
-  allElements(root).find(
-    (element) =>
-      element.getAttribute("role") === "alert" &&
-      !element.hasAttribute("hidden")
-  );
 
 const queryOf = (path: string) =>
   new URL(path, "https://admin.example.invalid").searchParams;
@@ -328,7 +242,7 @@ describe("searching for a store (AC-4, AC-11)", () => {
     await flush();
     expect(queryOf(calls[2]?.path ?? "").get("after")).toBe("org-a");
     expect(queryOf(calls[2]?.path ?? "").get("query")).toBe("Loja");
-    expect(byTag(root, "tr")).toHaveLength(3);
+    expect(byTag(byTag(root, "tbody")[0] as FakeElement, "tr")).toHaveLength(2);
     // the button that had the focus is gone: the focus goes on to the store it brought
     expect(document.activeElement?.getAttribute("aria-label")).toBe(
       "Ver loja Loja B (org-b)"
@@ -576,11 +490,12 @@ describe("a store's diagnostics (AC-5)", () => {
   ] as const)(
     "shows its own sentence and no code for each failure (%#)",
     async (answer, problem) => {
-      const { document, root } = await opened(answer);
+      const { document, root, section } = await opened(answer);
       const alert = alertOf(root);
       expect(alert?.textContent).toBe(PROBLEM_TEXT[problem]);
       expect(document.activeElement).toBe(alert);
-      expect(visibleText(root)).not.toMatch(TECHNICAL_TEXT);
+      // the store's area, where the failure is said (the case form below counts up to 500 characters)
+      expect(visibleText(section)).not.toMatch(TECHNICAL_TEXT);
     }
   );
 

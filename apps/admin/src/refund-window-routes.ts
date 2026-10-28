@@ -11,7 +11,8 @@ import { readBody, sameOrigin, UUID } from "./support-routes";
 
 /**
  * The window of the right of withdrawal of one store, for the support that answers a refund asked by e-mail (ADR 0104,
- * decisions 8 and 10; the Pix roteiro of R-1). One JSON route and no screen. The read writes an audit row, so it is a
+ * decisions 8 and 10; the Pix roteiro of R-1). One JSON route, read by the Admin page's Reembolso area on an explicit
+ * click (ui/views/refund-window.ts), which refunds nothing. The read writes an audit row, so it is a
  * POST with a small JSON body and a same-origin check (ADR 0072), and it asks for `billing:operate`. The operator
  * comes from the verified login, never from the body. The checks (active operator, open case of the same store) and
  * the audit belong to the database function, in one transaction; the window is computed here with the product's
