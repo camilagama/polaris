@@ -23,7 +23,7 @@ export interface AccessEndedEmail {
 /**
  * Over the Free limit, the count, the limit and the window's end go in the text, and the one button leads to
  * Assinatura: the screen of the choice of the variants does not exist yet, and the e-mail offers no button to it
- * (Petković, 24/10, condition of the E-D; AC-15 stays open until that screen exists).
+ * (AC-15 stays open until that screen exists).
  */
 export function accessEndedContent(
   email: AccessEndedEmail

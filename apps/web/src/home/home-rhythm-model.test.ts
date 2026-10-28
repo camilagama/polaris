@@ -17,7 +17,7 @@ import {
   weekdayOf,
 } from "./home-rhythm-model";
 
-// Sunday 25/10/2026: the 26 weeks start on Sunday 03/05/2026
+// Sunday `25/10/2026`: the 26 weeks start on Sunday `03/05/2026`
 const TODAY = "2026-10-25";
 
 /** The series the server returns for the period of `today`, with a value per date. */
@@ -269,9 +269,9 @@ describe("the map of the weeks shown (rhythmView)", () => {
     values["2026-10-17"] = ["100.05", 2];
     values["2026-10-19"] = ["10.00", 1];
     const view = rhythmView(daysWith(values), RHYTHM_WEEKS);
-    // 25 Saturdays up to 24/10 (31/10 is to come): (2500.05 / 25) = 100.002 → 100.00
+    // 25 Saturdays up to `24/10` (`31/10` is to come): (2500.05 / 25) = 100.002 → 100.00
     expect(view.weekdays.means[6]).toBe("100.00");
-    // 25 Mondays shown, 04/05 to 19/10 (26/10 is to come): 10 / 25 = 0.40
+    // 25 Mondays shown, `04/05` to `19/10` (`26/10` is to come): 10 / 25 = 0.40
     expect(view.weekdays.means[1]).toBe("0.40");
     expect(view.weekdays.best).toBe(6);
     expect(view.soldWeeks).toBe(25);

@@ -10,7 +10,7 @@ import { keptList, type Refusal } from "./subscription-model";
 
 /**
  * What the owner's commands of the Assinatura say (corte assinatura-e-cancelar, AC-21 to AC-34, AC-42 to AC-44;
- * design t268 v2, § 4 and § 11; ADR 0104, decision 3): cancel the renewal, the refund of the right of withdrawal and
+ * ADR 0104, decision 3): cancel the renewal, the refund of the right of withdrawal and
  * paying the charge that failed. Everything comes from `billing.readPlan` and from the commands' answers; the client
  * counts no window and trusts no clock of its own: the screen reads the plan again once the server's `until` passes.
  */

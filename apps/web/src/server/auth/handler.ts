@@ -320,7 +320,7 @@ async function freshVerifiedSession(
   if (session.user.emailVerified !== true) {
     return { response: jsonError(403, "email_not_verified") };
   }
-  // The decision of 19/10/2026 (consolidation of the entry screen design, item 1): a password is
+  // Per the entry screen design (item 1), a password is
   // changed or added only by a session signed in within the last 15 minutes, as a device revocation.
   if (!isSessionFresh(session.session.createdAt)) {
     return { response: jsonError(403, "fresh_session_required") };
@@ -659,7 +659,7 @@ function sameConfiguration(
 }
 
 /**
- * Built once per isolate (ADR 0017, emenda de 25/10/2026): assembling Better Auth costs more CPU than a request has.
+ * Built once per isolate (ADR 0017): assembling Better Auth costs more CPU than a request has.
  * It holds configuration only. The `db`, the request identifier, the `waitUntil`, the e-mails and what the hooks
  * remember are read at each call from the request scope (`runWithRequestScope`), so nothing of a request or of a
  * user stays here. It is built again when the environment changes, or after a failure.

@@ -68,7 +68,7 @@ const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * The resend of the verification e-mail works only this long after the sign-up (`created_at`), so the purge of the
- * unverified users cannot be postponed forever by resending (ADR 0100, P10; decision of 21/10/2026).
+ * unverified users cannot be postponed forever by resending (ADR 0100, P10).
  */
 const EMAIL_VERIFICATION_RESEND_CAP_SECONDS = 72 * 60 * 60;
 

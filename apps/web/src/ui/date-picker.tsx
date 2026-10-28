@@ -45,7 +45,7 @@ export interface DatePickerProps {
 /**
  * One date: an outline button with the calendar icon and the date written "24/10/2026" ("Escolher data" when there
  * is none) opens the month in a Popover, with "Hoje" in its footer. A touch on a day chooses it and closes. In this
- * first version the phone uses the same Popover; the full-screen Dialog comes with t331.
+ * first version the phone uses the same Popover; the full-screen Dialog comes later.
  */
 export function DatePicker({
   className,

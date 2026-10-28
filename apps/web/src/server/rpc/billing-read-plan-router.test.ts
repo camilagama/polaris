@@ -116,7 +116,7 @@ const freeRecord: OwnerPlanRecord = {
   trialAvailable: true,
 };
 
-/** Paid by card on 10/10 at 15:00 in São Paulo, monthly. */
+/** Paid by card on `10/10` at 15:00 in São Paulo, monthly. */
 const activeRecord: OwnerPlanRecord = {
   ...freeRecord,
   accessEndsAt: sp("2026-11-11T00:00:00"),
@@ -157,7 +157,7 @@ function setup(
   options: {
     bindings?: WorkerBindings;
     facts?: OwnerPlanTenantFacts;
-    /** The clock of the read; 12/10 09:00 in São Paulo by default. */
+    /** The clock of the read; `12/10` 09:00 in São Paulo by default. */
     now?: Date;
     /** The providers whose port can be built, and whether each refunds. */
     ports?: Record<string, { refundsEnabled: boolean }>;

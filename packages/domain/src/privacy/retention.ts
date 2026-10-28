@@ -12,7 +12,7 @@
  * A legal period (tax, accounting, LGPD, Marco Civil) carries the date of the
  * decision and the norms it rests on (`approvedOn`, `legalSources`).
  *
- * On 19/10/2026 the user approved every period of this registry, the legal ones
+ * The user approved every period of this registry, the legal ones
  * included ("always looking for simplicity"): the `review` of every class is
  * `decidida`. A lawyer's review of the legal periods is still recommended, but
  * it does not block anything: every class whose basis is the law keeps
@@ -85,7 +85,7 @@ export type RetentionReview =
   | { at: string; by: string; state: "decidida" };
 
 /**
- * Every period was approved by the user on 19/10/2026, the legal ones included, looking for
+ * Every period was approved by the user, the legal ones included, looking for
  * simplicity. A lawyer's review is recommended (`legalReview`) and blocks nothing; no job or
  * refusal was turned on by this decision.
  */
@@ -210,8 +210,8 @@ const DAY_MS = 24 * HOUR_MS;
 const TO_CONFIRM = "a confirmar pelo responsável";
 
 /**
- * The periods of the tenant's audit (ADR 0081, amended 19/10/2026; `security` lowered from 60 to 12 months by the
- * user's decision of 19/10/2026; a lawyer's review is recommended). The classes stay `proposta`, so no code reads them as
+ * The periods of the tenant's audit (ADR 0081, amended; `security` lowered from 60 to 12 months by the
+ * user's decision; a lawyer's review is recommended). The classes stay `proposta`, so no code reads them as
  * an approved period: the database function `tenant_audit_event_expired` (migration 0081) holds the same numbers, and
  * the audit gate proves its behavior at their edges.
  */

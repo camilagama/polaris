@@ -72,7 +72,7 @@ interface RevokeFormProps {
 }
 
 /**
- * The rest of the confirmation of a revocation, in the order of the rule of 19/10: the extra choice (always
+ * The rest of the confirmation of a revocation, in the order of the rule: the extra choice (always
  * unticked on opening), the error of the attempt right above the buttons, then the buttons.
  */
 export function RevokeForm({

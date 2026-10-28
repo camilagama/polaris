@@ -18,7 +18,7 @@ import { organizations } from "./organization";
 const runtimeRole = "polaris_pr11_runtime";
 
 /**
- * The audit of the tenant survives the purge of the organization (ADR 0081, amended 19/10/2026): the foreign key
+ * The audit of the tenant survives the purge of the organization (ADR 0081, amended): the foreign key
  * restricts, and the triggers of migration 0080 refuse UPDATE, DELETE and TRUNCATE (only the retention function
  * removes an expired row). `event_type` is a registered type (a CHECK built from the domain registry).
  */
@@ -32,7 +32,7 @@ export const tenantAuditEvents = pgTable(
     entityId: text("entity_id").notNull(),
     entityType: text("entity_type").notNull(),
     eventType: text("event_type").notNull(),
-    // the class of the type in the domain registry (ADR 0081, amended 19/10/2026): it decides the retention
+    // the class of the type in the domain registry (ADR 0081, amended): it decides the retention
     eventClass: text("event_class")
       .notNull()
       .generatedAlwaysAs(sql.raw(tenantAuditEventClassSql())),

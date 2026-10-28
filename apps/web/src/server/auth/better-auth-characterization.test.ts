@@ -11,7 +11,7 @@ import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
 
 /**
  * What the Polaris relies on from inside Better Auth, written on 1.6.23 before the upgrade to 1.7 and kept as is
- * after it (t435): the schema the Drizzle adapter maps to our tables, the 30-day session and its revocation on
+ * after it: the schema the Drizzle adapter maps to our tables, the 30-day session and its revocation on
  * sign-out, the IP of the access log (`getIp`), a failing audit write, the order of the `before` and `after` hooks
  * (`runAfterHooks`), `internalAdapter.updateSession` and the fixed `baseURL`. A change of any of them in a new
  * version fails here before it reaches a deploy.

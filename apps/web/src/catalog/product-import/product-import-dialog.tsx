@@ -31,7 +31,7 @@ import { type ImportStep, useProductImport } from "./use-product-import";
 
 /**
  * "Importar planilha" (corte 2.5): one dialog, four steps (the file, the preview, the import, the result), the whole
- * screen on a phone and the centred dialog from 760 px (`layout="form"`, with the step back of the phone, t408). Its
+ * screen on a phone and the centred dialog from 760 px (`layout="form"`, with the step back of the phone). Its
  * code and the reading of the CSV are a chunk of their own, loaded when the person opens the import and kept out of the
  * precache (there is no import offline). Esc and × keep the file and the preview while the page is open; nothing
  * closes the dialog while rows are on their way; after the result it closes for good.

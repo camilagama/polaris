@@ -21,7 +21,7 @@ export type PeriodPreset =
 
 /**
  * "Este ano" and any range above 62 days wait for the CPU measure of the `periodSummary` of 366 days in staging
- * (AC-23, Emenda de 24/10). The grouping by month (`groupByMonth`) is ready and tested; turning this on is the one
+ * (AC-23). The grouping by month (`groupByMonth`) is ready and tested; turning this on is the one
  * change that opens the long periods. Until the measure is registered it stays off.
  */
 export const LONG_PERIODS_ENABLED = false;

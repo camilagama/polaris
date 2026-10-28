@@ -24,7 +24,7 @@ import {
 } from "../product-import-send";
 
 /**
- * What the dialog "Importar planilha" says and decides, apart from React (corte 2.5, the texts of the Petković, 27/10):
+ * What the dialog "Importar planilha" says and decides, apart from React (corte 2.5):
  * what of the file enters, what the plan holds, the rows of the tables and the sentences of each step. The dialog never
  * promises a time: the progress is the rows answered, and an estimate only from the pace of this import, said as one.
  */
@@ -120,7 +120,7 @@ const EXISTS_IN_PREVIEW = "Já existe um produto com este nome. Fica como está.
 const OVER_LIMIT_IN_PREVIEW = "Não cabe no plano: esta linha fica de fora.";
 
 function noCategoryReason(category: string): string {
-  // a cell of the file can be as long as the file: written as the headers are (Rodrigo, 27/10)
+  // a cell of the file can be as long as the file: written as the headers are
   return `A categoria “${shortHeader(category.trim())}” não existe na loja. O produto entra sem categoria.`;
 }
 
@@ -464,7 +464,7 @@ export function stockText(sameDay: boolean): string {
 
 /**
  * The template to download: only the six columns with the form's labels. No example row: one left in the file would
- * become a product (Petković, 27/10); the step of the file says an example in its text.
+ * become a product; the step of the file says an example in its text.
  */
 export function importTemplateCsv(): string {
   return csvFile(

@@ -60,7 +60,7 @@ const link = {
 /** The `billing_events` row of the first charge (`first_charge_event_id`). */
 const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 
-/** Paid by card on 10/10 at 15:00 in São Paulo; the store's clock is 12/10 09:00 (inside the window). */
+/** Paid by card on `10/10` at 15:00 in São Paulo; the store's clock is `12/10` 09:00 (inside the window). */
 const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,

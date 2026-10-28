@@ -3,7 +3,7 @@ import type { RevokedPayment } from "./facts";
 import { saoPauloDateOf } from "./provider-period";
 
 /**
- * What the owner reads of the plan (ADR 0104, decision 2; design t268 v2, §3): the next charge, the window of the
+ * What the owner reads of the plan (ADR 0104, decision 2): the next charge, the window of the
  * right of withdrawal and when a new subscription may start, derived from the billing record and a clock the caller
  * gives. Nothing here reads a clock, a database or a provider; the read of the plan (`billing.readPlan`) and the
  * owner's commands use these same functions, so the screen and the command never disagree on a date.

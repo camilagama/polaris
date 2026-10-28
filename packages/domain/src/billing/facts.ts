@@ -37,7 +37,7 @@ export function isBillingCycleMonths(
 /**
  * What a payment moved, as the provider reported it (`money.md`: exact decimal
  * text, two places, never a float). It is the fiscal record of a money fact
- * (ADR 0101, Filipe V2); the lifecycle never reads it. Optional: a fact stored
+ * (ADR 0101); the lifecycle never reads it. Optional: a fact stored
  * before it existed has none.
  */
 export interface BillingFactAmount {

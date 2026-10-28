@@ -26,7 +26,7 @@ function pageOf(role: string, billingSelfService: boolean) {
 }
 
 /**
- * `?aba=assinatura` without `billing:manage` is accepted (t423): the tab says why and offers nothing, so there is no
+ * `?aba=assinatura` without `billing:manage` is accepted: the tab says why and offers nothing, so there is no
  * action to disable. Nothing of the billing is drawn or asked there (the screen that reads the plan is not mounted).
  */
 describe("the Assinatura without billing:manage", () => {

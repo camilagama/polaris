@@ -58,21 +58,21 @@ describe("the day the data may be deleted (D)", () => {
   });
 
   it("starts the day at its first instant across a change of daylight saving time", () => {
-    // São Paulo, 4/11/2018: midnight did not exist (the clock jumped to 01:00)
+    // São Paulo, `4/11/2018`: midnight did not exist (the clock jumped to 01:00)
     const gap = closureDeadlines(
       new Date("2018-08-06T15:00:00.000Z"),
       "America/Sao_Paulo"
     );
     expect(gap.deletionDate).toBe("2018-11-04");
     expect(iso(gap.deletableFrom)).toBe("2018-11-04T03:00:00.000Z");
-    // Havana, 4/11/2012: midnight happened twice (01:00 went back to 00:00); the first one counts
+    // Havana, `4/11/2012`: midnight happened twice (01:00 went back to 00:00); the first one counts
     const twice = closureDeadlines(
       new Date("2012-08-06T16:00:00.000Z"),
       "America/Havana"
     );
     expect(twice.deletionDate).toBe("2012-11-04");
     expect(iso(twice.deletableFrom)).toBe("2012-11-04T04:00:00.000Z");
-    // New York: the milestones fall on both sides of the change of 14/3/2027
+    // New York: the milestones fall on both sides of the change of `14/3/2027`
     const newYork = closureDeadlines(
       new Date("2026-12-14T17:00:00.000Z"),
       "America/New_York"

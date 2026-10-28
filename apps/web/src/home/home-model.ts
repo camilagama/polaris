@@ -6,7 +6,7 @@ import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
 /**
- * Pure rules of the Início (desenho t269 v2, § 2.4 and § 5): which periods it reads, what "today" is, the line under
+ * Pure rules of the Início: which periods it reads, what "today" is, the line under
  * the title, the series of the chart, which goal the card shows, the lines of "Precisa de atenção" and the checklist
  * of a store with no sale (the KPI cards are in home-kpis.ts). Every figure is the server's; money is added in
  * exact cents (`Money`), never as a float, and the numbers given to a drawing are only for the drawing.
@@ -344,7 +344,7 @@ export type GoalProjection =
 
 /**
  * "No ritmo dos últimos 7 dias, chega a R$ 3.380,00 em 31/10. Estimativa." (v7 § 3 item 9), only from what is known;
- * when the rhythm crosses the target, the day it does ("a meta é batida em 28/10", Petković, 26/10), and with nothing
+ * when the rhythm crosses the target, the day it does ("a meta é batida em 28/10"), and with nothing
  * sold in the 7 days no figure at all (a "chega a" equal to what was reached is no estimate):
  * the goal's own measure today (the server's `progress.value`) plus, for each day after today up to its last one, the
  * mean of the 7 whole days before today, from the daily series the server sent (`month.daily` and `before.daily`):
@@ -582,8 +582,7 @@ export interface HomeReads {
   sales: boolean;
   /**
    * The unknown cost line reads `movingAverageCost` through a filter on it: it follows the rule of that field, today
-   * `inventory:read`. A role that reads the stock without the cost (none exists yet) must lose this line too
-   * (Rodrigo, PR 281, menor 2).
+   * `inventory:read`. A role that reads the stock without the cost (none exists yet) must lose this line too.
    */
   unknownCost: boolean;
 }

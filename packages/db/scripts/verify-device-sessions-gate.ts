@@ -49,7 +49,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * Revoking a device ends the sessions of the browsers that used it (design t051 with the review fixes):
+ * Revoking a device ends the sessions of the browsers that used it:
  *   - a session that uses a live device (register, lease, sync, `device.check`) is linked to it, and revoking the
  *     device deletes the linked sessions in the same transaction; the other sessions of the user stay;
  *   - a session that never used the device is ended by `device.check` linking it, or by the "end the other
@@ -609,7 +609,7 @@ async function run() {
       "revoking a device with no linked session audits device_revoked once with the acting session and device (ended_session_count 0) and a repetition audits nothing; an acting session with a blank id is refused as a lost session and revokes nothing"
     );
 
-    // ------- 5c. "Sair" revokes this device (ADR 0048, emenda de 22/10): the session's own device only
+    // ------- 5c. "Sair" revokes this device (ADR 0048): the session's own device only
     const tenantC = await createTenantFixture(admin.pool, "device sessions C");
     const originOf = async (deviceId: string, sessionId: string) =>
       (

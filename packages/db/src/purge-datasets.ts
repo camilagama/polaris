@@ -57,9 +57,7 @@ export const PURGE_CASCADED_TABLES = Object.freeze([
 ] as const);
 
 /**
- * Tables with an organization that the purge keeps, and why. `tenant_audit_event` is one of them since 19/10/2026
- * (ADR 0081, amended): nothing of the audit leaves in the purge. Since the decisions of 18/10/2026 (ADR 0081) the
- * purge also rewrites four of them in the same transaction: the facts of `billing_events` lose every key but
+ * Tables with an organization that the purge keeps, and why. `tenant_audit_event` is one of them (ADR 0081, amended): nothing of the audit leaves in the purge. The purge also rewrites four of them in the same transaction: the facts of `billing_events` lose every key but
  * `PURGE_BILLING_FACT_KEYS` (a pseudonymization: the provider's references stay and still find the payer at the
  * provider), and the free text of `support_cases`, `privacy_cases` (no organization column: it hangs from the
  * support case), `organization_purge_cancellations` and `entitlement_grants` is removed.
@@ -123,7 +121,7 @@ export const PURGE_TABLES_WITHOUT_TENANT_DATA: Readonly<
 });
 
 /**
- * The keys a billing fact keeps after the purge (ADR 0081, decision of 18/10/2026): what the lifecycle writes
+ * The keys a billing fact keeps after the purge (ADR 0081): what the lifecycle writes
  * (`serializeBillingFact` and the ledger's commands), that is values, dates, types and opaque references, and since
  * migration 0084 the amount and currency of a money fact (the fiscal record, ADR 0101).
  * `purge_organization_data` holds the same list (`kept_fact_keys`); any other key, such as a payer's name,

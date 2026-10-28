@@ -2117,7 +2117,7 @@ async function run() {
     const xAudits = await auditsOf(x.id);
     assert.equal(xAudits.length, 1, "exactly one audit row");
     assert.deepEqual(xAudits[0], {
-      // the operator's reason is checked and never written (decision of 18/10/2026, ADR 0085)
+      // the operator's reason is checked and never written (ADR 0085)
       detail: "result=retried",
       entity_id: x.id,
       entity_type: "queue_dead_letter",

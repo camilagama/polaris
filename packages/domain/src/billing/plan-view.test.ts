@@ -38,7 +38,7 @@ const trialing: PlanViewRecord = {
   state: "trialing",
 };
 
-/** Paid on 10/10 at 15:00 in São Paulo, monthly: the period runs through 10/11. */
+/** Paid on `10/10` at 15:00 in São Paulo, monthly: the period runs through `10/11`. */
 const active: PlanViewRecord = {
   ...trialing,
   accessEndsAt: sp("2026-11-11T00:00:00"),
@@ -152,7 +152,7 @@ describe("refundWindowOf (AS-7, T-5)", () => {
   });
 
   it("a webhook delivered two days late does not push the window: it runs from the provider's moment", () => {
-    // the charge happened on 10/10 at 15:00 and was processed on 12/10; the record keeps the provider's moment
+    // the charge happened on `10/10` at 15:00 and was processed on `12/10`; the record keeps the provider's moment
     const lateWebhook = { ...active, firstChargeAt: sp("2026-10-10T15:00:00") };
     expect(
       refundWindowOf(lateWebhook, sp("2026-10-12T15:00:00"))?.until
@@ -249,7 +249,7 @@ describe("refundWindowClosesAt (T-5)", () => {
 });
 
 describe("refundWindowEndedOnOf (AS-14, AS-30)", () => {
-  /** Paid on 10/10, renewed on 10/11: the renewal is a new period, never a new window. */
+  /** Paid on `10/10`, renewed on `10/11`: the renewal is a new period, never a new window. */
   const renewed: PlanViewRecord = {
     ...active,
     accessEndsAt: sp("2026-12-11T00:00:00"),

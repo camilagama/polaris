@@ -29,7 +29,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * AC-23 of the Início (corte inicio.md, emended; desenho t269 v2, § 5.4) on a real PostgreSQL 18: opening the Início
+ * AC-23 of the Início (corte inicio.md, emended) on a real PostgreSQL 18: opening the Início
  * writes nothing. Every read the page makes (§ 2.4: A and B of the period summary, the goals, the variants with no
  * stock and with no cost, and the checklist's sale, product and stock) is run as the handlers run them, each opening
  * on a connection of its own that is closed at the end, so the backend's statistics are flushed (`pg_stat_*` is

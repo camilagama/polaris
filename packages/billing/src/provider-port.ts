@@ -182,7 +182,7 @@ export interface BillingProviderPort {
   ) => Promise<RefundOutcome>;
   /**
    * Whether `refundCurrentPeriod` may call the provider here. The refund
-   * command cancels the renewal first (ADR 0066, emenda de 23/10), so it asks
+   * command cancels the renewal first (ADR 0066), so it asks
    * this before touching anything: a provider that cannot refund leaves the
    * renewal as it was.
    */
@@ -190,7 +190,7 @@ export interface BillingProviderPort {
 }
 
 /**
- * The first charge Polaris recorded for the link (ADR 0104, desenho t268 §7):
+ * The first charge Polaris recorded for the link (ADR 0104, §7):
  * the ID of its `billing_events` row (`first_charge_event_id`) and the end of
  * the period it paid for, as that fact says. The provider's charges are told
  * apart by the period each pays, the same `periodEndsAt` its fact carried.

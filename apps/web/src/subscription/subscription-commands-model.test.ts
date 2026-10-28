@@ -50,7 +50,7 @@ const A_FAILURE = /Nada foi|falhou/;
 /** The contract's rule for the reason (`billingCancelRenewalInput`). */
 const CONTRACT_REASON = /^(?:[^\p{C}]|[\n\t])*$/u;
 
-/** The window of a first charge on 23/10/2026: it ends at 23:59:59 of 30/10 in São Paulo (02:59:59Z on 31/10). */
+/** The window of a first charge on `23/10/2026`: it ends at 23:59:59 of `30/10` in São Paulo (02:59:59Z on `31/10`). */
 const UNTIL = "2026-10-31T02:59:59.999Z";
 const REFUND = { amount: "24.90", until: UNTIL, via: "app" as const };
 const RPC_ERROR = (code: string, reason: string) => ({

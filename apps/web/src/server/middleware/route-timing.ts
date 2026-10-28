@@ -57,7 +57,7 @@ function handlerPattern(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
 }
 
 /**
- * `ROUTE_TIMING_ALL` = `"true"` (staging only, CPU-1e, ADR 0094 amended on 26/10/2026) widens the event to every
+ * `ROUTE_TIMING_ALL` = `"true"` (staging only, ADR 0094 amended) widens the event to every
  * `/rpc` procedure and every named `/api` route, so a route can be measured by `isolate.seq` against another one in
  * the same deploy. The label is still a pattern: a `/rpc` path is logged only when oRPC matched a procedure
  * (`markMatchedProcedure`), and an `/api` path only when a route of the app named it (not the `/api/*` of a

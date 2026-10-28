@@ -33,7 +33,7 @@ import {
 import type { BillingEmailStore } from "./emails/content";
 
 /**
- * The consumer of `billing.notice` (ADR 0104, decision 7; design t268 v2, §9): reads the notice and the billing record
+ * The consumer of `billing.notice` (ADR 0104, decision 7): reads the notice and the billing record
  * again (the billing role), checks it is still true (`noticeStillTrue`), reads the store it speaks of and the address of
  * its owner (the authentication role's `billing_notice_recipient`, never the payer of the Pix), renders the e-mail and
  * sends it under the notice's ID as the provider's idempotency key, then marks it sent, failed or skipped. The address,

@@ -17,7 +17,7 @@ import { organizations } from "./organization";
 const ownerRole = "polaris_privacy_owner";
 
 /**
- * The notices of a closure (ADR 0102 amended, design t107 §5): one row per milestone of a closure cycle, written
+ * The notices of a closure (ADR 0102 amended): one row per milestone of a closure cycle, written
  * by the privacy job once the milestone's date arrives (`record_closure_notices`), whether or not an e-mail goes
  * out. The milestones come only from the dates of the closure (the request, D minus 30 and minus 7 local days,
  * D), the same with or without a legal hold; `rescheduled` is the new notice of 7 days when a legal hold released

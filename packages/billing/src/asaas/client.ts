@@ -41,7 +41,7 @@ export interface AsaasClient {
   listSubscriptionPayments: (subscriptionId: string) => Promise<unknown[]>;
   /**
    * The subscription(s) a checkout created, deleted ones included. The API has
-   * no `checkoutSession` filter (it ignores the parameter: sandbox, 19/10/2026),
+   * no `checkoutSession` filter (it ignores the parameter: sandbox),
    * so the list is read newest first and filtered here, stopping at the page
    * where the checkout is found. A checkout makes one subscription. A checkout
    * not found within the pages read is an error, never an empty answer. Only for

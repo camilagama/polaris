@@ -24,8 +24,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The notices of the billing cycle and the welcome, the database part (ADR 0104, decision 7; PR F of design t268 v2,
- * migration 0101), on a real PostgreSQL 18:
+ * The notices of the billing cycle and the welcome, the database part (ADR 0104, decision 7; migration 0101), on a real PostgreSQL 18:
  *   1. `billing_notices`: forced row security, the exact policies and grants per role, nothing to the tenant, and its
  *      checks (the kinds, the welcome's person, the opaque key, one outcome, one notice per store, kind and key, one
  *      welcome per person);

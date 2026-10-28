@@ -1,5 +1,5 @@
 /**
- * What reads the time of day in a TypeScript source (t438): `Date.now` (also `Date?.now`, `Date["now"]`, `Date.now`
+ * What reads the time of day in a TypeScript source: `Date.now` (also `Date?.now`, `Date["now"]`, `Date.now`
  * as a value), `new Date()` (also `new Date`, `new Date(undefined)`, `new globalThis.Date()`, `new (Date)()`), `Date()`
  * without `new`, `Reflect.construct(Date, ...)`, `Date` taken as a value (`const D = Date`, `run(Date)`),
  * `Temporal.Now` and `performance.timeOrigin`. Comments, the text of strings and templates and regular expressions

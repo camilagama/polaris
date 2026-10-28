@@ -8,14 +8,14 @@ import type { Period } from "./home-model";
 import { type DailySeries, isDailySeries } from "./home-rhythm-model";
 
 /**
- * The copy of the Início's map on the device (desenho do `dailySales`, Filipe 25/10; condição do Rodrigo, PR 335): the
+ * The copy of the Início's map on the device: the
  * series `report.dailySales` returned (the days before the month, ~3 KB), under `polaris.offline.dailySales.<org>`,
  * with the same life as the other copies of the Início: it goes with "Sair" and with the session ended
  * (`clearPeriodSummaryCaches`), with a refusal of the store (`clearOrganizationResultCopies`), and a read still in flight
  * does not write it once sign-out started (the guard). The days of the month are the month's copy; without this one
  * the map says it opens with a connection.
  *
- * It is also the map's daily cache (Filipe, CPU-1e item 3): the copy keeps the store's day it was read on, and the
+ * It is also the map's daily cache: the copy keeps the store's day it was read on, and the
  * Início asks `report.dailySales` again only when the copy is not of today (or of another period), or on an explicit
  * "Tentar novamente". The days before the month may then miss a return made today until tomorrow: "até ontem".
  * With the runtime off (production today) nothing goes to the disk: the same day and series stay in the page's memory

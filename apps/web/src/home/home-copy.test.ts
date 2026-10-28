@@ -115,7 +115,7 @@ function summary(
   };
 }
 
-// October 2026 read on 15/10 at noon of the store, and the September before it
+// October 2026 read on `15/10` at noon of the store, and the September before it
 const READ_A = "2026-10-15T15:00:00.000Z";
 const READ_B = "2026-10-15T14:00:00.000Z";
 const october = (generatedAt = READ_A, withDaily = true) =>
@@ -489,7 +489,7 @@ describe("the figures of the copy (copiedFigures)", () => {
   });
 
   it("um B que não cobre os 30 dias que a leitura de A pede não serve", () => {
-    // read on 1 March: B has to start on 31 January, so a B from 1 February would draw a zero for 31/01
+    // read on 1 March: B has to start on 31 January, so a B from 1 February would draw a zero for `31/01`
     const a = summary("2027-03-01", "2027-03-31", "2027-03-01T15:00:00.000Z");
     const short = summary("2027-02-01", "2027-02-28", READ_B);
     const whole = summary("2027-01-31", "2027-02-28", READ_B);
@@ -512,13 +512,13 @@ describe("the figures of the copy (copiedFigures)", () => {
   });
 
   it("o dia de hoje nunca passa do fim do mês do A", () => {
-    // read on 02/11 in the store, but the copy of A is October's: the series ends on 31/10
+    // read on `02/11` in the store, but the copy of A is October's: the series ends on `31/10`
     const { copy, storage } = keep({ a: october("2026-11-02T15:00:00.000Z") });
     expect(copiedFigures(storage, ORG, copy, ZONE)?.today).toBe("2026-10-31");
   });
 
   it("o dia da leitura vem do fuso da loja, não do UTC", () => {
-    // 01:30 UTC of 16/10 is still 15/10 in São Paulo
+    // 01:30 UTC of `16/10` is still `15/10` in São Paulo
     const { copy, storage } = keep({ a: october("2026-10-16T01:30:00.000Z") });
     expect(copiedFigures(storage, ORG, copy, ZONE)?.today).toBe("2026-10-15");
   });
@@ -674,7 +674,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
   });
 
   it("um relógio do aparelho atrasado 3 dias não mantém 'em andamento' a meta que terminou antes da leitura", () => {
-    // A read on 15/10; the goal ended on 14/10; the device says 12/10
+    // A read on `15/10`; the goal ended on `14/10`; the device says `12/10`
     const { storage } = memoryStorage();
     writePeriodSummaryCache(storage, ORG, "2026-10", october(), ALLOWED);
     writeHomeCopy(storage, ORG, {

@@ -6,7 +6,7 @@ import {
 } from "../logout-guard";
 
 /**
- * The whole logout, end to end (ADR 0039 and the emenda of 22/10 of ADR 0048): protect the queue first, then,
+ * The whole logout, end to end (ADR 0039 and the emenda of ADR 0048): protect the queue first, then,
  * online, revoke this device on the server, then end the server session, then forget the device and leave. The
  * local data is purged by the guard before anything else, so a failed purge leaves the person signed in, with
  * their data. The revocation never stops the logout and never touches the queue, which is already empty or was

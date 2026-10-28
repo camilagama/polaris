@@ -368,7 +368,7 @@ describe("the expenses of the day come from the server when it sends them (opera
       "2026-10-31"
     );
     expect(series.rows.at(-1)?.expenses).toBe("90.00");
-    // the line is drawn on the known day and broken on this one (AC-9, emenda de 25/10)
+    // the line is drawn on the known day and broken on this one (AC-9)
     expect(series.costsDrawn).toBe(true);
     expect(costSeries(series.rows)).toEqual([0, null]);
   });

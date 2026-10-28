@@ -7,7 +7,7 @@ import { monthAbbreviation, monthName } from "./result-period";
 /**
  * The series of the Resultado chart and its table (corte resultado-v2, AC-5 to AC-12): the days up to the store's today,
  * the days after it kept apart, the rule that a day with an unknown cost is hatched and breaks the cost line only on
- * itself (AC-9, emenda de 25/10: never a zero, never a partial sum as the total), the grouping by month of the
+ * itself (AC-9: never a zero, never a partial sum as the total), the grouping by month of the
  * long periods, the parts of the cost and the sentences that depend on what is drawn. Money is added in exact cents
  * (`Money`); the numbers given to a drawing are only for the drawing.
  */
@@ -187,7 +187,7 @@ export interface ResultSeries {
   afterToday: string | null;
   /**
    * The cost line is drawn: every day says its cost (`costsSent`) and at least one row up to today is known. The rows
-   * with an unknown cost are hatched and break the line (AC-9, emenda de 25/10).
+   * with an unknown cost are hatched and break the line (AC-9).
    */
   costsDrawn: boolean;
   /** Every day says its cost, known or unknown: the table has the cost columns. */
@@ -256,7 +256,7 @@ export function hasAnyValue(
 
 /**
  * The cost line as the drawing gets it: the cost of each row in reais, or `null` for a row whose cost is unknown (or
- * not sent). Never a zero in place of an unknown cost (AC-9, emenda de 25/10, cuidado 1 do Filipe): the chart breaks
+ * not sent). Never a zero in place of an unknown cost (AC-9): the chart breaks
  * the line on a `null` and hatches the row.
  */
 export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
@@ -265,7 +265,7 @@ export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
   );
 }
 
-/** "3 de 25 dias sem custo informado" (AC-11, emenda de 25/10). */
+/** "3 de 25 dias sem custo informado" (AC-11). */
 export function unknownDaysCount(unknown: number, total: number): string {
   return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo informado`;
 }
@@ -320,7 +320,7 @@ const EQUALITY =
 const TO_THE_TABLE = "O resultado de cada dia está em Ver os números.";
 
 /**
- * The line that supports the chart (AC-11 with the emenda de 25/10, texto final do Petković, 26/10 00:41), in five
+ * The line that supports the chart (AC-11), in five
  * cases. The equality "the difference between the lines is the result" holds only when the period has no commercial
  * surcharge (a surcharge is in the result and not in the cost), and, with hatched days, only on the days without the
  * hatch; with a surcharge the line sends the reader to the table. With an unknown day it starts by how many there

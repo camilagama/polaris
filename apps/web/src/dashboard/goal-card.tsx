@@ -218,7 +218,7 @@ export function SettledGoalCard({
 
 type Mode = "cancel" | "edit" | "idle";
 
-/** A button that is off for a reason keeps its place in the focus order (decision of 21/10). */
+/** A button that is off for a reason keeps its place in the focus order. */
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 interface CancelDialogProps {

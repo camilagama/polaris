@@ -88,7 +88,7 @@ function normalizedImageFormat(format: string): string | null {
  * 9422 in the error message (or in a thrown string); and the `Cf-Resized:
  * err=9422` header of a rejected response. The real format is a go-live BLOCK in
  * the release checklist. Source: developers.cloudflare.com/images/pricing and
- * /images/reference/troubleshooting (consulted 18/10/2026).
+ * /images/reference/troubleshooting.
  */
 const QUOTA_EXCEEDED_CODE = 9422;
 const QUOTA_EXCEEDED_HEADER = /(?:^|[\s,;])err=9422(?:$|[\s,;])/;

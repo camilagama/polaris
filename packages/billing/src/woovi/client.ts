@@ -46,7 +46,7 @@ export interface WooviClient {
    * `POST /api/v1/customer`: creates the payer's customer under Polaris's own
    * `correlationID` (an HMAC of the document, never the document). Woovi keeps
    * one customer per CPF or CNPJ and refuses (400) a second one with another
-   * key (sandbox, 20/10/2026).
+   * key (sandbox).
    */
   createCustomer: (customer: {
     correlationId: string;
@@ -60,7 +60,7 @@ export interface WooviClient {
    * this key, or null when there is none. One read, never a list: the key is
    * an HMAC of the document, so the URL carries no CPF (ADR 0101, emenda do
    * PR 6). Woovi answers an unknown key with 400 `Cliente não encontrado`
-   * (sandbox, 20/10/2026), the only answer read as "none": any other 400 is a
+   * (sandbox), the only answer read as "none": any other 400 is a
    * rejection and a 404 (a wrong route) is `ProviderNotFoundError`.
    */
   getCustomer: (correlationId: string) => Promise<unknown>;

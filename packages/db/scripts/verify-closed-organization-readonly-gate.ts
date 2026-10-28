@@ -55,8 +55,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The closed organization, read-only until the purge, on a real PostgreSQL 18 (ADR 0081 and 0078, amended; design of
- * 19/10/2026 and its consolidation): the dates the database computes are the domain's, to the second and across a
+ * The closed organization, read-only until the purge, on a real PostgreSQL 18 (ADR 0081 and 0078, amended): the dates the database computes are the domain's, to the second and across a
  * change of daylight saving time; the owner (and only the owner) reads the state of a closed organization, the same
  * with or without a legal hold, a scheduled purge or any billing state, and asks for a copy until D; the tenant still
  * opens for no capability (a member is told `organization_closed`); the copy is read by a role that holds SELECT on
@@ -1088,7 +1087,7 @@ async function run() {
       "the scope answers nothing with another lease token, another export, a malformed setting, no export named, outside a READ ONLY transaction or after the lease ran out; the privacy runtime itself reads no table and the tenant runtime cannot become the reader; on every exported table the plan has the scope as an InitPlan and no SubPlan"
     );
 
-    // ------------------------------------------------- 6. the two barriers, each on its own (Diego V3, (a) to (g))
+    // ------------------------------------------------- 6. the two barriers, each on its own ((a) to (g))
     const countAll = async () => {
       const counts: Record<string, number> = {};
       for (const table of DATASET_TABLES) {

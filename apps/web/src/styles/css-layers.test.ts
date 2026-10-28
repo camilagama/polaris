@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The old CSS is gone (ADR 0103, section 3; t256): no file of apps/web/src is in `@layer legacy`. CSS outside a layer
+ * The old CSS is gone (ADR 0103, section 3): no file of apps/web/src is in `@layer legacy`. CSS outside a layer
  * wins over every layer, the utilities included, so one unwrapped sheet would beat the components on a screen: only
  * the files of Tailwind and the theme listed here may have rules outside a layer, and the entry imports Tailwind
  * first, which declares the order of its layers (theme, base, components, utilities) before anything else.
