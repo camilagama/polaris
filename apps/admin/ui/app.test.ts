@@ -150,6 +150,8 @@ function diagnostics(
 }
 
 /** A status code or an error code of the server: never shown to the operator. */
+/** Bidi controls and invisible characters, which an attribute must not carry as they are. */
+const INVISIBLE = /[\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/u;
 const TECHNICAL_TEXT = /\b(401|403|404|500|503)\b|error|not_found|plan_catalog/;
 
 function withoutControls(text: string): string {
@@ -299,7 +301,7 @@ describe("searching for a store (AC-4, AC-11)", () => {
       planInForce: "pro",
     });
     const second = summary({ id: "org-b", name: "Loja B" });
-    const { calls, root, search } = await mount([
+    const { calls, document, root, search } = await mount([
       json({ next: "org-a", organizations: [first] }),
       json({ next: null, organizations: [second] }),
     ]);
@@ -323,10 +325,29 @@ describe("searching for a store (AC-4, AC-11)", () => {
     expect(queryOf(calls[2]?.path ?? "").get("after")).toBe("org-a");
     expect(queryOf(calls[2]?.path ?? "").get("query")).toBe("Loja");
     expect(byTag(root, "tr")).toHaveLength(3);
+    // the button that had the focus is gone: the focus goes on to the store it brought
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Ver loja Loja B (org-b)"
+    );
     expect(visibleText(root)).toContain("2 lojas encontradas.");
     expect(buttons(root, "Carregar mais")[0]?.hasAttribute("hidden")).toBe(
       true
     );
+  });
+
+  it("starts a new search from nothing, so a failed one leaves no rows or cursor of the one before", async () => {
+    const { calls, root, search } = await mount([
+      json({ next: "org-a", organizations: [summary({ id: "org-a" })] }),
+      json({ error: "unavailable" }, 503),
+    ]);
+    await search("Loja");
+    await search("Outra");
+    expect(alertOf(root)?.textContent).toBe(PROBLEM_TEXT.unavailable);
+    expect(byTag(byTag(root, "tbody")[0] as FakeElement, "tr")).toEqual([]);
+    expect(buttons(root, "Carregar mais")[0]?.hasAttribute("hidden")).toBe(
+      true
+    );
+    expect(calls).toHaveLength(3);
   });
 
   it("turns off the buttons while the server answers, so a double click asks once", async () => {
@@ -342,7 +363,9 @@ describe("searching for a store (AC-4, AC-11)", () => {
     expect(calls).toHaveLength(2);
     answer(json({ next: null, organizations: [] }));
     await flush();
-    expect(buttons(root, "Buscar")[0]?.hasAttribute("disabled")).toBe(false);
+    expect(buttons(root, "Buscar")[0]?.getAttribute("aria-disabled")).toBe(
+      "false"
+    );
   });
 
   const hostile = [
@@ -373,9 +396,8 @@ describe("searching for a store (AC-4, AC-11)", () => {
       expect([...shown].length).toBeLessThanOrEqual(NAME_LIMIT + 1);
       // what is shown is the name itself, cut, with control characters made visible
       expect(shown.replaceAll("�", "")).toBe(
-        [...withoutControls(name)]
-          .slice(0, NAME_LIMIT)
-          .join("") + ([...name].length > NAME_LIMIT ? "…" : "")
+        [...withoutControls(name)].slice(0, NAME_LIMIT).join("") +
+          ([...name].length > NAME_LIMIT ? "…" : "")
       );
     }
     expect(names[0]?.textContent).toBe("<script>alert(1)</script>");
@@ -383,6 +405,14 @@ describe("searching for a store (AC-4, AC-11)", () => {
     expect(names[6]?.textContent).toBe("‮anaj al od aloj");
     expect(names[7]?.textContent).toBe(`${"A".repeat(NAME_LIMIT)}…`);
     expect(names[7]?.getAttribute("title")?.length).toBeLessThanOrEqual(301);
+    // a tooltip or an accessible name has no bidi isolation: the override is shown, not obeyed
+    expect(names[6]?.getAttribute("title")).toBe("\uFFFDanaj al od aloj");
+    const labels = buttons(root, "Ver loja").map(
+      (button) => button.getAttribute("aria-label") ?? ""
+    );
+    expect(labels[6]).toBe("Ver loja \uFFFDanaj al od aloj (org-6)");
+    expect(labels.join("")).not.toMatch(INVISIBLE);
+    expect(withoutControls(labels.join(""))).toBe(labels.join(""));
     for (const tag of ["script", "style", "img", "iframe", "a", "b", "link"]) {
       expect(document.created).not.toContain(tag);
     }
@@ -516,9 +546,7 @@ describe("a store's diagnostics (AC-5)", () => {
       const alert = alertOf(root);
       expect(alert?.textContent).toBe(PROBLEM_TEXT[problem]);
       expect(document.activeElement).toBe(alert);
-      expect(visibleText(root)).not.toMatch(
-        TECHNICAL_TEXT
-      );
+      expect(visibleText(root)).not.toMatch(TECHNICAL_TEXT);
     }
   );
 

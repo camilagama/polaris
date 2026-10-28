@@ -21,7 +21,7 @@ Passos:
 1. **Conferir a ordem.** Ela existe, está assinada, cita o número do processo e pede o registro de um usuário ou de um endereço IP num período. Se algo faltar, não consulte: devolva o pedido ao jurídico.
 2. **Conferir o número do processo.** Ele deve estar no formato `NNNNNNN-DD.AAAA.J.TR.OOOO` (número único do CNJ), com os dígitos verificadores DD corretos: a rota recusa um número digitado errado ou inventado (`invalid_reference`). Isso confere a forma, não a existência do processo: a consulta não se liga a uma ordem registrada, e a conferência da ordem é feita por quem consulta, com o papel de cada passo. Só esse número entra na consulta: nada de texto livre, porque a referência vai para a auditoria imutável de 5 anos.
 3. **Conferir o período e o alvo.** Um só filtro: um usuário (`user`) ou um endereço IP exato (`ip`), sem máscara. A janela `from` a `to` tem no máximo 31 dias, com `to` depois de `from`. Instantes em ISO 8601 com fuso (use `Z` para UTC). Para um período maior, faça várias consultas, uma por janela.
-4. **Consultar pela rota do Admin.** `POST /api/access-log/read`, com o corpo abaixo (exemplo fictício). O `limit` é de 1 a 50 (padrão 25).
+4. **Consultar pela rota do Admin.** `POST /api/access-log/read`, com o corpo abaixo (exemplo fictício). Toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403 ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 28/10). O `limit` é de 1 a 50 (padrão 25).
 
    ```json
    {

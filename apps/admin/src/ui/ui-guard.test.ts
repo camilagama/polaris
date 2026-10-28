@@ -45,8 +45,8 @@ const SCRIPT_FORBIDDEN: readonly [string, RegExp][] = [
   ["outerHTML", /outerHTML/],
   ["insertAdjacentHTML", /insertAdjacentHTML/],
   ["document.write", /\.write(ln)?\(/],
-  ["eval", /\beval\(/],
-  ["Function constructor", /\bFunction\(/],
+  ["eval", /\beval\b/],
+  ["Function constructor", /\bFunction\b/],
   ["setTimeout", /setTimeout/],
   ["setInterval", /setInterval/],
   ["localStorage", /localStorage/],
@@ -63,6 +63,17 @@ const SCRIPT_FORBIDDEN: readonly [string, RegExp][] = [
     /createElement(NS)?\([^)]*["'](style|script)["']/,
   ],
   ["a style property", /\.style\b/],
+  ["setHTMLUnsafe", /setHTMLUnsafe/],
+  ["parseHTMLUnsafe", /parseHTMLUnsafe/],
+  ["createContextualFragment", /createContextualFragment/],
+  ["DOMParser", /DOMParser/],
+  ["srcdoc", /srcdoc/],
+  ["caches", /\bcaches\b/],
+  ["postMessage", /postMessage/],
+  ["dynamic import", /\bimport\(/],
+  ["a worker", /\bnew (Shared)?Worker\b/],
+  ["window.name", /window\.name/],
+  ["a source set from a string", /\.src\s*=/],
 ];
 
 const API_PATH = /\/api\/[a-z-]+/g;
@@ -109,6 +120,17 @@ describe("the built script of the page", () => {
       'fetch("https://elsewhere.example")',
       'document.createElement("style")',
       "a.style.color=b",
+      "a.setHTMLUnsafe(b)",
+      "Document.parseHTMLUnsafe(b)",
+      "r.createContextualFragment(b)",
+      "new DOMParser",
+      "f.srcdoc=b",
+      "caches.open(b)",
+      "w.postMessage(b)",
+      'import("./x")',
+      "new Worker(u)",
+      "window.name=b",
+      "s.src=u",
     ];
     expect(planted.map((text) => forbiddenIn(text))).toEqual(
       SCRIPT_FORBIDDEN.map(([name]) => [name])
@@ -138,7 +160,24 @@ function uiFiles(directory: string): string[] {
 
 const OUTSIDE_THE_GUARD = ["ui/test-dom.ts"];
 
+/** A suppression comment would switch the guard off for the line below it: none is allowed in apps/admin/ui. */
+const SUPPRESSION = /biome-ignore/;
+
 describe("the Biome guard of apps/admin/ui (AC-13)", () => {
+  it("is never switched off by a comment, in any file of the page (and the check sees one)", () => {
+    const suppressed = uiFiles(ui).filter(
+      (file) =>
+        !OUTSIDE_THE_GUARD.includes(file) &&
+        SUPPRESSION.test(readFileSync(join(app, file), "utf8"))
+    );
+    expect(suppressed).toEqual([]);
+    expect(
+      SUPPRESSION.test(
+        "// biome-ignore lint/plugin: planted\nbox.innerHTML = x;"
+      )
+    ).toBe(true);
+  });
+
   it("leaves out exactly the test DOM, and it is there", () => {
     const files = uiFiles(ui);
     expect(files.filter((file) => OUTSIDE_THE_GUARD.includes(file))).toEqual(
@@ -181,6 +220,26 @@ describe("the Biome guard of apps/admin/ui (AC-13)", () => {
       'document.createElement("script");',
       "document.adoptedStyleSheets = [];",
       'console.log("x");',
+      'window.eval("1");',
+      '(0, eval)("1");',
+      'Function("return 1");',
+      "window.setTimeout(() => undefined, 1);",
+      "globalThis.setInterval(() => undefined, 1);",
+      'globalThis.document.cookie = "a";',
+      'caches.open("x");',
+      'window.name = "x";',
+      'Reflect.set(box, "innerHTML", "x");',
+      'Object.assign(box, { innerHTML: "x" });',
+      'box["inner" + "HTML"] = "x";',
+      'box.setHTMLUnsafe("x");',
+      'Document.parseHTMLUnsafe("x");',
+      'document.createRange().createContextualFragment("x");',
+      "export const parser = new DOMParser();",
+      'document.execCommand("insertHTML", false, "x");',
+      'import("./dom");',
+      'export const worker = new Worker("x.js");',
+      'window.postMessage("x", "*");',
+      "export const frame = box.srcdoc;",
     ];
     const imports = [
       "@polaris/db/admin-diagnostics-repository",

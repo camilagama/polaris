@@ -116,8 +116,10 @@ function auditTypes(detail: Answer): string[] {
   );
 }
 
-const PAGE_SCRIPT = /<script type="module" src="(\/ui\/admin-[0-9a-f]{16}\.js)">/;
-const PAGE_SHEET = /<link rel="stylesheet" href="(\/ui\/admin-[0-9a-f]{16}\.css)"/;
+const PAGE_SCRIPT =
+  /<script type="module" src="(\/ui\/admin-[0-9a-f]{16}\.js)">/;
+const PAGE_SHEET =
+  /<link rel="stylesheet" href="(\/ui\/admin-[0-9a-f]{16}\.css)"/;
 
 async function getPage(path: string, token: string | null) {
   return await exports.default.fetch(`https://admin.test${path}`, {
@@ -206,23 +208,26 @@ describe("the operator's page and its reads (corte admin-tela-v1, AC-2, AC-4, AC
     ["free", "free", "free", "free"],
     ["trial", "trialing", "pro", "trialing"],
     ["hostile", "active", "pro", "active"],
-  ] as const)("shows the %s store's plan as its diagnostics say", async (store, listed, plan, state) => {
-    const { id } = fixture.screen[store];
-    const [row] = await search(id);
-    expect(row?.billingState).toBe(listed);
-    const report = await call("GET", `/api/organizations/${id}/diagnostics`);
-    expect(report.status).toBe(200);
-    const entitlements = report.body.entitlements as {
-      plan: string;
-      state: string;
-    };
-    expect(entitlements.plan).toBe(plan);
-    expect(entitlements.plan).toBe(row?.planInForce);
-    expect(entitlements.state).toBe(state);
-    expect((report.body.organization as { name: string }).name).toBe(
-      fixture.screen[store].name
-    );
-  });
+  ] as const)(
+    "shows the %s store's plan as its diagnostics say",
+    async (store, listed, plan, state) => {
+      const { id } = fixture.screen[store];
+      const [row] = await search(id);
+      expect(row?.billingState).toBe(listed);
+      const report = await call("GET", `/api/organizations/${id}/diagnostics`);
+      expect(report.status).toBe(200);
+      const entitlements = report.body.entitlements as {
+        plan: string;
+        state: string;
+      };
+      expect(entitlements.plan).toBe(plan);
+      expect(entitlements.plan).toBe(row?.planInForce);
+      expect(entitlements.state).toBe(state);
+      expect((report.body.organization as { name: string }).name).toBe(
+        fixture.screen[store].name
+      );
+    }
+  );
 
   it("refuses a write without this origin, or from another origin of the site (AC-18 amended)", async () => {
     const token = await ownerToken();

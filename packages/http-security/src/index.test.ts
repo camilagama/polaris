@@ -146,16 +146,13 @@ describe("the headers of every profile", () => {
     "api",
     "app-shell",
     "public-document",
-  ] as const)(
-    "isolates %s from other origins",
-    (profile) => {
-      const headers = headersOf(profile);
+  ] as const)("isolates %s from other origins", (profile) => {
+    const headers = headersOf(profile);
 
-      expect(headers["Cross-Origin-Opener-Policy"]).toBe("same-origin");
-      expect(headers["Cross-Origin-Resource-Policy"]).toBe("same-origin");
-      expect(headers["X-Frame-Options"]).toBe("DENY");
-    }
-  );
+    expect(headers["Cross-Origin-Opener-Policy"]).toBe("same-origin");
+    expect(headers["Cross-Origin-Resource-Policy"]).toBe("same-origin");
+    expect(headers["X-Frame-Options"]).toBe("DENY");
+  });
 
   it("sends no referrer at all from the Admin, page or API", () => {
     expect(headersOf("admin")["Referrer-Policy"]).toBe("no-referrer");

@@ -186,9 +186,12 @@ describe("the page and its two files", () => {
     ["/ui/admin-0000000000000000.js", {}],
     ["/ui/", {}],
     ["/", { method: "POST" }],
-  ] as const)("keeps the inert policy on %s (the API, /health, a 404, a stale file, a POST to the page)", async (path, init) => {
-    expectAdminHeaders(await setup().call(path, init), INERT);
-  });
+  ] as const)(
+    "keeps the inert policy on %s (the API, /health, a 404, a stale file, a POST to the page)",
+    async (path, init) => {
+      expectAdminHeaders(await setup().call(path, init), INERT);
+    }
+  );
 });
 
 describe("who gets the page (AC-2)", () => {

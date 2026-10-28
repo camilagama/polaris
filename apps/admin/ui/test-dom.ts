@@ -159,6 +159,20 @@ export class FakeElement extends FakeNode {
     }
   }
 
+  /** The first descendant with this tag name (the only selector the page uses). */
+  querySelector(tag: string): FakeElement | null {
+    for (const child of this.children) {
+      if (child.tagName === tag) {
+        return child;
+      }
+      const found = child.querySelector(tag);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  }
+
   focus() {
     this.ownerDocument.activeElement = this;
   }

@@ -79,6 +79,25 @@ function cut(text: string, limit: number): string {
     : text;
 }
 
+/** Bidi controls and invisible characters: harmless inside `<bdi>`, but a tooltip or an accessible name has no isolation. */
+function isInvisible(code: number): boolean {
+  return (
+    (code >= 0x20_0b && code <= 0x20_0f) ||
+    (code >= 0x20_28 && code <= 0x20_2e) ||
+    (code >= 0x20_66 && code <= 0x20_69) ||
+    code === 0xfe_ff
+  );
+}
+
+/** A store's name for an attribute (tooltip, accessible name): controls and invisible characters made visible, cut. */
+export function labelName(name: string, limit = NAME_LIMIT): string {
+  let shown = "";
+  for (const character of visible(name)) {
+    shown += isInvisible(character.codePointAt(0) ?? 0) ? "\uFFFD" : character;
+  }
+  return cut(shown, limit);
+}
+
 /** A name a store owner typed, for the line where it is shown: visible controls, cut to `NAME_LIMIT`. */
 export function shownName(name: string): string {
   return cut(visible(name), NAME_LIMIT);
@@ -94,7 +113,7 @@ export function storeName(dom: Dom, name: string, id: string): HTMLElement {
     { class: "store" },
     dom.el(
       "bdi",
-      { class: "store-name", title: cut(visible(name), TITLE_LIMIT) },
+      { class: "store-name", title: labelName(name, TITLE_LIMIT) },
       shownName(name)
     ),
     " ",

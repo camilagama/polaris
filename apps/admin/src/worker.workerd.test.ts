@@ -90,12 +90,17 @@ describe("admin worker in workerd", () => {
     "/",
     "/ui/admin-0000000000000000.js",
     "/ui/admin-0000000000000000.css",
-  ])("refuses the page and its files without an Access token: 401 and no HTML (%s)", async (path) => {
-    const response = await exports.default.fetch(`https://admin.test${path}`);
-    expect(response.status).toBe(401);
-    expect(response.headers.get("content-type")).toContain("application/json");
-    expect(await response.json()).toEqual({ error: "unauthenticated" });
-  });
+  ])(
+    "refuses the page and its files without an Access token: 401 and no HTML (%s)",
+    async (path) => {
+      const response = await exports.default.fetch(`https://admin.test${path}`);
+      expect(response.status).toBe(401);
+      expect(response.headers.get("content-type")).toContain(
+        "application/json"
+      );
+      expect(await response.json()).toEqual({ error: "unauthenticated" });
+    }
+  );
 
   it("refuses the page with a tampered token, and fails closed at the principal lookup with a valid one", async () => {
     const foreign = await exports.default.fetch("https://admin.test/", {
@@ -113,16 +118,15 @@ describe("admin worker in workerd", () => {
     expect(await valid.text()).not.toContain("<html");
   });
 
-  it.each([
-    "/health",
-    "/nada",
-    "/ui/admin-0000000000000000.js",
-  ])("keeps the inert policy on %s, with the page built in", async (path) => {
-    const response = await exports.default.fetch(`https://admin.test${path}`);
-    expect(response.headers.get("content-security-policy")).toBe(
-      "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-    );
-  });
+  it.each(["/health", "/nada", "/ui/admin-0000000000000000.js"])(
+    "keeps the inert policy on %s, with the page built in",
+    async (path) => {
+      const response = await exports.default.fetch(`https://admin.test${path}`);
+      expect(response.headers.get("content-security-policy")).toBe(
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      );
+    }
+  );
 
   it("refuses the API without an Access token", async () => {
     const response = await whoami();

@@ -35,6 +35,15 @@ function storeFacts(dom: Dom, report: OrganizationDiagnostics) {
   ]);
 }
 
+function renewalText(billing: OrganizationDiagnostics["billing"]): string {
+  if (billing === null) {
+    return "—";
+  }
+  return billing.cancelAtPeriodEnd
+    ? "Cancelamento pedido: acaba no fim do período"
+    : "Sem cancelamento pedido";
+}
+
 function planFacts(dom: Dom, report: OrganizationDiagnostics) {
   const { billing, entitlements } = report;
   return facts(dom, [
@@ -43,12 +52,7 @@ function planFacts(dom: Dom, report: OrganizationDiagnostics) {
     ["Fim do acesso", brasiliaDay(entitlements.accessEndsAt)],
     ["Ciclo", cycleText(billing?.cycleMonths ?? null)],
     ["Forma de pagamento", paymentText(billing?.provider ?? null)],
-    [
-      "Renovação",
-      billing?.cancelAtPeriodEnd
-        ? "Cancelada: acaba no fim do período"
-        : "Sem cancelamento pedido",
-    ],
+    ["Renovação", renewalText(billing)],
     ["Teste do Pro começou em", brasiliaDay(billing?.trialStartedAt ?? null)],
     ["Último fato de cobrança", brasiliaDay(billing?.lastFactAt ?? null)],
     ["Pagamento revogado", revokedText(billing?.revokedReason ?? null)],
@@ -177,7 +181,7 @@ export function diagnosticsView(dom: Dom, api: Api): DiagnosticsView {
         notice.alert(PROBLEM_TEXT[answer.problem]);
         return;
       }
-      notice.clear();
+      notice.status("Loja carregada.");
       render(answer.data);
     },
   };

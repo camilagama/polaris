@@ -86,7 +86,11 @@ export function createAdminPage(
     };
   };
   return () => {
-    page ??= build();
+    // a failed build is not kept: the next request tries again
+    page ??= build().catch((error: unknown) => {
+      page = null;
+      throw error;
+    });
     return page;
   };
 }

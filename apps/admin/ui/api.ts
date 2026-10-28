@@ -15,9 +15,7 @@ export type Problem =
   | "session"
   | "unavailable";
 
-type ApiResult<T> =
-  | { data: T; ok: true }
-  | { ok: false; problem: Problem };
+type ApiResult<T> = { data: T; ok: true } | { ok: false; problem: Problem };
 
 export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   failed: "Erro no Admin. Tente de novo; se continuar, avise a engenharia.",

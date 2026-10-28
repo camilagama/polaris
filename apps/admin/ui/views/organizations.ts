@@ -1,7 +1,7 @@
 import type { Api } from "../api";
 import { PROBLEM_TEXT } from "../api";
 import { tableRow } from "../blocks";
-import { type Dom, hasControlCharacter, shownName, storeName } from "../dom";
+import { type Dom, hasControlCharacter, labelName, storeName } from "../dom";
 import {
   billingStateText,
   brasiliaDay,
@@ -79,22 +79,30 @@ export function organizationsView(
   let query = "";
   let next: string | null = null;
   let shown = 0;
+  let loading = false;
 
+  // `aria-disabled`, not `disabled`: the button keeps the keyboard focus while the server answers
   const busy = (on: boolean) => {
+    loading = on;
     for (const button of [searchButton, moreButton]) {
-      if (on) {
-        button.setAttribute("disabled", "");
-      } else {
-        button.removeAttribute("disabled");
-      }
+      button.setAttribute("aria-disabled", String(on));
     }
+  };
+
+  /** A new search starts from nothing: a failure must not leave the rows and the cursor of the one before. */
+  const reset = () => {
+    rows.replaceChildren();
+    shown = 0;
+    next = null;
+    results.setAttribute("hidden", "");
+    moreButton.setAttribute("hidden", "");
   };
 
   const row = (organization: OrganizationSummary) => {
     const open = dom.el(
       "button",
       {
-        "aria-label": `Ver loja ${shownName(organization.name)} (${organization.id})`,
+        "aria-label": `Ver loja ${labelName(organization.name)} (${organization.id})`,
         class: "secondary",
         type: "button",
       },
@@ -116,6 +124,9 @@ export function organizationsView(
     if (after !== null) {
       parameters.set("after", after);
     }
+    if (after === null) {
+      reset();
+    }
     busy(true);
     notice.status("Buscando lojas…");
     const answer = await api.get<OrganizationPage>(
@@ -126,13 +137,8 @@ export function organizationsView(
       notice.alert(PROBLEM_TEXT[answer.problem]);
       return;
     }
-    if (after === null) {
-      rows.replaceChildren();
-      shown = 0;
-    }
-    for (const organization of answer.data.organizations) {
-      rows.append(row(organization));
-    }
+    const added = answer.data.organizations.map(row);
+    rows.append(...added);
     shown += answer.data.organizations.length;
     ({ next } = answer.data);
     if (shown === 0) {
@@ -146,6 +152,10 @@ export function organizationsView(
       moreButton.removeAttribute("hidden");
     }
     notice.status(countText(shown, next !== null));
+    // "Carregar mais" may have just been hidden under the focus: the focus goes on to the first store it brought
+    if (after !== null) {
+      added[0]?.querySelector("button")?.focus();
+    }
   };
 
   const form = dom.el(
@@ -161,6 +171,9 @@ export function organizationsView(
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (loading) {
+      return;
+    }
     const typed = input.value;
     if (typed.length > MAX_QUERY_LENGTH) {
       notice.alert("A busca aceita até 100 caracteres.");
@@ -174,7 +187,7 @@ export function organizationsView(
     load(null);
   });
   moreButton.addEventListener("click", () => {
-    if (next !== null) {
+    if (!loading && next !== null) {
       load(next);
     }
   });
