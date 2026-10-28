@@ -917,7 +917,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Duas abas | Concluído | `e2e/offline-outbox`: duas abas do mesmo usuário compartilham a fila; um comando em envio não é enviado de novo pela outra aba; o próximo vai depois da confirmação. |
 | Atualização pendente | Concluído (na t456 os casos com fila passaram a `e2e-pwa/update.e2e.ts`, sem o aviso) | `e2e-pwa/update-with-queue.e2e.ts` (duas builds reais, gancho só na build `pwa-e2e`): com fila e sem rede a atualização espera e nada se perde; com rede envia e só então atualiza; com recusa não há botão. |
 | Versão antiga do app | Concluído | `server/sync/command-compatibility.test.ts` e `__golden__/command-payloads.json`: o que cada construtor emite hoje, aceito por todos os manipuladores registrados e coberto para todos os tipos; um campo desconhecido (app mais novo que o servidor) é `invalid_payload`. |
-| Execução | Concluída | `bun run test:offline-browser` (as duas configurações de navegador); o CI roda ambas. |
+| Execução | Concluída | `bun run test:offline-browser` (as duas configurações de navegador; a `pwa` inclui a regressão visual, que precisa de Docker); o CI roda ambas. |
 | Limites | Registrados | Safari de iPhone e Chrome de Android reais seguem no checklist do Gate 5 e bloqueiam ligar a escrita offline; o outbox ainda não está montado no app, então a atualização com fila usa a interface de fonte. |
 
 ### Runtime offline no app (implementação, prova em navegador e verificações locais concluídas; publicação: ver linha abaixo)
@@ -2546,3 +2546,14 @@ Origem: o item 4 das melhorias de qualidade aprovadas pelo usuário em 28/10 (de
 | Documentação | Em revisão | Emenda do ADR 0098, linha `client_error_log` no ADR 0079 e no registro de retenção (`packages/domain/src/privacy/retention.ts`, proposta), item do `privacy.md`, runbook `erros-do-navegador.md`. |
 | Pendências | Registrado | O deploy do staging precisa de `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no build (workflow, do responsável). Ligar em produção é item do checklist. O script e o cron de leitura são outra tarefa. |
 
+### Regressão visual na suíte e2e-pwa (Q1 do desenho de qualidade de 28/10; sem migration)
+
+Origem: melhoria aprovada pelo usuário em 28/10, desenho do Filipe (seção "2. Regressão visual" e tarefa Q1).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Spec | Em revisão | `apps/web/e2e-pwa/ui-visual.e2e.ts`: 26 estados de `ui-screens.ts` (um por tela, mais erros e vazios) a 360 px com toque e 1280 px com mouse, claro e escuro, 104 baselines `-linux` em `ui-visual.e2e.ts-snapshots/` (6,7 MB). Projeto `chromium-visual` da `playwright.pwa.config.ts`, dentro do `bun run test:pwa` do job do Offline gate, sem mudança de workflow. |
+| Navegador da imagem | Em revisão | `scripts/pwa-browser-tests.ts` sobe com `docker run` o `playwright run-server` da imagem `mcr.microsoft.com/playwright:v1.63.0-noble` fixada pelo digest, em `linux/amd64` (`scripts/visual-browser.ts`); o spec reprova antes de capturar sem um navegador remoto com o Chromium da versão fixa e CPU x86-64. `visual-browser.test.ts` amarra a imagem à versão do `@playwright/test`. Sem Docker, o `test:pwa` local roda os outros projetos e avisa; no CI, reprova. |
+| Determinismo | Em revisão | Fontes do app esperadas (teste de Geist e Geist Mono carregadas), `animations: "disabled"`, `caret: "hide"`, `reducedMotion: "reduce"`, `networkidle` mais um quadro, `page.clock.install` com data fixa e fuso `America/Sao_Paulo`, animação por script levada ao fim pelo relógio da página, janela na altura da página antes da captura (o `fullPage` redimensiona durante a captura e o gráfico de linha do Início chegava a sair estreito), `maxDiffPixelRatio: 0.001`, `threshold: 0.2`, `mask` só em `MASKS` (vazia). |
+| Atualizar | Em revisão | `bun run test:visual:update` (só comparar: `test:visual`); runbook `testes-de-tela.md`, "Regressão visual"; `DESIGN.md`: PR de UI traz o diff de imagem aprovado pelo Petković. |
+| Pendências | Registrado | Os gráficos de linha (`use-animated-series-path`, sparklines) usam `useReducedMotionConfig` sem `MotionConfig reducedMotion="user"`, então animam com `prefers-reduced-motion: reduce`; o spec contorna avançando o relógio, a correção é do app. A máquina de desenvolvimento é arm64 sem Docker: as baselines deste PR vieram da primeira execução do CI na imagem (as 104 também conferiram com as da variante arm64 da mesma imagem dentro da tolerância, mas a fixação em amd64 fica, porque isso não é garantido). Os 76 estados, Firefox e WebKit ficam para depois. |
