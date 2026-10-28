@@ -21,7 +21,7 @@ Um segundo aviso, que a prova por remoção ensinou: **muitas corridas têm mais
     CI=true bun run --filter @polaris/db gates:concurrency
     POLARIS_CONCURRENCY_REPEAT=10 CI=true bun run --filter @polaris/db gates:concurrency   # mais rodadas
 
-`gates:concurrency` é uma suíte nomeada de `packages/db/scripts/run-gates.ts`: ela só **escolhe** gates que já estão em `gates:ci`, sem duplicar nenhum e sem job novo. Rode-a num banco novo; os gates não são reexecutáveis num banco que já os rodou (ver o [runbook do Gate 4](../runbooks/gate-4-sales-core.md#passos)).
+`gates:concurrency` é uma suíte nomeada de `packages/db/scripts/run-gates.ts`: ela só **escolhe** gates que já estão em `gates:ci`, sem duplicar nenhum gate; o único job próprio é o noturno `Concurrency nightly`, fora dos PRs. Rode-a num banco novo; os gates não são reexecutáveis num banco que já os rodou (ver o [runbook do Gate 4](../runbooks/gate-4-sales-core.md#passos)).
 
 ### Quando rodar `gates:concurrency`
 
