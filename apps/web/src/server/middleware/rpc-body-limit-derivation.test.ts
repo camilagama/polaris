@@ -27,7 +27,6 @@ const FRAME_BYTES = 256;
 
 const FORMAT_BYTES: Record<string, number> = {
   date: 12,
-  datetime: 40, // with a fraction and an offset
   guid: 38,
   uuid: 38,
 };

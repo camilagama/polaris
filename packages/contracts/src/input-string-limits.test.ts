@@ -21,8 +21,11 @@ interface StringInInput {
   schema: $ZodType;
 }
 
-/** Formats whose text has a fixed size, the same the derivation of the ceiling of `/rpc` reads. */
-const FIXED_SIZE_FORMATS = new Set(["date", "datetime", "guid", "uuid"]);
+/**
+ * Formats whose text has a fixed size, the same the derivation of the ceiling of `/rpc` reads. Not `datetime`: its
+ * fraction of a second takes any number of digits.
+ */
+const FIXED_SIZE_FORMATS = new Set(["date", "guid", "uuid"]);
 
 /** Schemas that hold no string and no other schema. */
 const LEAVES = new Set([
@@ -316,6 +319,29 @@ function looseIn(found: StringInInput[]): string[] {
   ].sort();
 }
 
+/**
+ * The strings whose refine may run on a text of any length: zod still runs a refine after a check that failed without
+ * aborting, so a refine needs a `.max` or a `.length` with `abort` before it.
+ */
+function refinesWithoutAbortingCeiling(found: StringInInput[]): string[] {
+  return found
+    .filter((entry) => {
+      const checks = checksOf(entry.schema).map((check) => check._zod.def);
+      const firstRefine = checks.findIndex((def) => def.check === "custom");
+      return (
+        firstRefine >= 0 &&
+        !checks
+          .slice(0, firstRefine)
+          .some(
+            (def) =>
+              ["length_equals", "max_length"].includes(def.check as string) &&
+              def.abort === true
+          )
+      );
+    })
+    .map((entry) => entry.path);
+}
+
 /** What breaks the rule, for a set of found strings, a list of exceptions and the frozen baseline. */
 function problemsOf(
   found: StringInInput[],
@@ -391,6 +417,10 @@ describe("the input strings of the contract", () => {
     ).toEqual([]);
   });
 
+  it("stop a long text before every refine of a string: a ceiling that aborts comes first", () => {
+    expect(refinesWithoutAbortingCeiling(contractStrings)).toEqual([]);
+  });
+
   it("leave opaque only the payload of a pushed command, which the outbox bounds", () => {
     expect(
       contractStrings.filter((entry) => entry.opaque).map((entry) => entry.path)
@@ -415,7 +445,7 @@ describe("the walk over input strings, on planted schemas", () => {
   const loose = (shape: Record<string, $ZodType>) =>
     looseIn(stringsIn(z.object(shape), "input"));
 
-  it("reports a string held only by a regex, a refine, a trim with a min, or an email", () => {
+  it("reports a string held only by a regex, a refine, a trim with a min, an email or a datetime", () => {
     expect(
       loose({
         a: z.string().regex(DATE_PATTERN),
@@ -424,6 +454,8 @@ describe("the walk over input strings, on planted schemas", () => {
         d: z.string().email(),
         e: z.email(),
         f: z.coerce.string(),
+        g: z.string().datetime(),
+        h: z.iso.datetime({ offset: true }),
       })
     ).toEqual([
       "input.a",
@@ -432,6 +464,8 @@ describe("the walk over input strings, on planted schemas", () => {
       "input.d",
       "input.e",
       "input.f",
+      "input.g",
+      "input.h",
     ]);
   });
 
@@ -443,7 +477,7 @@ describe("the walk over input strings, on planted schemas", () => {
         c: z.string().regex(X_PATTERN).max(3),
         d: z.string().uuid(),
         e: z.uuid(),
-        f: z.string().datetime(),
+        f: z.string().max(64).datetime(),
         g: z.iso.date(),
         h: z.coerce.string().max(4),
         i: z.email().max(254),
@@ -539,6 +573,29 @@ describe("the walk over input strings, on planted schemas", () => {
     expect(at("sync/pull.commands[]", { payload: z.unknown() })).toEqual([
       "sync/pull.commands[].payload",
     ]);
+  });
+
+  it("reports a refine with no aborting ceiling before it", () => {
+    const refine = (text: string) => [...text].length <= 5;
+    expect(
+      refinesWithoutAbortingCeiling(
+        stringsIn(
+          z.object({
+            a: z.string().max(10).refine(refine),
+            b: z.string().refine(refine).max(10, { abort: true }),
+            c: z.string().max(10, { abort: true }).refine(refine),
+            d: z
+              .string()
+              .length(10, { abort: true })
+              .regex(X_PATTERN)
+              .refine(refine),
+            e: z.string().regex(X_PATTERN).max(10, { abort: true }),
+            f: z.string().refine(refine),
+          }),
+          "input"
+        )
+      )
+    ).toEqual(["input.a", "input.b", "input.f"]);
   });
 
   it("refuses a kind of schema it does not know, instead of passing over what it may hold", () => {

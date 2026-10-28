@@ -1244,11 +1244,17 @@ const deviceReadModel = z.object({
 
 export type DeviceReadModel = z.infer<typeof deviceReadModel>;
 
+/**
+ * An instant a client sends. The format alone has no ceiling (any number of digits after the second); the app writes
+ * `toISOString()` (24 characters), so 64 refuses nothing it sends.
+ */
+const instantInput = z.string().max(64).datetime({ offset: true });
+
 /** One queued offline command as the outbox sends it (plan PR52/PR53). */
 const pushCommand = z.object({
   baseVersion: z.number().int().nonnegative().nullable(),
   commandId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().max(64).datetime(),
   deviceId: z.string().uuid(),
   lease: z.string().min(1).max(4096),
   payload: z.json(),
@@ -2669,11 +2675,11 @@ export const polarisContract = {
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
           items: z.array(saleItemInput).min(1).max(200),
-          occurredAt: z.string().datetime({ offset: true }),
+          occurredAt: instantInput,
           organizationId: organizationIdInput,
           payment: salePaymentInput,
           paymentProfile: salePaymentProfileSelection.nullable(),
-          recordedAt: z.string().datetime({ offset: true }).optional(),
+          recordedAt: instantInput.optional(),
         })
       )
       .output(confirmedSale),
