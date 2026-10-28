@@ -60,7 +60,7 @@ function luminance([r, g, b]: Rgb) {
 const over = (top: Rgb, alpha: number, bottom: Rgb): Rgb =>
   top.map((v, i) => alpha * v + (1 - alpha) * (bottom[i] as number)) as Rgb;
 
-const CELL = /^`([a-z0-9-]+)(?:\/(\d+) sobre ([a-z0-9-]+))?`$/;
+const CELL = /^`([a-z0-9-]+)(?:\/(\d+))?(?: sobre ([a-z0-9-]+))?`$/;
 
 function color(cell: string, palette: ReturnType<typeof tokens>): Rgb {
   const [, name, percent, base] = CELL.exec(cell) ?? [];
@@ -68,14 +68,16 @@ function color(cell: string, palette: ReturnType<typeof tokens>): Rgb {
   if (!top) {
     throw new Error(`unknown token in ${cell}`);
   }
-  if (percent === undefined) {
+  if (base === undefined) {
     return top.rgb;
   }
-  const bottom = palette.get(base as string);
+  const bottom = palette.get(base);
   if (!bottom) {
     throw new Error(`unknown token in ${cell}`);
   }
-  return over(top.rgb, Number(percent) / 100, bottom.rgb);
+  // `x/NN sobre y` is the utility with an opacity; `x sobre y` is a token that carries its own alpha (the dark borders)
+  const alpha = percent === undefined ? top.alpha : Number(percent) / 100;
+  return over(top.rgb, alpha, bottom.rgb);
 }
 
 function ratio(a: Rgb, b: Rgb) {

@@ -31,11 +31,11 @@
     --muted: oklch(0.3 0.0035 85);
     --muted-foreground: oklch(0.79 0.004 85);
     --accent: oklch(0.33 0.0035 85);
-    --border: oklch(0.32 0.0035 85);
+    --border: oklch(1 0 0 / 0.06);
     --input: oklch(0.55 0.0035 85);
     --ring: oklch(0.64 0.134 165);
     --mark: oklch(0.74 0.14 165);
-    --card-ring: oklch(0.945 0.005 85 / 0.06);
+    --card-ring: oklch(1 0 0 / 0.06);
     --card-glow: oklch(1 0 0 / 0.04);
     --shadow-l: 0;
     --shadow-c: 0;
