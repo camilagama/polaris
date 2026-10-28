@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { reportClientError } from "../lib/client-errors";
+import { reportRenderError } from "../observability/sentry";
 import { ErrorBoundary } from "./error-boundary";
+
+vi.mock("../lib/client-errors", () => ({ reportClientError: vi.fn() }));
+vi.mock("../observability/sentry", () => ({
+  reportRenderError: vi.fn(),
+  sentryActive: vi.fn(() => false),
+}));
 
 const CHUNK_ERROR = new TypeError(
   "Failed to fetch dynamically imported module: https://app.example/assets/expenses-page-DzKt9t-U.js"
@@ -77,5 +85,48 @@ describe("Tentar novamente", () => {
       chunkFailed: false,
       failed: false,
     });
+  });
+});
+
+describe("the report of a caught error", () => {
+  const info = { componentStack: "\n    at Screen" };
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ["the whole page", { fullPage: true }, "app"],
+    ["a screen", {}, "screen"],
+  ] as const)(
+    "reports once, as a boundary of %s, with React's info for Sentry",
+    (_label, props, boundary) => {
+      const error = new TypeError("x is not a function");
+      const instance = new ErrorBoundary({ children: null, ...props });
+      instance.componentDidCatch(error, info);
+      expect(reportClientError).toHaveBeenCalledTimes(1);
+      expect(reportClientError).toHaveBeenCalledWith(error, {
+        boundary,
+        kind: "boundary",
+        renderInfo: info,
+      });
+    }
+  );
+
+  it("reports a screen that did not download as kind chunk", () => {
+    const instance = new ErrorBoundary({ children: null, fullPage: true });
+    instance.componentDidCatch(CHUNK_ERROR, info);
+    expect(reportClientError).toHaveBeenCalledTimes(1);
+    expect(reportClientError).toHaveBeenCalledWith(CHUNK_ERROR, {
+      boundary: "app",
+      kind: "chunk",
+      renderInfo: info,
+    });
+  });
+
+  it("leaves Sentry to the one report entry: it never calls reportRenderError itself", () => {
+    const instance = new ErrorBoundary({ children: null });
+    instance.componentDidCatch(new Error("x"), info);
+    expect(reportRenderError).not.toHaveBeenCalled();
   });
 });

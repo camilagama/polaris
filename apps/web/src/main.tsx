@@ -5,6 +5,7 @@ import { CSPProvider } from "@base-ui/react/csp-provider";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app-shell/app";
+import { installClientErrorListeners } from "./lib/client-errors";
 import { followMotionLevel } from "./lib/motion-level";
 import { followSystemTheme } from "./lib/theme";
 import { initSentry } from "./observability/sentry";
@@ -29,6 +30,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     VITE_SENTRY_RELEASE: import.meta.env.VITE_SENTRY_RELEASE,
   }).catch(() => undefined);
 }
+
+// The errors no boundary catches, reported as the boundary's are (lib/client-errors.ts): off unless the build says so.
+installClientErrorListeners(window);
 
 // The system can go from dark to light with the page open: the `dark` class follows it (U-40).
 followSystemTheme();
