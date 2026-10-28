@@ -305,11 +305,21 @@ test("resultado-periodo", async ({ evidence, page }) => {
     page.getByRole("region", { name: "Resultado estimado" })
   ).toBeVisible();
   await evidence.shot("resultado-mes", "Resultado deste mês");
-  const period = page.getByRole("group", { name: "Período" });
-  await period.getByRole("button", { name: "Últimos 30 dias" }).click();
-  await expect(
-    period.getByRole("button", { name: "Últimos 30 dias", pressed: true })
-  ).toBeVisible();
+  // wide screens show the periods as buttons of a group, narrow ones as the combobox "Período"
+  const select = page.getByRole("combobox", { exact: true, name: "Período" });
+  if (await select.isVisible()) {
+    await select.click();
+    await page
+      .getByRole("option", { exact: true, name: "Últimos 30 dias" })
+      .click();
+    await expect(select).toHaveText("Últimos 30 dias");
+  } else {
+    const period = page.getByRole("group", { name: "Período" });
+    await period.getByRole("button", { name: "Últimos 30 dias" }).click();
+    await expect(
+      period.getByRole("button", { name: "Últimos 30 dias", pressed: true })
+    ).toBeVisible();
+  }
   // the card of the month ("Vendas em outubro") is replaced by the one of the period: only then is the new period read
   await expect(
     page.getByRole("region", { name: "Vendas líquidas" })
