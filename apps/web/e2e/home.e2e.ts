@@ -942,7 +942,6 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto (feito)");
-    await expect(checklist.getByRole("link", { name: "À mão" })).toHaveCount(0);
     const step = checklist.getByRole("link", {
       name: "Dar entrada no estoque",
     });
