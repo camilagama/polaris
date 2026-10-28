@@ -41,6 +41,9 @@ const rpc = (json: unknown, status = 200) => ({
   headers: { ...WORKER_MARK },
   status,
 });
+/** What a write the server cut says (the 503 below has no reason of its own): it may have been saved. */
+const SERVER_CUT_WRITE =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em 1 minuto antes de repetir.";
 const unavailable = rpc(
   {
     code: "SERVICE_UNAVAILABLE",
@@ -847,9 +850,7 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(page.getByRole("alert")).toContainText(SERVER_CUT_WRITE);
   const undo = page.getByRole("button", { name: "Desfazer" });
   await expect(undo).toBeEnabled();
   await undo.click();
@@ -869,9 +870,7 @@ test("arquivar que o servidor recusa: o erro é dito e focado e a linha continua
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(alert).toContainText(SERVER_CUT_WRITE);
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Camiseta do teste"
@@ -1270,9 +1269,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await skuSection.getByRole("textbox").fill("CAM-1");
   await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
   const skuAlert = skuSection.getByRole("alert");
-  await expect(skuAlert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(skuAlert).toContainText(SERVER_CUT_WRITE);
   await expect(skuAlert.locator("svg")).toHaveCount(1);
   await expect(skuSection.getByRole("status")).toHaveCount(0);
 
@@ -1281,9 +1278,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   });
   await priceSection.getByRole("textbox").fill("59,90");
   await priceSection.getByRole("button", { name: "Salvar preço" }).click();
-  await expect(priceSection.getByRole("alert")).toContainText(
-    "Não foi possível salvar o preço."
-  );
+  await expect(priceSection.getByRole("alert")).toContainText(SERVER_CUT_WRITE);
   await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);
 
   skuAnswer = "conflict";
