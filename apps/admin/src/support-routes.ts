@@ -253,18 +253,30 @@ function optionalString(value: unknown): string | null | undefined {
 }
 
 /**
- * A change that comes from a browser must come from this origin: the login is a
- * cookie, so a page elsewhere could otherwise make the operator's browser act.
+ * What `Sec-Fetch-Site` may say of a request the operator's browser makes: from this origin, or typed in the
+ * address bar (`none`). `same-site` is refused too: another subdomain of the zone (the store's app, the catalog)
+ * is another origin, and a script there must not spend the operator's login. A request without the header (a
+ * tool, an old browser) is judged by the rest.
+ */
+export function fromThisSite(context: Context<AdminEnv>): boolean {
+  const site = context.req.header("sec-fetch-site");
+  return site === undefined || site === "same-origin" || site === "none";
+}
+
+/**
+ * A change must say it comes from this origin: the login is a cookie, so a page
+ * elsewhere could otherwise make the operator's browser act. The `Origin` header
+ * is required (a browser always sends it with a POST, PUT or DELETE; a tool sends
+ * the Admin's own), and `Sec-Fetch-Site` must not name another origin.
  */
 export const sameOrigin: MiddlewareHandler<AdminEnv> = async (
   context,
   next
 ) => {
-  const origin = context.req.header("origin");
   if (
     context.req.method !== "GET" &&
-    origin !== undefined &&
-    origin !== new URL(context.req.url).origin
+    (context.req.header("origin") !== new URL(context.req.url).origin ||
+      !fromThisSite(context))
   ) {
     return context.json({ error: "forbidden" }, 403);
   }

@@ -12,6 +12,7 @@ import {
 
 const PROFILES: readonly SecurityProfile[] = [
   "admin",
+  "admin-document",
   "api",
   "app-shell",
   "auth-entry",
@@ -139,19 +140,23 @@ describe("the headers of every profile", () => {
     expect(headers["Cross-Origin-Opener-Policy"]).toBeUndefined();
   });
 
-  it.each(["admin", "api", "app-shell", "public-document"] as const)(
-    "isolates %s from other origins",
-    (profile) => {
-      const headers = headersOf(profile);
+  it.each([
+    "admin",
+    "admin-document",
+    "api",
+    "app-shell",
+    "public-document",
+  ] as const)("isolates %s from other origins", (profile) => {
+    const headers = headersOf(profile);
 
-      expect(headers["Cross-Origin-Opener-Policy"]).toBe("same-origin");
-      expect(headers["Cross-Origin-Resource-Policy"]).toBe("same-origin");
-      expect(headers["X-Frame-Options"]).toBe("DENY");
-    }
-  );
+    expect(headers["Cross-Origin-Opener-Policy"]).toBe("same-origin");
+    expect(headers["Cross-Origin-Resource-Policy"]).toBe("same-origin");
+    expect(headers["X-Frame-Options"]).toBe("DENY");
+  });
 
-  it("sends no referrer at all from the Admin", () => {
+  it("sends no referrer at all from the Admin, page or API", () => {
     expect(headersOf("admin")["Referrer-Policy"]).toBe("no-referrer");
+    expect(headersOf("admin-document")["Referrer-Policy"]).toBe("no-referrer");
     expect(headersOf("api")["Referrer-Policy"]).toBe(
       "strict-origin-when-cross-origin"
     );
@@ -217,7 +222,12 @@ describe("the policy of the app shell", () => {
   });
 
   it("does not let a profile that loads nothing open a source or take a nonce", () => {
-    for (const profile of ["admin", "api", "public-media"] as const) {
+    for (const profile of [
+      "admin",
+      "admin-document",
+      "api",
+      "public-media",
+    ] as const) {
       expect(() =>
         securityHeaders(profile, { connectSources: ["https://a.example.com"] })
       ).toThrow(LOADS_NOTHING);
@@ -310,10 +320,40 @@ describe("the policy of the public documents", () => {
   });
 });
 
+describe("the policy of the Admin page", () => {
+  it("is exactly the approved one: its own script, sheet and API, nothing inline and Trusted Types", () => {
+    expect(headersOf("admin-document")["Content-Security-Policy"]).toBe(
+      [
+        "default-src 'none'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "connect-src 'self'",
+        "img-src 'none'",
+        "font-src 'none'",
+        "manifest-src 'none'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+        "require-trusted-types-for 'script'",
+        "trusted-types 'none'",
+      ].join("; ")
+    );
+  });
+
+  it("keeps every other header of the Admin", () => {
+    const { "Content-Security-Policy": _page, ...page } =
+      headersOf("admin-document");
+    const { "Content-Security-Policy": _api, ...api } = headersOf("admin");
+    expect(page).toEqual(api);
+  });
+});
+
 describe("Cache-Control", () => {
   it("makes the answers of the Worker and of the Admin uncacheable", () => {
     expect(defaultCacheControl("api")).toBe("no-store");
     expect(defaultCacheControl("admin")).toBe("no-store");
+    expect(defaultCacheControl("admin-document")).toBe("no-store");
     for (const profile of [
       "app-shell",
       "public-document",

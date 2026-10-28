@@ -348,20 +348,41 @@ describe("GET /api/funnel", () => {
     }
   );
 
-  it("refuses a read started from another site with 403, without spending a read", async () => {
-    const { app, read } = setup();
-    const response = await app.fetch(
-      new Request("https://admin.example.invalid/api/funnel?weeks=2", {
-        headers: {
-          "cf-access-jwt-assertion": "token",
-          "sec-fetch-site": "cross-site",
-        },
-      }),
-      bindings
-    );
-    expect(response.status).toBe(403);
-    expect(read).not.toHaveBeenCalled();
-  });
+  it.each(["cross-site", "same-site"])(
+    "refuses a read started from another origin (%s) with 403, without spending a read",
+    async (site) => {
+      const { app, read } = setup();
+      const response = await app.fetch(
+        new Request("https://admin.example.invalid/api/funnel?weeks=2", {
+          headers: {
+            "cf-access-jwt-assertion": "token",
+            "sec-fetch-site": site,
+          },
+        }),
+        bindings
+      );
+      expect(response.status).toBe(403);
+      expect(read).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["same-origin", "none", undefined])(
+    "reads for the Admin's own page, the address bar and a tool (Sec-Fetch-Site %s)",
+    async (site) => {
+      const { app, read } = setup();
+      const response = await app.fetch(
+        new Request("https://admin.example.invalid/api/funnel?weeks=2", {
+          headers: {
+            "cf-access-jwt-assertion": "token",
+            ...(site === undefined ? {} : { "sec-fetch-site": site }),
+          },
+        }),
+        bindings
+      );
+      expect(response.status).toBe(200);
+      expect(read).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it("answers 503 when the database cancels the read for its time", async () => {
     const { get, report } = setup(
