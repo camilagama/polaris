@@ -294,10 +294,11 @@ const RPC_READ_RULE: RateLimitRule = {
 };
 
 /**
- * Many rows in one call (the slices of a spreadsheet import, `kind: "bulk"`): a bucket of their own
- * (`RPC_BULK_RATE_LIMIT`, per session and per address), with few calls per minute. Counted as one write, a call
- * would multiply the write limit by its rows; counted as one write per row, it would leave the sales of the same
- * session without quota. It spends neither: the write bucket stays whole for the sales during an import.
+ * The calls of a spreadsheet import (`kind: "bulk"`, one row each): a bucket of their own
+ * (`RPC_BULK_RATE_LIMIT`, per session and per address), narrower than the writes. Counted as writes, an import of
+ * 500 rows would leave the sales of the same session without quota. It spends neither: the write bucket stays whole
+ * for the sales during an import. The bucket counts calls, so its rows per minute are only as few as the contract's
+ * cap of rows per call (`PRODUCT_IMPORT_BATCH_MAX_ROWS`).
  */
 const RPC_BULK_RULE: RateLimitRule = {
   bindings: {
