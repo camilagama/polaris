@@ -8,6 +8,7 @@ import {
   InvalidEconomicsPeriodError,
   MAX_DAILY_SALES_DAYS,
   periodSalesSelect,
+  periodSummaryQuery,
   readDailySales,
   readPeriodSummary,
 } from "../src/economics-repository";
@@ -36,15 +37,16 @@ import {
 /**
  * The daily sales series of the Início's map (`readDailySales`) on a real
  * PostgreSQL 18: the database aggregates net sales and the count of sales of
- * each date with SQL, and this gate proves that it is the engine's
- * `readPeriodSummary(...).daily` (`netSales` and `salesCount`), date by date,
+ * each date with SQL, and this gate proves that it is the summary's
+ * `readPeriodSummary(...).daily` (`netSales` and `salesCount`), date by date
+ * (the gate `period-summary-sql` holds the summary to the engine),
  * over generated sales with discounts (fixed and percentage, split among the
  * items, with ties), partial, repeated and full returns, cancellations, sales a
  * second before and after midnight and organizations in different time zones.
  * It also proves the scope (organization, capability, period) and the plan of
- * the two statements that read the sales of a period, the series and the
- * `readPeriodFacts` one of the summary: after a long history is added, both read
- * `sales` by the (organization_id, occurred_on) index, never the whole
+ * the statements that read the sales of a period, the series, the summary and
+ * the `readPeriodFacts` one of the goals: after a long history is added, each
+ * reads `sales` by the (organization_id, occurred_on) index, never the whole
  * organization.
  *
  * The generated sales come from a seed printed as a `gate-note`; set
@@ -726,7 +728,7 @@ function explainedStatement(built: { params: unknown[]; sql: string }) {
 type TenantTransaction = Parameters<Parameters<Fixture["as"]>[2]>[0];
 
 /**
- * The plans of the two statements that read the sales of a period: the daily series and `readPeriodFacts`. The
+ * The plans of the statements that read the sales of a period: the daily series, the summary and `readPeriodFacts`. The
  * history above is out of the period, so reading the organization's sales whole (or by an index that only knows the
  * organization and the confirmation) is the wrong plan: each statement must read `sales` by the
  * (organization_id, occurred_on) index. The planner chooses freely, with no setting turned off.
@@ -759,6 +761,10 @@ async function explainPlans(admin: AdminPool, fixture: Fixture, store: Store) {
       (_tx, organization) => dailySalesQuery(organization, period),
     ],
     [
+      "periodSummary",
+      (_tx, organization) => periodSummaryQuery(organization, period, 3),
+    ],
+    [
       "readPeriodFacts",
       (tx, organization) =>
         explainedStatement(periodSalesSelect(tx, organization, period).toSQL()),
@@ -766,7 +772,7 @@ async function explainPlans(admin: AdminPool, fixture: Fixture, store: Store) {
   ];
   const used: string[] = [];
   for (const [name, statement] of statements) {
-    // biome-ignore lint/performance/noAwaitInLoops: two plans, one after the other
+    // biome-ignore lint/performance/noAwaitInLoops: one plan after the other
     const plan = await fixture.as(
       store.tenant,
       "report:read",
