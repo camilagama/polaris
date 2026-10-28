@@ -81,7 +81,7 @@ A semeadura entra pelos comandos do Worker (`product.create`, `inventory.receive
 - `/health` responde `{"status":"ok"}`;
 - **a build é a da worktree**: o `index.html` servido aponta os mesmos assets de `dist-e2e/<projeto>/client/index.html`, e o `HEAD` e as mudanças locais de `apps/` e `packages/` são as mesmas do momento do build. Mudou o código depois do launch? O doctor reprova: `cleanup` e `launch` de novo;
 - **o login funciona**: o cookie de cada loja abre `/api/auth/get-session` com o usuário dela;
-- **o banco está semeado**: a loja tem o dono como membro e o que a receita dela promete (3 variantes e 8 vendas em `vendas`, 50 variantes em `limite`).
+- **o banco está semeado**: a loja tem o dono como membro e o que a receita dela promete (ao menos 3 variantes e 8 vendas em `vendas`, ao menos 50 variantes em `limite`: as receitas e os drives acrescentam dados, e o doctor não pode reprovar uma instância só porque foi dirigida).
 
 ## Drive
 

@@ -771,7 +771,7 @@ function seededAsExpected(
   row: { sales: number; variants: number }
 ): boolean {
   if (loja === "vendas") {
-    return row.variants === 3 && row.sales >= 8;
+    return row.variants >= 3 && row.sales >= 8;
   }
   if (loja === "limite") {
     return row.variants >= FREE_VARIANT_LIMIT;
