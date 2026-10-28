@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLIENT_ERROR_LINES_PER_MINUTE,
+  CLIENT_ERROR_SIGNATURE_IDLE_MINUTES,
   CLIENT_ERROR_SIGNATURES_KEPT,
   createClientErrorLog,
 } from "./client-error-log";
@@ -173,6 +174,60 @@ describe("the log of the reports of errors of the browser", () => {
     const dropped = lines(logs, "client_error_dropped");
     expect(dropped).toHaveLength(2);
     expect(dropped.map((line) => line.count)).toEqual([1, 1]);
+  });
+
+  it("lets an idle signature leave the memory: a table full of false signatures does not hide a new failure for good", () => {
+    const { advance, log, logs } = setup();
+    const perMinute = CLIENT_ERROR_LINES_PER_MINUTE;
+    for (
+      let minute = 0;
+      minute < CLIENT_ERROR_SIGNATURES_KEPT / perMinute;
+      minute += 1
+    ) {
+      for (let index = 0; index < perMinute; index += 1) {
+        log.accepted(`false-${minute * perMinute + index}`, FIELDS);
+      }
+      advance();
+    }
+    log.accepted("real", FIELDS);
+    expect(lines(logs, "client_error")).toHaveLength(
+      CLIENT_ERROR_SIGNATURES_KEPT
+    );
+
+    advance(CLIENT_ERROR_SIGNATURE_IDLE_MINUTES + 1);
+    log.accepted("real", FIELDS);
+
+    const found = lines(logs, "client_error");
+    expect(found).toHaveLength(CLIENT_ERROR_SIGNATURES_KEPT + 1);
+    expect(found.at(-1)).toMatchObject({ fingerprint: "real" });
+  });
+
+  it("keeps a signature that had a report within the idle window, and logs no first line for it again", () => {
+    const { advance, log, logs } = setup();
+    log.accepted("kept", FIELDS);
+    for (let step = 0; step < 3; step += 1) {
+      advance(CLIENT_ERROR_SIGNATURE_IDLE_MINUTES - 1);
+      log.accepted("kept", FIELDS);
+    }
+
+    expect(lines(logs, "client_error")).toHaveLength(1);
+  });
+
+  it("leaves room for a new signature in a minute whose counts would take every line", () => {
+    const { advance, log, logs } = setup();
+    for (let index = 0; index < CLIENT_ERROR_LINES_PER_MINUTE; index += 1) {
+      log.accepted(`sig-${index}`, FIELDS);
+      log.accepted(`sig-${index}`, FIELDS);
+    }
+    advance();
+    log.accepted("new", FIELDS);
+
+    expect(lines(logs, "client_error_count").length).toBeLessThan(
+      CLIENT_ERROR_LINES_PER_MINUTE
+    );
+    expect(lines(logs, "client_error").at(-1)).toMatchObject({
+      fingerprint: "new",
+    });
   });
 
   it("still counts the repeats of a signature that is kept when the table is full", () => {

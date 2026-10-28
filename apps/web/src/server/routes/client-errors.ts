@@ -1,6 +1,7 @@
 import { clientErrorEventSchema } from "@polaris/contracts/client-error";
 import {
   CLIENT_ERROR_BODY_MAX_BYTES,
+  CLIENT_ERROR_FRAME_PATTERN,
   type ClientErrorEvent,
   chunkNameOfFrame,
 } from "@polaris/contracts/client-error-fields";
@@ -76,29 +77,60 @@ export const clientErrorsSwitchMiddleware: MiddlewareHandler<
   await next();
 };
 
+/** The most keys and array items the route reads: a valid event has 9 keys and 3 frames, so the net costs little. */
+const MAX_KEYS = 16;
+const MAX_ITEMS = 3;
+
+/**
+ * Whether the body has the shape of an event at all: one flat object of at most `MAX_KEYS` keys, each value a string,
+ * a number or a list of at most `MAX_ITEMS` strings. Anything else is refused before the redaction net reads it.
+ */
+function hasEventShape(body: unknown): body is Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return false;
+  }
+  const values = Object.values(body);
+  return (
+    values.length <= MAX_KEYS &&
+    values.every(
+      (value) =>
+        typeof value === "string" ||
+        typeof value === "number" ||
+        (Array.isArray(value) &&
+          value.length <= MAX_ITEMS &&
+          value.every((item) => typeof item === "string"))
+    )
+  );
+}
+
+/** A frame as the log line writes it (`file@line:column`): the policy of the logs masks a name glued to a `:`. */
+function loggedFrame(frame: string): string {
+  const end = frame.indexOf(".js:") + ".js".length;
+  return `${frame.slice(0, end)}@${frame.slice(end + 1)}`;
+}
+
+/** The text as it would reach the log: a frame in the form of its line, anything else as it came. */
+function asLogged(text: string): string {
+  return CLIENT_ERROR_FRAME_PATTERN.test(text) ? loggedFrame(text) : text;
+}
+
+function suspectText(text: string): boolean {
+  const logged = asLogged(text);
+  return redactText(logged) !== logged || QUERY_PARAMETER.test(text);
+}
+
 /**
  * Whether any key or string of the body looks like personal data or a secret by the policy of the logs (ADR 0089:
  * an e-mail, a CPF, a phone, a token...) or carries a query: the whole event is then discarded, nothing is corrected.
  * The schema would refuse it as well; this net does not depend on the lists of the schema staying closed.
  */
-function suspectsPersonalData(value: unknown, depth = 0): boolean {
-  if (depth > 8) {
-    return true;
-  }
-  if (typeof value === "string") {
-    return redactText(value) !== value || QUERY_PARAMETER.test(value);
-  }
-  if (Array.isArray(value)) {
-    return value.some((item) => suspectsPersonalData(item, depth + 1));
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.entries(value).some(
-      ([key, item]) =>
-        suspectsPersonalData(key, depth + 1) ||
-        suspectsPersonalData(item, depth + 1)
-    );
-  }
-  return false;
+function suspectsPersonalData(body: Record<string, unknown>): boolean {
+  return Object.entries(body).some(
+    ([key, value]) =>
+      suspectText(key) ||
+      (typeof value === "string" && suspectText(value)) ||
+      (Array.isArray(value) && value.some((item) => suspectText(String(item))))
+  );
 }
 
 /**
@@ -134,7 +166,7 @@ function logFieldsOf(event: ClientErrorEvent): LogFields {
     boundary: event.boundary,
     errorClass: event.errorName,
     errorCode: event.code,
-    frames: event.frames,
+    frames: event.frames?.map(loggedFrame),
     kind: event.kind,
     release: event.release,
     routeId: event.routeId,
@@ -180,7 +212,10 @@ export function createClientErrorRoutes({
         warnedAboutMissingLimiter = true;
         logger.warn("rate_limit_binding_missing", { scope: LIMITER_SCOPE });
       }
-    } else if (ip !== undefined) {
+    } else if (ip === undefined) {
+      // behind the edge the address always comes; without it nothing is counted against a bucket, so say it
+      log.refused("limiter_unavailable");
+    } else {
       try {
         const { success } = await limiter.limit({
           key: await limiterKey(secret, LIMITER_SCOPE, ip),
@@ -216,6 +251,10 @@ export function createClientErrorRoutes({
     try {
       body = JSON.parse(text);
     } catch {
+      log.refused("bad_request");
+      return refuse(context, 400, "invalid_event");
+    }
+    if (!hasEventShape(body)) {
       log.refused("bad_request");
       return refuse(context, 400, "invalid_event");
     }

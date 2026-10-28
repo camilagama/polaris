@@ -187,7 +187,7 @@ describe("POST /api/client-errors: the accepted event", () => {
       boundary: "screen",
       errorClass: "TypeError",
       errorCode: "INTERNAL_SERVER_ERROR",
-      frames: ["sale-form-model-AAAAAAAA.js:10:5"],
+      frames: ["sale-form-model-AAAAAAAA.js@10:5"],
       kind: "error",
       level: "warn",
       release: "abcdef1",
@@ -246,6 +246,50 @@ describe("POST /api/client-errors: hostile events", () => {
 
     expect(response.status).toBe(400);
     expect(linesOf(logs, "client_error")).toEqual([]);
+  });
+
+  it("refuses a body that is not a flat event (nested object, long list, too many keys) before the redaction net", async () => {
+    const logs = spyLogs();
+    const { nextMinute, send } = setup();
+    const many = Object.fromEntries(
+      Array.from({ length: 17 }, (_, index) => [`k${index}`, index])
+    );
+
+    const statuses = [
+      (await send({ ...validEvent, nested: { a: "maria@example.com" } }))
+        .status,
+      (await send({ ...validEvent, frames: ["a", "b", "c", "d"] })).status,
+      (await send(many)).status,
+      (await send(["maria@example.com"])).status,
+    ];
+
+    expect(statuses).toEqual([400, 400, 400, 400]);
+    nextMinute();
+    await send(validEvent);
+    expect(linesOf(logs, "client_error_pii_suspected")).toEqual([]);
+    expect(linesOf(logs, "client_error_refused")[0]).toMatchObject({
+      bad_request: 4,
+    });
+  });
+
+  it("takes a frame of a piece named after a secret word (change-password-page) and logs it whole", async () => {
+    const logs = spyLogs();
+    const { send } = setup();
+
+    const response = await send({
+      ...validEvent,
+      frames: [
+        "change-password-page-AbCdEfGh.js:10:20",
+        "index-sidAbCdE.js:1:2",
+      ],
+    });
+
+    expect(response.status).toBe(204);
+    const [line] = linesOf(logs, "client_error") as [Record<string, unknown>];
+    expect(line.frames).toEqual([
+      "change-password-page-AbCdEfGh.js@10:20",
+      "index-sidAbCdE.js@1:2",
+    ]);
   });
 
   it.each([
