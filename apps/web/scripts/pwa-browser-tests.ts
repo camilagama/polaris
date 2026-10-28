@@ -168,43 +168,13 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
-    const status = playwright([], {
+    return playwright([], {
       ...process.env,
       [VISUAL_WS_ENV]: browser.wsEndpoint,
     });
-    dumpNewBaselines();
-    return status;
   } finally {
     capture("docker", ["stop", "--time", "2", browser.container]);
   }
-}
-
-// TEMPORARY: prints the baselines this run wrote, so they can be taken from the job log (no artifact upload).
-function dumpNewBaselines() {
-  if (!process.env.CI) {
-    return;
-  }
-  const listing = capture("git", [
-    "ls-files",
-    "--others",
-    "--",
-    "e2e-pwa/ui-visual.e2e.ts-snapshots",
-  ]);
-  const files = listing.output
-    .split("\n")
-    .filter((line) => line.endsWith(".png"));
-  if (files.length === 0) {
-    return;
-  }
-  const archive = spawnSync("tar", ["-czf", "-", ...files], {
-    maxBuffer: 268_435_456,
-  });
-  const text = archive.stdout.toString("base64");
-  console.log(`T470-BASELINES-BEGIN ${files.length}`);
-  for (let index = 0; index < text.length; index += 4000) {
-    console.log(`T470B ${text.slice(index, index + 4000)}`);
-  }
-  console.log("T470-BASELINES-END");
 }
 
 process.exit(await main());

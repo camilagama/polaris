@@ -2521,3 +2521,15 @@ Origem: a medida do Juan no staging (CPU de 10 a 13 ms por linha, só a fatia de
 | Tela | Em revisão | O tempo estimado já sai do ritmo medido da própria importação (`estimateText`), sem número fixo: cerca de 4 minutos por 100 linhas a 2,5 s. |
 | Ordem do deploy | Registrado | Aba aberta com o cliente antigo (fatias de até 10 linhas) tem a chamada recusada inteira depois do deploy; a importação vive só em memória e recomeça pelo que já foi criado (os mesmos `commandId` e `productId` voltam `repeated`). O cap e o balde entram no mesmo deploy. |
 | Pendências | Registrado | Depois do merge e do deploy, o Diego e o Juan medem no staging a 2,5 s; se o 1102 passar de cerca de 10%, o balde volta a 20/min (um número no `wrangler.jsonc`). Sem teto diário por loja, sem Workers Paid, sem fatia maior que 1. |
+
+### Regressão visual na suíte e2e-pwa (Q1 do desenho de qualidade de 28/10; sem migration)
+
+Origem: melhoria aprovada pelo usuário em 28/10, desenho do Filipe (seção "2. Regressão visual" e tarefa Q1).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Spec | Em revisão | `apps/web/e2e-pwa/ui-visual.e2e.ts`: 26 estados de `ui-screens.ts` (um por tela, mais erros e vazios) a 360 px com toque e 1280 px com mouse, claro e escuro, 104 baselines `-linux` em `ui-visual.e2e.ts-snapshots/` (6,7 MB). Projeto `chromium-visual` da `playwright.pwa.config.ts`, dentro do `bun run test:pwa` do job do Offline gate, sem mudança de workflow. |
+| Navegador da imagem | Em revisão | `scripts/pwa-browser-tests.ts` sobe com `docker run` o `playwright run-server` da imagem `mcr.microsoft.com/playwright:v1.63.0-noble` fixada pelo digest, em `linux/amd64` (`scripts/visual-browser.ts`); sem ele o spec reprova antes de capturar. `visual-browser.test.ts` amarra a imagem à versão do `@playwright/test`. Sem Docker, o `test:pwa` local roda os outros projetos e avisa; no CI, reprova. |
+| Determinismo | Em revisão | Fontes do app esperadas (teste de Geist e Geist Mono carregadas), `animations: "disabled"`, `caret: "hide"`, `reducedMotion: "reduce"`, `networkidle` mais um quadro, `page.clock.install` com data fixa e fuso `America/Sao_Paulo`, animação por script levada ao fim pelo relógio da página, janela na altura da página antes da captura (o `fullPage` redimensiona durante a captura e o gráfico de linha do Início chegava a sair estreito), `maxDiffPixelRatio: 0.001`, `threshold: 0.2`, `mask` só em `MASKS` (vazia). |
+| Atualizar | Em revisão | `bun run test:visual:update` (só comparar: `test:visual`); runbook `testes-de-tela.md`, "Regressão visual"; `DESIGN.md`: PR de UI traz o diff de imagem aprovado pelo Petković. |
+| Pendências | Registrado | Os gráficos de linha (`use-animated-series-path`, sparklines) usam `useReducedMotionConfig` sem `MotionConfig reducedMotion="user"`, então animam com `prefers-reduced-motion: reduce`; o spec contorna avançando o relógio, a correção é do app. A máquina de desenvolvimento é arm64 sem Docker: as baselines deste PR vieram da primeira execução do CI na imagem (as 104 conferem com as da variante arm64 da mesma imagem dentro da tolerância). Os 76 estados, Firefox e WebKit ficam para depois. |
