@@ -22,7 +22,7 @@ O que tem de existir antes do primeiro `launch`. O `$V preflight` confere tudo i
 | `bun` | `PATH` | o do `PATH`; roda o `stack.ts` |
 | `git` e `ss` (iproute2) | `PATH` | o do `PATH`; o doctor lê a porta com `ss` |
 | Dependências instaladas | | `bun install --frozen-lockfile` na worktree (precisa de `apps/web/node_modules/@playwright/test`) |
-| Pasta de evidência | `VERIFY_EVIDENCE_DIR` (padrão `~/tasks/<id>-telas`) | gravável ou criável; fora do repositório |
+| Pasta de evidência | `VERIFY_EVIDENCE_DIR` (padrão `~/tasks/<id>-telas`) | gravável ou criável (use uma pasta fora do repositório: a evidência nunca é commitada) |
 | Pasta de estado | `VERIFY_STATE_DIR` (padrão `/tmp/polaris-verify/<id>`) | gravável ou criável |
 | Worktree com `.git` gravável | | uma worktree sua (`git worktree add`); o git cria `index.lock` no diretório git dela |
 

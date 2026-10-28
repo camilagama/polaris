@@ -56,6 +56,7 @@ fi
 # nearest existing ancestor of a path that is meant to be created: it has to be writable
 writable_or_creatable() {
   local path="$1"
+  [[ "$path" == /* ]] || path="$PWD/$path"
   while [ ! -e "$path" ] && [ "$path" != "/" ] && [ -n "$path" ]; do
     path="${path%/*}"
   done
@@ -90,7 +91,9 @@ preflight() {
       fi
       if [ -z "$found" ]; then
         lacks PG_BIN "$binary do PostgreSQL 18 não achado${PG_BIN:+ em $PG_BIN}; aponte PG_BIN para a pasta bin (ou POLARIS_E2E_DATABASE_URL para o dono de um PostgreSQL local)"
-      elif version="$("$found" --version 2>/dev/null)" && [[ "$version" != *"(PostgreSQL) 18"* ]]; then
+      elif ! version="$("$found" --version 2>/dev/null)"; then
+        lacks PG_BIN "$found não executa (biblioteca ou arquitetura errada?)"
+      elif [[ "$version" != *"(PostgreSQL) 18"* ]]; then
         lacks PG_BIN "$found não é o PostgreSQL 18 ($version)"
       fi
     done
@@ -104,6 +107,7 @@ preflight() {
   if [ -f "$gitdir" ]; then
     read -r pointer <"$gitdir" || true
     gitdir="${pointer#gitdir: }"
+    [[ "$gitdir" == /* ]] || gitdir="$repo_root/$gitdir"
   fi
   if [ ! -e "$gitdir" ]; then
     lacks "worktree" "$repo_root não é um worktree git (sem .git)"
@@ -115,7 +119,9 @@ preflight() {
     echo "PREFLIGHT FALHOU: $missing item(ns) faltando; resolva e rode \"verify.sh preflight\" de novo"
     return 1
   fi
-  echo "PREFLIGHT OK node=$VERIFY_NODE pg=${PG_BIN:-${POLARIS_E2E_DATABASE_URL:+POLARIS_E2E_DATABASE_URL}} evidência=$VERIFY_EVIDENCE_DIR"
+  local pg_source="${PG_BIN:-PATH}"
+  [ -z "${POLARIS_E2E_DATABASE_URL:-}" ] || pg_source="POLARIS_E2E_DATABASE_URL"
+  echo "PREFLIGHT OK node=$VERIFY_NODE pg=$pg_source evidência=$VERIFY_EVIDENCE_DIR"
 }
 
 playwright() {
