@@ -1,5 +1,7 @@
 import { expect, test } from "../drive/fixture";
 
+const LOADING = /^Carregando/;
+
 /**
  * features/produtos.md, `produto-criar`: the person opens Produtos from the menu, creates a product with price and
  * opening stock in the "Novo produto" dialog, and sees it in the list; a reload shows it again (it was saved on the
@@ -31,6 +33,8 @@ test("produtos: criar um produto e vê-lo na lista", async ({
   await expect(
     page.getByRole("heading", { level: 1, exact: true, name: "Produtos" })
   ).toBeVisible();
+  // the list loads after the screen: the "before" shows the list, not its loading state
+  await expect(page.getByText(LOADING)).toHaveCount(0, { timeout: 15_000 });
   await evidence.shot(
     "produtos-antes",
     "Produtos aberto pelo menu, antes de criar"
