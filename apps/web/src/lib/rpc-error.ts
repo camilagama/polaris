@@ -58,6 +58,15 @@ export function legalAcceptanceMessage(
     : `Não foi possível carregar ${subject}: ${LEGAL_ACCEPTANCE_MISSING}`;
 }
 
+/**
+ * The Worker refused the body of the call for its size (`payload_too_large`, 413): oRPC reads the status as
+ * `PAYLOAD_TOO_LARGE`. It is the answer of a size rule, not a failure of the server and not a refusal of the
+ * command: the sync splits its batch.
+ */
+export function isPayloadTooLarge(error: unknown): boolean {
+  return rpcErrorCode(error) === "PAYLOAD_TOO_LARGE";
+}
+
 const definiteCodes = new Set([
   "BAD_REQUEST",
   "CONFLICT",
