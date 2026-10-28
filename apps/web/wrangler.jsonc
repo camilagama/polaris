@@ -103,8 +103,8 @@
   // Rate limit namespace ids are per account: 900xxx is local, 902xxx staging, 901xxx production.
   // /rpc counts writes in RPC_MUTATION_RATE_LIMIT (per session and per address) and reads in a bucket of
   // their own: RPC_READ_RATE_LIMIT per session and RPC_READ_IP_RATE_LIMIT per address, wider because a
-  // whole store shares one address. The calls of many rows (`kind: "bulk"`, the slices of an import) count in
-  // RPC_BULK_RATE_LIMIT, 12 per minute per session and per address, and spend neither of the others.
+  // whole store shares one address. The calls of the import (`kind: "bulk"`, one row each) count in
+  // RPC_BULK_RATE_LIMIT, 30 per minute per session and per address (30 rows), and spend neither of the others.
   // Reads, writes and bulk calls come from the `kind` of each procedure in the contract.
   "ratelimits": [
     {
@@ -135,7 +135,7 @@
     {
       "name": "RPC_BULK_RATE_LIMIT",
       "namespace_id": "900023",
-      "simple": { "limit": 12, "period": 60 }
+      "simple": { "limit": 30, "period": 60 }
     },
     {
       "name": "MEDIA_UPLOAD_RATE_LIMIT",
@@ -332,7 +332,7 @@
         {
           "name": "RPC_BULK_RATE_LIMIT",
           "namespace_id": "902023",
-          "simple": { "limit": 12, "period": 60 }
+          "simple": { "limit": 30, "period": 60 }
         },
         {
           "name": "MEDIA_UPLOAD_RATE_LIMIT",
@@ -491,7 +491,7 @@
         {
           "name": "RPC_BULK_RATE_LIMIT",
           "namespace_id": "901023",
-          "simple": { "limit": 12, "period": 60 }
+          "simple": { "limit": 30, "period": 60 }
         },
         {
           "name": "MEDIA_UPLOAD_RATE_LIMIT",

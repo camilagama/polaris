@@ -503,6 +503,10 @@ describe("the progress says rows, never a promised time", () => {
     expect(estimateText(5, 30_000, 30)).toBe(
       "Estimativa pelo ritmo desta importação: cerca de 3 minutos."
     );
+    // the pace of the import (2.5 s a call, ~3 s with the answer): 100 rows left are about 4 to 5 minutes
+    expect(estimateText(10, 30_000, 100)).toBe(
+      "Estimativa pelo ritmo desta importação: cerca de 5 minutos."
+    );
     expect(estimateText(5, 30_000, 4)).toBe(
       "Estimativa pelo ritmo desta importação: cerca de 1 minuto."
     );
