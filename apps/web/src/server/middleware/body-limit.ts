@@ -63,7 +63,7 @@ function limitedStream(
         read += chunk.byteLength;
         if (read > maxBytes) {
           onExceeded();
-          controller.error(new Error("body_too_large"));
+          controller.terminate();
           return;
         }
         controller.enqueue(chunk);
