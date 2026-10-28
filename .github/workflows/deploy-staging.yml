@@ -36,6 +36,7 @@ jobs:
       contents: read
     outputs:
       deploy: ${{ steps.tip.outputs.deploy }}
+      urgent: ${{ steps.urgent.outputs.urgent }}
     env:
       GH_TOKEN: ${{ github.token }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -65,6 +66,41 @@ jobs:
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A revert or a security fix goes in at the first safe moment, without settling (ADR 0041). The marker
+      # is a whole line "Swap-Urgent: yes" in the message of ANY commit since the last successful deploy:
+      # only the tip of main is deployed, so a marked revert followed by another merge minutes later must
+      # still ship urgent. Never a substring, never the text of a pull request: the squash of this
+      # repository keeps the title and the commit messages, not the PR body. Messages are read here, in a
+      # job that runs no repository code, and only the literals 1 or 0 leave it.
+      - id: urgent
+        name: Urgent swap marker since the last deploy
+        if: steps.tip.outputs.deploy == 'true'
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          workflow=$(basename "${WORKFLOW_REF%@*}")
+          base=""
+          for run in $(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=30" --jq '.workflow_runs[].id'); do
+            [ "$run" = "$GITHUB_RUN_ID" ] && continue
+            if gh api "repos/$REPOSITORY/actions/runs/$run/jobs" --jq '.jobs[] | select(.name == "Migrate, deploy and smoke") | .conclusion' | grep -cx success >/dev/null; then
+              base=$(gh api "repos/$REPOSITORY/actions/runs/$run" --jq .head_sha)
+              break
+            fi
+          done
+          if [ -n "$base" ]; then
+            messages=$(gh api --paginate "repos/$REPOSITORY/compare/$base...$HEAD_SHA" --jq '.commits[].commit.message')
+          else
+            messages=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.message)
+          fi
+          if printf '%s\n' "$messages" | tr -d '\r' | sed 's/[[:space:]]*$//' | grep -cx 'Swap-Urgent: yes' >/dev/null; then
+            echo "urgent=1" >> "$GITHUB_OUTPUT"
+            echo "::notice::urgent swap: this build skips the settling of ADR 0041 (marker since ${base:-the tip only})"
+            echo "**Urgent swap:** this staging build skips the 2 h settling (ADR 0041)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "urgent=0" >> "$GITHUB_OUTPUT"
+          fi
+
   # The build runs the repository's code and dependencies: no Environment and no secret here.
   build:
     name: Build staging
@@ -92,26 +128,13 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      # A revert or a security fix goes in at the first safe moment, without settling (ADR 0041): only when
-      # the commit message has the exact line "Swap-Urgent: yes". An exact whole line, never a substring, so
-      # a pull request that merely mentions the marker does not ship urgent. The message reaches the shell
-      # through env, never interpolated into run.
-      - name: Urgent swap marker
-        env:
-          COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
-        run: |
-          set -euo pipefail
-          if printf '%s\n' "$COMMIT_MESSAGE" | tr -d '\r' | grep -qx 'Swap-Urgent: yes'; then
-            echo "POLARIS_SWAP_URGENT=1" >> "$GITHUB_ENV"
-            echo "::notice::urgent swap: this build skips the settling of ADR 0041"
-          else
-            echo "POLARIS_SWAP_URGENT=0" >> "$GITHUB_ENV"
-          fi
       - name: Build the staging Workers
         env:
           CLOUDFLARE_ENV: staging
           # the offline runtime is on in staging only, for the manual Gate 5 (ADR 0043)
           VITE_OFFLINE_RUNTIME_ENABLED: "true"
+          # "1" only when a commit since the last deploy carries the marker (job decide, ADR 0041)
+          POLARIS_SWAP_URGENT: ${{ needs.decide.outputs.urgent }}
         run: |
           bun run --filter @polaris/web build
           bun run --filter @polaris/catalog build
