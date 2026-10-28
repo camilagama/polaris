@@ -23,7 +23,7 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 Preconditions:
 
 - Doctor OK, `$V seed vendas`, `VERIFY_LOJA=vendas` (3 variantes com saldo e custo 12,00).
-- Provado: `drives/receitas.verify.ts --grep estoque-receber`, `--grep estoque-contar` e `--grep estoque-baixar`. Cada um lê o saldo da linha antes e espera o saldo novo, então rodam em qualquer ordem e quantas vezes quiser: receber soma 5 na Vela aromática, contar põe a Camiseta básica em saldo + 3, baixar tira 2 dela (motivo "Avariado").
+- Provado: `drives/receitas.verify.ts --grep estoque-receber`, `--grep estoque-contar` e `--grep estoque-baixar`. Cada um lê o saldo da linha antes e espera o saldo novo, então rodam em qualquer ordem e de novo sem semear: receber soma 5 na Vela aromática, contar põe a Camiseta básica em saldo + 3, baixar tira 2 dela (motivo "Avariado"). O limite é o saldo da Caneca esmaltada (20 semeadas), que as vendas dos drives consomem: `venda-confirmar` tira 2 e `venda-devolver` tira 2 e devolve 1, ou seja, 3 por rodada de receitas num projeto. Na 7ª rodada a Caneca zera no meio e "Confirmar venda" recusa por saldo; aí semeie de novo (`cleanup` + `launch` + `seed vendas`) ou receba estoque dela.
 
 - **Abrir.** `await page.goto("/inventory")`. `getByRole("heading", { level: 1, name: "Estoque" })`, `status` "3 variantes" e a lista `getByRole("list", { name: "Saldos por variante" })`.
 - **Ler um saldo.** `list.getByRole("listitem").filter({ hasText: "Vela aromática" }).getByRole("definition").first()` é o saldo (o primeiro `definition` depois do `term` "Saldo").

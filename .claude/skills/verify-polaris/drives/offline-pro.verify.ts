@@ -13,10 +13,11 @@ const SHIRT = /Camiseta básica/;
 
 test("venda-offline", async ({ context, evidence, page }) => {
   // a price of its own in each run, to find this sale in the database and in the Histórico
+  const reais = 40 + (Math.floor(Date.now() / 1000) % 40);
   const cents = 10 + (Date.now() % 89);
-  const price = `57,${cents}`;
+  const price = `${reais},${cents}`;
   // the screens write "R$ 57,78" with a space or without, per place
-  const total = new RegExp(`R\\$\\s*57,${cents}`);
+  const total = new RegExp(`R\\$\\s*${reais},${cents}`);
 
   // with a connection: the service worker takes control of the tab on the reload, and the device becomes ready
   await page.goto("/");
@@ -68,9 +69,11 @@ test("venda-offline", async ({ context, evidence, page }) => {
   await expect(
     page.getByRole("status").filter({ hasText: SAVED_SALE })
   ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Vendas guardadas neste aparelho" })
-  ).toContainText(total);
+  const saved = page.getByRole("region", {
+    name: "Vendas guardadas neste aparelho",
+  });
+  await expect(saved).toContainText(total);
+  await expect(saved).toContainText("Aguardando envio");
   await evidence.shot(
     "offline-guardada",
     "venda guardada no aparelho, ainda não oficial"
@@ -78,9 +81,7 @@ test("venda-offline", async ({ context, evidence, page }) => {
 
   // the connection is back: the sale goes to the server and leaves the card
   await context.setOffline(false);
-  await expect(
-    page.getByRole("region", { name: "Vendas guardadas neste aparelho" })
-  ).toHaveCount(0, { timeout: 60_000 });
+  await expect(saved).toHaveCount(0, { timeout: 60_000 });
   await expect(
     page.getByRole("status").filter({ hasText: SYNCED })
   ).toBeVisible({ timeout: 60_000 });

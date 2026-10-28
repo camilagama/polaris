@@ -110,6 +110,9 @@ test("venda-devolver", async ({ evidence, page }) => {
     .getByRole("link")
     .first()
     .click();
+  await expect(
+    page.getByRole("region", { name: "Itens" }).getByText(MUG)
+  ).toBeVisible();
   await page
     .getByRole("region", { name: "Devolução" })
     .getByRole("button", { name: "Registrar devolução" })
@@ -301,14 +304,15 @@ test("resultado-periodo", async ({ evidence, page }) => {
   await expect(
     page.getByRole("region", { name: "Resultado estimado" })
   ).toBeVisible();
-  await evidence.shot("resultado-mes", "Resultado de este mês");
+  await evidence.shot("resultado-mes", "Resultado deste mês");
   const period = page.getByRole("group", { name: "Período" });
   await period.getByRole("button", { name: "Últimos 30 dias" }).click();
   await expect(
     period.getByRole("button", { name: "Últimos 30 dias", pressed: true })
   ).toBeVisible();
+  // the card of the month ("Vendas em outubro") is replaced by the one of the period: only then is the new period read
   await expect(
-    page.getByRole("region", { name: "Resultado estimado" })
+    page.getByRole("region", { name: "Vendas líquidas" })
   ).toBeVisible();
   await evidence.shot("resultado-30-dias", "Resultado dos últimos 30 dias");
 });
