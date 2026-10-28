@@ -44,7 +44,10 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
   return facts(dom, [
     ["Janela de arrependimento", windowText(view.window)],
     ["Prazo até", brasiliaMomentText(view.window?.until ?? null)],
-    ["O produto ainda aceita o reembolso", view.refundable ? "Sim" : "Não"],
+    [
+      "A regra do Polaris ainda permite o reembolso",
+      view.refundable ? "Sim" : "Não",
+    ],
     ["Primeira cobrança", brasiliaMomentText(view.firstChargeAt)],
     ["Valor da primeira cobrança", moneyText(view.firstChargeAmount)],
     ["Forma de pagamento", methodText(view.method)],
@@ -89,7 +92,13 @@ export function refundWindowView(
     onRead: (choice) => {
       read(choice);
     },
-    readHint: "reembolso-auditoria",
+    readHint: capabilities.readWindow
+      ? dom.el(
+          "p",
+          { class: "audit", hidden: "", id: "reembolso-auditoria" },
+          AUDIT_TEXT
+        )
+      : null,
   });
 
   const read = async (choice: CaseChoice) => {
@@ -138,9 +147,9 @@ export function refundWindowView(
         { class: "hint" },
         "A consulta da janela exige um caso de suporte aberto desta loja."
       ),
-      capabilities.readWindow
-        ? dom.el("p", { class: "audit", id: "reembolso-auditoria" }, AUDIT_TEXT)
-        : dom.el("p", {}, "Sem permissão para consultar a janela."),
+      ...(capabilities.readWindow
+        ? []
+        : [dom.el("p", {}, "Sem permissão para consultar a janela.")]),
       cases.element,
       notice.element,
       result,

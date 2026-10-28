@@ -285,10 +285,24 @@ button {
   margin: 0;
 }
 
-/* the funnel's cells and headers are sentences ("não disponível (…)"): they wrap instead of widening the page */
+/* the funnel's tables scroll sideways inside their own region, never the page; the week column stays in view */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* the funnel's cells and headers are sentences ("não disponível (…)"): they wrap, down to a width that reads */
 .grid.funnel th,
 .grid.funnel td:not(:first-child) {
+  min-width: 8rem;
   white-space: normal;
+}
+
+.grid.funnel th:first-child,
+.grid.funnel td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--background);
 }
 
 .controls {
@@ -301,6 +315,12 @@ button {
 
 .controls label {
   font-weight: 600;
+}
+
+.field-error {
+  margin: 0;
+  font-weight: 600;
+  color: var(--destructive);
 }
 
 /* what the refund area cannot do and what each read leaves behind: said in words, not only by colour */
@@ -318,6 +338,12 @@ button {
   margin-top: 0.75rem;
 }
 
+/* a long label wraps at 320 px instead of running out of the card */
+.cases > button {
+  max-width: 100%;
+  white-space: normal;
+}
+
 .case-form {
   margin-top: 1rem;
 }
@@ -328,9 +354,9 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* A narrow screen stacks each row; the header of each cell is written before it, so nothing scrolls sideways. */
+/* A narrow screen stacks each row of the other tables; the header of each cell is written before it, so nothing scrolls sideways. */
 @media (max-width: 40rem) {
-  .grid thead {
+  .grid:not(.funnel) thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -338,17 +364,26 @@ button {
     clip: rect(0, 0, 0, 0);
   }
 
-  .grid tr {
+  /* the hidden header cells keep their text for a screen reader but take no width, so they cannot widen the page */
+  .grid:not(.funnel) th {
+    width: 1px;
+    max-width: 1px;
+    padding: 0;
+    overflow: hidden;
+    white-space: normal;
+  }
+
+  .grid:not(.funnel) tr {
     display: block;
     padding: 0.5rem 0;
     border-bottom: 1px solid var(--border);
   }
 
-  .grid td:not(:first-child) {
+  .grid:not(.funnel) td:not(:first-child) {
     white-space: normal;
   }
 
-  .grid td {
+  .grid:not(.funnel) td {
     display: grid;
     grid-template-columns: 8rem minmax(0, 1fr);
     gap: 0.5rem;
@@ -357,14 +392,27 @@ button {
   }
 
   /* a button in a stacked row keeps to the column instead of running out of the card */
-  .grid td > button {
+  .grid:not(.funnel) td > button {
     max-width: 100%;
     white-space: normal;
   }
 
-  .grid td::before {
+  .grid:not(.funnel) td::before {
     font-size: 0.875rem;
     color: var(--muted-foreground);
     content: attr(data-label);
+  }
+
+  /* on a phone a funnel row stays one line (the region scrolls) and the week column is narrow, so the numbers fit beside it */
+  .grid.funnel td:not(:first-child) {
+    white-space: nowrap;
+  }
+
+  .grid.funnel th:first-child,
+  .grid.funnel td:first-child {
+    width: 7.5rem;
+    min-width: 7.5rem;
+    max-width: 7.5rem;
+    overflow-wrap: normal;
   }
 }

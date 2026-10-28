@@ -27,7 +27,7 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 
 - **O que a tela escreve.** Abrir caso de suporte (`POST /api/support-cases`, com `kind: "support"` e o motivo no corpo JSON) e ler a janela de reembolso (`POST /api/support-cases/:caseId/refund-window`, uma leitura que grava auditoria). Nenhuma rota nova nem mudança de rota: a tela usa as que existiam, e o servidor continua sendo quem recusa (capacidade, origem, caso aberto da mesma loja). Fechar caso, acesso temporário, revelação de dado pessoal, comandos de cobrança, suspensão e purge seguem só na API.
 - **Como.** Toda escrita sai do `api.ts` da tela com `content-type: application/json`, `redirect: "manual"` e a origem que o navegador põe sozinho em `Origin` (a regra da emenda anterior); nenhum dado vai na URL além do que a rota já pede. A sessão do Access vencida continua a dar "recarregue a página", sem seguir o redirecionamento.
-- **`dom.el` recusa** atributo `on*`, `style` e os `src…` que não são um URL (`srcdoc`, `srcset`), qualquer que seja o valor, e aceita em atributo de URL (`href`, `src`, `action`, `formaction` e afins) só um caminho do próprio Admin (`/…`, sem `//`, barra invertida, espaço nem caractere de controle). Nenhum esquema é aceito hoje.
+- **`dom.el` recusa** atributo `on*`, `style` e os `src…` que não são um URL (`srcdoc`, `srcset`), qualquer que seja o valor. `src`, `action` e `formaction` também são recusados sempre: a lista de atributos da página só tem `href`, e o `href` só aceita um caminho do próprio Admin (`/…`, sem `//`, barra invertida, espaço, caractere de controle, `%` nem segmento `.` ou `..`, e fora de `/api`, em qualquer caixa). Nenhum esquema é aceito hoje.
 
 ## Consequências
 

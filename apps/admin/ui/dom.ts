@@ -84,11 +84,12 @@ const ARIA = /^aria-[a-z]+$/;
 /**
  * A path of this origin: one slash, then no second slash or backslash (`//host` and `/\host` are another origin to
  * the browser), no space and no control character. No scheme is allowed: the page links nowhere else. Not a path of
- * the API either: following a link is a GET, and a GET of the funnel is an audited read.
+ * the API either, in any case (`/API/funnel` reaches the same route): following a link is a GET, and a GET of the
+ * funnel is an audited read.
  */
 /** A `.` or `..` segment or a %-escape: the browser resolves them, so `/x/../api` would reach the API after all. */
 const DOT_OR_ESCAPE = /%|\/\.\.?(?:[/?#]|$)/;
-const ADMIN_PATH = /^\/(?![/\\])(?!api(?:[/?#]|$))[^\s\\]*$/;
+const ADMIN_PATH = /^\/(?![/\\])(?!api(?:[/?#]|$))[^\s\\]*$/i;
 
 /** Throws on an element the page does not build. */
 export function checkTag(tag: string): void {

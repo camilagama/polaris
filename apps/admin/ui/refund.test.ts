@@ -107,7 +107,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
     const { calls, section } = await chosen([]);
     expect(section.hasAttribute("hidden")).toBe(false);
     expect(visibleText(section)).toContain(READ_ONLY_TEXT);
-    expect(visibleText(section)).toContain(AUDIT_TEXT);
+    expect(visibleText(section)).not.toContain(AUDIT_TEXT);
     expect(
       calls.some((call) => call.path.startsWith("/api/support-cases"))
     ).toBe(false);
@@ -234,17 +234,39 @@ describe("the refund area of the chosen store (AC-9)", () => {
       "O motivo não aceita caracteres de controle nem quebra de linha.",
     ],
   ])(
-    "refuses a reason the server would refuse, without asking it (%#)",
+    "refuses a reason the server would refuse, without asking it, under the field (%#)",
     async (reason, text) => {
-      const { calls, section } = await chosen([]);
+      const { calls, document, section } = await chosen([]);
       const before = calls.length;
       byId(section, "motivo").value = reason;
       buttons(section, "Abrir caso")[0]?.click();
       await flush();
-      expect(alertOf(section)?.textContent).toBe(text);
+      const field = byId(section, "motivo");
+      const error = byId(section, "motivo-erro");
+      expect(error.textContent).toBe(text);
+      expect(error.hasAttribute("hidden")).toBe(false);
+      expect(field.getAttribute("aria-describedby")).toContain("motivo-erro");
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      expect(document.activeElement).toBe(field);
+      expect(alertOf(section)).toBeUndefined();
       expect(calls).toHaveLength(before);
+      field.dispatch("input");
+      expect(error.hasAttribute("hidden")).toBe(true);
+      expect(field.hasAttribute("aria-invalid")).toBe(false);
     }
   );
+
+  it("sends the reason trimmed, as it was checked", async () => {
+    const { calls, section } = await chosen([
+      json({ ...supportCase(), reason: "x" }, 201),
+    ]);
+    byId(section, "motivo").value = "  Motivo do caso \n";
+    buttons(section, "Abrir caso")[0]?.click();
+    await flush();
+    expect(JSON.parse(String(calls.at(-1)?.init.body))).toMatchObject({
+      reason: "Motivo do caso",
+    });
+  });
 
   it("takes a reason of exactly 500 characters, counted as a person counts them", async () => {
     const { calls, section } = await chosen([
@@ -263,9 +285,10 @@ describe("the refund area of the chosen store (AC-9)", () => {
     byId(section, "motivo").value = "Motivo";
     buttons(section, "Abrir caso")[0]?.click();
     await flush();
-    expect(alertOf(section)?.textContent).toBe(
+    expect(byId(section, "motivo-erro").textContent).toBe(
       "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
     );
+    expect(alertOf(section)).toBeUndefined();
   });
   it("turns the buttons back on and says the Admin failed when the list is not one", async () => {
     const { listCases, section } = await chosen([json({ next: null })]);
@@ -313,6 +336,12 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     const read = buttons(section, "Consultar janela")[0] as FakeElement;
     expect(read.getAttribute("aria-describedby")).toBe("reembolso-auditoria");
     expect(byId(section, "reembolso-auditoria").textContent).toBe(AUDIT_TEXT);
+    // the sentence sits right above the list whose buttons make the read
+    const audit = byId(section, "reembolso-auditoria");
+    const siblings = audit.parent?.children ?? [];
+    expect(siblings.indexOf(audit) + 1).toBe(
+      siblings.findIndex((element) => element.tagName === "table")
+    );
     read.click();
     await flush();
     const [call] = refundCalls(calls);
@@ -339,7 +368,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     expect(fact("Valor da primeira cobrança")).toBe("R$ 1.234,50");
     expect(fact("Forma de pagamento")).toBe("Cartão");
     expect(fact("Assinatura")).toBe("Pro ativo");
-    expect(fact("O produto ainda aceita o reembolso")).toBe("Sim");
+    expect(fact("A regra do Polaris ainda permite o reembolso")).toBe("Sim");
     expect(fact("Pedido de reembolso do dono")).toBe("Nenhum");
     expect(fact("Consulta feita em")).toBe(
       "28/10/2026 12:07 (relógio do servidor)"
@@ -382,7 +411,9 @@ describe("reading the refund window (AC-9, AC-10)", () => {
       buttons(section, "Consultar janela")[0]?.click();
       await flush();
       expect(fact("Janela de arrependimento")).toBe(verdict);
-      expect(fact("O produto ainda aceita o reembolso")).toBe(refundable);
+      expect(fact("A regra do Polaris ainda permite o reembolso")).toBe(
+        refundable
+      );
       if (view.state === "novo") {
         expect(fact("Assinatura")).toBe("estado desconhecido: novo");
         expect(fact("Forma de pagamento")).toBe("forma desconhecida: boleto");

@@ -276,6 +276,25 @@ describe("what the funnel shows (AC-8)", () => {
       .map((row) => byTag(row, "td").map((cell) => cell.textContent));
   };
 
+  it("keeps each table a table, in a region that scrolls and is named, and says the read once", async () => {
+    const page = await openFunnel([json(funnel())]);
+    const tables = byTag(byId(page.root, "funil-corpo"), "table");
+    expect(tables).toHaveLength(4);
+    for (const table of tables) {
+      const region = table.parent as FakeElement;
+      expect(region.getAttribute("role")).toBe("region");
+      expect(region.getAttribute("tabindex")).toBe("0");
+      expect(region.getAttribute("aria-label")).toBe(
+        table.querySelector("caption")?.textContent
+      );
+      expect(table.getAttribute("class")).toContain("funnel");
+    }
+    expect(visibleText(page.root)).not.toContain("Funil lido.");
+    expect(visibleText(page.root)).toContain(
+      "Funil de 2 semanas, atualizado em"
+    );
+  });
+
   it("shows the server's numbers and shares, never its own", async () => {
     const page = await openFunnel([json(funnel())]);
     expect(

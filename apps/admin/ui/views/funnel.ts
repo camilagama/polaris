@@ -33,7 +33,10 @@ function problemText(failure: ApiFailure): string {
   ];
 }
 
-/** A table of the funnel: its cells keep their words on a narrow column (`funnel`) instead of widening the page. */
+/**
+ * A table of the funnel stays a table on a narrow screen: it scrolls sideways inside its own region (focusable, named
+ * by its caption, so a keyboard user can scroll it) with the week column fixed, and the page does not scroll.
+ */
 function funnelTable(
   dom: Dom,
   caption: string,
@@ -42,7 +45,16 @@ function funnelTable(
 ) {
   const element = table(dom, caption, headers, rows);
   element.setAttribute("class", "grid funnel");
-  return element;
+  return dom.el(
+    "div",
+    {
+      "aria-label": caption,
+      class: "table-scroll",
+      role: "region",
+      tabindex: "0",
+    },
+    element
+  );
 }
 
 function signupsTable(dom: Dom, funnel: ActivationFunnelResponse) {
@@ -251,7 +263,7 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
     }
     failed = false;
     shownWeeks = asked;
-    notice.status("Funil lido.");
+    notice.clear();
   };
 
   const render = (funnel: ActivationFunnelResponse) => {

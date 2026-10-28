@@ -88,7 +88,8 @@ export function supportCasesView(
   options: {
     canRead: boolean;
     onRead: (choice: CaseChoice) => void;
-    readHint: string;
+    /** The sentence that says what a read leaves behind: shown right above the list whose buttons make the read. */
+    readHint: HTMLElement | null;
   }
 ): SupportCasesView {
   const notice = createNotice(dom);
@@ -114,13 +115,18 @@ export function supportCasesView(
     rows
   );
   const reason = dom.el("input", {
-    "aria-describedby": "motivo-contador motivo-dica",
+    "aria-describedby": "motivo-erro motivo-contador motivo-dica",
     autocomplete: "off",
     id: "motivo",
     maxlength: String(MAX_REASON_LENGTH),
     name: "motivo",
     required: "",
     type: "text",
+  });
+  const reasonError = dom.el("p", {
+    class: "field-error",
+    hidden: "",
+    id: "motivo-erro",
   });
   const counter = dom.el(
     "p",
@@ -133,6 +139,7 @@ export function supportCasesView(
     { class: "search case-form", novalidate: "" },
     dom.el("label", { for: "motivo" }, "Motivo do novo caso"),
     dom.el("div", { class: "search-row" }, reason, openButton),
+    reasonError,
     counter,
     dom.el(
       "p",
@@ -163,7 +170,7 @@ export function supportCasesView(
       const read = dom.el(
         "button",
         {
-          "aria-describedby": options.readHint,
+          "aria-describedby": options.readHint?.getAttribute("id") ?? "",
           "aria-label": `Consultar janela: caso aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
           type: "button",
         },
@@ -194,11 +201,30 @@ export function supportCasesView(
   };
 
   const showRows = () => {
-    if (shown === 0) {
-      list.setAttribute("hidden", "");
-    } else {
-      list.removeAttribute("hidden");
+    for (const element of [list, options.readHint]) {
+      if (element === null) {
+        continue;
+      }
+      if (shown === 0) {
+        element.setAttribute("hidden", "");
+      } else {
+        element.removeAttribute("hidden");
+      }
     }
+  };
+
+  const clearReasonError = () => {
+    reasonError.textContent = "";
+    reasonError.setAttribute("hidden", "");
+    reason.removeAttribute("aria-invalid");
+  };
+
+  const showReasonError = (text: string) => {
+    notice.clear();
+    reasonError.textContent = text;
+    reasonError.removeAttribute("hidden");
+    reason.setAttribute("aria-invalid", "true");
+    reason.focus();
   };
 
   const load = async () => {
@@ -249,11 +275,13 @@ export function supportCasesView(
   };
 
   const open = async () => {
-    const problem = reasonProblem(reason.value);
+    const text = reason.value.trim();
+    const problem = reasonProblem(text);
     if (problem !== null) {
-      notice.alert(problem);
+      showReasonError(problem);
       return;
     }
+    clearReasonError();
     turn += 1;
     const mine = turn;
     loading = true;
@@ -262,7 +290,7 @@ export function supportCasesView(
     const answer = await api.post<OpenedSupportCase>("/api/support-cases", {
       kind: "support",
       organizationId,
-      reason: reason.value,
+      reason: text,
     });
     if (mine !== turn) {
       return;
@@ -270,7 +298,11 @@ export function supportCasesView(
     loading = false;
     refreshButtons();
     if (!answer.ok) {
-      notice.alert(openProblemText(answer.problem));
+      if (answer.problem === "invalid") {
+        showReasonError(openProblemText(answer.problem));
+      } else {
+        notice.alert(openProblemText(answer.problem));
+      }
       return;
     }
     // the route answers the case it opened; anything else is not shown as one, and it may still have been opened
@@ -299,6 +331,7 @@ export function supportCasesView(
     }
   });
   reason.addEventListener("input", () => {
+    clearReasonError();
     counter.textContent = `${[...reason.value].length} de ${MAX_REASON_LENGTH} caracteres`;
   });
   form.addEventListener("submit", (event) => {
@@ -319,7 +352,7 @@ export function supportCasesView(
       dom.el("h3", {}, "Caso de suporte"),
       listButton,
       notice.element,
-      dom.el("div", { class: "results" }, list)
+      dom.el("div", { class: "results" }, options.readHint, list)
     ),
     form,
     show: (id) => {
@@ -331,6 +364,7 @@ export function supportCasesView(
       rows.replaceChildren();
       readButtons.length = 0;
       reason.value = "";
+      clearReasonError();
       counter.textContent = `0 de ${MAX_REASON_LENGTH} caracteres`;
       notice.clear();
       showRows();
