@@ -416,8 +416,17 @@ export class OfflineRuntime {
   /** Where the update cycle reads the queue (ADR 0041): a swap of the build waits while it holds work. */
   workSource(): PendingWorkSource {
     return {
+      // no store open (stopped, or not open yet) or another organization meanwhile: the queue was not read, and
+      // the counts in the snapshot are not its figures; the swap takes an unread queue for one that holds work
       read: async () => {
+        const { generation, stores } = this;
+        if (!stores) {
+          throw new Error("queue_unread");
+        }
         await this.refreshCounts();
+        if (generation !== this.generation || this.stores !== stores) {
+          throw new Error("queue_unread");
+        }
         return this.snapshot.counts;
       },
       sync: async () => {

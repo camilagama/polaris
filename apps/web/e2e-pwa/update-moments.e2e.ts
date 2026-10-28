@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   checkForUpdate,
+  fakeQueue,
   markPage,
   openControlled,
   runningVersion,
@@ -18,7 +19,10 @@ import { WORKER_MARK } from "./worker-mark";
  * The moments of the swap that take time (ADR 0041), with the page's clock driven by the test
  * (`page.clock`; the worker keeps the real one): the return after 5 min away swaps before the first touch; the tab in
  * front and idle for 15 min swaps only a build waiting for more than 24 h, and comes back to the same scroll; a build
- * published less than 2 h ago never goes in. The rest of the swap is in `update.e2e.ts`.
+ * this device saw less than 2 h ago never goes in, however old its commit. Both times count from when the worker of
+ * the build installed (the real clock), against the page's clock, which starts at the real time. The checks of the
+ * return publish urgent builds (no settling, the default of `buildVersion`); those of the times do not. The rest of
+ * the swap is in `update.e2e.ts`.
  */
 const HOUR = 60 * 60 * 1000;
 const HOLD_MS = 2500;
@@ -33,11 +37,15 @@ const rpc = (body: unknown) => ({
 /** Version 1 open and controlled under a clock the test moves, signed in, with the sale's search answered. */
 async function openVersion1(
   page: Page,
-  buildVersion: (variant: string, options?: { publishedAt?: number }) => void,
+  buildVersion: (
+    variant: string,
+    options?: { publishedAt?: number; urgent?: boolean }
+  ) => void,
   path = "/"
 ) {
   buildVersion("1");
   await page.clock.install();
+  await fakeQueue(page);
   await serveHome(page, { signedIn: true });
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
     route.fulfill(rpc({ profiles: [] }))
@@ -105,15 +113,16 @@ test("de volta depois de menos de 5 min, nada troca com a aba à vista", async (
   expect(await stillHere(page)).toBe(true);
 });
 
-test("a aba à vista e ociosa por 15 min não troca uma build esperando há menos de 24 h", async ({
+test("a aba à vista e ociosa não troca uma build esperando há menos de 24 h", async ({
   buildVersion,
   page,
 }) => {
   await openVersion1(page, buildVersion);
-  buildVersion("2", { publishedAt: Date.now() - 23 * HOUR });
+  buildVersion("2", { urgent: false });
   await checkForUpdate(page);
   await waitForWaiting(page);
-  await page.clock.fastForward("16:00");
+  // idle the whole time, and past the 2 h of settling: only the 24 h hold it
+  await page.clock.fastForward("23:00:00");
   await page.waitForTimeout(HOLD_MS);
   expect(await runningVersion(page)).toBe("1");
   expect(await stillHere(page)).toBe(true);
@@ -130,10 +139,15 @@ test("a aba à vista e ociosa por 15 min troca uma build esperando há mais de 2
   await page.evaluate(() => window.scrollTo(0, 300));
   const scrolled = await page.evaluate(() => window.scrollY);
   expect(scrolled).toBeGreaterThan(100);
-  buildVersion("2", { publishedAt: Date.now() - 25 * HOUR });
+  buildVersion("2", { urgent: false });
   await checkForUpdate(page);
   await waitForWaiting(page);
-  // ten minutes idle is not enough
+  // almost a day waiting, idle: not yet
+  await page.clock.fastForward("23:55:00");
+  await page.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(page)).toBe("1");
+  // a key (no scroll), and then, past the 24 h, ten minutes idle is not enough
+  await page.keyboard.press("Shift");
   await page.clock.fastForward("10:00");
   await page.waitForTimeout(HOLD_MS);
   expect(await runningVersion(page)).toBe("1");
@@ -154,12 +168,13 @@ test("a aba à vista e ociosa por 15 min troca uma build esperando há mais de 2
   ).toBeNull();
 });
 
-test("uma build publicada há menos de 2 h não entra; passadas as 2 h, entra no próximo momento", async ({
+test("uma build que o aparelho viu há menos de 2 h não entra, mesmo de um commit de horas antes; passadas as 2 h desde que a viu, entra no próximo momento", async ({
   buildVersion,
   page,
 }) => {
   await openVersion1(page, buildVersion);
-  buildVersion("2", { publishedAt: Date.now() - 30 * 60 * 1000 });
+  // the commit is 3 h old (promoted late): the time it carries is not when it got here
+  buildVersion("2", { publishedAt: Date.now() - 3 * HOUR, urgent: false });
   await checkForUpdate(page);
   await waitForWaiting(page);
   await setVisibility(page, "hidden");
@@ -168,7 +183,13 @@ test("uma build publicada há menos de 2 h não entra; passadas as 2 h, entra no
   expect(await stillHere(page)).toBe(true);
 
   await setVisibility(page, "visible");
-  await page.clock.fastForward("01:45:00");
+  await page.clock.fastForward("01:50:00");
+  await setVisibility(page, "hidden");
+  await page.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(page)).toBe("1");
+
+  await setVisibility(page, "visible");
+  await page.clock.fastForward("00:11:00");
   await setVisibility(page, "hidden");
   await expect.poll(() => runningVersion(page), { timeout: 30_000 }).toBe("2");
 });

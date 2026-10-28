@@ -11,13 +11,11 @@ import {
   watchForUpdate,
 } from "./update-controller";
 import {
-  CLOCK_TOLERANCE_MS,
   IDLE_WAITING_MS,
   momentAllows,
   NO_PENDING_WORK,
   type PendingWork,
   SETTLE_MS,
-  waitedFor,
 } from "./update-model";
 import { createUpdateStore } from "./update-store";
 
@@ -119,6 +117,9 @@ describe("asking a worker which build it serves", () => {
           activatedAt: 5,
           id: "abc",
           publishedAt: 4,
+          seenAt: 3,
+          urgent: true,
+          workerId: "def",
         });
       },
     };
@@ -126,6 +127,9 @@ describe("asking a worker which build it serves", () => {
       activatedAt: 5,
       id: "abc",
       publishedAt: 4,
+      seenAt: 3,
+      urgent: true,
+      workerId: "def",
     });
   });
 
@@ -183,23 +187,6 @@ describe("taking over", () => {
 });
 
 describe("how long a build has waited, and the moment it may go in", () => {
-  it("counts from the time the build carries, less the tolerance of the device clock", () => {
-    expect(waitedFor(NOW - 3 * HOUR, NOW, NOW)).toBe(
-      3 * HOUR - CLOCK_TOLERANCE_MS
-    );
-  });
-
-  it("counts from when the page saw it when the build carries no time, or one in the device's future", () => {
-    const seen = NOW - HOUR;
-    expect(waitedFor(null, seen, NOW)).toBe(HOUR);
-    // a clock a day behind: the build looks published tomorrow
-    expect(waitedFor(NOW + 24 * HOUR, seen, NOW)).toBe(HOUR);
-    // within the tolerance, it is the build's time
-    expect(waitedFor(NOW + CLOCK_TOLERANCE_MS, seen, NOW)).toBe(
-      -2 * CLOCK_TOLERANCE_MS
-    );
-  });
-
   it("never lets in a build out for less than 2 h, at any moment", () => {
     for (const moment of ["hidden", "return", "idle"] as const) {
       expect(momentAllows(moment, SETTLE_MS - 1)).toBe(false);
@@ -212,12 +199,29 @@ describe("how long a build has waited, and the moment it may go in", () => {
     expect(momentAllows("idle", IDLE_WAITING_MS)).toBe(false);
     expect(momentAllows("idle", IDLE_WAITING_MS + 1)).toBe(true);
   });
+
+  it("lets an urgent build in at any moment, with no settling and no 24 h", () => {
+    for (const moment of ["hidden", "return", "idle"] as const) {
+      expect(momentAllows(moment, 0, true)).toBe(true);
+      expect(momentAllows(moment, 0, false)).toBe(false);
+    }
+  });
 });
 
+/** A build this device saw at `seenAt` (by default 3 h ago, past the settling), of a commit of a day before. */
 const build = (
   id: string,
-  publishedAt: number | null = NOW - 3 * HOUR
-): BuildInfo => ({ activatedAt: null, id, publishedAt });
+  seenAt: number | null = NOW - 3 * HOUR,
+  more: Partial<BuildInfo> = {}
+): BuildInfo => ({
+  activatedAt: null,
+  id,
+  publishedAt: NOW - 24 * HOUR,
+  seenAt,
+  urgent: false,
+  workerId: "w1",
+  ...more,
+});
 
 const QUIET: SwapState = {
   keptDrafts: 0,
@@ -307,7 +311,7 @@ describe("the update store", () => {
     await test.deliver(build("B"));
     expect(test.store.getSnapshot().pending).toMatchObject({
       build: build("B"),
-      firstSeenAt: NOW,
+      firstSeenAt: NOW - 3 * HOUR,
       kind: "waiting",
     });
   });
@@ -325,24 +329,62 @@ describe("the update store", () => {
     expect(test.keepScreen).toHaveBeenCalledWith("hidden");
   });
 
-  it("never swaps a build published less than 2 h ago", async () => {
+  it("never swaps a build this device saw less than 2 h ago, however old its commit", async () => {
     const test = setup();
     await test.attach();
-    const worker = await test.deliver(build("B", NOW - HOUR));
+    // published (promoted) hours after its commit: the time it carries says nothing of when it got here
+    const worker = await test.deliver(
+      build("B", NOW - HOUR, { publishedAt: NOW - 30 * HOUR })
+    );
     expect(await test.store.trySwap("hidden")).toBe(false);
     expect(worker.messages).toEqual([]);
-    // two hours later (and the tolerance), the same moment swaps
-    test.advance(HOUR + CLOCK_TOLERANCE_MS);
+    // two hours after the device saw it, the same moment swaps
+    test.advance(HOUR);
     expect(await test.store.trySwap("hidden")).toBe(true);
   });
 
-  it("the idle tab in front swaps only a build waiting for more than 24 h", async () => {
+  it("the idle tab in front swaps only a build this device has waited on for more than 24 h", async () => {
     const test = setup();
     await test.attach();
-    await test.deliver(build("B", NOW - 23 * HOUR));
+    await test.deliver(
+      build("B", NOW - 23 * HOUR, { publishedAt: NOW - 48 * HOUR })
+    );
     expect(await test.store.trySwap("idle")).toBe(false);
     test.advance(2 * HOUR);
     expect(await test.store.trySwap("idle")).toBe(true);
+  });
+
+  it("an urgent build (a revert) goes in at the first moment the page holds nothing, with no settling", async () => {
+    const test = setup({ guard: { openDialogs: 1 } });
+    await test.attach();
+    const worker = await test.deliver(build("A2", NOW, { urgent: true }));
+    // never over what the page holds
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    expect(worker.messages).toEqual([]);
+    test.page.guard = {};
+    expect(await test.store.trySwap("hidden")).toBe(true);
+    expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+  });
+
+  it("the same revert without the flag waits the 2 h from when the device saw it", async () => {
+    const test = setup();
+    await test.attach();
+    await test.deliver(build("A2", NOW));
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    test.advance(SETTLE_MS - 1);
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    test.advance(1);
+    expect(await test.store.trySwap("hidden")).toBe(true);
+  });
+
+  it("counts from when the page saw the build when the worker wrote no time, or one in the device's future", async () => {
+    const test = setup();
+    await test.attach();
+    await test.deliver(build("B", null));
+    expect(test.store.getSnapshot().pending?.firstSeenAt).toBe(NOW);
+    // a clock set back since the worker wrote its time: the page's own time, never a wait without end
+    await test.deliver(build("C", NOW + 24 * HOUR));
+    expect(test.store.getSnapshot().pending?.firstSeenAt).toBe(NOW);
   });
 
   it.each<[string, Partial<SwapState>]>([
@@ -447,6 +489,18 @@ describe("the update store", () => {
     expect(test.store.getSnapshot().pending?.firstSeenAt).toBe(NOW + SETTLE_MS);
   });
 
+  it("a waiting build with the same files and another worker code is a build like any other: it waits its moment", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("A", NOW, { workerId: "w2" }));
+    expect(worker.messages).toEqual([]);
+    expect(test.store.getSnapshot().pending).toMatchObject({
+      firstSeenAt: NOW,
+      kind: "waiting",
+    });
+    expect(await test.store.trySwap("hidden")).toBe(false);
+  });
+
   it("takes a waiting build with this page's own content at once, with no reload and nothing to wait for", async () => {
     const test = setup({ guard: { openDialogs: 1 } });
     await test.attach();
@@ -469,7 +523,7 @@ describe("the update store", () => {
       expect(test.reload).not.toHaveBeenCalled();
       expect(test.store.getSnapshot().pending).toMatchObject({
         build: build("B"),
-        firstSeenAt: NOW,
+        firstSeenAt: NOW - 3 * HOUR,
         kind: "stale",
       });
       // its draft holds it; once it is gone, its own moment loads the build already active

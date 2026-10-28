@@ -5,8 +5,10 @@ import type { Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   checkForUpdate,
+  fakeQueue,
   markPage,
   openControlled,
+  queueWith,
   runningVersion,
   setVisibility,
   stillHere,
@@ -20,13 +22,17 @@ import { WORKER_MARK } from "./worker-mark";
  * The swap of the build by itself (ADR 0041), with two real builds of the app served by the
  * same server: the new build goes in when the tab is hidden and the page holds nothing, never over a dialog, a sale
  * with an item or work in the queue, never at another tab's moment, and the tab held on the old build still opens a
- * lazy screen of its own build. The moments that need a clock (the return after 5 min, the idle tab, the 2 h of
- * settling) are in `update-moments.e2e.ts`.
+ * lazy screen of its own build, two builds later. The builds here are urgent (`POLARIS_SWAP_URGENT=1`, the default of
+ * `buildVersion`) unless the check is about the settling: the 2 h count from when the device saw the build. The
+ * moments that need a clock (the return after 5 min, the idle tab, the 2 h of settling) are in
+ * `update-moments.e2e.ts`.
  */
 const CHARTS_FILE = /^charts-[\w-]+\.js$/;
 const SHIRT_OPTION = /Camiseta do teste/;
 const SETTINGS_ADDRESS = /\/configuracoes$/;
-const VERSION_LINE = /Versão \d{4}\.\d{2}\.\d{2} · atualizado em \d{2}\/\d{2}/;
+const VERSION_LINE =
+  /Versão \d{4}\.\d{2}\.\d{2} \d{2}:\d{2} \([0-9a-f]{6}\) · atualizado em \d{2}\/\d{2}/;
+const HOUR = 60 * 60 * 1000;
 const HOLD_MS = 2500;
 
 const rpc = (body: unknown) => ({
@@ -52,6 +58,7 @@ const SHIRT = {
 
 /** A signed-in store with the Início, the sale and the payment profiles answered by the test (synthetic data). */
 async function serveApp(page: Page) {
+  await fakeQueue(page);
   await serveHome(page, { signedIn: true });
   await page.route("**/rpc/inventory/listBalances", (route: Route) =>
     route.fulfill(rpc({ entries: [SHIRT], nextCursor: null }))
@@ -154,7 +161,7 @@ test("uma venda com item segura a troca: a aba oculta não troca e a venda conti
   ).toBeVisible();
 });
 
-test("duas abas, uma com rascunho: só a outra troca, e a segurada abre uma tela preguiçosa da build dela sem erro", async ({
+test("duas abas, uma com rascunho: só a outra troca, duas vezes (A→B→C), e a segurada na A abre uma tela preguiçosa da build dela sem erro", async ({
   buildVersion,
   context,
   page,
@@ -182,13 +189,28 @@ test("duas abas, uma com rascunho: só a outra troca, e a segurada abre uma tela
   await other.waitForTimeout(HOLD_MS);
   expect(await runningVersion(other)).toBe("1");
   expect(await stillHere(other)).toBe(true);
-  // the worker of version 2 now serves the held tab too; the files of version 1 are gone from the server
+  // and once more: version 3 goes out while the held tab is still on version 1, two builds behind
+  buildVersion("3");
+  await checkForUpdate(page);
+  await waitForWaiting(page);
+  await setVisibility(page, "hidden");
+  await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("3");
+  await other.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(other)).toBe("1");
+  expect(await stillHere(other)).toBe(true);
+  // the worker of version 3 now serves the held tab too; the files of versions 1 and 2 are gone from the server, and
+  // the shells of both are kept
   expect(
     await other.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration();
       return registration?.waiting === null && registration.active !== null;
     })
   ).toBe(true);
+  expect(
+    await other.evaluate(async () =>
+      (await caches.keys()).filter((name) => name.startsWith("polaris-shell-"))
+    )
+  ).toHaveLength(3);
 
   // the held tab opens a tab it never opened, with no load of the page: a lazy chunk of version 1, from the cache kept
   const failed: string[] = [];
@@ -209,42 +231,6 @@ test("duas abas, uma com rascunho: só a outra troca, e a segurada abre uma tela
   expect(await runningVersion(other)).toBe("1");
   expect(await stillHere(other)).toBe(true);
 });
-
-declare global {
-  interface Window {
-    polarisQueue?: { pending: number; rejected: number };
-    polarisUpdateStore?: {
-      setWorkSource: (source: {
-        read: () => Promise<{
-          pending: number;
-          rejected: number;
-          sending: number;
-        }>;
-        sync: () => Promise<void>;
-      }) => void;
-    };
-  }
-}
-
-/** The test plays the part of the outbox, through the store the browser-check build exposes. */
-async function queueWith(
-  page: Page,
-  queued: { pending: number; rejected: number }
-) {
-  await page.evaluate((initial) => {
-    const control = { ...initial };
-    window.polarisQueue = control;
-    window.polarisUpdateStore?.setWorkSource({
-      read: () =>
-        Promise.resolve({
-          pending: control.pending,
-          rejected: control.rejected,
-          sending: 0,
-        }),
-      sync: () => Promise.resolve(),
-    });
-  }, queued);
-}
 
 test("com trabalho na fila de sincronização a aba oculta não troca; com a fila vazia, troca", async ({
   buildVersion,
@@ -291,26 +277,77 @@ test("Configurações diz a versão e, com uma build esperando, que ela entra qu
   const line = page.locator("#versao-do-app");
   await expect(line).toContainText(VERSION_LINE);
   await expect(line).toContainText(
-    "Nova versão pronta. Entra quando você fechar o app."
+    "Nova versão pronta. Entra sozinha quando você fechar o app ou deixá-lo parado um tempo."
   );
   await expect(line.getByRole("button")).toHaveCount(0);
   await expect(line.getByRole("link")).toHaveCount(0);
 });
 
-test("desfazer: publicada a B e depois de novo a A, a troca volta sozinha para a A", async ({
-  buildVersion,
-  page,
-}) => {
+/** Version 2 went in over version 1; then the revert: a new commit with the content of version 1 again. */
+async function revertedOver2(
+  page: Page,
+  buildVersion: (
+    variant: string,
+    options?: { publishedAt?: number; urgent?: boolean }
+  ) => void,
+  urgent: boolean
+) {
   await waitingOverVersion1(page, buildVersion);
   await setVisibility(page, "hidden");
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
-
-  // the way back is publishing the previous content again: the browser sees another sw.js and installs it
-  buildVersion("1");
+  await markPage(page);
+  // a revert is a new commit (another time in the worker): the browser sees another sw.js and installs it; the content
+  // is that of version 1, whose shell this device still keeps, and still it is new to the device
+  buildVersion("1", { publishedAt: Date.now() - HOUR, urgent });
   await checkForUpdate(page);
   await waitForWaiting(page);
+}
+
+test("desfazer: o revert (commit novo com POLARIS_SWAP_URGENT=1) entra no primeiro momento seguro, nunca por cima de um Dialog", async ({
+  buildVersion,
+  page,
+}) => {
+  await revertedOver2(page, buildVersion, true);
+  await page.evaluate(() => {
+    const dialog = document.createElement("dialog");
+    document.body.append(dialog);
+    dialog.show();
+    (window as unknown as { held: HTMLDialogElement }).held = dialog;
+  });
+  await setVisibility(page, "hidden");
+  await page.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(page)).toBe("2");
+  expect(await stillHere(page)).toBe(true);
+  await setVisibility(page, "visible");
+  await page.evaluate(() =>
+    (window as unknown as { held: HTMLDialogElement }).held.close()
+  );
   await setVisibility(page, "hidden");
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("1");
+});
+
+test("desfazer sem a marca de urgente: o revert espera as 2 h desde que o aparelho o viu", async ({
+  buildVersion,
+  page,
+}) => {
+  // the page's clock moves; the worker keeps the real one, and wrote when it saw the revert at install
+  await page.clock.install();
+  await revertedOver2(page, buildVersion, false);
+  await setVisibility(page, "hidden");
+  await page.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(page)).toBe("2");
+  expect(await stillHere(page)).toBe(true);
+
+  await setVisibility(page, "visible");
+  await page.clock.fastForward("01:50:00");
+  await setVisibility(page, "hidden");
+  await page.waitForTimeout(HOLD_MS);
+  expect(await runningVersion(page)).toBe("2");
+
+  await setVisibility(page, "visible");
+  await page.clock.fastForward("00:11:00");
+  await setVisibility(page, "hidden");
+  await expect.poll(() => runningVersion(page), { timeout: 30_000 }).toBe("1");
 });
 
 test("a primeira instalação não é uma troca: a página não recarrega", async ({

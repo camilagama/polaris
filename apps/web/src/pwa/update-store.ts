@@ -15,7 +15,6 @@ import {
   type PendingWork,
   type PendingWorkSource,
   type SwapMoment,
-  waitedFor,
 } from "./update-model";
 
 /**
@@ -26,13 +25,16 @@ import {
  * A build waits for this page in two ways: `waiting`, a worker installed and not active yet; or `stale`, another tab
  * made it active (the `controllerchange` this page got was not its own) and this page still runs the old build, whose
  * files the new worker serves from the caches kept (`sw.ts`). Either way this page swaps at its own moment, never at
- * another tab's. A waiting build with the same content as this page's (the same id: a new commit, the same files) is
- * taken at once and without a reload: nothing on the page changes.
+ * another tab's. A waiting build with the same content as this page's (the same id and the same worker code: a new
+ * commit, the same files) is taken at once and without a reload: nothing on the page changes.
  */
 export interface PendingBuild {
   /** What the worker said of its build; null when it did not answer. */
   build: BuildInfo | null;
-  /** When this page first saw it (the age when the build carries no time). */
+  /**
+   * When this device first saw it: the time its worker wrote at install (`seenAt`), or, without one or with one in the
+   * device's future (a clock set back since), when this page first saw it. The settling and the 24 h count from here.
+   */
   firstSeenAt: number;
   kind: "stale" | "waiting";
 }
@@ -120,8 +122,26 @@ export function createUpdateStore({
       return null;
     }
   }
+  /** The same files and the same worker: a worker whose code changed is a build like any other. */
   const sameContent = (build: BuildInfo | null) =>
-    build !== null && snapshot.current?.id === build.id;
+    build !== null &&
+    build.workerId !== null &&
+    snapshot.current?.id === build.id &&
+    snapshot.current.workerId === build.workerId;
+  const firstSeenOf = (build: BuildInfo | null) => {
+    const at = now();
+    const seenAt = build?.seenAt ?? null;
+    if (seenAt !== null && seenAt <= at) {
+      return seenAt;
+    }
+    const known = snapshot.pending;
+    return known &&
+      build &&
+      known.build?.id === build.id &&
+      known.build.workerId === build.workerId
+      ? known.firstSeenAt
+      : at;
+  };
 
   async function onWaiting(current: RegistrationLike) {
     const worker = current.waiting;
@@ -134,16 +154,8 @@ export function createUpdateStore({
       worker.postMessage({ type: "SKIP_WAITING" });
       return;
     }
-    const known = snapshot.pending;
     set({
-      pending: {
-        build,
-        firstSeenAt:
-          known && build && known.build?.id === build.id
-            ? known.firstSeenAt
-            : now(),
-        kind: "waiting",
-      },
+      pending: { build, firstSeenAt: firstSeenOf(build), kind: "waiting" },
     });
     await readWork();
   }
@@ -157,17 +169,7 @@ export function createUpdateStore({
       return;
     }
     // another tab made a build active; this page still runs its own and swaps at its own moment
-    const known = snapshot.pending;
-    set({
-      pending: {
-        build,
-        firstSeenAt:
-          known && build && known.build?.id === build.id
-            ? known.firstSeenAt
-            : now(),
-        kind: "stale",
-      },
-    });
+    set({ pending: { build, firstSeenAt: firstSeenOf(build), kind: "stale" } });
   }
 
   /**
@@ -216,12 +218,8 @@ export function createUpdateStore({
       if (!pending || snapshot.swapping) {
         return false;
       }
-      const waited = waitedFor(
-        pending.build?.publishedAt ?? null,
-        pending.firstSeenAt,
-        now()
-      );
-      if (!momentAllows(moment, waited)) {
+      const waited = now() - pending.firstSeenAt;
+      if (!momentAllows(moment, waited, pending.build?.urgent === true)) {
         return false;
       }
       const work = await readWork();

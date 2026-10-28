@@ -8,9 +8,12 @@
  * - `idle`: the tab is in front with no touch, key or scroll for `IDLE_MS`, and the build has waited more than
  *   `IDLE_WAITING_MS` (the counter computer that is never hidden); the screen comes back where it was.
  *
- * And never a build published less than `SETTLE_MS` ago: a bad build stops reaching everyone in the same minute. The
- * time is the one the build carries (the commit's), less `CLOCK_TOLERANCE_MS` for a device clock ahead; with no time
- * in the build, or one in the device's future (a clock behind), the age counts from when this page first saw it.
+ * And never a build this device saw less than `SETTLE_MS` ago: a bad build goes in only 2 h after it reached a
+ * device, which gives the time to revert it. Both the settling and the `IDLE_WAITING_MS` count from when the device
+ * first saw the build (the install of its worker, `sw.ts`), never from when it was published: a build promoted hours
+ * after its commit is new to the device all the same. An urgent build (`POLARIS_SWAP_URGENT=1`: a revert, a security
+ * fix) skips both and goes in at the first safe moment; the page's guard still holds it over work. The clock is the
+ * device's: one moved ahead while the build waits shortens the settling, with no bound (ADR 0041).
  */
 export interface PendingWork {
   pending: number;
@@ -40,7 +43,6 @@ const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 
 export const SETTLE_MS = 2 * HOUR;
-export const CLOCK_TOLERANCE_MS = 10 * MINUTE;
 export const RETURN_AFTER_MS = 5 * MINUTE;
 export const RETURN_WINDOW_MS = 30 * 1000;
 export const IDLE_MS = 15 * MINUTE;
@@ -48,20 +50,18 @@ export const IDLE_WAITING_MS = 24 * HOUR;
 
 export type SwapMoment = "hidden" | "idle" | "return";
 
-/** How long the build has been out, as far as this device can tell (see above). */
-export function waitedFor(
-  publishedAt: number | null,
-  firstSeenAt: number,
-  now: number
-): number {
-  if (publishedAt !== null && publishedAt <= now + CLOCK_TOLERANCE_MS) {
-    return now - publishedAt - CLOCK_TOLERANCE_MS;
+/**
+ * Whether a build that has waited this long since the device saw it may go in at this moment (the page's guard comes
+ * after); an urgent one at any moment.
+ */
+export function momentAllows(
+  moment: SwapMoment,
+  waited: number,
+  urgent = false
+): boolean {
+  if (urgent) {
+    return true;
   }
-  return now - firstSeenAt;
-}
-
-/** Whether a build that has waited this long may go in at this moment (the page's guard comes after). */
-export function momentAllows(moment: SwapMoment, waited: number): boolean {
   if (waited < SETTLE_MS) {
     return false;
   }

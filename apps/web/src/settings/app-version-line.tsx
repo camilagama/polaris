@@ -12,7 +12,11 @@ const PUBLISHED_ZONE = "America/Sao_Paulo";
 const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-/** "Versão 2026.10.28 · atualizado em 28/10"; the id when the build carries no time; null without a worker. */
+/**
+ * "Versão 2026.10.28 14:30 (a1b2c3) · atualizado em 28/10": the day and the time of the publication in São Paulo, the
+ * start of the id (to tell, in the triage of a fix, whether this device has it) and when it went in on this device;
+ * the id alone when the build carries no time; null without a worker.
+ */
 export function versionText(current: UpdateSnapshot["current"]): string | null {
   if (!current) {
     return null;
@@ -20,10 +24,13 @@ export function versionText(current: UpdateSnapshot["current"]): string | null {
   const name =
     current.publishedAt === null
       ? current.id
-      : calendarDayInTimezone(
+      : `${calendarDayInTimezone(
           new Date(current.publishedAt),
           PUBLISHED_ZONE
-        ).replaceAll("-", ".");
+        ).replaceAll(
+          "-",
+          "."
+        )} ${clockPartsInTimezone(new Date(current.publishedAt), PUBLISHED_ZONE).time} (${current.id.slice(0, 6)})`;
   const updated =
     current.activatedAt === null
       ? ""
@@ -53,7 +60,8 @@ export function AppVersionLineView({ snapshot }: { snapshot: UpdateSnapshot }) {
       ) : null}
       {waiting && snapshot.work.rejected === 0 ? (
         <p className="m-0">
-          Nova versão pronta. Entra quando você fechar o app.
+          Nova versão pronta. Entra sozinha quando você fechar o app ou deixá-lo
+          parado um tempo.
         </p>
       ) : null}
     </div>

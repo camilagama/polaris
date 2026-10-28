@@ -9,9 +9,13 @@ const CURRENT = {
   id: "a1b2c3d4e5f6",
   // 01:30 of the 28th in UTC is still the 27th in São Paulo: the version is named after the São Paulo day
   publishedAt: Date.parse("2026-10-28T01:30:00.000Z"),
+  seenAt: null,
+  urgent: false,
+  workerId: null,
 };
 
-const WITH_UPDATED = /^Versão 2026\.10\.27 · atualizado em \d{2}\/\d{2}$/;
+const WITH_UPDATED =
+  /^Versão 2026\.10\.27 22:30 \(a1b2c3\) · atualizado em \d{2}\/\d{2}$/;
 const BY_ID = /^Versão a1b2c3d4e5f6/;
 
 const snapshot = (change: Partial<UpdateSnapshot> = {}): UpdateSnapshot => ({
@@ -26,10 +30,10 @@ const render = (value: UpdateSnapshot) =>
   renderToStaticMarkup(<AppVersionLineView snapshot={value} />);
 
 describe("a linha da versão em Configurações", () => {
-  it("diz a versão pelo dia da publicação em São Paulo e quando ela entrou neste aparelho", () => {
+  it("diz a versão pelo dia e pela hora da publicação em São Paulo, o começo do id e quando ela entrou neste aparelho", () => {
     expect(versionText(CURRENT)).toMatch(WITH_UPDATED);
     expect(versionText({ ...CURRENT, activatedAt: null })).toBe(
-      "Versão 2026.10.27"
+      "Versão 2026.10.27 22:30 (a1b2c3)"
     );
     // a build without a time is named by its id
     expect(versionText({ ...CURRENT, publishedAt: null })).toMatch(BY_ID);
@@ -38,16 +42,16 @@ describe("a linha da versão em Configurações", () => {
 
   it("sem build nova, só a versão; sem botão nem link", () => {
     const html = render(snapshot());
-    expect(html).toContain("Versão 2026.10.27");
+    expect(html).toContain("Versão 2026.10.27 22:30 (a1b2c3)");
     expect(html).not.toContain("Nova versão");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("<a ");
   });
 
-  it("com build nova esperando, diz que ela entra quando o app fechar", () => {
+  it("com build nova esperando, diz que ela entra sozinha quando o app fechar ou ficar parado", () => {
     const html = render(snapshot({ pending: WAITING }));
     expect(html).toContain(
-      "Nova versão pronta. Entra quando você fechar o app."
+      "Nova versão pronta. Entra sozinha quando você fechar o app ou deixá-lo parado um tempo."
     );
     expect(html).not.toContain("Ver pendências");
     expect(html).not.toContain("<button");
@@ -62,7 +66,7 @@ describe("a linha da versão em Configurações", () => {
     );
     expect(html).toContain('href="/attention"');
     expect(html).toContain("Ver pendências");
-    expect(html).not.toContain("Entra quando você fechar o app.");
+    expect(html).not.toContain("Entra sozinha");
   });
 
   it("sem service worker e sem build esperando, nada", () => {

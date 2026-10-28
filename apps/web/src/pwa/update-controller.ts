@@ -88,6 +88,9 @@ export function askBuildInfo(
               activatedAt: event.data.activatedAt ?? null,
               id: event.data.id,
               publishedAt: event.data.publishedAt ?? null,
+              seenAt: event.data.seenAt ?? null,
+              urgent: event.data.urgent === true,
+              workerId: event.data.workerId ?? null,
             }
           : null
       );

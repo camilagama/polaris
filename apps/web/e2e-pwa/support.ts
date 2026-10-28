@@ -14,13 +14,18 @@ import { createStaticServer } from "../scripts/static-server.mjs";
 export interface BuildOptions {
   /** Built again even if this worker already made it (the same content built later). */
   fresh?: boolean;
-  /** When the build was published (ms); by default 3 h before the run: past the 2 h of settling. */
+  /** When the build was published (ms, the commit's time); by default one time for the whole run. */
   publishedAt?: number;
+  /**
+   * `POLARIS_SWAP_URGENT=1`: no settling, in at the first safe moment. By default true: the settling counts from when
+   * the device saw the build, and the checks that are not about it would wait 2 h; those that are say false.
+   */
+  urgent?: boolean;
 }
 
 const HOUR = 60 * 60 * 1000;
 /** One time for the whole run: the same variant built twice is the same worker, as the same commit is. */
-const SETTLED = Date.now() - 3 * HOUR;
+const PUBLISHED = Date.now() - 3 * HOUR;
 
 export const test = base.extend<
   { buildVersion: (variant: string, options?: BuildOptions) => void },
@@ -47,37 +52,42 @@ export const test = base.extend<
   },
   buildVersion: async ({ app }, use) => {
     await use((variant, options) =>
-      buildVersion(
-        app.outDir,
-        variant,
-        options?.publishedAt ?? SETTLED,
-        options?.fresh === true
-      )
+      buildVersion(app.outDir, variant, {
+        fresh: options?.fresh === true,
+        publishedAt: options?.publishedAt ?? PUBLISHED,
+        urgent: options?.urgent ?? true,
+      })
     );
   },
 });
 
 /**
  * Builds the app as "version N": the same code, a different marker in index.html and in every chunk (new file names,
- * as a deploy has), published at `publishedAt` (`POLARIS_BUILD_TIME`, read by the worker's build). What is served is
+ * as a deploy has), published at `publishedAt` (`POLARIS_BUILD_TIME`, read by the worker's build), urgent or not
+ * (`POLARIS_SWAP_URGENT`). What is served is
  * replaced as a deploy replaces it: the files of the build before are gone. A build already made by this worker is
  * copied again instead of built again (the same input gives the same files).
  */
 function buildVersion(
   outDir: string,
   variant: string,
-  publishedAt: number,
-  fresh: boolean
+  options: Required<BuildOptions>
 ) {
-  const made = `${outDir}-builds/${variant}-${publishedAt}`;
+  const { fresh, publishedAt, urgent } = options;
+  const made = `${outDir}-builds/${variant}-${publishedAt}-${urgent ? "urgent" : "settling"}`;
   if (fresh || !existsSync(made)) {
-    build(made, variant, publishedAt);
+    build(made, variant, publishedAt, urgent);
   }
   rmSync(outDir, { force: true, recursive: true });
   cpSync(made, outDir, { recursive: true });
 }
 
-function build(outDir: string, variant: string, publishedAt: number) {
+function build(
+  outDir: string,
+  variant: string,
+  publishedAt: number,
+  urgent: boolean
+) {
   execFileSync(
     "bunx",
     [
@@ -94,6 +104,7 @@ function build(outDir: string, variant: string, publishedAt: number) {
       env: {
         ...process.env,
         POLARIS_BUILD_TIME: String(publishedAt),
+        POLARIS_SWAP_URGENT: urgent ? "1" : "0",
         PWA_E2E_VARIANT: variant,
       },
       shell: process.platform === "win32",
@@ -168,3 +179,64 @@ export const stillHere = (page: Page) =>
   page.evaluate(
     () => (window as unknown as { stillHere?: boolean }).stillHere === true
   );
+
+interface QueueControl {
+  pending: number;
+  rejected: number;
+}
+
+declare global {
+  interface Window {
+    polarisQueue?: QueueControl;
+  }
+}
+
+/**
+ * The test plays the part of the outbox, on every load of the page: the offline runtime of the signed-in checks opens
+ * no store (their `/rpc` does not answer), and its work source then refuses to read, which holds every swap, as it
+ * must for a queue that was not read. The store the browser-check build exposes (`main.tsx`) is given a source that
+ * reads `window.polarisQueue` (empty after each load; `queueWith` fills it), and keeps it when the runtime plugs its own.
+ */
+export async function fakeQueue(page: Page) {
+  await page.addInitScript(() => {
+    const control: QueueControl = { pending: 0, rejected: 0 };
+    window.polarisQueue = control;
+    const source = {
+      read: () =>
+        Promise.resolve({
+          pending: control.pending,
+          rejected: control.rejected,
+          sending: 0,
+        }),
+      sync: () => Promise.resolve(),
+    };
+    let store: { setWorkSource: (next: typeof source) => void } | undefined;
+    Object.defineProperty(window, "polarisUpdateStore", {
+      configurable: true,
+      get: () => store,
+      set: (value: typeof store) => {
+        store = value;
+        if (value) {
+          const plug = value.setWorkSource.bind(value);
+          value.setWorkSource = () => plug(source);
+          plug(source);
+        }
+      },
+    });
+  });
+}
+
+/** What the queue of `fakeQueue` holds now, on this load of the page. */
+export async function queueWith(page: Page, queued: QueueControl) {
+  await page.evaluate(async (next) => {
+    if (window.polarisQueue) {
+      Object.assign(window.polarisQueue, next);
+    }
+    // read now, as the outbox tells the store when it changes
+    await (
+      window as unknown as {
+        polarisUpdateStore?: { refreshWork: () => Promise<void> };
+      }
+    ).polarisUpdateStore?.refreshWork();
+  }, queued);
+}

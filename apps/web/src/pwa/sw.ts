@@ -29,12 +29,14 @@
  * shell (a chunk that is not there yet, or no longer) and that must not be
  * cached as if it were the chunk.
  *
- * The build tool prepends `POLARIS_BUILD` (the build id, the list of files to
- * precache and when the build was published) and bundles this file as a classic
- * script. The time is the commit's, not the build's: building the same commit
- * again gives the same worker, so the browser finds no update. A page asks the
- * worker for its build (`BUILD_INFO`) to know whether a waiting build is new
- * content and how long ago it was published (ADR 0041).
+ * The build tool prepends `POLARIS_BUILD` (the build id, the id of this worker's
+ * own code, the list of files to precache, when the build was published and whether
+ * it is urgent) and bundles this file as a classic script. The time is the commit's,
+ * not the build's: building the same commit again gives the same worker, so the
+ * browser finds no update. The time only names the version; how long a build waited
+ * counts from when this device first saw it, which the worker writes in its cache at
+ * install (`seenAtPath`). A page asks the worker for its build (`BUILD_INFO`) to
+ * know whether a waiting build is new content and how long it has waited (ADR 0041).
  */
 export interface BuildManifest {
   /** A hash of what a user downloads: the worker changes when, and only when, it changes. */
@@ -43,6 +45,10 @@ export interface BuildManifest {
   precache: string[];
   /** When the build was published (ms since the epoch), or null when the build tool did not know. */
   publishedAt?: number | null;
+  /** `POLARIS_SWAP_URGENT=1` (a revert, a security fix): it goes in at the first safe moment, with no settling. */
+  urgent?: boolean;
+  /** A hash of this worker's own code, without the manifest: `id` does not cover `sw.js`. */
+  workerId?: string | null;
 }
 
 /** What a worker says of its build when a page asks (`BUILD_INFO`). */
@@ -51,6 +57,10 @@ export interface BuildInfo {
   activatedAt: number | null;
   id: string;
   publishedAt: number | null;
+  /** When this device first saw this build: the install of its worker (ms), or null when not written. */
+  seenAt: number | null;
+  urgent: boolean;
+  workerId: string | null;
 }
 
 declare const POLARIS_BUILD: BuildManifest | undefined;
@@ -84,6 +94,24 @@ export type RequestRoute = "asset" | "bypass" | "kept" | "navigate";
 const HASHED_PREFIX = "/assets/";
 /** Where a worker writes, in its own cache, when it became the active one ("atualizado em" of Configurações). */
 export const ACTIVATED_AT_PATH = "/__polaris/activated-at";
+/**
+ * Where a worker writes, in its own cache, when this device first saw its build (the start of the settling): one time
+ * per worker code, since the cache is named after the files only and a change only in `sw.ts` is a build of its own.
+ */
+export const SEEN_AT_PATH = "/__polaris/seen-at";
+
+export function seenAtPath(build: Pick<BuildManifest, "id" | "workerId">) {
+  return `${SEEN_AT_PATH}/${build.workerId ?? "unknown"}`;
+}
+
+/**
+ * Whether the install writes a new "seen at": when the cache has none, and when the content was active here since it
+ * was last seen (a revert to a build this device already ran: its cache is kept, and the revert is new to it). A new
+ * worker of the same content still waiting keeps the time: the device saw that content then.
+ */
+export function seesAnew(seenAt: number | null, activatedAt: number | null) {
+  return seenAt === null || (activatedAt !== null && activatedAt >= seenAt);
+}
 
 export function shellCacheName(build: Pick<BuildManifest, "id">) {
   return `${SHELL_CACHE_PREFIX}${build.id}`;
@@ -253,6 +281,13 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     return { request, response };
   };
 
+  /** A time this worker wrote in its cache (`ACTIVATED_AT_PATH`, `seenAtPath`); null when there is none. */
+  const storedTime = async (path: string): Promise<number | null> => {
+    const answer = await (await caches.open(cacheName)).match(path);
+    const value = Number(await answer?.text());
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
   scope.addEventListener("install", ((event: WaitableEvent) => {
     event.waitUntil(
       (async () => {
@@ -276,6 +311,21 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         await fetchExpected(AUTH_ENTRY_SHELL_PATH)
           .then(({ request, response }) => cache.put(request, response))
           .catch(() => undefined);
+        // only for the settling: without it the page counts from when it saw the build, so a failure here never
+        // stops the worker from installing
+        await Promise.all([
+          storedTime(seenAtPath(build)),
+          storedTime(ACTIVATED_AT_PATH),
+        ])
+          .then(([seen, activated]) =>
+            seesAnew(seen, activated)
+              ? cache.put(
+                  new Request(seenAtPath(build)),
+                  new Response(String(Date.now()))
+                )
+              : undefined
+          )
+          .catch(() => undefined);
       })()
     );
   }) as never);
@@ -298,14 +348,6 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     );
   }) as never);
 
-  const activatedAt = async (): Promise<number | null> => {
-    const answer = await (await caches.open(cacheName)).match(
-      ACTIVATED_AT_PATH
-    );
-    const value = Number(await answer?.text());
-    return Number.isFinite(value) && value > 0 ? value : null;
-  };
-
   scope.addEventListener("message", ((event: MessageLikeEvent) => {
     if (isSkipWaitingMessage(event.data)) {
       scope.skipWaiting().catch(() => undefined);
@@ -313,16 +355,21 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     }
     const port = event.ports?.[0];
     if (isBuildInfoMessage(event.data) && port) {
-      const answer = activatedAt()
-        .catch(() => null)
-        .then((at) => {
-          const info: BuildInfo = {
-            activatedAt: at,
-            id: build.id,
-            publishedAt: build.publishedAt ?? null,
-          };
-          port.postMessage(info);
-        });
+      const time = (path: string) => storedTime(path).catch(() => null);
+      const answer = Promise.all([
+        time(ACTIVATED_AT_PATH),
+        time(seenAtPath(build)),
+      ]).then(([activatedAt, seenAt]) => {
+        const info: BuildInfo = {
+          activatedAt,
+          id: build.id,
+          publishedAt: build.publishedAt ?? null,
+          seenAt,
+          urgent: build.urgent === true,
+          workerId: build.workerId ?? null,
+        };
+        port.postMessage(info);
+      });
       event.waitUntil?.(answer);
     }
   }) as never);
