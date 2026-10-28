@@ -9,17 +9,18 @@ import { polarisContract } from "./index";
  */
 interface ArrayInInput {
   bounded: boolean;
-  /** A recursive schema (`z.json()`): it holds arrays of any depth, so it is limited by something else, listed below. */
+  /**
+   * A schema that holds a value of any shape (`z.json()` is recursive; `z.any()`, `z.unknown()` and `z.custom()` are
+   * the walk cannot see what they accept): it may hold arrays of any depth, so it is limited by something else, listed below.
+   */
   opaque?: true;
   path: string;
 }
 
 /** Schemas that hold no other schema: nothing to walk into. */
 const LEAVES = new Set([
-  "any",
   "bigint",
   "boolean",
-  "custom",
   "date",
   "enum",
   "literal",
@@ -32,7 +33,6 @@ const LEAVES = new Set([
   "template_literal",
   "transform",
   "undefined",
-  "unknown",
   "void",
 ]);
 
@@ -73,8 +73,11 @@ function arraysIn(schema: $ZodType, path: string): ArrayInInput[] {
     case "readonly":
     case "catch":
       return arraysIn(child("innerType"), path);
-    case "lazy":
-      // the getter builds a new schema on each call, so a recursive one never ends: it is reported, not entered
+    case "lazy": // the getter builds a new schema on each call, so a recursive one never ends
+    case "any":
+    case "unknown":
+    case "custom": // these three have no shape the walk can enter
+      // all four are reported, not entered: the value may hold an array, and only a named exception lets it by
       return [{ bounded: false, opaque: true, path }];
     case "union":
       return (def.options as $ZodType[]).flatMap((option, index) =>
@@ -109,6 +112,17 @@ function arraysIn(schema: $ZodType, path: string): ArrayInInput[] {
       }
       return [];
   }
+}
+
+/** The opaque schemas the contract may keep: each needs a limit of its own, named at the test that lists it. */
+const OPAQUE_EXCEPTIONS = ["sync.push.commands[].payload"];
+
+/** The opaque paths found that no exception names: the rule of the contract is that this is empty. */
+function opaqueOutsideExceptions(found: ArrayInInput[]): string[] {
+  return found
+    .filter((entry) => entry.opaque)
+    .map((entry) => entry.path)
+    .filter((path) => !OPAQUE_EXCEPTIONS.includes(path));
 }
 
 function inputsOf(
@@ -166,13 +180,15 @@ describe("the input schemas of the contract", () => {
     ).toEqual([]);
   });
 
-  it("leave open only the recursive schemas that something else limits", () => {
+  it("leave open only the opaque schemas that something else limits", () => {
     // `payload` of a pushed command is JSON of any shape. The server refuses one over `MAX_COMMAND_PAYLOAD_CHARS`
     // (sync/push.ts), but only after the contract has validated it, and `/rpc` has no limit on the size of the body of
     // its own: the arrays inside it are open until that check, which is a limit of its own to add, not of this rule
+    expect(opaqueOutsideExceptions(arrays)).toEqual([]);
+    // and the exception is still there: one the contract no longer needs leaves the list
     expect(
       arrays.filter((found) => found.opaque).map((found) => found.path)
-    ).toEqual(["sync.push.commands[].payload"]);
+    ).toEqual(OPAQUE_EXCEPTIONS);
   });
 });
 
@@ -268,6 +284,56 @@ describe("the walk over input schemas", () => {
   it("reports a recursive schema as opaque instead of walking it for ever", () => {
     expect(arraysIn(z.object({ data: z.json() }), "input")).toEqual([
       { bounded: false, opaque: true, path: "input.data" },
+    ]);
+  });
+
+  // planted controls: they go through the same rule as the contract, so a loosened rule shows here
+  const outside = (schema: $ZodType, root = "input") =>
+    opaqueOutsideExceptions(arraysIn(schema, root));
+
+  it("reports `z.unknown()`, `z.any()` and `z.custom()` as opaque, so each is outside the list of exceptions", () => {
+    expect(
+      outside(
+        z.object({
+          a: z.unknown(),
+          b: z.any(),
+          c: z.custom<string[]>(),
+          d: z.array(z.unknown()).max(3),
+          e: z.unknown().optional(),
+          f: z.union([z.string(), z.any()]),
+          g: z.record(z.string(), z.unknown()),
+          h: z.string().pipe(z.custom<string>()),
+          i: z.json(),
+        })
+      )
+    ).toEqual([
+      "input.a",
+      "input.b",
+      "input.c",
+      "input.d[]",
+      "input.e",
+      "input.f|1",
+      "input.g{}",
+      "input.h",
+      "input.i",
+    ]);
+  });
+
+  it("lets by only the path the list names, not its neighbours", () => {
+    const at = (root: string, shape: Record<string, $ZodType>) =>
+      outside(z.object(shape), root);
+    expect(at("sync.push.commands[]", { payload: z.unknown() })).toEqual([]);
+    expect(at("sync.push.commands[]", { other: z.unknown() })).toEqual([
+      "sync.push.commands[].other",
+    ]);
+    expect(at("sync.push.commands[]", { payloads: z.any() })).toEqual([
+      "sync.push.commands[].payloads",
+    ]);
+    expect(at("sync.push.commands", { payload: z.any() })).toEqual([
+      "sync.push.commands.payload",
+    ]);
+    expect(at("sync.pull.commands[]", { payload: z.any() })).toEqual([
+      "sync.pull.commands[].payload",
     ]);
   });
 
