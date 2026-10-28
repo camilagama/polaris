@@ -78,6 +78,7 @@ export const UI_TEST_PACKAGES = [
 export const BASELINE_PACKAGES = [
   "@cloudflare/vite-plugin",
   "@cloudflare/workers-types",
+  "@lhci/cli",
   "@noble/hashes",
   "@orpc/client",
   "@orpc/server",

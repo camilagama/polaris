@@ -2546,3 +2546,12 @@ Origem: o item 4 das melhorias de qualidade aprovadas pelo usuário em 28/10 (de
 | Documentação | Em revisão | Emenda do ADR 0098, linha `client_error_log` no ADR 0079 e no registro de retenção (`packages/domain/src/privacy/retention.ts`, proposta), item do `privacy.md`, runbook `erros-do-navegador.md`. |
 | Pendências | Registrado | O deploy do staging precisa de `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no build (workflow, do responsável). Ligar em produção é item do checklist. O script e o cron de leitura são outra tarefa. |
 
+
+### Lighthouse CI num celular simulado (t473; sem migration)
+
+Origem: o item 3 das melhorias de qualidade aprovadas pelo usuário em 28/10 (desenho do Filipe, Q4).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Lighthouse CI | Em revisão | `apps/web/lighthouserc.json` e `bun run --filter @polaris/web test:lighthouse`: `/entrar`, a loja do catálogo de fixture e o Início (login falso por `puppeteerScript` sobre as leituras do `e2e-pwa`), contra o cliente de produção, em celular simulado (`simulate`), 3 rodadas e a mediana; rodada com a CPU disputada é repetida. LCP 2,5 s, TBT 200 ms, CLS 0,1 e bytes de JS (medido + 44 000 B do precache) em `warn`; sem INP, sem servidor LHCI, sem desktop. Runbook: `docs/runbooks/testes-de-tela.md`. |
+| Pendências | Registrado | O job do `ci.yml` é patch do responsável (`~/tasks/t473-lighthouse.patch.md`, aplicado depois do merge). A troca de `warn` para `error` é tarefa de daqui a duas semanas, com os números do CI. |

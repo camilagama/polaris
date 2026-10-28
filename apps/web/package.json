@@ -12,6 +12,7 @@
     "test:auth-gate": "bun scripts/test-better-auth-gate.ts",
     "test:e2e-real": "playwright test --config playwright.e2e-real.config.ts",
     "test:gate2-worker": "bun scripts/test-gate2-worker.ts",
+    "test:lighthouse": "node scripts/lighthouse.mjs",
     "test:offline-browser": "playwright test --config playwright.offline-poc.config.ts && playwright test --config playwright.pwa.config.ts",
     "test:offline-poc": "playwright test --config playwright.offline-poc.config.ts",
     "test:organization-onboarding-gate": "bun scripts/test-organization-onboarding-gate.ts",
@@ -70,6 +71,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",
     "@cloudflare/workers-types": "^5.20261006.1",
+    "@lhci/cli": "0.15.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/d3-array": "3.0.3",
