@@ -6,6 +6,6 @@ import { fileURLToPath } from "node:url";
  */
 export function workerLogPath(project: string): string {
   return fileURLToPath(
-    new URL(`../dist-e2e/${project}-worker.log`, import.meta.url)
+    new URL(`../dist-e2e/${project}/worker.log`, import.meta.url)
   );
 }
