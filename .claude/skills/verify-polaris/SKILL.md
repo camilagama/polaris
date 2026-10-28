@@ -121,7 +121,7 @@ Regras do drive:
 
 - Use os seletores do mapa: papel e nome acessível (`getByRole`, `getByLabel`), e `[data-product-id]` onde o mapa o cita. Não invente seletor; se o mapa não tem, leia o spec citado no arquivo do destino ou o ARIA de um `snap`.
 - Chegue pela interface quando o caminho importa (menu lateral no desktop; barra de baixo e "Mais" no celular). `page.goto` é para o ponto de partida.
-- Espere pelo estado (`expect(...).toBeVisible()`, `toHaveText`), nunca por tempo fixo.
+- Espere pelo estado (`expect(...).toBeVisible()`, `toHaveText`), nunca por tempo fixo. O `expect` espera até 15 s (a config): numa máquina carregada o "Carregando…" de uma lista passa dos 5 s do padrão do Playwright, e um drive que lê um saldo ou uma lista logo depois de abrir a tela caía por isso.
 - Uma falha guarda o contexto do erro em `/tmp/polaris-verify/<id>/playwright/<teste>/error-context.md` (o ARIA da página na hora): leia antes de mudar o drive. Depois de uma falha estranha, `$V doctor`.
 
 Estados que as tarefas pedem:

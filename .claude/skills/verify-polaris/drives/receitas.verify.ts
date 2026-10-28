@@ -361,14 +361,12 @@ test("metas", async ({ evidence, page }) => {
   const shown = new Intl.NumberFormat("pt-BR").format(target);
   await page.goto("/dashboard?aba=metas");
   const goals = page.getByRole("region", { exact: true, name: "Metas" });
-  await expect(goals).toBeVisible({ timeout: 15_000 });
+  await expect(goals).toBeVisible();
   // the Free plan keeps one goal in progress: the goal of an earlier run is edited instead of creating a second one
   const edit = goals.getByRole("button", { name: EDIT_GOAL });
   await expect(
     edit.first().or(goals.getByText("Nenhuma meta ainda"))
-  ).toBeVisible({
-    timeout: 15_000,
-  });
+  ).toBeVisible();
   if ((await edit.count()) === 0) {
     await goals.getByRole("button", { name: "Nova meta" }).click();
     const dialog = page.getByRole("dialog", { name: "Nova meta" });
