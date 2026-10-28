@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DateField, DateRangeField } from "./sale-fields";
 
-/** The markup of the date fields of the forms (t373): label, button name, help and error ties, and the "Limpar". */
+/** The markup of the date fields of the forms: label, button name, help and error ties, and the "Limpar". */
 const html = (node: React.ReactNode) => renderToStaticMarkup(node);
 const noop = () => undefined;
 

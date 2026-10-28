@@ -245,7 +245,7 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
       status: "cancelled",
       updatedAt: "2026-10-05T12:00:00.000Z",
     });
-    // settled on 01/10 of the store: shown from 01/10 to 07/10, seven days, and gone on the eighth
+    // settled on `01/10` of the store: shown from `01/10` to `07/10`, seven days, and gone on the eighth
     expect(pickGoal([settled, cancelled], "2026-10-07", zone)).toMatchObject({
       kind: "settled",
     });
@@ -537,7 +537,7 @@ describe("goalDaysLeftText (v7 § 3 item 9)", () => {
 
 describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
   const today = "2026-10-25";
-  // 18/10 to 24/10, the 7 whole days before today: R$ 100,00 and 2 sales each, R$ 700,00 and 14 sales in all
+  // `18/10` to `24/10`, the 7 whole days before today: R$ 100,00 and 2 sales each, R$ 700,00 and 14 sales in all
   const month = series("2026-10-01", "2026-10-31", (date) =>
     date >= "2026-10-18" && date <= "2026-10-24" ? ["100.00", 2] : undefined
   );
@@ -605,7 +605,7 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
     const september = series("2026-09-01", "2026-09-30", (date) =>
       date >= "2026-09-27" ? ["70.00", 1] : undefined
     );
-    // on 03/10 the 7 days are 26/09 to 02/10: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
+    // on `03/10` the 7 days are `26/09` to `02/10`: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
     expect(
       shortValue(
         goalProjection(
@@ -681,7 +681,7 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
   });
 
   it("says the day the rhythm crosses the target, from the daily total", () => {
-    // 400,00 + 100,00 a day: 1.000,00 is crossed on the 6th day after today, 31/10, the last one; 800,00 on the 4th
+    // 400,00 + 100,00 a day: 1.000,00 is crossed on the 6th day after today, `31/10`, the last one; 800,00 on the 4th
     expect(goalProjection(g({ target: "800.00" }), known, today)).toEqual({
       kind: "reaches",
       on: "29/10",

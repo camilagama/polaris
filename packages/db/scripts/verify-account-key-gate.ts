@@ -15,7 +15,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * One account per key, `(provider_id, account_id)` (0106, t435). Better Auth 1.7 finds an account by that key and
+ * One account per key, `(provider_id, account_id)` (0106). Better Auth 1.7 finds an account by that key and
  * refuses a key held by two rows, so the table must never hold one. This gate proves, on the database after every
  * migration: the index is there, unique, valid and on exactly those two columns, in that order; a second row with the
  * key of another is refused (23505) whatever its user, while the same account ID under another provider is accepted;

@@ -36,7 +36,7 @@ import {
 } from "./gate-hosts";
 
 /**
- * Operator script (t277, item 3 of the desenho-t269 round): fills a QA store
+ * Operator script: fills a QA store
  * of staging with the data the Início needs to be measured and checked. It
  * runs ONLY on an organization whose name starts with `qa-`, ONLY on the
  * staging branch (marker `polaris.environment=staging`, ADR 0097, on a direct

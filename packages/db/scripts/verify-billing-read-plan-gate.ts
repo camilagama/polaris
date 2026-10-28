@@ -26,7 +26,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The owner's read of the plan (`billing.readPlan`, ADR 0104 decision 2, PR C of design t268 v2) on a real
+ * The owner's read of the plan (`billing.readPlan`, ADR 0104 decision 2) on a real
  * PostgreSQL 18:
  *   1. the tenant's part, as the tenant role with `billing:manage`: the usage counted as the writes count it (an
  *      archived product's variants and images count, a deleted one's do not), what the store keeps, the active prices
@@ -292,7 +292,7 @@ async function run() {
     // the turn of the year
     await setSaleDays("2025-12-31", "2025-12-31");
     assert.equal(await monthsAt("2026-01-01T15:00:00Z"), 2);
-    // the store's midnight, not UTC's: 22:30 of 31/10 in São Paulo is still October, 00:30 of 01/11 is November
+    // the store's midnight, not UTC's: 22:30 of `31/10` in São Paulo is still October, 00:30 of `01/11` is November
     await setSaleDays("2026-10-31", "2026-10-31");
     assert.equal(await monthsAt("2026-11-01T01:30:00Z"), 1);
     assert.equal(await monthsAt("2026-11-01T03:30:00Z"), 2);

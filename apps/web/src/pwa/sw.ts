@@ -398,7 +398,7 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
         // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
         // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker
-        // resource mismatch") and fetch it a second time; a clone is taken as the preload's (measured, t344).
+        // resource mismatch") and fetch it a second time; a clone is taken as the preload's (measured).
         cached && isExpectedResponse(pathname, cached)
           ? cached.clone()
           : fetch(event.request)

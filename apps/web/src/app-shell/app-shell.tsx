@@ -216,7 +216,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
   }, [isMobile, setOpen, setOpenMobile, state]);
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
   // the state of "Sair" lives above the switch between the sheet and the card, so a width that crosses 760 px in the
-  // middle of the flow keeps the dialog of the queue and the message of a failure (Rodrigo, 26/10, menor 1)
+  // middle of the flow keeps the dialog of the queue and the message of a failure
   const logout = useLogout("/");
   const email = useSignedInEmail();
   const items = menuItemsOf({ attention: rejected > 0 }).filter(
@@ -300,7 +300,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       <SidebarFooter>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
         {isMobile ? (
-          // the phone keeps "Sair" straight in "Mais", with the theme (Rodrigo, 25/10, vale corrigir 2)
+          // the phone keeps "Sair" straight in "Mais", with the theme
           <div className="grid gap-3 p-1">
             <ThemeSegmented />
             {organization || email ? (

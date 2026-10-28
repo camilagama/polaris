@@ -2,7 +2,7 @@ const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Test teardown for a disposable database: deletes organizations that have audit rows. The audit of the tenant is
- * immutable and its foreign key restricts (ADR 0081, amended 19/10/2026), so the throwaway organizations only go
+ * immutable and its foreign key restricts (ADR 0081, amended), so the throwaway organizations only go
  * if the audit goes first, and that takes the owner of the table turning its trigger off for the statement. Everything
  * runs in one implicit transaction (a simple query with several statements): a failure puts the trigger back.
  * Only a gate may call this, on a database it created.

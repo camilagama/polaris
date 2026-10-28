@@ -48,7 +48,7 @@ export const SLICE_STEP_UP_AFTER = 10;
 
 /**
  * The size of the first slice, and the ceiling the size climbs to: one row each, by the measure of the CPU of
- * `product.importBatch` in staging on the Free plan of the Workers (Juan, 27/10/2026): errors 1102 (CPU limit) in 10%
+ * `product.importBatch` in staging on the Free plan of the Workers: errors 1102 (CPU limit) in 10%
  * of the calls of 1 row, 46% of 2, 55% of 5 and 78% of 10. No size fits the 10 ms; 1 row is the only one with ~90% of
  * calls that go through, and its 1102 is a failure like any other (the same row goes again with the same IDs). While
  * that is the measure the size never climbs; the halving and the climbing stay, for a new measure to change only

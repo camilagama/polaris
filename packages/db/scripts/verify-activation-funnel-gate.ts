@@ -135,7 +135,7 @@ interface Tally {
 }
 
 /**
- * The rule of the amendment, written again here from the corte and Rodrigo's conditions (not read from the
+ * The rule of the amendment, written again here from the corte and its conditions (not read from the
  * migration): the finest cut of the cohort whose cells all hold k stores or more.
  */
 function tierOf(t: Tally, windowClosed: boolean): number {
@@ -211,7 +211,7 @@ function expectedCohort(
 const shownValue = (cell: Cell): number | null =>
   cell.state === "shown" ? cell.value : null;
 
-/** What no answer may ever show, whatever the rows (Rodrigo's conditions 1 to 3). */
+/** What no answer may ever show, whatever the rows (conditions 1 to 3). */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one list of independent checks per cohort
 function suppressionProblems(funnel: Funnel): string[] {
   const problems: string[] = [];

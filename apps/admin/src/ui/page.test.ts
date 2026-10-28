@@ -68,7 +68,7 @@ const STYLE_HREF =
   /<link rel="stylesheet" href="(\/ui\/admin-[0-9a-f]{16}\.css)" \/>/;
 const LINK_TAG = /<link\b/gi;
 const MODULE_SCRIPT = /^<script type="module" src="\/ui\/admin-/;
-/** Rodrigo's list (D-1): an inline style, an event handler attribute, a style attribute, a javascript: URL, and any element that loads or submits. */
+/** The forbidden list: an inline style, an event handler attribute, a style attribute, a javascript: URL, and any element that loads or submits. */
 const HTML_FORBIDDEN = [
   /<style\b/i,
   /\son[a-z]+\s*=/i,

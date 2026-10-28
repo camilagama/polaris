@@ -7,7 +7,7 @@ import {
   readMotionLevel,
 } from "./motion-level";
 
-/** The table of the design (Filipe, 25/10): the device, its size, the pointer and the preference. */
+/** The table of the design: the device, its size, the pointer and the preference. */
 const TABLE: [string, Omit<MotionInputs, "reduced">, MotionLevel][] = [
   [
     "celular em pé (360×740)",

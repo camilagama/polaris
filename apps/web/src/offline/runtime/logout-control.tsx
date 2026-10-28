@@ -32,7 +32,7 @@ async function signOutOnServer(): Promise<void> {
   }
 }
 
-/** Revokes this installation on the server (ADR 0048, emenda de 22/10); the flow decides what a failure means. */
+/** Revokes this installation on the server (ADR 0048, emenda); the flow decides what a failure means. */
 async function revokeCurrentDevice(
   deviceId: string
 ): Promise<{ endedCurrentSession: boolean }> {
@@ -142,7 +142,7 @@ interface LogoutNoticesProps {
 
 /**
  * What a logout has to say after "Sair": the message of a failure and the dialog of the work this device would lose.
- * It lives with the hook, never inside a menu that closes on the click (Rodrigo, 25/10, vale corrigir 1): the answer
+ * It lives with the hook, never inside a menu that closes on the click: the answer
  * may come after the menu has closed, and a logout that failed must never be silent.
  */
 export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {

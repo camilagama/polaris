@@ -226,7 +226,7 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
         }
         throw error;
       }
-      // `PUT …/cancel` answers 200 again for one cancelled (sandbox, t092); it is read first
+      // `PUT …/cancel` answers 200 again for one cancelled (sandbox); it is read first
       // so the answer says what happened. Woovi sends no webhook for it: the command writes the fact
       return await cancel(subscription);
     },
@@ -259,7 +259,7 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       if (subscription.authorization === "APPROVED") {
         return true;
       }
-      // installments exist only after the approval (sandbox, t092): one approved and
+      // installments exist only after the approval (sandbox): one approved and
       // then revoked by the payer still made a subscription
       return (
         (await client.listSubscriptionInstallments(subscription.id)).length > 0

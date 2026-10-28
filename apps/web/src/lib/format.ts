@@ -19,7 +19,7 @@ export function formatBrlAmount(value: string): string {
   return `${sign}R$ ${whole},${fraction}`;
 }
 
-/** An instant in the device's locale and time zone, e.g. 13/10/2026 15:30. */
+/** An instant in the device's locale and time zone, e.g. `13/10/2026 15:30`. */
 export function formatInstant(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);

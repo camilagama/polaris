@@ -17,7 +17,7 @@ export interface TrialChargeEveEmail {
   store: BillingEmailStore;
 }
 
-/** The text of the corte, by Petković (23/10, rodada t268): it speaks of the first charge, never of the trial's end. */
+/** The text of the corte: it speaks of the first charge, never of the trial's end. */
 export function trialChargeEveContent(
   email: TrialChargeEveEmail
 ): BillingNoticeContent {

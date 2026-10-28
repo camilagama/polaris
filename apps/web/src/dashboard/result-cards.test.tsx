@@ -6,10 +6,10 @@ import { ResultCards } from "./result-cards";
 import { addDays } from "./result-period";
 
 /**
- * The cards of the Resultado when no cost of the goods is known (Petković 26/10, VC1; `cogsCoverageOf` "none", from
- * the item lines, t419): the margin and the result show a dash with the badge and one line each, never the percent or
+ * The cards of the Resultado when no cost of the goods is known (`cogsCoverageOf` "none", from
+ * the item lines): the margin and the result show a dash with the badge and one line each, never the percent or
  * the amount the server makes of costs read as zero. A partial cost (3 of 25 days), and every day null with some cost
- * of the goods known or only a fee unknown (cases a/b of t419), stay as any partial.
+ * of the goods known or only a fee unknown (cases a/b), stay as any partial.
  */
 
 const TODAY = "2026-10-25";

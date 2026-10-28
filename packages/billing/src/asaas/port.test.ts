@@ -576,7 +576,7 @@ describe("refundCurrentPeriod", () => {
 });
 
 describe("discardCheckout", () => {
-  // the shape of the sandbox answers (19/10/2026): 200 with CANCELED, then a 400 for the same checkout
+  // the shape of the sandbox answers: 200 with CANCELED, then a 400 for the same checkout
   const cancelled = `{"id":"${CHECKOUT_ID}","status":"CANCELED"}`;
   const alreadyCancelled =
     '{"errors":[{"code":"invalid_action","description":"Checkout já cancelado."}]}';

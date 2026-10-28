@@ -146,7 +146,7 @@ describe("moneyDelta", () => {
 });
 
 describe("dayReading (Vendas hoje)", () => {
-  // 2026-10-25 is a Sunday; the four before it: 18/10, 11/10, 04/10 and 27/09
+  // 2026-10-25 is a Sunday; the four before it: `18/10`, `11/10`, `04/10` and `27/09`
   const sundays: Record<string, [string, number]> = {
     "2026-09-27": ["150.00", 2],
     "2026-10-04": ["187.40", 1],
@@ -184,7 +184,7 @@ describe("dayReading (Vendas hoje)", () => {
   });
 
   it("writes the feminine for a weekday that is feminine", () => {
-    // 2026-10-23 is a Friday: 16/10, 09/10, 02/10 and 25/09
+    // 2026-10-23 is a Friday: `16/10`, `09/10`, `02/10` and `25/09`
     const month = days("2026-10-01", "2026-10-31", (date) =>
       ["2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23"].includes(date)
         ? { netSales: "100.00", salesCount: 1 }
@@ -519,7 +519,7 @@ describe("monthKpis: result (AC-9)", () => {
   });
 
   it("with an unknown day, says the server's card is the whole month, the expense dated after today in it", () => {
-    // the rent of 3.000,00 on 30/10 is in the server's card (-2.875,00), which reads the month to the 31st
+    // the rent of 3.000,00 on `30/10` is in the server's card (-2.875,00), which reads the month to the 31st
     const month = october((date) => {
       if (date === "2026-10-10") {
         return { operatingResult: null };
@@ -591,7 +591,7 @@ describe("monthKpis: result (AC-9)", () => {
   });
 
   it("at rest, says the sum up to today, not the whole month with the expenses dated after today", () => {
-    // the rent of 3.000,00 has its competence on 30/10: the month's card (-2.875,00) has it, today (25/10) does not
+    // the rent of 3.000,00 has its competence on `30/10`: the month's card (-2.875,00) has it, today (`25/10`) does not
     const month = october(
       (date) =>
         date === "2026-10-30" ? { operatingResult: "-3000.00" } : undefined,
@@ -659,7 +659,7 @@ describe("monthKpis: result (AC-9)", () => {
       costs
     );
     expect(kpis.series.result).toHaveLength(25);
-    // 1 to 02/09 is known, 1 to 03/09 is not
+    // 1 to `02/09` is known, 1 to `03/09` is not
     expect(kpis.read(1).result.delta?.text).toBe("+R$ 6,00");
     expect(kpis.read(2).result.delta).toBeNull();
     expect(kpis.read(2).result.note).toBeNull();

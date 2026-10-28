@@ -3,7 +3,7 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cn } from "@/lib/utils";
 
 /* `gap-3`: 12 px between choice cards (DESIGN.md), so the 48 px touch areas of two radios never overlap
-   (t180: the ui-guardrails check measures it). A group marked `aria-invalid` (the screen has no field to mark: the
+   (the ui-guardrails check measures it). A group marked `aria-invalid` (the screen has no field to mark: the
    choice is the field) draws a destructive ring around the whole group and the destructive border of each radio,
    so the card is not painted: the message below the group says what is missing. The ring is an outline, which
    takes no space and leaves the layout alone. */

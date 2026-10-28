@@ -11,7 +11,7 @@ import { requestIdMiddleware } from "./request-id";
 
 /**
  * The session bucket of the `/rpc` limiter against the Better Auth that is installed, not against a copy of its
- * rules (t435, Better Auth 1.7.8 aligned the cookie attributes with RFC 6265bis): the cookie it reads is the one
+ * rules (Better Auth 1.7.8 aligned the cookie attributes with RFC 6265bis): the cookie it reads is the one
  * Better Auth sets, and every spelling of a cookie header that Better Auth reads as a session lands in that
  * session's bucket, so a session never gets a second bucket by spelling its cookie another way.
  */

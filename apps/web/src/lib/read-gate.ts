@@ -1,5 +1,5 @@
 /**
- * The READ traffic of this tab to the Worker (paliativo dos 1102, desenho de 26/10): until the plan decides on more
+ * The READ traffic of this tab to the Worker (paliativo dos 1102): until the plan decides on more
  * CPU, the client spreads the bursts and hides the Workers killed for CPU on the reads. It does NOT lower the CPU
  * of a call (the limit is per invocation): it only spreads the burst and keeps the retries from making it worse.
  *

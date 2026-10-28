@@ -215,8 +215,8 @@ function Section({
 }
 
 /**
- * The date pickers (t363), as a screen uses them: the month grid alone, one date (empty, chosen, limited to today, with
- * its error) and a period. "Hoje" is fixed at 24/10/2026, so the browser checks and the captures see the same month on
+ * The date pickers, as a screen uses them: the month grid alone, one date (empty, chosen, limited to today, with
+ * its error) and a period. "Hoje" is fixed at `24/10/2026`, so the browser checks and the captures see the same month on
  * any day. The calendar comes through the on-demand loader, as in the app.
  */
 const TODAY = "2026-10-24";
@@ -353,7 +353,7 @@ function DatePickerStates() {
 }
 
 /**
- * The filter bar (t383), as the sales history will use it: a period, a choice, a text and a field that needs the
+ * The filter bar, as the sales history will use it: a period, a choice, a text and a field that needs the
  * connection (aria-disabled, with its reason). "Hoje" is the same fixed day as the pickers. The status line is the
  * screen's own, inside the bar's `<search>`.
  */

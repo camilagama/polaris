@@ -30,8 +30,7 @@ import {
 import { seedQaStore } from "./seed-qa-store";
 
 /**
- * The local measure of the Início's reads (t277, items 1 and 2 of the
- * desenho-t269 round), on the PostgreSQL 18 of the gates (`CI=true`, local
+ * The local measure of the Início's reads, on the PostgreSQL 18 of the gates (`CI=true`, local
  * host only). For each store it seeds (`MEASURE_STORES`, sales per day, 60
  * days each) it prints:
  * - the rows read and an estimate of the bytes the database sends for A (the

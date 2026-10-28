@@ -4,7 +4,7 @@ import type { PeriodChain, PeriodQuality } from "./dashboard-model";
 import { PartsBar } from "./parts-bar";
 
 /**
- * "Para onde vão os custos" (AC-12, T399-3): with no cost of the goods known (`cogsCoverageOf` "none") neither the bar
+ * "Para onde vão os custos" (AC-12): with no cost of the goods known (`cogsCoverageOf` "none") neither the bar
  * nor its track is drawn, the goods read "—" with "sem custo conhecido", the fees and the expenses keep their values and
  * a line says why; a partial and a full cost stay as they were.
  */

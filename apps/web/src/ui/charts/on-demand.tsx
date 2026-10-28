@@ -53,7 +53,7 @@ type Heatmap = typeof import("./heatmap");
 let loadingHeatmap: Promise<Heatmap> | null = null;
 let loadedHeatmap: Heatmap | null = null;
 
-/** The map of the Início has a chunk of its own (`heatmap-*.js`, t394), loaded the same way. */
+/** The map of the Início has a chunk of its own (`heatmap-*.js`), loaded the same way. */
 function loadHeatmap(): Promise<Heatmap> {
   if (!loadingHeatmap) {
     loadingHeatmap = import("./heatmap").then(
@@ -106,7 +106,7 @@ interface OnDemandProps {
 /**
  * The box that holds the place of a chart while its chunk loads. The area chart's has its floor, faint, where the
  * drawing will put it (`floor` px from the bottom): it says something comes there, without a jump and without a grey
- * skeleton in the place of the whole chart (Petković, PR 283).
+ * skeleton in the place of the whole chart.
  */
 function Reserved({
   className,

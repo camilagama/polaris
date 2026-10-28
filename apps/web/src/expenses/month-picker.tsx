@@ -23,8 +23,8 @@ import {
    The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
    "Este mês" (the store's current month, like the "Hoje" of the DatePicker); a touch or a click on a month chooses it
    and closes. The month is written by the screen, never by the browser's locale, so there is no native month field
-   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes with
-   t331. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
+   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes
+   later. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
    list of the expenses reads any month, future ones included. The arrows beside the month keep reaching every month
    from 0000-01 to 9999-12, as before. */
 

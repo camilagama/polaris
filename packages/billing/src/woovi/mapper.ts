@@ -32,7 +32,7 @@ export interface WooviSubscription {
   /**
    * The state of the Pix authorization (`pixRecurring.status`: `CREATED`,
    * `APPROVED`, `REJECTED` by the payer, `CANCELED` by Polaris). Null before
-   * the payer acts: the sandbox shows none then (spike t092).
+   * the payer acts: the sandbox shows none then.
    */
   authorization: string | null;
   /** 1, 6 or 12; null for a frequency Polaris does not sell. */
@@ -515,8 +515,7 @@ export function refundableInstallment(
 }
 
 /**
- * The `correlationID` of the refund Polaris asks for one installment (desenho
- * t088): the subscription's and the installment's `globalID`. The same refund
+ * The `correlationID` of the refund Polaris asks for one installment: the subscription's and the installment's `globalID`. The same refund
  * asked twice carries the same one, and the fact the command writes uses it as
  * its event ID.
  */

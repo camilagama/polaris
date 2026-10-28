@@ -41,7 +41,7 @@ const FIELD_MESSAGES: Record<ImportColumn, string> = {
   unitCost: COST_INVALID,
 };
 
-/** The reasons of the table of the result (Petković, 27/10), the same in this file. */
+/** The reasons of the table of the result, the same in this file. */
 const STATUS_MESSAGES: Partial<Record<ProductImportRowStatus, string>> = {
   conflict: "O servidor recusou esta linha. Corrija o arquivo e tente de novo.",
   exists_by_name: "Já existe um produto com este nome. Ficou como estava.",

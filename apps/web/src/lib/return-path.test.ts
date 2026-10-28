@@ -4,7 +4,7 @@ import { isSafeAuthCallbackPath, parseReturnPath } from "./return-path";
 describe("parseReturnPath", () => {
   it.each([
     "/",
-    // the return of the card's checkout lands on the Assinatura (t328); the root still takes the old mark there
+    // the return of the card's checkout lands on the Assinatura; the root still takes the old mark there
     "/subscription?retorno=concluida",
     "/?assinatura=concluida",
     "/sales",

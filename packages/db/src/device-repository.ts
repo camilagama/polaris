@@ -164,7 +164,7 @@ function isEndedSessionError(error: unknown): boolean {
  * the fresh-session rule by checking another device first. `first_check` is the
  * `device.check` of a session signed in within the fresh window: the device
  * becomes its own only while the session owns no device yet, so one recent
- * session owns at most the first device it checks (ADR 0048, emenda de 22/10);
+ * session owns at most the first device it checks (ADR 0048);
  * every later check, like an older session's, is a plain `use`. A link that
  * already exists is never promoted.
  */
@@ -502,8 +502,7 @@ export interface RevokeOwnDeviceResult {
 }
 
 /**
- * "Sair" revokes this installation (`device.revokeCurrent`, ADR 0048, emenda de
- * 22/10): the same revocation as `revokeDevice`, but only of the device the
+ * "Sair" revokes this installation (`device.revokeCurrent`, ADR 0048): the same revocation as `revokeDevice`, but only of the device the
  * acting session owns (it registered it, or confirmed it first while recent)
  * and never ending the other sessions, so it needs no fresh session. A device
  * of another user, or none, is DeviceNotFoundError; a device of the user this

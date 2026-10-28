@@ -1,5 +1,5 @@
 /**
- * The registry of the tenant's audit events (ADR 0081, amended 19/10/2026): every `event_type` written to
+ * The registry of the tenant's audit events (ADR 0081, amended): every `event_type` written to
  * `tenant_audit_event` has a class, and the class decides how long the row is kept (`retention.ts`). `security`
  * is what answers who did something sensitive (an export, an anonymization, an offline grant, the life of the
  * organization, what the public catalog shows); `operational` is the rest of the day-to-day record.

@@ -9,8 +9,8 @@ import type { BillingCycleMonths } from "./facts";
  * redelivery and by the reconciliation gives the same end, whenever it is read.
  *
  * Months are added on the calendar and a day the target month lacks is clamped
- * to its last day (31/01 + 1 month = 28/02, and the renewal due on 28/02 ends
- * on 28/03). The paid period runs through the whole of that day in São Paulo,
+ * to its last day (`31/01` + 1 month = `28/02`, and the renewal due on `28/02` ends
+ * on `28/03`). The paid period runs through the whole of that day in São Paulo,
  * because the renewal is charged during the day it falls due; a payment made
  * late keeps the end its due date gives, so the days of delay are lost.
  */

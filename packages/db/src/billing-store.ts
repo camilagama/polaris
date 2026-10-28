@@ -203,7 +203,7 @@ export interface UnclaimedTrialEvent {
 export type UnclaimedTrialOutcome = "cancelled" | "left_paid" | "not_pending";
 
 /**
- * What the checkout asked the provider for, recorded with the link (ADR 0104, §7 of design t268): the price of one
+ * What the checkout asked the provider for, recorded with the link (ADR 0104, §7): the price of one
  * cycle (`billing_prices`, as money.md writes it) with its catalog ID, and the day of the first charge (São Paulo).
  */
 export interface CheckoutTerms {
@@ -248,7 +248,7 @@ export interface OwnerPlanRecord extends PlanViewRecord {
 export interface OwnerCommandRecord extends PlanViewRecord {
   cycleMonths: BillingCycleMonths | null;
   /**
-   * The first charge recorded on the current link (ADR 0104, desenho t268 §7): the ID of its `billing_events` row
+   * The first charge recorded on the current link (ADR 0104, §7): the ID of its `billing_events` row
    * (`first_charge_event_id`) and the end of the period that fact says it paid for. The owner's refund refunds only
    * that charge; either one null refuses (it fails closed).
    */
@@ -634,8 +634,7 @@ export interface BillingStore {
    */
   withPayerLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
   /**
-   * Runs `operation` while holding the organization's command lock (ADR 0066,
-   * emenda de 23/10): two commands that take it never run at once for the same
+   * Runs `operation` while holding the organization's command lock (ADR 0066): two commands that take it never run at once for the same
    * organization, and the second decides by the state the first left. The
    * refunds and the owner's three commands take it (ADR 0104, decision 4); the
    * operator's cancellation and the closure's consumer do not (their second fact
@@ -1417,7 +1416,7 @@ const FIRST_CHARGE_FROM: ReadonlySet<BillingState> = new Set([
 ]);
 
 /**
- * The first charge of the link (ADR 0104, §7 of design t268), when an applied `charge_succeeded` takes the record
+ * The first charge of the link (ADR 0104, §7), when an applied `charge_succeeded` takes the record
  * from a trial or Free to `active`: the moment the provider says it happened (`occurredAt`), never the moment it was
  * processed, so a late webhook does not push the window of the right of withdrawal; the amount the fact carries (the
  * price sent to the provider without one); and the ledger row of the fact. Only the first one of the link: a renewal,

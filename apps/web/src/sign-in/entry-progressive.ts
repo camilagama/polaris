@@ -1,6 +1,5 @@
 /**
- * The password that shows after the e-mail (identifier-first, design v5.2, amendment of the sign-in cut of
- * 20/10): only the shape of the address is looked at, never the server, so the flow is the same whether the
+ * The password that shows after the e-mail (identifier-first, design v5.2, amendment of the sign-in cut): only the shape of the address is looked at, never the server, so the flow is the same whether the
  * account exists or not. The rule of the region:
  *
  * - an address with a complete shape opens it; an empty field closes it;

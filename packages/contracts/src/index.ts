@@ -1410,7 +1410,7 @@ const billingMethod = z.enum(["card", "pix_automatic"]);
 const planCount = z.number().int().nonnegative();
 
 /**
- * The owner's read of the plan (ADR 0104, decision 2; design t268 v2, §3). Every object is strict, so a key the
+ * The owner's read of the plan (ADR 0104, decision 2). Every object is strict, so a key the
  * server adds by mistake (a provider reference, a payer, a payload) fails the answer instead of reaching the client
  * (AS-2). The amounts are text with two decimals (money.md); the days are São Paulo's.
  */
@@ -2191,7 +2191,7 @@ export const polarisContract = {
           revokedGrantIds: z.array(z.string().uuid()),
         })
       ),
-    // "Sair" revokes this installation (ADR 0048, emenda de 22/10): only the
+    // "Sair" revokes this installation (ADR 0048): only the
     // device this session owns (it registered it, or confirmed it first while
     // signed in within 15 minutes), only the sessions linked to it, and without
     // a fresh session. Another device of the user is FORBIDDEN with reason

@@ -47,7 +47,7 @@ import {
 import type { Refusal } from "./subscription-model";
 
 /**
- * The owner's commands on the Assinatura (corte assinatura-e-cancelar, C and D, AC-42 to AC-44; design t268 v2, § 11):
+ * The owner's commands on the Assinatura (corte assinatura-e-cancelar, C and D, AC-42 to AC-44):
  * cancel the renewal, the refund of the right of withdrawal (by the app with the card, by support with Pix) and
  * paying the charge that failed. Each gesture has its request ID, kept while it is repeated and new for a new gesture
  * (ADR 0104, decision 3); the button waits off while the command is on its way.

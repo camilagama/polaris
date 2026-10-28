@@ -18,8 +18,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * Row security with FORCE on `"user"`, `account`, `verification` and `auth_security_audit_event` (migration 0098, design
- * t221) on a real PostgreSQL 18. Every role enters through a login of its own (LOGIN, member of its group with INHERIT
+ * Row security with FORCE on `"user"`, `account`, `verification` and `auth_security_audit_event` (migration 0098) on a real PostgreSQL 18. Every role enters through a login of its own (LOGIN, member of its group with INHERIT
  * and without SET), never through SET ROLE of the admin, who only builds the fixtures and the planted defects:
  *   1. the catalog: the five tables (session too) with row security enabled and forced, the exact policies (name,
  *      command, role, expressions, none TO PUBLIC), the exact grants of before, and the read-only checks of the

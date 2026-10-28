@@ -115,7 +115,7 @@ export async function expectSqlState(
 /**
  * An instant a few hours back, always inside the retroactive window and never in
  * the future, so gates do not expire as the calendar moves on. It moves with the hour: "3 hours ago" is
- * yesterday before 03:00 in São Paulo and today after it (the economics gate of PR 306). A gate that asserts the
+ * yesterday before 03:00 in São Paulo and today after it (the economics gate). A gate that asserts the
  * day of a sale takes the instant from `storeNoon(storeDay(runClock, n))` of `gate-clock.ts` instead.
  */
 export function recentInstant(hoursAgo = 3): string {

@@ -629,7 +629,7 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual([]); // came from the cache, not the network
-    // a clone, not the object `cache.match` returned (Chrome refuses the page's preload of the latter, t344)
+    // a clone, not the object `cache.match` returned (Chrome refuses the page's preload of the latter)
     const kept = worker.stores
       .get(shellCacheName(build))
       ?.get("/assets/index-BBB.js");

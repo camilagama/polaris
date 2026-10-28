@@ -60,7 +60,7 @@ export function organizationMediaPrefix(organizationId: string): string {
 }
 
 /**
- * The closure period (decision of 18/10/2026, changed from 30 to 90 days on 19/10/2026, ADR 0081): the purge
+ * The closure period (ADR 0081): the purge
  * removes the tenant's operational data only once the organization has been closed for this long, and refuses
  * before it (`closure_period_not_elapsed`), whatever recovery window the closure had. Polaris is the processor
  * of that data and the fiscal duty to keep it is the customer's, who has the export. The owner only reads and
@@ -106,7 +106,7 @@ export function automaticPurgeSchedulingAllowed(
 /**
  * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
  * category the purge removes (ADR 0081), and exactly those. Account, authentication, billing and the audit
- * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended on 19/10/2026): the purge keeps them, so a case that claims them is refused instead of recording a decision the
+ * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended): the purge keeps them, so a case that claims them is refused instead of recording a decision the
  * purge does not carry out. The migration holds the same list (`whole_organization` in
  * `admin_schedule_organization_purge`), and the gate proves each category is required and each kept one refused.
  */
