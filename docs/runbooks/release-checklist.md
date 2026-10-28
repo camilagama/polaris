@@ -219,6 +219,13 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: o deploy do Admin Worker roda `bun run --filter @polaris/admin build:ui` **antes** do `wrangler deploy` do Admin, no mesmo checkout do SHA candidato. O script e a folha da página ficam em `apps/admin/src/ui/generated/`, fora do git, e o Worker os embute como módulo Text: um `wrangler deploy` direto falha sem eles ou, pior, publica um arquivo velho que estava no disco de quem publica. Nunca rode o `wrangler deploy` do Admin sem esse passo.
 - Evidência: a saída do `build:ui` e do deploy, na mesma sessão e no mesmo SHA, no relatório da execução.
 
+### 27. Erros do app no navegador ligados só depois de conferir a linha (BLOCK, proposta)
+
+- Critério: `CLIENT_ERRORS_ENABLED` fica `"0"` em `env.production` (a verificação de isolamento reprova `"1"`) até este item: no staging, com a flag de build `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no deploy, um erro forçado numa tela gera uma linha `client_error` e conferir nos Workers Logs **o que a plataforma anexa a ela** (URL da requisição, cabeçalhos, IP, campos `cf`): só pode ter os campos da lista e os do logger. Com `invocation_logs` ligado (item 16), a rota passa a gerar uma linha por requisição, com a URL, e o orçamento dela deixa de valer: nesse caso não ligar sem nova decisão. Ver [runbook dos erros do navegador](./erros-do-navegador.md) e a emenda de 28/10/2026 do [ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md).
+- Para ligar em produção: remover a trava de `scripts/verify-staging-isolation.mjs` no mesmo PR que muda a var, com a evidência deste item.
+- Severidade: proposta (BLOCK), pendente de decisão do Arrascaeta.
+- Evidência: o ambiente, a data, a linha vista (sem valores de cliente) e o valor de `invocation_logs`.
+
 ## Veredito
 
 Ordem de decisão:

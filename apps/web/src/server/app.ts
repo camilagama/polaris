@@ -35,6 +35,11 @@ import {
 } from "./observability/server-log";
 import { authMethodsRoutes } from "./routes/auth-methods";
 import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
+import {
+  CLIENT_ERRORS_PATH,
+  clientErrorsSwitchMiddleware,
+  createClientErrorRoutes,
+} from "./routes/client-errors";
 import { createClosedExportRoutes } from "./routes/closed-exports";
 import { createDataExportRoutes } from "./routes/data-exports";
 import { createMediaRoutes } from "./routes/media";
@@ -59,6 +64,8 @@ interface ServerAppOptions {
     emailVerification: AuthRequestHandler;
     loginUnlock: AuthRequestHandler;
   };
+  /** The log of the reports of errors of the browser (one per app, so one per isolate); tests pass their own clock. */
+  clientErrorRoutes?: Parameters<typeof createClientErrorRoutes>[0];
   rpcRouter?: typeof defaultRpcRouter;
 }
 
@@ -95,6 +102,7 @@ export function createServerApp({
     emailVerification: handleEmailVerificationRequest,
     loginUnlock: handleLoginUnlockRequest,
   },
+  clientErrorRoutes,
   rpcRouter = defaultRpcRouter,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
@@ -122,6 +130,8 @@ export function createServerApp({
   app.use("*", routeTimingMiddleware);
   app.use("*", securityHeadersMiddleware);
   app.use("/rpc/*", originCheckMiddleware);
+  // before the origin check: the switch off answers the reports of the browser with nothing logged, a refusal neither
+  app.use(CLIENT_ERRORS_PATH, clientErrorsSwitchMiddleware);
   app.use("/api/*", originCheckMiddleware);
   app.use("/rpc/*", rpcRateLimitMiddleware);
   app.use("/rpc/*", rpcBodyLimitMiddleware);
@@ -235,6 +245,7 @@ export function createServerApp({
   app.route("/", createMediaRoutes());
   app.route("/", createDataExportRoutes());
   app.route("/", createClosedExportRoutes());
+  app.route("/", createClientErrorRoutes(clientErrorRoutes));
   // Provider webhooks sit outside /api and /rpc (browser origin checks): they
   // prove themselves by the provider signature their adapter verifies.
   app.route("/", createBillingWebhookRoutes());

@@ -72,6 +72,19 @@ describe("what the worker touches", () => {
     }
   });
 
+  it("never touches the report of an error of the browser, written or read, not even as a navigation", () => {
+    const url = `${origin}/api/client-errors`;
+    expect(
+      routeFor({ method: "POST", mode: "cors", url }, origin, precache)
+    ).toBe("bypass");
+    expect(routeFor(get("/api/client-errors"), origin, precache)).toBe(
+      "bypass"
+    );
+    expect(
+      routeFor(get("/api/client-errors", "navigate"), origin, precache)
+    ).toBe("bypass");
+  });
+
   it("leaves writes and other origins alone", () => {
     expect(
       routeFor(

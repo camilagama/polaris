@@ -28,7 +28,9 @@
     "WELCOME_EMAIL_ENABLED": "false",
     // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
     // on it is published and the service worker had time to update every device (release checklist)
-    "LEGAL_ACCEPTANCE_ENFORCED": "false"
+    "LEGAL_ACCEPTANCE_ENFORCED": "false",
+    // POST /api/client-errors, the reports of errors of the browser (ADR 0098, amended): only "1" turns it on
+    "CLIENT_ERRORS_ENABLED": "1"
   },
   "main": "./worker/index.ts",
   // Structured logger output (see src/server/observability).
@@ -105,7 +107,8 @@
   // their own: RPC_READ_RATE_LIMIT per session and RPC_READ_IP_RATE_LIMIT per address, wider because a
   // whole store shares one address. The calls of the import (`kind: "bulk"`, one row each) count in
   // RPC_BULK_RATE_LIMIT, 30 per minute per session and per address (30 rows), and spend neither of the others.
-  // Reads, writes and bulk calls come from the `kind` of each procedure in the contract.
+  // Reads, writes and bulk calls come from the `kind` of each procedure in the contract. CLIENT_ERROR_RATE_LIMIT counts
+  // the reports of errors of the browser (POST /api/client-errors) per address only, 10 per minute.
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
@@ -146,6 +149,11 @@
       "name": "AUTH_SOCIAL_RATE_LIMITER",
       "namespace_id": "900020",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "CLIENT_ERROR_RATE_LIMIT",
+      "namespace_id": "900024",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   // The three queues of the plan and the dead-letter queue (ADR 0083, ADR 0085, runbook docs/runbooks/queues.md). Declaring them here
@@ -256,7 +264,9 @@
         "OFFLINE_LEASE_KEY_ID": "staging-1",
         // http_request_timed (with isolate.id/seq) on every matched /rpc procedure and named /api route, not only the critical ones:
         // the per-route CPU measure of CPU-1e (ADR 0094, amended 26/10/2026). Staging only; production keeps "false".
-        "ROUTE_TIMING_ALL": "true"
+        "ROUTE_TIMING_ALL": "true",
+        // the reports of errors of the browser: on here to measure the volume against the limit per address
+        "CLIENT_ERRORS_ENABLED": "1"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
       "observability": {
@@ -343,6 +353,11 @@
           "name": "AUTH_SOCIAL_RATE_LIMITER",
           "namespace_id": "902020",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "CLIENT_ERROR_RATE_LIMIT",
+          "namespace_id": "902024",
+          "simple": { "limit": 10, "period": 60 }
         }
       ],
       "queues": {
@@ -417,7 +432,9 @@
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
         "OFFLINE_LEASE_KEY_ID": "production-1",
         // the timing of every route is a staging measure (ADR 0094); the isolation check refuses "true" here
-        "ROUTE_TIMING_ALL": "false"
+        "ROUTE_TIMING_ALL": "false",
+        // off until the item of the go-live checklist (ADR 0098, amended); only "1" turns it on
+        "CLIENT_ERRORS_ENABLED": "0"
       },
       "observability": {
         "enabled": true,
@@ -502,6 +519,11 @@
           "name": "AUTH_SOCIAL_RATE_LIMITER",
           "namespace_id": "901020",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "CLIENT_ERROR_RATE_LIMIT",
+          "namespace_id": "901024",
+          "simple": { "limit": 10, "period": 60 }
         }
       ],
       "queues": {

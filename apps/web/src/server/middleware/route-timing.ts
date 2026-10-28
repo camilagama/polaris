@@ -77,13 +77,22 @@ function wideRouteLabel(context: Parameters<MiddlewareHandler<ServerEnv>>[0]) {
   }
   try {
     const pattern = handlerPattern(context);
-    return pattern?.startsWith("/api/") && pattern !== "/api/*"
+    return pattern?.startsWith("/api/") &&
+      pattern !== "/api/*" &&
+      !UNTIMED_API_ROUTES.has(pattern)
       ? pattern
       : null;
   } catch {
     return null;
   }
 }
+
+/**
+ * Never timed, not even under `ROUTE_TIMING_ALL`: the reports of errors of the browser are public and refused in
+ * their own handlers, so a timed line per request would be the line per refusal that their log budget forbids
+ * (`client-error-log.ts`).
+ */
+const UNTIMED_API_ROUTES: ReadonlySet<string> = new Set(["/api/client-errors"]);
 
 function outcomeOf(httpStatus: number): "failure" | "rejected" | "success" {
   if (httpStatus >= 500) {

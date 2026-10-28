@@ -100,6 +100,13 @@ export interface WorkerBindings {
   BILLING_SUPPORT_EMAIL?: string;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
+  /** The limit of `POST /api/client-errors` per address (10 per minute): the reports of errors of the browser. */
+  CLIENT_ERROR_RATE_LIMIT?: RateLimitBinding;
+  /**
+   * `"1"` turns on `POST /api/client-errors` (the report of an error of the app in the browser, ADR 0098 amended);
+   * anything else (and absent) answers 204 and logs nothing. Off in production until the go-live checklist.
+   */
+  CLIENT_ERRORS_ENABLED?: string;
   /**
    * `true` turns on the automatic schedule of the purge of a closed organization (ADR 0102); anything else
    * leaves it off. Off in every environment until the go-live.

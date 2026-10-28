@@ -670,6 +670,16 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("refuses the reports of errors of the browser on in production, before the item of the release checklist", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    expect(production.vars.CLIENT_ERRORS_ENABLED).toBe("0");
+    production.vars.CLIENT_ERRORS_ENABLED = "1";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.production vars.CLIENT_ERRORS_ENABLED must not be "1" (the reports of errors of the browser stay off in production until the item of the release checklist, ADR 0098)',
+    ]);
+  });
+
   it("refuses production using the widget key of staging", () => {
     const entries = repositoryEntries();
     const { production, staging } = entryOf(entries, "web").config.env;
