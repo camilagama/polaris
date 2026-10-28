@@ -22,6 +22,8 @@
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
    strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{catalog-products-screen,categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";
+/* the import of a spreadsheet (corte 2.5): a chunk loaded on demand, out of the precache */
+@source "../catalog/product-import/{product-import-dialog,import-frame,import-file-step,import-preview-step,import-run-step,import-result-step,import-rows-table}.tsx";
 @source "../customers/{customers-page,customers-page-parts,customer-form,customer-list}.tsx";
 /* The payment profiles screen (v5.1): the page, the form and the list; the draft and the fee model have no class. */
 @source "../payment-profiles/{payment-profiles-page,payment-profile-form,payment-profile-list}.tsx";

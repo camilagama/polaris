@@ -136,6 +136,31 @@ async function openMediaPanel(page: Page) {
   await page.getByRole("button", { name: "Remover imagem 2" }).waitFor();
 }
 
+/** A spreadsheet of the import (corte 2.5) as the file the person chooses: nothing of it goes to the server. */
+const importFile = (lines: readonly string[]) => ({
+  buffer: Buffer.from(`${lines.join("\r\n")}\r\n`, "utf8"),
+  mimeType: "text/csv",
+  name: "produtos.csv",
+});
+
+/** Opens "Importar planilha", chooses the file and reads it: the preview, with the store's names answered here. */
+async function openImportPreview(page: Page, lines: readonly string[]) {
+  await openProductsLab(page);
+  await page.route("**/rpc/product/namesExisting", (route: Route) =>
+    route.fulfill(rpc({ names: ["Calça jeans"] }))
+  );
+  // the plan is not read here: the preview goes without the notice of the plan's room
+  await page.route("**/rpc/billing/readPlan", (route: Route) =>
+    route.abort("failed")
+  );
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = page.getByRole("dialog", { name: "Importar planilha" });
+  await dialog.locator('input[type="file"]').setInputFiles(importFile(lines));
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByText("Passo 2 de 4 · Prévia").waitFor();
+  return dialog;
+}
+
 export const productStates = {
   /** The edit of a product with the name cleared and saved: the form (name, category, description) and the message of the field. */
   async edit(page: Page) {
@@ -210,6 +235,44 @@ export const productStates = {
     await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
     await page.getByRole("button", { name: "Adicionar combinação" }).click();
     await page.getByRole("button", { name: "Remover combinação 1" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The preview of an import: a row that enters, one with an error, one the store has and one without category. */
+  async importPreview(page: Page) {
+    await openImportPreview(page, [
+      "Nome;Preço de tabela;Quantidade;Categoria;Marca",
+      "Caneca do teste;25,00;3;;X",
+      "Boné do teste;abc;;;",
+      "Calça jeans;10;;;",
+      "Meia do teste;12;;Inexistente;",
+    ]);
+    await showScreenAlone(page);
+  },
+
+  /** The result of an import: one product in, one row out, with its table and the CSV to download. */
+  async importResult(page: Page) {
+    await page.route("**/rpc/product/importBatch", (route: Route) => {
+      const { json } = route.request().postDataJSON() as {
+        json: { rows: { productId: string; rowNumber: number }[] };
+      };
+      return route.fulfill(
+        rpc({
+          results: json.rows.map((row) => ({
+            productId: row.productId,
+            rowNumber: row.rowNumber,
+            status: "created",
+          })),
+        })
+      );
+    });
+    const dialog = await openImportPreview(page, [
+      "Nome;Preço de tabela;Quantidade",
+      "Caneca do teste;25,00;3",
+      "Boné do teste;abc;",
+    ]);
+    await dialog.getByRole("button", { name: "Importar 1 produto" }).click();
+    await dialog.getByText("Passo 4 de 4 · Resultado").waitFor();
     await showScreenAlone(page);
   },
 };

@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
-import { listFiles, precacheList } from "./service-worker-plugin";
+import {
+  listFiles,
+  ONLINE_ONLY_CHUNK,
+  precacheList,
+} from "./service-worker-plugin";
 
 /**
  * The bundle budget of the interface base (ADR 0103, decision 4 and section 4), in six lines, over what the
@@ -101,6 +105,8 @@ export const REST_BASELINE_GZIP_BYTES = {
 
 const FONT = /\.woff2?$/;
 const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
+/** The path of a module of the app up to `apps/web/`, for the messages. */
+const PROJECT_PREFIX = /^.*[\\/]apps[\\/]web[\\/]/;
 /** The chunk the charts live in: the one the `import()` of `src/ui/charts/charts.ts` makes, named after that file. */
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
 /** The chunk `motion` lives in, shared by the charts and the filter bar (t383): the one the group named `motion` of the Vite configs makes; a line of its own (t385). */
@@ -422,6 +428,50 @@ export function calendarPlacementProblems(
     );
 }
 
+/**
+ * What belongs to the chunk of the import of a spreadsheet and to nothing else (corte 2.5, AC-11): the screen of the
+ * import (`src/catalog/product-import/`) and the reading, the sending and the CSV of the import
+ * (`src/catalog/product-import-*.ts` and `.tsx`), in any folder under it, with or without a query of the bundler. The CSV
+ * writer of the domain is shared with the server's data export only.
+ */
+const ONLINE_ONLY_MODULE =
+  /[\\/]apps[\\/]web[\\/]src[\\/]catalog[\\/]product-import(?:[\\/].+|-[\w-]+\.tsx?)(?:\?.*)?$/;
+
+/**
+ * The guard of the chunk kept out of the precache (`ONLINE_ONLY_CHUNK`): a module of the import in a precached chunk
+ * would cost the shell its bytes, and a chunk that imports the import's chunk statically would load, offline, a file
+ * the worker never kept (the shell would break with no connection). Only an `import()` may load it.
+ */
+export function onlineOnlyPlacementProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  const outside = chunks
+    .filter((chunk) => !ONLINE_ONLY_CHUNK.test(chunk.fileName))
+    .flatMap((chunk) => {
+      const misplaced = Object.keys(chunk.modules)
+        .filter((id) => ONLINE_ONLY_MODULE.test(id))
+        .map(
+          (id) =>
+            `module of the import ${id.replace(PROJECT_PREFIX, "")} is in ${chunk.fileName}, a precached chunk`
+        );
+      const importing = (chunk.imports ?? [])
+        .filter((name) => ONLINE_ONLY_CHUNK.test(name))
+        .map(
+          (name) =>
+            `${chunk.fileName} imports ${name} statically: the chunk out of the precache loads only by import()`
+        );
+      return [...misplaced, ...importing];
+    });
+  return outside;
+}
+
+/** The line the build prints for the chunk out of the precache: its size, which no line of the budget counts. */
+export function onlineOnlyLine(gzipBytes: number): string {
+  return gzipBytes === 0
+    ? "PRODUCT-IMPORT no import chunk in this build"
+    : `PRODUCT-IMPORT chunk ${gzipBytes} B gzip, out of the precache (loaded online, when the import opens)`;
+}
+
 /** The line the build prints for the charts chunk: how much of the budget it uses, or that this build has none. */
 export function chartsLine(size: PrecacheSize): string {
   if (size.charts === 0) {
@@ -677,6 +727,7 @@ export function precacheBudgetPlugin(
         ...chartsPlacementProblems(chunks),
         ...motionLoadProblems(chunks),
         ...calendarPlacementProblems(chunks),
+        ...onlineOnlyPlacementProblems(chunks),
       ];
     },
     name: "polaris:precache-budget",
@@ -697,11 +748,21 @@ export function precacheBudgetPlugin(
         (path) => readFileSync(join(directory, path)),
         shares
       );
+      const onlineOnly = listFiles(directory)
+        .filter((file) => ONLINE_ONLY_CHUNK.test(file))
+        .reduce(
+          (total, file) =>
+            total +
+            gzipSync(readFileSync(join(directory, file)), { level: 9 })
+              .byteLength,
+          0
+        );
       if (options.only === "chunks") {
         this.info(chartsLine(size));
         this.info(motionLine(size));
         this.info(calendarLine(size));
         this.info(heatmapLine(size));
+        this.info(onlineOnlyLine(onlineOnly));
         for (const warning of chunkBudgetWarnings(size, mode)) {
           this.warn(warning);
         }
@@ -732,6 +793,7 @@ export function precacheBudgetPlugin(
       this.info(motionLine(size));
       this.info(calendarLine(size));
       this.info(heatmapLine(size));
+      this.info(onlineOnlyLine(onlineOnly));
       for (const warning of budgetWarnings(size, baseline, mode)) {
         this.warn(warning);
       }

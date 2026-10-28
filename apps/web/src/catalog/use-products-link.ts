@@ -13,6 +13,8 @@ import {
 import { listLocalProducts } from "./local-products";
 
 interface ProductsLinkHandlers {
+  /** `?importar=1`: open the import of a spreadsheet. */
+  onImport: () => void;
   /** `?novo=1`: open the form of a new product. */
   onNew: () => void;
   /** The text to say when the address names a product the person cannot see. */
@@ -63,9 +65,13 @@ export function useProductsLink(
     if (handled.current || link.kind === "none") {
       return;
     }
-    if (link.kind === "new") {
+    if (link.kind === "new" || link.kind === "import") {
       handled.current = true;
-      latest.current.onNew();
+      if (link.kind === "new") {
+        latest.current.onNew();
+      } else {
+        latest.current.onImport();
+      }
       return;
     }
     let current = true;

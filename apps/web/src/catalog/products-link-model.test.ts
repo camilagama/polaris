@@ -51,6 +51,13 @@ describe("readProductsLink", () => {
     }
   });
 
+  it("reads the import address only as importar=1, and never as another value", () => {
+    expect(readProductsLink("?importar=1")).toEqual({ kind: "import" });
+    for (const search of ["?importar=", "?importar=0", "?importar=sim"]) {
+      expect(readProductsLink(search)).toEqual({ kind: "none" });
+    }
+  });
+
   it("opens the plain list for an invalid id, and does not fall back to the form", () => {
     for (const search of [
       "",

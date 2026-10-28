@@ -91,6 +91,28 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
 
 const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
 
+/** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
+const FIRST_PRODUCT_WAYS = [
+  { href: "/products?novo=1", label: "À mão" },
+  { href: "/products?importar=1", label: "Importar planilha" },
+] as const;
+
+function FirstProductWays() {
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-1">
+      {FIRST_PRODUCT_WAYS.map((way) => (
+        <a
+          className={buttonVariants({ size: "sm", variant: "link" })}
+          href={way.href}
+          key={way.href}
+        >
+          {way.label}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 /**
  * The store that never sold (AC-22, § 5.4): three steps from its real data, with one button to the next one; when
  * the first product has no stock, the next step is "Dar entrada no estoque" on its panel.
@@ -118,9 +140,19 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
             >
               {done[index] ? <CheckIcon className="size-3" /> : index + 1}
             </span>
-            <span className={done[index] ? "text-muted-foreground" : ""}>
-              {step}
-              {done[index] ? <span className="sr-only"> (feito)</span> : null}
+            <span
+              className={cn(
+                "flex flex-wrap items-center gap-x-3",
+                done[index] && "text-muted-foreground"
+              )}
+            >
+              <span>
+                {step}
+                {done[index] ? <span className="sr-only"> (feito)</span> : null}
+              </span>
+              {index === 1 && next.kind === "product" ? (
+                <FirstProductWays />
+              ) : null}
             </span>
           </li>
         ))}

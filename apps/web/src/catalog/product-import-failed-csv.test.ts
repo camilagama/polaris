@@ -23,7 +23,8 @@ describe("the CSV of the rows that failed", () => {
   it("neutralizes every cell a spreadsheet would run as a formula: =, +, -, @, tab and CR", () => {
     const csv = failedImportCsv([
       {
-        reason: "Já existe um produto com este nome.",
+        kind: "exists",
+        reason: "Já existe um produto com este nome. Ficou como estava.",
         rowNumber: 2,
         source: {
           category: "@SUM(1)",
@@ -43,7 +44,7 @@ describe("the CSV of the rows that failed", () => {
     );
     // the leading apostrophe on each one (a plain number like -2 stays a number, as in the data export)
     expect(line).toBe(
-      `"'=HYPERLINK(""http://x"")",'+SOMA(A1),-2,"'\r1",'@SUM(1),'\tescondido,2,Já existe um produto com este nome.`
+      `"'=HYPERLINK(""http://x"")",'+SOMA(A1),-2,"'\r1",'@SUM(1),'\tescondido,2,Já existe um produto com este nome. Ficou como estava.`
     );
   });
 
@@ -77,11 +78,15 @@ describe("the CSV of the rows that failed", () => {
       sources: new Map(result.ready.map((row) => [row.rowNumber, row.source])),
     });
 
-    expect(rows.map((row) => [row.rowNumber, row.reason])).toEqual([
-      [2, "Preço de tabela: Informe um valor em reais, como 59,90."],
-      [4, "Nome repetido na linha 3."],
-      [5, "Já existe um produto com este nome."],
-      [6, "O plano chegou ao limite de variantes."],
+    expect(rows.map((row) => [row.rowNumber, row.kind, row.reason])).toEqual([
+      [2, "error", "Preço de tabela: Informe um valor em reais, como 59,90."],
+      [4, "error", "Nome repetido na linha 3."],
+      [5, "exists", "Já existe um produto com este nome. Ficou como estava."],
+      [
+        6,
+        "not_entered",
+        "O plano chegou ao limite. Nada foi criado nesta linha.",
+      ],
     ]);
     const csv = failedImportCsv(rows);
     expect(csv).toContain(`'=cmd|' /C calc'!A0,abc,`);
@@ -111,11 +116,34 @@ describe("the CSV of the rows that failed", () => {
     });
 
     expect(rows.map((row) => [row.rowNumber, row.reason])).toEqual([
-      [2, "Já existe um produto com este nome."],
+      [2, "Já existe um produto com este nome. Ficou como estava."],
       [
         4,
         "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.",
       ],
+    ]);
+  });
+
+  it("lists the rows the preview left out for the plan, with the reason of the limit", () => {
+    const result = preview("Nome\nBoné\nMeia\nLuva\n");
+    const rows = failedImportRows({
+      duplicates: [],
+      overLimit: result.ready.slice(2),
+      refused: [],
+      run: createImportRun(result.ready.slice(0, 2), newId),
+      sources: new Map(result.ready.map((row) => [row.rowNumber, row.source])),
+    });
+
+    expect(rows.map((row) => [row.rowNumber, row.reason])).toEqual([
+      [
+        2,
+        "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.",
+      ],
+      [
+        3,
+        "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.",
+      ],
+      [4, "O plano chegou ao limite. Nada foi criado nesta linha."],
     ]);
   });
 });

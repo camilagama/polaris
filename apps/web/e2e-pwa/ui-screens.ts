@@ -248,6 +248,23 @@ const productScreen = (
   sourceDirs: PRODUCT_SOURCES,
 });
 
+/** The files of the import of a spreadsheet (corte 2.5): a chunk of its own, opened from the products screen. */
+const IMPORT_SOURCES = [
+  "src/catalog/product-import",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/products-page.tsx",
+];
+
+/** One state of the import of a spreadsheet (`ui-product-states.ts`). */
+const importScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `importar planilha ${name}`,
+  open,
+  sourceDirs: IMPORT_SOURCES,
+});
+
 /** Opens the menu of a row and closes it with Escape, so the motion recorder sees it. */
 async function exerciseProductMenu(page: Page) {
   await openAndClose(
@@ -954,6 +971,14 @@ export const SCREENS: UiScreen[] = [
   productScreen(
     "imagens, recorte da imagem escolhida",
     productStates.mediaCrop
+  ),
+  importScreen(
+    "prévia com erro, já existe e sem categoria",
+    productStates.importPreview
+  ),
+  importScreen(
+    "resultado com a linha que não entrou",
+    productStates.importResult
   ),
   categoryScreen("lista", categoryStates.list, exerciseRowMenu("Camisetas")),
   categoryScreen("remover", categoryStates.remove),
