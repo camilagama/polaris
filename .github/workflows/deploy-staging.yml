@@ -80,17 +80,32 @@ jobs:
         run: |
           set -euo pipefail
           workflow=$(basename "${WORKFLOW_REF%@*}")
+          # a failed listing must not read as "no deploy yet": fail loud instead of shipping without the marker
+          if ! runs=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=30" --jq '.workflow_runs[].id'); then
+            echo "::error::could not list the deploy runs to find the last deploy; the urgent marker cannot be computed"
+            exit 1
+          fi
           base=""
-          for run in $(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=30" --jq '.workflow_runs[].id'); do
+          for run in $runs; do
             [ "$run" = "$GITHUB_RUN_ID" ] && continue
-            if gh api "repos/$REPOSITORY/actions/runs/$run/jobs" --jq '.jobs[] | select(.name == "Migrate, deploy and smoke") | .conclusion' | grep -cx success >/dev/null; then
+            # a deploy happened only when the step "Smoke" succeeded: the job also succeeds when every step was
+            # skipped because main moved on (keep the step name "Smoke" in sync with the job below)
+            if ! smoke=$(gh api "repos/$REPOSITORY/actions/runs/$run/jobs" --jq '.jobs[] | select(.name == "Migrate, deploy and smoke") | .steps[] | select(.name == "Smoke") | .conclusion'); then
+              echo "::error::could not read the jobs of run $run; the urgent marker cannot be computed"
+              exit 1
+            fi
+            if printf '%s\n' "$smoke" | grep -cx success >/dev/null; then
               base=$(gh api "repos/$REPOSITORY/actions/runs/$run" --jq .head_sha)
               break
             fi
           done
           if [ -n "$base" ]; then
-            messages=$(gh api --paginate "repos/$REPOSITORY/compare/$base...$HEAD_SHA" --jq '.commits[].commit.message')
+            if ! messages=$(gh api --paginate "repos/$REPOSITORY/compare/$base...$HEAD_SHA" --jq '.commits[].commit.message'); then
+              echo "::error::could not compare the last deploy $base with $HEAD_SHA; the urgent marker cannot be computed"
+              exit 1
+            fi
           else
+            echo "::warning::no successful deploy among the last 30 runs: the urgent marker is read from the tip commit only"
             messages=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.message)
           fi
           if printf '%s\n' "$messages" | tr -d '\r' | sed 's/[[:space:]]*$//' | grep -cx 'Swap-Urgent: yes' >/dev/null; then
@@ -275,6 +290,7 @@ jobs:
           # --no-install: only the wrangler of the lockfile, never a download
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+      # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
         env:
