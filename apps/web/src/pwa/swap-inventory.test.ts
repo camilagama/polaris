@@ -4,20 +4,24 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The inventory of the screens that edit (ADR 0041, emenda de 28/10/2026). A swap of the build reloads the page, so a
+ * The inventory of the screens that edit (ADR 0041). A swap of the build reloads the page, so a
  * screen with a form says itself when it holds work: `useHoldSwap(changed)` (`lib/unsent-work.ts`). Read from the
  * source, the whole of `src/`:
  *
  * - every `.tsx` that renders a `<form` calls `useHoldSwap(` itself, or is in `WITHOUT_OWN_HOLD` with where its draft
- *   is held (a screen that owns it, which must call `useHoldSwap(`) or why it holds no work; the list is exact: a new
- *   form fails until it declares, and a line left behind fails too;
+ *   is held (a screen that owns it, which must call `useHoldSwap(`), why what it holds is cheap to type again
+ *   (`ignored`: the file must mark it with `data-swap-ignore`, or the net of the fields typed would hold the swap) or
+ *   why it holds no work; the list is exact: a new form fails until it declares, and a line left behind fails too;
  * - every search field (`type="search"`) carries `data-swap-ignore`: what is typed in a search does not hold the swap.
  *
  * Each rule has a control case: the functions run on a planted text with the fault.
  */
 const src = fileURLToPath(new URL("..", import.meta.url));
 
-type Exemption = { holdIn: readonly string[] } | { noWork: string };
+type Exemption =
+  | { holdIn: readonly string[] }
+  | { ignored: string }
+  | { noWork: string };
 
 const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
   "catalog/category-form.tsx": { holdIn: ["catalog/categories-page.tsx"] },
@@ -33,7 +37,7 @@ const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
     holdIn: ["catalog/public-catalog-page.tsx"],
   },
   "dashboard/period-picker.tsx": {
-    noWork: "o período escolhido fica no endereço",
+    ignored: "o período escolhido fica no endereço",
   },
   "legal/acceptance/acceptance-page.tsx": {
     noWork: "a caixa do aceite se marca de novo com um toque",
@@ -70,7 +74,7 @@ const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
       "a escolha do plano é um toque; o envio é uma escrita, que segura enquanto vai",
   },
   "ui/dialog.tsx": { noWork: "o primitivo: o diálogo aberto segura sozinho" },
-  "ui/filter-bar.tsx": { noWork: "os filtros ficam no endereço" },
+  "ui/filter-bar.tsx": { ignored: "os filtros ficam no endereço" },
 };
 
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
@@ -120,6 +124,9 @@ function formFaults(
     if (text === undefined || !FORM.test(text) || HOLDS.test(text)) {
       faults.push(`${file}: linha da lista sem razão de estar`);
     }
+    if ("ignored" in exemption && !IGNORE.test(text ?? "")) {
+      faults.push(`${file}: sem data-swap-ignore`);
+    }
     if ("holdIn" in exemption) {
       for (const holder of exemption.holdIn) {
         if (!HOLDS.test(files.get(holder) ?? "")) {
@@ -163,7 +170,7 @@ describe("o inventário das telas que editam (troca de build)", () => {
 
   it("toda busca leva data-swap-ignore", () => {
     expect(searchFaults(files)).toEqual([]);
-    // the two of today: the search field of the lists and the product search of the sale
+    // the search field of the lists and the product search of the sale
     const searches = [...files].filter(([, text]) => HAS_SEARCH.test(text));
     expect(searches.map(([file]) => file).sort()).toEqual([
       "sales/sale-variant-picker.tsx",
@@ -201,6 +208,14 @@ describe("o inventário das telas que editam (troca de build)", () => {
         "a.tsx: linha da lista sem razão de estar",
         "b.tsx: linha da lista sem razão de estar",
       ]);
+    });
+
+    it("reprova o formulário barato de refazer que não leva data-swap-ignore", () => {
+      expect(
+        formFaults(planted({ "p.tsx": "<form onSubmit={f} />" }), {
+          "p.tsx": { ignored: "fica no endereço" },
+        })
+      ).toEqual(["p.tsx: sem data-swap-ignore"]);
     });
 
     it("reprova quem diz segurar e não declara", () => {

@@ -320,6 +320,7 @@ describe("the update store", () => {
     expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
     expect(test.reload).not.toHaveBeenCalled();
     test.container.changeController(worker);
+    await flush();
     expect(test.reload).toHaveBeenCalledTimes(1);
     expect(test.keepScreen).toHaveBeenCalledWith("hidden");
   });
@@ -401,7 +402,49 @@ describe("the update store", () => {
     });
     test.page.guard = {};
     expect(await test.store.trySwap("hidden")).toBe(true);
+    await flush();
     expect(test.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload when the moment ended while the worker took over (the tab came back): it waits for the next one", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    let hidden = true;
+    expect(await test.store.trySwap("hidden", () => hidden)).toBe(true);
+    hidden = false;
+    test.container.changeController(worker);
+    await flush();
+    expect(test.reload).not.toHaveBeenCalled();
+    expect(test.store.getSnapshot().pending).toMatchObject({ kind: "stale" });
+  });
+
+  it("does not swap when the moment is already over after the queue was read", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden", () => false)).toBe(false);
+    expect(worker.messages).toEqual([]);
+  });
+
+  it("reads the queue again right before the reload: work that came in meanwhile holds it", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(true);
+    test.queue.work = { pending: 0, rejected: 0, sending: 1 };
+    test.container.changeController(worker);
+    await flush();
+    expect(test.reload).not.toHaveBeenCalled();
+  });
+
+  it("a build that says nothing of itself never takes the age of another one that said nothing", async () => {
+    const test = setup({ current: null });
+    await test.attach();
+    await test.deliver(null);
+    test.advance(SETTLE_MS);
+    await test.deliver(null);
+    expect(test.store.getSnapshot().pending?.firstSeenAt).toBe(NOW + SETTLE_MS);
   });
 
   it("takes a waiting build with this page's own content at once, with no reload and nothing to wait for", async () => {
@@ -433,6 +476,7 @@ describe("the update store", () => {
       expect(await test.store.trySwap("hidden")).toBe(false);
       test.page.guard = {};
       expect(await test.store.trySwap("hidden")).toBe(true);
+      await flush();
       expect(test.reload).toHaveBeenCalledTimes(1);
     });
 

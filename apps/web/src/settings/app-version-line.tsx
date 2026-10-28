@@ -4,7 +4,7 @@ import { getUpdateStore } from "../pwa/runtime";
 import type { UpdateSnapshot, UpdateStore } from "../pwa/update-store";
 
 /**
- * The only place that speaks of the version (ADR 0041, emenda de 28/10/2026): the build swaps by itself and says
+ * The only place that speaks of the version (ADR 0041): the build swaps by itself and says
  * nothing, so whoever looks for it (or the support asking "que versão aparece aí?") finds it at the foot of
  * Configurações, with the new build that waits and what it waits for. No button and no colour of a notice.
  */

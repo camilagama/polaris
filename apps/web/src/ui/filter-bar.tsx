@@ -228,7 +228,8 @@ function TextEditor({
   );
   const clear = useCallback(() => onCommit(null), [onCommit]);
   return (
-    <form className="grid gap-2" onSubmit={submit}>
+    // a filter goes in the address once applied: it does not hold the swap of the build (pwa/swap-guard.ts)
+    <form className="grid gap-2" data-swap-ignore="" onSubmit={submit}>
       <Input
         aria-label={field.label}
         autoComplete="off"

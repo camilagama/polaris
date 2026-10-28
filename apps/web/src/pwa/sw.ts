@@ -34,7 +34,7 @@
  * script. The time is the commit's, not the build's: building the same commit
  * again gives the same worker, so the browser finds no update. A page asks the
  * worker for its build (`BUILD_INFO`) to know whether a waiting build is new
- * content and how long ago it was published (ADR 0041, emenda de 28/10/2026).
+ * content and how long ago it was published (ADR 0041).
  */
 export interface BuildManifest {
   /** A hash of what a user downloads: the worker changes when, and only when, it changes. */
@@ -230,7 +230,19 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
   const lookup = async (request: Request | string) =>
     (await (await caches.open(cacheName)).match(request, MATCH_OPTIONS)) ??
     (await caches.match(request, MATCH_OPTIONS));
-  const anyBuild = (request: Request) => caches.match(request, MATCH_OPTIONS);
+  /** A copy in the shell of any build kept, newest first; never in a cache that is not a shell. */
+  const anyBuild = async (request: Request): Promise<Response | undefined> => {
+    const shells = (await caches.keys())
+      .filter((name) => name.startsWith(SHELL_CACHE_PREFIX))
+      .reverse();
+    for (const name of shells) {
+      // biome-ignore lint/performance/noAwaitInLoops: the first build that has the file answers; the others are not opened
+      const hit = await (await caches.open(name)).match(request, MATCH_OPTIONS);
+      if (hit) {
+        return hit;
+      }
+    }
+  };
   /** The file from the network, only if it is the file asked for (see `isExpectedResponse`). */
   const fetchExpected = async (path: string) => {
     const request = new Request(path, { cache: "reload" });
@@ -245,8 +257,17 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     event.waitUntil(
       (async () => {
         const cache = await caches.open(cacheName);
+        // A worker of the same files (a new commit, the same id) finds them in its cache already: only what is
+        // missing, or not the file, is fetched, so a deploy with nothing new for the page costs no download.
+        const kept = await Promise.all(
+          build.precache.map(async (path) => {
+            const copy = await cache.match(path, MATCH_OPTIONS);
+            return copy !== undefined && isExpectedResponse(path, copy);
+          })
+        );
+        const missing = build.precache.filter((_, index) => !kept[index]);
         // All or nothing: a half-cached shell is worse than none, and so is a page cached in place of a chunk.
-        const files = await Promise.all(build.precache.map(fetchExpected));
+        const files = await Promise.all(missing.map(fetchExpected));
         await Promise.all(
           files.map(({ request, response }) => cache.put(request, response))
         );
@@ -266,10 +287,10 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         await Promise.all(
           cachesToDelete(names, cacheName).map((name) => caches.delete(name))
         );
-        await (await caches.open(cacheName)).put(
-          new Request(ACTIVATED_AT_PATH),
-          new Response(String(Date.now()))
-        );
+        // only for the "atualizado em" of Configurações: a failure here never stops the worker from activating
+        await (await caches.open(cacheName))
+          .put(new Request(ACTIVATED_AT_PATH), new Response(String(Date.now())))
+          .catch(() => undefined);
         // No `clients.claim()`: a page opened before this worker is taken over only when
         // a page asks for it (`SKIP_WAITING`), and then the files of its own build still
         // come from the caches kept (the `kept` route).

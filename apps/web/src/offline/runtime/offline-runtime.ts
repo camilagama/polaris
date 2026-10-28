@@ -413,7 +413,7 @@ export class OfflineRuntime {
     };
   }
 
-  /** Where the update cycle reads the queue and sends it (ADR 0041). */
+  /** Where the update cycle reads the queue (ADR 0041): a swap of the build waits while it holds work. */
   workSource(): PendingWorkSource {
     return {
       read: async () => {
@@ -434,7 +434,7 @@ export class OfflineRuntime {
   }
 
   /**
-   * The real try of "Sair" and of the update cycle: it sends whatever the connection state says, and only
+   * The real try of "Sair" (and of the `sync` of the work source): it sends whatever the connection state says, and only
    * then a send that got no answer counts as offline (ADR 0039). Rejects with `offline` in that case.
    *
    * It sends the queue and nothing else: the pull does not protect work, and it goes through the tab's read gate

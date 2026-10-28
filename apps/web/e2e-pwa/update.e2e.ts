@@ -17,7 +17,7 @@ import { dropChartsChunkFromCaches, serveHome } from "./ui-home-states";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * The swap of the build by itself (ADR 0041, emenda de 28/10/2026), with two real builds of the app served by the
+ * The swap of the build by itself (ADR 0041), with two real builds of the app served by the
  * same server: the new build goes in when the tab is hidden and the page holds nothing, never over a dialog, a sale
  * with an item or work in the queue, never at another tab's moment, and the tab held on the old build still opens a
  * lazy screen of its own build. The moments that need a clock (the return after 5 min, the idle tab, the 2 h of

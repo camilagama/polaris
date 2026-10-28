@@ -19,7 +19,7 @@ import {
 } from "./update-model";
 
 /**
- * The state of the update cycle of this page (ADR 0041, emenda de 28/10/2026): which build it runs, whether a newer
+ * The state of the update cycle of this page (ADR 0041): which build it runs, whether a newer
  * one waits for it, and the swap, which the page does by itself at a safe moment (`trySwap`). A small external store
  * so React reads it with `useSyncExternalStore` (the line of Configurações) and tests drive it without a browser.
  *
@@ -53,8 +53,11 @@ export interface UpdateStore {
   refreshWork: () => Promise<void>;
   setWorkSource: (source: PendingWorkSource) => void;
   subscribe: (listener: () => void) => () => void;
-  /** A moment came: swaps when the build waited long enough for it and the page holds nothing. */
-  trySwap: (moment: SwapMoment) => Promise<boolean>;
+  /**
+   * A moment came: swaps when the build waited long enough for it and the page holds nothing. `lasts` says whether
+   * the moment still holds (the tab still hidden...): asked again right before the reload.
+   */
+  trySwap: (moment: SwapMoment, lasts?: () => boolean) => Promise<boolean>;
 }
 
 export interface UpdateStoreOptions {
@@ -136,7 +139,9 @@ export function createUpdateStore({
       pending: {
         build,
         firstSeenAt:
-          known && known.build?.id === build?.id ? known.firstSeenAt : now(),
+          known && build && known.build?.id === build.id
+            ? known.firstSeenAt
+            : now(),
         kind: "waiting",
       },
     });
@@ -165,11 +170,16 @@ export function createUpdateStore({
     });
   }
 
-  /** The reload of a swap, if nothing came up in the page meanwhile (the worker may take seconds to take over). */
-  function reloadIfStillSafe(moment: SwapMoment) {
-    if (!swapIsSafe(readGuard(snapshot.work))) {
+  /**
+   * The reload of a swap, if the moment still lasts and nothing came up in the page meanwhile: the worker may take
+   * seconds to take over (longer on a phone that froze the hidden tab), so the queue is read again and the moment
+   * asked again. Otherwise this page is left on its build, which the new worker serves, for the next moment.
+   */
+  async function reloadIfStillSafe(moment: SwapMoment, lasts: () => boolean) {
+    const work = await readWork();
+    if (work === null || !lasts() || !swapIsSafe(readGuard(work))) {
       set({ swapping: false });
-      onControllerChange().catch(() => undefined);
+      await onControllerChange();
       return;
     }
     keepScreen(moment);
@@ -201,7 +211,7 @@ export function createUpdateStore({
         listeners.delete(listener);
       };
     },
-    async trySwap(moment) {
+    async trySwap(moment, lasts = () => true) {
       const { pending } = snapshot;
       if (!pending || snapshot.swapping) {
         return false;
@@ -220,21 +230,25 @@ export function createUpdateStore({
         work === null ||
         snapshot.swapping ||
         snapshot.pending !== pending ||
+        !lasts() ||
         !swapIsSafe(readGuard(work))
       ) {
         return false;
       }
       set({ swapping: true });
       const current = registration;
+      const reloadNow = () => {
+        reloadIfStillSafe(moment, lasts).catch(() => undefined);
+      };
       if (
         pending.kind === "waiting" &&
         current &&
-        takeOver(current, container, () => reloadIfStillSafe(moment))
+        takeOver(current, container, reloadNow)
       ) {
         return true;
       }
       // the build is already active (another tab took it over): loading the page is the swap
-      reloadIfStillSafe(moment);
+      reloadNow();
       return true;
     },
   };

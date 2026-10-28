@@ -1,9 +1,10 @@
 /**
- * When a new build of the app goes in (ADR 0041, emenda de 28/10/2026): by itself, with nobody asked, at a moment
+ * When a new build of the app goes in (ADR 0041): by itself, with nobody asked, at a moment
  * when nobody is looking and nothing on the page would be lost (`swap-guard.ts`). The moments:
  *
  * - `hidden`: the tab went to the background;
- * - `return`: the tab came back after `RETURN_AFTER_MS` or more away, before the first touch, key or scroll;
+ * - `return`: the tab came back after `RETURN_AFTER_MS` or more away, before the first touch, key or scroll, and
+ *   within `RETURN_WINDOW_MS` (the time to find and install a build published while away);
  * - `idle`: the tab is in front with no touch, key or scroll for `IDLE_MS`, and the build has waited more than
  *   `IDLE_WAITING_MS` (the counter computer that is never hidden); the screen comes back where it was.
  *
@@ -26,7 +27,7 @@ export const NO_PENDING_WORK: PendingWork = {
 /** Where the app reads its queued work; the offline runtime plugs in here. */
 export interface PendingWorkSource {
   read: () => Promise<PendingWork>;
-  /** Sends the queue; rejects when it cannot (no network). */
+  /** Sends the queue; rejects when it cannot (no network). The automatic swap never calls it: it only reads. */
   sync: () => Promise<void>;
 }
 
@@ -41,6 +42,7 @@ const HOUR = 60 * MINUTE;
 export const SETTLE_MS = 2 * HOUR;
 export const CLOCK_TOLERANCE_MS = 10 * MINUTE;
 export const RETURN_AFTER_MS = 5 * MINUTE;
+export const RETURN_WINDOW_MS = 30 * 1000;
 export const IDLE_MS = 15 * MINUTE;
 export const IDLE_WAITING_MS = 24 * HOUR;
 

@@ -1,4 +1,9 @@
-import { IDLE_MS, RETURN_AFTER_MS, type SwapMoment } from "./update-model";
+import {
+  IDLE_MS,
+  RETURN_AFTER_MS,
+  RETURN_WINDOW_MS,
+  type SwapMoment,
+} from "./update-model";
 import type { UpdateSnapshot } from "./update-store";
 
 /**
@@ -10,7 +15,7 @@ import type { UpdateSnapshot } from "./update-store";
 export interface AutoSwapStore {
   getSnapshot: () => UpdateSnapshot;
   subscribe: (listener: () => void) => () => void;
-  trySwap: (moment: SwapMoment) => Promise<boolean>;
+  trySwap: (moment: SwapMoment, lasts?: () => boolean) => Promise<boolean>;
 }
 
 type Listen = (
@@ -43,17 +48,31 @@ export function startAutoSwap(store: AutoSwapStore, page: AutoSwapPage) {
   let hiddenAt: number | null =
     page.visibility() === "hidden" ? page.now() : null;
   let lastActivity = page.now();
-  /** Back after a while away, and nothing touched yet. */
-  let returning = false;
+  /** When the tab came back after a while away, while nothing was touched since; null otherwise. */
+  let returnedAt: number | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let asking = false;
   let askAgain = false;
 
+  const returning = () =>
+    returnedAt !== null && page.now() - returnedAt <= RETURN_WINDOW_MS;
+  /** Whether the moment still holds: asked again right before the reload of the swap. */
+  const lasts = (moment: SwapMoment) => () => {
+    if (moment === "hidden") {
+      return page.visibility() === "hidden";
+    }
+    if (page.visibility() !== "visible") {
+      return false;
+    }
+    return moment === "return"
+      ? returning()
+      : page.now() - lastActivity >= IDLE_MS;
+  };
   const momentNow = (): SwapMoment | null => {
     if (page.visibility() === "hidden") {
       return "hidden";
     }
-    return returning ? "return" : null;
+    return returning() ? "return" : null;
   };
   /** Asks the store at the moment there is now; one question at a time, the last change asked again after. */
   const ask = (moment: SwapMoment | null = momentNow()) => {
@@ -66,7 +85,7 @@ export function startAutoSwap(store: AutoSwapStore, page: AutoSwapPage) {
     }
     asking = true;
     store
-      .trySwap(moment)
+      .trySwap(moment, lasts(moment))
       .catch(() => false)
       .finally(() => {
         asking = false;
@@ -85,7 +104,8 @@ export function startAutoSwap(store: AutoSwapStore, page: AutoSwapPage) {
       idleTimer = null;
       const idleFor = page.now() - lastActivity;
       if (page.visibility() === "hidden") {
-        // hidden is a moment of its own; the idle one counts again from the return
+        // still hidden: a build that finished settling meanwhile goes in now, not only at the return
+        ask("hidden");
         armIdle(IDLE_MS);
       } else if (idleFor >= IDLE_MS) {
         ask("idle");
@@ -100,21 +120,21 @@ export function startAutoSwap(store: AutoSwapStore, page: AutoSwapPage) {
   page.addDocumentListener("visibilitychange", () => {
     if (page.visibility() === "hidden") {
       hiddenAt = page.now();
-      returning = false;
+      returnedAt = null;
       ask("hidden");
       return;
     }
     const away = hiddenAt === null ? 0 : page.now() - hiddenAt;
     hiddenAt = null;
     lastActivity = page.now();
-    returning = away >= RETURN_AFTER_MS;
+    returnedAt = away >= RETURN_AFTER_MS ? page.now() : null;
     ask();
   });
   for (const type of ACTIVITY_EVENTS) {
     page.addWindowListener(
       type,
       () => {
-        returning = false;
+        returnedAt = null;
         lastActivity = page.now();
       },
       { capture: true, passive: true }

@@ -4,6 +4,7 @@ import {
   IDLE_MS,
   NO_PENDING_WORK,
   RETURN_AFTER_MS,
+  RETURN_WINDOW_MS,
   type SwapMoment,
 } from "./update-model";
 import type { PendingBuild, UpdateSnapshot } from "./update-store";
@@ -21,6 +22,7 @@ function setup(options: { pending?: boolean } = {}) {
   const guardListeners = new Set<() => void>();
   const storeListeners = new Set<() => void>();
   const asked: SwapMoment[] = [];
+  const lasting: (() => boolean)[] = [];
   const pendingBuild: PendingBuild = {
     build: null,
     firstSeenAt: 0,
@@ -62,8 +64,9 @@ function setup(options: { pending?: boolean } = {}) {
         storeListeners.add(listener);
         return () => storeListeners.delete(listener);
       },
-      trySwap: (moment) => {
+      trySwap: (moment, lasts) => {
         asked.push(moment);
+        lasting.push(lasts ?? (() => true));
         return Promise.resolve(false);
       },
     },
@@ -71,6 +74,8 @@ function setup(options: { pending?: boolean } = {}) {
   );
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   return {
+    /** Whether the moment of the last question still holds now. */
+    lastStillHolds: () => lasting.at(-1)?.() ?? false,
     /** Time passes: the timers due run, in order. */
     async advance(ms: number) {
       const until = now + ms;
@@ -208,5 +213,49 @@ describe("the moments of a swap", () => {
     const page = setup();
     await page.advance(IDLE_MS * 3);
     expect(page.asked).toEqual(["idle", "idle", "idle"]);
+  });
+
+  it("the way back lasts 30 s: a build found after that waits for another moment", async () => {
+    const page = setup({ pending: false });
+    await page.becomes("hidden");
+    await page.advance(RETURN_AFTER_MS);
+    await page.becomes("visible");
+    await page.advance(RETURN_WINDOW_MS + 1);
+    await page.newBuild();
+    expect(page.asked).toEqual([]);
+  });
+
+  it("hidden for long, it asks again now and then: a build that settles meanwhile goes in before the return", async () => {
+    const page = setup();
+    await page.becomes("hidden");
+    await page.advance(IDLE_MS);
+    expect(page.asked).toEqual(["hidden", "hidden"]);
+  });
+
+  it("tells the store whether the moment still holds, for the reload", async () => {
+    const page = setup();
+    await page.becomes("hidden");
+    expect(page.lastStillHolds()).toBe(true);
+    await page.becomes("visible");
+    expect(page.asked).toEqual(["hidden"]);
+    // the question of the hidden moment no longer holds with the tab in front
+    const hiddenHolds = page.lastStillHolds();
+    expect(hiddenHolds).toBe(false);
+
+    const back = setup();
+    await back.becomes("hidden");
+    await back.advance(RETURN_AFTER_MS);
+    await back.becomes("visible");
+    expect(back.asked.at(-1)).toBe("return");
+    expect(back.lastStillHolds()).toBe(true);
+    await back.touch();
+    expect(back.lastStillHolds()).toBe(false);
+
+    const idle = setup();
+    await idle.advance(IDLE_MS);
+    expect(idle.asked).toEqual(["idle"]);
+    expect(idle.lastStillHolds()).toBe(true);
+    await idle.touch("keydown");
+    expect(idle.lastStillHolds()).toBe(false);
   });
 });

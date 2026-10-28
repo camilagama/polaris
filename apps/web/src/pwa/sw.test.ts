@@ -418,6 +418,7 @@ async function runWorker(build: {
     online: boolean;
   } = { htmlPaths: new Set(), online: true };
   const skipWaiting = vi.fn(() => Promise.resolve());
+  let putFails = false;
   const scope = {
     addEventListener: (type: string, listener: (event: never) => void) => {
       listeners[type] = listener;
@@ -451,6 +452,9 @@ async function runWorker(build: {
         match: (request: { url?: string } | string) =>
           Promise.resolve(store.get(keyOf(request))),
         put: (request: { url: string }, response: FakeResponse) => {
+          if (putFails) {
+            return Promise.reject(new Error("quota"));
+          }
           store.set(keyOf(request), response);
           return Promise.resolve();
         },
@@ -504,7 +508,10 @@ async function runWorker(build: {
     await Promise.all(pending);
     return answer === undefined ? undefined : await answer;
   };
-  return { fetched, listeners, network, run, skipWaiting, stores };
+  const failPut = (fails: boolean) => {
+    putFails = fails;
+  };
+  return { failPut, fetched, listeners, network, run, skipWaiting, stores };
 }
 
 describe("the worker as the browser runs it", () => {
@@ -662,7 +669,7 @@ describe("the worker as the browser runs it", () => {
     ).toEqual(["/", "/assets/index-BBB.js", "/entrar"].sort());
   });
 
-  it("serves a chunk of an older build from that build's cache: a tab still on it is served by this worker (t456)", async () => {
+  it("serves a chunk of an older build from that build's cache: a tab still on it is served by this worker", async () => {
     const worker = await runWorker(build);
     const older = shellCacheName({ id: "aaa" });
     worker.stores.set(
@@ -694,6 +701,48 @@ describe("the worker as the browser runs it", () => {
     expect(await chunk("/assets/old-AAA.js")).toMatchObject({
       body: "net:/assets/old-AAA.js",
     });
+  });
+
+  it("looks for a chunk of another build only in the shells, never in a cache that is not one", async () => {
+    const worker = await runWorker(build);
+    worker.stores.set(
+      "planted",
+      new Map([["/assets/x-ZZZ.js", fileOf("/assets/elsewhere.js")]])
+    );
+    await worker.run("install", {});
+    worker.fetched.length = 0;
+    expect(
+      await worker.run("fetch", {
+        request: {
+          method: "GET",
+          mode: "cors",
+          url: `${origin}/assets/x-ZZZ.js`,
+        },
+      })
+    ).toMatchObject({ body: "net:/assets/x-ZZZ.js" });
+    expect(worker.fetched).toEqual(["/assets/x-ZZZ.js"]);
+  });
+
+  it("a worker of the same files finds them in its cache and downloads only what is missing or not the file", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    const cache = worker.stores.get(shellCacheName(build));
+    cache?.set("/assets/index-BBB.js", htmlOf("/assets/index-BBB.js"));
+    worker.fetched.length = 0;
+    // the same id published again (a new commit, the same content): the next worker installs over the same cache
+    const again = await runWorker(build);
+    for (const [name, store] of worker.stores) {
+      again.stores.set(name, store);
+    }
+    await again.run("install", {});
+    expect(again.fetched.sort()).toEqual(["/assets/index-BBB.js", "/entrar"]);
+  });
+
+  it("activates even when the time of the activation cannot be written", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    worker.failPut(true);
+    await expect(worker.run("activate", {})).resolves.toBeUndefined();
   });
 
   it("says which build it serves, when it was published and when it became active here", async () => {

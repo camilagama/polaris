@@ -5,7 +5,7 @@ import { openDialogCount, subscribeOpenDialogs } from "../ui/dialog-history";
 import type { PendingWork } from "./update-model";
 
 /**
- * When the page may swap to a new build by itself (ADR 0041, emenda de 28/10/2026). A swap reloads the page, and
+ * When the page may swap to a new build by itself (ADR 0041). A swap reloads the page, and
  * what lives only in its memory goes with it, so ANY of these holds it:
  *
  * - a dialog open, of form or not (the dialog root registers itself; the "Mais" sheet is a native `<dialog open>`);

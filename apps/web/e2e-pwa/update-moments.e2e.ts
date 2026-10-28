@@ -15,7 +15,7 @@ import { serveHome } from "./ui-home-states";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * The moments of the swap that take time (ADR 0041, emenda de 28/10/2026), with the page's clock driven by the test
+ * The moments of the swap that take time (ADR 0041), with the page's clock driven by the test
  * (`page.clock`; the worker keeps the real one): the return after 5 min away swaps before the first touch; the tab in
  * front and idle for 15 min swaps only a build waiting for more than 24 h, and comes back to the same scroll; a build
  * published less than 2 h ago never goes in. The rest of the swap is in `update.e2e.ts`.
