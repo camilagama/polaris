@@ -17,7 +17,7 @@ const WEEK_CHOICES = ["4", "8", "12", "26"] as const;
 const DEFAULT_WEEKS = "12";
 
 /** The 429 of the funnel, with the wait the server gave (AC-7); without one, no number is made up. */
-export function funnelLimitText(retryAfterSeconds: number | undefined): string {
+function funnelLimitText(retryAfterSeconds: number | undefined): string {
   return retryAfterSeconds === undefined
     ? "Limite de leituras do funil por hora atingido. Tente de novo mais tarde."
     : `Limite de leituras do funil por hora atingido. Tente de novo em ${minutesText(retryAfterSeconds)}.`;

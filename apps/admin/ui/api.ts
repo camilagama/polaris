@@ -25,7 +25,7 @@ export interface ApiFailure {
   retryAfterSeconds?: number;
 }
 
-export type ApiResult<T> = { data: T; ok: true } | ApiFailure;
+type ApiResult<T> = { data: T; ok: true } | ApiFailure;
 
 export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   failed: "Erro no Admin. Tente de novo; se continuar, avise a engenharia.",

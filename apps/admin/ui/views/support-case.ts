@@ -11,7 +11,7 @@ import type {
 } from "../types";
 
 /** The server's limit for a case's reason (`MAX_CASE_REASON_LENGTH`), in characters as a person counts them. */
-export const MAX_REASON_LENGTH = 500;
+const MAX_REASON_LENGTH = 500;
 /** The most open cases of one store the list asks for; the server's page holds at most 50. */
 const CASES_PAGE = "50";
 const REASON_SHOWN = 120;
@@ -44,7 +44,7 @@ function countText(count: number, more: boolean): string {
 }
 
 /** Why a reason typed here would be refused by the server, or null when it would be taken (AC-11). */
-export function reasonProblem(reason: string): string | null {
+function reasonProblem(reason: string): string | null {
   const trimmed = reason.trim();
   if (trimmed === "") {
     return "Escreva o motivo do caso.";

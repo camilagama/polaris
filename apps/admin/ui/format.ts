@@ -171,7 +171,7 @@ export function grantValueText(
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** A calendar day the server wrote as `aaaa-mm-dd` (a week's start), as dd/mm/aaaa: a day, not a moment, so no zone. */
-export function isoDayText(day: string): string {
+function isoDayText(day: string): string {
   const match = ISO_DAY.exec(day);
   return match === null ? "—" : `${match[3]}/${match[2]}/${match[1]}`;
 }
@@ -191,7 +191,7 @@ const FUNNEL_REASONS: Readonly<Record<string, string>> = {
 };
 
 /** Why the funnel has no number here, always with "não disponível": never a 0 nor an empty cell (AC-8). */
-export function funnelReasonText(reason: string | null): string {
+function funnelReasonText(reason: string | null): string {
   if (reason === null) {
     return "não disponível";
   }
@@ -212,7 +212,7 @@ export function funnelCountText(cell: {
 const PERCENT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 /** A share the server computed, as it sent it (one decimal, comma): the page does no arithmetic of its own. */
-export function funnelPercentText(cell: {
+function funnelPercentText(cell: {
   reason: string | null;
   value: number | null;
 }): string {
