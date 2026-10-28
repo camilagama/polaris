@@ -45,7 +45,7 @@ import { PREFERRED_ORGANIZATION_KEY } from "../../../../apps/web/src/lib/current
 import { createDatabase } from "../../../../packages/db/src/client";
 import { appendLeiame, commitLabel, evidenceDir } from "./leiame";
 
-const repoRoot = resolve(import.meta.dir, "../../../..");
+const repoRoot = resolve(import.meta.dirname, "../../../..");
 const webRoot = join(repoRoot, "apps/web");
 const ZONE = "America/Sao_Paulo";
 const LOJAS = ["vazia", "vendas", "limite"] as const;
@@ -451,6 +451,9 @@ async function launch(runtime: boolean, billing: boolean): Promise<void> {
     `build ${state.project} and preview on ${origin(state)} (log ${join(stateDir, "preview.log")})`
   );
   const child = startPreview(state);
+  if (child.pid === undefined) {
+    throw new Error("the preview process did not start: see preview.log");
+  }
   state.servePid = child.pid;
   writeState(state);
   await waitForHealth(state, child);
@@ -629,7 +632,9 @@ async function readOnlySql(query: string): Promise<void> {
   try {
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL ROLE ${state.reader}`);
-    result = await client.query({ queryMode: "extended", text: query });
+    // pg runs a bare text query on the simple protocol unless queryMode says otherwise (the typings lack the field)
+    const request = { queryMode: "extended", text: query };
+    result = await client.query(request);
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();

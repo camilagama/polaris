@@ -9,10 +9,32 @@ Prova de comportamento do app web (`apps/web`) do jeito que a pessoa usa: tela �
 
 Antes de dirigir uma tela, leia [features/README.md](features/README.md) e o arquivo do destino: lá estão o caminho na interface, os seletores reais e o estado de que cada receita precisa. Se a tela não está no mapa, ela é nova: mapeie-a no mesmo PR (o teste `apps/web/scripts/verify-feature-map.test.ts` reprova rota sem mapa).
 
+**Aceite:** `DOCTOR OK` e receitas verdes não são aceite: staging e aparelho real (BrowserStack) seguem com o QA.
+
+## Pré-requisitos
+
+O que tem de existir antes do primeiro `launch`. O `$V preflight` confere tudo isto sem criar nada (e o `launch` o roda antes de começar): uma linha `PREFLIGHT FALTA <VARIÁVEL>: o que fazer` por item que falta, sem stack trace, e `PREFLIGHT OK` quando está tudo.
+
+| Item | Variável | Como a skill acha |
+|---|---|---|
+| Node 24 (`.node-version`) | `VERIFY_NODE` (caminho do binário `node`) | `VERIFY_NODE`, senão o `node` do `PATH` se for 24 |
+| Binários do PostgreSQL 18 (`initdb`, `pg_ctl`) | `PG_BIN` (a pasta `bin`) | `PG_BIN`, senão o `PATH`. Dispensável com `POLARIS_E2E_DATABASE_URL` (dono de um PostgreSQL local; ver Launch) |
+| `bun` | `PATH` | o do `PATH`; roda o `stack.ts` |
+| `git` e `ss` (iproute2) | `PATH` | o do `PATH`; o doctor lê a porta com `ss` |
+| Dependências instaladas | | `bun install --frozen-lockfile` na worktree (precisa de `apps/web/node_modules/@playwright/test`) |
+| Pasta de evidência | `VERIFY_EVIDENCE_DIR` (padrão `~/tasks/<id>-telas`) | gravável ou criável; fora do repositório |
+| Pasta de estado | `VERIFY_STATE_DIR` (padrão `/tmp/polaris-verify/<id>`) | gravável ou criável |
+| Worktree com `.git` gravável | | uma worktree sua (`git worktree add`); o git cria `index.lock` no diretório git dela |
+
+**Fallback só desta máquina de dev:** sem `VERIFY_NODE`/`PATH` com Node 24, o `verify.sh` procura `~/tools/node-v24*/bin/node`; sem `PG_BIN` nem `initdb` no `PATH`, procura `~/pgtest/pg18/package/native/bin`. Em qualquer outra máquina, defina as variáveis.
+
+## Comandos
+
 Tudo passa por um script, de qualquer pasta da worktree:
 
 ```bash
 V=.claude/skills/verify-polaris/scripts/verify.sh
+$V preflight              # o que falta antes do launch, sem criar nada (o launch já o roda)
 $V launch                 # pilha nova, loja "vazia" semeada, termina com o doctor
 $V doctor                 # só leitura: vale a pena dirigir esta instância?
 $V seed vendas            # outra loja (vazia | vendas | limite)
@@ -25,12 +47,12 @@ $V cleanup                # derruba o que o launch criou; a evidência fica
 
 ## Launch
 
-`$V launch [--runtime] [--assinatura]` (de 20 s a 1 min nesta máquina; o `vite build` é a parte longa):
+`$V launch [--runtime] [--assinatura]` (de 20 s a 1 min nesta máquina; o `vite build` é a parte longa). Começa pelo `preflight` (acima); se faltar algo, para ali.
 
 1. Cria o diretório de estado `/tmp/polaris-verify/<id>/` (o `<id>` é o nome da pasta da worktree, `~/wt/<id>`; `VERIFY_ID` muda). Se já existe uma instância desse id, recusa: use `doctor` ou `cleanup`.
-2. Banco: sem `POLARIS_E2E_DATABASE_URL`, um **cluster PostgreSQL 18 próprio** no estado (`initdb` + `pg_ctl`, só `127.0.0.1`, porta livre a partir de 55400 ou `VERIFY_PG_PORT`, dono `verify_owner` com senha aleatória). Os binários vêm de `PG_BIN`, do `PATH` ou, nesta máquina, de `~/pgtest/pg18/package/native/bin` (o script acha sozinho). Nunca usa o PostgreSQL compartilhado da porta 5432 nem Neon. Com `POLARIS_E2E_DATABASE_URL` (dono de um PostgreSQL local com `CREATEDB` e `CREATEROLE`, e superusuário para o papel de leitura do `sql`), usa esse, passando pela mesma guarda do e2e-real: só `localhost` ou `127.0.0.1`; Neon ou qualquer outro host é recusado antes de criar qualquer coisa.
+2. Banco: sem `POLARIS_E2E_DATABASE_URL`, um **cluster PostgreSQL 18 próprio** no estado (`initdb` + `pg_ctl`, só `127.0.0.1`, porta livre a partir de 55400 ou `VERIFY_PG_PORT`, dono `verify_owner` com senha aleatória). Os binários vêm de `PG_BIN` ou do `PATH` (fallback desta máquina: `~/pgtest/pg18/package/native/bin`). Nunca usa o PostgreSQL compartilhado da porta 5432 nem Neon. Com `POLARIS_E2E_DATABASE_URL` (dono de um PostgreSQL local com `CREATEDB` e `CREATEROLE`, e superusuário para o papel de leitura do `sql`), usa esse, passando pela mesma guarda do e2e-real: só `localhost` ou `127.0.0.1`; Neon ou qualquer outro host é recusado antes de criar qualquer coisa.
 3. Banco do run `e2e_<run>` migrado do zero (`db:migrate`) e os 7 logins dos Hyperdrive (`createRunDatabase` do e2e-real), mais o papel de leitura `verify_reader_<run>` do `sql`.
-4. `node apps/web/e2e-real/serve.ts verify <porta>`: `vite build` da worktree em `apps/web/dist-e2e/verify/` e `vite preview` dele, com o ambiente fechado do e2e-real (só o segredo do run e as 7 conexões). Porta livre a partir de 4400 (ou `VERIFY_PORT`), reservada em `/tmp/polaris-verify/ports/` para duas worktrees que sobem juntas não pegarem a mesma. Roda destacado; o log fica em `/tmp/polaris-verify/<id>/preview.log`. Precisa do **Node 24** (`.node-version`): sob o Bun o miniflare não responde. O script põe o de `~/tools/node-v24*/bin` no `PATH` quando o do sistema não é 24.
+4. `node apps/web/e2e-real/serve.ts verify <porta>`: `vite build` da worktree em `apps/web/dist-e2e/verify/` e `vite preview` dele, com o ambiente fechado do e2e-real (só o segredo do run e as 7 conexões). Porta livre a partir de 4400 (ou `VERIFY_PORT`), reservada em `/tmp/polaris-verify/ports/` para duas worktrees que sobem juntas não pegarem a mesma. Roda destacado; o log fica em `/tmp/polaris-verify/<id>/preview.log`. Precisa do **Node 24** (`.node-version`): sob o Bun o miniflare não responde. O script usa `VERIFY_NODE` ou o `node` do `PATH` quando é 24 (fallback desta máquina: `~/tools/node-v24*/bin`).
 5. Espera `/health` responder (até 8 min), semeia a loja `vazia` pelo `/rpc` do próprio Worker e roda o doctor.
 
 Pronto é `DOCTOR OK http://127.0.0.1:<porta> build verify` na última linha. Qualquer `FAIL` antes dela: não dirija; leia o `preview.log` e rode `$V cleanup` antes de tentar de novo.
@@ -159,7 +181,7 @@ Rode o cleanup ao terminar a tarefa, depois de cada tentativa de launch que falh
 
 | Arquivo | O que é |
 |---|---|
-| `scripts/verify.sh` | ponto de entrada (executável); acha Node 24 e o PostgreSQL desta máquina |
+| `scripts/verify.sh` | ponto de entrada (executável); o `preflight`; acha Node 24 e o PostgreSQL (variáveis, `PATH` e o fallback desta máquina) |
 | `scripts/stack.ts` | launch, doctor, seed, sql e cleanup, sob o Bun; reaproveita `apps/web/e2e-real/` (ambiente do run, banco, `serve.ts`, sessão do `testUtils`, sementes) |
 | `scripts/leiame.ts` | o `LEIAME.md` da evidência |
 | `playwright.verify.config.ts` | projetos de largura e tema, sessão da loja, saída em `/tmp` |
@@ -170,6 +192,6 @@ Duas worktrees podem ter instâncias ao mesmo tempo (ids, portas, estados e clus
 
 ## Onde esta skill foi provada
 
-Provada nesta máquina (Linux arm64, Bun 1.4, Node 24.21 de `~/tools`, PostgreSQL 18 de `~/pgtest`) com o cluster próprio. Não foi provada com `POLARIS_E2E_DATABASE_URL` (um PostgreSQL de fora), nem no CI, nem em outra máquina: nesses casos, confira primeiro que `initdb`/`pg_ctl` ou a URL do dono existem e que o Node do `PATH` é o 24.
+Provada nesta máquina (Linux arm64, Bun 1.4, Node 24.21 de `~/tools`, PostgreSQL 18 de `~/pgtest`) com o cluster próprio. Não foi provada com `POLARIS_E2E_DATABASE_URL` (um PostgreSQL de fora), nem no CI, nem em outra máquina: nesses casos, rode o `$V preflight` primeiro e resolva o que ele listar. O `preflight` foi testado com `PATH` vazio (lista os itens que faltam, sem stack trace). O typecheck de `scripts/`, `drive/`, `drives/` e da config roda no `bun run typecheck` (`tsconfig.skills.json`).
 
 Manutenção do mapa: [`maintain-verify-polaris`](../maintain-verify-polaris/SKILL.md). Origem: adaptada de `pstack-create-verification-skill` (pstack, de Lauren Tan, licença MIT; ver `LICENSE` e `NOTICE.md` nesta pasta).

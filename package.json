@@ -19,7 +19,7 @@
     "migrations:compat": "node scripts/verify-migration-compat.mjs",
     "test": "vitest run",
     "tokens:generate": "node scripts/generate-color-tokens.mjs",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.skills.json",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {
