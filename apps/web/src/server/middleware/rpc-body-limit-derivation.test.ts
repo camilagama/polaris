@@ -1,5 +1,6 @@
 import { traverseContractProcedures } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
+import { STRING_LIMIT_EXCEPTIONS } from "@polaris/contracts/input-string-limits";
 import { describe, expect, it } from "vitest";
 import { OUTBOX_MAX_PAYLOAD_BYTES } from "../../offline/outbox/command";
 import { PUSH_BATCH_TARGET_BYTES } from "../../offline/sync-runner";
@@ -12,10 +13,10 @@ import { RPC_BODY_MAX_BYTES } from "./rpc-body-limit";
  * looked at again, instead of a legitimate call turning into a 413.
  *
  * The walk gives the largest JSON text a value can take, in bytes. A string the contract does not bound by a `.max`
- * (names, ids, free text the domain validates later) counts as `UNBOUNDED_STRING_BYTES`, and the fields that do this
- * are listed below, exactly: a new one shows up here to be looked at. The ceiling is what bounds those in practice;
- * the walk only shows that an ordinary use of them is far below it (the most that stacks is 300 option and
- * variant values of `product.configureVariants`).
+ * (the option values and the SKU of a variant) counts as `UNBOUNDED_STRING_BYTES`, and the fields that do this are
+ * exactly the exceptions of the contract (`STRING_LIMIT_EXCEPTIONS`): a new one fails there first. The ceiling is what
+ * bounds those in practice; the walk only shows that an ordinary use of them is far below it (the most that stacks is
+ * 300 option and variant values of `product.configureVariants`).
  */
 const BYTES_PER_CODE_UNIT = 3; // the BMP in UTF-8; an escaped control character is not what a person types
 const NUMBER_BYTES = 25;
@@ -26,7 +27,6 @@ const FRAME_BYTES = 256;
 
 const FORMAT_BYTES: Record<string, number> = {
   date: 12,
-  datetime: 40, // with a fraction and an offset
   guid: 38,
   uuid: 38,
 };
@@ -235,141 +235,13 @@ function otherInputs() {
   return { largest, loose: loose.sort(), unbounded };
 }
 
-/** The fields no `.max` of the contract bounds, by procedure (each counted as 1 KiB: a name, an id, a date, a short note): the list is exact, a new field is looked at. */
-const LOOSE_FIELDS = [
-  "billing/cancelRenewal.organizationId",
-  "billing/cancelRenewal.requestId",
-  "billing/openOverduePayment.organizationId",
-  "billing/openOverduePayment.requestId",
-  "billing/readPlan.organizationId",
-  "billing/requestRefund.organizationId",
-  "billing/requestRefund.requestId",
-  "billing/startCheckout|0.organizationId",
-  "billing/startCheckout|1.organizationId",
-  "billing/startCheckout|1.payer.taxId",
-  "category/archive.organizationId",
-  "category/create.name",
-  "category/create.organizationId",
-  "category/delete.organizationId",
-  "category/list.organizationId",
-  "category/rename.name",
-  "category/rename.organizationId",
-  "category/restore.organizationId",
-  "customer/anonymizeForPrivacy.organizationId",
-  "customer/archive.organizationId",
-  "customer/create.organizationId",
-  "customer/findPossibleDuplicates.organizationId",
-  "customer/list.organizationId",
-  "customer/restore.organizationId",
-  "customer/update.organizationId",
-  "dataExport/list.organizationId",
-  "dataExport/listClosed.organizationId",
-  "dataExport/request.organizationId",
-  "dataExport/requestClosed.organizationId",
-  "expense/archiveCategory.organizationId",
-  "expense/archiveRule.organizationId",
-  "expense/create.competenceOn",
-  "expense/create.description",
-  "expense/create.organizationId",
-  "expense/create.payee",
-  "expense/createCategory.name",
-  "expense/createCategory.organizationId",
-  "expense/createRule.description",
-  "expense/createRule.endsOn",
-  "expense/createRule.organizationId",
-  "expense/createRule.payee",
-  "expense/createRule.startsOn",
-  "expense/list.from",
-  "expense/list.organizationId",
-  "expense/list.to",
-  "expense/listCategories.organizationId",
-  "expense/listRules.organizationId",
-  "expense/renameCategory.name",
-  "expense/renameCategory.organizationId",
-  "expense/restore.organizationId",
-  "expense/restoreCategory.organizationId",
-  "expense/restoreRule.organizationId",
-  "expense/update.competenceOn",
-  "expense/update.description",
-  "expense/update.organizationId",
-  "expense/update.payee",
-  "expense/updateRule.description",
-  "expense/updateRule.endsOn",
-  "expense/updateRule.organizationId",
-  "expense/updateRule.payee",
-  "expense/void.organizationId",
-  "goal/cancel.organizationId",
-  "goal/create.endsOn",
-  "goal/create.organizationId",
-  "goal/create.startsOn",
-  "goal/list.organizationId",
-  "goal/targetChanges.organizationId",
-  "goal/update.organizationId",
-  "inventory/getBalance.organizationId",
-  "inventory/inventoryCount.occurredOn",
-  "inventory/inventoryCount.organizationId",
-  "inventory/listBalances.organizationId",
-  "inventory/receiveStock.occurredOn",
-  "inventory/receiveStock.organizationId",
-  "inventory/writeOffStock.occurredOn",
-  "inventory/writeOffStock.organizationId",
-  "inventory/writeOffStock.reasonNote",
-  "offline/issueLease.organizationId",
-  "organization/closedStatus.organizationId",
-  "organization/recoverClosure.organizationId",
-  "organization/requestClosure.organizationId",
-  "paymentProfile/archive.organizationId",
-  "paymentProfile/create.organizationId",
-  "paymentProfile/list.organizationId",
-  "paymentProfile/restore.organizationId",
-  "paymentProfile/update.organizationId",
-  "plan/operationalSelection.organizationId",
-  "plan/selectOperationalVariants.organizationId",
-  "product/archive.organizationId",
-  "product/configureVariants.options[].values[]",
-  "product/configureVariants.organizationId",
-  "product/configureVariants.variants[].values.color",
-  "product/configureVariants.variants[].values.model",
-  "product/configureVariants.variants[].values.size",
-  "product/create.organizationId",
-  "product/delete.organizationId",
-  "product/getVariants.organizationId",
-  "product/importBatch.organizationId",
-  "product/list.organizationId",
-  "product/namesExisting.organizationId",
-  "product/restore.organizationId",
-  "product/setVariantListPrice.organizationId",
-  "product/setVariantSku.organizationId",
-  "product/setVariantSku.sku",
-  "product/update.description",
-  "product/update.organizationId",
-  "publicCatalog/publishProducts.organizationId",
-  "publicCatalog/saveProfile.organizationId",
-  "publicCatalog/setPublished.organizationId",
-  "publicCatalog/setup.organizationId",
-  "publicCatalog/unpublishProducts.organizationId",
-  "report/dailySales.from",
-  "report/dailySales.organizationId",
-  "report/dailySales.to",
-  "report/periodSummary.from",
-  "report/periodSummary.organizationId",
-  "report/periodSummary.to",
-  "sale/assignCustomer.organizationId",
-  "sale/cancel.organizationId",
-  "sale/confirm.organizationId",
-  "sale/get.organizationId",
-  "sale/getCustomerLink.organizationId",
-  "sale/list.occurredFrom",
-  "sale/list.occurredTo",
-  "sale/list.organizationId",
-  "sale/reassignCustomer.organizationId",
-  "sale/return.organizationId",
-  "sale/unassignCustomer.organizationId",
-  "sync/bootstrapPage.organizationId",
-  "sync/getCursor.organizationId",
-  "sync/pull.cursor",
-  "sync/pull.organizationId",
-];
+/**
+ * The fields no `.max` of the contract bounds, by procedure (each counted as 1 KiB): the list of the contract, which
+ * only shrinks, less the `sync/push`, whose input the walk reads apart.
+ */
+const LOOSE_FIELDS = STRING_LIMIT_EXCEPTIONS.filter(
+  (path) => !path.startsWith("sync/push")
+);
 
 describe("how the body ceiling of /rpc is derived", () => {
   it("is at least twice the largest payload the outbox keeps", () => {

@@ -4,6 +4,8 @@
 
 Este documento é a fonte de verdade para a **direção visual, os tokens de interface, as telas e o comportamento de interação**. Termos estão em [CONTEXT.md](CONTEXT.md), invariantes de negócio em [docs/business-rules/](docs/business-rules/), estrutura do sistema em [docs/architecture/](docs/architecture/) e a sequência de implementação em [doc/plano-inicial.md](doc/plano-inicial.md). Regras de negócio não descrevem comportamento de interface; ele vive aqui.
 
+PR que muda tela traz, além das capturas, o diff de imagem da regressão visual (as baselines de `apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/`, refeitas com `bun run test:visual:update`), e a mudança só entra com o diff aprovado pelo Petković; o como está em [testes-de-tela](docs/runbooks/testes-de-tela.md#regressão-visual).
+
 Seções marcadas como "diretriz" descrevem o que foi decidido para telas e navegação que ainda não existem; elas não afirmam que o código já as implementa. O resto descreve o que existe em `apps/web/src`. A **diretriz v5.1** (tokens, tema, tipografia, controles, foco e movimento, [ADR 0103](docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)) vale para toda tela nova e para cada tela que migra; **onde ela conflita com a descrição do código atual, vale a diretriz**, e o trecho antigo está marcado como substituído ou como pendência que some com a migração.
 
 ## Sensação do produto
