@@ -30,6 +30,7 @@ const STOCK_TEXT = "Estoque de abertura lançado com a data de hoje.";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OFFLINE_REASON = /Importar precisa de conexão/;
+const OFFLINE_REASON_RUN = /Quando ela voltar, continue de onde parou\./;
 const BLAMES_THE_FILE = /arquivo tem erro/i;
 const CANCEL_OR_UNDO = /cancel|desfe|desfaz/i;
 /** A fault of the Worker (as a 1102 of the CPU limit) in the shape of an error of oRPC: nothing created. */
@@ -425,6 +426,8 @@ test("AC-10 e AC-5: a conexão cai no meio (com uma resposta perdida), a tela di
   const again = dialog.getByRole("button", { name: "Continuar de onde parou" });
   await expect(again).toHaveAttribute("aria-disabled", "true");
   await expect(again).toHaveAccessibleDescription(OFFLINE_REASON);
+  // on step 3 the notice says how the import goes on, not what the step of the file said (T446-4)
+  await expect(again).toHaveAccessibleDescription(OFFLINE_REASON_RUN);
   expect(store.products).toHaveLength(2);
 
   await page.context().setOffline(false);
@@ -495,7 +498,7 @@ test("parar durante uma linha lenta e continuar sem produto repetido", async ({
   ]);
   expect(store.batches).toHaveLength(2);
 
-  // (c) continuing sends the rows left, with the IDs named once, and no product twice
+  // (c) continuing sends only the rows left, and no product twice (the same IDs after a lost answer: AC-10 e AC-5)
   await dialog.getByRole("button", { name: "Continuar de onde parou" }).click();
   await expect(statusIn(dialog, "Importamos 3 produtos.")).toBeVisible({
     timeout: 30_000,

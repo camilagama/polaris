@@ -12,6 +12,7 @@ import {
   type ImportPlan,
   importButtonLabel,
   noCategoryText,
+  nothingToImportText,
   overLimitText,
   previewCounts,
   previewTableRows,
@@ -136,7 +137,7 @@ export function ImportPreviewStep({
       </div>
       {count === 0 ? (
         <p className="text-muted-foreground" id={NOTHING_TO_IMPORT_ID}>
-          Nenhuma linha do arquivo pode entrar.
+          {nothingToImportText(plan)}
         </p>
       ) : null}
       {limit ? (

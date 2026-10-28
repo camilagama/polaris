@@ -17,6 +17,7 @@ import {
   importButtonLabel,
   importTemplateCsv,
   noCategoryText,
+  nothingToImportText,
   overLimitText,
   pauseText,
   planImport,
@@ -508,5 +509,14 @@ describe("the template", () => {
       ready: [],
       refused: [],
     });
+    // sent as it came, the preview says the file has no row, not that its rows were refused
+    expect(nothingToImportText(planImport(preview(csv), [], null))).toBe(
+      "O arquivo não tem linhas abaixo do cabeçalho."
+    );
+    expect(
+      nothingToImportText(
+        planImport(preview("Nome;Preço de tabela\nA;abc\n"), [], null)
+      )
+    ).toBe("Nenhuma linha do arquivo pode entrar.");
   });
 });

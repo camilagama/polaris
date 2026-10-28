@@ -243,6 +243,16 @@ function shortHeader(header: string): string {
     : header;
 }
 
+/**
+ * Why "Importar" stays off: a file with no row under the header (the template as it was downloaded) is not a file
+ * whose rows were refused.
+ */
+export function nothingToImportText(plan: ImportPlan): string {
+  return plan.total === 0
+    ? "O arquivo não tem linhas abaixo do cabeçalho."
+    : "Nenhuma linha do arquivo pode entrar.";
+}
+
 /** "Importar 46 produtos": the number is what will be sent. */
 export function importButtonLabel(count: number): string {
   return `Importar ${count} ${plural(count, "produto", "produtos")}`;

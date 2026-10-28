@@ -60,6 +60,8 @@ export interface ProductImportDialogProps {
   finalFocus: () => HTMLElement | boolean;
   /** Closes the dialog (Esc, ×, the step back, "Cancelar"). */
   onClose: () => void;
+  /** The dialog finished closing: the page may move the focus to what it says (as after a product made by hand). */
+  onClosed: () => void;
   /** Rows entered: the screen reads its products again. */
   onEntered: () => void;
   /** "Ver os produtos": the dialog closes and the list says how many entered, and shows them. */
@@ -75,6 +77,7 @@ export function ProductImportDialog({
   categories,
   finalFocus,
   onClose,
+  onClosed,
   onEntered,
   onShowProducts,
   open,
@@ -117,11 +120,15 @@ export function ProductImportDialog({
   const done = step.kind === "result";
   const handleOpenChangeComplete = useCallback(
     (next: boolean) => {
-      if (!next && done) {
+      if (next) {
+        return;
+      }
+      if (done) {
         actions.reset();
       }
+      onClosed();
     },
-    [actions, done]
+    [actions, done, onClosed]
   );
   const handleCancel = useCallback(() => {
     actions.reset();

@@ -393,10 +393,15 @@ export function ProductsPage() {
       clearMessages();
       setNotice(importedNotice(entered));
       closeImport();
-      focusFeedback();
     },
-    [clearMessages, closeImport, focusFeedback]
+    [clearMessages, closeImport]
   );
+  // what the import said takes the focus once the dialog is gone, on the notice itself (as `handleDialogClosed`)
+  const handleImportClosed = useCallback(() => {
+    if (noticeRef.current) {
+      focusLater(() => feedbackRef.current?.focus());
+    }
+  }, []);
   const handleImported = useCallback(() => {
     // the products live on the server: bring them to this device, then show them
     workspace?.runtime.syncNow().catch(() => undefined);
@@ -834,6 +839,7 @@ export function ProductsPage() {
           Dialog={ImportDialog}
           finalFocus={importFinalFocus}
           onClose={closeImport}
+          onClosed={handleImportClosed}
           onEntered={handleImported}
           onShowProducts={handleShowImported}
           open={importOpen}

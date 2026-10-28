@@ -67,7 +67,7 @@ export function ProductsHeader({
             <PlusIcon aria-hidden="true" data-icon="inline-start" />
             Novo produto
           </Button>
-          <div className="grid gap-1">
+          <div className="grid gap-1 min-[30rem]:justify-items-start">
             <Button
               aria-describedby={
                 importOffline ? IMPORT_OFFLINE_REASON_ID : undefined
