@@ -32,7 +32,7 @@ import {
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { formatCalendarDate } from "../lib/format";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { isDraftChanged, useHoldSwap } from "../lib/unsent-work";
 import { DateField, SelectField } from "../sales/sale-fields";
 import {
   ActionNotice,
@@ -162,7 +162,7 @@ export function ExpenseRuleForm({
     () => onDraftChange(changed ? draft : null),
     [changed, draft, onDraftChange]
   );
-  useReportUnsentWork(changed);
+  useHoldSwap(changed);
   const online = useConnectionOnline();
 
   // Active categories only; the one the edited rule already has stays

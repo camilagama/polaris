@@ -6,15 +6,22 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildId,
   buildManifest,
+  isUrgent,
   precacheList,
+  publishedAtOf,
+  workerIdOf,
 } from "../../pwa/service-worker-plugin";
 import {
+  ACTIVATED_AT_PATH,
   AUTH_ENTRY_PATHS,
   cachesToDelete,
+  isBuildInfoMessage,
   isExpectedResponse,
   isSkipWaitingMessage,
   routeFor,
   SHELL_CACHE_PREFIX,
+  seenAtPath,
+  seesAnew,
   shellCacheName,
 } from "./sw";
 
@@ -32,7 +39,7 @@ const get = (path: string, mode = "cors") => ({
 });
 
 describe("what the worker touches", () => {
-  it("answers navigations and serves precached files, nothing else", () => {
+  it("answers navigations, serves precached files and the hashed files of the builds kept, nothing else", () => {
     expect(routeFor(get("/sales", "navigate"), origin, precache)).toBe(
       "navigate"
     );
@@ -43,9 +50,11 @@ describe("what the worker touches", () => {
     expect(routeFor(get("/manifest.webmanifest"), origin, precache)).toBe(
       "asset"
     );
+    // a hashed file of another build: a tab still on it asks for its chunks (the caches kept, or the network)
     expect(routeFor(get("/assets/unknown-ZZZ.js"), origin, precache)).toBe(
-      "bypass"
+      "kept"
     );
+    expect(routeFor(get("/foto.png"), origin, precache)).toBe("bypass");
   });
 
   it("never intercepts the tenant API, authentication or the health checks", () => {
@@ -224,6 +233,12 @@ describe("what counts as the file that was asked for", () => {
 });
 
 describe("the update message", () => {
+  it("BUILD_INFO asks which build the worker serves", () => {
+    expect(isBuildInfoMessage({ type: "BUILD_INFO" })).toBe(true);
+    expect(isBuildInfoMessage({ type: "SKIP_WAITING" })).toBe(false);
+    expect(isBuildInfoMessage("BUILD_INFO")).toBe(false);
+  });
+
   it("only SKIP_WAITING from a page asks the new worker to take over", () => {
     expect(isSkipWaitingMessage({ type: "SKIP_WAITING" })).toBe(true);
     for (const data of [null, "SKIP_WAITING", {}, { type: "OTHER" }, 7]) {
@@ -284,14 +299,14 @@ describe("the build manifest", () => {
       "/assets/index-AAA.js",
       "/assets/products-page-AAA.js",
     ]);
-    // what the worker did not precache it does not serve: the request goes to the network
+    // what no build precached is in no cache: the worker passes it on to the network
     expect(
       routeFor(
         get("/assets/product-import-dialog-D57R_bC-f.js"),
         origin,
         new Set(listed)
       )
-    ).toBe("bypass");
+    ).toBe("kept");
   });
 
   it("changes the build id when the shell or an unhashed file changes, not otherwise", () => {
@@ -325,6 +340,37 @@ describe("the build manifest", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("is published at the time of the commit, or at the time the pipeline gives, never at the time of the build", () => {
+    const commit = () => "1792504800\n";
+    expect(publishedAtOf({}, commit)).toBe(1_792_504_800_000);
+    expect(publishedAtOf({ POLARIS_BUILD_TIME: "1792504900000" }, commit)).toBe(
+      1_792_504_900_000
+    );
+    expect(
+      publishedAtOf({ POLARIS_BUILD_TIME: "2026-10-28T12:00:00.000Z" }, commit)
+    ).toBe(Date.parse("2026-10-28T12:00:00.000Z"));
+    // a time that does not read falls back to the commit; no commit either: no time (the page counts its own)
+    expect(publishedAtOf({ POLARIS_BUILD_TIME: "ontem" }, commit)).toBe(
+      1_792_504_800_000
+    );
+    expect(publishedAtOf({}, () => null)).toBeNull();
+  });
+
+  it("is urgent only with POLARIS_SWAP_URGENT=1", () => {
+    expect(isUrgent({ POLARIS_SWAP_URGENT: "1" })).toBe(true);
+    expect(isUrgent({ POLARIS_SWAP_URGENT: " 1\n" })).toBe(true);
+    for (const value of [undefined, "", "0", "true", "sim"]) {
+      expect(isUrgent({ POLARIS_SWAP_URGENT: value })).toBe(false);
+    }
+  });
+
+  it("names the worker by its own code, which the build id does not cover", () => {
+    const worker = "self.addEventListener('fetch',()=>{})";
+    expect(workerIdOf(worker)).toMatch(twelveHexPattern);
+    expect(workerIdOf(worker)).toBe(workerIdOf(worker));
+    expect(workerIdOf(`${worker};`)).not.toBe(workerIdOf(worker));
   });
 });
 
@@ -370,7 +416,13 @@ function htmlOf(path: string): FakeResponse {
 }
 
 /** Runs the compiled worker in a sandbox with a fake service worker scope. */
-async function runWorker(build: { id: string; precache: string[] }) {
+async function runWorker(build: {
+  id: string;
+  precache: string[];
+  publishedAt?: number | null;
+  urgent?: boolean;
+  workerId?: string;
+}) {
   const source = readFileSync(new URL("./sw.ts", import.meta.url), "utf8");
   const { code } = await transformWithEsbuild(source, "sw.ts", {
     format: "iife",
@@ -387,6 +439,8 @@ async function runWorker(build: { id: string; precache: string[] }) {
     online: boolean;
   } = { htmlPaths: new Set(), online: true };
   const skipWaiting = vi.fn(() => Promise.resolve());
+  /** Every put fails (true), or only those of paths that start with the string. */
+  let putFails: boolean | string = false;
   const scope = {
     addEventListener: (type: string, listener: (event: never) => void) => {
       listeners[type] = listener;
@@ -420,6 +474,13 @@ async function runWorker(build: { id: string; precache: string[] }) {
         match: (request: { url?: string } | string) =>
           Promise.resolve(store.get(keyOf(request))),
         put: (request: { url: string }, response: FakeResponse) => {
+          const path = keyOf(request);
+          if (
+            putFails === true ||
+            (typeof putFails === "string" && path.startsWith(putFails))
+          ) {
+            return Promise.reject(new Error("quota"));
+          }
           store.set(keyOf(request), response);
           return Promise.resolve();
         },
@@ -438,6 +499,8 @@ async function runWorker(build: { id: string; precache: string[] }) {
   };
   runInNewContext(`const POLARIS_BUILD=${JSON.stringify(build)};\n${code}`, {
     caches: cacheApi,
+    // the clock of the test (`vi.setSystemTime`), not the sandbox's own
+    Date,
     fetch: fakeFetch,
     Request: class {
       url: string;
@@ -445,7 +508,18 @@ async function runWorker(build: { id: string; precache: string[] }) {
         this.url = new URL(url, origin).toString();
       }
     },
-    Response: { error: () => ({ body: "error" }) },
+    Response: class {
+      static error() {
+        return { body: "error" };
+      }
+      readonly body: string;
+      constructor(body: string) {
+        this.body = body;
+      }
+      text() {
+        return Promise.resolve(this.body);
+      }
+    },
     self: scope,
     URL,
   });
@@ -462,7 +536,10 @@ async function runWorker(build: { id: string; precache: string[] }) {
     await Promise.all(pending);
     return answer === undefined ? undefined : await answer;
   };
-  return { fetched, listeners, network, run, skipWaiting, stores };
+  const failPut = (fails: boolean | string) => {
+    putFails = fails;
+  };
+  return { failPut, fetched, listeners, network, run, skipWaiting, stores };
 }
 
 describe("the worker as the browser runs it", () => {
@@ -476,7 +553,7 @@ describe("the worker as the browser runs it", () => {
     await worker.run("install", {});
     const cache = worker.stores.get(shellCacheName(build));
     expect([...(cache?.keys() ?? [])].sort()).toEqual(
-      ["/", "/assets/index-BBB.js", "/entrar"].sort()
+      ["/", "/assets/index-BBB.js", "/entrar", seenAtPath(build)].sort()
     );
     expect(worker.skipWaiting).not.toHaveBeenCalled();
   });
@@ -531,7 +608,7 @@ describe("the worker as the browser runs it", () => {
     await worker.run("install", {});
     const cache = worker.stores.get(shellCacheName(build));
     expect([...(cache?.keys() ?? [])].sort()).toEqual(
-      ["/", "/assets/index-BBB.js"].sort()
+      ["/", "/assets/index-BBB.js", seenAtPath(build)].sort()
     );
   });
 
@@ -617,7 +694,211 @@ describe("the worker as the browser runs it", () => {
     await worker.run("install", {});
     expect(
       [...(worker.stores.get(shellCacheName(build))?.keys() ?? [])].sort()
-    ).toEqual(["/", "/assets/index-BBB.js", "/entrar"].sort());
+    ).toEqual(
+      ["/", "/assets/index-BBB.js", "/entrar", seenAtPath(build)].sort()
+    );
+  });
+
+  it("serves a chunk of an older build from that build's cache: a tab still on it is served by this worker", async () => {
+    const worker = await runWorker(build);
+    const older = shellCacheName({ id: "aaa" });
+    worker.stores.set(
+      older,
+      new Map([
+        ["/assets/sale-page-AAA.js", fileOf("/assets/sale-page-AAA.js")],
+      ])
+    );
+    await worker.run("install", {});
+    await worker.run("activate", {});
+    worker.fetched.length = 0;
+    const chunk = (path: string) =>
+      worker.run("fetch", {
+        request: { method: "GET", mode: "cors", url: `${origin}${path}` },
+      });
+    expect(await chunk("/assets/sale-page-AAA.js")).toMatchObject({
+      body: "net:/assets/sale-page-AAA.js",
+    });
+    expect(worker.fetched).toEqual([]);
+    // one no build kept goes to the network, as before
+    expect(await chunk("/assets/product-import-dialog-ZZZ.js")).toMatchObject({
+      body: "net:/assets/product-import-dialog-ZZZ.js",
+    });
+    expect(worker.fetched).toEqual(["/assets/product-import-dialog-ZZZ.js"]);
+    // and a page kept in place of a chunk is not served
+    worker.stores
+      .get(older)
+      ?.set("/assets/old-AAA.js", htmlOf("/assets/old-AAA.js"));
+    expect(await chunk("/assets/old-AAA.js")).toMatchObject({
+      body: "net:/assets/old-AAA.js",
+    });
+  });
+
+  it("looks for a chunk of another build only in the shells, never in a cache that is not one", async () => {
+    const worker = await runWorker(build);
+    worker.stores.set(
+      "planted",
+      new Map([["/assets/x-ZZZ.js", fileOf("/assets/elsewhere.js")]])
+    );
+    await worker.run("install", {});
+    worker.fetched.length = 0;
+    expect(
+      await worker.run("fetch", {
+        request: {
+          method: "GET",
+          mode: "cors",
+          url: `${origin}/assets/x-ZZZ.js`,
+        },
+      })
+    ).toMatchObject({ body: "net:/assets/x-ZZZ.js" });
+    expect(worker.fetched).toEqual(["/assets/x-ZZZ.js"]);
+  });
+
+  it("a worker of the same files finds them in its cache and downloads only what is missing or not the file", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    const cache = worker.stores.get(shellCacheName(build));
+    cache?.set("/assets/index-BBB.js", htmlOf("/assets/index-BBB.js"));
+    worker.fetched.length = 0;
+    // the same id published again (a new commit, the same content): the next worker installs over the same cache
+    const again = await runWorker(build);
+    for (const [name, store] of worker.stores) {
+      again.stores.set(name, store);
+    }
+    await again.run("install", {});
+    expect(again.fetched.sort()).toEqual(["/assets/index-BBB.js", "/entrar"]);
+  });
+
+  it("installs even when the time it saw the build cannot be written or read", async () => {
+    const worker = await runWorker(build);
+    worker.failPut(seenAtPath(build));
+    await expect(worker.run("install", {})).resolves.toBeUndefined();
+    expect(
+      worker.stores.get(shellCacheName(build))?.has("/assets/index-BBB.js")
+    ).toBe(true);
+  });
+
+  it("activates even when the time of the activation cannot be written", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    worker.failPut(true);
+    await expect(worker.run("activate", {})).resolves.toBeUndefined();
+  });
+
+  it("says which build it serves, when it was published, when this device saw it and when it became active here", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(5000);
+    const worker = await runWorker({
+      ...build,
+      publishedAt: 1234,
+      urgent: true,
+      workerId: "w1",
+    });
+    await worker.run("install", {});
+    vi.useRealTimers();
+    const answers: unknown[] = [];
+    const port = { postMessage: (message: unknown) => answers.push(message) };
+    await worker.run("message", {
+      data: { type: "BUILD_INFO" },
+      ports: [port],
+    });
+    expect(answers).toEqual([
+      {
+        activatedAt: null,
+        id: "bbb",
+        publishedAt: 1234,
+        seenAt: 5000,
+        urgent: true,
+        workerId: "w1",
+      },
+    ]);
+    await worker.run("activate", {});
+    await worker.run("message", {
+      data: { type: "BUILD_INFO" },
+      ports: [port],
+    });
+    expect(answers[1]).toMatchObject({ id: "bbb", publishedAt: 1234 });
+    expect((answers[1] as { activatedAt: number }).activatedAt).toBeGreaterThan(
+      0
+    );
+    expect(
+      worker.stores.get(shellCacheName(build))?.has(ACTIVATED_AT_PATH)
+    ).toBe(true);
+    // a build with no time says null
+    const untimed = await runWorker(build);
+    await untimed.run("message", {
+      data: { type: "BUILD_INFO" },
+      ports: [port],
+    });
+    expect(answers[2]).toMatchObject({
+      publishedAt: null,
+      seenAt: null,
+      urgent: false,
+      workerId: null,
+    });
+  });
+
+  it("writes at install when this device first saw the build: kept by a newer worker of the same content still waiting, written again for content it already ran (a revert)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const seenAt = async (worker: Awaited<ReturnType<typeof runWorker>>) => {
+        const answers: { seenAt: number | null }[] = [];
+        await worker.run("message", {
+          data: { type: "BUILD_INFO" },
+          ports: [{ postMessage: (message: never) => answers.push(message) }],
+        });
+        return answers[0]?.seenAt;
+      };
+      const sharing = async (
+        stores: Map<string, Map<string, FakeResponse>>,
+        workerId?: string
+      ) => {
+        const next = await runWorker(
+          workerId === undefined ? build : { ...build, workerId }
+        );
+        for (const [name, store] of stores) {
+          next.stores.set(name, store);
+        }
+        return next;
+      };
+      vi.setSystemTime(1000);
+      const first = await runWorker(build);
+      await first.run("install", {});
+      expect(await seenAt(first)).toBe(1000);
+      // a new commit of the same content while the first still waits: the device saw this content at 1000
+      vi.setSystemTime(2000);
+      const second = await sharing(first.stores);
+      await second.run("install", {});
+      expect(await seenAt(second)).toBe(1000);
+      vi.setSystemTime(3000);
+      await second.run("activate", {});
+      // the same content again after it ran here (a revert to it): new to the device, the settling starts over
+      vi.setSystemTime(4000);
+      const revert = await sharing(first.stores);
+      await revert.run("install", {});
+      expect(await seenAt(revert)).toBe(4000);
+      vi.setSystemTime(5000);
+      const again = await sharing(first.stores);
+      await again.run("install", {});
+      expect(await seenAt(again)).toBe(4000);
+      // the same files with another worker code (a change only in sw.ts) while that one waits: a build of its own,
+      // which never takes the time of the one before
+      vi.setSystemTime(6000);
+      const newCode = await sharing(first.stores, "w2");
+      await newCode.run("install", {});
+      expect(await seenAt(newCode)).toBe(6000);
+      expect(await seenAt(again)).toBe(4000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sees a build anew with no time written or after the content was active", () => {
+    expect(seesAnew(null, null)).toBe(true);
+    expect(seesAnew(null, 5)).toBe(true);
+    expect(seesAnew(10, null)).toBe(false);
+    expect(seesAnew(10, 9)).toBe(false);
+    expect(seesAnew(10, 10)).toBe(true);
+    expect(seesAnew(10, 11)).toBe(true);
   });
 
   it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {

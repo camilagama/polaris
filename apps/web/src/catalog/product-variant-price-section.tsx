@@ -5,7 +5,7 @@ import type {
 import { type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
@@ -63,7 +63,7 @@ function PriceRow({
   const [text, setText] = useState(listPriceFieldText(variant.listPrice));
   const [invalid, setInvalid] = useState(false);
   // a typed text that differs from the saved price is unsent (a save puts the saved text back)
-  useReportUnsentWork(text !== listPriceFieldText(variant.listPrice));
+  useHoldSwap(text !== listPriceFieldText(variant.listPrice));
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

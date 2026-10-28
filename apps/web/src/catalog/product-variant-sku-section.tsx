@@ -12,7 +12,7 @@ import {
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
@@ -64,7 +64,7 @@ function SkuRow({
     setSku(variant.sku ?? "");
   }
   const inputRef = useRef<HTMLInputElement>(null);
-  useReportUnsentWork(sku !== (variant.sku ?? ""));
+  useHoldSwap(sku !== (variant.sku ?? ""));
   // the refused SKU is said at this field, and the focus goes to it (the row is disabled while the save is in flight)
   useEffect(() => {
     if (error) {

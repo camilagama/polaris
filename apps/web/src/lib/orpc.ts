@@ -5,6 +5,7 @@ import { endSessionHere } from "../offline/runtime/session-ended";
 import { browserConnection } from "./browser-connection";
 import { markLegalAcceptanceRequired } from "./legal-acceptance";
 import { isLegalAcceptanceRefusal, rpcErrorCode } from "./rpc-error";
+import { trackWrite } from "./writes-in-flight";
 
 function createPolarisRpcClient(origin: string): PolarisRpcClient {
   const link = new RPCLink({
@@ -12,6 +13,8 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
     // thrown as "no answer", so the UNAUTHORIZED below only ever comes from the Worker (emenda do ADR 0043).
     fetch: (request, init) => browserConnection.fetch(request, init),
     interceptors: [
+      // a write on its way holds the swap of the build (pwa/swap-guard.ts) until it answers or fails
+      (options) => trackWrite(options.path, () => options.next()),
       // The server said, in answer to one of the screen's own calls, that the session is over: the shell
       // offers "Entrar de novo" (it never navigates by itself while something may be in progress).
       onError((error) => {

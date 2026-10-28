@@ -8,7 +8,10 @@
  *    when it cannot, so the app opens offline. The sign-in pages with the challenge
  *    have a copy of their own (`/entrar`, fetched at install): the policy of a
  *    document comes with it, and theirs lets the Turnstile widget load (ADR 0100);
- * 3. serves the precached static files cache-first.
+ * 3. serves the precached static files cache-first, and a hashed file of a build it
+ *    still keeps (`/assets/*`) from that build's cache: a tab still on an older build
+ *    is served by this worker once another tab took the update, and its lazy chunks
+ *    must not go to the network, where the deploy already removed them.
  *
  * It never touches anything else. In particular it never answers, stores or even
  * sees `/rpc/*` and `/api/*` (tenant data and authentication), `/health` or
@@ -26,16 +29,38 @@
  * shell (a chunk that is not there yet, or no longer) and that must not be
  * cached as if it were the chunk.
  *
- * The build tool prepends `POLARIS_BUILD` (the build id and the list of files to
- * precache) and bundles this file as a classic script. Nothing in it depends on
- * when the build was made: the same content is the same worker, so the browser
- * finds no update (and the person is told of none) when only the time changed.
+ * The build tool prepends `POLARIS_BUILD` (the build id, the id of this worker's
+ * own code, the list of files to precache, when the build was published and whether
+ * it is urgent) and bundles this file as a classic script. The time is the commit's,
+ * not the build's: building the same commit again gives the same worker, so the
+ * browser finds no update. The time only names the version; how long a build waited
+ * counts from when this device first saw it, which the worker writes in its cache at
+ * install (`seenAtPath`). A page asks the worker for its build (`BUILD_INFO`) to
+ * know whether a waiting build is new content and how long it has waited (ADR 0041).
  */
 export interface BuildManifest {
   /** A hash of what a user downloads: the worker changes when, and only when, it changes. */
   id: string;
   /** Paths served by the app, `/` first (the shell). */
   precache: string[];
+  /** When the build was published (ms since the epoch), or null when the build tool did not know. */
+  publishedAt?: number | null;
+  /** `POLARIS_SWAP_URGENT=1` (a revert, a security fix): it goes in at the first safe moment, with no settling. */
+  urgent?: boolean;
+  /** A hash of this worker's own code, without the manifest: `id` does not cover `sw.js`. */
+  workerId?: string | null;
+}
+
+/** What a worker says of its build when a page asks (`BUILD_INFO`). */
+export interface BuildInfo {
+  /** When this worker became the active one on this device (ms), or null before it is. */
+  activatedAt: number | null;
+  id: string;
+  publishedAt: number | null;
+  /** When this device first saw this build: the install of its worker (ms), or null when not written. */
+  seenAt: number | null;
+  urgent: boolean;
+  workerId: string | null;
 }
 
 declare const POLARIS_BUILD: BuildManifest | undefined;
@@ -59,7 +84,34 @@ const MATCH_OPTIONS = { ignoreVary: true };
 const WORKER_PATHS = ["/api/", "/rpc/"];
 const WORKER_EXACT_PATHS = ["/health", "/ready"];
 
-export type RequestRoute = "asset" | "bypass" | "navigate";
+/**
+ * `asset`: a file of this build's precache. `kept`: a hashed file that is not, which a tab on an older build may ask
+ * for: the caches of the builds kept answer it, or the network. `bypass`: not touched.
+ */
+export type RequestRoute = "asset" | "bypass" | "kept" | "navigate";
+
+/** The hashed files: a name is always the same content, so a copy from any build is the file asked for. */
+const HASHED_PREFIX = "/assets/";
+/** Where a worker writes, in its own cache, when it became the active one ("atualizado em" of Configurações). */
+export const ACTIVATED_AT_PATH = "/__polaris/activated-at";
+/**
+ * Where a worker writes, in its own cache, when this device first saw its build (the start of the settling): one time
+ * per worker code, since the cache is named after the files only and a change only in `sw.ts` is a build of its own.
+ */
+export const SEEN_AT_PATH = "/__polaris/seen-at";
+
+export function seenAtPath(build: Pick<BuildManifest, "id" | "workerId">) {
+  return `${SEEN_AT_PATH}/${build.workerId ?? "unknown"}`;
+}
+
+/**
+ * Whether the install writes a new "seen at": when the cache has none, and when the content was active here since it
+ * was last seen (a revert to a build this device already ran: its cache is kept, and the revert is new to it). A new
+ * worker of the same content still waiting keeps the time: the device saw that content then.
+ */
+export function seesAnew(seenAt: number | null, activatedAt: number | null) {
+  return seenAt === null || (activatedAt !== null && activatedAt >= seenAt);
+}
 
 export function shellCacheName(build: Pick<BuildManifest, "id">) {
   return `${SHELL_CACHE_PREFIX}${build.id}`;
@@ -132,7 +184,10 @@ export function routeFor(
   if (request.mode === "navigate") {
     return "navigate";
   }
-  return precache.has(url.pathname) ? "asset" : "bypass";
+  if (precache.has(url.pathname)) {
+    return "asset";
+  }
+  return url.pathname.startsWith(HASHED_PREFIX) ? "kept" : "bypass";
 }
 
 /** How many builds before the current one keep their shell (see `cachesToDelete`). */
@@ -162,11 +217,18 @@ export function cachesToDelete(
 
 /** The messages a page may send. */
 export function isSkipWaitingMessage(data: unknown): boolean {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    (data as { type?: unknown }).type === "SKIP_WAITING"
-  );
+  return messageType(data) === "SKIP_WAITING";
+}
+
+/** A page asks which build this worker serves; the answer goes to the port it sent. */
+export function isBuildInfoMessage(data: unknown): boolean {
+  return messageType(data) === "BUILD_INFO";
+}
+
+function messageType(data: unknown): unknown {
+  return typeof data === "object" && data !== null
+    ? (data as { type?: unknown }).type
+    : undefined;
 }
 
 // ------------------------------------------------------------------ worker
@@ -176,6 +238,11 @@ interface WaitableEvent {
 interface FetchLikeEvent {
   request: Request;
   respondWith: (response: Promise<Response>) => void;
+}
+interface MessageLikeEvent {
+  data: unknown;
+  ports?: ReadonlyArray<{ postMessage: (message: unknown) => void }>;
+  waitUntil?: (work: Promise<unknown>) => void;
 }
 interface WorkerScope {
   addEventListener: (type: string, listener: (event: never) => void) => void;
@@ -191,6 +258,19 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
   const lookup = async (request: Request | string) =>
     (await (await caches.open(cacheName)).match(request, MATCH_OPTIONS)) ??
     (await caches.match(request, MATCH_OPTIONS));
+  /** A copy in the shell of any build kept, newest first; never in a cache that is not a shell. */
+  const anyBuild = async (request: Request): Promise<Response | undefined> => {
+    const shells = (await caches.keys())
+      .filter((name) => name.startsWith(SHELL_CACHE_PREFIX))
+      .reverse();
+    for (const name of shells) {
+      // biome-ignore lint/performance/noAwaitInLoops: the first build that has the file answers; the others are not opened
+      const hit = await (await caches.open(name)).match(request, MATCH_OPTIONS);
+      if (hit) {
+        return hit;
+      }
+    }
+  };
   /** The file from the network, only if it is the file asked for (see `isExpectedResponse`). */
   const fetchExpected = async (path: string) => {
     const request = new Request(path, { cache: "reload" });
@@ -201,12 +281,28 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     return { request, response };
   };
 
+  /** A time this worker wrote in its cache (`ACTIVATED_AT_PATH`, `seenAtPath`); null when there is none. */
+  const storedTime = async (path: string): Promise<number | null> => {
+    const answer = await (await caches.open(cacheName)).match(path);
+    const value = Number(await answer?.text());
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
   scope.addEventListener("install", ((event: WaitableEvent) => {
     event.waitUntil(
       (async () => {
         const cache = await caches.open(cacheName);
+        // A worker of the same files (a new commit, the same id) finds them in its cache already: only what is
+        // missing, or not the file, is fetched, so a deploy with nothing new for the page costs no download.
+        const kept = await Promise.all(
+          build.precache.map(async (path) => {
+            const copy = await cache.match(path, MATCH_OPTIONS);
+            return copy !== undefined && isExpectedResponse(path, copy);
+          })
+        );
+        const missing = build.precache.filter((_, index) => !kept[index]);
         // All or nothing: a half-cached shell is worse than none, and so is a page cached in place of a chunk.
-        const files = await Promise.all(build.precache.map(fetchExpected));
+        const files = await Promise.all(missing.map(fetchExpected));
         await Promise.all(
           files.map(({ request, response }) => cache.put(request, response))
         );
@@ -214,6 +310,21 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         // then says to reload), so a failure here never stops the worker from installing.
         await fetchExpected(AUTH_ENTRY_SHELL_PATH)
           .then(({ request, response }) => cache.put(request, response))
+          .catch(() => undefined);
+        // only for the settling: without it the page counts from when it saw the build, so a failure here never
+        // stops the worker from installing
+        await Promise.all([
+          storedTime(seenAtPath(build)),
+          storedTime(ACTIVATED_AT_PATH),
+        ])
+          .then(([seen, activated]) =>
+            seesAnew(seen, activated)
+              ? cache.put(
+                  new Request(seenAtPath(build)),
+                  new Response(String(Date.now()))
+                )
+              : undefined
+          )
           .catch(() => undefined);
       })()
     );
@@ -226,15 +337,40 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         await Promise.all(
           cachesToDelete(names, cacheName).map((name) => caches.delete(name))
         );
-        // No `clients.claim()`: pages loaded under an older worker keep it, so the
-        // files they still load come from the cache that matches them.
+        // only for the "atualizado em" of Configurações: a failure here never stops the worker from activating
+        await (await caches.open(cacheName))
+          .put(new Request(ACTIVATED_AT_PATH), new Response(String(Date.now())))
+          .catch(() => undefined);
+        // No `clients.claim()`: a page opened before this worker is taken over only when
+        // a page asks for it (`SKIP_WAITING`), and then the files of its own build still
+        // come from the caches kept (the `kept` route).
       })()
     );
   }) as never);
 
-  scope.addEventListener("message", ((event: { data: unknown }) => {
+  scope.addEventListener("message", ((event: MessageLikeEvent) => {
     if (isSkipWaitingMessage(event.data)) {
       scope.skipWaiting().catch(() => undefined);
+      return;
+    }
+    const port = event.ports?.[0];
+    if (isBuildInfoMessage(event.data) && port) {
+      const time = (path: string) => storedTime(path).catch(() => null);
+      const answer = Promise.all([
+        time(ACTIVATED_AT_PATH),
+        time(seenAtPath(build)),
+      ]).then(([activatedAt, seenAt]) => {
+        const info: BuildInfo = {
+          activatedAt,
+          id: build.id,
+          publishedAt: build.publishedAt ?? null,
+          seenAt,
+          urgent: build.urgent === true,
+          workerId: build.workerId ?? null,
+        };
+        port.postMessage(info);
+      });
+      event.waitUntil?.(answer);
     }
   }) as never);
 
@@ -255,8 +391,10 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
       return;
     }
     const { pathname } = new URL(event.request.url);
+    // a file of an older build kept is in that build's cache; any other one goes to the network as it would
+    const find = route === "asset" ? lookup : anyBuild;
     event.respondWith(
-      lookup(event.request).then((cached) =>
+      find(event.request).then((cached) =>
         // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
         // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
         // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker

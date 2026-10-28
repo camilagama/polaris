@@ -15,7 +15,10 @@ import { uiBuild, uiPlugins } from "./vite.ui";
  * `sw.js` plugin, served by `scripts/serve-static.mjs` instead of the Cloudflare runtime.
  *
  * `PWA_E2E_VARIANT` stamps a marker into `index.html`, so a test can build "a new
- * version" of the app without touching the source and see which one is running.
+ * version" of the app without touching the source and see which one is running, and
+ * into every chunk (a legal comment, which the minifier keeps): each version has its
+ * own file names, as a real deploy does, so a tab left on the old one asks for chunks
+ * the new build no longer has.
  */
 const variantMarker: Plugin = {
   name: "polaris:pwa-e2e-variant",
@@ -39,6 +42,11 @@ export default defineConfig({
     // the same chunk for `motion` as the production build (vite.config.ts)
     rolldownOptions: {
       output: {
+        ...(process.env.PWA_E2E_VARIANT
+          ? {
+              postBanner: `/*! build-variant ${process.env.PWA_E2E_VARIANT} */`,
+            }
+          : {}),
         codeSplitting: {
           groups: [
             {
