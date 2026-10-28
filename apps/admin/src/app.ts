@@ -32,6 +32,11 @@ import {
   refundWindowRoutes,
 } from "./refund-window-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
+import {
+  type AdminPage,
+  type AdminPageAssets,
+  createAdminPage,
+} from "./ui/page";
 
 /**
  * The Admin app's HTTP surface (plan PR92 to PR94, ADR 0070). Cloudflare Access
@@ -98,19 +103,35 @@ const MAX_PAGE_SIZE = 50;
 const MAX_QUERY_LENGTH = 100;
 const MAX_ID_LENGTH = 128;
 
-const ADMIN_HEADERS = Object.entries(securityHeaders("admin"));
-const ADMIN_CACHE_CONTROL = defaultCacheControl("admin");
+const PROFILE_HEADERS = {
+  admin: Object.entries(securityHeaders("admin")),
+  "admin-document": Object.entries(securityHeaders("admin-document")),
+} as const;
 
-/** The headers of every answer of the Admin come from the shared module (ADR 0090); nothing here is cacheable. */
-const securityHeadersMiddleware: MiddlewareHandler = async (context, next) => {
-  await next();
-  for (const [name, value] of ADMIN_HEADERS) {
-    context.header(name, value);
-  }
-  if (ADMIN_CACHE_CONTROL !== null) {
-    context.header("Cache-Control", ADMIN_CACHE_CONTROL);
-  }
-};
+/**
+ * The headers of every answer of the Admin come from the shared module (ADR 0090), and nothing here is cacheable.
+ * The page, its script and its sheet (an exact list of GET paths) get the document profile; everything else, the API,
+ * `/health` and any 404 included, keeps the inert `admin` one.
+ */
+function securityHeadersMiddleware(
+  page: (() => Promise<AdminPage>) | null
+): MiddlewareHandler {
+  return async (context, next) => {
+    await next();
+    const document =
+      page !== null &&
+      context.req.method === "GET" &&
+      (await page()).documentPaths.has(context.req.path);
+    const profile = document ? "admin-document" : "admin";
+    for (const [name, value] of PROFILE_HEADERS[profile]) {
+      context.header(name, value);
+    }
+    const cacheControl = defaultCacheControl(profile);
+    if (cacheControl !== null) {
+      context.header("Cache-Control", cacheControl);
+    }
+  };
+}
 
 interface Refusal {
   body: { error: string };
@@ -224,12 +245,34 @@ function requireCapability(
   };
 }
 
-export function createAdminApp(dependencies: AdminDependencies) {
+/**
+ * The app. `pageAssets` are the operator's page files (built from apps/admin/ui); without them, as in the route tests,
+ * there is no page and every path but the API and `/health` is a 404.
+ */
+export function createAdminApp(
+  dependencies: AdminDependencies,
+  pageAssets: AdminPageAssets | null = null
+) {
   const app = new Hono<AdminEnv>();
-  app.use("*", securityHeadersMiddleware);
+  const page = pageAssets === null ? null : createAdminPage(pageAssets);
+  app.use("*", securityHeadersMiddleware(page));
 
   // answers without a login so a deployment can be checked; says nothing about the platform
   app.get("/health", (context) => context.json({ status: "ok" }));
+
+  if (page !== null) {
+    // the page and its files pass the same verification as the API: without an operator's token, a 401 and no HTML
+    app.get("/", authentication(dependencies), async (context) =>
+      context.html((await page()).html)
+    );
+    app.get("/ui/:file", authentication(dependencies), async (context) => {
+      const file = (await page()).file(context.req.path);
+      if (file === null) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      return context.body(file.body, 200, { "Content-Type": file.type });
+    });
+  }
 
   const api = new Hono<AdminEnv>();
   api.use("*", authentication(dependencies));

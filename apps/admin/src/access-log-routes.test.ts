@@ -81,6 +81,8 @@ function setup(
         headers: {
           "cf-access-jwt-assertion": "token",
           "content-type": "application/json",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...headers,
         },
         method: "POST",
