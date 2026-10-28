@@ -167,3 +167,127 @@ export function grantValueText(
   }
   return flagValue ? "Ligado" : "Desligado";
 }
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A calendar day the server wrote as `aaaa-mm-dd` (a week's start), as dd/mm/aaaa: a day, not a moment, so no zone. */
+export function isoDayText(day: string): string {
+  const match = ISO_DAY.exec(day);
+  return match === null ? "—" : `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+export function weekText(week: {
+  inProgress: boolean;
+  weekStart: string;
+}): string {
+  const start = `semana de ${isoDayText(week.weekStart)}`;
+  return week.inProgress ? `${start} (em andamento)` : start;
+}
+
+const FUNNEL_REASONS: Readonly<Record<string, string>> = {
+  activation_window_open: "não disponível (os 7 dias ainda correm)",
+  suppressed: "não disponível (grupo pequeno)",
+  week_not_closed: "não disponível (semana em andamento)",
+};
+
+/** Why the funnel has no number here, always with "não disponível": never a 0 nor an empty cell (AC-8). */
+export function funnelReasonText(reason: string | null): string {
+  if (reason === null) {
+    return "não disponível";
+  }
+  return (
+    FUNNEL_REASONS[reason] ?? `não disponível (motivo desconhecido: ${reason})`
+  );
+}
+
+export function funnelCountText(cell: {
+  reason: string | null;
+  value: number | null;
+}): string {
+  return cell.value === null
+    ? funnelReasonText(cell.reason)
+    : String(cell.value);
+}
+
+const PERCENT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+
+/** A share the server computed, as it sent it (one decimal, comma): the page does no arithmetic of its own. */
+export function funnelPercentText(cell: {
+  reason: string | null;
+  value: number | null;
+}): string {
+  return cell.value === null
+    ? funnelReasonText(cell.reason)
+    : `${PERCENT.format(cell.value)}%`;
+}
+
+/** A count with its share next to it, as two facts of the server. */
+export function funnelCountAndShare(
+  count: { reason: string | null; value: number | null },
+  share: { reason: string | null; value: number | null }
+): string {
+  return count.value === null
+    ? funnelReasonText(count.reason)
+    : `${count.value} (${funnelPercentText(share)})`;
+}
+
+const DECIMAL = /^(\d+)(?:\.(\d+))?$/;
+const LEADING_ZEROS = /^0+(?=\d)/;
+const THOUSANDS = /\B(?=(\d{3})+$)/g;
+
+/**
+ * An amount the server wrote as a decimal text (`49.9`, `1234.5000`), as R$ with a comma and a dot per thousand,
+ * read as text: no float ever holds it and nothing is rounded; a digit past the cents that is not 0 stays shown
+ * (docs/business-rules/money.md).
+ */
+export function moneyText(amount: string | null): string {
+  if (amount === null) {
+    return "—";
+  }
+  const match = DECIMAL.exec(amount);
+  if (match === null) {
+    return `valor desconhecido: ${amount}`;
+  }
+  const whole = (match[1] ?? "0").replace(LEADING_ZEROS, "");
+  let cents = (match[2] ?? "").padEnd(2, "0");
+  while (cents.length > 2 && cents.endsWith("0")) {
+    cents = cents.slice(0, -1);
+  }
+  return `R$ ${whole.replace(THOUSANDS, ".")},${cents}`;
+}
+
+const METHODS: Readonly<Record<string, string>> = {
+  card: "Cartão",
+  pix_automatic: "Pix Automático",
+};
+
+export function methodText(method: string | null): string {
+  if (method === null) {
+    return "—";
+  }
+  return METHODS[method] ?? `forma desconhecida: ${method}`;
+}
+
+const CASE_KINDS: Readonly<Record<string, string>> = {
+  privacy: "Privacidade",
+  support: "Suporte",
+};
+
+export function caseKindText(kind: string): string {
+  return CASE_KINDS[kind] ?? `tipo desconhecido: ${kind}`;
+}
+
+/** The wait the server gave, in whole minutes rounded up (a wait of 61 seconds is 2 minutes, never 1). */
+export function minutesText(seconds: number): string {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return minutes === 1 ? "1 minuto" : `${minutes} minutos`;
+}
+
+/** A moment the server gave, as dd/mm/aaaa HH:mm in Brasília; "—" when there is none or it is not a date. */
+export function brasiliaMomentText(moment: string | null): string {
+  if (moment === null) {
+    return "—";
+  }
+  const date = new Date(moment);
+  return Number.isNaN(date.getTime()) ? "—" : brasiliaMoment(date);
+}

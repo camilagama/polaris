@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { type AdminDependencies, createAdminApp } from "../app";
 
 /**
  * What the Admin page's script may not do, checked three ways (corte admin-tela-v1, AC-6, AC-7, AC-11, AC-12 and
@@ -77,9 +78,30 @@ const SCRIPT_FORBIDDEN: readonly [string, RegExp][] = [
 ];
 
 const API_PATH = /\/api\/[a-z-]+/g;
+/** The app is built only to list its routes: no request is made, so no dependency is ever called. */
+const NEVER = new Proxy(
+  {},
+  {
+    get: () => () => {
+      throw new Error("the route list called a dependency");
+    },
+  }
+);
+const NO_DEPENDENCIES = new Proxy(
+  {},
+  { get: () => NEVER }
+) as AdminDependencies;
 const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
-/** The routes of this part of the cut (AC-6): who the operator is, the search and the diagnostics. */
-const ROUTES_OF_THIS_CUT = ["/api/organizations", "/api/whoami"];
+/**
+ * The routes of the cut (AC-6): who the operator is, the search and the diagnostics, the funnel, and the support
+ * cases with the refund window under them (`/api/support-cases/:id/refund-window`).
+ */
+const ROUTES_OF_THIS_CUT = [
+  "/api/funnel",
+  "/api/organizations",
+  "/api/support-cases",
+  "/api/whoami",
+];
 
 function forbiddenIn(text: string): string[] {
   return SCRIPT_FORBIDDEN.filter(([, pattern]) => pattern.test(text)).map(
@@ -141,6 +163,30 @@ describe("the built script of the page", () => {
     expect([...new Set(bundle.match(API_PATH))].sort()).toEqual(
       ROUTES_OF_THIS_CUT
     );
+  });
+
+  it("names, under those routes, only the diagnostics and the refund window: no other action of a case or a store", () => {
+    // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
+    const segments = new Set(
+      createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
+        .routes.filter((route) => route.path.startsWith("/api/"))
+        .flatMap((route) =>
+          route.path
+            .split("/")
+            .slice(3)
+            .filter((segment) => segment !== "" && !segment.startsWith(":"))
+        )
+    );
+    expect(segments.size).toBeGreaterThan(10);
+    const named = (text: string) =>
+      [...segments]
+        .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
+        .sort();
+    expect(named(bundle)).toEqual(["diagnostics", "refund-window"]);
+    // a planted call to another action of a case is seen
+    expect(
+      named(`${bundle}fetch(\`/api/support-cases/\${id}/close\`)`)
+    ).toEqual(["close", "diagnostics", "refund-window"]);
   });
 });
 

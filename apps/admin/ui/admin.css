@@ -140,7 +140,9 @@ h3 {
   gap: 0.5rem;
 }
 
-input[type="search"] {
+input[type="search"],
+input[type="text"],
+select {
   flex: 1;
   width: 100%;
   min-width: 0;
@@ -180,7 +182,9 @@ button[aria-disabled="true"] {
 
 @media (pointer: coarse) {
   button,
-  input[type="search"] {
+  input[type="search"],
+  input[type="text"],
+  select {
     min-height: 3rem;
   }
 }
@@ -275,9 +279,53 @@ button {
   overflow-wrap: anywhere;
 }
 
-.attention {
+.attention,
+.notes {
   padding-left: 1.25rem;
   margin: 0;
+}
+
+/* the funnel's cells and headers are sentences ("não disponível (…)"): they wrap instead of widening the page */
+.grid.funnel th,
+.grid.funnel td:not(:first-child) {
+  white-space: normal;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem;
+  max-width: 28rem;
+  margin-top: 0.75rem;
+}
+
+.controls label {
+  font-weight: 600;
+}
+
+/* what the refund area cannot do and what each read leaves behind: said in words, not only by colour */
+.warning,
+.audit {
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--foreground);
+  border-radius: var(--radius);
+}
+
+.cases {
+  margin-top: 0.75rem;
+}
+
+.cases form {
+  margin-top: 1rem;
+}
+
+/* a reason is a sentence the operator typed: it wraps inside its cell */
+.reason {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* A narrow screen stacks each row; the header of each cell is written before it, so nothing scrolls sideways. */
@@ -306,6 +354,12 @@ button {
     gap: 0.5rem;
     padding: 0.25rem 0;
     border-bottom: 0;
+  }
+
+  /* a button in a stacked row keeps to the column instead of running out of the card */
+  .grid td > button {
+    max-width: 100%;
+    white-space: normal;
   }
 
   .grid td::before {

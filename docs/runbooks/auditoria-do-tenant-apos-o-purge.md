@@ -14,7 +14,7 @@
 
 - Quem lê é o **dono do banco** (o perfil do migrador), porque nenhum papel de aplicação lê a auditoria: o runtime do tenant só insere, e o dono da retenção (`polaris_retention_owner`, sem login) enxerga só quatro colunas. A tabela força RLS e não tem política para o dono; a leitura funciona com o papel dono da Neon, que ignora RLS (confirme antes, no ambiente, com `SELECT rolbypassrls, rolsuper FROM pg_roles WHERE rolname = current_user`).
 - Siga a [política de perfil de CLI](./cli-profile-policy.md): não rode nada sem confirmar o perfil e a identidade permitidos, e nunca contra produção sem o pedido explícito do responsável.
-- **Registre o pedido antes de ler**: abra (ou use) um caso de suporte ou de privacidade da organização no Admin, com o motivo curto, sem dado pessoal. É a trilha de quem leu o quê, enquanto a função auditada do Admin não existe.
+- **Registre o pedido antes de ler**: abra (ou use) um caso de suporte ou de privacidade da organização no Admin, com o motivo curto, sem dado pessoal. Pela tela do Admin (área Reembolso, "Abrir caso") o navegador manda a origem sozinho; por cliente HTTP, toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403 ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 28/10). É a trilha de quem leu o quê, enquanto a função auditada do Admin não existe.
 
 ## Passos
 

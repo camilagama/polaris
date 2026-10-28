@@ -39,6 +39,8 @@ const ALLOWED = [
   /^apps\/[\w-]+\/vitest\.workers(-db)?\.config\.ts$/,
   /^apps\/admin\/src\/workerd-access\.ts$/,
   /^apps\/admin\/src\/workerd(-db)?-env\.d\.ts$/,
+  // the same bindings, typed for the page's end-to-end test (browser library, tsconfig.page-e2e.json)
+  /^apps\/admin\/src\/page-e2e-env\.d\.ts$/,
   /^apps\/admin\/src\/[\w-]+\.workerd(-db)?\.test\.ts$/,
   /^apps\/admin\/src\/access-mock-confinement\.test\.ts$/,
   // the gate that makes the database fixtures names the test team (it writes the principals under its issuer)

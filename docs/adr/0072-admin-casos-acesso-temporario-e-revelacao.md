@@ -36,7 +36,7 @@ O diagnóstico (ADR 0071) responde "o que há de errado" sem tocar em dado do te
 - "Somente inserção" vale para DML (atualizar, apagar, truncar): o dono do banco ainda pode alterar a estrutura, o que é uma operação de manutenção, não do Admin.
 - Só clientes são legíveis (mascarados); produtos, vendas e demais modelos entram quando houver necessidade e não são lidos hoje.
 - O nome da organização e o motivo do caso (digitado pelo operador) aparecem nas listas.
-- Sem tela do Admin ainda (só API); sem notificação ao cliente de que seus dados foram vistos (o caso de privacidade da Fase 10 cuida da prestação de contas ao titular).
+- A tela do Admin (corte admin-tela-v1, parte B) lista os casos abertos da loja escolhida e abre caso de suporte com motivo (1 a 500 caracteres, sem controle); fechar caso, acesso temporário e revelação seguem só na API. Sem notificação ao cliente de que seus dados foram vistos (o caso de privacidade da Fase 10 cuida da prestação de contas ao titular).
 
 ## Alternativas rejeitadas
 

@@ -93,6 +93,13 @@ export class FakeElement extends FakeNode {
     }
   }
 
+  prepend(...nodes: (FakeNode | string)[]) {
+    const kept = this.childNodes;
+    this.childNodes = [];
+    this.append(...nodes);
+    this.childNodes.push(...kept);
+  }
+
   removeChild(child: FakeNode) {
     this.childNodes = this.childNodes.filter((node) => node !== child);
     child.parent = null;

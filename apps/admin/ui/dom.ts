@@ -1,7 +1,8 @@
 /**
  * The one way the Admin page builds its DOM: elements made by name, attributes set one by one and text written as
  * text. Nothing here takes HTML, so a store name with `<script>` in it is shown as those characters (AC-4, AC-11);
- * the page's policy (Trusted Types `'none'`) refuses an HTML string even if one slipped in.
+ * the page's policy (Trusted Types `'none'`) refuses an HTML string even if one slipped in. An event handler, a style
+ * or a frame source is never an attribute, and a URL attribute is only a path of the Admin (`checkAttribute`).
  */
 
 type Child = Node | string | null | undefined | false;
@@ -15,6 +16,44 @@ export interface Dom {
   ) => HTMLElementTagNameMap[K];
   /** Replaces what an element holds with the given children. */
   fill: (parent: Element, ...children: Child[]) => void;
+}
+
+/**
+ * Attributes that run code, style the page or carry a document or a list of sources from a string (`on*`, `style`,
+ * the frame's document and the image's source list): never set, whatever the value.
+ */
+const REFUSED_ATTRIBUTE = /^(on.*|style|src.+)$/;
+/** Attributes the browser follows as a URL: only a path of the Admin itself, so nothing points to another origin. */
+const URL_ATTRIBUTES = new Set([
+  "action",
+  "background",
+  "cite",
+  "data",
+  "formaction",
+  "href",
+  "ping",
+  "poster",
+  "src",
+  "xlink:href",
+]);
+/**
+ * A path of this origin: one slash, then no second slash or backslash (`//host` and `/\host` are another origin to
+ * the browser), no space and no control character. No scheme is allowed: the page links nowhere else.
+ */
+const ADMIN_PATH = /^\/(?![/\\])[^\s\\]*$/;
+
+/** Throws on an attribute that would run code, style the page or point outside the Admin. */
+export function checkAttribute(name: string, value: string): void {
+  const lower = name.toLowerCase();
+  if (REFUSED_ATTRIBUTE.test(lower)) {
+    throw new Error(`the page does not set the attribute ${lower}`);
+  }
+  if (
+    URL_ATTRIBUTES.has(lower) &&
+    !(ADMIN_PATH.test(value) && !hasControlCharacter(value))
+  ) {
+    throw new Error(`the attribute ${lower} takes only a path of the Admin`);
+  }
 }
 
 export function createDom(document: Document): Dom {
@@ -33,6 +72,7 @@ export function createDom(document: Document): Dom {
     el: (tag, attributes = {}, ...children) => {
       const element = document.createElement(tag);
       for (const [name, value] of Object.entries(attributes)) {
+        checkAttribute(name, value);
         element.setAttribute(name, value);
       }
       append(element, children);
