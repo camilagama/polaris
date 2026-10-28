@@ -42,6 +42,8 @@ const SCREENS = {
 const THEMES = { claro: "light", escuro: "dark" } as const;
 
 export default defineConfig({
+  // the screens read the server after the shell: on a loaded machine "Carregando…" outlasts the 5 s default of `expect`
+  expect: { timeout: 15_000 },
   forbidOnly: true,
   fullyParallel: false,
   // scratch of the runner (Playwright empties it on every run): the proof goes to the evidence directory
