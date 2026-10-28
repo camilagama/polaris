@@ -64,6 +64,7 @@ import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
+  type QueueHandlers,
 } from "../src/server/queue/consumer";
 import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
@@ -757,7 +758,9 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
       handleDataExportRequested(env, envelope),
     "organization.closure_notice": (envelope: QueueEnvelope) =>
       handleClosureNoticeEvent(env, envelope),
-  };
+    // one handler per type of the outbox: a type added to the domain without one does not compile, instead of
+    // spinning on `queue_handler_missing` until the dead-letter queue
+  } satisfies QueueHandlers;
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // no check against the outbox and no deduplication across isolates: only the handler's own guards

@@ -1,4 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  OUTBOX_EVENT_TYPES,
+  outboxIdempotencyKey,
+} from "@polaris/domain/events/outbox";
+import { queueForEventType } from "@polaris/domain/events/queue-envelope";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1239,6 +1244,70 @@ describe("the queue consumer", () => {
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("a handler for every type of the outbox", () => {
+    const noticeId = "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a40";
+    const requestedAt = 1_792_457_258_261;
+    const bodies: Record<
+      (typeof OUTBOX_EVENT_TYPES)[number],
+      { entity: string; event: Record<string, string | number> }
+    > = {
+      "billing.notice": { entity: noticeId, event: { noticeId } },
+      "billing.renewal_cancel_requested": {
+        entity: String(requestedAt),
+        event: { requestedAt },
+      },
+      "data_export.requested": {
+        entity: noticeId,
+        event: { exportId: noticeId },
+      },
+      "organization.closure_notice": { entity: noticeId, event: { noticeId } },
+    };
+
+    it("is described here for each type the domain has: a new type fails until its body is", () => {
+      expect(Object.keys(bodies).sort()).toEqual(
+        [...OUTBOX_EVENT_TYPES].sort()
+      );
+    });
+
+    it.each(OUTBOX_EVENT_TYPES)(
+      "binds one for %s: it does not spin on queue_handler_missing until the dead-letter queue",
+      async (type) => {
+        const { entity, event } = bodies[type];
+        const sent = message({
+          attempt: 1,
+          correlationId: "req-all",
+          event,
+          eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a41",
+          idempotencyKey: outboxIdempotencyKey(type, entity),
+          organizationId: "org_1",
+          type,
+          version: 1,
+        });
+        // on the queue of its type, with nothing provisioned: the handler runs, finds nothing to do and acks
+        await worker.queue(
+          {
+            messages: [sent],
+            queue: `polaris-${queueForEventType(type)}`,
+          } as never,
+          {} as never
+        );
+
+        for (const refusal of [
+          "queue_handler_missing",
+          "queue_message_invalid",
+          "queue_message_misrouted",
+        ]) {
+          expect(console.warn).not.toHaveBeenCalledWith(
+            expect.objectContaining({ event: refusal })
+          );
+        }
+        // a message with no handler is retried; one that reached its handler is acked
+        expect(sent.retry).not.toHaveBeenCalled();
+        expect(sent.ack).toHaveBeenCalledTimes(1);
+      }
+    );
   });
 
   describe("the notice of a closure milestone", () => {

@@ -279,7 +279,7 @@ describe("product RPCs", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("refuses more than 50 values for one option before touching anything", async () => {
+  it("takes 50 values for one option, the limit itself, and refuses 51 before touching anything", async () => {
     const withTenantRequestContext = vi.fn();
     const client = createRpcClient(
       createRpcRouter({
@@ -288,6 +288,20 @@ describe("product RPCs", () => {
     );
     const valuesOf = (count: number) =>
       Array.from({ length: count }, (_, index) => `Tamanho ${index}`);
+
+    // inside the limit the input passes and the call reaches the tenant context (which stops it here)
+    withTenantRequestContext.mockRejectedValueOnce(new Error("reached"));
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "size", values: valuesOf(50) }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { size: "Tamanho 0" } }],
+      })
+    ).rejects.not.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).toHaveBeenCalledTimes(1);
+    withTenantRequestContext.mockClear();
 
     await expect(
       client.product.configureVariants({

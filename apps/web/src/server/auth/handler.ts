@@ -814,8 +814,10 @@ async function withAuthRuntime(
     );
   } catch (error) {
     // a failed start of the instance would otherwise be kept for the whole life of the isolate; any other failure (the
-    // database, a route) keeps it, so an outage does not cost a new instance per request
-    if (sharedAuth === entry && (await startFailed(entry.auth))) {
+    // database, a route) keeps it, so an outage does not cost a new instance per request. The identity is read after
+    // the wait: another request of the isolate may have replaced the instance meanwhile, and that one must stay
+    const failedToStart = await startFailed(entry.auth);
+    if (failedToStart && sharedAuth === entry) {
       sharedAuth = undefined;
     }
     throw error;
