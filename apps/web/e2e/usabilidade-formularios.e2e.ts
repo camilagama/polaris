@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * Correções de usabilidade do staging, lote 1, parte C (t213): percentual de taxa dos perfis de pagamento
+ * Correções de usabilidade do staging, lote 1, parte C: percentual de taxa dos perfis de pagamento
  * (U-29 e U-30). U-14 (SKU repetido) está em products-screen.e2e.ts, junto da tela dele.
  */
 const EDIT = /Editar/;

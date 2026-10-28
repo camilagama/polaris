@@ -235,7 +235,7 @@ export function normalizeGoalTarget(kind: GoalKind, target: string): string {
 /**
  * Validates what a person typed for a goal. The period is a range of the
  * organization's calendar of at most 366 days that starts no earlier than
- * 2000-01-01 and no later than 366 days after `today`.
+ * `2000-01-01` and no later than 366 days after `today`.
  */
 export function normalizeGoal(input: GoalInput, today: string): NormalizedGoal {
   if (!isGoalKind(input.kind)) {

@@ -137,7 +137,7 @@ describe("the automatic schedule of the purge (ADR 0102)", () => {
 
   it("starts at the first instant of D minus 7 local days, to the second", () => {
     expect(CLOSURE_PURGE_SCHEDULE_LEAD_DAYS).toBe(7);
-    // D is 2027-01-17 local; D - 7 is 2027-01-10 local, which starts at 03:00 UTC
+    // D is `2027-01-17` local; D - 7 is `2027-01-10` local, which starts at 03:00 UTC
     expect(
       closurePurgeSchedulable(
         requestedAt,
@@ -176,7 +176,7 @@ describe("the automatic schedule of the purge (ADR 0102)", () => {
   });
 
   it("counts D in the organization's zone, across a change of daylight saving time", () => {
-    // New York: the clock goes forward on 2027-03-14; D - 7 is in standard time and D in daylight time
+    // New York: the clock goes forward on `2027-03-14`; D - 7 is in standard time and D in daylight time
     const requested = new Date("2026-12-16T17:00:00.000Z");
     const deadlines = closureDeadlines(requested, "America/New_York");
     expect(deadlines.deletionDate).toBe("2027-03-16");

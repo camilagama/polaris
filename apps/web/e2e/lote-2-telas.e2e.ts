@@ -12,7 +12,7 @@ import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * Categorias, Clientes and the public catalog of the ERP on the interface v5.1 (t235, lot 2 of the migration): the
+ * Categorias, Clientes and the public catalog of the ERP on the interface v5.1 (lot 2 of the migration): the
  * real route, with the API answered by the test (the server mode, no offline runtime). What the lab of the screens
  * already proves for Clientes and for the catalog is in `offline-screens.e2e.ts` and `usabilidade-lote-1.e2e.ts`; here
  * is Categorias (the whole screen), the strip of the screens that need a connection (U-54), the states a server
@@ -294,7 +294,7 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
   const confirmation = page.getByRole("group", {
     name: "Confirmar remoção de Camisetas",
   });
-  // the confirmation of the row takes the focus, and the keyboard sees it (t439)
+  // the confirmation of the row takes the focus, and the keyboard sees it
   await expectFocusRing(confirmation);
   await expect(confirmation).toContainText(
     "O histórico de vendas continua igual."

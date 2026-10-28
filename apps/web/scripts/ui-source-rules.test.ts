@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { SCREENS } from "../e2e-pwa/ui-screens";
 
 /**
- * Source rules of the interface guardrails (t180, items 4 and 5): what the review of the CSS and the classes finds
+ * Source rules of the interface guardrails (items 4 and 5): what the review of the CSS and the classes finds
  * by reading, a test reads. They run on `src/ui`, on `src/styles` and on the source folders of every
  * screen (`sourceDirs` in e2e-pwa/ui-screens.ts); the measured checks (overflow, touch, axe, motion, focus) are in
  * e2e-pwa/ui-guardrails.e2e.ts. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
@@ -14,7 +14,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  *    class; an `oklch(…)` literal lives only in the token sheet (`src/styles/theme.css`).
  * 5. motion: the components use the animation they bring (shadcn, Bklit UI); the CSS of an animation lives only in
  *    the sheets of the base; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
- *    On the phone (t386, ADR 0103 "Níveis de movimento") only the essential motion runs: every `animate-*`,
+ *    On the phone (ADR 0103 "Níveis de movimento") only the essential motion runs: every `animate-*`,
  *    `transition*` and `duration-*` class of the `.ts` and `.tsx` of `src/` is under the `motion-full:` variant or
  *    in `ESSENTIAL_MOTION` (the four of the inventory) or `INERT_MOTION` (moves nothing), with its reason.
  */
@@ -58,8 +58,8 @@ const OWN_ANIMATION = /@keyframes\b|\banimation(?:-name)?\s*:/;
 const withoutComments = (text: string) => text.replace(COMMENT, "");
 
 /**
- * The motion that stays on the phone (`data-motion="essential"`), the four essentials of the inventory of the Petković
- * (25/10; the fifth, the row of pills scrolling to the pill, left when the row began to wrap): the file, what in it makes the motion (`source`, a class or a piece of code) and why. A motion class listed
+ * The motion that stays on the phone (`data-motion="essential"`), the four essentials of the inventory
+ * (the fifth, the row of pills scrolling to the pill, left when the row began to wrap): the file, what in it makes the motion (`source`, a class or a piece of code) and why. A motion class listed
  * here is allowed off `motion-full:`; anything else that animates is written `motion-full:…` and runs only at the
  * `full` level, and a new animation fails here until someone decides whether it is essential.
  */
@@ -124,7 +124,7 @@ const classTokens = (text: string) =>
     (match[1] ?? match[2] ?? match[3] ?? "").split(SPACES).filter(Boolean)
   );
 
-/** The motion classes of a source that run on the phone without being listed as essential (t386). */
+/** The motion classes of a source that run on the phone without being listed as essential. */
 export function phoneMotionFaults(path: string, text: string): string[] {
   if (!TS_OR_TSX.test(path)) {
     return [];
@@ -224,7 +224,7 @@ const MOTION_SCOPE = sourcesUnder("src").filter((path) =>
 );
 
 /**
- * Focus (t439, DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
+ * Focus (DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
  * has it also carries the ring of its own (`focus-visible:…`, `focus:…`, `has-[…:focus-visible]…`), or the element is a
  * programmatic target that uses the `focus-ring` utility instead. Where the ring is somewhere else, the string is here
  * with the file, how many strings and why. The list is exact: a string that left it makes the test fail, and so does a
@@ -320,7 +320,7 @@ const drawsFocus = (word: string) => {
   );
 };
 
-/** The class strings of a source that take the outline away without a ring of their own (t439). */
+/** The class strings of a source that take the outline away without a ring of their own. */
 export function outlineStrings(path: string, text: string): string[] {
   if (!TS_OR_TSX.test(path)) {
     return [];

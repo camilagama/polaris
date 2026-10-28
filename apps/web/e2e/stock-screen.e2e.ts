@@ -16,7 +16,7 @@ import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The stock screen on the components of src/ui (ADR 0103, t194), in the lab of the offline screens:
+ * The stock screen on the components of src/ui (ADR 0103), in the lab of the offline screens:
  * - condition 2 of the ADR repeated on the screen itself: every control of the screen opens and changes state
  *   under the production Content-Security-Policy with zero violations, in the light and in the dark theme;
  * - the focus: the first field when a command opens, the first invalid one after "Revisar", the status after the

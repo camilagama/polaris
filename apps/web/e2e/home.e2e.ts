@@ -8,7 +8,7 @@ import { READ_PROCEDURES } from "../src/lib/read-gate";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The Início at `/` with a connection (desenho t269 v2, § 4 and § 5; corte inicio.md AC-1 to AC-23), in the real app
+ * The Início at `/` with a connection (desenho do Início v2, § 4 and § 5; corte inicio.md AC-1 to AC-23), in the real app
  * against a server played by network interception: the figures (A and B of `report.periodSummary`, with the daily
  * series and the ranking), the goals, the lists of balances and the sales. What the real server computes is proved
  * on PostgreSQL (the `economics` and `home-writes` gates); here, what the screen does with it.
@@ -31,7 +31,7 @@ const DEVICE = {
   lastSeenAt: "2026-10-14T12:00:00.000Z",
   revokedAt: null,
 };
-/** 23/10/2026 at noon in Brasília. */
+/** `23/10/2026` at noon in Brasília. */
 const NOON = Date.parse("2026-10-23T15:00:00.000Z");
 const PRODUCT = "0199c2d0-0000-7000-8000-0000000000b1";
 const DELETED = "0199c2d0-0000-7000-8000-0000000000b2";
@@ -496,8 +496,8 @@ async function openHome(page: Page, server: FakeServer, at = NOON) {
 }
 
 /**
- * The estimate of the goal of 23/10 (v7 § 3 item 9): R$ 2.670,60 measured, plus the 7 whole days before today (16 to
- * 22/10: R$ 1.840,00 + R$ 420,50 = R$ 2.260,50) × 8 days left ÷ 7 = R$ 2.583,428… → R$ 2.583,43 (half-up, once), so
+ * The estimate of the goal of `23/10` (v7 § 3 item 9): R$ 2.670,60 measured, plus the 7 whole days before today (16 to
+ * `22/10`: R$ 1.840,00 + R$ 420,50 = R$ 2.260,50) × 8 days left ÷ 7 = R$ 2.583,428… → R$ 2.583,43 (half-up, once), so
  * R$ 5.254,03 on the 31st. Over the target of R$ 5.000,00 the phrase says the day the rhythm crosses it (the 7th day
  * would give R$ 4.931,10: the 31st, the last one, is the first above), and under a target of R$ 6.000,00 where it gets.
  */
@@ -562,7 +562,7 @@ test.describe("loja com venda", () => {
       page.getByText("Sexta-feira, 23 de outubro · atualizado às 12:00")
     ).toBeVisible();
 
-    // the KPI cards (v7 § 3): Friday 23/10 against the mean of the 4 Fridays before it (only 02/10 sold, R$ 80,00)
+    // the KPI cards (v7 § 3): Friday `23/10` against the mean of the 4 Fridays before it (only `02/10` sold, R$ 80,00)
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("R$ 320,10");
     await expect(today).toContainText("2 vendas hoje");
@@ -622,7 +622,7 @@ test.describe("loja com venda", () => {
 
     const meta = region(page, "Meta");
     await expect(meta).toContainText("Meta de outubro");
-    // the store's today is 23/10: 8 days after it up to the 31st
+    // the store's today is `23/10`: 8 days after it up to the 31st
     await expect(meta).toContainText("de 01/10 a 31/10 · faltam 8 dias");
     // the ring (v7 § 3 item 9): an image that says it in words, the drawing of Bklit UI hidden inside it
     const ring = meta.getByRole("img");
@@ -1245,7 +1245,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     const chart = region(page, "Vendas por dia");
     const marks = chart.locator("[data-chart-mark]");
     await expect(marks).toHaveCount(7);
-    // 17/10 to 23/10: sold on 18, 20 and 23
+    // `17/10` to `23/10`: sold on 18, 20 and 23
     await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(3);
     await expect(chart.locator("[data-chart-mark=none]")).toHaveCount(4);
     await expect(chart.locator("[data-chart-best]")).toHaveAttribute(
@@ -1363,7 +1363,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta).not.toContainText("5.254,03");
     await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
 
-    // nothing sold from 16 to 22/10: a "chega a" equal to what was reached would be no estimate
+    // nothing sold from 16 to `22/10`: a "chega a" equal to what was reached would be no estimate
     const { "2026-10-18": _, "2026-10-20": __, ...quiet } = SOLD.days;
     short.scenario = {
       ...SOLD,
@@ -1899,7 +1899,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("a meia-noite da loja passa com a página aberta sem rede: o Hoje da cópia deixa de valer", async ({
     page,
   }) => {
-    // 23:50 of 23/10 in Brasília
+    // 23:50 of `23/10` in Brasília
     const lateEvening = Date.parse("2026-10-24T02:50:00.000Z");
     const server = new FakeServer(SOLD);
     server.now = lateEvening;
@@ -2115,8 +2115,8 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 });
 
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
-  // Friday 23/10: the 26 weeks go from Sunday 26/04 to Saturday 24/10; the days that sold are those of SOLD
-  // at rest the map reads today; the best day (Sunday 18/10) has a line of its own under the legend
+  // Friday `23/10`: the 26 weeks go from Sunday `26/04` to Saturday `24/10`; the days that sold are those of SOLD
+  // at rest the map reads today; the best day (Sunday `18/10`) has a line of its own under the legend
   const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
   const BEST_DAY_READING =
     "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
@@ -2156,7 +2156,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
-    // 24/10, to come, has no outline and no fill
+    // `24/10`, to come, has no outline and no fill
     await expect(dataCells(page)).toHaveCount(182);
     await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
     await expect(map).toContainText(
@@ -2200,7 +2200,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     await expect(reading(page)).toHaveText(READING);
-    // the column of the week of 18/10 is the last, the 26th (index 25); Sunday is its 1st row
+    // the column of the week of `18/10` is the last, the 26th (index 25); Sunday is its 1st row
     await dataCells(page)
       .nth(25 * 7)
       .hover();
@@ -2224,7 +2224,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await expect(slider).toHaveValue("180");
     await slider.focus();
-    // the keyboard starts on today: down is Saturday 24/10, to come, so it stays; up is the day before
+    // the keyboard starts on today: down is Saturday `24/10`, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
     await expect(reading(page)).toHaveText(READING);
     await page.keyboard.press("ArrowUp");

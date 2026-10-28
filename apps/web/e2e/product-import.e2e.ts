@@ -359,7 +359,7 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
   const list = page.getByRole("list", { name: "Produtos" });
   await expect(list.getByText("Camiseta básica")).toBeVisible();
   await expect(list.getByText("Meia")).toBeVisible();
-  // the page says what entered, and the focus goes to it (T446-1), as after a product made by hand
+  // the page says what entered, and the focus goes to it, as after a product made by hand
   await expect(
     page.getByRole("status").filter({ hasText: "2 produtos importados." })
   ).toBeVisible();
@@ -426,7 +426,7 @@ test("AC-10 e AC-5: a conexão cai no meio (com uma resposta perdida), a tela di
   const again = dialog.getByRole("button", { name: "Continuar de onde parou" });
   await expect(again).toHaveAttribute("aria-disabled", "true");
   await expect(again).toHaveAccessibleDescription(OFFLINE_REASON);
-  // on step 3 the notice says how the import goes on, not what the step of the file said (T446-4)
+  // on step 3 the notice says how the import goes on, not what the step of the file said
   await expect(again).toHaveAccessibleDescription(OFFLINE_REASON_RUN);
   expect(store.products).toHaveLength(2);
 
@@ -705,7 +705,7 @@ test("AC-6: o plano chega ao limite no meio (outra aba criou produto): diz o lim
   await expect(statusIn(dialog, "Importamos 1 produto.")).toBeVisible({
     timeout: 30_000,
   });
-  // one sentence with the total and the part, never the same rows twice (T446-3)
+  // one sentence with the total and the part, never the same rows twice
   await expect(
     statusIn(dialog, "2 linhas não entraram: o plano chegou ao limite.")
   ).toBeVisible();

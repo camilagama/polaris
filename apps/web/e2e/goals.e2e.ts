@@ -570,7 +570,7 @@ for (const width of FORM_WIDTHS) {
 }
 
 /**
- * The step back of a phone closes the form dialog (DESIGN.md, "Diálogo de formulário"; t408): its entry in the history,
+ * The step back of a phone closes the form dialog (DESIGN.md, "Diálogo de formulário"): its entry in the history,
  * at the same address, is the one the step back takes. The gallery proves two dialogs and each way of closing
  * (`e2e-pwa/dialog-voltar.e2e.ts`); here, the screen with its draft, the fresh tab, the reload and the address.
  */
@@ -1130,7 +1130,7 @@ test("a 360 px o período da meta abre no mês do período, e com pouco espaço 
   expect(top).toBeGreaterThan(300);
   expect(top).toBeLessThan(440);
   const popup = await openDatePicker(page, "Período da meta");
-  // one month at 360: the month of the start of 01/10 a 31/10, never the one before it
+  // one month at 360: the month of the start of `01/10` a `31/10`, never the one before it
   await expect(popup.getByText("Outubro de 2026")).toBeVisible();
   await expect(popup.getByText("Setembro de 2026")).toHaveCount(0);
   await popup.locator('button[data-day="2026-10-05"]').click();

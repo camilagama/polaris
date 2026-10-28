@@ -7,10 +7,10 @@ import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * How often the real offline runtime pulls (t400): one pull per tick per browser, whatever the number of tabs
+ * How often the real offline runtime pulls: one pull per tick per browser, whatever the number of tabs
  * (the tab holding the Web Lock pulls, the others hear it through the data channel), and no pull for a page
  * load when a tab pulled less than a tick ago (each screen is a page load; that was the ~2.5 s pull of the
- * QA of 26/10). The server is simulated by network interception, for the whole context: both tabs are counted.
+ * QA). The server is simulated by network interception, for the whole context: both tabs are counted.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const USER_ID = "user-do-teste";

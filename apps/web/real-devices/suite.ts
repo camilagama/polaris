@@ -877,7 +877,7 @@ async function datePickerFlow(
 }
 
 /**
- * O celular de verdade é o nível de movimento `essential` (t386, ADR 0103 "Níveis de movimento"): a emulação do
+ * O celular de verdade é o nível de movimento `essential` (ADR 0103 "Níveis de movimento"): a emulação do
  * Playwright prova o resto (`e2e-pwa/motion-level.e2e.ts`), mas não que um aparelho real dê `pointer: coarse`.
  */
 async function motionFlow(recorder: Recorder, browser: Browser) {
@@ -956,7 +956,7 @@ const dialogEntry = (browser: Browser) =>
   browser.execute(() => history.state?.polarisDialog ?? null);
 
 /**
- * O "voltar" do celular fecha o Dialog de tela inteira (t408, DESIGN.md "Diálogo de formulário"): a entrada do Dialog
+ * O "voltar" do celular fecha o Dialog de tela inteira (DESIGN.md "Diálogo de formulário"): a entrada do Dialog
  * no histórico é a que o voltar tira, o rascunho fica e o foco volta ao botão; fechado pelo ×, ele retira a entrada e o
  * voltar seguinte sai da tela. O WebDriver volta como o gesto e o botão do sistema (`history.back`); a emulação prova o
  * resto (dois Dialogs, recarga, aba nova, endereço: `e2e-pwa/dialog-voltar.e2e.ts` e `e2e/goals.e2e.ts`).

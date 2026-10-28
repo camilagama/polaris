@@ -5,11 +5,11 @@ import { json, settle } from "./ui-entry-states";
 import { serveHealth } from "./worker-mark";
 
 /**
- * The states of the Assinatura the interface guardrails measure (t328): the real route `/subscription` in the shell,
+ * The states of the Assinatura the interface guardrails measure: the real route `/subscription` in the shell,
  * with the session and `billing.readPlan` answered by the test (`page.route`), synthetic data only. Five states, as
  * few as the other screens (each one loads in every context of the map, and the CI job has a limit of 30 minutes):
  * the offer of a Free store with the form of Pix Automático open, the Pix waiting for the bank, the Pro in force in
- * the window of the refund, the dialog of cancelling the renewal (t372), and the grace with the notice at the top and
+ * the window of the refund, the dialog of cancelling the renewal, and the grace with the notice at the top and
  * the page of the charge that failed. Each state of the plan, the refusals, the return of the card and the owner's
  * commands are proved in `e2e/subscription-screen.e2e.ts`, `e2e/subscription-commands.e2e.ts` and in the captures
  * of the pull requests.
@@ -139,7 +139,7 @@ export const subscriptionStates = {
     openSubscription(page, [ACTIVE_IN_WINDOW], (current) =>
       current.getByText("Próxima cobrança em").first().waitFor()
     ),
-  /** "Cancelar a renovação" open: the loss, what stays, the reason and the two buttons (t372). */
+  /** "Cancelar a renovação" open: the loss, what stays, the reason and the two buttons. */
   cancelDialog: (page: Page) =>
     openSubscription(page, [ACTIVE_IN_WINDOW], async (current) => {
       await current

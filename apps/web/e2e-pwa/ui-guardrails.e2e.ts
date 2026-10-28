@@ -22,7 +22,7 @@ import {
 } from "./ui-screens";
 
 /**
- * The interface guardrails (t180): what the UX review finds by measuring, measured on every screen of
+ * The interface guardrails: what the UX review finds by measuring, measured on every screen of
  * `ui-screens.ts`, each check only on the axes that can change its result (`CHECK_CONTEXTS`, with the table in
  * docs/runbooks/testes-de-tela.md). Each check has a control case below that
  * proves it catches the fault it is for (a check that never fails proves nothing). Adding a screen:
@@ -146,7 +146,7 @@ for (const screen of SCREENS) {
   });
 }
 
-/** A desktop window of 360 px with a mouse: the panel of the phone and the `full` level of motion (t386). */
+/** A desktop window of 360 px with a mouse: the panel of the phone and the `full` level of motion. */
 const NARROW_MOUSE = {
   colorScheme: "light",
   hasTouch: false,

@@ -114,7 +114,7 @@ export interface TimeSeriesChartInnerProps {
   lines: LineConfig[];
   /**
    * Base SVG clipPath id for grow animation. Uniquified per chart instance so
-   * multiple charts on one page do not share a clipPath (#226).
+   * multiple charts on one page do not share a clipPath.
    */
   clipPathId: string;
   /** Optional ComposedChart bar layout (forwarded into context). */
@@ -181,7 +181,7 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
   tweenYDomainOnXDomainChange = false,
   onPhaseChange,
 }: TimeSeriesChartInnerProps) {
-  // Unique per instance — shared clipPath ids crop later charts (#226).
+  // Unique per instance — shared clipPath ids crop later charts.
   const uniqueClipPathId = `${clipPathId}-${useId().replace(/:/g, "")}`;
   const staticPreview = useStaticChartPreview();
   const innerWidth = width - margin.left - margin.right;

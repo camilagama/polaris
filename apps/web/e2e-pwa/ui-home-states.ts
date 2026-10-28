@@ -15,7 +15,7 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-/** 23/10/2026 at noon in Brasília: the month of the figures is the server's, whatever the device's date. */
+/** `23/10/2026` at noon in Brasília: the month of the figures is the server's, whatever the device's date. */
 const NOW = "2026-10-23T15:00:00.000Z";
 const DAY = 86_400_000;
 const RPC_PREFIX = /^\/rpc\//;

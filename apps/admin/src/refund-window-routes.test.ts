@@ -41,7 +41,7 @@ const CASE_ID = "0199a0a0-0000-7000-8000-0000000000c1";
 const PATH = `/api/support-cases/${CASE_ID}/refund-window`;
 const sp = (local: string) => new Date(`${local}-03:00`);
 
-// first charge at 15:30 of 2026-10-10 in São Paulo: the window's last second is 23:59:59 of 2026-10-17
+// first charge at 15:30 of `2026-10-10` in São Paulo: the window's last second is 23:59:59 of `2026-10-17`
 function raw(overrides: Partial<RawRefundWindow> = {}): RawRefundWindow {
   return {
     firstChargeAmount: "24.90",

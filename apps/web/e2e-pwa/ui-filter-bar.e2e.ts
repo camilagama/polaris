@@ -7,12 +7,12 @@ import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
 /**
- * The filter bar of src/ui/ in the gallery (t383), at 360 and 1280 px and with the bar open (the menu and the
+ * The filter bar of src/ui/ in the gallery, at 360 and 1280 px and with the bar open (the menu and the
  * editors), as the review asks: the pills with their names, the menu with the fields used and the one that needs the
  * connection, adding, editing and taking out a filter, "Limpar tudo", the keyboard (Tab, Enter, Escape gives the focus
  * back to the pill), the sizes with a mouse and with touch, the row of pills that wraps into lines at every width (320, 360 and 1280 px), the
  * motion and its absence under `prefers-reduced-motion`, and axe with each part open in both themes. "Hoje" is
- * 24/10/2026 in the gallery and the bar starts with Período 01/10 a 24/10, Situação Paga and Cliente Maria Souza.
+ * `24/10/2026` in the gallery and the bar starts with Período `01/10` a `24/10`, Situação Paga and Cliente Maria Souza.
  */
 const REASON = /Só com conexão/;
 const CLOSED_FAULT = /Filtrar|Tirar o filtro|editar|Limpar tudo/;

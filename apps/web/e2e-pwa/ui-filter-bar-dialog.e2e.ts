@@ -4,11 +4,11 @@ import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 
 /**
- * The editor of each pill of the filter bar on a phone (t414), in the gallery: below 760 px it is the form Dialog of
+ * The editor of each pill of the filter bar on a phone, in the gallery: below 760 px it is the form Dialog of
  * the whole screen (title = the field, "Aplicar" and "Cancelar" in the fixed footer), nothing is applied before
  * "Aplicar", and Cancelar, ×, Esc and the step back of the phone close it with the filter as it was and the focus on the
- * pill that opened it. From 760 px it is still the Popover of before. The bar starts with Período 01/10 a 24/10,
- * Situação Paga and Cliente Maria Souza ("hoje" is 24/10/2026).
+ * pill that opened it. From 760 px it is still the Popover of before. The bar starts with Período `01/10` a `24/10`,
+ * Situação Paga and Cliente Maria Souza ("hoje" is `24/10/2026`).
  */
 const PHONE = { height: 740, width: 360 } as const;
 const DESKTOP = { height: 800, width: 1280 } as const;

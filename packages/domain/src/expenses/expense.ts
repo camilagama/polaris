@@ -247,7 +247,7 @@ function addDays(date: string, days: number): string {
 }
 
 /**
- * The competence date must be a plausible period: not before 2000-01-01 and
+ * The competence date must be a plausible period: not before `2000-01-01` and
  * not more than 366 days after `today` (the date in the organization's
  * calendar). Competence may be in the future (next month's rent) or far in the
  * past (a correction), unlike a sale, which happened.

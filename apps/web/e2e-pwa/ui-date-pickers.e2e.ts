@@ -6,12 +6,12 @@ import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails";
 
 /**
- * The date pickers of src/ui/ in the gallery (t363): the calendar chunk loads on demand; one date is chosen with a
+ * The date pickers of src/ui/ in the gallery: the calendar chunk loads on demand; one date is chosen with a
  * touch, with "Hoje" and with the arrows; a disabled day is aria-disabled, says why and is not chosen; the period
  * keeps the popover open on the first touch and closes on the second, the shortcuts and "Limpar" work, and an
  * inverted range cannot be made. At 360 and 1280 px: the size of the days (36 px with a mouse, 44 with touch), one
  * month or two, nothing past the window, the focus of 3 px. The popover moves as Base UI's does, and the page that
- * asks for no motion stops it. axe finds nothing with each picker open, in both themes. "Hoje" is 24/10/2026 in the
+ * asks for no motion stops it. axe finds nothing with each picker open, in both themes. "Hoje" is `24/10/2026` in the
  * gallery.
  */
 // with or without the query of a second try (`?retry=1`)

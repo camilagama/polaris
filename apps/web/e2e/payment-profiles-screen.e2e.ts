@@ -420,7 +420,7 @@ test("um perfil criado fecha o formulário, é dito no alto, com o foco, e a lis
   );
   const notice = page.getByText("Perfil “Maquininha da loja” criado.");
   await expect(notice).toBeVisible();
-  // the region of the notice takes the focus, and the keyboard sees it (t439)
+  // the region of the notice takes the focus, and the keyboard sees it
   await expectFocusRing(notice.locator("xpath=ancestor::div[@tabindex='-1']"));
   await expect(page.getByText("Maquininha da loja").last()).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
