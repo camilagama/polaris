@@ -6,7 +6,7 @@ import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The filters of the sales history on the filter bar of src/ui (t391, over the DateRangePicker of t373), in the lab of
+ * The filters of the sales history on the filter bar of src/ui (over the DateRangePicker), in the lab of
  * the screens over the real offline runtime, the list answered by the test: the period is a pill whose editor takes
  * two days (in order, whichever is touched first) or a shortcut, "Limpar" and the X take a pill out, "Limpar tudo"
  * takes them all, and what the server is asked for is what the bar shows.

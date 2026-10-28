@@ -5,7 +5,7 @@ import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The states of the sales history the interface guardrails measure (t234): the screen in the lab of the screens
+ * The states of the sales history the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=history`) over the real offline runtime, with the list answered by the test
  * (`page.route`) and synthetic data only. The lab's own controls are hidden at the end of each state, so what is
  * measured is the screen alone. Three states, for the reason the products screen gives (each one starts the

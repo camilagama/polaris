@@ -733,7 +733,7 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   const notice = page.getByText("Produto “Bolsa de couro” cadastrado.");
   await expect(notice).toBeVisible();
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
-  // the region of the notice has the ring of the keyboard (t439)
+  // the region of the notice has the ring of the keyboard
   await expectFocusRing(page.locator(":focus").filter({ has: notice }));
   await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
   await expect(page.locator("[data-product-id]")).toContainText(

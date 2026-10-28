@@ -3,7 +3,7 @@ import { createJourneyUser, expect, test } from "../fixtures";
 import { journeyName } from "../journey-names";
 
 /**
- * The /rpc rate limit of the preview, with the limits of `wrangler.jsonc` (t400): reads count in a bucket of their
+ * The /rpc rate limit of the preview, with the limits of `wrangler.jsonc`: reads count in a bucket of their
  * own (600 per minute per session, 1800 per address) and writes in the old one (120 per minute per session and per
  * address). Each test has its own user, so its own session and address (journeyClientIp): its buckets start empty.
  * The local limiter counts in windows aligned to the minute of the clock, so a burst starts early in a minute.

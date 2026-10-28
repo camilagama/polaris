@@ -143,7 +143,7 @@ export function cycleOf(value: string | undefined): 1 | 6 | 12 {
 }
 
 /**
- * What `refund` prints (ADR 0066, emenda de 23/10): the refund's answer and the renewal as the record shows it
+ * What `refund` prints (ADR 0066): the refund's answer and the renewal as the record shows it
  * afterwards. The refund cancels the renewal first, so a `nothing_to_refund` (the charge was refunded already, or
  * none is paid) can still have cancelled it: the QA reads "renovação cancelada" then too, never only the refund.
  */

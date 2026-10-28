@@ -7,7 +7,7 @@ import {
 
 const sp = (local: string) => new Date(`${local}-03:00`);
 
-// first charge on 2026-10-10 (São Paulo): the window ends at 23:59:59 of 2026-10-17
+// first charge on `2026-10-10` (São Paulo): the window ends at 23:59:59 of `2026-10-17`
 const charged: RawRefundWindow = {
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:30:00"),

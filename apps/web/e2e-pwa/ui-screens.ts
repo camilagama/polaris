@@ -26,10 +26,10 @@ import { stockStates } from "./ui-stock-states";
 import { subscriptionStates } from "./ui-subscription-states";
 
 /**
- * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
+ * The screens the interface guardrails run on, served by the static server of the pwa-e2e build under
  * the CSP of `_headers`. The list grows with each new screen or state: docs/runbooks/testes-de-tela.md says how.
  *
- * Every screen is on the new interface since batch 6 (t256): touch area of 48 px, no fault waits for a migration,
+ * Every screen is on the new interface since batch 6: touch area of 48 px, no fault waits for a migration,
  * and the source folders of each one are read by the source rules (`scripts/ui-source-rules.test.ts`).
  */
 export interface UiScreen {
@@ -453,7 +453,7 @@ async function exerciseHomePanels(page: Page) {
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
-  // under the chart and under the map (t394)
+  // under the chart and under the map
   for (const numbers of await page
     .getByRole("button", { name: "Ver os números" })
     .all()) {
@@ -711,7 +711,7 @@ const ACCOUNT_SOURCES = [
   "src/sign-in/entry-ui.tsx",
 ];
 
-/** The files of the Assinatura (t328), with the notice of grace of the shell. */
+/** The files of the Assinatura, with the notice of grace of the shell. */
 const SUBSCRIPTION_SOURCES = [
   "src/subscription",
   "src/app-shell/grace-notice.tsx",
@@ -747,7 +747,7 @@ export const SCREENS: UiScreen[] = [
         .locator("[data-chart-loading]")
         .first()
         .waitFor({ state: "detached" });
-      // and the calendar of the date pickers, from its own chunk too (t363)
+      // and the calendar of the date pickers, from its own chunk too
       await page
         .locator("[data-calendar-loading]")
         .first()

@@ -244,7 +244,7 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   ).toBeVisible();
   expect(removed).toBe(1);
   await expect(page.getByText("Imagem 1 de 1")).toBeVisible();
-  // the heading of the list takes the focus, and the keyboard sees it (t439)
+  // the heading of the list takes the focus, and the keyboard sees it
   await expectFocusRing(
     page.getByRole("heading", { level: 3, name: "Imagens associadas" })
   );

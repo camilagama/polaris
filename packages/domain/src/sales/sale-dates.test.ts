@@ -10,7 +10,7 @@ import {
 } from "./sale-dates";
 
 const saoPaulo = "America/Sao_Paulo";
-const now = new Date("2026-10-13T15:00:00Z"); // 12:00 on 2026-10-13 in São Paulo
+const now = new Date("2026-10-13T15:00:00Z"); // 12:00 on `2026-10-13` in São Paulo
 
 describe("retroactiveLimitDaysForRole", () => {
   it("gives the V1 owner about 30 days and unknown roles none", () => {
@@ -53,11 +53,11 @@ describe("assertSaleOccurredWithinWindow", () => {
   });
 
   it("accepts the same local date 30 days ago and rejects the day before", () => {
-    // 2026-09-13 local is exactly 30 calendar days before 2026-10-13
+    // `2026-09-13` local is exactly 30 calendar days before `2026-10-13`
     expect(assertSaleOccurredWithinWindow(window("2026-09-13T03:00:00Z"))).toBe(
       "2026-09-13"
     );
-    // one second earlier is still the evening of 2026-09-12 in São Paulo
+    // one second earlier is still the evening of `2026-09-12` in São Paulo
     expect(() =>
       assertSaleOccurredWithinWindow(window("2026-09-13T02:59:59Z"))
     ).toThrow(SaleOccurredTooOldError);
@@ -67,9 +67,9 @@ describe("assertSaleOccurredWithinWindow", () => {
   });
 
   it("follows the organization's calendar, so the same instant can fall on either side", () => {
-    // 14:30Z is 11:30 on 2026-09-13 in São Paulo (30 days before its "today",
-    // 2026-10-13) but 23:30 on 2026-09-13 in Tokyo, where "today" is already
-    // 2026-10-14, 31 days later.
+    // 14:30Z is 11:30 on `2026-09-13` in São Paulo (30 days before its "today",
+    // `2026-10-13`) but 23:30 on `2026-09-13` in Tokyo, where "today" is already
+    // `2026-10-14`, 31 days later.
     const instant = "2026-09-13T14:30:00Z";
     expect(assertSaleOccurredWithinWindow(window(instant, saoPaulo))).toBe(
       "2026-09-13"

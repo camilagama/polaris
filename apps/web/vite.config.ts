@@ -23,7 +23,7 @@ const APP_CORE =
 /**
  * The modules that Produtos, Categorias, Clientes and the public catalog share (field parts, the search model and the
  * screen parts): with the four screens migrated the default split left each in a chunk of
- * its own, 0.2 to 1.3 KB gzip, which compress worse alone (+2.8 KB over the main with the merge of the PR 255, past
+ * its own, 0.2 to 1.3 KB gzip, which compress worse alone (+2.8 KB over the main with the merge, past
  * the +46 KB ceiling). One chunk, +42.8 KB of +46 KB measured with Node.
  */
 const CATALOG_SHARED =
@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
         output: {
           // Left to the default split, a new import of the interface in the first chunk (a button in the shell's
           // notices) pulled those modules out into chunks of their own, each compressing worse alone: about 7 KB
-          // gzip in the precache for no new code (t233). One group keeps them in a single chunk, with what they import.
+          // gzip in the precache for no new code. One group keeps them in a single chunk, with what they import.
           codeSplitting: {
             groups: [
               {
@@ -81,7 +81,7 @@ export default defineConfig(({ mode }) => {
                     priority: 30,
                     test: MOTION_MODULE,
                   },
-                  // the charts and the map of the Início (t394) share the sparkline, d3 and visx: they stay in the charts
+                  // the charts and the map of the Início share the sparkline, d3 and visx: they stay in the charts
                   // chunk, so the map's chunk has only the map (the guards of `pwa/precache-budget.ts`)
                   {
                     includeDependenciesRecursively: false,

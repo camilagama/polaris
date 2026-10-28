@@ -38,7 +38,7 @@ const CUSTOMER_PATH = `/api/v1/customer/${CUSTOMER_KEY}`;
 const END_TO_END_ID = "E00000000202610271200FAKE0000001";
 const FAKE_EMV =
   "00020126FAKE0000PIXAUTOMATICO5204000053039865802BR5909POLARISFK6009SAO PAULO62070503***6304ABCD";
-/** Inside the period of the installment charged on 2026-10-27. */
+/** Inside the period of the installment charged on `2026-10-27`. */
 const NOW = new Date("2026-10-28T15:00:00.000Z");
 const encoded = (id: string) => encodeURIComponent(id);
 const SUBSCRIPTION_PATH = `/api/v1/subscriptions/${encoded(SUBSCRIPTION_ID)}`;
@@ -877,7 +877,7 @@ describe("refundCurrentPeriod", () => {
         fact: {
           amount: { currency: "BRL", value: "24.90" },
           occurredAt: NOW,
-          // 2026-10-27 plus one month, through the whole day in São Paulo
+          // `2026-10-27` plus one month, through the whole day in São Paulo
           periodEndsAt: new Date("2026-11-28T03:00:00.000Z"),
           type: "charge_refunded",
         },

@@ -303,7 +303,7 @@ function checkStagingBlock(app, where, staging, problems) {
   }
 }
 
-// Password sign-in is on in staging by decision of the user (22/10, ADR 0100), open to anyone because the
+// Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
 // data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
 // ones and the closure notices, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
 // sender of another domain would send from a verified domain of production or of a third party the day any

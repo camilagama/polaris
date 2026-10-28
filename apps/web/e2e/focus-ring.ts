@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 /**
- * The focus of the keyboard (t439, DESIGN.md "Acessibilidade"): the 3 px outline in `--ring`. The elements that take
+ * The focus of the keyboard (DESIGN.md "Acessibilidade"): the 3 px outline in `--ring`. The elements that take
  * the focus by code (a heading after a removal, the notice of a result, the confirmation of a row) are not stops of
  * Tab, so the test gets there the way a person does: it activates the control with the keyboard (Enter on the focused
  * button), and the browser then draws `:focus-visible` on what the code focuses next.

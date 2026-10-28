@@ -418,7 +418,7 @@ describe("ZIP writer (PRV-4 to PRV-6)", () => {
 // Retention: civil-calendar arithmetic as the oracle
 // ---------------------------------------------------------------------------------------------
 
-/** Days since 1970-01-01 of a civil date (Howard Hinnant's algorithm), for any month number, even out of 1 to 12. */
+/** Days since `1970-01-01` of a civil date (Howard Hinnant's algorithm), for any month number, even out of 1 to 12. */
 function daysFromCivil(year: number, month: number, day: number): number {
   const y0 = year + Math.floor((month - 1) / 12);
   const m = ((((month - 1) % 12) + 12) % 12) + 1;

@@ -9,7 +9,7 @@ import { activateByKeyboard, expectActiveElementRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * "Sair" revokes this device (ADR 0048, emenda de 22/10; U-50 and U-51), against a server played by network
+ * "Sair" revokes this device (ADR 0048; U-50 and U-51), against a server played by network
  * interception that keeps its state across the pages of a test: the devices, the session of each browser, the queue.
  * The real server, its database and the gate `device-sessions` are proven elsewhere; here it is the order of the
  * requests, what the browser sends and what the screen shows.
@@ -310,7 +310,7 @@ const storeMenuButton = (page: Page) =>
 
 /**
  * "Sair": on a wide screen, the last item of the menu of the store card (v7 § 3 item 12); under "Mais" on a narrow
- * one, as a button straight in the sheet (Rodrigo, 25/10).
+ * one, as a button straight in the sheet.
  */
 async function clickSair(page: Page) {
   const more = page.getByRole("button", { exact: true, name: "Mais" });
@@ -551,7 +551,7 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
           document.activeElement?.querySelector('[role="alertdialog"]') !== null
       )
     ).toBe(true);
-    // the keyboard sees it: the focus of the warning has the ring (t439)
+    // the keyboard sees it: the focus of the warning has the ring
     await expectActiveElementRing(page);
     expect(server.log).not.toContain("sign-out");
     expect(server.log.some((line) => line.startsWith("revokeCurrent"))).toBe(

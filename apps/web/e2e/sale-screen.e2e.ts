@@ -12,7 +12,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * The sale screen on the components of src/ui (ADR 0103, PR 4), in the lab of the offline screens:
  * - condition 2 of the ADR repeated on the screen itself: every control of the sale opens and changes state
  *   under the production Content-Security-Policy with zero violations, in the light and in the dark theme;
- * - Petković C-1: the quantity field is 64 px wide and leaves at least 48 px free between the touch areas of
+ * - condition C-1: the quantity field is 64 px wide and leaves at least 48 px free between the touch areas of
  *   its − and + buttons.
  */
 const DARK = /\bdark\b/;

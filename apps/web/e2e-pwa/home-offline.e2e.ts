@@ -9,7 +9,7 @@ import {
 } from "./ui-home-states";
 
 /**
- * The chart of the Início without a connection, with the service worker of the real build (desenho t269 v2, § 7.4,
+ * The chart of the Início without a connection, with the service worker of the real build (desenho do Início v2, § 7.4,
  * "Chunk do gráfico"; AC-21): the charts chunk is in the precache, so a device that installed the app draws the
  * chart of the copy offline; with the chunk gone from Cache Storage, the page opened offline keeps the figures and
  * says the chart opens when the internet comes back. The Início runs in the lab of the screens, whose runtime is
@@ -49,7 +49,7 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await expect(
     page.getByText("O gráfico abre quando a internet voltar.")
   ).toHaveCount(0);
-  // the map of the copy, from its own chunk in the precache (t394)
+  // the map of the copy, from its own chunk in the precache
   const map = page.getByRole("region", { name: "Ritmo de vendas" });
   await expect(map.locator("[data-heatmap] svg")).toBeVisible({
     timeout: 20_000,

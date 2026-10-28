@@ -23,6 +23,12 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - **Perfil de cabeçalhos `admin-document`** (`@polaris/http-security`, ADR 0090), aplicado por **lista exata** desses três caminhos em `GET`: `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; font-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'`, com `no-referrer` e `no-store` como o perfil `admin`. A API, `/health` e qualquer 404 seguem com o perfil `admin`, inerte.
 - **Origem das escritas.** Toda escrita (`POST`, `PUT`, `DELETE`) precisa trazer `Origin` igual à origem do Admin (antes, a ausência passava) e é recusada com 403 quando `Sec-Fetch-Site` vem e não é `same-origin` nem `none` (antes só `cross-site` era recusado em `/funnel`; `same-site`, outro subdomínio da zona, passava). O `GET /api/funnel`, que audita e gasta o limite, segue a mesma regra de `Sec-Fetch-Site`. Ferramenta que chama a API com token de serviço manda `Origin: https://<host do Admin>`. Sem token anti-CSRF nem cookie próprio.
 
+### Emenda de 28/10/2026: as escritas da tela (corte admin-tela-v1, parte B)
+
+- **O que a tela escreve.** Abrir caso de suporte (`POST /api/support-cases`, com `kind: "support"` e o motivo no corpo JSON) e ler a janela de reembolso (`POST /api/support-cases/:caseId/refund-window`, uma leitura que grava auditoria). Nenhuma rota nova nem mudança de rota: a tela usa as que existiam, e o servidor continua sendo quem recusa (capacidade, origem, caso aberto da mesma loja). Fechar caso, acesso temporário, revelação de dado pessoal, comandos de cobrança, suspensão e purge seguem só na API.
+- **Como.** Toda escrita sai do `api.ts` da tela com `content-type: application/json`, `redirect: "manual"` e a origem que o navegador põe sozinho em `Origin` (a regra da emenda anterior); nenhum dado vai na URL além do que a rota já pede. A sessão do Access vencida continua a dar "recarregue a página", sem seguir o redirecionamento.
+- **`dom.el` recusa** atributo `on*`, `style` e os `src…` que não são um URL (`srcdoc`, `srcset`), qualquer que seja o valor. `src`, `action` e `formaction` também são recusados sempre: a lista de atributos da página só tem `href`, e o `href` só aceita um caminho do próprio Admin (`/…`, sem `//`, barra invertida, espaço, caractere de controle, `%` nem segmento `.` ou `..`, e fora de `/api`, em qualquer caixa). Nenhum esquema é aceito hoje.
+
 ## Consequências
 
 - Roubar o acesso ao Admin exige um login do Access válido **e** uma linha em `platform_principals` para aquele subject; trocar o e-mail no provedor de identidade não leva a nada.
@@ -34,7 +40,7 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - Sem MFA aplicado pelo Worker: o MFA obrigatório é uma política do Access (runbook); o Worker só verifica o token que o Access emitiu.
 - Um token roubado vale até expirar (a duração da sessão do Access é configurada lá).
 - O isolate guarda as chaves em memória; várias instâncias buscam cada uma a sua.
-- Não há tela do Admin ainda (só `/api/whoami`); casos de suporte, acesso temporário, revelação de dados pessoais, comandos de cobrança e suspensão são as próximas etapas da fase.
+- A tela do Admin (emendas de 28/10) cobre buscar loja, o diagnóstico, o funil, abrir e listar caso de suporte e ler a janela de reembolso; acesso temporário, revelação de dados pessoais, comandos de cobrança e suspensão seguem só na API.
 
 ## Alternativas rejeitadas
 

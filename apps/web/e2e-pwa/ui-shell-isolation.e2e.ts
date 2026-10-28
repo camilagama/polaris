@@ -12,7 +12,7 @@ import { serveStockRows } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
- * The screens inside the real shell and the pages outside it (t193; since batch 6, t256): every style rule on the page
+ * The screens inside the real shell and the pages outside it (since batch 6): every style rule on the page
  * is in a layer of Tailwind, so nothing old or stray (a sheet with no layer, the old `@layer legacy`) can reach a
  * screen. The break this used to catch was `.ui-root input` giving the field of "Trocar senha" a border and a 2.8rem
  * height (ADR 0103, section 3). Every screen and state is opened, not one: the build splits CSS by chunk, so a sheet
@@ -376,7 +376,7 @@ const PUBLIC_CATALOG_SETUP = {
   publishedProductIds: [],
 };
 
-/** Categorias, Clientes and the public catalog (t235): each with the screen as it opens and one state with a field. */
+/** Categorias, Clientes and the public catalog: each with the screen as it opens and one state with a field. */
 const LOT2_SCREENS = [
   {
     name: "Categorias no shell: lista",

@@ -214,6 +214,11 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Evidência: data, SHA, aparelhos e versões do sistema; para cada tela, o que o leitor anunciou no botão (rótulo e data), na grade do mês e no dia escolhido; achados e a correção de cada um, ou "nenhum".
 - Severidade BLOCK: decidida pelo Filipe Luís (arquitetura, revisão de 25/10/2026 da t373).
 
+### 26. Página do Admin gerada antes do deploy do Admin (BLOCK, proposta)
+
+- Critério: o deploy do Admin Worker roda `bun run --filter @polaris/admin build:ui` **antes** do `wrangler deploy` do Admin, no mesmo checkout do SHA candidato. O script e a folha da página ficam em `apps/admin/src/ui/generated/`, fora do git, e o Worker os embute como módulo Text: um `wrangler deploy` direto falha sem eles ou, pior, publica um arquivo velho que estava no disco de quem publica. Nunca rode o `wrangler deploy` do Admin sem esse passo.
+- Evidência: a saída do `build:ui` e do deploy, na mesma sessão e no mesmo SHA, no relatório da execução.
+
 ## Veredito
 
 Ordem de decisão:
@@ -246,7 +251,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 17 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 18 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
 4. Como fazer o smoke test do item 6.

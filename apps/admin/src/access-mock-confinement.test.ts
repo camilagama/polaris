@@ -39,6 +39,8 @@ const ALLOWED = [
   /^apps\/[\w-]+\/vitest\.workers(-db)?\.config\.ts$/,
   /^apps\/admin\/src\/workerd-access\.ts$/,
   /^apps\/admin\/src\/workerd(-db)?-env\.d\.ts$/,
+  // the same bindings, typed for the page's end-to-end test (browser library, tsconfig.page-e2e.json)
+  /^apps\/admin\/src\/page-e2e-env\.d\.ts$/,
   /^apps\/admin\/src\/[\w-]+\.workerd(-db)?\.test\.ts$/,
   /^apps\/admin\/src\/access-mock-confinement\.test\.ts$/,
   // the gate that makes the database fixtures names the test team (it writes the principals under its issuer)
@@ -100,6 +102,11 @@ describe("the simulated Access stays in the test configuration", () => {
       ".github/workflows/deploy-staging.yml",
       "apps/admin/src/worker.ts",
       "apps/admin/src/app.ts",
+      // the exception for the page's end-to-end types is that exact file: a neighbour of its name is not excused
+      "apps/admin/src/page-e2e-env.ts",
+      "apps/admin/src/ui/page-e2e-env.d.ts",
+      "apps/admin/ui/page-e2e-env.d.ts",
+      "apps/admin/src/page-e2e-env.d.ts.bak",
     ]) {
       for (const marker of MARKERS) {
         expect(leaks([{ path, text: `x ${marker} y` }])).toEqual([path]);
@@ -115,6 +122,8 @@ describe("the simulated Access stays in the test configuration", () => {
       "apps/admin/src/workerd-access.ts",
       "apps/admin/src/worker.workerd.test.ts",
       "apps/admin/src/worker.workerd-db.test.ts",
+      "apps/admin/src/page.workerd-db.test.ts",
+      "apps/admin/src/page-e2e-env.d.ts",
     ]) {
       expect(paths.has(expected), expected).toBe(true);
     }

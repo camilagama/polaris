@@ -27,9 +27,9 @@ export default defineConfig({
       testIgnore: [...PHONE_ONLY, ...VISUAL],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
-    // The levels of motion on a phone (t386): a touch screen of 360×740, the phone of the design. The file proves
+    // The levels of motion on a phone: a touch screen of 360×740, the phone of the design. The file proves
     // `pointer: coarse` before anything else and fails loudly without it; its desktop and tablet controls open their own
-    // contexts. The step back that closes the form dialog (t408) is a phone's too.
+    // contexts. The step back that closes the form dialog is a phone's too.
     {
       name: "chromium-celular",
       testMatch: PHONE_ONLY,

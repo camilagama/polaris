@@ -552,7 +552,7 @@ async function noticeScenario(
   const settled = (await noticesOf(owner, seven.organizationId)).find(
     (notice) => notice.id === sevenSent.id
   );
-  // with no e-mail configured the notice is left unresolved (decision of 20/10/2026): neither sent nor failed, so the
+  // with no e-mail configured the notice is left unresolved: neither sent nor failed, so the
   // change that sends the e-mail still finds it, and the deletion keeps waiting for it
   assert.equal(settled?.failure_code, null);
   assert.equal(settled?.failed_at, null);

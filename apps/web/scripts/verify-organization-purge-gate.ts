@@ -78,7 +78,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * organization's prefixes; every row of the tenant goes in one transaction that writes the deletion
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
- * decisions of 18/10/2026: the purge refuses a closure younger than 90 days and a legal hold, with nothing
+ * decisions taken: the purge refuses a closure younger than 90 days and a legal hold, with nothing
  * removed; the billing events stay pseudonymized (the payer's data out of the fact, the provider's references
  * kept); the cases and the entitlement grants stay without their free text.
  */
@@ -701,7 +701,7 @@ async function run() {
       "SELECT has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'SELECT') OR has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'DELETE') AS allowed"
     );
     assert.equal(ledgerRead.rows[0]?.allowed, false);
-    // in what survives, the purge owner reaches only the columns of the decisions of 18/10/2026: the billing fact,
+    // in what survives, the purge owner reaches only the columns of those decisions: the billing fact,
     // the free text of the cases and of the cancellations, whether a legal hold is in force, the purge tombstones
     const survivorColumns = await owner.pool.query<{ grant: string }>(
       `SELECT table_name || '.' || column_name || ':' || privilege_type AS grant
@@ -1268,7 +1268,7 @@ async function run() {
       InvalidSupportRequestError,
       "an unknown case"
     );
-    // the closure period (decision of 19/10/2026, 90 days): a window that ended early does not shorten it, and the
+    // the closure period (90 days): a window that ended early does not shorten it, and the
     // old period of 30 days is no longer enough; the day before the 90th is still refused
     await owner.pool.query(
       "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
@@ -1670,7 +1670,7 @@ async function run() {
       "the rows are never deleted without a claim, and an export holding its lease delays the purge"
     );
 
-    // the run refuses too (decisions of 18/10/2026): a legal hold placed after the schedule, or a closure younger
+    // the run refuses too: a legal hold placed after the schedule, or a closure younger
     // than 90 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
     const holdLease = () =>
       owner.pool.query(
@@ -1778,7 +1778,7 @@ async function run() {
       }
       return result;
     };
-    // the audit of the tenant is not in the purge (ADR 0081, amended 19/10/2026): its rows are read by ID, before and after
+    // the audit of the tenant is not in the purge (ADR 0081, amended): its rows are read by ID, before and after
     const auditRows = async (tenant: TenantFixture) =>
       (
         await owner.pool.query<{ event_class: string; id: string }>(
