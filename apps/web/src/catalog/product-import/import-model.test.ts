@@ -13,6 +13,7 @@ import {
   enteredAndLeft,
   estimateText,
   FAILED_KIND_LABELS,
+  failedCsvLabel,
   headerNotes,
   importButtonLabel,
   importTemplateCsv,
@@ -404,6 +405,27 @@ describe("Parar depois desta linha (Everton)", () => {
         (row) => FAILED_KIND_LABELS[row.kind as "unconfirmed"]
       )
     ).toEqual(["Não confirmada", "Não confirmada"]);
+  });
+});
+
+describe("o botão do CSV do resultado (Everton)", () => {
+  it("diz 'que falharam' sem linha não confirmada e 'para conferir' com ela", () => {
+    expect(failedCsvLabel([{ kind: "error" }])).toBe(
+      "Baixar a linha que falhou (CSV)"
+    );
+    expect(failedCsvLabel([{ kind: "error" }, { kind: "not_entered" }])).toBe(
+      "Baixar as 2 linhas que falharam (CSV)"
+    );
+    expect(failedCsvLabel([{ kind: "unconfirmed" }])).toBe(
+      "Baixar a linha para conferir (CSV)"
+    );
+    expect(
+      failedCsvLabel([
+        { kind: "error" },
+        { kind: "unconfirmed" },
+        { kind: "unconfirmed" },
+      ])
+    ).toBe("Baixar as 3 linhas para conferir (CSV)");
   });
 });
 

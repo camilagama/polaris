@@ -33,12 +33,16 @@ export interface ImportTableRow {
 
 const PAGE = 20;
 
+/** The mark wraps in two lines when the column is narrow (320 px), never cut at the edge of the table. */
+const MARK =
+  "h-auto min-h-5 max-w-full overflow-visible whitespace-normal rounded-xl py-0.5 text-left leading-tight";
+
 const CELL = "whitespace-normal px-2 align-top [overflow-wrap:anywhere]";
 
 function RowMark({ label, tone }: Pick<ImportTableRow, "label" | "tone">) {
   if (tone === "problem") {
     return (
-      <Badge variant="destructive">
+      <Badge className={MARK} variant="destructive">
         <CircleAlertIcon aria-hidden="true" data-icon="inline-start" />
         {label}
       </Badge>
@@ -46,7 +50,7 @@ function RowMark({ label, tone }: Pick<ImportTableRow, "label" | "tone">) {
   }
   if (tone === "warning") {
     return (
-      <Badge variant="warning">
+      <Badge className={MARK} variant="warning">
         <TriangleAlertIcon aria-hidden="true" data-icon="inline-start" />
         {label}
       </Badge>
@@ -54,14 +58,14 @@ function RowMark({ label, tone }: Pick<ImportTableRow, "label" | "tone">) {
   }
   if (tone === "left_out") {
     return (
-      <Badge variant="secondary">
+      <Badge className={MARK} variant="secondary">
         <CircleMinusIcon aria-hidden="true" data-icon="inline-start" />
         {label}
       </Badge>
     );
   }
   return (
-    <Badge>
+    <Badge className={MARK}>
       <CircleCheckIcon aria-hidden="true" data-icon="inline-start" />
       {label}
     </Badge>

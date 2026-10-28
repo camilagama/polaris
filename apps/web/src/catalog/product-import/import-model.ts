@@ -338,6 +338,26 @@ export function resultFailedRows(plan: ImportPlan, run: ImportRun | null) {
   }).filter((row) => row.kind !== "exists");
 }
 
+/**
+ * The text of the button of the CSV of the result. With a row not confirmed (it may have entered) the file is no longer
+ * only of rows that failed: it says "para conferir". The file keeps those rows, since sending again is safe (a name
+ * that exists is skipped).
+ */
+export function failedCsvLabel(
+  failed: readonly { kind: FailedRowKind }[]
+): string {
+  const count = failed.length;
+  const check = failed.some((row) => row.kind === "unconfirmed");
+  if (count === 1) {
+    return check
+      ? "Baixar a linha para conferir (CSV)"
+      : "Baixar a linha que falhou (CSV)";
+  }
+  return check
+    ? `Baixar as ${count} linhas para conferir (CSV)`
+    : `Baixar as ${count} linhas que falharam (CSV)`;
+}
+
 export const FAILED_KIND_LABELS: Record<
   Exclude<FailedRowKind, "exists">,
   string

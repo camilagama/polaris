@@ -34,6 +34,11 @@ interface ImportRunStepProps {
   stopping: boolean;
 }
 
+const SKIP_HELP_ID = "product-import-skip-help";
+/** What "Pular esta linha" does, said before the click: the row is left as not confirmed, the import goes on. */
+const SKIP_HELP =
+  "A linha fica como não confirmada e a importação segue com a próxima.";
+
 type RunFooterProps = Pick<
   ImportRunStepProps,
   "onContinue" | "onFinish" | "onSkip" | "onStop" | "pause" | "stopping"
@@ -73,7 +78,7 @@ function RunFooter({
       </Button>
       {pause.kind === "interrupted" ? (
         <Button
-          aria-describedby={reason}
+          aria-describedby={reason ? `${reason} ${SKIP_HELP_ID}` : SKIP_HELP_ID}
           aria-disabled={offline || undefined}
           onClick={offline ? undefined : onSkip}
           type="button"
@@ -166,6 +171,11 @@ export function ImportRunStep({
         <p className="text-muted-foreground text-support">
           Você pode continuar usando o Polaris em outra aba. Não feche esta
           janela.
+        </p>
+      ) : null}
+      {pause?.kind === "interrupted" ? (
+        <p className="text-muted-foreground text-support" id={SKIP_HELP_ID}>
+          {SKIP_HELP}
         </p>
       ) : null}
       {pause?.kind === "refused" ? (

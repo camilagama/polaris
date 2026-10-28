@@ -13,6 +13,7 @@ import { type ImportRun, summarizeImport } from "../product-import-send";
 import { downloadCsv, StepFrame } from "./import-frame";
 import {
   FAILED_KIND_LABELS,
+  failedCsvLabel,
   type ImportPlan,
   resultFailedRows,
   resultTexts,
@@ -136,9 +137,7 @@ export function ImportResultStep({
           variant="link"
         >
           <DownloadIcon aria-hidden="true" data-icon="inline-start" />
-          {failed.length === 1
-            ? "Baixar a linha que falhou (CSV)"
-            : `Baixar as ${failed.length} linhas que falharam (CSV)`}
+          {failedCsvLabel(failed)}
         </Button>
       ) : null}
     </StepFrame>

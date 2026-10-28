@@ -538,7 +538,45 @@ test("(d) parar e ver o resultado: as linhas não enviadas ficam como não confi
   await expect(statusIn(dialog, "não entr")).toHaveCount(0);
   const table = dialog.getByRole("table", { name: "Linhas que não entraram" });
   await expect(table.getByText("Não confirmada")).toHaveCount(2);
+  await expect(
+    dialog.getByRole("button", {
+      name: "Baixar as 2 linhas para conferir (CSV)",
+    })
+  ).toBeVisible();
   await expect(table.getByText("Erro", { exact: true })).toHaveCount(0);
+});
+
+test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ height: 740, width: 320 });
+  const store = await openProducts(page);
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 3 produtos" }).click();
+  await expect.poll(() => store.batches.length, { timeout: 30_000 }).toBe(1);
+  await dialog
+    .getByRole("button", { name: "Parar depois desta linha" })
+    .click();
+  await expect(statusIn(dialog, "Importação parada.")).toBeVisible({
+    timeout: 30_000,
+  });
+  await dialog.getByRole("button", { name: "Ver o resultado" }).click();
+  const table = dialog.getByRole("table", { name: "Linhas que não entraram" });
+  const badge = table.getByText("Não confirmada").first();
+  await expect(badge).toBeVisible();
+  const fit = await badge.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return {
+      cut: node.scrollWidth > node.clientWidth,
+      lines: box.height > 20,
+      outside: box.right > window.innerWidth,
+    };
+  });
+  expect(fit).toEqual({ cut: false, lines: true, outside: false });
 });
 
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
@@ -563,6 +601,12 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
     (batch) => batch.rows[0]?.name === "Beta"
   ).length;
   expect(tries).toBe(9);
+  // what the button does is said before the click
+  await expect(
+    dialog.getByRole("button", { name: "Pular esta linha" })
+  ).toHaveAccessibleDescription(
+    "A linha fica como não confirmada e a importação segue com a próxima."
+  );
   await dialog.getByRole("button", { name: "Pular esta linha" }).click();
 
   await expect(statusIn(dialog, "Importamos 2 produtos.")).toBeVisible({
@@ -572,6 +616,10 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
   await expect(statusIn(dialog, "não entr")).toHaveCount(0);
   const table = dialog.getByRole("table", { name: "Linhas que não entraram" });
   await expect(table.getByText("Não confirmada")).toBeVisible();
+  // the row may have entered: the file is to check, not only of failures
+  await expect(
+    dialog.getByRole("button", { name: "Baixar a linha para conferir (CSV)" })
+  ).toBeVisible();
   // the row skipped was never sent again after the skip; the one after it entered
   expect(store.batches.at(-1)?.rows[0]?.name).toBe("Gama");
   expect(store.products.map((product) => product.name)).toEqual([
