@@ -4,6 +4,7 @@
   "description": "Vendas, estoque e resultado da sua loja.",
   "lang": "pt-BR",
   "dir": "ltr",
+  "categories": ["business", "productivity"],
   "start_url": "/",
   "scope": "/",
   "id": "/",
