@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { clientErrorsBuildDefine } from "./client-errors-build";
+import { clientErrorsBuildDefine } from "./sentry-build";
 
 const KEY = "import.meta.env.VITE_RELEASE";
 const CI_SHA = "9b3d37ed5c223fba78109e32e9196bb294b35358";

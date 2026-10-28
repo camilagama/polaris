@@ -8,8 +8,11 @@ import {
   MOTION_MODULE,
   precacheBudgetPlugin,
 } from "./pwa/precache-budget";
-import { clientErrorsBuildDefine } from "./pwa/client-errors-build";
-import { appShellHeadersPlugin, sentryBuildSettings } from "./pwa/sentry-build";
+import {
+  appShellHeadersPlugin,
+  clientErrorsBuildDefine,
+  sentryBuildSettings,
+} from "./pwa/sentry-build";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
