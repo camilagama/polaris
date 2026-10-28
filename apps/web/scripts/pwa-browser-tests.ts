@@ -125,9 +125,11 @@ async function startImageBrowser() {
     "host",
     "--user",
     "pwuser",
-    // the native placeholder of date inputs follows the process locale, not the `locale` of the context
+    // the native placeholder of date inputs follows the process locale, not the `locale` of the context; the image sets LC_ALL, which wins over LANG
     "--env",
     "LANG=pt_BR.UTF-8",
+    "--env",
+    "LC_ALL=pt_BR.UTF-8",
     "--volume",
     `${playwrightCoreDir()}:/pw:ro`,
     VISUAL_IMAGE,
