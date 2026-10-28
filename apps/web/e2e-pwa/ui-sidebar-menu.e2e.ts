@@ -40,6 +40,8 @@ for (const theme of ["claro", "escuro"] as const) {
   }) => {
     const context = await browser.newContext({
       colorScheme: COLOR_SCHEME[theme],
+      hasTouch: false,
+      isMobile: false,
       reducedMotion: "reduce",
       viewport: VIEWPORTS["1280"],
     });
