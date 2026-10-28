@@ -130,7 +130,7 @@ export function supportCasesView(
   const openButton = dom.el("button", { type: "submit" }, "Abrir caso");
   const form = dom.el(
     "form",
-    { class: "search", novalidate: "" },
+    { class: "search case-form", novalidate: "" },
     dom.el("label", { for: "motivo" }, "Motivo do novo caso"),
     dom.el("div", { class: "search-row" }, reason, openButton),
     counter,
