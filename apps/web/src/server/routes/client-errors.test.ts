@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { ClientErrorEvent } from "@polaris/contracts/client-error-fields";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
@@ -707,5 +708,23 @@ describe("POST /api/client-errors: no database, no session, no call outside", ()
 
     expect(response.status).toBe(204);
     expect(fetchStub).not.toHaveBeenCalled();
+  });
+});
+
+describe("the schema of the event", () => {
+  it("says in the comment above it that a new field needs a new privacy review", () => {
+    const text = readFileSync(
+      new URL(
+        "../../../../../packages/contracts/src/client-error.ts",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    const comment = text.slice(
+      0,
+      text.indexOf("export const clientErrorEventSchema")
+    );
+
+    expect(comment).toContain("new privacy review");
   });
 });

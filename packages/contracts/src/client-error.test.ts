@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { clientErrorEventSchema } from "./client-error";
 import { chunkNameOfFrame } from "./client-error-fields";
@@ -43,19 +42,6 @@ describe("clientErrorEventSchema", () => {
     expect(
       clientErrorEventSchema.safeParse({ ...valid, extra: 1 }).success
     ).toBe(false);
-  });
-
-  it("says in the comment above it that a new field needs a new privacy review", () => {
-    const text = readFileSync(
-      new URL("./client-error.ts", import.meta.url),
-      "utf8"
-    );
-    const comment = text.slice(
-      0,
-      text.indexOf("export const clientErrorEventSchema")
-    );
-
-    expect(comment).toContain("new privacy review");
   });
 });
 

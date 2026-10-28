@@ -664,6 +664,7 @@ describe("what the code reads of an error", () => {
     expect(forbiddenIn("const { cause } = error;")).toEqual(["cause word"]);
     expect(forbiddenIn("send(String(error))")).toEqual(["String()"]);
     expect(forbiddenIn("send(error.toString())")).toEqual(["toString()"]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the planted code is a template literal, as text
     expect(forbiddenIn("send(`${error}`)")).toEqual(["error in a template"]);
     expect(forbiddenIn("send({ ...error })")).toEqual(["spread of an error"]);
     expect(forbiddenIn("send(JSON.stringify(error))")).toEqual([
