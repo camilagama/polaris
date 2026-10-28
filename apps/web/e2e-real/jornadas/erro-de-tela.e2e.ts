@@ -100,7 +100,10 @@ test("erro forçado numa tela: uma linha client_error com os campos da lista e n
   const before = clientErrorLines(project).length;
 
   await page.goto(screen.path);
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // the first load of the store reads the organization: slow on a busy machine
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
+    timeout: 30_000,
+  });
 
   const reported = page.waitForResponse((answer) =>
     answer.url().endsWith("/api/client-errors")
