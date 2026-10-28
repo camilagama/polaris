@@ -195,7 +195,9 @@ async function openProducts(
     }
   });
   await page.goto("/products");
-  await expect(page.getByRole("heading", { name: "Produtos" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Produtos" })
+  ).toBeVisible();
   return store;
 }
 
