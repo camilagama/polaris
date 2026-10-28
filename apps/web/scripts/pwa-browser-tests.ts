@@ -196,6 +196,9 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
+    console.log(
+      `TMPENV ${capture("docker", ["exec", browser.container, "sh", "-c", "env | grep -i -E 'lang|lc_'"]).output}`
+    );
     const code = await playwright(
       ["--update-snapshots=all", "-g", "venda (com itens|erro nos campos) ·"],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
