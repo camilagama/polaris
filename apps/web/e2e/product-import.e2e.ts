@@ -16,7 +16,7 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
  * - AC-6: the plan's room in the preview (only the first ones, with "Você usa N de M"), and the plan's refusal in the
  *   middle said as the limit, never as a fault of the file;
  * - AC-13: the result in a status, the table with its headers, no sideways scroll at 320 px.
- * Each slice is one row and goes at most every 6 s (`IMPORT_SLICE_INTERVAL_MS`): the tests keep few rows.
+ * Each call is one row and goes at most every 2.5 s (`IMPORT_CALL_INTERVAL_MS`): the tests keep few rows.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -582,7 +582,7 @@ test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", a
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
   page,
 }) => {
-  // the stuck row is tried 9 times at the pace of the import (6 s): about a minute before "Pular esta linha"
+  // the stuck row is tried 9 times at the pace of the import (2.5 s): about half a minute before "Pular esta linha"
   test.setTimeout(180_000);
   const store = await openProducts(page, { faultyRow: "Beta" });
   await page.getByRole("button", { name: "Importar planilha" }).click();

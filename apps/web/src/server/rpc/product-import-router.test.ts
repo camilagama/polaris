@@ -1,8 +1,9 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type {
-  ProductImportRowInput,
-  ProductImportRowResult,
+import {
+  PRODUCT_IMPORT_BATCH_MAX_ROWS,
+  type ProductImportRowInput,
+  type ProductImportRowResult,
 } from "@polaris/contracts";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
@@ -385,6 +386,20 @@ const batch = (rows: ProductImportRowInput[]) => ({
   rows,
 });
 
+/** The contract takes one row per call: the rows of a file go one call each, in order, as the client sends them. */
+async function importEach(
+  store: ReturnType<typeof createStore>,
+  rows: ProductImportRowInput[]
+) {
+  const results: ProductImportRowResult[] = [];
+  for (const row of rows) {
+    // biome-ignore lint/performance/noAwaitInLoops: one call at a time, the next only after the answer
+    const answer = await store.client.product.importBatch(batch([row]));
+    results.push(...answer.results);
+  }
+  return { results };
+}
+
 async function rpcError(promise: Promise<unknown>) {
   try {
     await promise;
@@ -409,7 +424,7 @@ describe("product.importBatch", () => {
       }),
     ];
 
-    const { results } = await store.client.product.importBatch(batch(rows));
+    const { results } = await importEach(store, rows);
 
     expect(results).toEqual([
       { productId: rows[0]?.productId, rowNumber: 2, status: "created" },
@@ -438,7 +453,7 @@ describe("product.importBatch", () => {
       importRow(4, "Depois"),
     ];
 
-    const { results } = await store.client.product.importBatch(batch(rows));
+    const { results } = await importEach(store, rows);
 
     expect(results.map((result) => result.status)).toEqual([
       "created",
@@ -459,14 +474,14 @@ describe("product.importBatch", () => {
     ]);
   });
 
-  it("AC-5: sending the same slice again repeats it and writes nothing twice", async () => {
+  it("AC-5: sending the same rows again repeats them and writes nothing twice", async () => {
     const store = createStore();
     const rows = [importRow(2, "Camiseta"), importRow(3, "Boné")];
 
-    await store.client.product.importBatch(batch(rows));
+    await importEach(store, rows);
     const before = store.counts();
-    // the answer was lost: the client sends the same slice, with the same IDs
-    const { results } = await store.client.product.importBatch(batch(rows));
+    // the answer was lost: the client sends the same rows, with the same IDs
+    const { results } = await importEach(store, rows);
 
     expect(results).toEqual([
       { productId: rows[0]?.productId, rowNumber: 2, status: "repeated" },
@@ -517,13 +532,11 @@ describe("product.importBatch", () => {
       name: "Meia",
     });
 
-    const { results } = await store.client.product.importBatch(
-      batch([
-        importRow(2, "camiseta   azul"),
-        importRow(3, "BONÉ"),
-        importRow(4, "Meia"),
-      ])
-    );
+    const { results } = await importEach(store, [
+      importRow(2, "camiseta   azul"),
+      importRow(3, "BONÉ"),
+      importRow(4, "Meia"),
+    ]);
 
     expect(results.map((result) => result.status)).toEqual([
       "exists_by_name",
@@ -534,15 +547,14 @@ describe("product.importBatch", () => {
     expect(store.tried).toEqual(["Meia"]);
   });
 
-  it("a name repeated in the same file enters once: the later row is skipped, in this slice or in the next", async () => {
+  it("a name repeated in the same file enters once: the later row is skipped", async () => {
     const store = createStore();
 
-    const first = await store.client.product.importBatch(
-      batch([importRow(2, "Camiseta"), importRow(3, "camiseta")])
-    );
-    const next = await store.client.product.importBatch(
-      batch([importRow(9, "CAMISETA")])
-    );
+    const first = await importEach(store, [
+      importRow(2, "Camiseta"),
+      importRow(3, "camiseta"),
+    ]);
+    const next = await importEach(store, [importRow(9, "CAMISETA")]);
 
     expect(first.results.map((result) => result.status)).toEqual([
       "created",
@@ -554,16 +566,15 @@ describe("product.importBatch", () => {
     expect(store.counts().products).toBe(1);
   });
 
-  it("AC-6: the plan's refusal stops the slice, and no row past the limit is tried", async () => {
+  it("AC-6: a row past the plan's limit is limit_reached and creates nothing", async () => {
     const store = createStore({ limit: 2 });
-    const rows = [1, 2, 3, 4].map((n) => importRow(n + 1, `Produto ${n}`));
+    const rows = [1, 2, 3].map((n) => importRow(n + 1, `Produto ${n}`));
 
-    const { results } = await store.client.product.importBatch(batch(rows));
+    const { results } = await importEach(store, rows);
 
     expect(results.map((result) => result.status)).toEqual([
       "created",
       "created",
-      "limit_reached",
       "limit_reached",
     ]);
     expect(store.tried).toEqual(["Produto 1", "Produto 2", "Produto 3"]);
@@ -579,9 +590,10 @@ describe("product.importBatch", () => {
     async (_label, name) => {
       const store = createStore();
 
-      const { results } = await store.client.product.importBatch(
-        batch([importRow(2, name), importRow(3, "Boné")])
-      );
+      const { results } = await importEach(store, [
+        importRow(2, name),
+        importRow(3, "Boné"),
+      ]);
 
       expect(results).toEqual([
         {
@@ -599,12 +611,10 @@ describe("product.importBatch", () => {
   it("a description with a forbidden character, or an invalid price, is a refused row with its field", async () => {
     const store = createStore();
 
-    const { results } = await store.client.product.importBatch(
-      batch([
-        importRow(2, "A", { description: "texto\u202Einvertido" }),
-        importRow(3, "B", { listPrice: "12,345" }),
-      ])
-    );
+    const { results } = await importEach(store, [
+      importRow(2, "A", { description: "texto\u202Einvertido" }),
+      importRow(3, "B", { listPrice: "12,345" }),
+    ]);
 
     expect(results).toEqual([
       {
@@ -637,17 +647,33 @@ describe("product.importBatch", () => {
     expect(stored?.description).toBe("<script>x</script>");
   });
 
-  it("a refusal of the session or the membership stops the slice and answers it whole", async () => {
+  it("a refusal of the session or the membership answers the call whole, and writes nothing", async () => {
     const store = createStore({ failTransaction: 2 });
+    const [first, second] = [importRow(2, "A"), importRow(3, "B")];
 
+    await store.client.product.importBatch(batch([first]));
     const error = await rpcError(
-      store.client.product.importBatch(
-        batch([importRow(2, "A"), importRow(3, "B"), importRow(4, "C")])
-      )
+      store.client.product.importBatch(batch([second]))
     );
 
     expect(error.code).toBe("FORBIDDEN");
-    // the first row stays (its transaction ended); sending the slice again repeats it
+    // the first row stays (its call ended); sending the second again is a new call
+    expect(store.counts().products).toBe(1);
+  });
+
+  it("takes one row per call: two rows are refused whole and one is created", async () => {
+    const store = createStore();
+    const [one, two] = [importRow(2, "A"), importRow(3, "B")];
+
+    expect(PRODUCT_IMPORT_BATCH_MAX_ROWS).toBe(1);
+    const refused = await rpcError(
+      store.client.product.importBatch(batch([one, two]))
+    );
+    expect(refused.code).toBe("BAD_REQUEST");
+    expect(store.counts().products).toBe(0);
+
+    const { results } = await store.client.product.importBatch(batch([one]));
+    expect(results.map((result) => result.status)).toEqual(["created"]);
     expect(store.counts().products).toBe(1);
   });
 
@@ -655,7 +681,11 @@ describe("product.importBatch", () => {
     [
       "more rows than a call carries",
       () =>
-        batch(Array.from({ length: 11 }, (_, i) => importRow(i + 2, `P${i}`))),
+        batch(
+          Array.from({ length: PRODUCT_IMPORT_BATCH_MAX_ROWS + 1 }, (_, i) =>
+            importRow(i + 2, `P${i}`)
+          )
+        ),
     ],
     ["no row", () => batch([])],
     [
@@ -667,15 +697,11 @@ describe("product.importBatch", () => {
       () => ({ ...batch([importRow(2, "A")]), file: "a;b" }),
     ],
     [
-      "two rows with the same product ID",
+      "a row whose product and variant IDs are the same",
       () => {
         const one = importRow(2, "A");
-        return batch([one, { ...importRow(3, "B"), productId: one.productId }]);
+        return batch([{ ...one, variantId: one.productId }]);
       },
-    ],
-    [
-      "two rows with the same row number",
-      () => batch([importRow(2, "A"), importRow(2, "B")]),
     ],
     [
       "a name longer than the one of product.create",
@@ -711,7 +737,7 @@ describe("product.importBatch", () => {
     }
   );
 
-  it("AC-7: the log of a slice has counts and opaque IDs, never a name, a value or a description", async () => {
+  it("AC-7: the log of a call has counts and opaque IDs, never a name, a value or a description", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const store = createStore({ limit: 1 });
@@ -720,31 +746,31 @@ describe("product.importBatch", () => {
       listPrice: "987654.32",
     });
 
-    await store.client.product.importBatch(
-      batch([hostile, importRow(3, "Outro"), importRow(4, "Bolsa\u0000")])
-    );
+    await importEach(store, [
+      hostile,
+      importRow(3, "Outro"),
+      importRow(4, "Bolsa\u0000"),
+    ]);
 
-    const lines = [...info.mock.calls, ...log.mock.calls].map((call) =>
-      JSON.stringify(call)
-    );
-    const line = lines.find((text) => text.includes("product_import_batch"));
-    expect(line).toBeDefined();
-    const parsed = JSON.parse(
-      JSON.stringify(
-        [...info.mock.calls, ...log.mock.calls].find((call) =>
-          JSON.stringify(call).includes("product_import_batch")
-        )?.[0]
-      )
-    );
-    expect(parsed).toMatchObject({
-      created: 1,
-      event: "product_import_batch",
-      importId,
-      limit_reached: 2,
-      organizationId,
-      rows: 3,
-    });
-    const everything = lines.join("\n");
+    const lines = [...info.mock.calls, ...log.mock.calls]
+      .map((call) => JSON.stringify(call))
+      .filter((text) => text.includes("product_import_batch"));
+    expect(lines).toHaveLength(3);
+    const parsed = lines.map((line) => JSON.parse(line)[0]);
+    for (const entry of parsed) {
+      expect(entry).toMatchObject({
+        event: "product_import_batch",
+        importId,
+        organizationId,
+        rows: 1,
+      });
+    }
+    expect(parsed.map((entry) => entry.created)).toEqual([1, 0, 0]);
+    expect(parsed.map((entry) => entry.limit_reached)).toEqual([0, 1, 0]);
+    expect(parsed.map((entry) => entry.invalid)).toEqual([0, 0, 1]);
+    const everything = [...info.mock.calls, ...log.mock.calls]
+      .map((call) => JSON.stringify(call))
+      .join("\n");
     for (const secret of ["Segredo", "calc", "secreta", "onerror", "987654"]) {
       expect(everything).not.toContain(secret);
     }
