@@ -13,6 +13,11 @@
  *   `AUTH_ENTRY_PATHS` only, so no other page of the app may load a third-party script.
  * - `api`: JSON and file answers of the Worker of apps/web. Nothing is ever loaded from them.
  * - `admin`: the Admin Worker. Like `api`, with no referrer at all (the host is behind Cloudflare Access).
+ * - `admin-document`: the operator's page of the Admin and its one script and one sheet, given by an exact list of
+ *   paths (the API, `/health` and any 404 keep `admin`). The HTML is a constant and every datum arrives by `fetch`,
+ *   so the page needs its own files and nothing else: no inline script or style (no nonce), no image, font, frame,
+ *   form target or manifest, and Trusted Types refuse any HTML or script made from a string. Like `admin`, no
+ *   referrer and never cached.
  * - `public-document`: the HTML of the public catalog, rendered on the server. Its hydration scripts are
  *   inline, so the policy carries a nonce made for each response instead of 'unsafe-inline'.
  * - `public-media`: the image bytes of the public catalog, embeddable from other origins on purpose
@@ -25,6 +30,7 @@
 
 export type SecurityProfile =
   | "admin"
+  | "admin-document"
   | "api"
   | "app-shell"
   | "auth-entry"
@@ -179,11 +185,39 @@ function publicDocumentPolicy(
   ] satisfies Directives;
 }
 
+/**
+ * The Admin page (D-1 of the screen's cut): its own script, sheet and API, and nothing else. `form-action 'none'`
+ * because every action goes by `fetch` (a native submit of a failed script must not put a typed text in a URL), and
+ * `trusted-types 'none'` makes the browser refuse `innerHTML`, `eval` and a script source set from a string, so
+ * writing only text stops depending on a search of the code. A browser without Trusted Types ignores those two.
+ */
+const ADMIN_DOCUMENT_POLICY = [
+  ["default-src", [NONE]],
+  ["script-src", [SELF]],
+  ["style-src", [SELF]],
+  ["connect-src", [SELF]],
+  ["img-src", [NONE]],
+  ["font-src", [NONE]],
+  ["manifest-src", [NONE]],
+  ["object-src", [NONE]],
+  ["base-uri", [NONE]],
+  ["form-action", [NONE]],
+  ["frame-ancestors", [NONE]],
+  ["require-trusted-types-for", ["'script'"]],
+  ["trusted-types", [NONE]],
+] satisfies Directives;
+
 /** Image bytes: `sandbox` keeps an image that a browser opens as a document (an SVG, say) from running anything. */
 const PUBLIC_MEDIA_POLICY = [
   ...INERT_POLICY,
   ["sandbox", []],
 ] satisfies Directives;
+
+/** The two profiles of the Admin: no referrer and never cached, page or API. */
+const ADMIN_PROFILES: ReadonlySet<SecurityProfile> = new Set([
+  "admin",
+  "admin-document",
+]);
 
 const PERMISSIONS_POLICY =
   "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
@@ -214,6 +248,9 @@ function policyFor(
   if (connect.length > 0 || img.length > 0) {
     throw new Error(`${profile} loads nothing: it takes no sources`);
   }
+  if (profile === "admin-document") {
+    return serialize(ADMIN_DOCUMENT_POLICY);
+  }
   return serialize(
     profile === "public-media" ? PUBLIC_MEDIA_POLICY : INERT_POLICY
   );
@@ -240,8 +277,9 @@ export function securityHeaders(
     "Cross-Origin-Resource-Policy":
       profile === "public-media" ? "cross-origin" : "same-origin",
     "Permissions-Policy": PERMISSIONS_POLICY,
-    "Referrer-Policy":
-      profile === "admin" ? "no-referrer" : "strict-origin-when-cross-origin",
+    "Referrer-Policy": ADMIN_PROFILES.has(profile)
+      ? "no-referrer"
+      : "strict-origin-when-cross-origin",
     // Sent by the application (not only a zone setting) so the policy is versioned and reviewable.
     // Browsers ignore it over plain HTTP, so local development is unaffected. `preload` is absent on
     // purpose: it is a one-way commitment to make at the domain level, not in application code.
@@ -265,7 +303,7 @@ export function securityHeaders(
  * exception that the catalog's own entry enforces, because its nonce must never be cached.
  */
 export function defaultCacheControl(profile: SecurityProfile): string | null {
-  return profile === "api" || profile === "admin" ? "no-store" : null;
+  return profile === "api" || ADMIN_PROFILES.has(profile) ? "no-store" : null;
 }
 
 /**

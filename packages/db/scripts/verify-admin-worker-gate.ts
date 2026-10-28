@@ -181,6 +181,39 @@ async function run() {
     const orgB = await organization("B");
     const orgSuspend = await organization("suspend");
     const orgReactivate = await organization("reactivate");
+    // the operator's page (corte admin-tela-v1, AC-17): a store on Free, one in the Pro trial and one on Pro whose
+    // owner typed a hostile name (markup, quotes and a right-to-left override), all found by one prefix but the hostile
+    const screenStore = async (
+      name: string,
+      plan: "free" | "pro",
+      trial = false
+    ) => {
+      const { organizationId } = await createTenantFixture(
+        owner.pool,
+        `admin screen ${name} ${suffix}`,
+        "America/Sao_Paulo",
+        plan
+      );
+      await owner.pool.query(
+        "UPDATE public.organizations SET name = $2 WHERE id = $1",
+        [organizationId, name]
+      );
+      if (trial) {
+        await owner.pool.query(
+          "INSERT INTO public.organization_billing (organization_id, state, access_ends_at, trial_started_at, cycle_months) VALUES ($1, 'trialing', now() + interval '7 days', now(), 1)",
+          [organizationId]
+        );
+      }
+      return { id: organizationId, name };
+    };
+    const screen = {
+      free: await screenStore(`Tela ${suffix} livre`, "free"),
+      hostile: await screenStore(
+        `<script>alert("tela")</script> & 'Tela' \u202E${suffix}`,
+        "pro"
+      ),
+      trial: await screenStore(`Tela ${suffix} em teste`, "free", true),
+    };
     const customer = async (
       organizationId: string,
       name: string,
@@ -245,6 +278,7 @@ async function run() {
           reactivate: orgReactivate.organizationId,
           suspend: orgSuspend.organizationId,
         },
+        screen: { prefix: `Tela ${suffix}`, ...screen },
         principals: {
           disabled: disabledSubject,
           ownerId,

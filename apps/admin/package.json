@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "build": "bun run build:ui && wrangler deploy --dry-run --outdir dist",
+    "build:ui": "bun build ./ui/main.ts --target=browser --format=esm --minify --outfile=src/ui/generated/admin.js.txt && cp ui/admin.css src/ui/generated/admin.css.txt",
     "check": "bun run typecheck",
-    "dev": "wrangler dev --port 5175",
-    "typecheck": "tsc --noEmit"
+    "dev": "bun run build:ui && wrangler dev --port 5175",
+    "test": "bun run build:ui && cd ../.. && vitest run --project node --project admin-workerd apps/admin",
+    "typecheck": "bun run build:ui && tsc --noEmit && tsc --noEmit -p ui"
   },
   "dependencies": {
     "@polaris/contracts": "workspace:*",

@@ -25,6 +25,10 @@ interface Fixture {
   }[];
   organizations: Record<"a" | "b" | "reactivate" | "suspend", string>;
   principals: { disabled: string; ownerId: string; ownerSubject: string };
+  /** The stores of the operator's page (corte admin-tela-v1, AC-17). */
+  screen: Record<"free" | "hostile" | "trial", { id: string; name: string }> & {
+    prefix: string;
+  };
   strangerSubject: string;
 }
 
@@ -63,6 +67,8 @@ async function call(
         ? {}
         : { "cf-access-jwt-assertion": accessToken }),
       ...(body === undefined ? {} : { "content-type": "application/json" }),
+      // a write names the Admin's own origin, as the operator's browser does
+      ...(method === "GET" ? {} : { origin: "https://admin.test" }),
     },
     method,
   });
@@ -109,6 +115,134 @@ function auditTypes(detail: Answer): string[] {
     (entry) => entry.eventType
   );
 }
+
+const PAGE_SCRIPT = /<script type="module" src="(\/ui\/admin-[0-9a-f]{16}\.js)">/;
+const PAGE_SHEET = /<link rel="stylesheet" href="(\/ui\/admin-[0-9a-f]{16}\.css)"/;
+
+async function getPage(path: string, token: string | null) {
+  return await exports.default.fetch(`https://admin.test${path}`, {
+    headers: token === null ? {} : { "cf-access-jwt-assertion": token },
+  });
+}
+
+interface Listed {
+  billingState: string;
+  id: string;
+  name: string;
+  planInForce: string;
+}
+
+describe("the operator's page and its reads (corte admin-tela-v1, AC-2, AC-4, AC-5, AC-17)", () => {
+  const search = async (query: string): Promise<Listed[]> => {
+    const answer = await call(
+      "GET",
+      `/api/organizations?${new URLSearchParams({ limit: "50", query })}`
+    );
+    expect(answer.status).toBe(200);
+    return answer.body.organizations as Listed[];
+  };
+
+  it("serves the page, its script and its sheet to the owner, under the document policy", async () => {
+    const response = await getPage("/", await ownerToken());
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(response.headers.get("content-security-policy")).toContain(
+      "trusted-types 'none'"
+    );
+    const script = PAGE_SCRIPT.exec(html)?.[1] ?? "missing";
+    const sheet = PAGE_SHEET.exec(html)?.[1] ?? "missing";
+    const [js, css] = await Promise.all([
+      getPage(script, await ownerToken()),
+      getPage(sheet, await ownerToken()),
+    ]);
+    expect([js.status, css.status]).toEqual([200, 200]);
+    expect(js.headers.get("content-type")).toContain("text/javascript");
+    expect(css.headers.get("content-type")).toContain("text/css");
+    expect(await js.text()).toContain("/api/whoami");
+  });
+
+  it.each([
+    ["no token", async (): Promise<string | null> => null, 401],
+    [
+      "a disabled operator",
+      () => signAccessToken({ subject: fixture.principals.disabled }),
+      403,
+    ],
+    [
+      "someone who is not an operator",
+      () => signAccessToken({ subject: `${fixture.strangerSubject}-none` }),
+      403,
+    ],
+  ] as const)("gives no page to %s", async (_name, makeToken, status) => {
+    const response = await getPage("/", await makeToken());
+    expect(response.status).toBe(status);
+    expect(await response.text()).not.toContain("<html");
+  });
+
+  it("finds the three stores by the start of their name or by ID, and only by what the server matches", async () => {
+    const found = await search(fixture.screen.prefix);
+    expect(found.map((store) => store.id).sort()).toEqual(
+      [fixture.screen.free.id, fixture.screen.trial.id].sort()
+    );
+    const hostile = await search(fixture.screen.hostile.id);
+    expect(hostile).toEqual([
+      expect.objectContaining({
+        billingState: "active",
+        id: fixture.screen.hostile.id,
+        name: fixture.screen.hostile.name,
+        planInForce: "pro",
+      }),
+    ]);
+    // the name comes back exactly as typed, markup and right-to-left override included
+    expect(
+      (await search("<script>alert")).map((store) => store.name)
+    ).toContain(fixture.screen.hostile.name);
+    // no wildcard: a % or _ is a character to match, not a pattern
+    expect(await search(`%${fixture.screen.prefix.slice(1)}`)).toEqual([]);
+    expect(await search(`T_la ${fixture.screen.prefix.slice(5)}`)).toEqual([]);
+  });
+
+  it.each([
+    ["free", "free", "free", "free"],
+    ["trial", "trialing", "pro", "trialing"],
+    ["hostile", "active", "pro", "active"],
+  ] as const)("shows the %s store's plan as its diagnostics say", async (store, listed, plan, state) => {
+    const { id } = fixture.screen[store];
+    const [row] = await search(id);
+    expect(row?.billingState).toBe(listed);
+    const report = await call("GET", `/api/organizations/${id}/diagnostics`);
+    expect(report.status).toBe(200);
+    const entitlements = report.body.entitlements as {
+      plan: string;
+      state: string;
+    };
+    expect(entitlements.plan).toBe(plan);
+    expect(entitlements.plan).toBe(row?.planInForce);
+    expect(entitlements.state).toBe(state);
+    expect((report.body.organization as { name: string }).name).toBe(
+      fixture.screen[store].name
+    );
+  });
+
+  it("refuses a write without this origin, or from another origin of the site (AC-18 amended)", async () => {
+    const token = await ownerToken();
+    const write = (headers: Record<string, string>) =>
+      exports.default.fetch("https://admin.test/api/support-cases", {
+        body: JSON.stringify(openCaseBody(fixture.organizations.b)),
+        headers: {
+          "cf-access-jwt-assertion": token,
+          "content-type": "application/json",
+          ...headers,
+        },
+        method: "POST",
+      });
+    const [noOrigin, sameSite] = await Promise.all([
+      write({}),
+      write({ origin: "https://admin.test", "sec-fetch-site": "same-site" }),
+    ]);
+    expect([noOrigin.status, sameSite.status]).toEqual([403, 403]);
+  });
+});
 
 describe("admin worker, whole chain, PostgreSQL", () => {
   it("has the fixtures the gate made", () => {

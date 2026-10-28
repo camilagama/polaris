@@ -48,6 +48,8 @@ import {
   withAdminDatabase,
 } from "@polaris/db/platform-principal-repository";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import adminCss from "./ui/generated/admin.css.txt";
+import adminJs from "./ui/generated/admin.js.txt";
 import {
   type BillingCommandPorts,
   grantEntitlementCommand,
@@ -365,7 +367,7 @@ const dependencies: AdminDependencies = {
 
 configureLogging({ service: "polaris-admin" });
 
-const app = createAdminApp(dependencies);
+const app = createAdminApp(dependencies, { css: adminCss, js: adminJs });
 
 export default {
   fetch: (request: Request, env: AdminBindings, context: ExecutionContext) =>
