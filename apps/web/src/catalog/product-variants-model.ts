@@ -3,7 +3,7 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import {
-  legalAcceptanceMessage,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -174,9 +174,9 @@ export const VARIANT_LIMIT_REACHED =
   "Seu plano chegou ao limite de variantes. Nada foi alterado.";
 
 export function variantErrorMessage(error: unknown, subject?: string): string {
-  const unaccepted = legalAcceptanceMessage(error, subject);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, subject);
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {

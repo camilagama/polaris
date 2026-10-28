@@ -1,5 +1,5 @@
 import {
-  legalAcceptanceMessage,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -79,7 +79,7 @@ export function publicCatalogErrorMessage(
   action: PublicCatalogAction
 ): string {
   return (
-    legalAcceptanceMessage(
+    commonFailureMessage(
       error,
       action === "load" ? "o catálogo público" : undefined
     ) ?? publicCatalogRefusalMessage(error, action)

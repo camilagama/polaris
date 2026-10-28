@@ -7,6 +7,9 @@ import { calendarDayInTimezone } from "../../lib/dates";
 import { orpcClient } from "../../lib/orpc";
 import { readErrorMessage } from "../../lib/rpc-error";
 import { useHoldSwap } from "../../lib/unsent-work";
+import type { OfflineRuntime } from "../../offline/runtime/offline-runtime";
+import { useOfflineRuntime } from "../../offline/runtime/runtime-context";
+import { waitingOperations } from "../../offline/runtime/sync-status";
 import {
   type LimitHelpView,
   limitHelpFor,
@@ -28,13 +31,16 @@ import {
   planRoom,
   readImportFile,
   stepAfter,
+  tillIsFailing,
 } from "./import-model";
 
 /**
  * The state of one import in the dialog: the file chosen, its plan (read and checked here, nothing sent), and the run
  * that sends it. Everything lives in memory while the dialog's page is open (AC-7): closing the dialog keeps it,
  * leaving the page drops it. A stop that may have left rows on their way (no answer, the connection gone) keeps the
- * run, so "Continuar de onde parou" sends the same rows with the same IDs (AC-5, AC-10).
+ * run, so "Continuar de onde parou" sends the same rows with the same IDs (AC-5, AC-10). A cut of the platform never
+ * stops it: the run pauses (`paused_busy`) and goes on by itself, and it pauses the same way while the tab's own
+ * sales are failing to go or its reads are dying (`tillFailing`).
  */
 
 export type { ImportPause, ImportStep } from "./import-model";
@@ -76,6 +82,16 @@ export interface ProductImportActions {
   stop: () => void;
 }
 
+function tillFailing(runtime: OfflineRuntime | null): boolean {
+  const snapshot = runtime?.getSnapshot() ?? null;
+  return tillIsFailing({
+    quietRetries: runtime?.retriesQuietly() ?? false,
+    reason: snapshot?.reason ?? null,
+    serverFailing: browserConnection.isServerFailing(),
+    waiting: snapshot ? waitingOperations(snapshot) : 0,
+  });
+}
+
 interface Options {
   categories: readonly CategoryReadModel[];
   /** The run stopped (or ended) with rows answered: the screen reads its products again. */
@@ -109,6 +125,8 @@ export function useProductImport({
   onlineRef.current = online;
   const enteredRef = useRef(onEntered);
   enteredRef.current = onEntered;
+  const runtimeRef = useRef<OfflineRuntime | null>(null);
+  runtimeRef.current = useOfflineRuntime();
   // a read of the file answered after another file was chosen, or after the dialog started over, is dropped
   const readingRef = useRef(0);
 
@@ -181,6 +199,18 @@ export function useProductImport({
         }));
         // biome-ignore lint/performance/noAwaitInLoops: one run at a time; a stop with no answer continues it
         const stop = await runImport(run, {
+          busy: () => tillFailing(runtimeRef.current),
+          onPause: (resumeAt) => {
+            if (controllerRef.current === controller) {
+              setState((current) => ({
+                ...current,
+                step:
+                  resumeAt === null
+                    ? { kind: "running" }
+                    : { kind: "paused_busy", resumeAt },
+              }));
+            }
+          },
           onProgress: () => setTick((count) => count + 1),
           organizationId,
           retryAfterMs: browserConnection.takeRetryAfterMs,
@@ -242,7 +272,8 @@ export function useProductImport({
   }, []);
 
   // the connection went during the run: it stops after the row on its way, and waits for "Continuar de onde parou"
-  const running = state.step.kind === "running";
+  const running =
+    state.step.kind === "running" || state.step.kind === "paused_busy";
   useEffect(() => {
     if (running && !online) {
       abortedForRef.current = "offline";
@@ -296,6 +327,7 @@ export function useProductImport({
     (state.step.kind === "file" && state.file !== null) ||
       state.step.kind === "preview" ||
       state.step.kind === "running" ||
+      state.step.kind === "paused_busy" ||
       state.step.kind === "paused"
   );
 

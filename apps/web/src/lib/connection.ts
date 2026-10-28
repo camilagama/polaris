@@ -206,6 +206,8 @@ export interface Connection {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getSnapshot: () => ConnectionSnapshot;
   isOnline: () => boolean;
+  /** The breaker of the reads is open (`read-gate.ts`): the platform is killing the calls of this tab. */
+  isServerFailing: () => boolean;
   /**
    * Whether a read that failed in a transient way may be tried again now (the brakes of `read-gate.ts`): true spends
    * one retry of the tab's budget.
@@ -520,6 +522,7 @@ export function createConnection(
     },
     getSnapshot: () => snapshot,
     isOnline: () => snapshot.state === "online",
+    isServerFailing: reads.breakerOpen,
     mayRetryRead: reads.mayRetry,
     sessionFirst: reads.session,
     async probeNow() {

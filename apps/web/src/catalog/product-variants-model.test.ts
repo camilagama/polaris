@@ -250,9 +250,13 @@ describe("mensagens de erro das variantes", () => {
     ).toBe(
       "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente."
     );
+    // saving, the server's cut may have saved: never "unavailable"
     expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
-      "temporariamente indisponível"
+      "O servidor está ocupado e não confirmou"
     );
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE"), "as variantes")
+    ).toContain("temporariamente indisponível");
     expect(variantErrorMessage(new Error("rede"))).toBe(
       "Não foi possível carregar ou salvar as variantes. Tente novamente."
     );

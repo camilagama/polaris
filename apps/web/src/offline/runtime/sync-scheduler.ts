@@ -3,7 +3,7 @@ import type { RuntimeSnapshot } from "./offline-runtime";
 
 /**
  * WHEN the offline runtime syncs (emenda do ADR 0043): the only scheduler, in the runtime provider. The
- * runtime only says how a sync ended (offline, or `sync_failed`); the connection only says whether the
+ * runtime only says how a sync ended (offline, `server_busy` or `sync_failed`); the connection only says whether the
  * Worker answers. Here:
  *
  * - every 60 s while the page is visible, in ONE tab of the browser per store (the one holding the lock
@@ -14,13 +14,17 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  *   without this every change of screen was a pull (the ~2.5 s pulls seen in QA);
  * - when the connection comes back: a sync about 1 s later (±20%, so tabs and devices do not come back
  *   together);
- * - after `sync_failed` (a 5xx, a 429), and after a transient failure the runtime still keeps quiet (a Worker
+ * - after `server_busy` or `sync_failed` (a 5xx, a 429), and after a transient failure the runtime still keeps quiet (a Worker
  *   killed for CPU, `retriesQuietly`): again in 2, 4, 8, 20, 40 and then 60 s (±20%), never before the
  *   `Retry-After` of a 429. The sync never goes through the retries of the screens' reads: these steps are its own.
  *
  * Never two runs pending: the runtime's sync is single-flight, and each of the timers here is replaced,
  * never added. Framework-free, with the clock and the page injected.
  */
+function failedLoudly({ reason }: RuntimeSnapshot): boolean {
+  return reason === "sync_failed" || reason === "server_busy";
+}
+
 interface SchedulerRuntime {
   connectionChanged: () => void;
   getSnapshot: () => RuntimeSnapshot;
@@ -113,10 +117,7 @@ export function startSyncScheduler(
         if (stopped) {
           return;
         }
-        if (
-          runtime.getSnapshot().reason === "sync_failed" ||
-          runtime.retriesQuietly()
-        ) {
+        if (failedLoudly(runtime.getSnapshot()) || runtime.retriesQuietly()) {
           scheduleRetry();
         } else {
           retryStep = 0;

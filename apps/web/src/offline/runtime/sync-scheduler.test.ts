@@ -334,27 +334,30 @@ describe("the connection coming back and going", () => {
 });
 
 describe("after a failed sync", () => {
-  it("tries again in 2, 4, 8, 20, 40 and then 60 s", async () => {
-    const t = setup({ visible: false });
-    t.state.reason = "sync_failed";
+  it.each(["sync_failed", "server_busy"])(
+    "tries again in 2, 4, 8, 20, 40 and then 60 s (%s)",
+    async (reason) => {
+      const t = setup({ visible: false });
+      t.state.reason = reason;
 
-    await t.scheduler.syncNow();
-    const gaps: number[] = [];
-    let last = t.now();
-    for (let i = 0; i < 6; i += 1) {
-      const before = t.syncNow.mock.calls.length;
-      // biome-ignore lint/performance/noAwaitInLoops: the retries come one after the other
-      await t.advance(1000);
-      while (t.syncNow.mock.calls.length === before) {
+      await t.scheduler.syncNow();
+      const gaps: number[] = [];
+      let last = t.now();
+      for (let i = 0; i < 6; i += 1) {
+        const before = t.syncNow.mock.calls.length;
         // biome-ignore lint/performance/noAwaitInLoops: the retries come one after the other
         await t.advance(1000);
+        while (t.syncNow.mock.calls.length === before) {
+          // biome-ignore lint/performance/noAwaitInLoops: the retries come one after the other
+          await t.advance(1000);
+        }
+        gaps.push(t.now() - last);
+        last = t.now();
       }
-      gaps.push(t.now() - last);
-      last = t.now();
-    }
 
-    expect(gaps).toEqual([2000, 4000, 8000, 20_000, 40_000, 60_000]);
-  });
+      expect(gaps).toEqual([2000, 4000, 8000, 20_000, 40_000, 60_000]);
+    }
+  );
 
   it("spreads each wait by 20% either way", async () => {
     for (const [random, first] of [

@@ -4,6 +4,7 @@ import {
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isPlatformCut,
   isTransientReadFailure,
   rpcErrorCode,
 } from "../../lib/rpc-error";
@@ -44,7 +45,7 @@ import { leaseStanding, leaseTimerDelay } from "./lease-standing";
  * 5. the figures the screens show (online, queued, refused, last sync).
  *
  * It never decides WHEN to sync: the host calls syncNow (on start, on reconnect,
- * on a timer, after queueing) and reads the outcome (offline, or `sync_failed`
+ * on a timer, after queueing) and reads the outcome (offline, `server_busy` or `sync_failed`
  * to try again later). It is framework-free and takes every outside thing as a
  * dependency, so it is tested without a browser.
  */
@@ -192,7 +193,11 @@ export interface RuntimeSnapshot {
   legalAcceptanceRequired: boolean;
   online: boolean;
   phase: RuntimePhase;
-  /** Why the runtime is unavailable or the last sync failed; null when fine. */
+  /**
+   * Why the runtime is unavailable or the last sync failed; null when fine. A failed sync is `server_busy` when the
+   * server got the call and died on it (`isPlatformCut`: the regime of the Free plan, past the 60 s of quiet), and
+   * `sync_failed` for any other failure (`syncFailed`).
+   */
   reason: string | null;
   /**
    * While `expired`: the server answered the renewal with a refusal that is not about the
@@ -232,9 +237,19 @@ function isSessionRefusal(error: unknown): boolean {
 
 /**
  * How long a sync that keeps failing in a transient way (a Worker killed for CPU, 1102; a 503 "try again") stays quiet:
- * no "Envio falhou" before 60 s in a row without a good sync (paliativo dos 1102). Nothing kept is lost meanwhile.
+ * nothing said before 60 s in a row without a good sync (paliativo dos 1102), then `server_busy`. Nothing kept is lost
+ * meanwhile.
  */
 const QUIET_FAILURE_MS = 60_000;
+
+/** The last sync failed and said so (`server_busy` or `sync_failed`): the queue was not sent. */
+function syncFailed(snapshot: Pick<RuntimeSnapshot, "reason">): boolean {
+  return snapshot.reason === "sync_failed" || snapshot.reason === "server_busy";
+}
+
+function failureReason(error: unknown): "server_busy" | "sync_failed" {
+  return isPlatformCut(error) ? "server_busy" : "sync_failed";
+}
 
 /** Why the pull of a run is aborted: "Sair" or an update needs the queue out and must not wait for the read gate. */
 const PULL_CUT = new DOMException("pull_cut", "AbortError");
@@ -431,7 +446,7 @@ export class OfflineRuntime {
       },
       sync: async () => {
         await this.trySend();
-        if (this.snapshot.reason === "sync_failed") {
+        if (syncFailed(this.snapshot)) {
           throw new Error("sync_failed");
         }
         // the queue was not sent: an update must not take it for done
@@ -1861,7 +1876,7 @@ export class OfflineRuntime {
       ...this.snapshot,
       dataVersion: this.snapshot.dataVersion + 1,
       online: this.dependencies.isOnline(),
-      reason: noAnswer || quiet ? null : "sync_failed",
+      reason: noAnswer || quiet ? null : failureReason(error),
       sessionRefused: false,
       syncing: false,
     });

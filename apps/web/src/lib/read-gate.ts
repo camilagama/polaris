@@ -111,6 +111,8 @@ export interface ReadGateDependencies {
 export interface ReadGate {
   /** Waits for a slot; resolves with how to give it back (once, whatever happens). */
   acquire: (signal?: AbortSignal | null) => Promise<() => void>;
+  /** Whether the breaker is open now: more than half of the last 20 calls died on the platform, 15 s ago or less. */
+  breakerOpen: () => boolean;
   /** The reads in flight now (tests, the e2e's marks). */
   inFlight: () => number;
   /** Whether a read may be tried again now; true spends one retry of the budget. */
@@ -210,6 +212,7 @@ export function createReadGate({
         pump();
       });
     },
+    breakerOpen: () => now() < breakerUntil,
     inFlight: () => running,
     mayRetry() {
       const at = now();

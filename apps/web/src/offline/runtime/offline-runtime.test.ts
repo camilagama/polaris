@@ -2344,7 +2344,7 @@ describe("conexão com prova (F7)", () => {
       });
     });
 
-    it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'sync_failed'", async () => {
+    it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'server_busy', never 'sync_failed'", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
       // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark)
@@ -2367,9 +2367,11 @@ describe("conexão com prova (F7)", () => {
 
       w.advance(1 / 3600); // 60 s in a row with no good sync
       await runtime.syncNow();
-      expect(runtime.getSnapshot().reason).toBe("sync_failed");
+      expect(runtime.getSnapshot().reason).toBe("server_busy");
       expect(runtime.retriesQuietly()).toBe(false);
       expect(runtime.getSnapshot().counts.pending).toBe(1);
+      // the queue was not sent: an update must not take it for done
+      await expect(runtime.workSource().sync()).rejects.toThrow("sync_failed");
     });
 
     it("a good sync between two deaths for CPU starts the 60 s again", async () => {

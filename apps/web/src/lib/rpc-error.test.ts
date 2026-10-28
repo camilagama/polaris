@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
 import {
+  CHANGE_CUT_BY_SERVER,
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isPlatformCut,
   readErrorMessage,
   rpcErrorCode,
   rpcErrorReason,
+  serverCutWriteMessage,
 } from "./rpc-error";
 
 describe("rpc error helpers", () => {
@@ -140,5 +143,58 @@ describe("a call that got no answer from the Worker", () => {
     ).toBe(
       "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
     );
+  });
+});
+
+const BLAMES_THE_NETWORK = /conexão|internet/;
+
+describe("a call the server got and died on (the regime of the Free plan)", () => {
+  const platform503 = Object.assign(new Error("cut"), {
+    code: "SERVICE_UNAVAILABLE",
+    status: 503,
+  });
+
+  it("is the platform's 5xx with no reason, or the router's 503 server_busy; never no answer, never a 4xx", () => {
+    expect(isPlatformCut(platform503)).toBe(true);
+    expect(
+      isPlatformCut(
+        Object.assign(new Error("bad gateway"), {
+          code: "BAD_GATEWAY",
+          status: 502,
+        })
+      )
+    ).toBe(true);
+    expect(
+      isPlatformCut({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "server_busy" },
+        status: 503,
+      })
+    ).toBe(true);
+    expect(
+      isPlatformCut({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "billing_not_configured" },
+        status: 503,
+      })
+    ).toBe(false);
+    expect(isPlatformCut(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isPlatformCut(new NoWorkerAnswerError("unproven"))).toBe(false);
+    expect(isPlatformCut({ code: "TOO_MANY_REQUESTS", status: 429 })).toBe(
+      false
+    );
+    expect(isPlatformCut({ code: "CONFLICT", status: 409 })).toBe(false);
+  });
+
+  it("is said in a write sent at once as a server that did not confirm, never as the internet", () => {
+    expect(serverCutWriteMessage(platform503)).toBe(CHANGE_CUT_BY_SERVER);
+    expect(CHANGE_CUT_BY_SERVER).toBe(
+      "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em 1 minuto antes de repetir."
+    );
+    expect(CHANGE_CUT_BY_SERVER).not.toMatch(BLAMES_THE_NETWORK);
+    expect(
+      serverCutWriteMessage(new TypeError("Failed to fetch"))
+    ).toBeUndefined();
+    expect(serverCutWriteMessage({ code: "BAD_REQUEST" })).toBeUndefined();
   });
 });

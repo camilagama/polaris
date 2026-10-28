@@ -145,3 +145,39 @@ export function isTransientReadFailure(error: unknown): boolean {
   const { status } = (error ?? {}) as { status?: unknown };
   return typeof status === "number" && status >= 500 && reason === undefined;
 }
+
+/**
+ * The server got the call and died on it, or said "try again": a 5xx of the platform for a Worker it killed (the CPU
+ * limit of the Free plan, 1102), the router's 503 `server_busy`. Never no answer (`isNoAnswer`): a call that may not
+ * have left says nothing about the server. In the regime of the Free plan every call of the Worker dies like this for
+ * minutes, whatever it is.
+ */
+export function isPlatformCut(error: unknown): boolean {
+  return !isNoAnswer(error) && isTransientReadFailure(error);
+}
+
+/**
+ * A write sent at once (no queue) that the server cut: it may have been saved, so the text never says it was not, and
+ * it blames no network. The screen never sends it again by itself (a write with no idempotency key may double).
+ */
+export const CHANGE_CUT_BY_SERVER =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em 1 minuto antes de repetir.";
+
+/** The text of a write the server cut (`isPlatformCut`); undefined for any other error. */
+export function serverCutWriteMessage(error: unknown): string | undefined {
+  return isPlatformCut(error) ? CHANGE_CUT_BY_SERVER : undefined;
+}
+
+/**
+ * What a screen says of a failed call before its own codes: the missing legal acceptance (`legalAcceptanceMessage`)
+ * and, for a write (no `subject`), the server's cut (`serverCutWriteMessage`). Undefined for any other error.
+ */
+export function commonFailureMessage(
+  error: unknown,
+  subject?: string
+): string | undefined {
+  return (
+    legalAcceptanceMessage(error, subject) ??
+    (subject === undefined ? serverCutWriteMessage(error) : undefined)
+  );
+}

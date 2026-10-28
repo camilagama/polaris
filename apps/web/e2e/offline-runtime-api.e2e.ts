@@ -674,8 +674,8 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
   });
 });
 
-/** What the chip says when the sync failed or the device went offline: never for a Worker killed for CPU. */
-const SYNC_ERROR = /Envio falhou|Não foi possível|Sem conexão/;
+/** What the chip says when the sync failed or the device went offline: never within 60 s of a Worker killed for CPU. */
+const SYNC_ERROR = /Envio falhou|[Oo]cupado|Não foi possível|Sem conexão/;
 
 test.describe("paliativo dos 1102: a fila e o sync com o Worker morto por CPU", () => {
   test("(d) a escrita da fila com 1102 na primeira tentativa é gravada uma vez, com a mesma chave", async ({
