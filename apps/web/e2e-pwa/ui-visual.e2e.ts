@@ -69,7 +69,6 @@ const CONTEXTS = [
 const SCREENSHOT = {
   animations: "disabled",
   caret: "hide",
-  fullPage: true,
   maxDiffPixelRatio: 0.001,
   scale: "css",
   threshold: 0.2,
@@ -91,16 +90,35 @@ const STATES = VISUAL_STATES.map(([name, file]) => ({
   screen: screenNamed(name),
 }));
 
-/** The network idle, the app's fonts, and one more frame painted after both. */
-async function settleForScreenshot(page: Page) {
+/** Longer than any animation of the app driven by script, which `animations: "disabled"` does not stop. */
+const SCRIPTED_MOTION_MS = 5000;
+
+/** The network idle, the app's fonts, the scripted motion run to its end, and one more frame painted after all. */
+async function settle(page: Page) {
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
+  // the line charts morph with `motion` on requestAnimationFrame and ignore `reduce`: the page clock (faked by
+  // `clock.install`) runs their frames to the end, so the capture never lands in the middle of one
+  await page.clock.runFor(SCRIPTED_MOTION_MS);
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       })
   );
+}
+
+/**
+ * The whole page in the window, drawn before the capture: `fullPage` grows the window while it captures, and the
+ * charts, which measure their box with a ResizeObserver, could be drawn for the passing size.
+ */
+async function showWholePage(page: Page, width: number) {
+  await settle(page);
+  const height = await page.evaluate(
+    () => document.documentElement.scrollHeight
+  );
+  await page.setViewportSize({ height, width });
+  await settle(page);
 }
 
 test.describe.configure({ mode: "parallel" });
@@ -170,7 +188,7 @@ for (const { file, screen } of STATES) {
       test("igual à baseline", async ({ page }) => {
         await page.clock.install({ time: CLOCK });
         await screen.open(page, page.context());
-        await settleForScreenshot(page);
+        await showWholePage(page, VIEWPORTS[viewport].width);
         await expect(page).toHaveScreenshot(
           `${file}-${viewport}-${theme}.png`,
           {
