@@ -438,3 +438,26 @@ describe("the 413 as the client sees it", () => {
     expect(failure).toMatchObject({ status: 413 });
   });
 });
+
+describe("a field of 500 000 characters, within the ceiling of the body", () => {
+  it.each([
+    ["the name", { name: "a".repeat(500_000), organizationId: "o" }],
+    ["the organization", { name: "x", organizationId: "a".repeat(500_000) }],
+  ])(
+    "in %s is a BAD_REQUEST of under 1 KB that does not echo the text",
+    async (_, input) => {
+      const { post, reached } = setup();
+
+      const response = await post(JSON.stringify({ json: input }));
+
+      const text = await response.text();
+      expect(response.status).toBe(400);
+      expect(JSON.parse(text)).toMatchObject({
+        json: { code: "BAD_REQUEST", defined: false },
+      });
+      expect(new TextEncoder().encode(text).length).toBeLessThan(1024);
+      expect(text).not.toContain("a".repeat(32));
+      expect(reached).not.toHaveBeenCalled();
+    }
+  );
+});
