@@ -25,7 +25,8 @@ export interface SentryBuildSettings {
   define: Record<string, string>;
 }
 
-function commitSha(env: NodeJS.ProcessEnv): string | undefined {
+/** The SHA of the commit the build is made of: the one of the CI run, else the one of the working tree. */
+export function commitSha(env: NodeJS.ProcessEnv): string | undefined {
   const fromCi = env.GITHUB_SHA?.trim();
   if (fromCi) {
     return fromCi;

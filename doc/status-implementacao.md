@@ -2521,3 +2521,17 @@ Origem: a medida do Juan no staging (CPU de 10 a 13 ms por linha, só a fatia de
 | Tela | Em revisão | O tempo estimado já sai do ritmo medido da própria importação (`estimateText`), sem número fixo: cerca de 4 minutos por 100 linhas a 2,5 s. |
 | Ordem do deploy | Registrado | Aba aberta com o cliente antigo (fatias de até 10 linhas) tem a chamada recusada inteira depois do deploy; a importação vive só em memória e recomeça pelo que já foi criado (os mesmos `commandId` e `productId` voltam `repeated`). O cap e o balde entram no mesmo deploy. |
 | Pendências | Registrado | Depois do merge e do deploy, o Diego e o Juan medem no staging a 2,5 s; se o 1102 passar de cerca de 10%, o balde volta a 20/min (um número no `wrangler.jsonc`). Sem teto diário por loja, sem Workers Paid, sem fatia maior que 1. |
+
+### Erros do app no navegador, sem Sentry (t471; emenda de 28/10 do ADR 0098; sem migration)
+
+Origem: o item 4 das melhorias de qualidade aprovadas pelo usuário em 28/10 (desenho do Filipe, critérios de segurança do Rodrigo, leitura do Juan).
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Cliente | Em revisão | `lib/client-errors.ts`: `reportClientError` escolhe o destino (Sentry iniciado, ou a rota), chamado pelo `ErrorBoundary` (sem segundo `componentDidCatch`), pelo `window.onerror` e pelo `unhandledrejection` (`installClientErrorListeners` em `main.tsx`). Evento de lista fechada; nunca lê mensagem, causa nem pilha de componentes; até 3 quadros de `/assets/` da própria origem. 3 por carga, 1 por assinatura, `keepalive`, `credentials: "omit"`, sem retry nem fila, offline descarta, falha de rede não relata; só com `VITE_CLIENT_ERRORS_ENABLED=true`, e só então o Vite grava `VITE_RELEASE` (SHA curto). |
+| Contrato | Em revisão | `@polaris/contracts/client-error-fields` (listas fechadas, sem zod, para o cliente) e `@polaris/contracts/client-error` (schema `.strict()`). `routeId` = telas de `ROUTES` e abas (`screen:aba`), mais `entrar`, `aceite`, `catalogo` e `outra`; um teste mantém a lista igual a `screenKeys()` de `navigation-model.ts`. |
+| Rota | Em revisão | `server/routes/client-errors.ts`: interruptor `CLIENT_ERRORS_ENABLED` antes do `originCheck`, query 400, `Content-Type` exato 415, `CLIENT_ERROR_RATE_LIMIT` por endereço (10/min, sem cookie), 2 KiB pelo limite de corpo generalizado (`middleware/body-limit.ts`, que o `/rpc` também usa), rede de redação, schema estrito, assinatura no servidor (`fingerprint` na linha), 204. Orçamento por isolate em `server/observability/client-error-log.ts`; recusas só no resumo por minuto; fora do `http_request_timed`. |
+| Configuração | Em revisão | Binding (`900024`, `902024`, `901024`) e var nos três ambientes do `wrangler.jsonc` (produção `"0"`). O SW já não roteia a rota (`bypass`). CSP sem mudança. |
+| Documentação | Em revisão | Emenda do ADR 0098, linha `client_error_log` no ADR 0079 e no registro de retenção (`packages/domain/src/privacy/retention.ts`, proposta), item do `privacy.md`, runbook `erros-do-navegador.md`. |
+| Pendências | Registrado | O deploy do staging precisa de `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no build (workflow, do responsável). Ligar em produção é item do checklist. O script e o cron de leitura são outra tarefa. |
+

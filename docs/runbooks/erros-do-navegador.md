@@ -1,0 +1,75 @@
+# Erros do app no navegador (sem Sentry)
+
+O relatório de erro do app no navegador vai a `POST /api/client-errors`, no Worker do app, e vira uma linha do Workers Logs. A decisão e os limites estão na emenda de 28/10/2026 do [ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md); o que o relatório leva e não leva, em [privacidade](../business-rules/privacy.md) (classe `client_error_log` do [ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)).
+
+## Gatilho
+
+- Ligar ou desligar a coleta num ambiente.
+- Investigar uma falha que uma pessoa relatou, ou uma assinatura que a leitura automática apontou.
+- Conter uma enxurrada de relatórios falsos (a rota é pública).
+
+## Pré-requisitos
+
+- Para ler o Workers Logs: o acesso de leitura do Observability da conta do ambiente, pela [política de perfis de CLI](./cli-profile-policy.md). O dev não lê o log de produção.
+- Para mudar a var: um deploy do ambiente, que é do responsável.
+
+## As duas chaves
+
+| Onde | Nome | Liga com | Efeito desligada |
+| --- | --- | --- | --- |
+| Build do cliente | `VITE_CLIENT_ERRORS_ENABLED` | `true` | o navegador não envia nada; o build é o mesmo de antes (sem `VITE_RELEASE`) |
+| Worker | `CLIENT_ERRORS_ENABLED` (var do `wrangler.jsonc`) | `"1"` (só esse valor) | a rota responde 204 sem ler o corpo e sem logar nada, nem a recusa de origem |
+
+No `wrangler.jsonc`: local e staging com `"1"`, produção com `"0"` até o item do checklist de liberação. A flag de build e o `VITE_RELEASE` no deploy do staging dependem de um ajuste do workflow de deploy, que é do responsável; até lá o staging aceita a rota, mas o build publicado não envia.
+
+Com o Sentry iniciado no build (`VITE_SENTRY_DSN` válido), o Sentry é o destino e a rota não recebe nada do navegador.
+
+## O que a rota faz, em ordem
+
+1. Interruptor (`CLIENT_ERRORS_ENABLED`), antes da checagem de origem.
+2. `originCheck` do `/api/*` (403; essa recusa escreve `request_origin_rejected`, como em toda rota `/api/*`).
+3. Caminho sem query: 400.
+4. `Content-Type: application/json` exato: senão 415.
+5. Limite `CLIENT_ERROR_RATE_LIMIT`, só por endereço (IPv4 ou /64 de IPv6, chave HMAC), 10 por minuto: 429 com `Retry-After: 60`. Não lê cookie nem sessão. Limitador fora do ar: deixa passar e conta `limiter_unavailable`.
+6. Corpo de no máximo 2 KiB: 413 pelo `Content-Length` (sem ler) e em fluxo; `Content-Encoding` diferente de `identity`: 415; `Content-Length` inválido: 400.
+7. Rede de redação: a política dos logs e uma query com parâmetro, em toda chave e todo texto. Qualquer achado descarta o evento inteiro (400) e conta em `client_error_pii_suspected`.
+8. Schema estrito de `@polaris/contracts/client-error`: chave a mais, palavra fora da lista ou quadro fora do padrão dá 400.
+9. Assinatura no servidor e a linha, dentro do orçamento. Resposta 204.
+
+Nenhuma recusa (429, 400, 413, 415) escreve uma linha por requisição, e a rota fica fora do `http_request_timed`, mesmo com `ROUTE_TIMING_ALL`.
+
+## As linhas
+
+| `event` | Quando | Campos |
+| --- | --- | --- |
+| `client_error` | a 1ª vez que um isolate vê uma assinatura | `fingerprint` (a assinatura, 16 hex), `kind`, `errorClass`, `errorCode`, `rpcStatus`, `release`, `boundary`, `routeId`, `frames`, `v` |
+| `client_error_count` | por minuto, para cada assinatura repetida | `fingerprint`, `count`, `minute` |
+| `client_error_refused` | por minuto, com alguma recusa | `minute` e a contagem por motivo: `rate_limited`, `bad_request`, `too_large`, `unsupported`, `limiter_unavailable` |
+| `client_error_pii_suspected` | por minuto, com algum descarte da rede de redação | `count`, `minute` (nunca o valor) |
+| `client_error_dropped` | por minuto, com excedente | `count`, `minute` |
+
+- **Orçamento por isolate:** 20 linhas `client_error` e `client_error_count` por minuto e 200 assinaturas na memória; o que passa disso vai para `client_error_dropped`. As linhas de um minuto saem com a primeira requisição da rota depois dele; um isolate que morre antes perde as contagens (só subconta).
+- **A assinatura** junta `kind`, `errorName`, `code`, `status`, `boundary`, `routeId` e o nome do pedaço do primeiro quadro sem o hash. A mesma falha em duas builds tem a mesma assinatura; a `release` diz em qual build ela apareceu. O campo se chama `fingerprint` porque `signature` é mascarado pela política de redação dos logs.
+- **Os quadros** são `arquivo-com-hash.js:linha:coluna` do build publicado. Para a linha original, use o source map da mesma `release` (o build gera mapas escondidos, que não são publicados; ver o ADR 0098).
+
+## Ler
+
+Na API de telemetria do Workers Logs (`POST /accounts/{id}/workers/observability/telemetry/query`) ou no painel, filtre por `event = client_error` e agrupe por `fingerprint`; some os `client_error_count` da mesma assinatura. A retenção é a da plataforma (3 dias no Free). A leitura automática (o script e o cron) é uma tarefa à parte e não existe ainda.
+
+## Conter uma enxurrada
+
+1. Confirme pelo volume de `client_error_refused` (muito `rate_limited` ou `bad_request`) ou de `client_error_dropped`.
+2. Desligue no Worker: `CLIENT_ERRORS_ENABLED` diferente de `"1"` no ambiente e deploy. A rota passa a responder 204 sem logar.
+3. Verificação: depois do deploy, nenhuma linha `client_error*` nova.
+4. Volta: `"1"` de novo e deploy. Não há estado a limpar (nada é gravado fora do log).
+
+## Limites conhecidos
+
+- Um relatório falso com campos válidos passa (a origem não é autenticação: um `curl` forja `Origin`). O limite por endereço, o orçamento por isolate e o interruptor seguram o volume; a regra de quem acorda com uma assinatura nova é da leitura automática.
+- A rede de redação descarta um quadro legítimo se o hash e o fim do nome do arquivo formarem um número que parece CPF ou telefone (raro): o erro deixa de ser relatado, nada vaza.
+- O `unhandledrejection` de um `TypeError` sem `code` é tratado como falha de rede (é o que um `fetch` sem resposta lança) e não é relatado; o mesmo erro numa tela, pego pelo `ErrorBoundary`, é.
+- Da pilha o cliente só tira posições de `/assets/` da própria origem; a primeira linha da pilha do Chrome repete a mensagem, então um texto que imite esse formato poderia virar um quadro (só letras, dígitos, `-` e `_`, até 64 caracteres, com o hash): aceito, a rede de redação e o padrão do quadro limitam o que passa.
+
+## Escalonamento
+
+O responsável (Arrascaeta) decide ligar em produção e o ajuste do workflow; segurança da rota com o Rodrigo; leitura dos logs com o Juan.

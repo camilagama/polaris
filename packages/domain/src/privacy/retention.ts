@@ -57,6 +57,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "event_outbox",
   "queue_processing",
   "operational_incident",
+  "client_error_log",
   "provider_backups",
 ] as const);
 
@@ -709,6 +710,20 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     review: USER_APPROVED_REVIEW,
     rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Fora do purge nenhum papel apaga; o expurgo é do job agendado (PR112). O purge da organização apaga os itens dela explicitamente (política e DELETE do papel do purge, ADR 0081): a cascata da chave estrangeira não dispara, porque o purge mantém a linha da organização. O incidente não tem organização e não entra no purge.",
     sources: ["ADR 0085"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "client_error_log",
+    data: [
+      "linhas client_error, client_error_count, client_error_refused, client_error_pii_suspected e client_error_dropped no Workers Logs da Cloudflare (o relatório de erro do app no navegador: o tipo do evento, a classe do erro de uma lista fechada, o código e o status do oRPC, a versão do app, o boundary, o id da tela e até três posições de código; sem loja, pessoa, IP, user agent, endereço da página nem texto do erro)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "O prazo da plataforma: o Workers Logs guarda as linhas pelo prazo dele (7 dias, ADR 0094; 3 no plano Free, a conferir na mudança de preço de 1/12/2026) e as apaga sozinho, sem job do Polaris e sem prazo aplicado por nós (decisão do Arrascaeta de 28/10/2026, com o parecer do Rodrigo). Se o relatório ganhar um campo de loja ou de pessoa, deixa de ser anônimo e a classe volta à revisão de privacidade (exportação, purge e prazo).",
+    review: { state: "pendente_juridica" },
+    rule: "O relatório é anônimo por construção: lista fechada de campos, validada de novo pelo servidor com schema estrito, e descartado inteiro se algo sair dela ou se a política de redação dos logs mudar qualquer valor. Não está ligado a loja nem a pessoa, então fica fora da exportação do tenant, do atendimento ao titular e do purge. Fica só no Workers Logs, do operador de hospedagem que já existe: não há operador novo.",
+    sources: ["ADR 0079", "ADR 0094", "ADR 0098", "docs/business-rules/privacy.md"],
     status: "proposta",
   },
   {

@@ -422,6 +422,34 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
 }
 
 /**
+ * The screen on display as the report of an error names it (`routeId` of `@polaris/contracts/client-error`): the
+ * screen of `ROUTES`, and for a screen with tabs `screen:tab`, by the tab the address asks. Null outside the shell.
+ */
+export function screenKeyOf(pathname: string, search = ""): string | null {
+  const normalized = pathname.replace(trailingSlashes, "") || "/";
+  const route = Object.hasOwn(ROUTES, normalized)
+    ? ROUTES[normalized]
+    : undefined;
+  if (!route) {
+    return null;
+  }
+  return isTabScreen(route.screen)
+    ? `${route.screen}:${requestedTab(route.screen, search).value}`
+    : route.screen;
+}
+
+/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, and each tab of a screen with tabs. */
+export function screenKeys(): string[] {
+  return Object.values(ROUTES)
+    .flatMap(({ screen }) =>
+      isTabScreen(screen)
+        ? SCREEN_TABS[screen].map((tab) => `${screen}:${tab.value}`)
+        : [screen]
+    )
+    .sort();
+}
+
+/**
  * The pages of the sign-in group (ADR 0100): outside the shell, no menu, no organization, so they are
  * not among the routes above. All but `/desbloquear` show the challenge, under their own CSP.
  */

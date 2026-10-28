@@ -8,6 +8,7 @@ import {
   MOTION_MODULE,
   precacheBudgetPlugin,
 } from "./pwa/precache-budget";
+import { clientErrorsBuildDefine } from "./pwa/client-errors-build";
 import { appShellHeadersPlugin, sentryBuildSettings } from "./pwa/sentry-build";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
@@ -30,9 +31,12 @@ const CATALOG_SHARED =
   /[\\/]apps[\\/]web[\\/]src[\\/](?:catalog[\\/](?:product-fields|product-search-model|products-page-parts|screen-parts))\.tsx?$/;
 
 export default defineConfig(({ mode }) => {
-  const sentry = sentryBuildSettings(
-    loadEnv(mode, fileURLToPath(new URL(".", import.meta.url)), "VITE_")
+  const viteEnv = loadEnv(
+    mode,
+    fileURLToPath(new URL(".", import.meta.url)),
+    "VITE_"
   );
+  const sentry = sentryBuildSettings(viteEnv);
   return {
     ...uiBuild,
     build: {
@@ -59,7 +63,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    define: sentry.define,
+    define: { ...sentry.define, ...clientErrorsBuildDefine(viteEnv) },
     // Source maps of the browser build are hidden: generated for the upload to Sentry (release checklist),
     // never referenced by the bundles and kept out of the static assets by `public/.assetsignore`.
     environments: {
