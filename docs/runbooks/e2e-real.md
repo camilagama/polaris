@@ -46,6 +46,10 @@ O projeto `runtime-ligado` roda cliente, venda e a chave. Todos os outros depend
 
 Fora do Playwright (projeto `node` do Vitest, em `bun run test`): `confinement.test.ts` (o `testUtils` e o harness fora do grafo de imports do Worker, do bundle e do que um deploy lê, com casos de controle), `run-environment.test.ts` (avaliação dupla, ambiente fechado, guardas de `BASE_URL` e de host), `journey-names.test.ts`, `oracle.test.ts`, `calendar.test.ts`, `selectors.test.ts` (só papel, rótulo e texto) e `scripts/e2e-flaky-report.test.mjs`.
 
+## A mesma pilha na skill de verificação
+
+A skill [verify-polaris](../../.claude/skills/verify-polaris/SKILL.md) usa este harness para manter uma instância de pé entre os passos de um agente: `run-environment.ts`, `run-database.ts`, `serve.ts`, a sessão de `fixtures.ts` (`createJourneyUser`) e as sementes de `seed.ts`. Mudar a assinatura dessas funções quebra o `launch` dela: rode `.claude/skills/verify-polaris/scripts/verify.sh launch` e `cleanup` depois de mexer nelas. A skill sobe um PostgreSQL 18 próprio quando não há `POLARIS_E2E_DATABASE_URL`, constrói em `dist-e2e/verify` e usa as portas a partir de 4400, então não disputa as 4321 e 4322 daqui; os dois só não rodam juntos na mesma worktree, porque dividem `apps/web/.wrangler/deploy`.
+
 ## Retry e flaky
 
 O CI roda com 1 retry. `node scripts/e2e-flaky-report.mjs apps/web/test-results/e2e-real-report.json` lista no resumo do job os testes que só passaram no retry e **reprova** com 2 ou mais, ou com qualquer um das jornadas de dinheiro (venda, devolução/cancelamento, estoque). Antes de o job ser obrigatório: 10 execuções seguidas com `E2E_RETRIES=0`, registradas em `apps/web/e2e-real/medicoes/`.
