@@ -267,15 +267,34 @@ describe("the refund area of the chosen store (AC-9)", () => {
       "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
     );
   });
-  it("says that a case may have been opened when the answer did not come, so it is not opened twice", async () => {
-    const { section } = await chosen([new TypeError("Failed to fetch")]);
-    byId(section, "motivo").value = "Motivo";
-    buttons(section, "Abrir caso")[0]?.click();
-    await flush();
-    expect(alertOf(section)?.textContent).toBe(
-      "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo."
-    );
+  it("turns the buttons back on and says the Admin failed when the list is not one", async () => {
+    const { listCases, section } = await chosen([json({ next: null })]);
+    await listCases();
+    expect(alertOf(section)?.textContent).toBe(PROBLEM_TEXT.failed);
+    expect(
+      buttons(section, "Ver casos abertos desta loja")[0]?.getAttribute(
+        "aria-disabled"
+      )
+    ).toBe("false");
   });
+
+  it.each([
+    new TypeError("Failed to fetch"),
+    json({ error: "internal_error" }, 500),
+    json({ error: "unavailable" }, 503),
+    json(null, 201),
+  ])(
+    "says that a case may have been opened when the answer is not the case, so it is not opened twice (%#)",
+    async (answer) => {
+      const { section } = await chosen([answer]);
+      byId(section, "motivo").value = "Motivo";
+      buttons(section, "Abrir caso")[0]?.click();
+      await flush();
+      expect(alertOf(section)?.textContent).toBe(
+        "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo."
+      );
+    }
+  );
 });
 
 describe("reading the refund window (AC-9, AC-10)", () => {
@@ -314,7 +333,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     buttons(section, "Consultar janela")[0]?.click();
     await flush();
     expect(fact("Janela de arrependimento")).toBe("Dentro do prazo");
-    // 23:59:59 of 01/11 in Brasília, as the server said: not 7 days after 24/10
+    // the last minute of the day the server said, in Brasília: not one the page worked out from the first charge
     expect(fact("Prazo até")).toBe("01/11/2026 23:59");
     expect(fact("Primeira cobrança")).toBe("24/10/2026 15:30");
     expect(fact("Valor da primeira cobrança")).toBe("R$ 1.234,50");
@@ -389,6 +408,17 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     expect(fact("Pedido de reembolso do dono")).toBe(
       "Feito em 25/10/2026 09:00; pode ser concluído pelo app até 28/10/2026 09:00 (prazo passou)"
     );
+  });
+
+  it("shows no window from an answer of another shape, and says the Admin failed", async () => {
+    const { fact, section } = await listed([json({ state: "active" })]);
+    buttons(section, "Consultar janela")[0]?.click();
+    await flush();
+    expect(alertOf(section)?.textContent).toBe(PROBLEM_TEXT.failed);
+    expect(fact("Janela de arrependimento")).toBeUndefined();
+    expect(
+      buttons(section, "Consultar janela")[0]?.getAttribute("aria-disabled")
+    ).toBe("false");
   });
 
   it("asks once for a double click: the buttons are off while the server answers", async () => {

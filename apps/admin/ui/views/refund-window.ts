@@ -111,15 +111,22 @@ export function refundWindowView(
     reading = false;
     cases.busy(false);
     if (!answer.ok) {
-      notice.alert(PROBLEM_TEXT[answer.problem]);
+      // the page sends the store it shows: a 400 is the Admin's error, not something the operator typed
+      notice.alert(
+        PROBLEM_TEXT[answer.problem === "invalid" ? "failed" : answer.problem]
+      );
       return;
     }
+    let shownWindow: HTMLElement;
+    try {
+      shownWindow = windowFacts(dom, answer.data, choice);
+    } catch {
+      // an answer of another shape is not shown as a window (the read was made and audited all the same)
+      notice.alert(PROBLEM_TEXT.failed);
+      return;
+    }
+    dom.fill(result, dom.el("h3", {}, "Janela de reembolso"), shownWindow);
     notice.status("Janela lida. A consulta ficou registrada na auditoria.");
-    dom.fill(
-      result,
-      dom.el("h3", {}, "Janela de reembolso"),
-      windowFacts(dom, answer.data, choice)
-    );
   };
 
   let body: (Node | string)[];

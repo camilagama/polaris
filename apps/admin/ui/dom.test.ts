@@ -86,6 +86,10 @@ describe("the attributes dom.el sets", () => {
     "/api/funnel?weeks=26",
     "/api?x",
     "/api#x",
+    "/./api/funnel",
+    "/x/../api/funnel",
+    "/x/..",
+    "/%61pi/funnel",
     "",
   ])("refuses %j as an href: only a path of the Admin's page", (value) => {
     for (const name of ["href", "HREF"]) {

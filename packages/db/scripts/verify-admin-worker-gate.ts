@@ -36,7 +36,8 @@ const VITEST_TIMEOUT_MS = 5 * 60_000;
 /**
  * The reads of GET /api/funnel the Worker answers: 3 in worker.workerd-db.test.ts (its loop over weeks 1, 4 and 26),
  * and in page.workerd-db.test.ts the 30 of the hour (`ACTIVATION_FUNNEL_READS_PER_HOUR`) before its 429. Each test
- * file runs in its own isolate, so each counts its hour apart. Change them together.
+ * file runs in its own isolate, so each counts its hour apart; if they shared one, page.workerd-db.test.ts would stop
+ * short of 30 answered reads and fail. Change them together.
  */
 const ACTIVATION_FUNNEL_ANSWERED_READS = 3 + 30;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));

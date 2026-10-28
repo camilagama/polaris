@@ -86,6 +86,8 @@ const ARIA = /^aria-[a-z]+$/;
  * the browser), no space and no control character. No scheme is allowed: the page links nowhere else. Not a path of
  * the API either: following a link is a GET, and a GET of the funnel is an audited read.
  */
+/** A `.` or `..` segment or a %-escape: the browser resolves them, so `/x/../api` would reach the API after all. */
+const DOT_OR_ESCAPE = /%|\/\.\.?(?:[/?#]|$)/;
 const ADMIN_PATH = /^\/(?![/\\])(?!api(?:[/?#]|$))[^\s\\]*$/;
 
 /** Throws on an element the page does not build. */
@@ -103,7 +105,11 @@ export function checkAttribute(name: string, value: string): void {
   }
   if (
     lower === "href" &&
-    !(ADMIN_PATH.test(value) && !hasControlCharacter(value))
+    !(
+      ADMIN_PATH.test(value) &&
+      !hasControlCharacter(value) &&
+      !DOT_OR_ESCAPE.test(value)
+    )
   ) {
     throw new Error("an href takes only a path of the Admin's page");
   }

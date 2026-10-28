@@ -24,9 +24,13 @@ function funnelLimitText(retryAfterSeconds: number | undefined): string {
 }
 
 function problemText(failure: ApiFailure): string {
-  return failure.problem === "rate_limited"
-    ? funnelLimitText(failure.retryAfterSeconds)
-    : PROBLEM_TEXT[failure.problem];
+  if (failure.problem === "rate_limited") {
+    return funnelLimitText(failure.retryAfterSeconds);
+  }
+  // the page sends only `weeks` from its own list: a 400 here is the Admin's error, not something the operator typed
+  return PROBLEM_TEXT[
+    failure.problem === "invalid" ? "failed" : failure.problem
+  ];
 }
 
 /** A table of the funnel: its cells keep their words on a narrow column (`funnel`) instead of widening the page. */
@@ -211,6 +215,7 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
 
   let opened = false;
   let loading = false;
+  let failed = false;
   let shownWeeks: string | null = null;
 
   const busy = (on: boolean) => {
@@ -230,16 +235,32 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
     );
     busy(false);
     if (!answer.ok) {
+      // the tables of the read before stay, under their own line that says of when and of how many weeks they are
+      failed = true;
       notice.alert(problemText(answer));
       return;
     }
     const funnel = answer.data;
+    try {
+      render(funnel);
+    } catch {
+      failed = true;
+      result.replaceChildren();
+      notice.alert(PROBLEM_TEXT.failed);
+      return;
+    }
+    failed = false;
     shownWeeks = asked;
-    notice.status(
-      `Funil de ${funnel.weeks} semanas, atualizado em ${brasiliaMomentText(funnel.updatedAt)}.`
-    );
-    dom.fill(
-      result,
+    notice.status("Funil lido.");
+  };
+
+  const render = (funnel: ActivationFunnelResponse) => {
+    const tables = [
+      dom.el(
+        "p",
+        { class: "read-at" },
+        `Funil de ${funnel.weeks} semanas, atualizado em ${brasiliaMomentText(funnel.updatedAt)}.`
+      ),
       dom.el("h3", {}, "Cadastros"),
       signupsTable(dom, funnel),
       dom.el("h3", {}, "Lojas criadas na semana"),
@@ -249,8 +270,9 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
       dom.el("h3", {}, "Lojas ativas"),
       activeTable(dom, funnel),
       dom.el("h3", {}, "O que não entra nos números"),
-      notesBlock(dom, funnel)
-    );
+      notesBlock(dom, funnel),
+    ];
+    dom.fill(result, ...tables);
   };
 
   toggle.addEventListener("click", () => {
@@ -272,7 +294,12 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
     read();
   });
   weeks.addEventListener("change", () => {
-    if (shownWeeks !== null && shownWeeks !== weeks.value) {
+    // a read on its way or a failure on screen keeps its own sentence
+    if (
+      !(loading || failed) &&
+      shownWeeks !== null &&
+      shownWeeks !== weeks.value
+    ) {
       notice.status(
         `Mostrando ${shownWeeks} semanas. Use Atualizar para ler ${weeks.value} semanas.`
       );
@@ -286,7 +313,7 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
     dom.el(
       "p",
       { class: "hint" },
-      "Números da plataforma, sem nenhuma loja. Cada leitura fica registrada na auditoria e conta no limite de 30 leituras por hora."
+      "Números da plataforma, sem nenhuma loja. Cada leitura fica registrada na auditoria e conta no limite de leituras por hora de cada operador."
     ),
     toggle,
     body

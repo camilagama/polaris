@@ -51,7 +51,11 @@ function openProblemText(problem: Problem): string {
   if (problem === "invalid") {
     return `O motivo não foi aceito: use de 1 a ${MAX_REASON_LENGTH} caracteres, sem caracteres de controle.`;
   }
-  if (problem === "network") {
+  if (
+    problem === "network" ||
+    problem === "failed" ||
+    problem === "unavailable"
+  ) {
     return "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo.";
   }
   return PROBLEM_TEXT[problem];
@@ -215,9 +219,16 @@ export function supportCasesView(
       return;
     }
     loading = false;
+    refreshButtons();
     if (!answer.ok) {
-      refreshButtons();
-      notice.alert(PROBLEM_TEXT[answer.problem]);
+      // the page asks with its own store and state: a 400 is the Admin's error, not something the operator typed
+      notice.alert(
+        PROBLEM_TEXT[answer.problem === "invalid" ? "failed" : answer.problem]
+      );
+      return;
+    }
+    if (!Array.isArray(answer.data?.cases)) {
+      notice.alert(PROBLEM_TEXT.failed);
       return;
     }
     // the server filters by store and state; a case of another store or not open is never offered, whatever came.
@@ -257,15 +268,14 @@ export function supportCasesView(
       return;
     }
     loading = false;
+    refreshButtons();
     if (!answer.ok) {
-      refreshButtons();
       notice.alert(openProblemText(answer.problem));
       return;
     }
-    // the route answers the case it opened; anything else is not shown as one
+    // the route answers the case it opened; anything else is not shown as one, and it may still have been opened
     if (typeof answer.data?.id !== "string") {
-      refreshButtons();
-      notice.alert(PROBLEM_TEXT.failed);
+      notice.alert(openProblemText("failed"));
       return;
     }
     const added = row(answer.data);

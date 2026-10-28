@@ -205,6 +205,33 @@ describe("reading the funnel (AC-7)", () => {
     }
   );
 
+  it("keeps the tables of the read before under their own date when a later read fails, and keeps the failure said", async () => {
+    const page = await openFunnel([
+      json(funnel()),
+      json({ error: "rate_limited" }, 429),
+    ]);
+    refreshOf(page.root)?.click();
+    await flush();
+    const weeks = byId(page.root, "funil-semanas");
+    weeks.value = "4";
+    weeks.dispatch("change");
+    const text = visibleText(page.root);
+    expect(alertOf(page.root)?.textContent).toBe(
+      "Limite de leituras do funil por hora atingido. Tente de novo mais tarde."
+    );
+    expect(text).toContain(
+      "Funil de 2 semanas, atualizado em 28/10/2026 11:00."
+    );
+    expect(text).not.toContain("Use Atualizar para ler 4 semanas.");
+  });
+
+  it("shows no tables from an answer of another shape, and says the Admin failed", async () => {
+    const page = await openFunnel([json({ weeks: 12 })]);
+    expect(alertOf(page.root)?.textContent).toBe(PROBLEM_TEXT.failed);
+    expect(byTag(byId(page.root, "funil-corpo"), "table")).toEqual([]);
+    expect(refreshOf(page.root)?.getAttribute("aria-disabled")).toBe("false");
+  });
+
   it("says the limit without a number when the server gave no wait", async () => {
     const page = await openFunnel([json({ error: "rate_limited" }, 429)]);
     expect(alertOf(page.root)?.textContent).toBe(

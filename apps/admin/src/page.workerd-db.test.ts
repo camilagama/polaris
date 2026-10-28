@@ -116,9 +116,6 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     weeks.dispatch("change");
     buttons(page.root, "Fechar o funil")[0]?.click();
     buttons(page.root, "Abrir o funil")[0]?.click();
-    expect(funnelCalls(page.calls)).toEqual([
-      { method: "GET", path: "/api/funnel?weeks=12", status: 200 },
-    ]);
     const funnel = page.section("funil-titulo");
     // one row per week in each table, and the few stores of the gate are under k: "não disponível", never 0
     const signupRows = byTag(byTag(funnel, "tbody")[0] as FakeElement, "tr");
@@ -140,6 +137,10 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       answered += 1;
     }
     expect(answered).toBe(FUNNEL_READS_PER_HOUR);
+    // by now a read the weeks or the reopening had started would have come back and be counted: there is none
+    expect(funnelCalls(page.calls)).toEqual([
+      { method: "GET", path: "/api/funnel?weeks=12", status: 200 },
+    ]);
     // the next click is refused with the wait in minutes, and the page does not ask again by itself (AC-7)
     buttons(page.root, "Atualizar")[0]?.click();
     await page.shows(LIMIT_SENTENCE);
