@@ -2546,3 +2546,16 @@ Origem: o item 4 das melhorias de qualidade aprovadas pelo usuário em 28/10 (de
 | Documentação | Em revisão | Emenda do ADR 0098, linha `client_error_log` no ADR 0079 e no registro de retenção (`packages/domain/src/privacy/retention.ts`, proposta), item do `privacy.md`, runbook `erros-do-navegador.md`. |
 | Pendências | Registrado | O deploy do staging precisa de `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no build (workflow, do responsável). Ligar em produção é item do checklist. O script e o cron de leitura são outra tarefa. |
 
+
+### O Início reaproveita a janela anterior do dia (t480; emenda de 28/10 do ADR 0056; sem migration)
+
+Origem: D2 do desenho do `report.periodSummary` (Filipe), aceito pelo Everton com quatro condições, que são o escopo. O `periodSummary` é a rota mais cara do app no Workers Free e o Início o chamava duas vezes por carga.
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Reaproveitamento | Em revisão | `home/previous-window-copy.ts`: a janela anterior (B) vem da cópia só quando ela foi lida no dia de hoje da loja (o dia do `generatedAt` dela, no horário da loja) e é do mesmo período (mesmas datas de início e fim). Qualquer outra cópia vale nada: relê do servidor e guarda. O mês corrente (A) e o "hoje" são sempre lidos. Na memória da página (`previousWindowMemory`, com o runtime desligado) e, com o runtime ligado, na cópia do Início do aparelho. |
+| Atualizar | Em revisão | O Início não tinha o gesto: `Atualizar` entra no cabeçalho (ícone no celular), lê todos os blocos e as duas janelas do servidor. "Tentar novamente" dos números também lê as duas. Voltar à aba, a volta da conexão e a meia-noite relêem o mês e usam a cópia do dia. |
+| Invalidação local | Em revisão | Devolução ou cancelamento feitos neste aparelho (`sales/sale-detail-page.tsx`) sobre uma venda anterior ao 1º dia do mês corrente descartam a cópia da memória e marcam a do aparelho (`beforeStale`), que segue valendo sem internet mas não no lugar de uma leitura. Venda do mês corrente não mexe (está em A). A mudança de outro aparelho espera o dia seguinte. |
+| Só o Início | Em revisão | `reusablePreviousWindow` só é chamada por `home/use-home.ts`; Resultado, Histórico e Meta seguem lendo do servidor (`home/previous-window-guard.test.ts`). |
+| Provas | Em revisão | Unidade: `home/previous-window-copy.test.ts` (mesmo dia, dia seguinte, fuso, outro período, outra loja, aparelho, invalidação), `home/previous-window-guard.test.ts`. e2e com relógio controlado em `e2e/home.e2e.ts`: segunda abertura no mesmo dia faz 1 chamada, no dia seguinte 2, "Atualizar" 2, virada do mês 2, relógio do aparelho atrás do servidor 2, cancelamento de venda de antes do mês 2 e de venda do mês corrente 1. |
+| Limites | Registrado | Cancelamento ou devolução em outro aparelho ou em outra aba do mesmo aparelho, e despesa com competência passada, só aparecem na comparação no dia seguinte ou em "Atualizar". O app não tem ajuste de venda confirmada (a venda é um registro que não muda), então não há o que invalidar. Sem texto novo na tela além do rótulo `Atualizar`, que já existe no Resultado. |

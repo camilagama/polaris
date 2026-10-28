@@ -28,6 +28,13 @@ export const DAILY_SALES_COPY_KEY_PREFIX = "polaris.offline.dailySales.";
  */
 export const dailySalesMemory = new Map<string, unknown>();
 
+/**
+ * The Início's "janela anterior" as the server last said it, by organization (`home/previous-window-copy.ts`): the page's
+ * memory that works with the offline runtime off too, so the second opening of the day does not read it again. It goes
+ * with the copies below, like the map's series.
+ */
+export const previousWindowMemory = new Map<string, unknown>();
+
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
 /** A day as kept: a copy written before the costs of the day existed has no `costs`, `operatingExpenses` or `operatingResult`. */
@@ -400,6 +407,7 @@ export function clearOrganizationResultCopies(
   organizationId: string
 ): void {
   dailySalesMemory.delete(organizationId);
+  previousWindowMemory.delete(organizationId);
   try {
     for (const key of [
       ...keysWithPrefix(preference, organizationPrefix(organizationId)),
@@ -421,6 +429,7 @@ export function clearPeriodSummaryCaches(
   preference: PreferenceStorage | null
 ): void {
   dailySalesMemory.clear();
+  previousWindowMemory.clear();
   try {
     for (const key of [
       ...keysWithPrefix(preference, KEY_PREFIX),

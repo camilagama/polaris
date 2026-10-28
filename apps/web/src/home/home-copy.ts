@@ -1,6 +1,7 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { GOAL_KINDS } from "@polaris/domain/goals/goal";
 import type { PreferenceStorage } from "../lib/current-organization-model";
+import { calendarDayInTimezone } from "../lib/dates";
 import {
   HOME_COPY_KEY_PREFIX,
   isDate,
@@ -10,8 +11,6 @@ import {
   readPeriodSummaryCache,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import { calendarDayInTimezone } from "../lib/dates";
-import type { DailySeries } from "./home-rhythm-model";
 import {
   copyStanding,
   type GoalView,
@@ -20,6 +19,7 @@ import {
   offlineGoal,
   storeToday,
 } from "./home-model";
+import type { DailySeries } from "./home-rhythm-model";
 import { readRhythmCopy } from "./rhythm-copy";
 
 /**
@@ -32,6 +32,11 @@ import { readRhythmCopy } from "./rhythm-copy";
 export interface HomeCopy {
   /** B as the server returned it; its day after the end is in the month of A. */
   before: StoredPeriodSummary | null;
+  /**
+   * A return or a cancellation made on this device changed what B says since it was read: B still shows without a
+   * connection, but is never taken in place of a read (`previous-window-copy.ts`). Absent is not stale.
+   */
+  beforeStale?: boolean;
   /** The goal the card showed and when (the server's clock as the device estimated it), null when not read. */
   goal: { at: string; view: GoalView } | null;
   /** The store sold at least once (the checklist does not come back, AC-23). */
@@ -112,6 +117,8 @@ function isHomeCopy(value: unknown): value is HomeCopy {
   return (
     isDictionary(value) &&
     (value.before === null || isPeriodSummary(value.before)) &&
+    (value.beforeStale === undefined ||
+      typeof value.beforeStale === "boolean") &&
     (value.goal === null || isKeptGoal(value.goal)) &&
     typeof value.hadSale === "boolean"
   );
@@ -152,8 +159,13 @@ export function writeHomeCopy(
     goal: null,
     hadSale: false,
   };
+  // a B read from the server is as fresh as it gets, unless the caller says otherwise
+  const stale =
+    change.beforeStale ??
+    (change.before === undefined ? kept.beforeStale === true : false);
   const next: HomeCopy = {
     before: change.before === undefined ? kept.before : change.before,
+    ...(stale ? { beforeStale: true } : {}),
     goal: change.goal === undefined ? kept.goal : change.goal,
     hadSale: kept.hadSale || change.hadSale === true,
   };

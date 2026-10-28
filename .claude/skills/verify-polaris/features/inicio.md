@@ -11,6 +11,7 @@ O Início (`/`) é a primeira tela depois de entrar: a data de hoje, o atalho "N
 - `inicio-meta` a região "Meta" e o link "Definir meta".
 - `inicio-grafico` "Vendas por dia" com as abas "7 dias" e "30 dias".
 - `inicio-esconder` o botão "Esconder valores".
+- `inicio-atualizar` o botão "Atualizar" (só o ícone no celular) relê todos os blocos, as duas janelas dos números incluídas; só com internet.
 - `inicio-nova-venda` o link "Nova venda" leva a `/sales`.
 
 ## How to get to it (user POV)

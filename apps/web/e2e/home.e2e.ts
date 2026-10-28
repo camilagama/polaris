@@ -174,6 +174,8 @@ class FakeServer {
   readonly diesNext = new Map<string, number>();
   /** How long each read of the Início takes to answer (ms), so the reads of an opening overlap. */
   latencyMs = 0;
+  /** The store's date of the sale that `sale.get` returns. */
+  saleOccurredOn = "2026-09-12";
 
   /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
   readonly held = new Map<string, Promise<void>>();
@@ -327,6 +329,28 @@ class FakeServer {
         return json({ goals: this.scenario.goals });
       case "inventory/listBalances":
         return json(this.balances(input));
+      case "sale/get":
+        return json(saleDetail(this.saleOccurredOn));
+      case "sale/getCustomerLink":
+        return json({
+          current: { customerId: null, version: 0 },
+          history: [],
+          saleId: SALE_ID,
+        });
+      case "sale/cancel":
+        return json({
+          cancellation: {
+            cancelledAt: new Date(this.now).toISOString(),
+            cancelledBy: USER_ID,
+            commandId: String(input.commandId ?? SALE_ID),
+            id: "0199c2d0-0000-7000-8000-0000000000c4",
+            reasonCode: null,
+            reasonNote: null,
+            saleId: SALE_ID,
+          },
+          replayed: false,
+          restocked: [{ position: 0, quantity: 1, variantId: VARIANT }],
+        });
       case "sale/list":
         return json({
           hasMore: false,
@@ -357,8 +381,86 @@ const HOME_PROCEDURES = new Set([
   "inventory/listBalances",
   "report/dailySales",
   "report/periodSummary",
+  "sale/cancel",
+  "sale/get",
+  "sale/getCustomerLink",
   "sale/list",
 ]);
+
+const CANCELLED_NOTICE = /Venda cancelada\./;
+const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
+const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
+const NO_FEE = {
+  amount: null,
+  fixedAmount: null,
+  mode: "not_applicable",
+  percentage: null,
+};
+
+/** A confirmed sale of `occurredOn`, as `sale.get` returns it: one shirt, paid in cash, never returned. */
+function saleDetail(occurredOn: string) {
+  const at = `${occurredOn}T15:00:00.000Z`;
+  return {
+    cancellation: null,
+    customer: { customerId: null, version: 0 },
+    returnSummary: [
+      {
+        availableToReturn: 1,
+        position: 0,
+        restockedQuantity: 0,
+        returnedQuantity: 0,
+        sold: 1,
+      },
+    ],
+    returns: [],
+    sale: {
+      adjustments: [],
+      items: [
+        {
+          chargedUnitPrice: "50.00",
+          listedUnitPrice: "50.00",
+          position: 0,
+          productId: PRODUCT,
+          productLabel: "Camiseta básica",
+          quantity: 1,
+          unitCost: "20.00",
+          variantId: VARIANT,
+        },
+      ],
+      payment: {
+        amount: "50.00",
+        anticipationFee: NO_FEE,
+        anticipationRequested: false,
+        expectedSettlementDays: null,
+        installmentPlan: null,
+        installments: null,
+        method: "cash",
+        paymentProfileId: null,
+        paymentProfileName: null,
+        paymentProfileRuleId: null,
+        paymentProfileVersion: null,
+        processingFee: NO_FEE,
+      },
+      sale: {
+        commandId: "0199c2d0-0000-7000-8000-0000000000c3",
+        confirmedAt: at,
+        currency: "BRL",
+        id: SALE_ID,
+        occurredAt: at,
+        occurredOn,
+        recordedAt: null,
+      },
+      totals: {
+        discountTotal: "0.00",
+        freightTotal: "0.00",
+        paymentSurchargeTotal: "0.00",
+        subtotal: "50.00",
+        surchargeTotal: "0.00",
+        totalDue: "50.00",
+      },
+    },
+  };
+}
 
 async function serve(page: Page, server: FakeServer) {
   // a read with no answer is judged by the probe of /health: it answers, so it was an isolated failure (not offline)
@@ -1598,6 +1700,175 @@ async function reopenWithoutNetwork(page: Page, server: FakeServer, at = NOON) {
     page.getByRole("heading", { level: 1, name: "Início" })
   ).toBeVisible({ timeout: 20_000 });
 }
+
+/** The reads of B (the days before the month) and of the month (A) of the Início, by the period they asked for. */
+const beforeReads = (server: FakeServer) =>
+  periodCalls(server).filter((call) => call.input.to === "2026-09-30").length;
+const monthReads = (server: FakeServer) =>
+  periodCalls(server).filter((call) => call.input.from === "2026-10-01").length;
+const refreshButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Atualizar" });
+
+test.describe("janela anterior do Início: uma leitura por dia da loja (relógio controlado)", () => {
+  test("a segunda abertura no mesmo dia lê só o mês; no dia seguinte, as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 1]);
+
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(3);
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 2]);
+
+    server.now = NOON + DAY;
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText(
+      "Nenhuma venda hoje ainda"
+    );
+    expect(periodCalls(server)).toHaveLength(5);
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 3]);
+  });
+
+  test("voltar à aba no mesmo dia relê o mês e não a janela anterior", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => monthReads(server)).toBe(2);
+    expect(beforeReads(server)).toBe(1);
+  });
+
+  test("Atualizar relê as duas, mesmo no mesmo dia", async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(2);
+
+    await refreshButton(page).click();
+
+    await expect.poll(() => periodCalls(server).length).toBe(4);
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+  });
+
+  test("Tentar novamente depois de uma falha também lê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    // the month fails on the next opening, with the day's copy of B in hand
+    server.broken.set("report/periodSummary", "500");
+    await page.reload();
+    const retry = page.getByRole("button", { name: "Tentar novamente" });
+    await expect(retry.first()).toBeVisible({ timeout: 20_000 });
+    server.broken.delete("report/periodSummary");
+    const asked = periodCalls(server).length;
+
+    await retry.first().click();
+
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server).length).toBe(asked + 2);
+  });
+
+  test("com outra janela (a virada do mês), lê as duas", async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+
+    server.now = Date.parse("2026-11-01T15:00:00.000Z");
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(region(page, "Vendas em novembro")).toBeVisible();
+
+    expect(periodCalls(server)).toHaveLength(4);
+    expect(
+      periodCalls(server)
+        .slice(2)
+        .map((call) => `${call.input.from}..${call.input.to}`)
+        .sort()
+    ).toEqual(["2026-10-01..2026-10-31", "2026-11-01..2026-11-30"]);
+  });
+
+  test("com o relógio do aparelho um dia atrás do servidor, a cópia do dia do aparelho não serve", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server, NOON - DAY);
+    await expect(region(page, "Vendas hoje")).toContainText("22/10");
+    await expect.poll(() => copyKeys(page)).toHaveLength(3);
+    // the copy was read on 22/10; the server is now on 23/10 while the device still thinks it is 22/10: the copy is
+    // the device's today, not the store's, and the month's answer says so
+    server.now = NOON;
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+  });
+
+  test("a loja recusa os números: a janela anterior guardada some junto e não volta sem o servidor", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+
+    server.broken.delete("report/periodSummary");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(beforeReads(server)).toBe(2);
+  });
+});
+
+test.describe("janela anterior do Início: o que muda neste aparelho", () => {
+  const cancelSale = async (page: Page) => {
+    await page.goto(`/sales/detail?saleId=${SALE_ID}`);
+    await page
+      .getByRole("button", { exact: true, name: "Cancelar venda" })
+      .click();
+    await page.getByRole("button", { name: "Revisar cancelamento" }).click();
+    await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
+    await expect(page.getByText(CANCELLED_NOTICE)).toBeVisible();
+  };
+
+  test("cancelar neste aparelho uma venda de antes do mês: a próxima abertura relê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.saleOccurredOn = "2026-09-12";
+    await openWithCopy(page, server);
+
+    await cancelSale(page);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+
+    // read again from the server, the copy is of the day again
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 3]);
+  });
+
+  test("cancelar uma venda do mês corrente não mexe na janela anterior", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.saleOccurredOn = "2026-10-05";
+    await openWithCopy(page, server);
+
+    await cancelSale(page);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 2]);
+  });
+});
 
 const OFFLINE_SALE =
   "Você pode vender sem internet. A venda é enviada quando a conexão voltar.";
