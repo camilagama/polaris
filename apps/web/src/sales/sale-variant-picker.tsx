@@ -158,6 +158,8 @@ export function VariantSearch({
           aria-describedby={error ? errorId : undefined}
           aria-invalid={error ? true : undefined}
           autoComplete="off"
+          // the search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
+          data-swap-ignore=""
           id={searchId}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

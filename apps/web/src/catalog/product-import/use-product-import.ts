@@ -6,7 +6,7 @@ import { useCurrentOrganization } from "../../lib/current-organization";
 import { calendarDayInTimezone } from "../../lib/dates";
 import { orpcClient } from "../../lib/orpc";
 import { readErrorMessage } from "../../lib/rpc-error";
-import { useReportUnsentWork } from "../../lib/unsent-work";
+import { useHoldSwap } from "../../lib/unsent-work";
 import {
   type LimitHelpView,
   limitHelpFor,
@@ -291,9 +291,10 @@ export function useProductImport({
     []
   );
 
-  // a file read and not imported, or an import on its way, is work the page would lose
-  useReportUnsentWork(
-    state.step.kind === "preview" ||
+  // a file chosen, read and not imported, or an import on its way (or paused) is work the page would lose
+  useHoldSwap(
+    (state.step.kind === "file" && state.file !== null) ||
+      state.step.kind === "preview" ||
       state.step.kind === "running" ||
       state.step.kind === "paused"
   );

@@ -4,22 +4,19 @@ import { LegalAcceptanceNotice } from "../app-shell/legal-acceptance-notice";
 import { NotFoundPage } from "../app-shell/not-found-page";
 import { PageLoading } from "../app-shell/page-loading";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { LogoutDialog } from "../offline/logout-dialog";
 import type { BlockedWorkspace } from "../offline/logout-guard";
 import { OfflineAccessExpiredView } from "../offline/runtime/offline-access-expired";
 import type { RuntimeSnapshot } from "../offline/runtime/offline-runtime";
-import { UpdateBannerView } from "../pwa/update-banner";
-import { NO_PENDING_WORK, offerFor } from "../pwa/update-model";
-import type { UpdateSnapshot } from "../pwa/update-store";
 
 /**
  * The pieces around the screens (v5.1), each in the states the browser checks measure (`?estado=`): the 404, the
- * failure of a screen, the loading, the notices of the session, the acceptance and the new version, "Sair" with
+ * failure of a screen, the loading, the notices of the session and the acceptance, "Sair" with
  * work to lose and the offline access that expired. Real components with synthetic data, in a frame like the
  * shell's `main`; only in the builds of the browser checks (see main.tsx; the chunk is named `screens-lab-*`, which
  * the precache check keeps out of the production build). The same pieces run in the real shell in the browser tests
- * of the sessions, of the acceptance, of "Sair" and of the update.
+ * of the sessions, of the acceptance and of "Sair".
  */
 const none = () => undefined;
 
@@ -41,40 +38,14 @@ function Boom(): never {
   throw new Error("Falha de teste");
 }
 
-const updateSnapshot = (
-  work: Partial<UpdateSnapshot["work"]>,
-  message: string | null = null
-): UpdateSnapshot => {
-  const merged = { ...NO_PENDING_WORK, ...work };
-  return {
-    applying: false,
-    message,
-    offer: offerFor(true, merged),
-    waiting: true,
-    work: merged,
-  };
-};
-
-/** The notices of the top of a screen, one under the other: the session, the acceptance and the update. */
+/** The notices of the top of a screen, one under the other: the session and the acceptance. */
 function Notices() {
   // the screen says by itself that it holds something typed: the warning of the session notice and the hint of the link
-  useReportUnsentWork(true);
+  useHoldSwap(true);
   return (
     <>
       <SessionEndedNotice alone />
       <LegalAcceptanceNotice />
-      <UpdateBannerView onApply={none} snapshot={updateSnapshot({})} />
-      <UpdateBannerView
-        onApply={none}
-        snapshot={updateSnapshot(
-          { pending: 2, sending: 1 },
-          "Ainda não foi possível enviar a fila. Tente de novo com conexão."
-        )}
-      />
-      <UpdateBannerView
-        onApply={none}
-        snapshot={updateSnapshot({ rejected: 2 })}
-      />
     </>
   );
 }

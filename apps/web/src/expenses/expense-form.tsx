@@ -30,7 +30,7 @@ import {
 } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { DateField } from "../sales/sale-fields";
 import {
   ActionNotice,
@@ -137,7 +137,7 @@ export function ExpenseForm({
     () => onDraftChange(changed ? draft : null),
     [changed, draft, onDraftChange]
   );
-  useReportUnsentWork(changed);
+  useHoldSwap(changed);
   const online = useConnectionOnline();
 
   // Active categories only; the one the edited expense already has stays

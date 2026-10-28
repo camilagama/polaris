@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -9,9 +10,14 @@ import { type Plugin, transformWithEsbuild } from "vite";
  * THIS build: its id and the files the shell needs. The file names carry content
  * hashes, and the id also hashes `index.html` and the unhashed public files, so any
  * change to what a user would download changes the worker, which is what makes the
- * browser install the update. Nothing else goes in: not the time of the build, or
- * a deploy of the same content would be a new worker and a notice of a new version
- * with nothing new in it.
+ * browser install the update. The id does not cover `sw.js` itself: `workerId` hashes
+ * the worker's own code (`workerIdOf`). The other things are when the build was
+ * published, which is the time of the commit it was built from (`publishedAtOf`), not
+ * the time of the build, so the same commit built again is the same worker, and
+ * whether the build is urgent (`POLARIS_SWAP_URGENT=1`, `isUrgent`). The time only
+ * names the version: the settling counts from when the device saw the build (`sw.ts`).
+ * A new commit with the same content (the same id and the same worker code) is a new
+ * worker, which the page takes without a reload (`update-store.ts`).
  */
 export interface PrecacheInput {
   /** Files of the build output, relative to it, with forward slashes. */
@@ -84,6 +90,48 @@ export function buildManifest(
   };
 }
 
+const DIGITS = /^\d+$/;
+
+/**
+ * When the build was published, in ms: `POLARIS_BUILD_TIME` (ms or an ISO date) when the pipeline sets it, otherwise
+ * the time of the commit built, otherwise null (the page then counts the age from when it first saw the build).
+ */
+export function publishedAtOf(
+  environment: Record<string, string | undefined>,
+  commitSeconds: () => string | null
+): number | null {
+  const given = environment.POLARIS_BUILD_TIME?.trim();
+  if (given) {
+    const parsed = DIGITS.test(given) ? Number(given) : Date.parse(given);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  const seconds = Number(commitSeconds()?.trim());
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+/** `POLARIS_SWAP_URGENT=1`: a revert or a security fix, which goes in at the first safe moment (ADR 0041). */
+export function isUrgent(environment: Record<string, string | undefined>) {
+  return environment.POLARIS_SWAP_URGENT?.trim() === "1";
+}
+
+/** A short hash of the worker's compiled code, without the manifest: a change only in `sw.ts` changes it. */
+export function workerIdOf(code: string): string {
+  return createHash("sha256").update(code).digest("hex").slice(0, 12);
+}
+
+function commitSecondsOfHead(): string | null {
+  try {
+    return execFileSync("git", ["log", "-1", "--format=%ct"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function serviceWorkerPlugin(options: { source: string }): Plugin {
   return {
     apply: "build",
@@ -98,14 +146,17 @@ export function serviceWorkerPlugin(options: { source: string }): Plugin {
         return;
       }
       const files = listFiles(directory).filter((file) => file !== "sw.js");
-      const manifest = buildManifest(files, (file) =>
-        readFileSync(join(directory, file))
-      );
       const compiled = await transformWithEsbuild(
         readFileSync(options.source, "utf8"),
         options.source,
         { format: "iife", loader: "ts", minify: true, target: "es2020" }
       );
+      const manifest = {
+        ...buildManifest(files, (file) => readFileSync(join(directory, file))),
+        publishedAt: publishedAtOf(process.env, commitSecondsOfHead),
+        urgent: isUrgent(process.env),
+        workerId: workerIdOf(compiled.code),
+      };
       writeFileSync(
         join(directory, "sw.js"),
         `const POLARIS_BUILD=${JSON.stringify(manifest)};\n${compiled.code}`

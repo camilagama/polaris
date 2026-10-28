@@ -7,6 +7,7 @@ import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { loadAuthMethods } from "../sign-in/sign-in-model";
+import { AppVersionLine } from "./app-version-line";
 import { settingsTabsShown } from "./settings-tabs";
 
 /** Each tab is its own chunk, as each screen was. */
@@ -98,11 +99,14 @@ export function SettingsScreen() {
     )
     .map(([, panel]) => panel);
   return (
-    <ScreenTabs
-      label="Configurações"
-      panels={panels}
-      screen="settings"
-      title="Configurações"
-    />
+    <>
+      <ScreenTabs
+        label="Configurações"
+        panels={panels}
+        screen="settings"
+        title="Configurações"
+      />
+      <AppVersionLine />
+    </>
   );
 }

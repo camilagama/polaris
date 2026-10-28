@@ -1,9 +1,9 @@
-import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { ORPCError } from "@orpc/client";
+import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NoWorkerAnswerError } from "../../lib/connection";
-import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { signOfflineLease } from "../../lib/offline-lease-token";
+import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { attemptLogout } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
@@ -1153,6 +1153,35 @@ describe("what the rest of the app plugs into", () => {
       rejected: 0,
       sending: 0,
     });
+  });
+
+  it("the work source refuses to read a queue it has no store for, and never says it is empty", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+
+    // not started: the queue of the device is there, but this runtime has nothing open to read it
+    const runtime = w.make();
+    await expect(runtime.workSource().read()).rejects.toThrow("queue_unread");
+    // stopped after reading it once: what the snapshot kept is not the queue now
+    await runtime.start(organizationId);
+    const source = runtime.workSource();
+    expect(await source.read()).toMatchObject({ pending: 1 });
+    await runtime.stop();
+    await expect(source.read()).rejects.toThrow("queue_unread");
+  });
+
+  it("the work source refuses the figures of a read the organization changed under", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const reading = runtime.workSource().read();
+    const stopping = runtime.stop();
+    await expect(reading).rejects.toThrow("queue_unread");
+    await stopping;
   });
 
   it("the work source reports a failed sync as a failure", async () => {

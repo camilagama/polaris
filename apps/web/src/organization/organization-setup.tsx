@@ -12,7 +12,7 @@ import { documentTitle } from "../app-shell/navigation-model";
 import { orpcClient } from "../lib/orpc";
 import { SIGN_IN_AGAIN_BUTTON } from "../lib/session-ended-text";
 import { signInPath } from "../lib/sign-in-path";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { LogoutControl } from "../offline/runtime/logout-control";
 import { SelectField } from "../sales/sale-fields";
 import {
@@ -55,7 +55,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
     message: string;
   } | null>(null);
   const [pending, setPending] = useState(false);
-  useReportUnsentWork(name.trim() !== "");
+  useHoldSwap(name.trim() !== "");
   const nameRef = useRef<HTMLInputElement>(null);
 
   // the tab says what the page is, and gives the title back when the organization opens

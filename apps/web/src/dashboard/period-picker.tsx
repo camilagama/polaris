@@ -190,6 +190,9 @@ export function PeriodPicker({
         <form
           aria-label="Escolher o período"
           className="grid gap-4 sm:flex sm:flex-wrap sm:items-start"
+          // the period goes in the address once applied, and two dates are cheap to pick again: it does not hold the
+          // swap of the build (pwa/swap-guard.ts)
+          data-swap-ignore=""
           noValidate
           onSubmit={apply}
         >

@@ -3,7 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import {
   backToCancelEditing,
@@ -53,7 +53,7 @@ export function SaleCancelPanel({
   saleId,
 }: CancelPanelProps) {
   const [state, setState] = useState(initialCancelState);
-  useReportUnsentWork(isCancelDraftChanged(state));
+  useHoldSwap(isCancelDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const sectionRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);

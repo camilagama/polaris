@@ -4,6 +4,9 @@ import {
   type DialogEntry,
   type EntryHistory,
   entryOf,
+  holdOpenDialog,
+  openDialogCount,
+  subscribeOpenDialogs,
 } from "./dialog-history";
 
 /**
@@ -254,5 +257,24 @@ describe("pilha de entradas do Dialog de tela inteira", () => {
     expect(entryOf(null)).toBeNull();
     expect(entryOf("texto")).toBeNull();
     expect(entryOf({ polarisDialog: { depth: "1", id: "x" } })).toBeNull();
+  });
+});
+
+describe("os diálogos abertos (seguram a troca de build)", () => {
+  it("conta cada diálogo aberto até ele fechar, uma vez só, e avisa quem ouve", () => {
+    let heard = 0;
+    const stop = subscribeOpenDialogs(() => {
+      heard += 1;
+    });
+    const first = holdOpenDialog();
+    const second = holdOpenDialog();
+    expect(openDialogCount()).toBe(2);
+    first();
+    first();
+    expect(openDialogCount()).toBe(1);
+    second();
+    expect(openDialogCount()).toBe(0);
+    stop();
+    expect(heard).toBe(4);
   });
 });
