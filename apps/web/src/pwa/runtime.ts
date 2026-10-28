@@ -1,6 +1,8 @@
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { keepScrollForReload, startAutoSwap } from "./auto-swap";
 import { readPageSwapState, subscribePageSwapState } from "./swap-guard";
 import type { RegistrationLike } from "./update-controller";
+import { workSourceBeforeRuntime } from "./update-model";
 import { createUpdateStore, type UpdateStore } from "./update-store";
 
 /**
@@ -24,6 +26,7 @@ export function getUpdateStore(): UpdateStore | null {
             },
             readGuard: readPageSwapState,
             reload: () => window.location.reload(),
+            workSource: workSourceBeforeRuntime(OFFLINE_RUNTIME_ENABLED),
           })
         : null;
   }

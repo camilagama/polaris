@@ -27,6 +27,7 @@ function setup(options: { pending?: boolean } = {}) {
     build: null,
     firstSeenAt: 0,
     kind: "waiting",
+    urgent: false,
   };
   let snapshot: UpdateSnapshot = {
     current: null,

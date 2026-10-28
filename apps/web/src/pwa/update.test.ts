@@ -15,7 +15,9 @@ import {
   momentAllows,
   NO_PENDING_WORK,
   type PendingWork,
+  type PendingWorkSource,
   SETTLE_MS,
+  workSourceBeforeRuntime,
 } from "./update-model";
 import { createUpdateStore } from "./update-store";
 
@@ -238,6 +240,8 @@ describe("the update store", () => {
       current?: BuildInfo | null;
       guard?: Partial<SwapState>;
       work?: PendingWork;
+      /** The source the store starts with, left in place (no runtime handed its queue). */
+      workSource?: PendingWorkSource;
     } = {}
   ) {
     const registration = new FakeRegistration();
@@ -259,12 +263,15 @@ describe("the update store", () => {
       now: () => now,
       readGuard: (work) => ({ ...QUIET, ...page.guard, work }),
       reload,
+      ...(options.workSource ? { workSource: options.workSource } : {}),
     });
     const queue = { work: options.work ?? NO_PENDING_WORK };
-    store.setWorkSource({
-      read: () => Promise.resolve(queue.work),
-      sync: () => Promise.resolve(),
-    });
+    if (!options.workSource) {
+      store.setWorkSource({
+        read: () => Promise.resolve(queue.work),
+        sync: () => Promise.resolve(),
+      });
+    }
     /** A new build `id`, installed and waiting. */
     const deliver = async (info: BuildInfo | null) => {
       const worker = new FakeWorker();
@@ -375,6 +382,170 @@ describe("the update store", () => {
     expect(await test.store.trySwap("hidden")).toBe(false);
     test.advance(1);
     expect(await test.store.trySwap("hidden")).toBe(true);
+  });
+
+  describe("a normal build published on top of an urgent one still waiting", () => {
+    it("takes its urgency: it goes in at the first safe moment, with no settling", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      const worker = await test.deliver(build("C", NOW));
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: build("C", NOW),
+        kind: "waiting",
+        urgent: true,
+      });
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    });
+
+    it("passes it on to the next one, while none went in", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      await test.deliver(build("C", NOW));
+      const worker = await test.deliver(build("D", NOW));
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    });
+
+    it("still never goes in over an open dialog", async () => {
+      const test = setup({ guard: { openDialogs: 1 } });
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      const worker = await test.deliver(build("C", NOW));
+      expect(await test.store.trySwap("hidden")).toBe(false);
+      expect(worker.messages).toEqual([]);
+      test.page.guard = {};
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    });
+
+    it("keeps it when its own reload was held after the worker took over: the page still runs the old build", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      const worker = await test.deliver(build("C", NOW));
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      test.page.guard = { openDialogs: 1 };
+      test.container.changeController(worker);
+      await flush();
+      expect(test.reload).not.toHaveBeenCalled();
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        kind: "stale",
+        urgent: true,
+      });
+      test.page.guard = {};
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      await flush();
+      expect(test.reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps it in a tab where another tab made it active", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      await test.deliver(build("C", NOW));
+      test.registration.waiting = null;
+      await test.otherTabSwapped(build("C", NOW));
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        kind: "stale",
+        urgent: true,
+      });
+    });
+
+    it("keeps it when the worker that took over does not say its build, or is one this page never saw waiting", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      await test.deliver(build("C", NOW));
+      test.registration.waiting = null;
+      await test.otherTabSwapped(null);
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: null,
+        kind: "stale",
+        urgent: true,
+      });
+      await test.otherTabSwapped(build("D", NOW));
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        kind: "stale",
+        urgent: true,
+      });
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      await flush();
+      expect(test.reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("an urgent build that comes after the urgent one went in is taken over at once (a revert of the revert)", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      test.registration.waiting = null;
+      await test.otherTabSwapped(build("A2", NOW, { urgent: true }));
+      const worker = await test.deliver(build("E", NOW, { urgent: true }));
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: build("E", NOW, { urgent: true }),
+        kind: "waiting",
+      });
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    });
+
+    it("ends at the first swap on the device: this page loads the urgent build already active, and the next one waits the 2 h", async () => {
+      const test = setup();
+      await test.attach();
+      await test.deliver(build("A2", NOW, { urgent: true }));
+      test.registration.waiting = null;
+      await test.otherTabSwapped(build("A2", NOW, { urgent: true }));
+      const worker = await test.deliver(build("C", NOW));
+      // this page, still on the old build, loads A2 (already active) at its first safe moment; C is not taken over
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: build("A2", NOW, { urgent: true }),
+        kind: "stale",
+      });
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      await flush();
+      expect(worker.messages).toEqual([]);
+      expect(test.reload).toHaveBeenCalledTimes(1);
+
+      // the page loaded on A2 sees C as any build: 2 h from when the device saw it
+      const next = setup({ current: build("A2", NOW, { urgent: true }) });
+      await next.attach();
+      const waiting = await next.deliver(build("C", NOW));
+      expect(next.store.getSnapshot().pending).toMatchObject({
+        firstSeenAt: NOW,
+        urgent: false,
+      });
+      expect(await next.store.trySwap("hidden")).toBe(false);
+      next.advance(SETTLE_MS - 1);
+      expect(await next.store.trySwap("hidden")).toBe(false);
+      next.advance(1);
+      expect(await next.store.trySwap("hidden")).toBe(true);
+      expect(waiting.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    });
+  });
+
+  describe("before the offline runtime hands its queue", () => {
+    it("with the runtime off there is no queue: it swaps", async () => {
+      const test = setup({ workSource: workSourceBeforeRuntime(false) });
+      await test.attach();
+      await test.deliver(build("B"));
+      expect(await test.store.trySwap("hidden")).toBe(true);
+    });
+
+    it("with the runtime on the queue cannot be read yet (the login screen): it never swaps, not even an urgent build", async () => {
+      const test = setup({ workSource: workSourceBeforeRuntime(true) });
+      await test.attach();
+      const worker = await test.deliver(build("B", NOW, { urgent: true }));
+      expect(await test.store.trySwap("hidden")).toBe(false);
+      expect(worker.messages).toEqual([]);
+      // once the runtime hands its queue, an empty one lets it in
+      test.store.setWorkSource({
+        read: () => Promise.resolve(NO_PENDING_WORK),
+        sync: () => Promise.resolve(),
+      });
+      expect(await test.store.trySwap("hidden")).toBe(true);
+    });
   });
 
   it("counts from when the page saw the build when the worker wrote no time, or one in the device's future", async () => {

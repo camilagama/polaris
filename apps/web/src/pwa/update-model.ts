@@ -12,8 +12,9 @@
  * device, which gives the time to revert it. Both the settling and the `IDLE_WAITING_MS` count from when the device
  * first saw the build (the install of its worker, `sw.ts`), never from when it was published: a build promoted hours
  * after its commit is new to the device all the same. An urgent build (`POLARIS_SWAP_URGENT=1`: a revert, a security
- * fix) skips both and goes in at the first safe moment; the page's guard still holds it over work. The clock is the
- * device's: one moved ahead while the build waits shortens the settling, with no bound (ADR 0041).
+ * fix) skips both and goes in at the first safe moment; the page's guard still holds it over work. A normal build that
+ * takes the place of an urgent one still waiting inherits it, until the first swap the page sees (`update-store.ts`).
+ * The clock is the device's: one moved ahead while the build waits shortens the settling, with no bound (ADR 0041).
  */
 export interface PendingWork {
   pending: number;
@@ -38,6 +39,21 @@ export const idleWorkSource: PendingWorkSource = {
   read: () => Promise.resolve(NO_PENDING_WORK),
   sync: () => Promise.resolve(),
 };
+
+/**
+ * The queue before the offline runtime hands its own: with the runtime off there is no queue, so it is empty; with
+ * it on, a queue may sit on the device (the login screen, a runtime still opening), so it cannot be read.
+ */
+export function workSourceBeforeRuntime(
+  offlineRuntimeEnabled: boolean
+): PendingWorkSource {
+  return offlineRuntimeEnabled
+    ? {
+        read: () => Promise.reject(new Error("queue_not_attached")),
+        sync: () => Promise.reject(new Error("queue_not_attached")),
+      }
+    : idleWorkSource;
+}
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;

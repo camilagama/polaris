@@ -37,6 +37,13 @@ export interface PendingBuild {
    */
   firstSeenAt: number;
   kind: "stale" | "waiting";
+  /**
+   * Skips the settling and the 24 h: the build is urgent, or it took the place of an urgent one still waiting (a
+   * normal commit published on top of a revert must not leave the device on the bad build for 2 h). The inheritance
+   * ends at the first swap on the device: once an urgent build is active, this page reloads into it and the next
+   * build waits its own settling.
+   */
+  urgent: boolean;
 }
 
 export interface UpdateSnapshot {
@@ -74,6 +81,8 @@ export interface UpdateStoreOptions {
   /** What the page holds now, with the queue just read (`swap-guard.ts`). */
   readGuard: (work: PendingWork) => SwapState;
   reload: () => void;
+  /** Where the queue is read until the offline runtime hands its own (`setWorkSource`). */
+  workSource?: PendingWorkSource;
 }
 
 export function createUpdateStore({
@@ -83,9 +92,10 @@ export function createUpdateStore({
   now = Date.now,
   readGuard,
   reload,
+  workSource = idleWorkSource,
 }: UpdateStoreOptions): UpdateStore {
   let registration: RegistrationLike | null = null;
-  let source: PendingWorkSource = idleWorkSource;
+  let source = workSource;
   let snapshot: UpdateSnapshot = {
     current: null,
     pending: null,
@@ -154,8 +164,19 @@ export function createUpdateStore({
       worker.postMessage({ type: "SKIP_WAITING" });
       return;
     }
+    const known = snapshot.pending;
+    if (known?.kind === "stale" && known.urgent && build?.urgent !== true) {
+      // the urgent build already went in on this device and this page still runs the one it replaced: the page loads
+      // the active build at its first safe moment, and this one waits its own settling from the next page
+      return;
+    }
     set({
-      pending: { build, firstSeenAt: firstSeenOf(build), kind: "waiting" },
+      pending: {
+        build,
+        firstSeenAt: firstSeenOf(build),
+        kind: "waiting",
+        urgent: build?.urgent === true || known?.urgent === true,
+      },
     });
     await readWork();
   }
@@ -168,8 +189,16 @@ export function createUpdateStore({
     if (sameContent(build)) {
       return;
     }
-    // another tab made a build active; this page still runs its own and swaps at its own moment
-    set({ pending: { build, firstSeenAt: firstSeenOf(build), kind: "stale" } });
+    // another tab made a build active (or this page's own reload was held); this page still runs its own and swaps at
+    // its own moment, as urgently as it waited: loading the build already active hurries no build on the device
+    set({
+      pending: {
+        build,
+        firstSeenAt: firstSeenOf(build),
+        kind: "stale",
+        urgent: build?.urgent === true || snapshot.pending?.urgent === true,
+      },
+    });
   }
 
   /**
@@ -219,7 +248,7 @@ export function createUpdateStore({
         return false;
       }
       const waited = now() - pending.firstSeenAt;
-      if (!momentAllows(moment, waited, pending.build?.urgent === true)) {
+      if (!momentAllows(moment, waited, pending.urgent)) {
         return false;
       }
       const work = await readWork();

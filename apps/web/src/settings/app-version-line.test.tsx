@@ -25,7 +25,12 @@ const snapshot = (change: Partial<UpdateSnapshot> = {}): UpdateSnapshot => ({
   work: NO_PENDING_WORK,
   ...change,
 });
-const WAITING = { build: null, firstSeenAt: 0, kind: "waiting" } as const;
+const WAITING = {
+  build: null,
+  firstSeenAt: 0,
+  kind: "waiting",
+  urgent: false,
+} as const;
 const render = (value: UpdateSnapshot) =>
   renderToStaticMarkup(<AppVersionLineView snapshot={value} />);
 
