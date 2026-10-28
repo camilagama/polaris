@@ -10,7 +10,7 @@ Um `Promise.all` de N comandos prova pouco: os comandos podem rodar um depois do
 
 1. **Largada real.** Uma transação "segurador" toma antes de tudo o lock disputado (a linha do produto, a chave advisory do comando, a chave única ainda não confirmada). Os competidores são criados e liberados juntos por uma única barreira de largada; o segurador só solta depois.
 2. **Houve disputa.** O gate espera o próprio banco dizer que os competidores estão bloqueados pelo segurador, direto ou na fila atrás de um que está (`pg_stat_activity` e `pg_blocking_pids`, recursivo), e **falha** se eles nunca bloqueiam (`the race did not compete`). Uma corrida que não competiu é falha, não sucesso. Quando o pool do código sob teste tem menos conexões que competidores (a loja de cobrança tem 3), o gate declara quantos bloqueios espera.
-3. **N rodadas.** `POLARIS_CONCURRENCY_REPEAT` define quantas vezes cada corrida se repete com dados novos (padrão 1 na suíte `ci`, 3 em `gates:concurrency`, no máximo 10: o `inventory` mantém uma organização Free de 50 variantes para todas as rodadas). O CI roda 1 rodada; **quando as 3 rodadas são obrigatórias** está em [Quando rodar `gates:concurrency`](#quando-rodar-gatesconcurrency).
+3. **N rodadas.** `POLARIS_CONCURRENCY_REPEAT` define quantas vezes cada corrida se repete com dados novos (padrão 1 na suíte `ci`, 3 em `gates:concurrency`, no máximo 10: o `inventory` mantém uma organização Free de 50 variantes para todas as rodadas). O CI roda 1 rodada por PR e 3 toda noite na `main`; **quando as 3 rodadas são obrigatórias** está em [Quando rodar `gates:concurrency`](#quando-rodar-gatesconcurrency).
 4. **Prova por remoção da proteção.** Feita localmente e descartada (nada disso é commitado): tira-se a proteção e o gate precisa ficar vermelho. A tabela [Provas por remoção](#provas-por-remoção) guarda o resultado.
 
 Um segundo aviso, que a prova por remoção ensinou: **muitas corridas têm mais de uma camada** (um lock e um índice único, ou um lock de produto e um de saldo). Tirar só uma camada deixa o gate verde, e isso é o esperado. A prova só vale quando tira as camadas que seguram aquela corrida; a tabela diz quais.
@@ -25,7 +25,7 @@ Um segundo aviso, que a prova por remoção ensinou: **muitas corridas têm mais
 
 ### Quando rodar `gates:concurrency`
 
-O job `PostgreSQL 18 gates` do CI roda `gates:ci` com 1 rodada por corrida, e corrida intermitente é o que 1 rodada não pega. Sem job novo no CI (custo 0), a suíte com **N = 3 rodadas** (o padrão de `gates:concurrency`) é obrigatória:
+O job `PostgreSQL 18 gates` do CI roda `gates:ci` com 1 rodada por corrida, e corrida intermitente é o que 1 rodada não pega. Por isso o workflow `Concurrency nightly` (`.github/workflows/concurrency-nightly.yml`) roda `gates:concurrency` com **N = 3 rodadas** toda noite na `main` (04:30 de Brasília), fora dos PRs; um vermelho ali é corrida intermitente a investigar com `POLARIS_CONCURRENCY_REPEAT=10`. Além disso, a suíte com N = 3 é obrigatória:
 
 - **em todo PR que mexa numa proteção desta matriz** (lock, índice único, ordem de lock, gatilho ou função que uma linha abaixo prova): o autor roda e registra o resultado em "Verificação" do PR;
 - **antes de cada prova de release**, num PostgreSQL 18 descartável e novo, a partir do SHA candidato ([item 4 do checklist de release](../runbooks/release-checklist.md#4-gates-de-banco-em-neon-descartável-block)).
