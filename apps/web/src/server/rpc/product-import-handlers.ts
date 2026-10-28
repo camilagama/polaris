@@ -60,9 +60,9 @@ function statusCounts(
 }
 
 /**
- * The import of a spreadsheet (corte 2.5): `importBatch` creates a slice of rows the browser read, each in its own
+ * The import of a spreadsheet (corte 2.5): `importBatch` creates the row the browser read (one per call, the contract's cap), in its own
  * transaction under `product:create`, and `namesExisting` tells the preview which names the store already has.
- * The file never reaches the server; the log of a slice has the counts, the import, the request and the opaque
+ * The file never reaches the server; the log of a call has the counts, the import, the request and the opaque
  * organization, never a name, a value or a description.
  */
 export function createProductImportRpcHandlers(

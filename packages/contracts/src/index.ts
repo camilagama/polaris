@@ -68,10 +68,11 @@ export type ProductReadModel = z.infer<typeof product>;
 /**
  * The import of a spreadsheet (corte 2.5): the browser reads the file and sends only the rows it accepted, a slice at
  * a time; the file never reaches the server. One call carries at most `PRODUCT_IMPORT_BATCH_MAX_ROWS` rows (a call
- * with more is refused whole, never cut), each row is created in its own transaction by the same use case as
+ * with more is refused whole, never cut; one row keeps each call inside the CPU of the Free plan and makes the bulk
+ * bucket count rows, not slices), each row is created in its own transaction by the same use case as
  * `product.create`, and the answer says what happened to each row.
  */
-export const PRODUCT_IMPORT_BATCH_MAX_ROWS = 10;
+export const PRODUCT_IMPORT_BATCH_MAX_ROWS = 1;
 /** The names one `product.namesExisting` asks about: the rows of one file. */
 export const PRODUCT_IMPORT_MAX_NAMES = 500;
 
@@ -1612,9 +1613,9 @@ const legalAcceptanceStatus = z.object({
  * write, and so is `device.check`: it promotes the session's link to the device (ADR 0048), and once per
  * page load fits the write bucket. `read` = no effect asked for by the user; it may do idempotent, bounded
  * maintenance, proven by a gate (today only `goal.list`, which settles the goals whose period ended;
- * `verify-home-writes-gate`). `bulk` = a write of many rows in one call (today only `product.importBatch`): it
- * counts in a bucket of its own, with few calls per minute, so it neither stands for one write in the write
- * bucket (it would multiply that limit by its rows) nor spends the quota the sales share.
+ * `verify-home-writes-gate`). `bulk` = the import of a spreadsheet, one row per call (today only `product.importBatch`): it
+ * counts in a bucket of its own, so a long import neither spends the write quota the sales share nor is held to it;
+ * the rows per minute are the bucket's calls times the cap of rows per call.
  */
 export type ProcedureKind = "bulk" | "read" | "write";
 
@@ -2538,8 +2539,8 @@ export const polarisContract = {
         })
       )
       .output(productVariantConfiguration),
-    // A slice of a spreadsheet import: its own rate-limit bucket (`bulk`), never the one of the writes, so a
-    // sale made during the import keeps the whole write quota and one call never stands for one write.
+    // One row of a spreadsheet import: its own rate-limit bucket (`bulk`), never the one of the writes, so a
+    // sale made during the import keeps the whole write quota.
     importBatch: bulkProcedure
       .input(
         z
