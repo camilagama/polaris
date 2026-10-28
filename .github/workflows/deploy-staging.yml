@@ -92,6 +92,21 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
+      # A revert or a security fix goes in at the first safe moment, without settling (ADR 0041): only when
+      # the commit message has the exact line "Swap-Urgent: yes". An exact whole line, never a substring, so
+      # a pull request that merely mentions the marker does not ship urgent. The message reaches the shell
+      # through env, never interpolated into run.
+      - name: Urgent swap marker
+        env:
+          COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if printf '%s\n' "$COMMIT_MESSAGE" | tr -d '\r' | grep -qx 'Swap-Urgent: yes'; then
+            echo "POLARIS_SWAP_URGENT=1" >> "$GITHUB_ENV"
+            echo "::notice::urgent swap: this build skips the settling of ADR 0041"
+          else
+            echo "POLARIS_SWAP_URGENT=0" >> "$GITHUB_ENV"
+          fi
       - name: Build the staging Workers
         env:
           CLOUDFLARE_ENV: staging
