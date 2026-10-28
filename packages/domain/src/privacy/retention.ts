@@ -723,7 +723,12 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
       "O prazo da plataforma: o Workers Logs guarda as linhas pelo prazo dele (7 dias, ADR 0094; 3 no plano Free, a conferir na mudança de preço de 1/12/2026) e as apaga sozinho, sem job do Polaris e sem prazo aplicado por nós (decisão do Arrascaeta de 28/10/2026, com o parecer do Rodrigo). Se o relatório ganhar um campo de loja ou de pessoa, deixa de ser anônimo e a classe volta à revisão de privacidade (exportação, purge e prazo).",
     review: { state: "pendente_juridica" },
     rule: "O relatório é anônimo por construção: lista fechada de campos, validada de novo pelo servidor com schema estrito, e descartado inteiro se algo sair dela ou se a política de redação dos logs mudar qualquer valor. Não está ligado a loja nem a pessoa, então fica fora da exportação do tenant, do atendimento ao titular e do purge. Fica só no Workers Logs, do operador de hospedagem que já existe: não há operador novo.",
-    sources: ["ADR 0079", "ADR 0094", "ADR 0098", "docs/business-rules/privacy.md"],
+    sources: [
+      "ADR 0079",
+      "ADR 0094",
+      "ADR 0098",
+      "docs/business-rules/privacy.md",
+    ],
     status: "proposta",
   },
   {

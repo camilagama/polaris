@@ -1,3 +1,4 @@
+import type { ClientErrorEvent } from "@polaris/contracts/client-error-fields";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -74,7 +75,7 @@ function limiter(initial = true) {
 }
 
 function setup(
-  overrides: Partial<WorkerBindings> = {},
+  overrides: { [K in keyof WorkerBindings]?: WorkerBindings[K] | undefined } = {},
   { limiterSuccess = true }: { limiterSuccess?: boolean } = {}
 ) {
   const clock = { now: Date.UTC(2026, 9, 28, 12, 0, 10) };
@@ -457,7 +458,7 @@ describe("POST /api/client-errors: refusals are counted, never logged one by one
       post(chunked(MAX_BYTES + 1).stream, {
         "content-length": String(MAX_BYTES + 1),
       });
-    const burst = async (attempt: () => Promise<Response>) =>
+    const burst = async (attempt: () => Promise<Response> | Response) =>
       (await Promise.all(Array.from({ length: 25 }, attempt))).map(
         (response) => response.status
       );
@@ -576,14 +577,14 @@ describe("POST /api/client-errors: the switch CLIENT_ERRORS_ENABLED", () => {
 });
 
 describe("the signature of a failure", () => {
-  const base = {
+  const base: ClientErrorEvent = {
     errorName: "TypeError",
     frames: ["sale-form-model-AAAAAAAA.js:10:5"],
     kind: "error",
     release: "abcdef1",
     routeId: "sale",
     v: 1,
-  } as const;
+  };
 
   it("is 16 hex characters", async () => {
     expect(await clientErrorSignature(base)).toMatch(SIGNATURE);
@@ -611,7 +612,7 @@ describe("the signature of a failure", () => {
       { ...base, status: 404 },
       { ...base, boundary: "app" },
       { ...base, kind: "rejection" },
-    ] as const;
+    ] satisfies ClientErrorEvent[];
 
     const signatures = await Promise.all(
       variants.map((variant) => clientErrorSignature(variant))

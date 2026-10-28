@@ -38,7 +38,7 @@ const LIMITER_SCOPE = "client-error-ip";
 const QUERY_PARAMETER = /\?\S*=/;
 
 /** Only `"1"` turns the route on; anything else (and absent) answers 204 and logs nothing. */
-export function clientErrorsEnabled(bindings: WorkerBindings | undefined) {
+function clientErrorsEnabled(bindings: WorkerBindings | undefined) {
   return bindings?.CLIENT_ERRORS_ENABLED === "1";
 }
 
@@ -81,7 +81,7 @@ export const clientErrorsSwitchMiddleware: MiddlewareHandler<
  * an e-mail, a CPF, a phone, a token...) or carries a query: the whole event is then discarded, nothing is corrected.
  * The schema would refuse it as well; this net does not depend on the lists of the schema staying closed.
  */
-export function suspectsPersonalData(value: unknown, depth = 0): boolean {
+function suspectsPersonalData(value: unknown, depth = 0): boolean {
   if (depth > 8) {
     return true;
   }

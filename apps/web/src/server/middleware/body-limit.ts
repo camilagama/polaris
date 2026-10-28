@@ -10,7 +10,7 @@ export type BodyRefusal =
   | "payload_too_large"
   | "unsupported_content_encoding";
 
-export interface BodyRefusalDetail {
+interface BodyRefusalDetail {
   /** Where a too large body was cut: by its `Content-Length`, or as it was read. */
   cut?: "declared" | "stream";
   /** The `Content-Length` the request declared (null when absent). */

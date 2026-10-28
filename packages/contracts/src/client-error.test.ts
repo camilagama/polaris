@@ -33,8 +33,9 @@ describe("clientErrorEventSchema", () => {
     "user",
     "session",
   ])("refuses an event with the key %s", (key) => {
-    expect(clientErrorEventSchema.safeParse({ ...valid, [key]: "x" }).success)
-      .toBe(false);
+    expect(
+      clientErrorEventSchema.safeParse({ ...valid, [key]: "x" }).success
+    ).toBe(false);
   });
 
   it("accepts the event without extra keys and refuses any extra key", () => {
@@ -49,7 +50,10 @@ describe("clientErrorEventSchema", () => {
       new URL("./client-error.ts", import.meta.url),
       "utf8"
     );
-    const comment = text.slice(0, text.indexOf("export const clientErrorEventSchema"));
+    const comment = text.slice(
+      0,
+      text.indexOf("export const clientErrorEventSchema")
+    );
 
     expect(comment).toContain("new privacy review");
   });
