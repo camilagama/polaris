@@ -32,7 +32,7 @@ Com o Sentry iniciado no build (`VITE_SENTRY_DSN` válido), o Sentry é o destin
 4. `Content-Type: application/json` exato: senão 415.
 5. Limite `CLIENT_ERROR_RATE_LIMIT`, só por endereço (IPv4 ou /64 de IPv6, chave HMAC), 10 por minuto: 429 com `Retry-After: 60`. Não lê cookie nem sessão. Limitador fora do ar: deixa passar e conta `limiter_unavailable`.
 6. Corpo de no máximo 2 KiB: 413 pelo `Content-Length` (sem ler) e em fluxo; `Content-Encoding` diferente de `identity`: 415; `Content-Length` inválido: 400.
-7. Rede de redação: a política dos logs e uma query com parâmetro, em toda chave e todo texto. Qualquer achado descarta o evento inteiro (400) e conta em `client_error_pii_suspected`.
+7. Formato de evento (um objeto plano de até 16 chaves, cada valor texto, número ou lista de até 3 textos): senão 400. Depois, a rede de redação: a política dos logs e uma query com parâmetro, em toda chave e todo texto (o quadro, na forma da linha). Qualquer achado descarta o evento inteiro (400) e conta em `client_error_pii_suspected`.
 8. Schema estrito de `@polaris/contracts/client-error`: chave a mais, palavra fora da lista ou quadro fora do padrão dá 400.
 9. Assinatura no servidor e a linha, dentro do orçamento. Resposta 204.
 
@@ -42,15 +42,15 @@ Nenhuma recusa (429, 400, 413, 415) escreve uma linha por requisição, e a rota
 
 | `event` | Quando | Campos |
 | --- | --- | --- |
-| `client_error` | a 1ª vez que um isolate vê uma assinatura | `fingerprint` (a assinatura, 16 hex), `kind`, `errorClass`, `errorCode`, `rpcStatus`, `release`, `boundary`, `routeId`, `frames`, `v` |
+| `client_error` | a 1ª vez que um isolate vê uma assinatura (de novo depois de 30 minutos sem relatório dela) | `fingerprint` (a assinatura, 16 hex), `kind`, `errorClass`, `errorCode`, `rpcStatus`, `release`, `boundary`, `routeId`, `frames` (`arquivo@linha:coluna`), `v` |
 | `client_error_count` | por minuto, para cada assinatura repetida | `fingerprint`, `count`, `minute` |
 | `client_error_refused` | por minuto, com alguma recusa | `minute` e a contagem por motivo: `rate_limited`, `bad_request`, `too_large`, `unsupported`, `limiter_unavailable` |
 | `client_error_pii_suspected` | por minuto, com algum descarte da rede de redação | `count`, `minute` (nunca o valor) |
 | `client_error_dropped` | por minuto, com excedente | `count`, `minute` |
 
-- **Orçamento por isolate:** 20 linhas `client_error` e `client_error_count` por minuto e 200 assinaturas na memória; o que passa disso vai para `client_error_dropped`. As linhas de um minuto saem com a primeira requisição da rota depois dele; um isolate que morre antes perde as contagens (só subconta).
+- **Orçamento por isolate:** 20 linhas `client_error` e `client_error_count` por minuto (as contagens ficam com até 15, para sobrar lugar para assinatura nova) e 200 assinaturas na memória, cada uma guardada enquanto teve relatório nos últimos 30 minutos; o que passa disso vai para `client_error_dropped`. As linhas de um minuto saem com a primeira requisição da rota depois dele; um isolate que morre antes perde as contagens (só subconta).
 - **A assinatura** junta `kind`, `errorName`, `code`, `status`, `boundary`, `routeId` e o nome do pedaço do primeiro quadro sem o hash. A mesma falha em duas builds tem a mesma assinatura; a `release` diz em qual build ela apareceu. O campo se chama `fingerprint` porque `signature` é mascarado pela política de redação dos logs.
-- **Os quadros** são `arquivo-com-hash.js:linha:coluna` do build publicado. Para a linha original, use o source map da mesma `release` (o build gera mapas escondidos, que não são publicados; ver o ADR 0098).
+- **Os quadros** chegam como `arquivo-com-hash.js:linha:coluna` e saem na linha como `arquivo-com-hash.js@linha:coluna`: a política de redação dos logs mascara um nome colado a `:` com palavra de segredo (`change-password-page`). Para a linha original, use o source map da mesma `release` (o build gera mapas escondidos, que não são publicados; ver o ADR 0098).
 
 ## Ler
 
@@ -67,6 +67,9 @@ Na API de telemetria do Workers Logs (`POST /accounts/{id}/workers/observability
 
 - Um relatório falso com campos válidos passa (a origem não é autenticação: um `curl` forja `Origin`). O limite por endereço, o orçamento por isolate e o interruptor seguram o volume; a regra de quem acorda com uma assinatura nova é da leitura automática.
 - A rede de redação descarta um quadro legítimo se o hash e o fim do nome do arquivo formarem um número que parece CPF ou telefone (raro): o erro deixa de ser relatado, nada vaza.
+- `release`, `frames` e o nome do pedaço vêm do cliente: só o formato é conferido. Quem lê o log (a leitura automática, o Juan) confere o `release` contra o SHA publicado e trata quadro e assinatura de release desconhecido como não confiáveis.
+- A recusa de origem (403) escreve `request_origin_rejected` por requisição, como em toda rota `/api/*`: o orçamento desta rota não a cobre. Numa enxurrada desse tipo, o interruptor é a contenção.
+- O limite por endereço da Cloudflare conta por local (colo), não no mundo todo.
 - O `unhandledrejection` de um `TypeError` sem `code` é tratado como falha de rede (é o que um `fetch` sem resposta lança) e não é relatado; o mesmo erro numa tela, pego pelo `ErrorBoundary`, é.
 - Da pilha o cliente só tira posições de `/assets/` da própria origem; a primeira linha da pilha do Chrome repete a mensagem, então um texto que imite esse formato poderia virar um quadro (só letras, dígitos, `-` e `_`, até 64 caracteres, com o hash): aceito, a rede de redação e o padrão do quadro limitam o que passa.
 

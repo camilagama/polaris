@@ -60,8 +60,9 @@ export type ClientErrorBoundary = (typeof CLIENT_ERROR_BOUNDARIES)[number];
 /**
  * The screen on display, as the pattern of the route and never the address: the screens of the shell (`ROUTES` of
  * `app-shell/navigation-model.ts`), a screen with tabs as `screen:tab`, then the sign-in pages (`entrar`), the
- * acceptance (`aceite`), the public catalog without its slug (`catalogo`) and anything else (`outra`). A test of
- * the app keeps the shell's part equal to the routes, so a new screen cannot fall into `outra` unnoticed.
+ * acceptance (`aceite`) and anything else (`outra`). `catalogo` is kept for the public catalog without its slug: it is
+ * another app, on another origin, and does not report yet. A test of the app keeps the shell's part equal to the
+ * routes, so a new screen cannot fall into `outra` unnoticed.
  */
 export const CLIENT_ERROR_ROUTE_IDS = [
   "attention",

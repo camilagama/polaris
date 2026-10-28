@@ -62,8 +62,10 @@ const preview = spawn(
 const workerLog = createWriteStream(workerLogPath(project), { flags: "w" });
 preview.stdout.pipe(process.stdout);
 preview.stderr.pipe(process.stderr);
-preview.stdout.pipe(workerLog);
-preview.stderr.pipe(workerLog);
+// two sources into one file: neither ends it (the other may still write), and a failure of the copy never stops the preview
+workerLog.on("error", () => undefined);
+preview.stdout.pipe(workerLog, { end: false });
+preview.stderr.pipe(workerLog, { end: false });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => preview.kill(signal));
 }

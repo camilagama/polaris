@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ErrorInfo } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -603,7 +604,15 @@ const LINE_COMMENT = /(^|[^:\\])\/\/.*$/gm;
 const STACK_READ = /\.stack\b/;
 const FORBIDDEN: readonly (readonly [string, RegExp])[] = [
   ["message", /\.message\b/],
+  // any other spelling of the text of the error: `error["message"]`, `const { message } = error`
+  ["message word", /\bmessage\b/],
   ["cause", /\.cause\b/],
+  ["cause word", /\bcause\b/],
+  ["String()", /\bString\(/],
+  ["toString()", /\.toString\(/],
+  ["error in a template", /\$\{\s*(?:error|reason)\b/],
+  ["spread of an error", /\.\.\.\s*(?:error|reason)\b/],
+  ["JSON.stringify of anything but the event", /JSON\.stringify\((?!event\))/],
   ["componentStack", /componentStack/],
   ["renderInfo member", /renderInfo\./],
   ["location.href", /location\.href/],
@@ -613,15 +622,15 @@ const FORBIDDEN: readonly (readonly [string, RegExp])[] = [
   ["indexedDB", /indexedDB/],
 ];
 
+function withoutComments(text: string): string {
+  return text.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "$1");
+}
+
 describe("what the code reads of an error", () => {
   const sourcePath = fileURLToPath(
     new URL("./client-errors.ts", import.meta.url)
   );
   const source = readFileSync(sourcePath, "utf8");
-
-  function withoutComments(text: string): string {
-    return text.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "$1");
-  }
 
   function forbiddenIn(text: string): string[] {
     return FORBIDDEN.filter(([, pattern]) => pattern.test(text)).map(
@@ -638,12 +647,29 @@ describe("what the code reads of an error", () => {
   });
 
   it("catches an access planted in a string, so the check cannot go quiet", () => {
-    expect(forbiddenIn("send(error.message)")).toEqual(["message"]);
-    expect(forbiddenIn("const c = error.cause;")).toEqual(["cause"]);
+    expect(forbiddenIn("send(error.message)")).toEqual([
+      "message",
+      "message word",
+    ]);
+    expect(forbiddenIn("const c = error.cause;")).toEqual([
+      "cause",
+      "cause word",
+    ]);
     expect(forbiddenIn("info.componentStack")).toEqual(["componentStack"]);
     expect(forbiddenIn("report.renderInfo.digest")).toEqual([
       "renderInfo member",
     ]);
+    expect(forbiddenIn('send(error["message"])')).toEqual(["message word"]);
+    expect(forbiddenIn("const { message } = error;")).toEqual(["message word"]);
+    expect(forbiddenIn("const { cause } = error;")).toEqual(["cause word"]);
+    expect(forbiddenIn("send(String(error))")).toEqual(["String()"]);
+    expect(forbiddenIn("send(error.toString())")).toEqual(["toString()"]);
+    expect(forbiddenIn("send(`${error}`)")).toEqual(["error in a template"]);
+    expect(forbiddenIn("send({ ...error })")).toEqual(["spread of an error"]);
+    expect(forbiddenIn("send(JSON.stringify(error))")).toEqual([
+      "JSON.stringify of anything but the event",
+    ]);
+    expect(forbiddenIn("send(JSON.stringify(event))")).toEqual([]);
     expect(
       forbiddenIn(withoutComments("// error.message\nconst a = 1;"))
     ).toEqual([]);
@@ -666,5 +692,69 @@ describe("what the code reads of an error", () => {
     const outside = code.slice(0, start) + code.slice(end);
     expect(inside).toMatch(STACK_READ);
     expect(outside).not.toMatch(STACK_READ);
+  });
+});
+
+const SOURCE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const SOURCE_FILE = /\.(?:ts|tsx)$/;
+const TEST_FILE = /\.test\.(?:ts|tsx)$/;
+
+/** Every source file of `apps/web/src` but the tests, as a path relative to it. */
+function sourceFiles(): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const entry of readdirSync(SOURCE_ROOT, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (
+      entry.isFile() &&
+      SOURCE_FILE.test(entry.name) &&
+      !TEST_FILE.test(entry.name)
+    ) {
+      const path = join(entry.parentPath, entry.name);
+      // the comments may name the route (a doc comment does): only the code counts
+      files.set(
+        relative(SOURCE_ROOT, path),
+        withoutComments(readFileSync(path, "utf8"))
+      );
+    }
+  }
+  return files;
+}
+
+function filesWith(files: Map<string, string>, pattern: RegExp): string[] {
+  return [...files]
+    .filter(([, text]) => pattern.test(text))
+    .map(([path]) => path)
+    .sort();
+}
+
+const ROUTE_NAME = /\/api\/client-errors/;
+const REPORT_CALL = /\breportClientError\(/;
+
+describe("who reaches the report, in the whole source tree", () => {
+  const files = sourceFiles();
+
+  it("names the route only in the client, the route itself and the timing that leaves it out (exact list)", () => {
+    expect(filesWith(files, ROUTE_NAME)).toEqual([
+      "lib/client-errors.ts",
+      "server/middleware/route-timing.ts",
+      "server/routes/client-errors.ts",
+    ]);
+  });
+
+  it("calls reportClientError only from the error boundary and the client itself (exact list)", () => {
+    expect(filesWith(files, REPORT_CALL)).toEqual([
+      "app-shell/error-boundary.tsx",
+      "lib/client-errors.ts",
+    ]);
+  });
+
+  it("would see a file that posts to the route or reports on its own", () => {
+    const planted = new Map(files);
+    planted.set("sales/planted.ts", 'fetch("/api/client-errors")');
+    planted.set("home/planted.tsx", "reportClientError(error, report)");
+    expect(filesWith(planted, ROUTE_NAME)).toContain("sales/planted.ts");
+    expect(filesWith(planted, REPORT_CALL)).toContain("home/planted.tsx");
   });
 });
