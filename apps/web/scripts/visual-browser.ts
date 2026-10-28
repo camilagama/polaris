@@ -6,6 +6,10 @@
  * first screenshot, so no baseline is written from another browser.
  */
 
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
 /** The Playwright version of the image: the same as `@playwright/test` (the client and the server speak one protocol). */
 export const VISUAL_PLAYWRIGHT_VERSION = "1.63.0";
 
@@ -28,4 +32,27 @@ export const VISUAL_PROJECT = "chromium-visual";
 export function visualConnectOptions() {
   const wsEndpoint = process.env[VISUAL_WS_ENV];
   return wsEndpoint ? { wsEndpoint } : undefined;
+}
+
+/**
+ * The playwright-core under `@playwright/test`, followed through the dependencies each package declares (the bun
+ * install keeps every package in its own folder): its server speaks the protocol of the client the tests use.
+ */
+export function playwrightCoreDir() {
+  let manifest = createRequire(import.meta.url).resolve(
+    "@playwright/test/package.json"
+  );
+  for (const step of [0, 1]) {
+    const dependency = Object.keys(
+      JSON.parse(readFileSync(manifest, "utf8")).dependencies ?? {}
+    ).find((name) => name.startsWith("playwright"));
+    if (!dependency) {
+      throw new Error(`no playwright dependency in ${manifest} (step ${step})`);
+    }
+    manifest = createRequire(manifest).resolve(`${dependency}/package.json`);
+  }
+  if (!manifest.endsWith(join("playwright-core", "package.json"))) {
+    throw new Error(`expected playwright-core, found ${manifest}`);
+  }
+  return dirname(manifest);
 }

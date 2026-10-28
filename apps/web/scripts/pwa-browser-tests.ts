@@ -1,14 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { dirname } from "node:path";
 import config from "../playwright.pwa.config";
 import {
   VISUAL_IMAGE,
   VISUAL_PLATFORM,
   VISUAL_PROJECT,
   VISUAL_WS_ENV,
+  playwrightCoreDir,
 } from "./visual-browser";
 
 /**
@@ -70,21 +69,6 @@ function freePort() {
       );
     });
   });
-}
-
-/** The playwright-core of the lockfile, mounted read-only in the container: its server speaks the client's protocol. */
-function playwrightCoreDir() {
-  const require = createRequire(import.meta.url);
-  const test = require.resolve("@playwright/test/package.json");
-  return dirname(
-    createRequire(test).resolve("playwright-core/package.json", {
-      paths: [
-        dirname(
-          require.resolve("playwright/package.json", { paths: [dirname(test)] })
-        ),
-      ],
-    })
-  );
 }
 
 async function waitListening(container: string) {

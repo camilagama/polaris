@@ -1,20 +1,18 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   VISUAL_BROWSER_VERSION,
   VISUAL_IMAGE,
   VISUAL_PLAYWRIGHT_VERSION,
+  playwrightCoreDir,
 } from "./visual-browser";
 
 const require = createRequire(import.meta.url);
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 
 const testManifest = require.resolve("@playwright/test/package.json");
-const coreManifest = createRequire(
-  require.resolve("playwright/package.json", { paths: [dirname(testManifest)] })
-).resolve("playwright-core/package.json");
 
 describe("the browser of the visual regression", () => {
   // a bump of Playwright without the image would connect a client to a server of another version, and the other way
@@ -29,7 +27,7 @@ describe("the browser of the visual regression", () => {
   });
 
   it("names the Chromium of that Playwright", () => {
-    const browsers = readJson(join(dirname(coreManifest), "browsers.json"))
+    const browsers = readJson(join(playwrightCoreDir(), "browsers.json"))
       .browsers as { browserVersion?: string; name: string }[];
     expect(
       browsers.find((browser) => browser.name === "chromium")?.browserVersion

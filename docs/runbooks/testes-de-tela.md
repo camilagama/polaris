@@ -46,6 +46,13 @@ bunx playwright test --config playwright.pwa.config.ts --project=chromium-deskto
 
 Uma falha diz a verificação (`1. nada sai do contêiner`, `2. área de toque`, `3. axe`, `6. foco de 3 px`; a 7 diz a camada e o seletor de cada regra fora das camadas do Tailwind), o elemento e a medida. A de movimento diz o elemento e a duração da animação que correu com `reduce`.
 
+## Regressão visual
+
+`apps/web/e2e-pwa/ui-visual.e2e.ts` compara 26 estados de `ui-screens.ts` (um por tela, mais erros e vazios) a 360 px com toque e a 1280 px com mouse, nos temas claro e escuro (104 imagens), com as baselines de `e2e-pwa/ui-visual.e2e.ts-snapshots/` (sufixo `-linux`). Roda no projeto `chromium-visual` da `playwright.pwa.config.ts`, dentro do `bun run test:pwa` que o job do Offline gate já chama: o script (`scripts/pwa-browser-tests.ts`) sobe com `docker run` o Chromium da imagem fixa `mcr.microsoft.com/playwright:v<versão>-noble@sha256:…` em `linux/amd64` (`scripts/visual-browser.ts`; `visual-browser.test.ts` reprova se a versão do `@playwright/test` mudar sem a imagem) e os testes se ligam a ele por `run-server`. Sem esse navegador o spec reprova antes de capturar, então baseline de fora da imagem não se escreve. Determinismo: fontes do app esperadas (um teste confere Geist e Geist Mono carregadas), `animations: "disabled"`, `caret: "hide"`, `reducedMotion: "reduce"`, `networkidle` mais um quadro, `page.clock` fixo e fuso `America/Sao_Paulo`, os fixtures de `ui-screens.ts`, `maxDiffPixelRatio: 0.001` e `threshold: 0.2`; `mask` só na lista `MASKS` do spec.
+
+- **Atualizar a baseline** (mudança de tela consciente): `cd apps/web && bun run test:visual:update` numa máquina com Docker (em arm64, com emulação de amd64: a baseline é a do CI), confira as imagens novas e versione-as no mesmo PR; o revisor de UI aprova pelo diff de imagem. Só comparar: `bun run test:visual`. Sem Docker, o `test:pwa` local roda os outros projetos e avisa que o visual não rodou; no CI, sem Docker, reprova.
+- **Acrescentar um estado:** uma linha em `VISUAL_STATES` (nome do estado em `SCREENS` e nome do arquivo) e as quatro baselines dele; cada estado custa 4 testes.
+
 ## Duas sessões ao mesmo tempo
 
 Os três configs de navegador de `apps/web` abrem o próprio servidor (build e serve). Duas sessões na mesma máquina, cada uma na sua árvore (`git worktree`), disputavam as portas fixas, e o servidor de uma era reaproveitado pela outra: o teste rodava contra o código errado e passava. Agora:
