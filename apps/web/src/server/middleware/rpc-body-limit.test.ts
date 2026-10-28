@@ -190,7 +190,14 @@ describe("the body ceiling of /rpc", () => {
     expect(reached).not.toHaveBeenCalled();
   });
 
-  it.each(["gzip", "br", "deflate", "gzip, identity", "identity, gzip"])(
+  it.each([
+    "gzip",
+    "GZIP",
+    "br",
+    "deflate",
+    "gzip, identity",
+    "identity, gzip",
+  ])(
     "answers 415 to Content-Encoding %j before the procedure",
     async (encoding) => {
       const { post, reached } = setup();
@@ -228,6 +235,28 @@ describe("the body ceiling of /rpc", () => {
 
     expect(response.status).toBe(415);
     expect(reached).not.toHaveBeenCalled();
+  });
+
+  it("leaves a call without a body, and a GET, to the handler", async () => {
+    const { app, post } = setup();
+
+    const empty = await post(null);
+    const read = await app.request(
+      "/rpc/category/list",
+      {
+        headers: {
+          "content-length": String(RPC_BODY_MAX_BYTES + 1),
+          origin: baseURL,
+        },
+        method: "GET",
+      },
+      bindings()
+    );
+
+    expect([413, 415]).not.toContain(empty.status);
+    expect(await empty.text()).not.toContain("invalid_content_length");
+    // the handler's own refusal of a GET (it runs no procedure), not the ceiling's
+    expect(read.status).toBe(405);
   });
 
   it("logs one line per 413 with the route and a band of the declared size, never the body", async () => {
@@ -280,8 +309,9 @@ describe("the body ceiling of /rpc", () => {
       .mockImplementation(() => undefined);
     const { post } = setup();
 
-    await post(chunked(RPC_BODY_MAX_BYTES + 1).stream);
+    const response = await post(chunked(RPC_BODY_MAX_BYTES + 1).stream);
 
+    expect(response.status).toBe(413);
     expect(error).not.toHaveBeenCalled();
   });
 });

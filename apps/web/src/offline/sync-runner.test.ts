@@ -122,6 +122,59 @@ describe("the batch of sync.push", () => {
     expect(sent).toEqual([1, 1]);
   });
 
+  it("takes the first command into the batch even when it alone passes the target", async () => {
+    // the outbox keeps a command at 256 KiB, so the guard only matters if that ceiling grows: a stand-in queue holds one at 450 KiB
+    const queue = [
+      {
+        attempts: 0,
+        baseVersion: null,
+        commandId: uuid(1),
+        createdAt: now.toISOString(),
+        deviceId,
+        lease: "lease",
+        organizationId,
+        payload: { note: "x".repeat(450 * KIB) },
+        rejection: null,
+        seq: 1,
+        status: "pending",
+        type: "sale.confirm",
+      },
+    ];
+    const stub = {
+      acknowledge: (id: string) => {
+        queue.splice(
+          queue.findIndex((command) => command.commandId === id),
+          1
+        );
+        return Promise.resolve();
+      },
+      markSending: () => Promise.resolve(),
+      recoverInterrupted: () => Promise.resolve(),
+      retry: () => Promise.resolve(),
+      snapshot: () =>
+        Promise.resolve({
+          blockedBy: null,
+          commands: queue,
+          pending: queue.length,
+          rejected: 0,
+          sending: 0,
+        }),
+    } as unknown as Outbox;
+    const sent: number[] = [];
+
+    const summary = await syncOutbox({
+      outbox: stub,
+      push: (input) => {
+        sent.push(input.commands.length);
+        return Promise.resolve(acceptAll(input.commands));
+      },
+    });
+
+    expect(sent).toEqual([1]);
+    expect(summary.accepted).toBe(1);
+    expect(queue).toEqual([]);
+  });
+
   it("halves the batch on a 413 and puts the commands back, none rejected", async () => {
     const { outbox, queue } = await setup();
     await queue(8, KIB);
@@ -149,19 +202,22 @@ describe("the batch of sync.push", () => {
     await queue(3, KIB);
     let requests = 0;
 
-    await expect(
-      syncOutbox({
-        outbox,
-        push: () => {
-          requests += 1;
-          if (requests > 10) {
-            // a run that does not stop must fail the test, not hang it
-            return Promise.reject(new Error("loop"));
-          }
-          return Promise.reject(tooLarge());
-        },
-      })
-    ).rejects.toBeInstanceOf(PushPayloadTooLargeError);
+    const failure = await syncOutbox({
+      outbox,
+      push: () => {
+        requests += 1;
+        if (requests > 10) {
+          // a run that does not stop must fail the test, not hang it
+          return Promise.reject(new Error("loop"));
+        }
+        return Promise.reject(tooLarge());
+      },
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(PushPayloadTooLargeError);
+    expect((failure as Error).cause).toMatchObject({
+      code: "PAYLOAD_TOO_LARGE",
+    });
 
     // 3 → 1 → stop
     expect(requests).toBe(2);

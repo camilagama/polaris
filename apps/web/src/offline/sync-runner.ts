@@ -2,13 +2,13 @@ import type {
   PushCommandReadModel,
   PushResultReadModel,
 } from "@polaris/contracts";
+import { isPayloadTooLarge } from "../lib/rpc-error";
 import {
   type BootstrapSource,
   isLocalStoreReady,
   type LocalWriter,
   pullLocalChanges,
 } from "./bootstrap";
-import { isPayloadTooLarge } from "../lib/rpc-error";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox } from "./outbox/outbox";
 

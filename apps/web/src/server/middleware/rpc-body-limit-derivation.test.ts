@@ -214,50 +214,161 @@ function oneCommandBytes(): number {
   );
 }
 
-/** Every input but the sync's: the largest, the ones nothing bounds, and the fields without a `.max`. */
+/** Every input but the sync's: the largest, the ones nothing bounds, and the fields without a `.max`, by procedure. */
 function otherInputs() {
-  const walk = newWalk();
   const unbounded: string[] = [];
+  const loose: string[] = [];
   let largest = { bytes: 0, path: "" };
   for (const [path, schema] of inputs()) {
     if (path === "sync/push") {
       continue;
     }
+    const walk = newWalk();
     const bytes = FRAME_BYTES + maxBytes(schema, "", walk);
+    loose.push(...[...walk.unbounded].map((field) => `${path}${field}`));
     if (!Number.isFinite(bytes)) {
       unbounded.push(path);
     } else if (bytes > largest.bytes) {
       largest = { bytes, path };
     }
   }
-  return { largest, loose: [...walk.unbounded].sort(), unbounded };
+  return { largest, loose: loose.sort(), unbounded };
 }
 
-/** The fields no `.max` of the contract bounds (each counted as 1 KiB: a name, an id, a date, a short note): the list is exact, a new field is looked at. */
+/** The fields no `.max` of the contract bounds, by procedure (each counted as 1 KiB: a name, an id, a date, a short note): the list is exact, a new field is looked at. */
 const LOOSE_FIELDS = [
-  ".competenceOn",
-  ".cursor",
-  ".description",
-  ".endsOn",
-  ".from",
-  ".name",
-  ".occurredFrom",
-  ".occurredOn",
-  ".occurredTo",
-  ".options[].values[]",
-  ".organizationId",
-  ".payee",
-  ".reasonNote",
-  ".requestId",
-  ".sku",
-  ".startsOn",
-  ".to",
-  ".variants[].values.color",
-  ".variants[].values.model",
-  ".variants[].values.size",
-  "|0.organizationId",
-  "|1.organizationId",
-  "|1.payer.taxId",
+  "billing/cancelRenewal.organizationId",
+  "billing/cancelRenewal.requestId",
+  "billing/openOverduePayment.organizationId",
+  "billing/openOverduePayment.requestId",
+  "billing/readPlan.organizationId",
+  "billing/requestRefund.organizationId",
+  "billing/requestRefund.requestId",
+  "billing/startCheckout|0.organizationId",
+  "billing/startCheckout|1.organizationId",
+  "billing/startCheckout|1.payer.taxId",
+  "category/archive.organizationId",
+  "category/create.name",
+  "category/create.organizationId",
+  "category/delete.organizationId",
+  "category/list.organizationId",
+  "category/rename.name",
+  "category/rename.organizationId",
+  "category/restore.organizationId",
+  "customer/anonymizeForPrivacy.organizationId",
+  "customer/archive.organizationId",
+  "customer/create.organizationId",
+  "customer/findPossibleDuplicates.organizationId",
+  "customer/list.organizationId",
+  "customer/restore.organizationId",
+  "customer/update.organizationId",
+  "dataExport/list.organizationId",
+  "dataExport/listClosed.organizationId",
+  "dataExport/request.organizationId",
+  "dataExport/requestClosed.organizationId",
+  "expense/archiveCategory.organizationId",
+  "expense/archiveRule.organizationId",
+  "expense/create.competenceOn",
+  "expense/create.description",
+  "expense/create.organizationId",
+  "expense/create.payee",
+  "expense/createCategory.name",
+  "expense/createCategory.organizationId",
+  "expense/createRule.description",
+  "expense/createRule.endsOn",
+  "expense/createRule.organizationId",
+  "expense/createRule.payee",
+  "expense/createRule.startsOn",
+  "expense/list.from",
+  "expense/list.organizationId",
+  "expense/list.to",
+  "expense/listCategories.organizationId",
+  "expense/listRules.organizationId",
+  "expense/renameCategory.name",
+  "expense/renameCategory.organizationId",
+  "expense/restore.organizationId",
+  "expense/restoreCategory.organizationId",
+  "expense/restoreRule.organizationId",
+  "expense/update.competenceOn",
+  "expense/update.description",
+  "expense/update.organizationId",
+  "expense/update.payee",
+  "expense/updateRule.description",
+  "expense/updateRule.endsOn",
+  "expense/updateRule.organizationId",
+  "expense/updateRule.payee",
+  "expense/void.organizationId",
+  "goal/cancel.organizationId",
+  "goal/create.endsOn",
+  "goal/create.organizationId",
+  "goal/create.startsOn",
+  "goal/list.organizationId",
+  "goal/targetChanges.organizationId",
+  "goal/update.organizationId",
+  "inventory/getBalance.organizationId",
+  "inventory/inventoryCount.occurredOn",
+  "inventory/inventoryCount.organizationId",
+  "inventory/listBalances.organizationId",
+  "inventory/receiveStock.occurredOn",
+  "inventory/receiveStock.organizationId",
+  "inventory/writeOffStock.occurredOn",
+  "inventory/writeOffStock.organizationId",
+  "inventory/writeOffStock.reasonNote",
+  "offline/issueLease.organizationId",
+  "organization/closedStatus.organizationId",
+  "organization/recoverClosure.organizationId",
+  "organization/requestClosure.organizationId",
+  "paymentProfile/archive.organizationId",
+  "paymentProfile/create.organizationId",
+  "paymentProfile/list.organizationId",
+  "paymentProfile/restore.organizationId",
+  "paymentProfile/update.organizationId",
+  "plan/operationalSelection.organizationId",
+  "plan/selectOperationalVariants.organizationId",
+  "product/archive.organizationId",
+  "product/configureVariants.options[].values[]",
+  "product/configureVariants.organizationId",
+  "product/configureVariants.variants[].values.color",
+  "product/configureVariants.variants[].values.model",
+  "product/configureVariants.variants[].values.size",
+  "product/create.organizationId",
+  "product/delete.organizationId",
+  "product/getVariants.organizationId",
+  "product/importBatch.organizationId",
+  "product/list.organizationId",
+  "product/namesExisting.organizationId",
+  "product/restore.organizationId",
+  "product/setVariantListPrice.organizationId",
+  "product/setVariantSku.organizationId",
+  "product/setVariantSku.sku",
+  "product/update.description",
+  "product/update.organizationId",
+  "publicCatalog/publishProducts.organizationId",
+  "publicCatalog/saveProfile.organizationId",
+  "publicCatalog/setPublished.organizationId",
+  "publicCatalog/setup.organizationId",
+  "publicCatalog/unpublishProducts.organizationId",
+  "report/dailySales.from",
+  "report/dailySales.organizationId",
+  "report/dailySales.to",
+  "report/periodSummary.from",
+  "report/periodSummary.organizationId",
+  "report/periodSummary.to",
+  "sale/assignCustomer.organizationId",
+  "sale/cancel.organizationId",
+  "sale/confirm.organizationId",
+  "sale/get.organizationId",
+  "sale/getCustomerLink.organizationId",
+  "sale/list.occurredFrom",
+  "sale/list.occurredTo",
+  "sale/list.organizationId",
+  "sale/reassignCustomer.organizationId",
+  "sale/return.organizationId",
+  "sale/unassignCustomer.organizationId",
+  "sync/bootstrapPage.organizationId",
+  "sync/getCursor.organizationId",
+  "sync/pull.cursor",
+  "sync/pull.organizationId",
 ];
 
 describe("how the body ceiling of /rpc is derived", () => {
@@ -292,5 +403,21 @@ describe("how the body ceiling of /rpc is derived", () => {
     expect(RPC_BODY_MAX_BYTES - PUSH_BATCH_TARGET_BYTES).toBeGreaterThan(
       64 * 1024
     );
+  });
+
+  it("sees a string with no .max, and an array with none, in a schema planted for the purpose", () => {
+    const planted = (def: object) => ({ _zod: { def } }) as unknown as $ZodType;
+    const text = planted({ checks: [], type: "string" });
+    const walk = newWalk();
+
+    expect(maxBytes(text, ".planted", walk)).toBe(UNBOUNDED_STRING_BYTES);
+    expect([...walk.unbounded]).toEqual([".planted"]);
+    expect(
+      maxBytes(
+        planted({ checks: [], element: text, type: "array" }),
+        "",
+        newWalk()
+      )
+    ).toBe(Number.POSITIVE_INFINITY);
   });
 });

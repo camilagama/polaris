@@ -7,7 +7,7 @@ import { rpcRoute } from "./rate-limit";
  * The largest body `/rpc` reads: the biggest single input is one `sync.push` command, at most
  * `OUTBOX_MAX_PAYLOAD_BYTES` (256 KiB) of payload plus its envelope (~262 KiB), and the largest input of any
  * other procedure is below that; the sync closes its batches at 400 KiB (`PUSH_BATCH_TARGET_BYTES`). The
- * derivation test (`rpc-body-limit.test.ts`) fails if the outbox ceiling or a contract input outgrows it.
+ * derivation test (`rpc-body-limit-derivation.test.ts`) fails if the outbox ceiling or a contract input outgrows it.
  */
 export const RPC_BODY_MAX_BYTES = 512 * 1024;
 
