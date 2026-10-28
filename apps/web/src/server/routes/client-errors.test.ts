@@ -75,7 +75,9 @@ function limiter(initial = true) {
 }
 
 function setup(
-  overrides: { [K in keyof WorkerBindings]?: WorkerBindings[K] | undefined } = {},
+  overrides: {
+    [K in keyof WorkerBindings]?: WorkerBindings[K] | undefined;
+  } = {},
   { limiterSuccess = true }: { limiterSuccess?: boolean } = {}
 ) {
   const clock = { now: Date.UTC(2026, 9, 28, 12, 0, 10) };
