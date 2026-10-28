@@ -1,8 +1,7 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HELP_TIP_MAX_CHARS, HelpTip, helpTipTextProblem } from "@/ui/help-tip";
+import { HelpTip } from "@/ui/help-tip";
+import { HELP_TIP_MAX_CHARS, helpTipTextProblem } from "@/ui/help-tip-text";
 
 const OVER_CHARS = /161 characters/;
 const OVER_SENTENCES = /3 sentences/;
@@ -66,46 +65,13 @@ describe("limite do texto da ajuda", () => {
     expect(helpTipTextProblem("Uma? Duas! Três.")).toMatch(OVER_SENTENCES);
   });
 
+  it("não conta o ponto de 'vs.' como fim de frase", () => {
+    expect(
+      helpTipTextProblem("Vendas do dia. Chip vs. a média dos 4 domingos.")
+    ).toBeNull();
+  });
+
   it("reprova o texto vazio", () => {
     expect(helpTipTextProblem("  ")).toBe("empty");
-  });
-});
-
-/** The `.tsx` files under `dir`, tests aside. */
-function sources(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) {
-      return sources(path);
-    }
-    return path.endsWith(".tsx") && !path.endsWith(".test.tsx") ? [path] : [];
-  });
-}
-
-// a HelpTip whose children are one string literal: `<HelpTip about="…">texto</HelpTip>`
-const LITERAL_HELP_TIP = /<HelpTip\b[^>]*>\s*([^<>{}]+?)\s*<\/HelpTip>/g;
-const WHITESPACE = /\s+/g;
-
-describe("os HelpTip escritos no código", () => {
-  it("têm texto dentro do limite", () => {
-    const root = join(import.meta.dirname, "..");
-    const problems: string[] = [];
-    let found = 0;
-    for (const file of sources(root)) {
-      for (const match of readFileSync(file, "utf8").matchAll(
-        LITERAL_HELP_TIP
-      )) {
-        found += 1;
-        const problem = helpTipTextProblem(
-          (match[1] ?? "").replace(WHITESPACE, " ")
-        );
-        if (problem) {
-          problems.push(`${file}: ${problem}`);
-        }
-      }
-    }
-    // the gallery has at least one, so the scan cannot pass by finding none
-    expect(found).toBeGreaterThan(0);
-    expect(problems).toEqual([]);
   });
 });

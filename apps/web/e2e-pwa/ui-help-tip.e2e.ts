@@ -178,7 +178,7 @@ test("o popup mede 18 rem, abre abaixo do botão alinhado ao início e sai intei
     await open.evaluate((el) => el.closest('[data-slot="card"]'))
   ).toBeNull();
   // and the card that holds the button is shorter than the popup, which is nevertheless whole and on top
-  const card = await box(page.locator('[data-slot="card"]').first());
+  const card = await box(section(page).locator('[data-slot="card"]').first());
   expect(shown.y + shown.height).toBeGreaterThan(card.y + card.height);
   const topmost = await page.evaluate(
     ([x, y]) =>

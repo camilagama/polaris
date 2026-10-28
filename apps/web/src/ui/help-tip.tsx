@@ -10,6 +10,9 @@ import {
   PopoverTrigger,
 } from "./popover";
 
+const LINK =
+  "touch-hit focus-ring w-fit rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+
 /**
  * The (i) next to a card's title: a toggletip, not a tooltip (DESIGN.md, "Texto curto"). It opens by touch, click, Enter
  * and Space and never by hover, because a finger has no hover and a screen reader does not announce a hover tooltip.
@@ -17,35 +20,6 @@ import {
  * button on Esc, on a touch outside and on the button itself. Never for an error, a warning, the consequence of an
  * action or what the app does offline: those stay on the screen.
  */
-
-/** The most characters of one help text (DESIGN.md, "Texto curto"). */
-export const HELP_TIP_MAX_CHARS = 160;
-
-/** The most sentences of one help text. */
-const HELP_TIP_MAX_SENTENCES = 2;
-
-// a sentence ends at a terminator followed by a space or by the end, so "R$ 1.234,56" and "1 a 23/10" do not count
-const SENTENCE_END = /[.!?…]+(?=\s|$)/g;
-
-/** What is wrong with a help text, or null when it fits the limits. Screens that use `HelpTip` test their texts with it. */
-export function helpTipTextProblem(text: string): string | null {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return "empty";
-  }
-  if (trimmed.length > HELP_TIP_MAX_CHARS) {
-    return `${trimmed.length} characters, the limit is ${HELP_TIP_MAX_CHARS}`;
-  }
-  const sentences = (trimmed.match(SENTENCE_END) ?? []).length;
-  if (sentences > HELP_TIP_MAX_SENTENCES) {
-    return `${sentences} sentences, the limit is ${HELP_TIP_MAX_SENTENCES}`;
-  }
-  return null;
-}
-
-const LINK =
-  "touch-hit focus-ring w-fit rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-
 export function HelpTip({
   about,
   children,
