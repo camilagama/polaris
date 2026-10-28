@@ -302,7 +302,7 @@ button {
 .grid.funnel td:first-child {
   position: sticky;
   left: 0;
-  background: var(--background);
+  background: var(--card);
 }
 
 .controls {
