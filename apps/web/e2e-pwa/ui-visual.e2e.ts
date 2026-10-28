@@ -1,4 +1,6 @@
 /// <reference lib="dom" />
+import { readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
@@ -113,12 +115,44 @@ async function settle(page: Page) {
  * charts, which measure their box with a ResizeObserver, could be drawn for the passing size.
  */
 async function showWholePage(page: Page, width: number) {
+  const pageHeight = () =>
+    page.evaluate(() => document.documentElement.scrollHeight);
   await settle(page);
-  const height = await page.evaluate(
-    () => document.documentElement.scrollHeight
+  // a page as tall as the window (`min-h-dvh` plus a margin) grows with it: grow the window until it stops
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: each size is measured after the last one is drawn
+    const height = await pageHeight();
+    if (height === page.viewportSize()?.height) {
+      break;
+    }
+    await page.setViewportSize({ height, width });
+    await settle(page);
+  }
+  expect(await pageHeight(), "a página inteira cabe na janela").toBe(
+    page.viewportSize()?.height
   );
-  await page.setViewportSize({ height, width });
-  await settle(page);
+}
+
+/**
+ * The CPU of the browser, read from a page of the app (the hints exist only in a secure context). `navigator.platform`
+ * says "Linux x86_64" on every Linux (the reduced user agent); the high-entropy hints do not.
+ */
+async function expectImagePlatform(page: Page) {
+  const platform = await page.evaluate(async () => {
+    const hints = await (
+      navigator as Navigator & {
+        userAgentData: {
+          getHighEntropyValues: (keys: string[]) => Promise<{
+            architecture: string;
+            bitness: string;
+            platform: string;
+          }>;
+        };
+      }
+    ).userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+    return `${hints.platform} ${hints.architecture} ${hints.bitness}`;
+  });
+  expect(platform, "a plataforma da imagem fixa").toBe("Linux x86 64");
 }
 
 test.describe.configure({ mode: "parallel" });
@@ -130,7 +164,8 @@ test.use({
   timezoneId: "America/Sao_Paulo",
 });
 
-// A baseline is drawn only by the browser of the image: a run against any other browser fails here, before it writes.
+// A baseline is drawn only by the browser the launcher starts from the image (a remote Chromium of the pinned version;
+// its CPU is checked on the app's page, before each capture): a run against any other browser fails before it writes.
 test.beforeEach(({ browser }) => {
   expect(
     process.env[VISUAL_WS_ENV],
@@ -141,11 +176,25 @@ test.beforeEach(({ browser }) => {
   );
 });
 
+test("a pasta de baselines tem exatamente as imagens da lista", () => {
+  const info = test.info();
+  const folder = dirname(info.snapshotPath("x.png"));
+  const suffix = `-${info.project.name}-${process.platform}.png`;
+  const expected = STATES.flatMap(({ file }) =>
+    CONTEXTS.map(
+      ({ theme, viewport }) => `${file}-${viewport}-${theme}${suffix}`
+    )
+  ).sort();
+  // a state taken out of the list must take its images with it
+  expect(readdirSync(folder).sort()).toEqual(expected);
+});
+
 test("as fontes do app carregaram: Geist e Geist Mono, sem fonte do sistema", async ({
   page,
 }) => {
   await page.goto("/entrar");
   await page.getByRole("heading", { level: 1 }).first().waitFor();
+  await expectImagePlatform(page);
   const fonts = await page.evaluate(async () => {
     const families = ["Geist Variable", "Geist Mono Variable"];
     // a family nobody uses is fetched only on demand: ask for both, from the app's own files
@@ -188,6 +237,7 @@ for (const { file, screen } of STATES) {
       test("igual à baseline", async ({ page }) => {
         await page.clock.install({ time: CLOCK });
         await screen.open(page, page.context());
+        await expectImagePlatform(page);
         await showWholePage(page, VIEWPORTS[viewport].width);
         await expect(page).toHaveScreenshot(
           `${file}-${viewport}-${theme}.png`,

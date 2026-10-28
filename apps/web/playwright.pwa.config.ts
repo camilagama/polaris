@@ -44,11 +44,8 @@ export default defineConfig({
     {
       name: VISUAL_PROJECT,
       testMatch: VISUAL,
-      use: {
-        ...devices["Desktop Chrome"],
-        browserName: "chromium",
-        connectOptions: visualConnectOptions(),
-      },
+      // no device descriptor: its user agent (Windows) would hide the platform of the image from the spec
+      use: { browserName: "chromium", connectOptions: visualConnectOptions() },
     },
   ],
   reporter: "list",

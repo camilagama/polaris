@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import config from "../playwright.pwa.config";
@@ -87,6 +87,10 @@ async function waitListening(container: string) {
   throw new Error("the browser server of the image did not listen in 60 s");
 }
 
+function stopContainer(container: string) {
+  capture("docker", ["stop", "--time", "2", container]);
+}
+
 async function startImageBrowser() {
   const started = Date.now();
   if (
@@ -136,19 +140,39 @@ async function startImageBrowser() {
   if (status !== 0) {
     throw new Error("docker run of the browser server failed");
   }
-  await waitListening(container);
+  try {
+    await waitListening(container);
+  } catch (error) {
+    stopContainer(container);
+    throw error;
+  }
   console.log(
     `visual: ${VISUAL_IMAGE} (${VISUAL_PLATFORM}) pulled in ${((pulled - started) / 1000).toFixed(1)} s, listening in ${((Date.now() - pulled) / 1000).toFixed(1)} s`
   );
   return { container, wsEndpoint: `ws://127.0.0.1:${port}${path}` };
 }
 
-const playwright = (extra: string[], env = process.env) =>
-  run(
+/** Playwright as a child the launcher can outlive: a signal to the launcher stops the container before it exits. */
+function playwright(extra: string[], env = process.env, container?: string) {
+  const child = spawn(
     "playwright",
     ["test", "--config", "playwright.pwa.config.ts", ...args, ...extra],
-    env
-  ) ?? 1;
+    { env, stdio: "inherit" }
+  );
+  const onSignal = (signal: NodeJS.Signals) => {
+    child.kill(signal);
+    if (container) {
+      stopContainer(container);
+    }
+    process.exit(1);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  return new Promise<number>((resolve) => {
+    child.once("error", () => resolve(1));
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
+}
 
 async function main() {
   if (!visualRuns) {
@@ -168,12 +192,13 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
-    return playwright([], {
-      ...process.env,
-      [VISUAL_WS_ENV]: browser.wsEndpoint,
-    });
+    return await playwright(
+      [],
+      { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
+      browser.container
+    );
   } finally {
-    capture("docker", ["stop", "--time", "2", browser.container]);
+    stopContainer(browser.container);
   }
 }
 

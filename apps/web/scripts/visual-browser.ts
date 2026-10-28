@@ -1,9 +1,10 @@
 /**
  * The browser of the visual regression (`e2e-pwa/ui-visual.e2e.ts`): Chromium inside one pinned Playwright image,
  * reached by the tests through `playwright run-server`. The baselines are drawn and compared by this browser only:
- * the image fixes the fonts, the FreeType and the Skia build, and the architecture (the CI is amd64; Skia does not
- * draw the same pixels on arm64). A run of the visual project without the server of the image fails before the
- * first screenshot, so no baseline is written from another browser.
+ * the image fixes the fonts, the FreeType and the Skia build, and the architecture is the CI's (amd64): Skia has
+ * code paths per CPU, and a match between architectures is not promised. A run of the visual project fails before the
+ * first screenshot unless its browser is a remote Chromium of the pinned version on Linux x86_64, the one the
+ * launcher (`scripts/pwa-browser-tests.ts`) starts from the image.
  */
 
 import { readFileSync } from "node:fs";
