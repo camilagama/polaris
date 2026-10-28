@@ -152,6 +152,11 @@ describe("the failures", () => {
       text: expect.stringContaining("já foi revogado"),
       uncertain: false,
     });
+    expect(revokeFailure(rpcError("PAYLOAD_TOO_LARGE"))).toEqual({
+      kind: "message",
+      text: "Não foi possível revogar este aparelho. Nada foi alterado.",
+      uncertain: false,
+    });
     for (const unknown of [
       new TypeError("Failed to fetch"),
       rpcError("INTERNAL_SERVER_ERROR"),

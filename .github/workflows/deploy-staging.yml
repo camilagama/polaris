@@ -148,6 +148,10 @@ jobs:
           CLOUDFLARE_ENV: staging
           # the offline runtime is on in staging only, for the manual Gate 5 (ADR 0043)
           VITE_OFFLINE_RUNTIME_ENABLED: "true"
+          # the reports of errors of the browser (ADR 0098, amended): on in the client, with the commit of the build as
+          # the release (GITHUB_SHA of a workflow_run is the default branch's, not the built one)
+          VITE_CLIENT_ERRORS_ENABLED: "true"
+          VITE_RELEASE: ${{ github.event.workflow_run.head_sha }}
           # "1" only when a commit since the last deploy carries the marker (job decide, ADR 0041)
           POLARIS_SWAP_URGENT: ${{ needs.decide.outputs.urgent }}
         run: |
