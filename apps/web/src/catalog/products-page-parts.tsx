@@ -50,7 +50,7 @@ export function ProductsHeader({
       <ScreenTitle>Produtos</ScreenTitle>
       {showNew ? (
         <div className="grid gap-1 min-[30rem]:justify-items-end">
-          <div className="grid gap-2 min-[30rem]:flex">
+          <div className="grid gap-3 min-[30rem]:flex min-[30rem]:gap-2">
             <Button
               aria-describedby={
                 importOffline ? IMPORT_OFFLINE_REASON_ID : undefined
