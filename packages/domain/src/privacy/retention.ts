@@ -36,6 +36,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "billing_events",
   "billing_trial_claims",
   "billing_cancellation_feedback",
+  "billing_notices",
   "sync_commands",
   "sync_change_log",
   "data_exports",
@@ -389,6 +390,25 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     rule: "O motivo que o dono escreve ao cancelar a renovação fica 12 meses contados do dia em que foi gravado (`recorded_on`, só o dia, no horário de São Paulo, para não casar com o fato do razão) e sai na manutenção de privacidade, pela função `expire_billing_cancellation_feedback`. Não tem loja nem pessoa: fica fora do purge da organização, da exportação e do atendimento ao titular, porque é texto livre sem vínculo. Nunca vai para o razão de cobrança, log, Sentry nem auditoria (prazo aprovado pelo usuário no desenho t268 de 23/10/2026, ADR 0104).",
     sources: ["ADR 0104", "docs/business-rules/privacy.md"],
     status: "aprovada",
+  },
+  {
+    basis: "decisao",
+    class: "billing_notices",
+    data: [
+      "billing_notices (os avisos do ciclo de cobrança e as boas-vindas: organização, tipo, chave de deduplicação, datas de registro, de vencimento, da primeira e da última tentativa, de envio ou de falha, o código curto da falha ou do motivo de não envio e, só nas boas-vindas, o ID do usuário; sem e-mail, sem nome da loja, sem valor e sem texto)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "Dentro do purge da organização a linha sai com a loja, e a das boas-vindas sai também com a conta do usuário, pela chave estrangeira em cascata (já implementado, ADR 0081 e ADR 0104). Fora do purge, para a loja viva, o prazo proposto é de 12 meses contados de `recorded_at`, só para o aviso já encerrado (`sent_at`, `failed_at` ou `skipped_reason` preenchido), classe operacional e não fiscal, a mesma para todos os tipos, boas-vindas incluídas (decisão do Arrascaeta de 28/10/2026, com o parecer do Rodrigo). O prazo não está aplicado e nenhum job existe: a classe só vira aprovada com o job, que decide o responsável (Arrascaeta), e o job só pode existir depois de pular a loja sob legal hold e de conferir que nenhuma chave de deduplicação reaparece depois dos 12 meses. Efeito aceito: quem abrir uma loja nova mais de 12 meses depois da primeira, sem outra loja anterior como dono ativo, recebe as boas-vindas de novo.",
+    review: { state: "pendente_juridica" },
+    rule: "Cada aviso do ciclo de cobrança (10 tipos, incluídas as boas-vindas) vira uma linha, com ou sem e-mail enviado, um por loja, tipo e chave. A linha guarda só identificadores, datas e códigos: o endereço é lido da conta na hora do envio, por uma função do papel de autenticação, e nunca fica no aviso, no evento nem no log. A referência opaca do provedor, quando é a chave, ainda localiza o pagador no provedor, como nos eventos de cobrança. Fica fora da exportação do tenant e nenhum papel de runtime do tenant a lê; o purge da organização a apaga.",
+    sources: [
+      "ADR 0079",
+      "ADR 0104",
+      "docs/business-rules/privacy.md",
+      "docs/runbooks/email-auth.md",
+    ],
+    status: "proposta",
   },
   {
     approvedOn: "2026-10-18",

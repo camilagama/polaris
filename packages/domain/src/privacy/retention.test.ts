@@ -179,9 +179,13 @@ describe("review state", () => {
   });
 
   it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
-    // the trial per person (ADR 0101) and the notices of a closure (ADR 0102, amended) came later: their period waits
-    // for the responsible person
-    const undecided = ["billing_trial_claims", "closure_notice"];
+    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended) and the notices of billing (ADR 0104)
+    // came later: their period waits for the responsible person
+    const undecided = [
+      "billing_notices",
+      "billing_trial_claims",
+      "closure_notice",
+    ];
     for (const policy of RETENTION_POLICIES) {
       if (undecided.includes(policy.class)) {
         expect(policy.review, policy.class).toEqual({
@@ -585,6 +589,47 @@ describe("approved periods", () => {
     expect(() => approvedRetention("billing_events")).toThrow(
       RetentionNotApprovedError
     );
+  });
+});
+
+describe("the notices of billing", () => {
+  it("are a proposed class, with no job and no period applied", () => {
+    const policy = retentionPolicy("billing_notices");
+    expect(policy.class).toBe("billing_notices");
+    expect(policy.basis).toBe("decisao");
+    expect(policy.status).toBe("proposta");
+    expect(policy.period).toEqual({ kind: "undecided" });
+    expect(policy.review).toEqual({ state: "pendente_juridica" });
+    expect("job" in policy).toBe(false);
+    expect(policy.legalReview).toBeUndefined();
+    expect(RETENTION_PURGE_JOBS.map((job) => job.class)).not.toContain(
+      "billing_notices"
+    );
+    // nothing reads a period of a proposed class as approved
+    expect(() => approvedRetention("billing_notices")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(() => retentionExpiry("billing_notices", new Date())).toThrow(
+      RetentionNotApprovedError
+    );
+  });
+
+  it("say what they keep, where the rule comes from and the proposed period, 12 months from recorded_at", () => {
+    const policy = retentionPolicy("billing_notices");
+    expect(policy.data.join(" ")).toContain("billing_notices");
+    expect(policy.sources).toEqual([
+      "ADR 0079",
+      "ADR 0104",
+      "docs/business-rules/privacy.md",
+      "docs/runbooks/email-auth.md",
+    ]);
+    if (policy.status !== "proposta") {
+      throw new Error("billing_notices must stay proposed");
+    }
+    expect(policy.proposed).toContain("12 meses contados de `recorded_at`");
+    expect(policy.proposed).toContain("legal hold");
+    expect(policy.proposed).toContain("operacional e não fiscal");
+    expect(policy.proposed).toContain("nenhum job existe");
   });
 });
 
