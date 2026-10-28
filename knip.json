@@ -36,6 +36,7 @@
         "e2e/**/*.e2e.ts",
         "e2e-pwa/**/*.e2e.ts",
         "scripts/lighthouse-servers.ts",
+        "playwright.pwa.config.ts",
         "vite.ui.ts"
       ],
       "ignore": ["src/ui/bklit/**"],
