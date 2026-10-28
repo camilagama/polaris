@@ -551,7 +551,7 @@ function SidebarMenuButton({
   const button = (
     <a
       className={cx(
-        "peer/menu-button focus-ring relative flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
+        "peer/menu-button focus-ring relative flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
         className
       )}
       data-active={isActive ? "" : undefined}

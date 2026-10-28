@@ -33,7 +33,7 @@
     --secondary-foreground: oklch(0.945 0.005 85);
     --muted-foreground: oklch(0.79 0.004 85);
     --destructive: oklch(0.77 0.13 25);
-    --border: oklch(0.32 0.0035 85);
+    --border: oklch(1 0 0 / 0.06);
     --input: oklch(0.55 0.0035 85);
     --ring: oklch(0.64 0.134 165);
   }
