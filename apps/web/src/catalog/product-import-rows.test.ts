@@ -253,6 +253,13 @@ describe("the header", () => {
       },
     ]);
     expect(result.ignoredHeaders).toEqual(["Fornecedor"]);
+    // the labels of the form written another way are not other names; "PRODUTO", "preco", "Qtd" and "Custo unitário" are
+    expect(result.aliasedHeaders).toEqual([
+      { column: "name", header: "PRODUTO" },
+      { column: "listPrice", header: "preco" },
+      { column: "quantity", header: "Qtd" },
+      { column: "unitCost", header: "Custo unitário" },
+    ]);
   });
 
   it.each([

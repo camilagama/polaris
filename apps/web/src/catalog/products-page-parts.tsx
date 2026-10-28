@@ -2,8 +2,10 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import UploadIcon from "lucide-react/dist/esm/icons/upload";
 import type { ReactNode, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
 import type { ProductListStatus } from "./product-list";
@@ -20,20 +22,75 @@ export const PRODUCT_STATUS_OPTIONS: ReadonlyArray<
 
 interface HeaderProps {
   buttonRef: Ref<HTMLButtonElement>;
+  importButtonRef: Ref<HTMLButtonElement>;
+  /** The device's copy says there is no connection (the offline runtime). */
+  isOffline: boolean;
+  onImport: () => void;
   onNew: () => void;
-  /** A new product is made in the active list only. */
+  /** A new product is made in the active list only (and imported there too). */
   showNew: boolean;
 }
 
-export function ProductsHeader({ buttonRef, onNew, showNew }: HeaderProps) {
+/**
+ * What Produtos says when the import closes on "Ver os produtos" (here, not in the import's chunk: the page says it).
+ */
+export function importedNotice(entered: number): string {
+  if (entered === 0) {
+    return "Nenhum produto importado.";
+  }
+  return entered === 1
+    ? "1 produto importado."
+    : `${entered} produtos importados.`;
+}
+
+/** Read with "Importar planilha" while it is off for lack of connection. */
+const IMPORT_OFFLINE_REASON_ID = "products-import-offline-reason";
+
+export function ProductsHeader({
+  buttonRef,
+  importButtonRef,
+  isOffline,
+  onImport,
+  onNew,
+  showNew,
+}: HeaderProps) {
+  // the import never goes to the offline queue: without a connection "Importar planilha" stays reachable, off, and
+  // reads why
+  const importOffline = !useConnectionOnline() || isOffline;
   return (
     <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between">
       <ScreenTitle>Produtos</ScreenTitle>
       {showNew ? (
-        <Button onClick={onNew} ref={buttonRef} type="button">
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
-          Novo produto
-        </Button>
+        // "Novo produto" first, at every width; the reason of the import right under its button
+        <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-start min-[30rem]:gap-2">
+          <Button onClick={onNew} ref={buttonRef} type="button">
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Novo produto
+          </Button>
+          <div className="grid gap-1 min-[30rem]:justify-items-start">
+            <Button
+              aria-describedby={
+                importOffline ? IMPORT_OFFLINE_REASON_ID : undefined
+              }
+              aria-disabled={importOffline || undefined}
+              onClick={importOffline ? undefined : onImport}
+              ref={importButtonRef}
+              type="button"
+              variant="outline"
+            >
+              <UploadIcon aria-hidden="true" data-icon="inline-start" />
+              Importar planilha
+            </Button>
+            {importOffline ? (
+              <p
+                className="text-muted-foreground text-support"
+                id={IMPORT_OFFLINE_REASON_ID}
+              >
+                Importar planilha precisa de conexão.
+              </p>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </div>
   );

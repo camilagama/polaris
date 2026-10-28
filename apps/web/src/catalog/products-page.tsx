@@ -1,5 +1,6 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import {
+  type ComponentType,
   type FormEvent,
   useCallback,
   useEffect,
@@ -7,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { browserConnection } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
@@ -26,6 +28,7 @@ import {
   newProductIds,
 } from "./product-commands";
 import { ProductDialog, type ProductTab } from "./product-dialog";
+import type { ProductImportDialogProps } from "./product-import/product-import-dialog";
 import {
   isCategoryUnavailable,
   isProductAlreadyCreated,
@@ -44,6 +47,7 @@ import {
   LoadErrorNotice,
   OFFLINE_NOTICE_ID,
   OfflineNotice,
+  importedNotice,
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
   ProductsHeader,
@@ -204,6 +208,58 @@ function toKeep(state: ProductsReturn): ProductsReturn | null {
   return state.keptKey === null && state.variantsDraft === null ? null : state;
 }
 
+const IMPORT_NEEDS_CONNECTION = "Importar planilha precisa de conexão.";
+
+/** Said when the chunk of the import could not be downloaded (a deploy since the page loaded, or the network). */
+const IMPORT_LOAD_FAILED =
+  "Não foi possível abrir a importação. Recarregue a página e tente de novo.";
+
+/**
+ * The import of a spreadsheet (corte 2.5): its code and the reading of the CSV are a chunk of their own, downloaded the
+ * first time the person opens it and kept out of the precache (there is no import offline, `pwa/service-worker-plugin.ts`).
+ */
+function useImportDialog(onLoadFailed: () => void) {
+  const [open, setOpen] = useState(false);
+  const [Dialog, setDialog] =
+    useState<ComponentType<ProductImportDialogProps> | null>(null);
+  const loading = useRef<boolean>(false);
+  const failedRef = useRef(onLoadFailed);
+  failedRef.current = onLoadFailed;
+  const openImport = useCallback(() => {
+    setOpen(true);
+    if (loading.current) {
+      return;
+    }
+    loading.current = true;
+    import("./product-import/product-import-dialog")
+      .then((module) => setDialog(() => module.ProductImportDialog))
+      .catch(() => {
+        loading.current = false;
+        setOpen(false);
+        failedRef.current();
+      });
+  }, []);
+  const closeImport = useCallback(() => setOpen(false), []);
+  return { closeImport, Dialog, open, openImport };
+}
+
+/**
+ * The dialog of the import once its chunk arrived. "Conhecer o Pro" inside it closes it before the Assinatura opens; the
+ * file read lives in this page only, so it does not come back on "voltar" (a new file is read again).
+ */
+function ImportDialogSlot({
+  Dialog,
+  ...props
+}: ProductImportDialogProps & {
+  Dialog: ComponentType<ProductImportDialogProps> | null;
+}) {
+  return Dialog ? (
+    <LimitLeaveScope value={props.onClose}>
+      <Dialog {...props} />
+    </LimitLeaveScope>
+  ) : null;
+}
+
 /** A new product refused because of its category: the category takes the focus, not the alert. */
 function isCategoryRefusal(
   cause: unknown,
@@ -268,6 +324,7 @@ export function ProductsPage() {
   const newProductNames = useRef<NewProductIds | null>(returned.names);
   const rootRef = useRef<HTMLDivElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  const importButtonRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const noticeRef = useRef<string | null>(null);
   noticeRef.current = notice;
@@ -305,6 +362,51 @@ export function ProductsPage() {
     setNotice(null);
     setUndoProduct(null);
   }, []);
+
+  const handleImportLoadFailed = useCallback(() => {
+    setError(IMPORT_LOAD_FAILED);
+    focusFeedback();
+  }, [focusFeedback]);
+  const {
+    closeImport,
+    Dialog: ImportDialog,
+    open: importOpen,
+    openImport,
+  } = useImportDialog(handleImportLoadFailed);
+  const handleImport = useCallback(() => {
+    clearMessages();
+    // the address (`?importar=1`) opens it too: without a connection it says why instead of a download that fails
+    if (!browserConnection.isOnline()) {
+      setError(IMPORT_NEEDS_CONNECTION);
+      focusFeedback();
+      return;
+    }
+    openImport();
+  }, [clearMessages, focusFeedback, openImport]);
+  // after "Ver os produtos" the focus goes to the notice of what entered, not back to the button
+  const importFinalFocus = useCallback(
+    () => (noticeRef.current ? false : (importButtonRef.current ?? true)),
+    []
+  );
+  const handleShowImported = useCallback(
+    (entered: number) => {
+      clearMessages();
+      setNotice(importedNotice(entered));
+      closeImport();
+    },
+    [clearMessages, closeImport]
+  );
+  // what the import said takes the focus once the dialog is gone, on the notice itself (as `handleDialogClosed`)
+  const handleImportClosed = useCallback(() => {
+    if (noticeRef.current) {
+      focusLater(() => feedbackRef.current?.focus());
+    }
+  }, []);
+  const handleImported = useCallback(() => {
+    // the products live on the server: bring them to this device, then show them
+    workspace?.runtime.syncNow().catch(() => undefined);
+    refresh();
+  }, [refresh, workspace]);
 
   /**
    * Opens the dialog of a product (or of a new one) on a tab. A draft kept by Esc for the same product comes back;
@@ -438,6 +540,7 @@ export function ProductsPage() {
 
   // `?produto=` and `?novo=1`: the dialog the address names opens, on the variants of the product or for a new one
   const { retry: retryLink } = useProductsLink(workspace, organizationId, {
+    onImport: handleImport,
     onNew: () => openDialog(null, "dados"),
     onNotice: (message) => {
       setLinkFailure(null);
@@ -681,6 +784,9 @@ export function ProductsPage() {
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
         <ProductsHeader
           buttonRef={newButtonRef}
+          importButtonRef={importButtonRef}
+          isOffline={isOffline}
+          onImport={handleImport}
           onNew={handleNew}
           showNew={status === "active"}
         />
@@ -727,6 +833,17 @@ export function ProductsPage() {
             variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
           />
         </LimitLeaveScope>
+
+        <ImportDialogSlot
+          categories={categories}
+          Dialog={ImportDialog}
+          finalFocus={importFinalFocus}
+          onClose={closeImport}
+          onClosed={handleImportClosed}
+          onEntered={handleImported}
+          onShowProducts={handleShowImported}
+          open={importOpen}
+        />
 
         <ProductSearch onChange={setQuery} value={query} />
         <StatusNav

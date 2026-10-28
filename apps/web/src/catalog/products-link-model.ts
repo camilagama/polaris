@@ -5,12 +5,14 @@ import { productErrorMessage } from "./product-errors";
 /**
  * What `/products` opens by its address (the Início and the Venda link to it):
  * `?produto=<uuid>` the variants panel of that product, `?novo=1` the form of a
- * new one. Anything else is the plain list, and no value of the address is ever
- * written on the screen.
+ * new one, `?importar=1` the import of a spreadsheet (the checklist of the Início).
+ * Anything else is the plain list, and no value of the address is ever written
+ * on the screen.
  */
 export type ProductsLink =
   | { kind: "none" }
   | { kind: "new" }
+  | { kind: "import" }
   | { kind: "product"; productId: string };
 
 const uuidPattern =
@@ -24,6 +26,9 @@ export function readProductsLink(search: string): ProductsLink {
     return uuidPattern.test(productId)
       ? { kind: "product", productId: productId.toLowerCase() }
       : { kind: "none" };
+  }
+  if (params.get("importar") === "1") {
+    return { kind: "import" };
   }
   return params.get("novo") === "1" ? { kind: "new" } : { kind: "none" };
 }

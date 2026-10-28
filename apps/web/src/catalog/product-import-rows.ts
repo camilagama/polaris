@@ -144,8 +144,15 @@ export type ImportFileProblem =
   | "too_many_rows"
   | "unclosed_quote";
 
+/** A header of the file read as a column by another name ("Qtd" as Quantidade), for the preview to say so. */
+export interface ImportAliasedHeader {
+  column: ImportColumn;
+  header: string;
+}
+
 export type ImportPreview =
   | {
+      aliasedHeaders: ImportAliasedHeader[];
       /** Rows whose category is not one of the store: they enter without a category. */
       categoryWarnings: ImportCategoryWarning[];
       duplicates: ImportDuplicateRow[];
@@ -216,6 +223,7 @@ export function spreadsheetDecimal(cell: string): Prepared {
 }
 
 interface Columns {
+  aliasedHeaders: ImportAliasedHeader[];
   ignoredHeaders: string[];
   positions: Map<ImportColumn, number>;
 }
@@ -225,8 +233,10 @@ function mapHeader(
 ): Columns | { problem: ImportFileProblem } {
   const positions = new Map<ImportColumn, number>();
   const ignoredHeaders: string[] = [];
+  const aliasedHeaders: ImportAliasedHeader[] = [];
   for (const [index, text] of header.entries()) {
-    const column = COLUMN_OF_HEADER.get(headerKey(text));
+    const key = headerKey(text);
+    const column = COLUMN_OF_HEADER.get(key);
     if (column === undefined) {
       if (text.trim() !== "") {
         ignoredHeaders.push(text.trim());
@@ -237,11 +247,14 @@ function mapHeader(
       return { problem: "repeated_column" };
     }
     positions.set(column, index);
+    if (key !== headerKey(IMPORT_COLUMN_LABELS[column])) {
+      aliasedHeaders.push({ column, header: text.trim() });
+    }
   }
   if (!positions.has("name")) {
     return { problem: "missing_name_column" };
   }
-  return { ignoredHeaders, positions };
+  return { aliasedHeaders, ignoredHeaders, positions };
 }
 
 function sourceOf(
@@ -453,6 +466,7 @@ export function previewImport(
     }
   }
   return {
+    aliasedHeaders: columns.aliasedHeaders,
     categoryWarnings,
     duplicates,
     ignoredHeaders: columns.ignoredHeaders,

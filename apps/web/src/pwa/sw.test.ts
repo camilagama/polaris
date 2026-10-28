@@ -235,6 +235,30 @@ describe("the build manifest", () => {
     expect(listed).toContain("/assets/charts-Dk3jf9.js");
   });
 
+  it("keeps the chunk of the import of a spreadsheet out: it loads only online (corte 2.5, AC-11)", () => {
+    const listed = precacheList({
+      files: [
+        "index.html",
+        "assets/product-import-dialog-D57R_bC-f.js",
+        "assets/products-page-AAA.js",
+        "assets/index-AAA.js",
+      ],
+    });
+    expect(listed).toEqual([
+      "/",
+      "/assets/index-AAA.js",
+      "/assets/products-page-AAA.js",
+    ]);
+    // what the worker did not precache it does not serve: the request goes to the network
+    expect(
+      routeFor(
+        get("/assets/product-import-dialog-D57R_bC-f.js"),
+        origin,
+        new Set(listed)
+      )
+    ).toBe("bypass");
+  });
+
   it("changes the build id when the shell or an unhashed file changes, not otherwise", () => {
     const files = ["index.html", "assets/a-1.js", "manifest.webmanifest"];
     const contents: Record<string, string> = {

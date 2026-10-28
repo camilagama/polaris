@@ -21,12 +21,27 @@ export interface PrecacheInput {
 /** Never part of the shell: the worker itself, source maps and host config files. */
 const EXCLUDED = new Set(["sw.js", "_headers", "_redirects", ".assetsignore"]);
 
-/** The paths to precache: `/` (the shell) first, then every static file. */
+/**
+ * The chunks that load only online and stay out of the precache (and so out of the budget of `precache-budget.ts`):
+ * the import of a spreadsheet (corte 2.5, AC-11), its screen and the reading of the CSV, loaded by an `import()` when
+ * the person opens it. There is no import offline (the button is off without a connection), so a phone never
+ * downloads it with the shell. The worker does not serve what it did not precache: the request goes to the network.
+ * A guard of the budget fails the build when one of its modules is in another chunk or a chunk imports it statically
+ * (`onlineOnlyPlacementProblems`).
+ */
+export const ONLINE_ONLY_CHUNK = /^assets\/product-import-dialog-[\w-]+\.js$/;
+
+/** The paths to precache: `/` (the shell) first, then every static file but the online-only chunks. */
 export function precacheList({ files }: PrecacheInput): string[] {
   const paths = files
     .filter(
       (file) =>
-        !(EXCLUDED.has(file) || file.endsWith(".map") || file === "index.html")
+        !(
+          EXCLUDED.has(file) ||
+          file.endsWith(".map") ||
+          file === "index.html" ||
+          ONLINE_ONLY_CHUNK.test(file)
+        )
     )
     .map((file) => `/${file}`)
     .sort();

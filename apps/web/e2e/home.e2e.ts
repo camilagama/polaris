@@ -901,12 +901,21 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "2Cadastrar o 1º produto",
+      "2Cadastrar o 1º produtoÀ mãoImportar planilha",
       "3Fazer a 1ª venda",
     ]);
     await expect(
       checklist.getByRole("link", { name: "Cadastrar produto" })
     ).toHaveAttribute("href", "/products?novo=1");
+    // the step has its two ways (corte 2.5, T-5): by hand, or the import of a spreadsheet
+    const step = checklist.getByRole("listitem").nth(1);
+    await expect(step.getByRole("link", { name: "À mão" })).toHaveAttribute(
+      "href",
+      "/products?novo=1"
+    );
+    await expect(
+      step.getByRole("link", { name: "Importar planilha" })
+    ).toHaveAttribute("href", "/products?importar=1");
     await expect(region(page, "Vendas hoje")).toHaveCount(0);
     await expect(region(page, "Vendas por dia")).toHaveCount(0);
     await expect(

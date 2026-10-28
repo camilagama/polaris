@@ -19,7 +19,8 @@ import type { ImportReadyRow } from "./product-import-rows";
  * away. A failure that may have taken effect (no answer, a fault of the server, as the CPU limit of the Free plan
  * killing a slice too big) halves the slice (10 → 5 → 2 → 1) and sends the rows again from the same place, with the
  * same IDs; the size stays at the smallest one that went through, so the slices after it do not pay the failure
- * again, and climbs one step only after `SLICE_STEP_UP_AFTER` slices in a row without a failure. A row that fails
+ * again, and climbs one step only after `SLICE_STEP_UP_AFTER` slices in a row without a failure, never past the
+ * ceiling (`IMPORT_SLICE_CEILING`, or the `maxSliceSize` given). The run starts at `IMPORT_SLICE_START`. A row that fails
  * alone is tried again twice and then stops the run where it was, so `skipStuckRow` can leave it out without
  * holding back the rows after it. The plan's refusal stops it for good and says so, for the screen's notice of the
  * limit (corte 1.6).
@@ -45,6 +46,17 @@ const MAX_SINGLE_ROW_RETRIES = 2;
  */
 export const SLICE_STEP_UP_AFTER = 10;
 
+/**
+ * The size of the first slice, and the ceiling the size climbs to: one row each, by the measure of the CPU of
+ * `product.importBatch` in staging on the Free plan of the Workers (Juan, 27/10/2026): errors 1102 (CPU limit) in 10%
+ * of the calls of 1 row, 46% of 2, 55% of 5 and 78% of 10. No size fits the 10 ms; 1 row is the only one with ~90% of
+ * calls that go through, and its 1102 is a failure like any other (the same row goes again with the same IDs). While
+ * that is the measure the size never climbs; the halving and the climbing stay, for a new measure to change only
+ * these numbers. The server's own cap (`PRODUCT_IMPORT_BATCH_MAX_ROWS`, 10) does not change.
+ */
+export const IMPORT_SLICE_START = 1;
+export const IMPORT_SLICE_CEILING = 1;
+
 export interface ImportRun {
   readonly importId: string;
   /** When the last call of the run went, for the pace; null before the first. */
@@ -61,10 +73,11 @@ export interface ImportRun {
   sliceSize: number;
 }
 
-/** A new import of the ready rows, with every ID named now, once. */
+/** A new import of the ready rows, with every ID named now, once; the first slice has `sliceStart` rows. */
 export function createImportRun(
   rows: readonly ImportReadyRow[],
-  newId: () => string = uuidv7
+  newId: () => string = uuidv7,
+  sliceStart: number = IMPORT_SLICE_START
 ): ImportRun {
   return {
     answeredInARow: 0,
@@ -85,7 +98,7 @@ export function createImportRun(
       variantId: newId(),
     })),
     skipped: new Set(),
-    sliceSize: PRODUCT_IMPORT_BATCH_MAX_ROWS,
+    sliceSize: sliceStart,
   };
 }
 
@@ -127,7 +140,7 @@ export interface ImportSendDependencies {
     organizationId: string;
     rows: ProductImportRowInput[];
   }) => Promise<{ results: ProductImportRowResult[] }>;
-  /** The biggest slice, capped by the contract's. */
+  /** The biggest slice, `IMPORT_SLICE_CEILING` when not given; capped by the contract's. */
   maxSliceSize?: number;
   signal?: AbortSignal;
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -353,7 +366,7 @@ export async function runImport(
   };
   const steps = sliceSteps(
     Math.min(
-      dependencies.maxSliceSize ?? PRODUCT_IMPORT_BATCH_MAX_ROWS,
+      dependencies.maxSliceSize ?? IMPORT_SLICE_CEILING,
       PRODUCT_IMPORT_BATCH_MAX_ROWS
     )
   );

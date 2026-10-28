@@ -41,15 +41,24 @@ const FIELD_MESSAGES: Record<ImportColumn, string> = {
   unitCost: COST_INVALID,
 };
 
+/** The reasons of the table of the result (Petković, 27/10), the same in this file. */
 const STATUS_MESSAGES: Partial<Record<ProductImportRowStatus, string>> = {
-  conflict: "Esta linha já foi enviada com outros dados.",
-  exists_by_name: "Já existe um produto com este nome.",
-  limit_reached: "O plano chegou ao limite de variantes.",
+  conflict: "O servidor recusou esta linha. Corrija o arquivo e tente de novo.",
+  exists_by_name: "Já existe um produto com este nome. Ficou como estava.",
+  limit_reached: "O plano chegou ao limite. Nada foi criado nesta linha.",
 };
 /** A row of the run with no answer: the run stopped before it, or it was left out after stopping it. */
 const NOT_ANSWERED =
   "Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo.";
 const EXISTING = STATUS_MESSAGES.exists_by_name ?? "";
+const LIMIT_REACHED = STATUS_MESSAGES.limit_reached ?? "";
+
+function kindOf(result: ProductImportRowResult): FailedRowKind {
+  if (result.status === "invalid") {
+    return "error";
+  }
+  return result.status === "exists_by_name" ? "exists" : "not_entered";
+}
 
 /** What a row that did not enter says in the column "Motivo". */
 function importResultMessage(result: ProductImportRowResult): string | null {
@@ -59,7 +68,14 @@ function importResultMessage(result: ProductImportRowResult): string | null {
   return STATUS_MESSAGES[result.status] ?? null;
 }
 
-interface FailedRow {
+/**
+ * What became of a row that did not enter, for the mark of the table (never said by color alone): refused for a field,
+ * already in the store, refused by the plan or the server, or with no answer (it may have entered: the person checks).
+ */
+export type FailedRowKind = "error" | "exists" | "not_entered" | "unconfirmed";
+
+export interface FailedRow {
+  kind: FailedRowKind;
   reason: string;
   rowNumber: number;
   source: ImportSourceCells;
@@ -70,6 +86,8 @@ export function failedImportRows(input: {
   duplicates: readonly ImportDuplicateRow[];
   /** The rows the preview left out because the store has a product of that name (`splitExisting`). */
   existing?: readonly { rowNumber: number }[];
+  /** The rows the preview left out because the plan has no room for them (the person confirmed the first ones). */
+  overLimit?: readonly { rowNumber: number }[];
   refused: readonly ImportRefusedRow[];
   run: ImportRun | null;
   /** The cells of each row the run sent, by its row number. */
@@ -84,29 +102,42 @@ export function failedImportRows(input: {
             : `${IMPORT_COLUMN_LABELS[error.column]}: ${error.message}`
         )
         .join(" "),
+      kind: "error" as const,
       rowNumber: row.rowNumber,
       source: row.source,
     })),
     ...input.duplicates.map((row) => ({
+      kind: "error" as const,
       reason: `Nome repetido na linha ${row.firstRowNumber}.`,
       rowNumber: row.rowNumber,
       source: row.source,
     })),
   ];
-  const withSource = (rowNumber: number, reason: string) => {
+  const withSource = (
+    rowNumber: number,
+    reason: string,
+    kind: FailedRowKind
+  ) => {
     const source = input.sources.get(rowNumber);
     if (source !== undefined) {
-      failed.push({ reason, rowNumber, source });
+      failed.push({ kind, reason, rowNumber, source });
     }
   };
   for (const row of input.existing ?? []) {
-    withSource(row.rowNumber, EXISTING);
+    withSource(row.rowNumber, EXISTING, "exists");
+  }
+  for (const row of input.overLimit ?? []) {
+    withSource(row.rowNumber, LIMIT_REACHED, "not_entered");
   }
   for (const row of input.run?.rows ?? []) {
     const result = input.run?.results.get(row.rowNumber);
-    const reason = result ? importResultMessage(result) : NOT_ANSWERED;
+    if (result === undefined) {
+      withSource(row.rowNumber, NOT_ANSWERED, "unconfirmed");
+      continue;
+    }
+    const reason = importResultMessage(result);
     if (reason !== null) {
-      withSource(row.rowNumber, reason);
+      withSource(row.rowNumber, reason, kindOf(result));
     }
   }
   return failed.sort((a, b) => a.rowNumber - b.rowNumber);

@@ -6,7 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ImportReadyRow } from "./product-import-rows";
 import {
   createImportRun,
+  IMPORT_SLICE_CEILING,
   IMPORT_SLICE_INTERVAL_MS,
+  IMPORT_SLICE_START,
   type ImportRun,
   type ImportSendDependencies,
   runImport,
@@ -69,14 +71,18 @@ function fakeTime() {
   };
 }
 
+/** The mechanism of the size, with the ceiling and the start of the contract's 10 rows (a new measure may bring them). */
+const MECHANISM_SLICE = 10;
+
 function setup(
   count: number,
   send: ImportSendDependencies["send"],
   extra: Partial<ImportSendDependencies> = {}
 ) {
-  const run = createImportRun(readyRows(count), newId);
+  const run = createImportRun(readyRows(count), newId, MECHANISM_SLICE);
   const time = fakeTime();
   const dependencies: ImportSendDependencies = {
+    maxSliceSize: MECHANISM_SLICE,
     now: time.now,
     organizationId,
     retryAfterMs: () => null,
@@ -113,6 +119,93 @@ describe("the IDs of an import", () => {
       "productId",
       "rowNumber",
       "variantId",
+    ]);
+  });
+});
+
+describe("the size of the slice by the measure of the Free plan (27/10)", () => {
+  it("starts at one row and never climbs: the start and the ceiling are 1", async () => {
+    expect(IMPORT_SLICE_START).toBe(1);
+    expect(IMPORT_SLICE_CEILING).toBe(1);
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const run = createImportRun(readyRows(SLICE_STEP_UP_AFTER * 2 + 3), newId);
+    const time = fakeTime();
+
+    expect(
+      await runImport(run, {
+        now: time.now,
+        organizationId,
+        retryAfterMs: () => null,
+        send,
+        wait: time.wait,
+      })
+    ).toEqual({ kind: "done" });
+
+    expect(run.sliceSize).toBe(1);
+    expect(sent).toEqual(sent.map(() => 1));
+    expect(sent).toHaveLength(SLICE_STEP_UP_AFTER * 2 + 3);
+  });
+
+  it("sends the same row again with the same IDs after a 1102 of one row, and goes on", async () => {
+    const productIds: string[] = [];
+    const send = vi.fn((input: SendInput) => {
+      productIds.push(input.rows[0]?.productId ?? "");
+      // the CPU limit of the platform kills the first call: no answer, the row may have entered
+      return productIds.length === 1
+        ? Promise.reject(rpcError("INTERNAL_SERVER_ERROR"))
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const run = createImportRun(readyRows(3), newId);
+    const time = fakeTime();
+    const progress: number[] = [];
+
+    expect(
+      await runImport(run, {
+        now: time.now,
+        onProgress: (current) => progress.push(current.nextIndex),
+        organizationId,
+        retryAfterMs: () => null,
+        send,
+        wait: time.wait,
+      })
+    ).toEqual({ kind: "done" });
+
+    expect(productIds).toEqual([
+      run.rows[0]?.productId,
+      run.rows[0]?.productId,
+      run.rows[1]?.productId,
+      run.rows[2]?.productId,
+    ]);
+    // the failure is no step of the progress: the screen sees only the rows answered
+    expect(progress).toEqual([1, 2, 3]);
+    expect(summarizeImport(run)).toMatchObject({ entered: 3, pending: 0 });
+  });
+
+  it("takes a ceiling given as a parameter, above the one of the measure", async () => {
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      sent.push(input.rows.length);
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const run = createImportRun(readyRows(25), newId);
+    const time = fakeTime();
+
+    await runImport(run, {
+      maxSliceSize: 2,
+      now: time.now,
+      organizationId,
+      retryAfterMs: () => null,
+      send,
+      wait: time.wait,
+    });
+
+    expect(sent.slice(0, SLICE_STEP_UP_AFTER + 1)).toEqual([
+      ...Array.from({ length: SLICE_STEP_UP_AFTER }, () => 1),
+      2,
     ]);
   });
 });
