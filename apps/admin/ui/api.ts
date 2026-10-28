@@ -120,11 +120,12 @@ export function createApi(fetchJson: Fetch): Api {
   ): Promise<ApiResult<T>> => {
     let response: Response;
     try {
+      // the method, headers and body are the caller's; how the request goes out is not
       response = await fetchJson(path, {
+        ...init,
         cache: "no-store",
         credentials: "same-origin",
         redirect: "manual",
-        ...init,
       });
     } catch {
       return { ok: false, problem: "network" };

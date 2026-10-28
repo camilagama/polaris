@@ -127,6 +127,12 @@ describe("the refund area of the chosen store (AC-9)", () => {
             id: "0199b0b0-0000-7000-8000-00000000000c",
             status: "closed",
           }),
+          // a privacy case has its own workflow: its reason is not shown here
+          supportCase({
+            id: "0199b0b0-0000-7000-8000-00000000000d",
+            kind: "privacy",
+            reason: "Titular pediu os dados",
+          }),
         ],
         next: null,
       }),
@@ -259,6 +265,15 @@ describe("the refund area of the chosen store (AC-9)", () => {
     await flush();
     expect(alertOf(section)?.textContent).toBe(
       "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
+    );
+  });
+  it("says that a case may have been opened when the answer did not come, so it is not opened twice", async () => {
+    const { section } = await chosen([new TypeError("Failed to fetch")]);
+    byId(section, "motivo").value = "Motivo";
+    buttons(section, "Abrir caso")[0]?.click();
+    await flush();
+    expect(alertOf(section)?.textContent).toBe(
+      "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo."
     );
   });
 });

@@ -1,8 +1,9 @@
 /**
  * The one way the Admin page builds its DOM: elements made by name, attributes set one by one and text written as
  * text. Nothing here takes HTML, so a store name with `<script>` in it is shown as those characters (AC-4, AC-11);
- * the page's policy (Trusted Types `'none'`) refuses an HTML string even if one slipped in. An event handler, a style
- * or a frame source is never an attribute, and a URL attribute is only a path of the Admin (`checkAttribute`).
+ * the page's policy (Trusted Types `'none'`) refuses an HTML string even if one slipped in. Only the elements and the
+ * attributes the page uses are made (`checkTag`, `checkAttribute`): no handler, style or source from a string, and
+ * an `href` only to a path of the Admin's page.
  */
 
 type Child = Node | string | null | undefined | false;
@@ -19,40 +20,92 @@ export interface Dom {
 }
 
 /**
- * Attributes that run code, style the page or carry a document or a list of sources from a string (`on*`, `style`,
- * the frame's document and the image's source list): never set, whatever the value.
+ * The elements the page is made of: text, forms and tables. Anything else (a `meta` that navigates, a `link`, a frame,
+ * an object, a script or a style element) is refused by name, whatever the attributes.
  */
-const REFUSED_ATTRIBUTE = /^(on.*|style|src.+)$/;
-/** Attributes the browser follows as a URL: only a path of the Admin itself, so nothing points to another origin. */
-const URL_ATTRIBUTES = new Set([
-  "action",
-  "background",
-  "cite",
-  "data",
-  "formaction",
-  "href",
-  "ping",
-  "poster",
-  "src",
-  "xlink:href",
+const TAGS = new Set([
+  "a",
+  "bdi",
+  "button",
+  "caption",
+  "code",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "header",
+  "input",
+  "label",
+  "li",
+  "main",
+  "option",
+  "p",
+  "section",
+  "select",
+  "span",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul",
 ]);
 /**
- * A path of this origin: one slash, then no second slash or backslash (`//host` and `/\host` are another origin to
- * the browser), no space and no control character. No scheme is allowed: the page links nowhere else.
+ * The attributes the page sets, and nothing else: no handler (`on*`), no style, no source of a frame or an image, no
+ * URL but `href`. `aria-*` is the accessibility of the page; `data-label` is the header a stacked cell shows.
  */
-const ADMIN_PATH = /^\/(?![/\\])[^\s\\]*$/;
+const ATTRIBUTES = new Set([
+  "autocomplete",
+  "class",
+  "data-label",
+  "for",
+  "hidden",
+  "href",
+  "id",
+  "maxlength",
+  "name",
+  "novalidate",
+  "required",
+  "role",
+  "scope",
+  "selected",
+  "spellcheck",
+  "tabindex",
+  "title",
+  "type",
+  "value",
+]);
+const ARIA = /^aria-[a-z]+$/;
+/**
+ * A path of this origin: one slash, then no second slash or backslash (`//host` and `/\host` are another origin to
+ * the browser), no space and no control character. No scheme is allowed: the page links nowhere else. Not a path of
+ * the API either: following a link is a GET, and a GET of the funnel is an audited read.
+ */
+const ADMIN_PATH = /^\/(?![/\\])(?!api(?:[/?#]|$))[^\s\\]*$/;
 
-/** Throws on an attribute that would run code, style the page or point outside the Admin. */
+/** Throws on an element the page does not build. */
+export function checkTag(tag: string): void {
+  if (!TAGS.has(tag.toLowerCase())) {
+    throw new Error(`the page does not make the element ${tag}`);
+  }
+}
+
+/** Throws on an attribute the page does not set, and on an `href` that is not a path of the Admin's page. */
 export function checkAttribute(name: string, value: string): void {
   const lower = name.toLowerCase();
-  if (REFUSED_ATTRIBUTE.test(lower)) {
+  if (!(ATTRIBUTES.has(lower) || ARIA.test(lower))) {
     throw new Error(`the page does not set the attribute ${lower}`);
   }
   if (
-    URL_ATTRIBUTES.has(lower) &&
+    lower === "href" &&
     !(ADMIN_PATH.test(value) && !hasControlCharacter(value))
   ) {
-    throw new Error(`the attribute ${lower} takes only a path of the Admin`);
+    throw new Error("an href takes only a path of the Admin's page");
   }
 }
 
@@ -70,6 +123,7 @@ export function createDom(document: Document): Dom {
   return {
     document,
     el: (tag, attributes = {}, ...children) => {
+      checkTag(tag);
       const element = document.createElement(tag);
       for (const [name, value] of Object.entries(attributes)) {
         checkAttribute(name, value);
@@ -122,7 +176,10 @@ function cut(text: string, limit: number): string {
 /** Bidi controls and invisible characters: harmless inside `<bdi>`, but a tooltip or an accessible name has no isolation. */
 function isInvisible(code: number): boolean {
   return (
+    code === 0xad ||
+    code === 0x06_1c ||
     (code >= 0x20_0b && code <= 0x20_0f) ||
+    (code >= 0x20_60 && code <= 0x20_64) ||
     (code >= 0x20_28 && code <= 0x20_2e) ||
     (code >= 0x20_66 && code <= 0x20_69) ||
     code === 0xfe_ff

@@ -1,4 +1,4 @@
-import type { Api } from "../api";
+import type { Api, Problem } from "../api";
 import { PROBLEM_TEXT } from "../api";
 import { tableRow } from "../blocks";
 import { type Dom, hasControlCharacter, labelName } from "../dom";
@@ -41,6 +41,20 @@ function countText(count: number, more: boolean): string {
   }
   const found = count === 1 ? "1 caso aberto." : `${count} casos abertos.`;
   return more ? `${found} Mostrando os ${CASES_PAGE} mais recentes.` : found;
+}
+
+/**
+ * What a failed opening says. Without an answer the case may have been opened all the same (the request may have
+ * reached the server): the operator looks at the list before asking again, so a case is not opened twice.
+ */
+function openProblemText(problem: Problem): string {
+  if (problem === "invalid") {
+    return `O motivo não foi aceito: use de 1 a ${MAX_REASON_LENGTH} caracteres, sem caracteres de controle.`;
+  }
+  if (problem === "network") {
+    return "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo.";
+  }
+  return PROBLEM_TEXT[problem];
 }
 
 /** Why a reason typed here would be refused by the server, or null when it would be taken (AC-11). */
@@ -206,10 +220,13 @@ export function supportCasesView(
       notice.alert(PROBLEM_TEXT[answer.problem]);
       return;
     }
-    // the server filters by store and state; a case of another store or not open is never offered, whatever came
+    // the server filters by store and state; a case of another store or not open is never offered, whatever came.
+    // A privacy case has its own workflow and capability: its reason is not shown here, nor is it offered for the read
     const cases = answer.data.cases.filter(
       (item: SupportCaseSummary) =>
-        item.organizationId === organizationId && item.status === "open"
+        item.organizationId === organizationId &&
+        item.status === "open" &&
+        item.kind === "support"
     );
     rows.replaceChildren();
     readButtons.length = 0;
@@ -242,11 +259,7 @@ export function supportCasesView(
     loading = false;
     if (!answer.ok) {
       refreshButtons();
-      notice.alert(
-        answer.problem === "invalid"
-          ? `O motivo não foi aceito: use de 1 a ${MAX_REASON_LENGTH} caracteres, sem caracteres de controle.`
-          : PROBLEM_TEXT[answer.problem]
-      );
+      notice.alert(openProblemText(answer.problem));
       return;
     }
     // the route answers the case it opened; anything else is not shown as one
