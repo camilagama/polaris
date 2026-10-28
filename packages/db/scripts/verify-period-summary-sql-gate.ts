@@ -17,6 +17,8 @@ import fc from "fast-check";
 import { createDatabase } from "../src/client";
 import {
   type EconomicsPeriod,
+  InvalidEconomicsPeriodError,
+  InvalidTopProductsError,
   MAX_ECONOMICS_PERIOD_DAYS,
   type PeriodSummaryRead,
   periodSummaryQuery,
@@ -35,11 +37,14 @@ import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { products } from "../src/schema/product";
 import {
+  TenantAuthorizationError,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { runClock, shiftDay, storeDay } from "./gate-clock";
+import { assertAllowedGateUrl } from "./gate-hosts";
+import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -59,7 +64,7 @@ import {
  * The period summary aggregated by PostgreSQL 18 (`readPeriodSummary`, one
  * statement, ADR 0054) against its definition: the engine over the facts
  * (`readPeriodFacts`, then `periodResult`, `dailyEconomics` and `topProducts`,
- * with the names read as the summary read them before). Both run as a login of
+ * with the names of the ranked products read in the same snapshot). Both run as a login of
  * the runtime role under RLS, in the same repeatable-read snapshot, and every
  * field must be equal: the chain, the cards, the daily series date by date, the
  * quality account and the ranking, and the answer of `report.periodSummary`
@@ -1150,8 +1155,8 @@ async function assertVolume(
 ) {
   const store = await propertyStore(scenarios, "volume");
   const client = await admin.connect();
-  await setCommandTriggers(admin, false);
   try {
+    await setCommandTriggers(admin, false);
     await client.query("BEGIN");
     const values = {
       category: store.categoryId,
@@ -1191,6 +1196,41 @@ async function assertVolume(
   return read.result.salesCount;
 }
 
+/** Another capability, a bad period and a ranking out of 1 to 10 are refused before any statement. */
+async function assertRefusals(scenarios: Scenarios, store: Store) {
+  const year = { from: shiftDay(store.today, -365), to: store.today };
+  await assert.rejects(
+    scenarios.as(store.tenant, "sale:read", (tx, identity) =>
+      readPeriodSummary(tx, identity, year)
+    ),
+    (error: unknown) =>
+      error instanceof TenantAuthorizationError &&
+      error.message === "capability_denied"
+  );
+  for (const period of [
+    { from: shiftDay(store.today, -366), to: store.today },
+    { from: store.today, to: shiftDay(store.today, -1) },
+    { from: "2026-02-30", to: "2026-03-01" },
+  ]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each refusal is its own read
+    await assert.rejects(
+      scenarios.as(store.tenant, "report:read", (tx, identity) =>
+        readPeriodSummary(tx, identity, period)
+      ),
+      InvalidEconomicsPeriodError
+    );
+  }
+  for (const limit of [0, 11, 2.5]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each refusal is its own read
+    await assert.rejects(
+      scenarios.as(store.tenant, "report:read", (tx, identity) =>
+        readPeriodSummary(tx, identity, year, { topProducts: limit })
+      ),
+      InvalidTopProductsError
+    );
+  }
+}
+
 /* -------------------------------------------------------------- property */
 
 interface DrawnItem {
@@ -1228,7 +1268,7 @@ interface DrawnCase {
 }
 
 const PROPERTY_PRODUCTS = 6;
-/** A month of this many sales, the largest store of the bench, before slot 0 of the property. */
+/** A month of this many sales, a busy store, before slot 0 of the property. */
 const VOLUME_SALES = 9100;
 const VOLUME_FROM = "2000-02-01";
 
@@ -1698,6 +1738,44 @@ async function propertyStore(
   };
 }
 
+/** After the drawn facts: every trigger switched off is on again. */
+async function assertCommandTriggersOn(admin: AdminPool) {
+  const triggers = await admin.query<{ enabled: string; name: string }>(
+    "SELECT tgname AS name, tgenabled::text AS enabled FROM pg_trigger WHERE tgname = ANY($1)",
+    [COMMAND_TRIGGERS.map(([, trigger]) => trigger)]
+  );
+  assert.equal(triggers.rows.length, COMMAND_TRIGGERS.length);
+  for (const trigger of triggers.rows) {
+    assert.equal(trigger.enabled, "O", `${trigger.name} is still off`);
+  }
+}
+
+/** What the drawn cases held, beyond what a result shows: each must have come up at least once. */
+interface DrawnSeen {
+  cancelledWithLinkedExpense: boolean;
+  missingPayment: boolean;
+  partialRestock: boolean;
+  repeatedReturnOfAnItem: boolean;
+  zeroPriceInDiscountedSale: boolean;
+}
+
+function noteDrawn(drawn: DrawnCase, seen: DrawnSeen) {
+  for (const sale of drawn.sales) {
+    const lines = sale.fate === "returns" ? returnLines(sale) : [];
+    const positions = lines.map((line) => line.position);
+    seen.missingPayment ||= sale.payment.kind === "missing";
+    seen.cancelledWithLinkedExpense ||=
+      sale.fate === "cancel" && sale.linked.some((expense) => !expense.voided);
+    seen.partialRestock ||= lines.some(
+      (line) => line.restocked > 0 && line.restocked < line.returned
+    );
+    seen.repeatedReturnOfAnItem ||= new Set(positions).size < positions.length;
+    seen.zeroPriceInDiscountedSale ||=
+      sale.items.some((item) => item.cents === 0) &&
+      sale.discounts.some((percent) => percent > 0);
+  }
+}
+
 async function setCommandTriggers(admin: AdminPool, enabled: boolean) {
   for (const [table, trigger] of COMMAND_TRIGGERS) {
     // biome-ignore lint/performance/noAwaitInLoops: one table at a time
@@ -1715,16 +1793,24 @@ async function assertProperty(
   tally: Tally
 ) {
   const store = await propertyStore(scenarios);
+  const drawnSeen: DrawnSeen = {
+    cancelledWithLinkedExpense: false,
+    missingPayment: false,
+    partialRestock: false,
+    repeatedReturnOfAnItem: false,
+    zeroPriceInDiscountedSale: false,
+  };
   let slot = 0;
   const property = fc.asyncProperty(caseArb, async (drawn) => {
     const slotStart = shiftDay(SLOT_ORIGIN, slot * SLOT_DAYS);
     slot += 1;
-    await setCommandTriggers(admin, false);
     try {
+      await setCommandTriggers(admin, false);
       await writeCase(admin, store, drawn, slotStart);
     } finally {
       await setCommandTriggers(admin, true);
     }
+    noteDrawn(drawn, drawnSeen);
     const from = shiftDay(slotStart, drawn.period.start);
     const last = shiftDay(slotStart, SLOT_DAYS - 1);
     const end = shiftDay(from, drawn.period.length);
@@ -1743,6 +1829,10 @@ async function assertProperty(
     seed: options.seed,
     ...(options.path ? { path: options.path } : {}),
   });
+  await assertCommandTriggersOn(admin);
+  for (const [name, value] of Object.entries(drawnSeen)) {
+    assert.ok(value, `no drawn case had ${name}`);
+  }
   return slot;
 }
 
@@ -1753,6 +1843,8 @@ async function run() {
   const parsedAdminUrl = new URL(adminUrl);
   assert.match(parsedAdminUrl.hostname, disposableHostPattern);
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
+
+  assertAllowedGateUrl(adminUrl);
 
   const admin = createDatabase(adminUrl, { maxConnections: 2 });
   let runtime: ReturnType<typeof createDatabase> | undefined;
@@ -1768,6 +1860,8 @@ async function run() {
   console.log(`gate-note: period-summary-sql seed ${seed} runs ${runs}`);
 
   try {
+    // the host list says nothing about the database behind it: a marked one is refused before any write
+    await assertDisposableEnvironment(admin.pool as unknown as MarkerClient);
     const server = await admin.pool.query<{
       database_name: string;
       server_version: string;
@@ -1823,6 +1917,10 @@ async function run() {
     tests.push(
       "a store without sales and one with only expenses equal the engine for 1, 31 and 366 days; the statement for one store run in another's context finds nothing (RLS)"
     );
+    await assertRefusals(scenarios, zones[0] as Store);
+    tests.push(
+      "another capability, a period of 367 days, an inverted one, an impossible date and a ranking of 0, 11 or 2.5 products are refused"
+    );
     const scenarioComparisons = tally.comparisons;
 
     const cases = await assertProperty(
@@ -1849,6 +1947,7 @@ async function run() {
       `gate-note: period-summary-sql compared ${tally.comparisons} summaries (${scenarioComparisons} of scenarios), ${tally.days} dates, ${tally.daysWithSales} with sales, ${tally.rankedProducts} ranked products`
     );
     const volumeSales = await assertVolume(admin.pool, scenarios, db, tally);
+    await assertCommandTriggersOn(admin.pool);
     tests.push(
       `a month of ${volumeSales} counted sales written in bulk equals the engine in every field, and the database time of the statement under RLS is printed (gate-note)`
     );

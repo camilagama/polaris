@@ -748,7 +748,7 @@ export function periodSummaryQuery(
       round(coalesce(per_day.linked, 0), 0)::text AS linked,
       coalesce(per_day.linked_count, 0)::integer AS linked_count,
       coalesce(per_day.lines, 0)::integer AS lines,
-      coalesce(per_day.units, 0)::integer AS units,
+      coalesce(per_day.units, 0)::text AS units,
       coalesce(per_day.unknown_cost, 0)::integer AS unknown_cost,
       coalesce(per_day.unknown_processing, 0)::integer AS unknown_processing,
       coalesce(per_day.unknown_anticipation, 0)::integer AS unknown_anticipation,
@@ -764,7 +764,7 @@ export function periodSummaryQuery(
             'name', top.name,
             'netCents', round(top.net_cents, 0)::text,
             'productId', top.product_id::text,
-            'quantity', top.units::integer
+            'quantity', top.units::bigint
           ) ORDER BY top.rank), '[]'::json)::text
         FROM top
       ) END AS top_products`
@@ -833,7 +833,8 @@ interface SummaryDayRow {
   surcharges: string;
   /** Only with a ranking, and only on the first date. */
   top_products?: string | null;
-  units: number;
+  /** Text: a sum of quantities can pass the range of an integer column. */
+  units: string;
   unknown_anticipation: number;
   unknown_cost: number;
   unknown_processing: number;
@@ -901,7 +902,7 @@ function resultOf(rows: readonly SummaryDayRow[], days: readonly DayCents[]) {
   const total = (part: keyof DayCents) =>
     days.reduce((sum, day) => sum + day[part], 0n);
   const count = (field: keyof SummaryDayRow) =>
-    rows.reduce((sum, row) => sum + (row[field] as number), 0);
+    rows.reduce((sum, row) => sum + Number(row[field]), 0);
   const margin = total("margin");
   const operating = total("operating");
   const result: PeriodResult = {
@@ -946,7 +947,7 @@ function rankedOf(text: string | null | undefined): TopProduct[] {
       name: entry.name,
       netSales: brl(BigInt(entry.netCents)),
       productId: entry.productId,
-      quantity: entry.quantity,
+      quantity: Number(entry.quantity),
     };
   });
 }

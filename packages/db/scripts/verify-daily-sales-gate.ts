@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { dailyEconomics } from "@polaris/domain/economics/period-series";
 import { sql } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import {
@@ -10,7 +11,7 @@ import {
   periodSalesSelect,
   periodSummaryQuery,
   readDailySales,
-  readPeriodSummary,
+  readPeriodFacts,
 } from "../src/economics-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
@@ -37,9 +38,9 @@ import {
 /**
  * The daily sales series of the Início's map (`readDailySales`) on a real
  * PostgreSQL 18: the database aggregates net sales and the count of sales of
- * each date with SQL, and this gate proves that it is the summary's
- * `readPeriodSummary(...).daily` (`netSales` and `salesCount`), date by date
- * (the gate `period-summary-sql` holds the summary to the engine),
+ * each date with SQL, and this gate proves that it is the engine's daily
+ * series (`dailyEconomics` over `readPeriodFacts`: `netSales` and
+ * `salesCount`), date by date,
  * over generated sales with discounts (fixed and percentage, split among the
  * items, with ties), partial, repeated and full returns, cancellations, sales a
  * second before and after midnight and organizations in different time zones.
@@ -175,7 +176,7 @@ class Fixture {
     return withTenantAs(this.db, tenant, capability, operation);
   }
 
-  /** The period summary needs one consistent snapshot, as the repository requires. */
+  /** The engine's daily series (the definition), over facts read in one consistent snapshot, as the repository requires. */
   summary(tenant: TenantFixture, period: EconomicsPeriod) {
     return withAuthorizedTenantTransaction(
       this.db,
@@ -185,7 +186,17 @@ class Fixture {
         isolationLevel: "repeatable read",
         requestedOrganizationId: tenant.organizationId,
       },
-      (tx, identity) => readPeriodSummary(tx, identity, period)
+      async (tx, identity) => {
+        const facts = await readPeriodFacts(tx, identity, period);
+        return {
+          daily: dailyEconomics(
+            facts.sales,
+            facts.operatingExpenseDays,
+            period.from,
+            period.to
+          ),
+        };
+      }
     );
   }
 
@@ -540,7 +551,7 @@ async function assertFixtureNotEmpty(
   );
 }
 
-/** `readDailySales` equals `readPeriodSummary(...).daily` date by date. */
+/** `readDailySales` equals the engine's daily series date by date. */
 async function assertEquivalence(fixture: Fixture, stores: Store[]) {
   let comparedDays = 0;
   let daysWithSales = 0;
@@ -866,7 +877,7 @@ async function run() {
       stores.push(await seedStore(fixture, timezone));
     }
     tests.push(
-      "a sale a second before midnight and one a second after fall on their own dates, and three sales worked out by hand (the discount split with a tie, 1.94; one item returned in two times, 1.98; a share of the discount of exactly half a cent, 1.00) are the same in the series and in the summary, in São Paulo, Tokyo and Auckland"
+      "a sale a second before midnight and one a second after fall on their own dates, and three sales worked out by hand (the discount split with a tie, 1.94; one item returned in two times, 1.98; a share of the discount of exactly half a cent, 1.00) are the same in the series and in the engine, in São Paulo, Tokyo and Auckland"
     );
     await moveSomeBack(admin.pool, stores);
     await assertFixtureNotEmpty(admin.pool, fixture, stores);
@@ -876,7 +887,7 @@ async function run() {
       stores
     );
     tests.push(
-      `the SQL series equals periodSummary.daily (netSales and salesCount) date by date: ${comparedDays} dates compared, ${daysWithSales} with sales, in 5 windows of up to 182 days per store, over fixed and percentage discounts, partial, repeated and full returns, cancellations and freight`
+      `the SQL series equals the engine's daily series (netSales and salesCount) date by date: ${comparedDays} dates compared, ${daysWithSales} with sales, in 5 windows of up to 182 days per store, over fixed and percentage discounts, partial, repeated and full returns, cancellations and freight`
     );
 
     await assertScope(admin.pool, fixture, stores);
