@@ -198,6 +198,62 @@ export function planNoticeRetryDelayMs(failures: number): number {
   return Math.min(60_000 * 2 ** Math.max(failures - 1, 0), 600_000);
 }
 
+/**
+ * The wait after failed reads, of ONE store: the reads that failed in a row and the first instant the next one may
+ * start. It names its store, so a wait never carries over to another one (the user switching stores) and the answer
+ * of a read that was started for a store is never counted in another's.
+ */
+export interface PlanReadBackoff {
+  failures: number;
+  organizationId: string;
+  retryAt: number;
+}
+
+/** No failure yet, in this store. */
+export function noPlanReadBackoff(organizationId: string): PlanReadBackoff {
+  return { failures: 0, organizationId, retryAt: 0 };
+}
+
+/** The wait that applies to this store: the one kept, or none when it is of another store. */
+export function planReadBackoffFor(
+  backoff: PlanReadBackoff,
+  organizationId: string
+): PlanReadBackoff {
+  return backoff.organizationId === organizationId
+    ? backoff
+    : noPlanReadBackoff(organizationId);
+}
+
+/** A read of this store worked: its wait is over. The answer of a store no longer the one kept changes nothing. */
+export function planReadSucceeded(
+  backoff: PlanReadBackoff,
+  organizationId: string
+): PlanReadBackoff {
+  return backoff.organizationId === organizationId
+    ? noPlanReadBackoff(organizationId)
+    : backoff;
+}
+
+/**
+ * A read of this store failed: one more failure, and the wait counted from `startedAt`, the minute that started the
+ * read, so it is not stretched by the answer's delay. The failure of a store no longer the one kept changes nothing.
+ */
+export function planReadFailed(
+  backoff: PlanReadBackoff,
+  organizationId: string,
+  startedAt: number
+): PlanReadBackoff {
+  if (backoff.organizationId !== organizationId) {
+    return backoff;
+  }
+  const failures = backoff.failures + 1;
+  return {
+    failures,
+    organizationId,
+    retryAt: startedAt + planNoticeRetryDelayMs(failures),
+  };
+}
+
 /** Read again: never read, older than the few minutes, or read "in the future" (the device's clock went back). */
 export function planNoticeIsOld(
   remembered: Pick<RememberedNotice, "readAt"> | null,

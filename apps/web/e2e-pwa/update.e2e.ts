@@ -49,7 +49,7 @@ test("uma nova versão aparece como aviso, sem recarregar sozinha, e só troca q
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
   await expect(banner).toHaveCount(0);
 
-  // both builds' shells are kept (the previous one for pages still open)
+  // both builds' shells are kept (the previous ones for pages still open)
   const names = await page.evaluate(() => caches.keys());
   expect(names).toHaveLength(2);
 });

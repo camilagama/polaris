@@ -92,19 +92,60 @@ describe("the shell caches", () => {
     );
   });
 
-  it("keep the current build and the newest other (the last created), and drop the rest, and only ours", () => {
-    const current = shellCacheName({ id: "c" });
+  it("keep the current build and the two newest others (the last created), and drop the rest, and only ours", () => {
+    const current = shellCacheName({ id: "e" });
     // in the order of creation, as `caches.keys()` lists them
     const names = [
       shellCacheName({ id: "z" }),
       shellCacheName({ id: "a" }),
       "someone-elses-cache",
       shellCacheName({ id: "b" }),
+      shellCacheName({ id: "c" }),
       current,
     ];
     expect(cachesToDelete(names, current).sort()).toEqual(
       [shellCacheName({ id: "z" }), shellCacheName({ id: "a" })].sort()
     );
+  });
+
+  it.each([
+    { deleted: [], shells: 1 },
+    { deleted: [], shells: 2 },
+    { deleted: [], shells: 3 },
+    { deleted: ["b1"], shells: 4 },
+    { deleted: ["b1", "b2"], shells: 5 },
+  ])(
+    "with $shells shells (the current one included) delete $deleted",
+    ({ shells, deleted }) => {
+      const ids = ["b1", "b2", "b3", "b4", "b5"].slice(0, shells);
+      const names = ids.map((id) => shellCacheName({ id }));
+      const current = names.at(-1) as string;
+      expect(cachesToDelete(names, current)).toEqual(
+        deleted.map((id) => shellCacheName({ id }))
+      );
+    }
+  );
+
+  it("never delete a cache that is not a shell, however many builds there are", () => {
+    const current = shellCacheName({ id: "b4" });
+    const names = [
+      "someone-elses-cache",
+      shellCacheName({ id: "b1" }),
+      "polaris-data",
+      shellCacheName({ id: "b2" }),
+      shellCacheName({ id: "b3" }),
+      current,
+    ];
+    expect(cachesToDelete(names, current)).toEqual([
+      shellCacheName({ id: "b1" }),
+    ]);
+  });
+
+  it("keep fewer previous builds when asked, down to none", () => {
+    const names = ["a", "b", "c"].map((id) => shellCacheName({ id }));
+    const current = shellCacheName({ id: "c" });
+    expect(cachesToDelete(names, current, 1)).toEqual([names[0]]);
+    expect(cachesToDelete(names, current, 0)).toEqual([names[0], names[1]]);
   });
 
   it("count the caches named with the time of the build (before t344) as older ones, in the order they were created", () => {
@@ -113,16 +154,10 @@ describe("the shell caches", () => {
     const names = [
       legacy("001792882534887"),
       legacy("001792887639279"),
+      legacy("001792889999999"),
       current,
     ];
     expect(cachesToDelete(names, current)).toEqual([legacy("001792882534887")]);
-  });
-
-  it("keep everything when there is nothing older than one previous build", () => {
-    const current = shellCacheName({ id: "b" });
-    expect(
-      cachesToDelete([shellCacheName({ id: "a" }), current], current)
-    ).toEqual([]);
   });
 });
 
@@ -547,18 +582,20 @@ describe("the worker as the browser runs it", () => {
     expect(worker.skipWaiting).toHaveBeenCalledTimes(1);
   });
 
-  it("activating a build removes old shell caches but keeps the previous one and other caches", async () => {
+  it("activating a build removes old shell caches but keeps the two previous ones and other caches", async () => {
     const worker = await runWorker(build);
-    // created in this order: the previous build is the one created last
+    // created in this order: the previous builds are the ones created last
+    const oldest = shellCacheName({ id: "oldest" });
     const old = shellCacheName({ id: "old" });
     const previous = shellCacheName({ id: "prev" });
+    worker.stores.set(oldest, new Map());
     worker.stores.set(old, new Map());
     worker.stores.set(previous, new Map());
     worker.stores.set("unrelated", new Map());
     await worker.run("install", {});
     await worker.run("activate", {});
     expect([...worker.stores.keys()].sort()).toEqual(
-      [previous, shellCacheName(build), "unrelated"].sort()
+      [old, previous, shellCacheName(build), "unrelated"].sort()
     );
   });
 

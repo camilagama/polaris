@@ -135,21 +135,29 @@ export function routeFor(
   return precache.has(url.pathname) ? "asset" : "bypass";
 }
 
+/** How many builds before the current one keep their shell (see `cachesToDelete`). */
+const KEEP_PREVIOUS_BUILDS = 2;
+
 /**
  * Of the shell caches present, the ones to delete: everything except the current
- * build and the newest other one. The previous build is kept because a page that
- * is still open may load one more lazy chunk of it. `names` come in the order the
- * caches were created (what `caches.keys()` returns), which is the order of the
- * builds: the names carry no time.
+ * build and the `keepPrevious` newest other ones. The previous builds are kept
+ * because a page that is still open may load one more lazy chunk of its own build,
+ * and a tab left open through two updates is still on the build before the previous
+ * one. A tab open through three or more updates loses its chunks: that case falls
+ * to the reload-once of the error boundary (`reloadOnceForChunkError`), which can
+ * cost what was typed and not saved; keeping more shells costs a copy of the precache each (about 1 MB gzip,
+ * more on disk: not measured). `names` come in the order the caches were created (what
+ * `caches.keys()` returns), which is the order of the builds: the names carry no time.
  */
 export function cachesToDelete(
   names: readonly string[],
-  current: string
+  current: string,
+  keepPrevious = KEEP_PREVIOUS_BUILDS
 ): string[] {
   const others = names.filter(
     (name) => name.startsWith(SHELL_CACHE_PREFIX) && name !== current
   );
-  return others.slice(0, -1);
+  return others.slice(0, Math.max(others.length - keepPrevious, 0));
 }
 
 /** The messages a page may send. */

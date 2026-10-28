@@ -6,10 +6,14 @@ import {
   daysUntil,
   graceNotice,
   legacyCheckoutReturnPath,
+  noPlanReadBackoff,
   PLAN_NOTICE_FOR_MS,
   PLAN_NOTICE_KEY,
   planNoticeIsOld,
   planNoticeRetryDelayMs,
+  planReadBackoffFor,
+  planReadFailed,
+  planReadSucceeded,
   rememberedPlanNotice,
   rememberPlanNotice,
   untilText,
@@ -1036,5 +1040,56 @@ describe("planNoticeRetryDelayMs", () => {
     expect(
       [1, 2, 3, 4, 5, 6, 20].map((failures) => planNoticeRetryDelayMs(failures))
     ).toEqual([60_000, 120_000, 240_000, 480_000, 600_000, 600_000, 600_000]);
+  });
+});
+
+describe("the wait after failed reads of the notice, by store", () => {
+  const MINUTE = 60_000;
+  const T0 = Date.parse("2026-10-28T15:00:00.000Z");
+
+  it("counts the failures of a store, the wait doubling from its first minute", () => {
+    let backoff = noPlanReadBackoff("store-a");
+    backoff = planReadFailed(backoff, "store-a", T0);
+    expect(backoff).toEqual({
+      failures: 1,
+      organizationId: "store-a",
+      retryAt: T0 + MINUTE,
+    });
+    backoff = planReadFailed(backoff, "store-a", T0 + MINUTE);
+    expect(backoff.retryAt).toBe(T0 + 3 * MINUTE);
+    expect(planReadSucceeded(backoff, "store-a")).toEqual(
+      noPlanReadBackoff("store-a")
+    );
+  });
+
+  it("does not carry the wait of store A to store B: B reads on the next minute", () => {
+    let backoff = noPlanReadBackoff("store-a");
+    backoff = planReadFailed(backoff, "store-a", T0);
+    backoff = planReadFailed(backoff, "store-a", T0 + MINUTE);
+    // A is waiting until T0 + 3 min; the screen switches to B at T0 + 1 min
+    const switchedAt = T0 + MINUTE;
+    expect(backoff.retryAt).toBeGreaterThan(switchedAt + MINUTE);
+    backoff = planReadBackoffFor(backoff, "store-b");
+    expect(backoff).toEqual(noPlanReadBackoff("store-b"));
+    expect(backoff.retryAt).toBeLessThanOrEqual(switchedAt + MINUTE);
+    expect(backoff.failures).toBe(0);
+  });
+
+  it("keeps the wait while the store stays the same", () => {
+    const backoff = planReadFailed(noPlanReadBackoff("store-a"), "store-a", T0);
+    expect(planReadBackoffFor(backoff, "store-a")).toBe(backoff);
+  });
+
+  it("ignores the late answer of a read of store A after the switch to B", () => {
+    const afterSwitch = planReadFailed(
+      noPlanReadBackoff("store-b"),
+      "store-b",
+      T0
+    );
+    // a late success of A does not clear B's wait, and a late failure of A does not add to it
+    expect(planReadSucceeded(afterSwitch, "store-a")).toBe(afterSwitch);
+    expect(planReadFailed(afterSwitch, "store-a", T0 + 5 * MINUTE)).toBe(
+      afterSwitch
+    );
   });
 });

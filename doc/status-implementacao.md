@@ -888,7 +888,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | --- | --- | --- |
 | Base | Concluída | Branch `codex/pr60-pwa-service-worker` sobre `codex/pr59-logout-pending`. |
 | Decisões | Tomadas pelo projeto | [ADR 0040](../docs/adr/0040-service-worker-do-app-shell.md): worker próprio de três funções (pré-guardar o shell, navegação rede-primeiro com o shell como reserva, arquivos pré-guardados do cache); nunca intercepta `/rpc`, `/api`, `/health`, `/ready`; cache por build; sem `skipWaiting` nem `clients.claim()`; sem biblioteca de PWA. |
-| Worker | Concluído | `src/pwa/sw.ts` (roteamento, nome de cache ordenável, limpeza que mantém a build atual e a anterior, mensagem `SKIP_WAITING`); busca ignorando `Vary`. |
+| Worker | Concluído | `src/pwa/sw.ts` (roteamento, nome de cache ordenável, limpeza que mantém a build atual e as duas anteriores (t453), mensagem `SKIP_WAITING`); busca ignorando `Vary`. |
 | Build | Concluído | `pwa/service-worker-plugin.ts` emite `sw.js` com o id da build, o instante e a lista de arquivos; `public/_headers` revalida `/sw.js`. |
 | Instalável | Concluído | `manifest.webmanifest`, ícones PNG (any, maskable, apple-touch) rasterizados dos SVG de `design/icone-app/`, links no `index.html`. |
 | Registro | Concluído | `src/pwa/register.ts` (produção, suporte, contexto seguro, depois do `load`, nunca nos laboratórios offline); chamado em `main.tsx`. |
