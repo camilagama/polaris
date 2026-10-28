@@ -175,13 +175,13 @@ function rpcReply(asked: string, input: string): Reply {
   if (!HOME_READS.includes(asked)) {
     return NOT_FOUND;
   }
-  let sent: { json?: Record<string, unknown> };
+  let sent: { json?: Record<string, unknown> } | null;
   try {
     sent = JSON.parse(input || "{}");
   } catch {
     return { body: "{}", status: 400 };
   }
-  const served = answer(asked, sent.json ?? {}, {
+  const served = answer(asked, sent?.json ?? {}, {
     failing: false,
     fresh: false,
   });
@@ -279,10 +279,11 @@ const PHOTO_ROUTE = /^\/(?:[^/]+\/)?m\/[^/]+\/[^/?]+/;
 
 /**
  * The stylesheet of the catalog answers this long after it is asked for. The first paint waits for it, while the scripts
- * are asked for at the top of the page; over a real network the first paint comes a round trip or more after that
- * request. Here the stylesheet arrives within milliseconds, so the first paint came before or after the scripts were
- * asked for from one round to the next, and the Lantern graph of the FCP and the LCP held them or not: the simulated
- * LCP of the page jumped by about a second while the LCP the browser saw was the same.
+ * are asked for at the top of the page; over a real network the first paint comes a round trip or more after the
+ * scripts finish downloading. Here the stylesheet arrives within milliseconds, so the first paint came before or after
+ * the scripts finished downloading from one round to the next, and the Lantern graph of the FCP and the LCP held them
+ * or not (it keeps what ended before the paint: FirstContentfulPaint.js of the Lantern in Lighthouse): the simulated LCP
+ * of the page jumped by about a second while the LCP the browser saw was the same.
  */
 const STYLESHEET_DELAY_MS = 600;
 const STYLESHEET = /\.css$/;

@@ -140,13 +140,13 @@ describe("the rounds of the Lighthouse run", () => {
 
   it("tabulates the median of each metric and the range of the LCP, one row per page", () => {
     const rounds = [
-      round(SIGN_IN, "a", 1200, 3400),
-      round(SIGN_IN, "b", 1200, 3600),
-      round(SIGN_IN, "c", 1200, 3500),
+      round(SIGN_IN, "a", 1180, 3400),
+      round(SIGN_IN, "b", 1290, 3600),
+      round(SIGN_IN, "c", 1250, 3500),
       round(HOME, "d", 1200, 5000),
     ];
     expect(summaryTable(rounds).split("\n").slice(2)).toEqual([
-      "| /entrar | 3 | 3500 | 120 | 0.050 | 300000 | 5.7% | 1200 a 1200 |",
+      "| /entrar | 3 | 3500 | 120 | 0.050 | 300000 | 5.7% | 1180 a 1290 |",
       "| / (Início) | 1 | 5000 | 120 | 0.050 | 300000 | 0.0% | 1200 a 1200 |",
     ]);
   });

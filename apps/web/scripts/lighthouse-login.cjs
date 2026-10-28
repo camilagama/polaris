@@ -7,7 +7,9 @@ const READY = {
   "/": () =>
     document.querySelector("h1")?.textContent === "Início" &&
     document.body.textContent.includes("Camiseta básica"),
-  "/entrar": () => document.body.textContent.includes("Continuar com o Google"),
+  "/entrar": () =>
+    document.body.textContent.includes("Continuar com o Google") &&
+    !document.querySelector("input[type=password]"),
   "/loja-horizonte": () =>
     document.querySelector("main h1")?.textContent === "Loja Horizonte",
 };
