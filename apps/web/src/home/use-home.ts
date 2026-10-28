@@ -39,7 +39,7 @@ import {
 } from "./home-model";
 
 /**
- * The reads of the Início (Início design, § 2.4 and § 5): A and B (the figures), G (the goals) and S (no stock) in
+ * The reads of the Início: A and B (the figures), G (the goals) and S (no stock) in
  * parallel; C (no cost) and the checklist reads (V, P, E) only when A asks for them. Each block has its own state, so
  * one that fails never takes the others with it (§ 5.2), and "Nova venda" depends on none of them.
  *

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Tailwind only generates the classes of the files the `@source` lines of the CSS entry name: a `.tsx` of a
- * migrated screen left out of them ships without its utilities (PR 229: `md:w-fit` of the row buttons of the
+ * migrated screen left out of them ships without its utilities (e.g. `md:w-fit` of the row buttons of the
  * stock list was never generated). A file counts as migrated when it imports a component of `src/ui`; it must be
  * covered by some `@source`. The list stays file by file, not a folder glob, as it was written while old screens
  * still lived beside the new ones (ADR 0103, section 3); turning it into a glob of `src` is a decision of its own.

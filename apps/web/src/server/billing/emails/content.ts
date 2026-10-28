@@ -1,5 +1,5 @@
 /**
- * What one e-mail of the billing cycle says (corte `emails-ciclo-cobranca`, drafts of the texts; design § 9):
+ * What one e-mail of the billing cycle says (corte `emails-ciclo-cobranca`, drafts of the texts):
  * the subject, the preview, the paragraphs and the one button, to the app's own screens with an absolute address and
  * no tracking parameter (AC-16). The texts are the corte's; each kind has its file next to this one.
  */

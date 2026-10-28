@@ -25,7 +25,8 @@ const word = (source) =>
 
 // The name list is the team and its bots; a name is a capitalized word, so the match is case-sensitive.
 const rules = [
-  { kind: "id de tarefa", pattern: /\bt\d{3,4}\b/ },
+  { kind: "id de tarefa", pattern: /\bt\d{3,4}\b/i },
+  { kind: "número de PR", pattern: /\bPR\s+#?\d{3,}\b|\bPR\s*#\d+/ },
   {
     kind: "nome de pessoa ou bot",
     pattern: word(
@@ -84,11 +85,11 @@ const regexAfterWord = new Set([
   "yield",
   "await",
 ]);
-const regexAfterPunctuation = "(,=:[!&|?{};+-*%<>~^";
+const regexAfterPunctuation = "(,=:[!&|?{};*%~^";
 
 /**
  * Walks a source once and collects its comments. Strings, template literals (with nested `${}`) and
- * regex literals are skipped, so "t123" inside a string is not a comment. A quoted string ends at the
+ * regex literals are skipped, so a task id inside a string is not a comment. A quoted string ends at the
  * line break: an apostrophe in JSX text then cannot swallow the rest of the file.
  */
 class CommentScanner {
@@ -120,7 +121,7 @@ class CommentScanner {
       this.lineComment();
     } else if (char === "/" && next === "*") {
       this.blockComment();
-    } else if (char === '"' || char === "'") {
+    } else if ((char === '"' || char === "'") && !this.afterWord()) {
       this.quoted(char);
     } else if (char === "`") {
       this.index += 1;
@@ -155,12 +156,20 @@ class CommentScanner {
     this.index = end === -1 ? this.source.length : end + 2;
   }
 
+  // A quote glued to a word is an apostrophe of JSX text ("Don't"), never the start of a string.
+  afterWord() {
+    return identifierChar.test(this.source[this.index - 1] ?? "");
+  }
+
   quoted(quote) {
     this.index += 1;
     while (this.index < this.source.length) {
       const char = this.source[this.index];
       if (char === "\n") {
         break;
+      }
+      if (char === "\\" && this.source[this.index + 1] === "\n") {
+        this.line += 1;
       }
       this.index += char === "\\" ? 2 : 1;
       if (char === quote) {
@@ -233,6 +242,9 @@ class CommentScanner {
   regexAllowed() {
     if (this.previous === "" || regexAfterPunctuation.includes(this.previous)) {
       return true;
+    }
+    if (this.previous === ">") {
+      return this.source.slice(0, this.index).trimEnd().endsWith("=>");
     }
     if (!identifierChar.test(this.previous)) {
       return false;

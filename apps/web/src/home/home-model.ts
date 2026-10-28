@@ -6,7 +6,7 @@ import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
 /**
- * Pure rules of the Início (Início design, § 2.4 and § 5): which periods it reads, what "today" is, the line under
+ * Pure rules of the Início: which periods it reads, what "today" is, the line under
  * the title, the series of the chart, which goal the card shows, the lines of "Precisa de atenção" and the checklist
  * of a store with no sale (the KPI cards are in home-kpis.ts). Every figure is the server's; money is added in
  * exact cents (`Money`), never as a float, and the numbers given to a drawing are only for the drawing.

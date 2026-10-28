@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ADVICE,
@@ -14,6 +15,10 @@ import {
 
 // the opening of a template expression, spelled out so the fixtures below are not strings that look like one
 const OPEN = "${";
+
+const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+const scannedPath = /^(?:apps|packages)\/[^/]+\/(?:src|worker|scripts)\//;
 
 const kinds = (source) =>
   checkSource(source).map((violation) => violation.kind);
@@ -48,6 +53,9 @@ describe("forbidden patterns in a comment", () => {
     ["// decisão de 19/10/2026", "data"],
     ["// em 5/3/26", "data"],
     ["// emenda de 01/10", "data"],
+    ["// condição do PR 296", "número de PR"],
+    ["// PR #296", "número de PR"],
+    ["// T399-3 do desenho", "id de tarefa"],
   ])("%s", (source, kind) => {
     expect(kinds(source)).toContain(kind);
   });
@@ -155,6 +163,23 @@ describe("what counts as a comment", () => {
     ]);
   });
 
+  it.each([
+    "const a = <p><b>x</b> {/* t123 */}</p>;",
+    "const a = <b>x</b>; // t123",
+    "const a = <p>Don't</p>; // t123",
+    "n++ / 2; // t123",
+    "const f = (x) => /a\\/b/.test(x); // t123",
+    "const s = 'x\\\n y'; // t123",
+  ])("reads the comment after %s", (source) => {
+    expect(checkSource(source)).toEqual([
+      { line: expect.any(Number), kind: "id de tarefa", match: "t123" },
+    ]);
+  });
+
+  it("counts the line after a line continuation inside a string", () => {
+    expect(checkSource("const s = 'x\\\n y'; // t123")[0].line).toBe(2);
+  });
+
   it("reads JSX comments", () => {
     expect(checkSource("<div>{/* Rodrigo, 25/10 */}</div>")).toHaveLength(2);
   });
@@ -238,6 +263,23 @@ describe("scanned files", () => {
 });
 
 describe("the repository", () => {
+  it("scans the real tree: every root, test files included, and nothing outside them", () => {
+    const files = collectFiles().map((file) => path.relative(root, file));
+    expect(files.length).toBeGreaterThan(500);
+    for (const known of [
+      "apps/web/worker/index.ts",
+      "apps/web/src/app-shell/app-shell.tsx",
+      "apps/admin/src/worker.ts",
+      "apps/catalog/src/server/catalog.workerd-db.test.ts",
+      "packages/domain/src/index.ts",
+      "packages/db/scripts/gate-clock.ts",
+    ]) {
+      expect(files).toContain(known);
+    }
+    expect(files.some((file) => file.endsWith(".test.ts"))).toBe(true);
+    expect(files.filter((file) => !scannedPath.test(file))).toEqual([]);
+  });
+
   it("has no comment with history", () => {
     const failures = checkRepository().map(
       ({ file, line, kind, match }) => `${file}:${line} ${kind} "${match}"`

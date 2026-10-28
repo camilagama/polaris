@@ -19,7 +19,7 @@ import {
 } from "./plan-notice";
 
 /**
- * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17; design, § 11; the wireframes).
+ * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17).
  * Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
  * counted on the client but the day the trial's first charge would fall on, before any checkout (the same rule the
  * server sets at the provider).
@@ -510,7 +510,7 @@ export function checkoutReturnOf(search: string): CheckoutReturn | null {
     : null;
 }
 
-/** Every 5 s for up to 2 min, then "Atualizar" (design, § 3). */
+/** Every 5 s for up to 2 min, then "Atualizar". */
 export const REREAD_EVERY_MS = 5000;
 export const REREAD_FOR_MS = 120_000;
 

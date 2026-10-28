@@ -84,9 +84,9 @@ export interface BillingNoticeTransition {
 }
 
 /**
- * The notices one applied change of the record records (EM-1 to EM-5, EM-7): one transition, one notice, from the
- * table of the design (§9). The caller calls it only for a fact that was applied, or for what time caused: a fact that
- * was ignored (duplicated, stale or out of order) records nothing (EM-3).
+ * The notices one applied change of the record records (EM-1 to EM-5, EM-7): one transition, one notice. The caller
+ * calls it only for a fact that was applied, or for what time caused: a fact that was ignored (duplicated, stale or
+ * out of order) records nothing (EM-3).
  */
 export function noticesFor(
   input: BillingNoticeTransition

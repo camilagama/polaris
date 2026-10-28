@@ -218,7 +218,7 @@ async function assertOldCheckoutMadeNoSubscription(
 
 /**
  * Before the organization's link is replaced, the renewal of the subscription it names is cancelled at the
- * provider (ADR 0104, condition (a) of PR 296): a subscription refunded or charged back whose
+ * provider (ADR 0104): a subscription refunded or charged back whose
  * renewal the hourly safety net had not cancelled yet would stay alive once the new link clears its memory
  * (`revoked_*`), and charge again with no organization behind it. Only a link a subscription came from
  * (`provider_subscription_id`); a checkout nobody paid is the next check's. The checkout is refused if the provider
