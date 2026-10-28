@@ -26,3 +26,8 @@ apps/web/.e2e-state/
 
 # A página do Admin: o script e a folha gerados pelo build:ui (apps/admin/package.json)
 apps/admin/src/ui/generated/
+
+# Mutação (Stryker) em packages/domain: relatório, arquivo incremental e cópia temporária
+packages/domain/reports/
+packages/domain/.stryker-tmp/
+packages/domain/stryker-setup-*.js
