@@ -1,7 +1,7 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button, buttonVariants } from "@/ui/button";
-import { reportRenderError } from "../observability/sentry";
+import { reportClientError } from "../lib/client-errors";
 import { isChunkLoadError, reloadOnceForChunkError } from "./chunk-load-error";
 import { StatePanel } from "./state-panel";
 
@@ -44,8 +44,13 @@ export class ErrorBoundary extends Component<
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Reported only when the build has a Sentry DSN (ADR 0098); the fallback below is the contract either way.
-    reportRenderError(error, info);
+    // One report, to Sentry when the build has its DSN or else to the route of the Worker when the build has it on
+    // (ADR 0098, amended); the fallback below is the contract either way.
+    reportClientError(error, {
+      boundary: this.props.fullPage ? "app" : "screen",
+      kind: isChunkLoadError(error) ? "chunk" : "boundary",
+      renderInfo: info,
+    });
   }
 
   readonly handleRetry = () => {

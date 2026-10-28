@@ -198,7 +198,10 @@ export function previewEnvironment(
     BETTER_AUTH_BASE_URL: assertLoopbackBaseUrl(baseURL).origin,
     BETTER_AUTH_SECRET: run.secret,
     CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
+    // the reports of errors of the browser, on in the build and in the Worker: a journey checks the line they make
+    CLIENT_ERRORS_ENABLED: "1",
     LEGAL_DRAFT_BUILD: "1",
+    VITE_CLIENT_ERRORS_ENABLED: "true",
     VITE_CONFIG_NATIVE_IGNORE_WARNING: "true",
     VITE_OFFLINE_RUNTIME_ENABLED: offlineRuntime ? "true" : "false",
     ...Object.fromEntries(

@@ -203,6 +203,32 @@ describe("the fetch of the web worker", () => {
     expect(response.status).toBe(403);
   });
 
+  it("takes the report of an error of the browser in workerd: 204 for a valid event, 413 for a body over 2 KiB", async () => {
+    const report = (body: string) =>
+      exports.default.fetch("https://web.test/api/client-errors", {
+        body,
+        headers: {
+          "cf-connecting-ip": "203.0.113.71",
+          "content-type": "application/json",
+          origin: "https://web.test",
+        },
+        method: "POST",
+      });
+    const valid = await report(
+      JSON.stringify({
+        errorName: "TypeError",
+        frames: ["sale-form-model-BX3k9a1Z.js:12:34"],
+        kind: "error",
+        routeId: "sale",
+        v: 1,
+      })
+    );
+    expect(valid.status).toBe(204);
+    expect(await valid.text()).toBe("");
+    const oversized = await report("x".repeat(2 * 1024 + 1));
+    expect(oversized.status).toBe(413);
+  });
+
   it("answers a visitor without a cookie that there is no session, through the authentication role", async () => {
     const response = await exports.default.fetch(
       "https://web.test/api/auth/get-session",

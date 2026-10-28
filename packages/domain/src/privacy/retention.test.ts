@@ -179,11 +179,13 @@ describe("review state", () => {
   });
 
   it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
-    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended) and the notices of billing (ADR 0104)
-    // came later: their period waits for the responsible person
+    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended), the notices of billing (ADR 0104)
+    // and the reports of errors of the browser (ADR 0098, amended) came later: their period waits for the responsible
+    // person
     const undecided = [
       "billing_notices",
       "billing_trial_claims",
+      "client_error_log",
       "closure_notice",
     ];
     for (const policy of RETENTION_POLICIES) {
