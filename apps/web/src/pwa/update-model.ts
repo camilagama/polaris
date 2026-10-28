@@ -1,18 +1,15 @@
 /**
- * What to do when a new build of the app is waiting (plan PR61). An update swaps
- * the files under the running app, and the commands in the outbox were made by
- * the version that is running. So the rule is: never swap while work is queued.
+ * When a new build of the app goes in (ADR 0041, emenda de 28/10/2026): by itself, with nobody asked, at a moment
+ * when nobody is looking and nothing on the page would be lost (`swap-guard.ts`). The moments:
  *
- * - nothing waiting: nothing to offer;
- * - waiting, queue empty: the person can update now (never automatically);
- * - waiting, work queued and nothing refused: send first, then update, and only
- *   if the queue really ended up empty;
- * - waiting, something refused: the update is deferred until the person has
- *   resolved it (it blocks the queue, so the queue cannot be emptied).
+ * - `hidden`: the tab went to the background;
+ * - `return`: the tab came back after `RETURN_AFTER_MS` or more away, before the first touch, key or scroll;
+ * - `idle`: the tab is in front with no touch, key or scroll for `IDLE_MS`, and the build has waited more than
+ *   `IDLE_WAITING_MS` (the counter computer that is never hidden); the screen comes back where it was.
  *
- * There is no way to update over queued work: the durable queue would survive a
- * reload, but a new version may read its commands differently, and the
- * update can always wait one more day.
+ * And never a build published less than `SETTLE_MS` ago: a bad build stops reaching everyone in the same minute. The
+ * time is the one the build carries (the commit's), less `CLOCK_TOLERANCE_MS` for a device clock ahead; with no time
+ * in the build, or one in the device's future (a clock behind), the age counts from when this page first saw it.
  */
 export interface PendingWork {
   pending: number;
@@ -20,36 +17,13 @@ export interface PendingWork {
   sending: number;
 }
 
-export type UpdateOffer =
-  | { kind: "after_sync"; pending: number; sending: number }
-  | { kind: "deferred"; rejected: number; total: number }
-  | { kind: "none" }
-  | { kind: "ready" };
-
 export const NO_PENDING_WORK: PendingWork = {
   pending: 0,
   rejected: 0,
   sending: 0,
 };
 
-export function offerFor(
-  updateWaiting: boolean,
-  work: PendingWork
-): UpdateOffer {
-  if (!updateWaiting) {
-    return { kind: "none" };
-  }
-  const total = work.pending + work.sending + work.rejected;
-  if (total === 0) {
-    return { kind: "ready" };
-  }
-  if (work.rejected > 0) {
-    return { kind: "deferred", rejected: work.rejected, total };
-  }
-  return { kind: "after_sync", pending: work.pending, sending: work.sending };
-}
-
-/** Where the app reads its queued work and sends it; the offline runtime plugs in here. */
+/** Where the app reads its queued work; the offline runtime plugs in here. */
 export interface PendingWorkSource {
   read: () => Promise<PendingWork>;
   /** Sends the queue; rejects when it cannot (no network). */
@@ -61,33 +35,33 @@ export const idleWorkSource: PendingWorkSource = {
   sync: () => Promise.resolve(),
 };
 
-export type ApplyOutcome =
-  | { status: "applying" }
-  | { reason: "queue_not_empty" | "sync_failed"; status: "deferred" };
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 
-/**
- * The person asked to update. Sends first when work is queued, re-reads the queue
- * and applies only when it is empty; otherwise the update stays deferred.
- */
-export async function applyWhenSafe(
-  source: PendingWorkSource,
-  apply: () => Promise<void> | void
-): Promise<ApplyOutcome> {
-  let work = await source.read();
-  if (work.pending + work.sending + work.rejected > 0) {
-    if (work.rejected > 0) {
-      return { reason: "queue_not_empty", status: "deferred" };
-    }
-    try {
-      await source.sync();
-    } catch {
-      return { reason: "sync_failed", status: "deferred" };
-    }
-    work = await source.read();
-    if (work.pending + work.sending + work.rejected > 0) {
-      return { reason: "queue_not_empty", status: "deferred" };
-    }
+export const SETTLE_MS = 2 * HOUR;
+export const CLOCK_TOLERANCE_MS = 10 * MINUTE;
+export const RETURN_AFTER_MS = 5 * MINUTE;
+export const IDLE_MS = 15 * MINUTE;
+export const IDLE_WAITING_MS = 24 * HOUR;
+
+export type SwapMoment = "hidden" | "idle" | "return";
+
+/** How long the build has been out, as far as this device can tell (see above). */
+export function waitedFor(
+  publishedAt: number | null,
+  firstSeenAt: number,
+  now: number
+): number {
+  if (publishedAt !== null && publishedAt <= now + CLOCK_TOLERANCE_MS) {
+    return now - publishedAt - CLOCK_TOLERANCE_MS;
   }
-  await apply();
-  return { status: "applying" };
+  return now - firstSeenAt;
+}
+
+/** Whether a build that has waited this long may go in at this moment (the page's guard comes after). */
+export function momentAllows(moment: SwapMoment, waited: number): boolean {
+  if (waited < SETTLE_MS) {
+    return false;
+  }
+  return moment !== "idle" || waited > IDLE_WAITING_MS;
 }

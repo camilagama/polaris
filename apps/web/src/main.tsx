@@ -12,7 +12,13 @@ import {
   browserRegisterEnvironment,
   registerServiceWorker,
 } from "./pwa/register";
-import { checkForUpdatesRegularly, getUpdateStore } from "./pwa/runtime";
+import { restoreScrollAfterSwap } from "./pwa/auto-swap";
+import {
+  checkForUpdatesRegularly,
+  getUpdateStore,
+  startUpdates,
+} from "./pwa/runtime";
+import { watchTypedFields } from "./pwa/swap-guard";
 
 // Error reporting is off unless the build has a Sentry DSN (ADR 0098); never blocks the first paint.
 // The guard is on the build constant, so a build without a DSN drops the SDK chunk altogether.
@@ -218,7 +224,10 @@ if (isShellPiecesRoute) {
   };
   loadOfflineLab().catch(() => undefined);
 } else {
+  // what is typed counts from the first key, and an idle swap comes back to the scroll it left (pwa/auto-swap.ts)
+  watchTypedFields();
   root.render(<App />);
+  restoreScrollAfterSwap();
   if (import.meta.env.MODE === "pwa-e2e") {
     // Only in the browser-check build: lets the test play the part of the outbox.
     (window as unknown as { polarisUpdateStore: unknown }).polarisUpdateStore =
@@ -230,8 +239,9 @@ if (isShellPiecesRoute) {
     window.addEventListener("load", () => {
       registerServiceWorker(pwaEnvironment)
         .then((registration) => {
-          if (registration) {
-            getUpdateStore()?.attach(registration);
+          const updates = getUpdateStore();
+          if (registration && updates) {
+            startUpdates(updates, registration);
             checkForUpdatesRegularly(registration);
           }
         })

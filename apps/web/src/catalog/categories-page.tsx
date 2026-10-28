@@ -9,7 +9,7 @@ import {
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import {
   type CategoryAction,
   type CategoryListStatus,
@@ -52,7 +52,7 @@ export function CategoriesPage() {
   const renamedCategory = categories.find(
     (item) => item.id === renamingCategoryId
   );
-  useReportUnsentWork(
+  useHoldSwap(
     categoryName.trim() !== "" ||
       (renamedCategory !== undefined && renameValue !== renamedCategory.name)
   );

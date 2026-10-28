@@ -20,7 +20,7 @@ import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import {
   createOfflineCustomer,
   type PendingCustomer,
@@ -109,7 +109,7 @@ export function CustomersPage() {
   const noticeRef = useRef<string | null>(null);
   // a customer was just made: the notice offers "Cadastrar outro"
   const [justCreated, setJustCreated] = useState(false);
-  useReportUnsentWork(isCustomerDraftChanged(draft, editingCustomer));
+  useHoldSwap(isCustomerDraftChanged(draft, editingCustomer));
   // any change of the form (typing, picking another customer, clearing) takes the contact error away
   useEffect(() => setContactError(null), [draft]);
 

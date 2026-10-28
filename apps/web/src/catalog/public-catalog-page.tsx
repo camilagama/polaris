@@ -16,7 +16,7 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { CHANGE_OUTCOME_UNKNOWN, isConnectionFailure } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { LimitHelp, useLimitHelp } from "../subscription/limit-help";
 import { LoadErrorNotice } from "./products-page-parts";
 import {
@@ -86,7 +86,7 @@ export function PublicCatalogPage() {
   const [problem, setProblem] = useState<ProfileFieldError | null>(null);
   // read again when the connection returns: the page that did not load, or what a cut command changed
   const [stale, setStale] = useState(false);
-  useReportUnsentWork(
+  useHoldSwap(
     loaded !== null && hasProfileChanges(draft, loaded.setup.profile)
   );
   // offline the notice says the typed text stays only when there is a form (it shows once the page loaded)

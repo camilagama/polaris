@@ -8,7 +8,10 @@
  *    when it cannot, so the app opens offline. The sign-in pages with the challenge
  *    have a copy of their own (`/entrar`, fetched at install): the policy of a
  *    document comes with it, and theirs lets the Turnstile widget load (ADR 0100);
- * 3. serves the precached static files cache-first.
+ * 3. serves the precached static files cache-first, and a hashed file of a build it
+ *    still keeps (`/assets/*`) from that build's cache: a tab still on an older build
+ *    is served by this worker once another tab took the update, and its lazy chunks
+ *    must not go to the network, where the deploy already removed them.
  *
  * It never touches anything else. In particular it never answers, stores or even
  * sees `/rpc/*` and `/api/*` (tenant data and authentication), `/health` or
@@ -26,16 +29,28 @@
  * shell (a chunk that is not there yet, or no longer) and that must not be
  * cached as if it were the chunk.
  *
- * The build tool prepends `POLARIS_BUILD` (the build id and the list of files to
- * precache) and bundles this file as a classic script. Nothing in it depends on
- * when the build was made: the same content is the same worker, so the browser
- * finds no update (and the person is told of none) when only the time changed.
+ * The build tool prepends `POLARIS_BUILD` (the build id, the list of files to
+ * precache and when the build was published) and bundles this file as a classic
+ * script. The time is the commit's, not the build's: building the same commit
+ * again gives the same worker, so the browser finds no update. A page asks the
+ * worker for its build (`BUILD_INFO`) to know whether a waiting build is new
+ * content and how long ago it was published (ADR 0041, emenda de 28/10/2026).
  */
 export interface BuildManifest {
   /** A hash of what a user downloads: the worker changes when, and only when, it changes. */
   id: string;
   /** Paths served by the app, `/` first (the shell). */
   precache: string[];
+  /** When the build was published (ms since the epoch), or null when the build tool did not know. */
+  publishedAt?: number | null;
+}
+
+/** What a worker says of its build when a page asks (`BUILD_INFO`). */
+export interface BuildInfo {
+  /** When this worker became the active one on this device (ms), or null before it is. */
+  activatedAt: number | null;
+  id: string;
+  publishedAt: number | null;
 }
 
 declare const POLARIS_BUILD: BuildManifest | undefined;
@@ -59,7 +74,16 @@ const MATCH_OPTIONS = { ignoreVary: true };
 const WORKER_PATHS = ["/api/", "/rpc/"];
 const WORKER_EXACT_PATHS = ["/health", "/ready"];
 
-export type RequestRoute = "asset" | "bypass" | "navigate";
+/**
+ * `asset`: a file of this build's precache. `kept`: a hashed file that is not, which a tab on an older build may ask
+ * for: the caches of the builds kept answer it, or the network. `bypass`: not touched.
+ */
+export type RequestRoute = "asset" | "bypass" | "kept" | "navigate";
+
+/** The hashed files: a name is always the same content, so a copy from any build is the file asked for. */
+const HASHED_PREFIX = "/assets/";
+/** Where a worker writes, in its own cache, when it became the active one ("atualizado em" of Configurações). */
+export const ACTIVATED_AT_PATH = "/__polaris/activated-at";
 
 export function shellCacheName(build: Pick<BuildManifest, "id">) {
   return `${SHELL_CACHE_PREFIX}${build.id}`;
@@ -132,7 +156,10 @@ export function routeFor(
   if (request.mode === "navigate") {
     return "navigate";
   }
-  return precache.has(url.pathname) ? "asset" : "bypass";
+  if (precache.has(url.pathname)) {
+    return "asset";
+  }
+  return url.pathname.startsWith(HASHED_PREFIX) ? "kept" : "bypass";
 }
 
 /** How many builds before the current one keep their shell (see `cachesToDelete`). */
@@ -162,11 +189,18 @@ export function cachesToDelete(
 
 /** The messages a page may send. */
 export function isSkipWaitingMessage(data: unknown): boolean {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    (data as { type?: unknown }).type === "SKIP_WAITING"
-  );
+  return messageType(data) === "SKIP_WAITING";
+}
+
+/** A page asks which build this worker serves; the answer goes to the port it sent. */
+export function isBuildInfoMessage(data: unknown): boolean {
+  return messageType(data) === "BUILD_INFO";
+}
+
+function messageType(data: unknown): unknown {
+  return typeof data === "object" && data !== null
+    ? (data as { type?: unknown }).type
+    : undefined;
 }
 
 // ------------------------------------------------------------------ worker
@@ -176,6 +210,11 @@ interface WaitableEvent {
 interface FetchLikeEvent {
   request: Request;
   respondWith: (response: Promise<Response>) => void;
+}
+interface MessageLikeEvent {
+  data: unknown;
+  ports?: ReadonlyArray<{ postMessage: (message: unknown) => void }>;
+  waitUntil?: (work: Promise<unknown>) => void;
 }
 interface WorkerScope {
   addEventListener: (type: string, listener: (event: never) => void) => void;
@@ -191,6 +230,7 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
   const lookup = async (request: Request | string) =>
     (await (await caches.open(cacheName)).match(request, MATCH_OPTIONS)) ??
     (await caches.match(request, MATCH_OPTIONS));
+  const anyBuild = (request: Request) => caches.match(request, MATCH_OPTIONS);
   /** The file from the network, only if it is the file asked for (see `isExpectedResponse`). */
   const fetchExpected = async (path: string) => {
     const request = new Request(path, { cache: "reload" });
@@ -226,15 +266,43 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
         await Promise.all(
           cachesToDelete(names, cacheName).map((name) => caches.delete(name))
         );
-        // No `clients.claim()`: pages loaded under an older worker keep it, so the
-        // files they still load come from the cache that matches them.
+        await (await caches.open(cacheName)).put(
+          new Request(ACTIVATED_AT_PATH),
+          new Response(String(Date.now()))
+        );
+        // No `clients.claim()`: a page opened before this worker is taken over only when
+        // a page asks for it (`SKIP_WAITING`), and then the files of its own build still
+        // come from the caches kept (the `kept` route).
       })()
     );
   }) as never);
 
-  scope.addEventListener("message", ((event: { data: unknown }) => {
+  const activatedAt = async (): Promise<number | null> => {
+    const answer = await (await caches.open(cacheName)).match(
+      ACTIVATED_AT_PATH
+    );
+    const value = Number(await answer?.text());
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
+  scope.addEventListener("message", ((event: MessageLikeEvent) => {
     if (isSkipWaitingMessage(event.data)) {
       scope.skipWaiting().catch(() => undefined);
+      return;
+    }
+    const port = event.ports?.[0];
+    if (isBuildInfoMessage(event.data) && port) {
+      const answer = activatedAt()
+        .catch(() => null)
+        .then((at) => {
+          const info: BuildInfo = {
+            activatedAt: at,
+            id: build.id,
+            publishedAt: build.publishedAt ?? null,
+          };
+          port.postMessage(info);
+        });
+      event.waitUntil?.(answer);
     }
   }) as never);
 
@@ -255,8 +323,10 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
       return;
     }
     const { pathname } = new URL(event.request.url);
+    // a file of an older build kept is in that build's cache; any other one goes to the network as it would
+    const find = route === "asset" ? lookup : anyBuild;
     event.respondWith(
-      lookup(event.request).then((cached) =>
+      find(event.request).then((cached) =>
         // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
         // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
         // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker

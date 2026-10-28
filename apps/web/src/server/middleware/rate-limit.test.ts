@@ -9,6 +9,7 @@ import { traverseContractProcedures } from "@orpc/server";
 import type { ProcedureMeta } from "@polaris/contracts";
 import { polarisContract } from "@polaris/contracts";
 import { rpcRouter } from "../rpc/router";
+import { READ_PROCEDURES } from "../../lib/read-procedures";
 import {
   createRateLimitMiddleware,
   isMediaUploadRequest,
@@ -74,44 +75,6 @@ function declaredKinds(
   return kinds;
 }
 
-/** The reads, spelled out: making a procedure a read (a wider bucket) shows up here, in review. */
-const READ_PROCEDURES = [
-  "account/legalStatus",
-  "billing/readPlan",
-  "category/list",
-  "customer/findPossibleDuplicates",
-  "customer/list",
-  "dataExport/list",
-  "dataExport/listClosed",
-  "device/list",
-  "expense/list",
-  "expense/listCategories",
-  "expense/listRules",
-  "goal/list",
-  "goal/targetChanges",
-  "inventory/getBalance",
-  "inventory/listBalances",
-  "organization/closedStatus",
-  "organization/listClosed",
-  "organization/listClosing",
-  "organization/listMine",
-  "paymentProfile/list",
-  "plan/operationalSelection",
-  "product/getVariants",
-  "product/list",
-  "product/namesExisting",
-  "publicCatalog/setup",
-  "report/dailySales",
-  "report/periodSummary",
-  "sale/get",
-  "sale/getCustomerLink",
-  "sale/list",
-  "sync/bootstrapPage",
-  "sync/getCursor",
-  "sync/pull",
-  "system/ping",
-];
-
 describe("request classification", () => {
   it("every procedure the router serves declares read, write or bulk", () => {
     const kinds = declaredKinds(rpcRouter);
@@ -135,7 +98,8 @@ describe("request classification", () => {
       .map(([path]) => path)
       .sort();
 
-    expect(reads).toEqual(READ_PROCEDURES);
+    // the page counts every other procedure as a write in flight (`lib/writes-in-flight.ts`)
+    expect(reads).toEqual([...READ_PROCEDURES]);
   });
 
   it("the bulk procedures are exactly the import of a spreadsheet", () => {

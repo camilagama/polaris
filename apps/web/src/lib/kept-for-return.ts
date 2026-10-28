@@ -4,6 +4,13 @@
  * the drafts themselves: nothing is written to the browser, and a load of the page drops it.
  */
 const kept = new Map<string, unknown>();
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) {
+    listener();
+  }
+}
 
 /** Only while the app opens another screen for "Conhecer o Pro": a screen left any other way keeps nothing. */
 let leaving = false;
@@ -28,12 +35,28 @@ export function keepForReturn(key: string, value: unknown): void {
   } else {
     kept.set(key, value);
   }
+  emit();
 }
 
 /** What was kept under the key, taken out (it comes back once). */
 export function takeKept<T>(key: string): T | undefined {
   leaving = false;
   const value = kept.get(key) as T | undefined;
-  kept.delete(key);
+  if (kept.delete(key)) {
+    emit();
+  }
   return value;
+}
+
+/**
+ * How many drafts wait to come back: a reload would drop them (they live in memory only), so the swap of the build
+ * waits until the screen took them back (`pwa/swap-guard.ts`).
+ */
+export function keptCount(): number {
+  return kept.size;
+}
+
+export function subscribeKept(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

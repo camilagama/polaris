@@ -630,8 +630,6 @@ interface AppShellProps {
   routeId?: RouteId;
   /** Pages that need data of an organization wait for it to be resolved. */
   requiresOrganization?: boolean;
-  /** The new-version notice (ADR 0041), at the top of the content, beside the sidebar and never under it. */
-  updateNotice?: ReactNode;
 }
 
 /**
@@ -645,7 +643,6 @@ export function AppShell({
   onlineOnly = false,
   requiresOrganization = true,
   routeId,
-  updateNotice,
 }: AppShellProps) {
   const { billingSelfService, load, reload, select } = useOrganizationLoad();
   const sessionOver = useSessionOver();
@@ -677,7 +674,6 @@ export function AppShell({
   if (requiresOrganization && load.status === "empty" && !accessExpired) {
     return (
       <>
-        {updateNotice}
         {showNotice || showAcceptanceNotice ? (
           // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
           <div className="flow-root bg-background px-(--gutter) pt-4">
@@ -714,7 +710,6 @@ export function AppShell({
           // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
           tabIndex={-1}
         >
-          {updateNotice}
           <ShellNotices
             acceptance={showAcceptanceNotice}
             connection={

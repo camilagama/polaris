@@ -23,7 +23,7 @@ import {
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { useNow } from "../lib/use-now";
 import {
   filterLocalStockEntries,
@@ -161,7 +161,7 @@ export function SalePage() {
   const formRef = useRef(form);
   formRef.current = form;
   // the cart is work the session notice warns about, until the sale is confirmed or queued
-  useReportUnsentWork(
+  useHoldSwap(
     isSaleFormDirty(form) &&
       submission.phase !== "confirmed" &&
       submission.phase !== "queued"

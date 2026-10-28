@@ -22,7 +22,7 @@ import {
 } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { isDraftChanged, useHoldSwap } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import { ActionNotice, ExpenseTextField } from "./expense-fields";
 import { EXPENSE_GROUP_ORDER, type ExpenseGroupKey } from "./expense-model";
@@ -84,7 +84,7 @@ export function ExpenseCategoryForm({
     () => onDraftChange(changed ? draft : null),
     [changed, draft, onDraftChange]
   );
-  useReportUnsentWork(changed);
+  useHoldSwap(changed);
   const online = useConnectionOnline();
 
   const handleGroup = useCallback((value: string) => {

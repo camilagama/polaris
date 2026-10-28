@@ -1,0 +1,472 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BuildInfo } from "./sw";
+import type { SwapState } from "./swap-guard";
+import {
+  askBuildInfo,
+  type ContainerLike,
+  type RegistrationLike,
+  TAKE_OVER_TIMEOUT_MS,
+  takeOver,
+  type WorkerLike,
+  watchForUpdate,
+} from "./update-controller";
+import {
+  CLOCK_TOLERANCE_MS,
+  IDLE_WAITING_MS,
+  momentAllows,
+  NO_PENDING_WORK,
+  type PendingWork,
+  SETTLE_MS,
+  waitedFor,
+} from "./update-model";
+import { createUpdateStore } from "./update-store";
+
+const HOUR = 60 * 60 * 1000;
+const NOW = Date.parse("2026-10-28T15:00:00.000Z");
+
+class FakeWorker implements WorkerLike {
+  state = "installing";
+  readonly messages: unknown[] = [];
+  private readonly listeners: (() => void)[] = [];
+  addEventListener(_type: "statechange", listener: () => void) {
+    this.listeners.push(listener);
+  }
+  postMessage(message: unknown) {
+    this.messages.push(message);
+  }
+  become(state: string) {
+    this.state = state;
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+}
+
+class FakeRegistration implements RegistrationLike {
+  installing: FakeWorker | null = null;
+  waiting: FakeWorker | null = null;
+  private updateFound: (() => void)[] = [];
+  addEventListener(_type: "updatefound", listener: () => void) {
+    this.updateFound.push(listener);
+  }
+  removeEventListener(_type: "updatefound", listener: () => void) {
+    this.updateFound = this.updateFound.filter((item) => item !== listener);
+  }
+  /** A new build starts installing, then waits. */
+  deliver(worker = new FakeWorker()): FakeWorker {
+    this.installing = worker;
+    for (const listener of this.updateFound) {
+      listener();
+    }
+    this.waiting = worker;
+    worker.become("installed");
+    return worker;
+  }
+}
+
+class FakeContainer implements ContainerLike {
+  controller: FakeWorker | null = new FakeWorker();
+  private listeners: (() => void)[] = [];
+  addEventListener(_type: "controllerchange", listener: () => void) {
+    this.listeners.push(listener);
+  }
+  removeEventListener(_type: "controllerchange", listener: () => void) {
+    this.listeners = this.listeners.filter((item) => item !== listener);
+  }
+  changeController(next: FakeWorker | null = this.controller) {
+    this.controller = next;
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+  }
+}
+
+describe("noticing a new build", () => {
+  it("reports a build that finishes installing while the page is controlled", () => {
+    const registration = new FakeRegistration();
+    const onChange = vi.fn();
+    watchForUpdate(registration, new FakeContainer(), onChange);
+    expect(onChange).not.toHaveBeenCalled();
+    registration.deliver();
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it("reports one that was already waiting when the page opened", () => {
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker();
+    const onChange = vi.fn();
+    watchForUpdate(registration, new FakeContainer(), onChange);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it("does not call the very first installation an update", () => {
+    const registration = new FakeRegistration();
+    const container = new FakeContainer();
+    container.controller = null;
+    const onChange = vi.fn();
+    watchForUpdate(registration, container, onChange);
+    registration.deliver();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("asking a worker which build it serves", () => {
+  it("reads the answer the worker sends to the port", async () => {
+    const worker = {
+      postMessage: (message: unknown, transfer?: MessagePort[]) => {
+        expect(message).toEqual({ type: "BUILD_INFO" });
+        transfer?.[0]?.postMessage({
+          activatedAt: 5,
+          id: "abc",
+          publishedAt: 4,
+        });
+      },
+    };
+    expect(await askBuildInfo(worker)).toEqual({
+      activatedAt: 5,
+      id: "abc",
+      publishedAt: 4,
+    });
+  });
+
+  it("is null when the worker never answers (one older than the question) or there is none", async () => {
+    expect(await askBuildInfo({ postMessage: () => undefined }, 20)).toBeNull();
+    expect(await askBuildInfo(null)).toBeNull();
+  });
+});
+
+describe("taking over", () => {
+  it("asks the waiting worker and reloads once, however many times the controller changes", () => {
+    const registration = new FakeRegistration();
+    const worker = registration.deliver();
+    const container = new FakeContainer();
+    const reload = vi.fn();
+    expect(takeOver(registration, container, reload)).toBe(true);
+    expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    expect(reload).not.toHaveBeenCalled();
+    container.changeController();
+    container.changeController();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when no build is waiting", () => {
+    const reload = vi.fn();
+    expect(takeOver(new FakeRegistration(), new FakeContainer(), reload)).toBe(
+      false
+    );
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  describe("when the new worker never takes over (several tabs)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reloads the page itself after the wait, once", () => {
+      vi.useFakeTimers();
+      const registration = new FakeRegistration();
+      registration.deliver();
+      const container = new FakeContainer();
+      const reload = vi.fn();
+      const onTimeout = vi.fn();
+      takeOver(registration, container, reload, onTimeout);
+      vi.advanceTimersByTime(TAKE_OVER_TIMEOUT_MS - 1);
+      expect(reload).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+      // a late controllerchange does not reload a second time
+      container.changeController();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe("how long a build has waited, and the moment it may go in", () => {
+  it("counts from the time the build carries, less the tolerance of the device clock", () => {
+    expect(waitedFor(NOW - 3 * HOUR, NOW, NOW)).toBe(
+      3 * HOUR - CLOCK_TOLERANCE_MS
+    );
+  });
+
+  it("counts from when the page saw it when the build carries no time, or one in the device's future", () => {
+    const seen = NOW - HOUR;
+    expect(waitedFor(null, seen, NOW)).toBe(HOUR);
+    // a clock a day behind: the build looks published tomorrow
+    expect(waitedFor(NOW + 24 * HOUR, seen, NOW)).toBe(HOUR);
+    // within the tolerance, it is the build's time
+    expect(waitedFor(NOW + CLOCK_TOLERANCE_MS, seen, NOW)).toBe(
+      -2 * CLOCK_TOLERANCE_MS
+    );
+  });
+
+  it("never lets in a build out for less than 2 h, at any moment", () => {
+    for (const moment of ["hidden", "return", "idle"] as const) {
+      expect(momentAllows(moment, SETTLE_MS - 1)).toBe(false);
+    }
+    expect(momentAllows("hidden", SETTLE_MS)).toBe(true);
+    expect(momentAllows("return", SETTLE_MS)).toBe(true);
+  });
+
+  it("lets the idle tab in front swap only a build waiting for more than 24 h", () => {
+    expect(momentAllows("idle", IDLE_WAITING_MS)).toBe(false);
+    expect(momentAllows("idle", IDLE_WAITING_MS + 1)).toBe(true);
+  });
+});
+
+const build = (
+  id: string,
+  publishedAt: number | null = NOW - 3 * HOUR
+): BuildInfo => ({ activatedAt: null, id, publishedAt });
+
+const QUIET: SwapState = {
+  keptDrafts: 0,
+  openDialogs: 0,
+  screensHolding: 0,
+  typedFields: 0,
+  work: NO_PENDING_WORK,
+  writesInFlight: 0,
+};
+
+describe("the update store", () => {
+  function setup(
+    options: {
+      current?: BuildInfo | null;
+      guard?: Partial<SwapState>;
+      work?: PendingWork;
+    } = {}
+  ) {
+    const registration = new FakeRegistration();
+    const container = new FakeContainer();
+    const infos = new Map<unknown, BuildInfo | null>();
+    const current = container.controller;
+    infos.set(
+      current,
+      options.current === undefined ? build("A") : options.current
+    );
+    const reload = vi.fn();
+    const keepScreen = vi.fn();
+    const page = { guard: { ...options.guard } };
+    let now = NOW;
+    const store = createUpdateStore({
+      buildInfoOf: (worker) => Promise.resolve(infos.get(worker) ?? null),
+      container,
+      keepScreen,
+      now: () => now,
+      readGuard: (work) => ({ ...QUIET, ...page.guard, work }),
+      reload,
+    });
+    const queue = { work: options.work ?? NO_PENDING_WORK };
+    store.setWorkSource({
+      read: () => Promise.resolve(queue.work),
+      sync: () => Promise.resolve(),
+    });
+    /** A new build `id`, installed and waiting. */
+    const deliver = async (info: BuildInfo | null) => {
+      const worker = new FakeWorker();
+      infos.set(worker, info);
+      registration.deliver(worker);
+      await flush();
+      return worker;
+    };
+    /** Another tab made `info` the active build. */
+    const otherTabSwapped = async (info: BuildInfo | null) => {
+      const worker = new FakeWorker();
+      infos.set(worker, info);
+      container.changeController(worker);
+      await flush();
+    };
+    return {
+      advance: (ms: number) => {
+        now += ms;
+      },
+      attach: async () => {
+        await store.attach(registration);
+        await flush();
+      },
+      container,
+      deliver,
+      keepScreen,
+      otherTabSwapped,
+      page,
+      queue,
+      registration,
+      reload,
+      store,
+    };
+  }
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("knows the build it runs and has nothing waiting until a new one installs", async () => {
+    const test = setup();
+    await test.attach();
+    expect(test.store.getSnapshot()).toMatchObject({
+      current: build("A"),
+      pending: null,
+    });
+    await test.deliver(build("B"));
+    expect(test.store.getSnapshot().pending).toMatchObject({
+      build: build("B"),
+      firstSeenAt: NOW,
+      kind: "waiting",
+    });
+  });
+
+  it("swaps when the moment comes and the page holds nothing: the worker takes over and the page reloads once", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(true);
+    expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    expect(test.reload).not.toHaveBeenCalled();
+    test.container.changeController(worker);
+    expect(test.reload).toHaveBeenCalledTimes(1);
+    expect(test.keepScreen).toHaveBeenCalledWith("hidden");
+  });
+
+  it("never swaps a build published less than 2 h ago", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B", NOW - HOUR));
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    expect(worker.messages).toEqual([]);
+    // two hours later (and the tolerance), the same moment swaps
+    test.advance(HOUR + CLOCK_TOLERANCE_MS);
+    expect(await test.store.trySwap("hidden")).toBe(true);
+  });
+
+  it("the idle tab in front swaps only a build waiting for more than 24 h", async () => {
+    const test = setup();
+    await test.attach();
+    await test.deliver(build("B", NOW - 23 * HOUR));
+    expect(await test.store.trySwap("idle")).toBe(false);
+    test.advance(2 * HOUR);
+    expect(await test.store.trySwap("idle")).toBe(true);
+  });
+
+  it.each<[string, Partial<SwapState>]>([
+    ["a dialog open", { openDialogs: 1 }],
+    ["a screen with a change (a sale with an item)", { screensHolding: 1 }],
+    ["a draft kept for the way back", { keptDrafts: 1 }],
+    ["a write on its way", { writesInFlight: 1 }],
+    ["a field with text typed", { typedFields: 1 }],
+  ])("never swaps over %s", async (_name, guard) => {
+    const test = setup({ guard });
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    expect(worker.messages).toEqual([]);
+    expect(test.reload).not.toHaveBeenCalled();
+    // it goes away: the next moment swaps
+    test.page.guard = {};
+    expect(await test.store.trySwap("hidden")).toBe(true);
+  });
+
+  it.each<[string, PendingWork]>([
+    ["pending", { pending: 2, rejected: 0, sending: 0 }],
+    ["being sent", { pending: 0, rejected: 0, sending: 1 }],
+    ["refused", { pending: 0, rejected: 1, sending: 0 }],
+  ])("never swaps with work in the sync queue (%s)", async (_name, work) => {
+    const test = setup({ work });
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(false);
+    expect(worker.messages).toEqual([]);
+    expect(test.store.getSnapshot().work).toEqual(work);
+  });
+
+  it("never swaps when the queue cannot be read", async () => {
+    const test = setup();
+    await test.attach();
+    test.store.setWorkSource({
+      read: () => Promise.reject(new Error("idb")),
+      sync: () => Promise.resolve(),
+    });
+    await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(false);
+  });
+
+  it("does not reload when something came up while the worker took over: it waits for the next moment", async () => {
+    const test = setup();
+    await test.attach();
+    const worker = await test.deliver(build("B"));
+    expect(await test.store.trySwap("hidden")).toBe(true);
+    test.page.guard = { openDialogs: 1 };
+    test.container.changeController(worker);
+    await flush();
+    expect(test.reload).not.toHaveBeenCalled();
+    expect(test.store.getSnapshot()).toMatchObject({
+      pending: { kind: "stale" },
+      swapping: false,
+    });
+    test.page.guard = {};
+    expect(await test.store.trySwap("hidden")).toBe(true);
+    expect(test.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a waiting build with this page's own content at once, with no reload and nothing to wait for", async () => {
+    const test = setup({ guard: { openDialogs: 1 } });
+    await test.attach();
+    const worker = await test.deliver(build("A", NOW));
+    expect(worker.messages).toEqual([{ type: "SKIP_WAITING" }]);
+    expect(test.store.getSnapshot().pending).toBeNull();
+    test.container.changeController(worker);
+    await flush();
+    expect(test.store.getSnapshot().pending).toBeNull();
+    expect(test.reload).not.toHaveBeenCalled();
+  });
+
+  describe("with two tabs", () => {
+    it("the other tab's swap never reloads this one: it waits for its own moment", async () => {
+      const test = setup({ guard: { typedFields: 1 } });
+      await test.attach();
+      await test.deliver(build("B"));
+      test.registration.waiting = null;
+      await test.otherTabSwapped(build("B"));
+      expect(test.reload).not.toHaveBeenCalled();
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: build("B"),
+        firstSeenAt: NOW,
+        kind: "stale",
+      });
+      // its draft holds it; once it is gone, its own moment loads the build already active
+      expect(await test.store.trySwap("hidden")).toBe(false);
+      test.page.guard = {};
+      expect(await test.store.trySwap("hidden")).toBe(true);
+      expect(test.reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("a tab that took a worker of the same content is no swap for this one", async () => {
+      const test = setup();
+      await test.attach();
+      await test.otherTabSwapped(build("A", NOW));
+      expect(test.store.getSnapshot().pending).toBeNull();
+    });
+
+    it("a worker that does not say its build counts as a new one", async () => {
+      const test = setup({ current: null });
+      await test.attach();
+      await test.otherTabSwapped(null);
+      expect(test.store.getSnapshot().pending).toMatchObject({
+        build: null,
+        kind: "stale",
+      });
+      // the age is this page's own: it saw it now, so it waits the 2 h
+      expect(await test.store.trySwap("hidden")).toBe(false);
+      test.advance(SETTLE_MS);
+      expect(await test.store.trySwap("hidden")).toBe(true);
+    });
+  });
+
+  it("tells its subscribers when something changes, and only then", async () => {
+    const test = setup();
+    await test.attach();
+    const listener = vi.fn();
+    const stop = test.store.subscribe(listener);
+    await test.store.refreshWork();
+    expect(listener).not.toHaveBeenCalled();
+    await test.deliver(build("B"));
+    expect(listener).toHaveBeenCalled();
+    stop();
+  });
+});

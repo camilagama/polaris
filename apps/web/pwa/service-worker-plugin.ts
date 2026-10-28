@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -9,9 +10,11 @@ import { type Plugin, transformWithEsbuild } from "vite";
  * THIS build: its id and the files the shell needs. The file names carry content
  * hashes, and the id also hashes `index.html` and the unhashed public files, so any
  * change to what a user would download changes the worker, which is what makes the
- * browser install the update. Nothing else goes in: not the time of the build, or
- * a deploy of the same content would be a new worker and a notice of a new version
- * with nothing new in it.
+ * browser install the update. The only other thing is when the build was published,
+ * which is the time of the commit it was built from (`publishedAtOf`), not the time
+ * of the build: the same commit built again is the same worker. A new commit with the
+ * same content is a new worker with the same id, which the page takes without a
+ * reload (`update-store.ts`).
  */
 export interface PrecacheInput {
   /** Files of the build output, relative to it, with forward slashes. */
@@ -84,6 +87,38 @@ export function buildManifest(
   };
 }
 
+const DIGITS = /^\d+$/;
+
+/**
+ * When the build was published, in ms: `POLARIS_BUILD_TIME` (ms or an ISO date) when the pipeline sets it, otherwise
+ * the time of the commit built, otherwise null (the page then counts the age from when it first saw the build).
+ */
+export function publishedAtOf(
+  environment: Record<string, string | undefined>,
+  commitSeconds: () => string | null
+): number | null {
+  const given = environment.POLARIS_BUILD_TIME?.trim();
+  if (given) {
+    const parsed = DIGITS.test(given) ? Number(given) : Date.parse(given);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  const seconds = Number(commitSeconds()?.trim());
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+function commitSecondsOfHead(): string | null {
+  try {
+    return execFileSync("git", ["log", "-1", "--format=%ct"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function serviceWorkerPlugin(options: { source: string }): Plugin {
   return {
     apply: "build",
@@ -98,9 +133,10 @@ export function serviceWorkerPlugin(options: { source: string }): Plugin {
         return;
       }
       const files = listFiles(directory).filter((file) => file !== "sw.js");
-      const manifest = buildManifest(files, (file) =>
-        readFileSync(join(directory, file))
-      );
+      const manifest = {
+        ...buildManifest(files, (file) => readFileSync(join(directory, file))),
+        publishedAt: publishedAtOf(process.env, commitSecondsOfHead),
+      };
       const compiled = await transformWithEsbuild(
         readFileSync(options.source, "utf8"),
         options.source,

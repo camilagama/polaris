@@ -23,7 +23,7 @@ import {
   isConnectionFailure,
   legalAcceptanceMessage,
 } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import {
   blankDraft,
   blankRule,
@@ -194,7 +194,7 @@ export function PaymentProfilesPage() {
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
   const readOnce = useRef<boolean>(false);
   const profilesRequest = useRef(0);
-  useReportUnsentWork(
+  useHoldSwap(
     !pending &&
       profileDraftKey(draft) !==
         profileDraftKey(editing ? profileDraft(editing) : blankDraft())

@@ -13,7 +13,7 @@ import { Button } from "@/ui/button";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { queueOfflineStock } from "./queue-offline-stock";
 import {
@@ -171,7 +171,7 @@ export function StockCommandPanel({
   const [state, setState] = useState(() =>
     startStockCommand(action, target, today)
   );
-  useReportUnsentWork(isStockDraftChanged(state));
+  useHoldSwap(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const statusRef: RefObject<HTMLDivElement | null> = useRef(null);
   const panelRef: RefObject<HTMLElement | null> = useRef(null);
