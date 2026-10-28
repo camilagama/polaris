@@ -1,6 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import config from "../playwright.pwa.config";
 import {
@@ -125,7 +124,8 @@ async function startImageBrowser() {
     "host",
     "--user",
     "pwuser",
-    // the native placeholder of date inputs follows the process locale, not the `locale` of the context; the image sets LC_ALL, which wins over LANG
+    // the native placeholder of date inputs follows the process locale, not the `locale` of the context;
+    // the image sets LC_ALL, which wins over LANG
     "--env",
     "LANG=pt_BR.UTF-8",
     "--env",
@@ -198,30 +198,11 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
-    console.log(
-      `TMPENV ${capture("docker", ["exec", browser.container, "sh", "-c", "env | grep -i -E 'lang|lc_'"]).output}`
-    );
-    const code = await playwright(
-      ["--update-snapshots=all", "-g", "venda (com itens|erro nos campos) ·"],
+    return await playwright(
+      [],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
       browser.container
     );
-    const changed = spawnSync(
-      "git",
-      ["status", "--porcelain", "--", "e2e-pwa/ui-visual.e2e.ts-snapshots"],
-      { encoding: "utf8" }
-    ).stdout;
-    console.log(`TMPDUMP-LIST\n${changed}TMPDUMP-LIST-END`);
-    for (const line of changed.split("\n").filter(Boolean)) {
-      const file = line.slice(3);
-      const data = readFileSync(`../../${file}`).toString("base64");
-      console.log(`TMPDUMP-BEGIN ${file}`);
-      for (let at = 0; at < data.length; at += 3000) {
-        console.log(`TMPDUMP ${data.slice(at, at + 3000)}`);
-      }
-      console.log("TMPDUMP-END");
-    }
-    return code;
   } finally {
     stopContainer(browser.container);
   }
