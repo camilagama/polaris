@@ -5,7 +5,10 @@ import { type ReactNode, type Ref, useCallback, useMemo } from "react";
 import { Button } from "@/ui/button";
 import { LimitHelp } from "../../subscription/limit-help";
 import type { LimitHelpView } from "../../subscription/limit-help-model";
-import { failedImportCsv } from "../product-import-failed-csv";
+import {
+  type FailedRowKind,
+  failedImportCsv,
+} from "../product-import-failed-csv";
 import { type ImportRun, summarizeImport } from "../product-import-send";
 import { downloadCsv, StepFrame } from "./import-frame";
 import {
@@ -16,7 +19,19 @@ import {
   stockEntered,
   stockText,
 } from "./import-model";
-import { ImportRowsTable, type ImportTableRow } from "./import-rows-table";
+import {
+  ImportRowsTable,
+  type ImportTableRow,
+  type RowMarkTone,
+} from "./import-rows-table";
+
+/** The mark of each row of the result: a row with no answer asks to be checked, it is no error. */
+const RESULT_TONES: Record<FailedRowKind, RowMarkTone> = {
+  error: "problem",
+  exists: "left_out",
+  not_entered: "left_out",
+  unconfirmed: "warning",
+};
 
 const FAILED_FILE_NAME = "linhas-que-nao-entraram.csv";
 
@@ -26,7 +41,8 @@ interface ImportResultStepProps {
   limitHelp: LimitHelpView | null;
   offline: ReactNode;
   onAnother: () => void;
-  onShowProducts: () => void;
+  /** "Ver os produtos", with how many entered: Produtos says it. */
+  onShowProducts: (entered: number) => void;
   plan: ImportPlan;
   run: ImportRun | null;
   /** Whether the import started and ended on the same day of the store, on this device. */
@@ -55,15 +71,22 @@ export function ImportResultStep({
     () =>
       failed.map(
         (row): ImportTableRow => ({
+          // a row with no answer is not confirmed, never an error: it may have entered
           label:
-            FAILED_KIND_LABELS[row.kind === "error" ? "error" : "not_entered"],
+            FAILED_KIND_LABELS[
+              row.kind === "exists" ? "not_entered" : row.kind
+            ],
           name: row.source.name.trim(),
           reason: row.reason,
           rowNumber: row.rowNumber,
-          tone: row.kind === "error" ? "problem" : "left_out",
+          tone: RESULT_TONES[row.kind],
         })
       ),
     [failed]
+  );
+  const handleShowProducts = useCallback(
+    () => onShowProducts(entered),
+    [entered, onShowProducts]
   );
   const handleDownload = useCallback(
     () => downloadCsv(FAILED_FILE_NAME, failedImportCsv(failed)),
@@ -78,7 +101,7 @@ export function ImportResultStep({
           <Button onClick={onAnother} type="button" variant="outline">
             Importar outro arquivo
           </Button>
-          <Button onClick={onShowProducts} type="button">
+          <Button onClick={handleShowProducts} type="button">
             Ver os produtos
           </Button>
         </>
@@ -91,11 +114,10 @@ export function ImportResultStep({
           <p className="font-medium text-title">{texts.title}</p>
           {texts.notEntered ? <p>{texts.notEntered}</p> : null}
           {texts.existing ? <p>{texts.existing}</p> : null}
-          {texts.limit ? <p>{texts.limit}</p> : null}
           {texts.unconfirmed ? <p>{texts.unconfirmed}</p> : null}
         </div>
       </div>
-      {texts.limit ? <LimitHelp help={limitHelp} /> : null}
+      {texts.limitReached ? <LimitHelp help={limitHelp} /> : null}
       {run && stockEntered(run) ? (
         <p className="text-muted-foreground text-support">
           {stockText(sameDay)}

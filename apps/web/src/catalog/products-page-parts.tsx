@@ -31,6 +31,18 @@ interface HeaderProps {
   showNew: boolean;
 }
 
+/**
+ * What Produtos says when the import closes on "Ver os produtos" (here, not in the import's chunk: the page says it).
+ */
+export function importedNotice(entered: number): string {
+  if (entered === 0) {
+    return "Nenhum produto importado.";
+  }
+  return entered === 1
+    ? "1 produto importado."
+    : `${entered} produtos importados.`;
+}
+
 /** Read with "Importar planilha" while it is off for lack of connection. */
 const IMPORT_OFFLINE_REASON_ID = "products-import-offline-reason";
 
@@ -49,8 +61,13 @@ export function ProductsHeader({
     <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between">
       <ScreenTitle>Produtos</ScreenTitle>
       {showNew ? (
-        <div className="grid gap-1 min-[30rem]:justify-items-end">
-          <div className="grid gap-3 min-[30rem]:flex min-[30rem]:gap-2">
+        // "Novo produto" first, at every width; the reason of the import right under its button
+        <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-start min-[30rem]:gap-2">
+          <Button onClick={onNew} ref={buttonRef} type="button">
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Novo produto
+          </Button>
+          <div className="grid gap-1">
             <Button
               aria-describedby={
                 importOffline ? IMPORT_OFFLINE_REASON_ID : undefined
@@ -64,19 +81,15 @@ export function ProductsHeader({
               <UploadIcon aria-hidden="true" data-icon="inline-start" />
               Importar planilha
             </Button>
-            <Button onClick={onNew} ref={buttonRef} type="button">
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Novo produto
-            </Button>
+            {importOffline ? (
+              <p
+                className="text-muted-foreground text-support"
+                id={IMPORT_OFFLINE_REASON_ID}
+              >
+                Importar planilha precisa de conexão.
+              </p>
+            ) : null}
           </div>
-          {importOffline ? (
-            <p
-              className="text-muted-foreground text-support"
-              id={IMPORT_OFFLINE_REASON_ID}
-            >
-              Importar planilha precisa de conexão.
-            </p>
-          ) : null}
         </div>
       ) : null}
     </div>

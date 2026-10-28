@@ -31,6 +31,14 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OFFLINE_REASON = /Importar precisa de conexão/;
 const BLAMES_THE_FILE = /arquivo tem erro/i;
+const CANCEL_OR_UNDO = /cancel|desfe|desfaz/i;
+/** A fault of the Worker (as a 1102 of the CPU limit) in the shape of an error of oRPC: nothing created. */
+const SERVER_FAULT = {
+  code: "INTERNAL_SERVER_ERROR",
+  defined: false,
+  message: "Internal server error",
+  status: 500,
+};
 /** Three products by hand, as AC-25 of the Início measured each one (`product-opening-stock.e2e.ts`). */
 const BY_HAND_ACTIONS = 3 * 6;
 /** The hypothesis of the corte: up to 6 taps and one choice of file. */
@@ -95,6 +103,8 @@ const productOf = (name: string, id: string) => ({
 interface ServerOptions {
   /** What each call of `product.importBatch` does before the server answers (by its number, from 1). */
   beforeAnswer?: (call: number, route: Route) => Promise<"answer" | "lost">;
+  /** A row the server never answers: a fault of the Worker each time (a 500, as a 1102 of the CPU), nothing created. */
+  faultyRow?: string;
   existing?: readonly string[];
   /** The variants of the store the plan holds; another tab may take some in the middle (`takeRoom`). */
   room?: number;
@@ -104,7 +114,13 @@ interface ServerOptions {
 /** The store as a server keeps it: the products, the calls of the import and the reads of the preview. */
 async function openProducts(
   page: Page,
-  { beforeAnswer, existing = [], room = 49, used = 1 }: ServerOptions = {}
+  {
+    beforeAnswer,
+    existing = [],
+    faultyRow,
+    room = 49,
+    used = 1,
+  }: ServerOptions = {}
 ) {
   const store = {
     batches: [] as BatchCall[],
@@ -183,6 +199,9 @@ async function openProducts(
       case "product/importBatch": {
         const rows = body().rows as ImportRow[];
         store.batches.push({ rows });
+        if (rows.some((row) => row.name === faultyRow)) {
+          return route.fulfill(rpc(SERVER_FAULT, 500));
+        }
         const results = rows.map(createRow);
         const fate =
           (await beforeAnswer?.(store.batches.length, route)) ?? "answer";
@@ -339,9 +358,11 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
   const list = page.getByRole("list", { name: "Produtos" });
   await expect(list.getByText("Camiseta básica")).toBeVisible();
   await expect(list.getByText("Meia")).toBeVisible();
+  // the page says what entered, and the focus goes to it (T446-1), as after a product made by hand
   await expect(
-    page.getByRole("button", { name: "Importar planilha" })
-  ).toBeFocused();
+    page.getByRole("status").filter({ hasText: "2 produtos importados." })
+  ).toBeVisible();
+  await expect(page.locator(":focus")).toContainText("2 produtos importados.");
 
   testInfo.annotations.push({
     description: `${taps} toques e 1 escolha de arquivo (3 produtos à mão: ${BY_HAND_ACTIONS} ações)`,
@@ -429,6 +450,133 @@ test("AC-10 e AC-5: a conexão cai no meio (com uma resposta perdida), a tela di
   ]);
 });
 
+test("parar durante uma linha lenta e continuar sem produto repetido", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  let release: () => void = () => undefined;
+  const slow = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const store = await openProducts(page, {
+    beforeAnswer: async (call) => {
+      if (call === 2) {
+        // the second row takes its time on the server: the person stops while it is on its way
+        await slow;
+      }
+      return "answer";
+    },
+  });
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 3 produtos" }).click();
+
+  await expect.poll(() => store.batches.length, { timeout: 30_000 }).toBe(2);
+  await dialog
+    .getByRole("button", { name: "Parar depois desta linha" })
+    .click();
+  const stopping = dialog.getByRole("button", {
+    name: "Parando depois desta linha…",
+  });
+  await expect(stopping).toHaveAttribute("aria-disabled", "true");
+  release();
+
+  // (a) the row on its way got its answer: the run stopped after it, never in the middle
+  await expect(
+    statusIn(dialog, "Importação parada. 2 produtos entraram; 1 falta.")
+  ).toBeVisible({ timeout: 30_000 });
+  // (b) what entered stays, and nothing says cancel or undo
+  await expect(dialog.getByText(CANCEL_OR_UNDO)).toHaveCount(0);
+  expect(store.products.map((product) => product.name)).toEqual([
+    "Alfa",
+    "Beta",
+  ]);
+  expect(store.batches).toHaveLength(2);
+
+  // (c) continuing sends the rows left, with the IDs named once, and no product twice
+  await dialog.getByRole("button", { name: "Continuar de onde parou" }).click();
+  await expect(statusIn(dialog, "Importamos 3 produtos.")).toBeVisible({
+    timeout: 30_000,
+  });
+  const sent = store.batches.map((batch) => batch.rows[0]?.name);
+  expect(sent).toEqual(["Alfa", "Beta", "Gama"]);
+  expect(store.products.map((product) => product.name)).toEqual([
+    "Alfa",
+    "Beta",
+    "Gama",
+  ]);
+});
+
+test("(d) parar e ver o resultado: as linhas não enviadas ficam como não confirmadas, não como erro", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const store = await openProducts(page);
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 3 produtos" }).click();
+  await expect.poll(() => store.batches.length, { timeout: 30_000 }).toBe(1);
+  await dialog
+    .getByRole("button", { name: "Parar depois desta linha" })
+    .click();
+  await expect(statusIn(dialog, "Importação parada.")).toBeVisible({
+    timeout: 30_000,
+  });
+  await dialog.getByRole("button", { name: "Ver o resultado" }).click();
+
+  await expect(statusIn(dialog, "Importamos 1 produto.")).toBeVisible();
+  await expect(
+    statusIn(dialog, "2 linhas não foram confirmadas")
+  ).toBeVisible();
+  await expect(statusIn(dialog, "não entr")).toHaveCount(0);
+  const table = dialog.getByRole("table", { name: "Linhas que não entraram" });
+  await expect(table.getByText("Não confirmada")).toHaveCount(2);
+  await expect(table.getByText("Erro", { exact: true })).toHaveCount(0);
+});
+
+test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
+  page,
+}) => {
+  // the stuck row is tried 9 times at the pace of the import (6 s): about a minute before "Pular esta linha"
+  test.setTimeout(180_000);
+  const store = await openProducts(page, { faultyRow: "Beta" });
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 3 produtos" }).click();
+
+  await expect(
+    statusIn(
+      dialog,
+      "O servidor não respondeu a esta linha. 1 produto entrou; 2 faltam."
+    )
+  ).toBeVisible({ timeout: 120_000 });
+  const tries = store.batches.filter(
+    (batch) => batch.rows[0]?.name === "Beta"
+  ).length;
+  expect(tries).toBe(9);
+  await dialog.getByRole("button", { name: "Pular esta linha" }).click();
+
+  await expect(statusIn(dialog, "Importamos 2 produtos.")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(statusIn(dialog, "1 linha não foi confirmada")).toBeVisible();
+  await expect(statusIn(dialog, "não entr")).toHaveCount(0);
+  const table = dialog.getByRole("table", { name: "Linhas que não entraram" });
+  await expect(table.getByText("Não confirmada")).toBeVisible();
+  // the row skipped was never sent again after the skip; the one after it entered
+  expect(store.batches.at(-1)?.rows[0]?.name).toBe("Gama");
+  expect(store.products.map((product) => product.name)).toEqual([
+    "Alfa",
+    "Gama",
+  ]);
+});
+
 test("AC-10: sem conexão, Importar planilha fica desligado com o motivo e não abre nada", async ({
   page,
 }) => {
@@ -473,7 +621,9 @@ test("AC-6: a prévia diz quantas cabem no plano e importa só as primeiras, com
   await expect(statusIn(dialog, "Importamos 2 produtos.")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(statusIn(dialog, "2 linhas não entraram.")).toBeVisible();
+  await expect(
+    statusIn(dialog, "2 linhas não entraram: o plano chegou ao limite.")
+  ).toBeVisible();
   // no row past the limit was sent
   expect(
     store.batches.flatMap((batch) => batch.rows.map((row) => row.name))
@@ -504,9 +654,11 @@ test("AC-6: o plano chega ao limite no meio (outra aba criou produto): diz o lim
   await expect(statusIn(dialog, "Importamos 1 produto.")).toBeVisible({
     timeout: 30_000,
   });
+  // one sentence with the total and the part, never the same rows twice (T446-3)
   await expect(
-    statusIn(dialog, "2 linhas não entraram porque o plano chegou ao limite.")
+    statusIn(dialog, "2 linhas não entraram: o plano chegou ao limite.")
   ).toBeVisible();
+  await expect(statusIn(dialog, "porque o plano")).toHaveCount(0);
   await expect(
     dialog.getByRole("link", { name: "Conhecer o Pro" })
   ).toBeVisible();

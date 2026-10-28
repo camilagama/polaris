@@ -19,6 +19,7 @@ import {
   createImportRun,
   type ImportRun,
   runImport,
+  skipStuckRow,
 } from "../product-import-send";
 import {
   type ImportPlan,
@@ -70,6 +71,8 @@ export interface ProductImportActions {
   finish: () => void;
   readFile: () => void;
   reset: () => void;
+  /** "Pular esta linha": leaves out the row the server never answered (not confirmed) and goes on from the next. */
+  skip: () => void;
   stop: () => void;
 }
 
@@ -224,6 +227,15 @@ export function useProductImport({
     }
   }, [start, state.run]);
 
+  const skip = useCallback(() => {
+    // only a paused run: the row on its way is never left out
+    if (state.run === null || controllerRef.current !== null) {
+      return;
+    }
+    skipStuckRow(state.run);
+    start(state.run).catch(() => undefined);
+  }, [start, state.run]);
+
   const stop = useCallback(() => {
     abortedForRef.current = "stopped";
     controllerRef.current?.abort();
@@ -295,9 +307,20 @@ export function useProductImport({
       finish,
       readFile,
       reset,
+      skip,
       stop,
     }),
-    [back, chooseFile, confirm, continueRun, finish, readFile, reset, stop]
+    [
+      back,
+      chooseFile,
+      confirm,
+      continueRun,
+      finish,
+      readFile,
+      reset,
+      skip,
+      stop,
+    ]
   );
   return [state, actions];
 }

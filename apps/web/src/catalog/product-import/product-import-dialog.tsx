@@ -22,6 +22,7 @@ import {
   ImportOfflineNotice,
   OFFLINE_DETAIL,
   OFFLINE_DETAIL_AFTER,
+  OFFLINE_DETAIL_RUN,
 } from "./import-frame";
 import { ImportPreviewStep } from "./import-preview-step";
 import { ImportResultStep } from "./import-result-step";
@@ -44,6 +45,15 @@ const STEP_NAMES: Record<ImportStep["kind"], string> = {
   running: "Passo 3 de 4 · Importando",
 };
 
+/** The file is kept on the first two steps; once rows went, what matters is where the import continues. */
+const OFFLINE_DETAILS: Record<ImportStep["kind"], string> = {
+  file: OFFLINE_DETAIL,
+  paused: OFFLINE_DETAIL_RUN,
+  preview: OFFLINE_DETAIL,
+  result: OFFLINE_DETAIL_AFTER,
+  running: OFFLINE_DETAIL_RUN,
+};
+
 export interface ProductImportDialogProps {
   categories: readonly CategoryReadModel[];
   /** Where the focus goes back when the dialog closes: the button that opened it, or `true` for the default. */
@@ -52,8 +62,8 @@ export interface ProductImportDialogProps {
   onClose: () => void;
   /** Rows entered: the screen reads its products again. */
   onEntered: () => void;
-  /** "Ver os produtos": the dialog closes and the list shows what entered. */
-  onShowProducts: () => void;
+  /** "Ver os produtos": the dialog closes and the list says how many entered, and shows them. */
+  onShowProducts: (entered: number) => void;
   open: boolean;
 }
 
@@ -123,9 +133,7 @@ export function ProductImportDialog({
   }, [actions]);
 
   const offline = online ? null : (
-    <ImportOfflineNotice
-      detail={step.kind === "result" ? OFFLINE_DETAIL_AFTER : OFFLINE_DETAIL}
-    />
+    <ImportOfflineNotice detail={OFFLINE_DETAILS[step.kind]} />
   );
   const today = calendarDayInTimezone(new Date(), organization.timezone);
 
@@ -177,6 +185,7 @@ export function ProductImportDialog({
         onContinue={actions.continueRun}
         onFinish={actions.finish}
         online={online}
+        onSkip={actions.skip}
         onStop={handleStop}
         pace={state.pace}
         pause={step.kind === "paused" ? step.pause : null}

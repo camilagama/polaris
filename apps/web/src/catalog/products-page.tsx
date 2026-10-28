@@ -47,6 +47,7 @@ import {
   LoadErrorNotice,
   OFFLINE_NOTICE_ID,
   OfflineNotice,
+  importedNotice,
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
   ProductsHeader,
@@ -382,9 +383,19 @@ export function ProductsPage() {
     }
     openImport();
   }, [clearMessages, focusFeedback, openImport]);
+  // after "Ver os produtos" the focus goes to the notice of what entered, not back to the button
   const importFinalFocus = useCallback(
-    () => importButtonRef.current ?? true,
+    () => (noticeRef.current ? false : (importButtonRef.current ?? true)),
     []
+  );
+  const handleShowImported = useCallback(
+    (entered: number) => {
+      clearMessages();
+      setNotice(importedNotice(entered));
+      closeImport();
+      focusFeedback();
+    },
+    [clearMessages, closeImport, focusFeedback]
   );
   const handleImported = useCallback(() => {
     // the products live on the server: bring them to this device, then show them
@@ -824,7 +835,7 @@ export function ProductsPage() {
           finalFocus={importFinalFocus}
           onClose={closeImport}
           onEntered={handleImported}
-          onShowProducts={closeImport}
+          onShowProducts={handleShowImported}
           open={importOpen}
         />
 

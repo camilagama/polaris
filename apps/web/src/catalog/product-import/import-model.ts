@@ -1,7 +1,7 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { legalAcceptanceMessage, rpcErrorCode } from "../../lib/rpc-error";
 import { IMPORT_MAX_BYTES } from "../product-import-csv";
-import { csvFile, csvRow } from "@polaris/domain/privacy/csv";
+import { csvFile } from "@polaris/domain/privacy/csv";
 import {
   type FailedRowKind,
   failedImportRows,
@@ -120,7 +120,8 @@ const EXISTS_IN_PREVIEW = "Já existe um produto com este nome. Fica como está.
 const OVER_LIMIT_IN_PREVIEW = "Não cabe no plano: esta linha fica de fora.";
 
 function noCategoryReason(category: string): string {
-  return `A categoria “${category.trim()}” não existe na loja. O produto entra sem categoria.`;
+  // a cell of the file can be as long as the file: written as the headers are (Rodrigo, 27/10)
+  return `A categoria “${shortHeader(category.trim())}” não existe na loja. O produto entra sem categoria.`;
 }
 
 /** Every row of the file in the preview, in its order, with its mark and its reason. */
@@ -233,7 +234,7 @@ export function headerNotes(plan: ImportPlan): string[] {
   ];
 }
 
-/** The longest header the preview writes whole: a cell of the file can be as long as the file. */
+/** The longest header (or category) the preview writes whole: a cell of the file can be as long as the file. */
 const HEADER_SHOWN = 60;
 
 function shortHeader(header: string): string {
@@ -268,6 +269,34 @@ export function progressValueText(done: number, count: number): string {
 /** "23 produtos entraram; 23 faltam." */
 export function enteredAndLeft(entered: number, left: number): string {
   return `${entered} ${plural(entered, "produto entrou", "produtos entraram")}; ${left} ${plural(left, "falta", "faltam")}.`;
+}
+
+/** What a pause says before "N produtos entraram; M faltam.". */
+function pauseLead(pause: ImportPause): string {
+  switch (pause.kind) {
+    case "offline":
+      return "Sem internet.";
+    case "stopped":
+      return "Importação parada.";
+    case "interrupted":
+      return "O servidor não respondeu a esta linha.";
+    case "rate_limited":
+      return "O envio está ocupado agora. Espere um minuto e continue.";
+    default:
+      return pause.message;
+  }
+}
+
+/**
+ * What a pause says: why the run stopped, then what entered and what is left. What entered stays (no word of
+ * cancelling or undoing: nothing is undone); a row the server never answered says so ("Pular esta linha" goes with it).
+ */
+export function pauseText(
+  pause: ImportPause,
+  entered: number,
+  left: number
+): string {
+  return `${pauseLead(pause)} ${enteredAndLeft(entered, left)}`;
 }
 
 /**
@@ -310,13 +339,31 @@ export const FAILED_KIND_LABELS: Record<
 
 export interface ResultTexts {
   existing: string | null;
-  /** "N linhas não entraram porque o plano chegou ao limite.", when the server stopped there. */
-  limit: string | null;
-  /** "1 linha não entrou." / "N linhas não entraram." */
+  /** The server stopped at the plan's limit: the result shows what goes with that limit (corte 1.6). */
+  limitReached: boolean;
+  /**
+   * The rows that did not enter, in one sentence with the part the plan's limit left out (never counted twice):
+   * "1 linha não entrou.", "2 linhas não entraram: o plano chegou ao limite.", "3 linhas não entraram, 2 delas pelo
+   * limite do plano."
+   */
   notEntered: string | null;
   title: string;
-  /** Rows with no answer (the run stopped on them, or before them): they may have entered. */
+  /** Rows with no answer (the run stopped on them, or before them, or left them out): they may have entered. */
   unconfirmed: string | null;
+}
+
+/** The rows that did not enter, and of them the ones the plan's limit left out, in one sentence. */
+function notEnteredText(count: number, byLimit: number): string | null {
+  if (count === 0) {
+    return null;
+  }
+  const lead = `${count} ${plural(count, "linha não entrou", "linhas não entraram")}`;
+  if (byLimit === 0) {
+    return `${lead}.`;
+  }
+  return byLimit >= count
+    ? `${lead}: o plano chegou ao limite.`
+    : `${lead}, ${byLimit} delas pelo limite do plano.`;
 }
 
 const NO_RUN = {
@@ -348,14 +395,11 @@ export function resultTexts(
       existing === 0
         ? null
         : `${existing} ${plural(existing, "já existia e ficou como estava", "já existiam e ficaram como estavam")}.`,
-    limit:
-      summary.limitReached === 0
-        ? null
-        : `${summary.limitReached} ${plural(summary.limitReached, "linha não entrou", "linhas não entraram")} porque o plano chegou ao limite.`,
-    notEntered:
-      notEntered === 0
-        ? null
-        : `${notEntered} ${plural(notEntered, "linha não entrou", "linhas não entraram")}.`,
+    limitReached: summary.limitReached > 0,
+    notEntered: notEnteredText(
+      notEntered,
+      plan.overLimit.length + summary.limitReached
+    ),
     title:
       summary.entered === 0
         ? "Nenhum produto foi importado."
@@ -388,28 +432,14 @@ export function stockText(sameDay: boolean): string {
     : "Estoque de abertura lançado com a data do dia em que cada linha entrou.";
 }
 
-/** The template to download: the six columns with the form's labels and two rows marked as examples. */
+/**
+ * The template to download: only the six columns with the form's labels. No example row: one left in the file would
+ * become a product (Petković, 27/10); the step of the file says an example in its text.
+ */
 export function importTemplateCsv(): string {
   return csvFile(
     IMPORT_COLUMNS.map((column) => IMPORT_COLUMN_LABELS[column]),
-    [
-      csvRow([
-        "Exemplo: Camiseta básica",
-        "49,90",
-        "10",
-        "18,00",
-        "",
-        "Linha de exemplo: apague antes de importar.",
-      ]),
-      csvRow([
-        "Exemplo: Caneca",
-        "25,00",
-        "",
-        "",
-        "",
-        "Linha de exemplo: só o produto, sem estoque.",
-      ]),
-    ]
+    []
   );
 }
 

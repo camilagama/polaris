@@ -20,6 +20,9 @@ export function ImportOfflineNotice({ detail }: { detail: string }) {
 
 export const OFFLINE_DETAIL =
   "Importar precisa de conexão. O arquivo que você escolheu fica aqui enquanto esta janela estiver aberta.";
+/** During the import (step 3): the status says what entered and what is left; this says how it goes on. */
+export const OFFLINE_DETAIL_RUN =
+  "Importar precisa de conexão. Quando ela voltar, continue de onde parou.";
 /** After the result there is no file to keep: only what the import needs. */
 export const OFFLINE_DETAIL_AFTER = "Importar precisa de conexão.";
 

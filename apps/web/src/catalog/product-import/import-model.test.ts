@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { previewImport } from "../product-import-rows";
 import { IMPORT_MAX_BYTES } from "../product-import-csv";
-import { createImportRun, skipStuckRow } from "../product-import-send";
+import type { ProductImportRowInput } from "@polaris/contracts";
+import { failedImportCsv } from "../product-import-failed-csv";
+import {
+  createImportRun,
+  runImport,
+  skipStuckRow,
+  summarizeImport,
+} from "../product-import-send";
 import {
   enteredAndLeft,
   estimateText,
+  FAILED_KIND_LABELS,
   headerNotes,
   importButtonLabel,
   importTemplateCsv,
   noCategoryText,
   overLimitText,
+  pauseText,
   planImport,
   planRoom,
   previewCounts,
@@ -21,6 +30,8 @@ import {
   stockEntered,
   stockText,
 } from "./import-model";
+
+const CANCEL_OR_UNDO = /cancel|desfe|desfaz/i;
 
 const CATEGORY = {
   id: "0199c2d0-0000-7000-8000-0000000000c1",
@@ -154,6 +165,16 @@ describe("the notes of the header", () => {
   });
 });
 
+describe("a long category", () => {
+  it("is cut in the reason of the preview, as a header is", () => {
+    const long = "C".repeat(80);
+    const plan = planImport(preview(`Nome;Categoria\nA;${long}\n`), [], null);
+    expect(previewTableRows(plan)[0]?.reason).toBe(
+      `A categoria “${"C".repeat(60)}…” não existe na loja. O produto entra sem categoria.`
+    );
+  });
+});
+
 describe("the result", () => {
   it("counts what entered, what did not and what existed, and lists only the rows that did not enter", () => {
     const plan = planImport(preview(FILE), ["Caneca"], 1);
@@ -171,8 +192,8 @@ describe("the result", () => {
 
     expect(resultTexts(plan, run)).toEqual({
       existing: "1 já existia e ficou como estava.",
-      limit: null,
-      notEntered: "3 linhas não entraram.",
+      limitReached: false,
+      notEntered: "3 linhas não entraram, 1 delas pelo limite do plano.",
       title: "Importamos 1 produto.",
       unconfirmed: null,
     });
@@ -198,11 +219,48 @@ describe("the result", () => {
 
     const texts = resultTexts(plan, run);
     expect(texts).toMatchObject({
-      limit: "3 linhas não entraram porque o plano chegou ao limite.",
+      limitReached: true,
+      notEntered: "3 linhas não entraram: o plano chegou ao limite.",
       title: "Nenhum produto foi importado.",
     });
-    expect(texts.limit).not.toContain("arquivo");
+    expect(texts.notEntered).not.toContain("arquivo");
     expect(stockEntered(run)).toBe(false);
+  });
+
+  it("counts the rows of a limit reached in the middle once: one sentence with the total and the part (T446-3)", () => {
+    const sentences = (file: string) => {
+      const plan = planImport(preview(file), [], null);
+      const run = createImportRun(plan.toSend, newId);
+      run.rows.forEach((row, index) => {
+        run.results.set(
+          row.rowNumber,
+          index === 0
+            ? {
+                productId: row.productId,
+                rowNumber: row.rowNumber,
+                status: "created",
+              }
+            : { rowNumber: row.rowNumber, status: "limit_reached" }
+        );
+      });
+      run.nextIndex = run.rows.length;
+      const texts = resultTexts(plan, run);
+      return [texts.title, texts.notEntered, texts.unconfirmed].filter(
+        (text) => text !== null
+      );
+    };
+    // the limit took every row that did not enter
+    expect(sentences("Nome\nUm\nDois\nTrês\n")).toEqual([
+      "Importamos 1 produto.",
+      "2 linhas não entraram: o plano chegou ao limite.",
+    ]);
+    // a row of the file with an error, and two of the limit: the total, then the part
+    expect(
+      sentences("Nome;Preço de tabela\nUm;1\nDois;2\nTrês;3\nQuatro;x\n")
+    ).toEqual([
+      "Importamos 1 produto.",
+      "3 linhas não entraram, 2 delas pelo limite do plano.",
+    ]);
   });
 });
 
@@ -235,6 +293,116 @@ describe("rows with no answer", () => {
       [3, "unconfirmed"],
       [4, "unconfirmed"],
     ]);
+  });
+});
+
+describe("a row the server never answers (Léo, VC1)", () => {
+  it("is skipped after its tries, the rows after it enter, and the result says it is not confirmed, never an error", async () => {
+    const plan = planImport(preview("Nome\nA\nB\nC\n"), [], null);
+    const run = createImportRun(plan.toSend, newId);
+    const stuck = run.rows[1]?.rowNumber;
+    const sent: number[] = [];
+    let clock = 0;
+    const dependencies = {
+      now: () => clock,
+      organizationId: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0",
+      retryAfterMs: () => null,
+      send: (input: { rows: ProductImportRowInput[] }) => {
+        const [row] = input.rows;
+        sent.push(row?.rowNumber ?? 0);
+        return row?.rowNumber === stuck
+          ? Promise.reject(
+              Object.assign(new Error("fault"), {
+                code: "INTERNAL_SERVER_ERROR",
+              })
+            )
+          : Promise.resolve({
+              results: input.rows.map((each) => ({
+                productId: each.productId,
+                rowNumber: each.rowNumber,
+                status: "created" as const,
+              })),
+            });
+      },
+      wait: (ms: number) => {
+        clock += ms;
+        return Promise.resolve();
+      },
+    };
+
+    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
+    const pause = stepAfter(
+      { error: new Error("fault"), kind: "interrupted" },
+      null,
+      true
+    );
+    // the screen continues it by itself a few times; then the pause offers "Pular esta linha"
+    expect(pause).toBe("continue");
+    expect(
+      pauseText({ kind: "interrupted" }, summarizeImport(run).entered, 2)
+    ).toBe(
+      "O servidor não respondeu a esta linha. 1 produto entrou; 2 faltam."
+    );
+
+    skipStuckRow(run);
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    expect(sent).toEqual([2, 3, 3, 3, 4]);
+    expect(resultTexts(plan, run)).toMatchObject({
+      notEntered: null,
+      title: "Importamos 2 produtos.",
+      unconfirmed:
+        "1 linha não foi confirmada: confira na lista de produtos antes de enviar de novo.",
+    });
+    const failed = resultFailedRows(plan, run);
+    expect(failed.map((row) => [row.rowNumber, row.kind])).toEqual([
+      [3, "unconfirmed"],
+    ]);
+    expect(FAILED_KIND_LABELS.unconfirmed).toBe("Não confirmada");
+    // the file of the rows that failed says it was not confirmed, not that it was refused
+    const csvLine = failedImportCsv(failed).trimEnd().split("\r\n").at(-1);
+    expect(csvLine).toBe(
+      "B,,,,,,3,Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo."
+    );
+  });
+});
+
+describe("Parar depois desta linha (Everton)", () => {
+  it("says what entered stays and what is left, never cancelling or undoing", () => {
+    const texts = (
+      [
+        { kind: "stopped" },
+        { kind: "offline" },
+        { kind: "interrupted" },
+        { kind: "rate_limited" },
+        { kind: "refused", message: "O servidor recusou o envio." },
+      ] as const
+    ).map((pause) => pauseText(pause, 2, 1));
+    expect(texts[0]).toBe("Importação parada. 2 produtos entraram; 1 falta.");
+    expect(texts[1]).toBe("Sem internet. 2 produtos entraram; 1 falta.");
+    for (const text of texts) {
+      expect(text).not.toMatch(CANCEL_OR_UNDO);
+    }
+  });
+
+  it("leaves the rows it did not send as not confirmed, never as errors", () => {
+    const plan = planImport(preview("Nome\nA\nB\nC\n"), [], null);
+    const run = createImportRun(plan.toSend, newId);
+    const [a] = run.rows;
+    if (!a) {
+      throw new Error("expected a row");
+    }
+    run.results.set(a.rowNumber, {
+      productId: a.productId,
+      rowNumber: a.rowNumber,
+      status: "created",
+    });
+    run.nextIndex = 1;
+    expect(resultTexts(plan, run).notEntered).toBeNull();
+    expect(
+      resultFailedRows(plan, run).map(
+        (row) => FAILED_KIND_LABELS[row.kind as "unconfirmed"]
+      )
+    ).toEqual(["Não confirmada", "Não confirmada"]);
   });
 });
 
@@ -329,19 +497,16 @@ describe("the progress says rows, never a promised time", () => {
 });
 
 describe("the template", () => {
-  it("has the six columns with the form's labels and two rows marked as examples, and reads back as two rows", () => {
+  it("has only the six columns with the form's labels: no example row that could become a product (T446-2)", () => {
     const csv = importTemplateCsv();
-    const [header, ...lines] = csv.slice(1).trimEnd().split("\r\n");
-    expect(header).toBe(
-      "Nome,Preço de tabela,Quantidade,Custo de cada unidade,Categoria,Descrição"
+    expect(csv).toBe(
+      "\uFEFFNome,Preço de tabela,Quantidade,Custo de cada unidade,Categoria,Descrição\r\n"
     );
-    expect(lines).toHaveLength(2);
-    expect(lines.every((line) => line.startsWith("Exemplo: "))).toBe(true);
-    const read = preview(csv);
-    expect(read.refused).toEqual([]);
-    expect(read.ready.map((row) => row.initialStock)).toEqual([
-      { quantity: 10, unitCost: "18.00" },
-      null,
-    ]);
+    // read back, it has the columns and no row at all
+    expect(preview(csv)).toMatchObject({
+      ignoredHeaders: [],
+      ready: [],
+      refused: [],
+    });
   });
 });

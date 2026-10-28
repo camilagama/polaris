@@ -8,28 +8,12 @@ import { summarizeImport } from "../product-import-send";
 import { IMPORT_OFFLINE_ID, StepFrame } from "./import-frame";
 import {
   answeredCount,
-  enteredAndLeft,
   estimateText,
+  pauseText,
   progressTitle,
   progressValueText,
 } from "./import-model";
 import type { ImportPause } from "./use-product-import";
-
-/** What a pause says before "N produtos entraram; M faltam.". */
-function pauseLead(pause: ImportPause): string {
-  switch (pause.kind) {
-    case "offline":
-      return "Sem internet.";
-    case "stopped":
-      return "Importação parada.";
-    case "interrupted":
-      return "O servidor não respondeu.";
-    case "rate_limited":
-      return "O envio está ocupado agora. Espere um minuto e continue.";
-    default:
-      return pause.message;
-  }
-}
 
 interface ImportRunStepProps {
   bodyRef: Ref<HTMLDivElement>;
@@ -39,6 +23,8 @@ interface ImportRunStepProps {
   /** "Ver o resultado": what entered and what did not, the rows not sent among the latter. */
   onFinish: () => void;
   online: boolean;
+  /** "Pular esta linha": the row the server never answered is left out (not confirmed) and the run goes on. */
+  onSkip: () => void;
   onStop: () => void;
   /** When this run (or its continuation) started, and from which row: the pace of the estimate. */
   pace: { fromIndex: number; startedAt: number } | null;
@@ -46,6 +32,66 @@ interface ImportRunStepProps {
   pause: ImportPause | null;
   run: ImportRun;
   stopping: boolean;
+}
+
+type RunFooterProps = Pick<
+  ImportRunStepProps,
+  "onContinue" | "onFinish" | "onSkip" | "onStop" | "pause" | "stopping"
+> & { offline: boolean };
+
+/**
+ * While rows go: "Parar depois desta linha" (the row on its way gets its answer, then the run stops). On a pause: the
+ * result, and continuing from where it stopped; after a row the server never answered, "Pular esta linha" too. With no
+ * connection, what sends stays reachable, off, and reads why.
+ */
+function RunFooter({
+  offline,
+  onContinue,
+  onFinish,
+  onSkip,
+  onStop,
+  pause,
+  stopping,
+}: RunFooterProps) {
+  if (pause === null) {
+    return (
+      <Button
+        aria-disabled={stopping || undefined}
+        onClick={stopping ? undefined : onStop}
+        type="button"
+        variant="outline"
+      >
+        {stopping ? "Parando depois desta linha…" : "Parar depois desta linha"}
+      </Button>
+    );
+  }
+  const reason = offline ? IMPORT_OFFLINE_ID : undefined;
+  return (
+    <>
+      <Button onClick={onFinish} type="button" variant="outline">
+        Ver o resultado
+      </Button>
+      {pause.kind === "interrupted" ? (
+        <Button
+          aria-describedby={reason}
+          aria-disabled={offline || undefined}
+          onClick={offline ? undefined : onSkip}
+          type="button"
+          variant="outline"
+        >
+          Pular esta linha
+        </Button>
+      ) : null}
+      <Button
+        aria-describedby={reason}
+        aria-disabled={offline || undefined}
+        onClick={offline ? undefined : onContinue}
+        type="button"
+      >
+        Continuar de onde parou
+      </Button>
+    </>
+  );
 }
 
 /**
@@ -57,6 +103,7 @@ export function ImportRunStep({
   bodyRef,
   onContinue,
   onFinish,
+  onSkip,
   onStop,
   offline,
   online,
@@ -73,7 +120,6 @@ export function ImportRunStep({
     pause === null && pace !== null
       ? estimateText(done - pace.fromIndex, Date.now() - pace.startedAt, left)
       : null;
-  const continueOff = !online;
   const valueText = useCallback(
     () => progressValueText(done, count),
     [count, done]
@@ -82,32 +128,15 @@ export function ImportRunStep({
     <StepFrame
       bodyRef={bodyRef}
       footer={
-        pause === null ? (
-          <Button
-            aria-disabled={stopping || undefined}
-            onClick={stopping ? undefined : onStop}
-            type="button"
-            variant="outline"
-          >
-            {stopping
-              ? "Parando depois desta linha…"
-              : "Parar depois desta linha"}
-          </Button>
-        ) : (
-          <>
-            <Button onClick={onFinish} type="button" variant="outline">
-              Ver o resultado
-            </Button>
-            <Button
-              aria-describedby={continueOff ? IMPORT_OFFLINE_ID : undefined}
-              aria-disabled={continueOff || undefined}
-              onClick={continueOff ? undefined : onContinue}
-              type="button"
-            >
-              Continuar de onde parou
-            </Button>
-          </>
-        )
+        <RunFooter
+          offline={!online}
+          onContinue={onContinue}
+          onFinish={onFinish}
+          onSkip={onSkip}
+          onStop={onStop}
+          pause={pause}
+          stopping={stopping}
+        />
       }
       offline={offline}
     >
@@ -116,7 +145,7 @@ export function ImportRunStep({
           <p className="font-medium">{progressTitle(count)}</p>
         ) : (
           <p className="font-medium">
-            {pauseLead(pause)} {enteredAndLeft(summary.entered, left)}
+            {pauseText(pause, summary.entered, left)}
           </p>
         )}
       </div>

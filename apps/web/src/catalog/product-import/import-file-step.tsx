@@ -158,11 +158,18 @@ export function ImportFileStep({
           </CollapsiblePanel>
         </Collapsible>
       </div>
-      <p className="text-muted-foreground text-support">
-        Colunas: Nome (obrigatória), Preço de tabela, Quantidade, Custo de cada
-        unidade, Categoria, Descrição. Quantidade e custo vazios criam só o
-        produto.
-      </p>
+      <div className="grid gap-1 text-muted-foreground text-support">
+        <p>
+          Colunas: Nome (obrigatória), Preço de tabela, Quantidade, Custo de
+          cada unidade, Categoria, Descrição. O modelo traz só os nomes das
+          colunas: cada linha que você escrever embaixo vira um produto.
+        </p>
+        <p>
+          Exemplo de linha: Nome “Camiseta básica”, Preço de tabela “49,90”,
+          Quantidade “10”, Custo de cada unidade “18,00”. Quantidade e custo
+          vazios criam só o produto.
+        </p>
+      </div>
     </StepFrame>
   );
 }
