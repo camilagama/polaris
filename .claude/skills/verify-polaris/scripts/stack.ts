@@ -48,8 +48,10 @@ import { appendLeiame, commitLabel, evidenceDir } from "./leiame";
 const repoRoot = resolve(import.meta.dirname, "../../../..");
 const webRoot = join(repoRoot, "apps/web");
 const ZONE = "America/Sao_Paulo";
-const LOJAS = ["vazia", "vendas", "limite"] as const;
+const LOJAS = ["vazia", "vendas", "limite", "pro"] as const;
 type Loja = (typeof LOJAS)[number];
+/** Worker secrets the offline runtime needs and the closed environment of the e2e-real does not carry. */
+const RUNTIME_SECRETS = ["OFFLINE_LEASE_SECRET", "SYNC_PAYLOAD_HASH_SECRET"];
 /** The variants of the Free plan (packages/domain/src/billing/entitlements.ts). */
 const FREE_VARIANT_LIMIT = 50;
 const LISTENER_PID = /pid=(\d+)/;
@@ -313,6 +315,17 @@ function startPreview(state: State): ChildProcess {
     // only this local preview: the top of wrangler.jsonc keeps it off, as production does today
     env.BILLING_SELF_SERVICE_ENABLED = "true";
     env.E2E_PREVIEW_VARIABLES = `${env.E2E_PREVIEW_VARIABLES},BILLING_SELF_SERVICE_ENABLED`;
+  }
+  if (state.runtime) {
+    // the keys the Worker signs the offline lease and hashes the commands of `sync.push` with, made from the secret of
+    // the run and thrown away with it. Without them a Pro store also gets "Offline indisponível neste aparelho"
+    // (issueLease answers 503) and a sale kept on the device is never accepted (sync.push answers 503)
+    for (const name of RUNTIME_SECRETS) {
+      env[name] = createHash("sha256")
+        .update(`${name}:${state.run.secret}`)
+        .digest("hex");
+    }
+    env.E2E_PREVIEW_VARIABLES = `${env.E2E_PREVIEW_VARIABLES},${RUNTIME_SECRETS.join(",")}`;
   }
   const child = spawn(
     node,
@@ -579,6 +592,50 @@ async function seedLimit(user: StoreUser, store: Store) {
   }
 }
 
+/**
+ * A paid store: two products with stock and the billing record of an active Pro subscription written straight into
+ * the run database. No provider, no checkout and no webhook exist in this stack, and the plan reads only this record
+ * (state `active` with the end of the access), so it is the same row the billing lifecycle would leave. Pro is what
+ * allows offline writes, which the Free stores refuse.
+ */
+async function seedPro(state: State, user: StoreUser, store: Store) {
+  startCommandIds(`verify/${store.name}`);
+  const today = isoDay(0).on;
+  for (const item of [
+    { name: "Camiseta básica", price: "59.90", stock: 30 },
+    { name: "Caneca esmaltada", price: "35.00", stock: 20 },
+  ]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one command after the other, as the screens send them
+    const product = await seedProduct(
+      user.rpc,
+      store.organizationId,
+      item.name,
+      item.price
+    );
+    await seedStock(
+      user.rpc,
+      store.organizationId,
+      product.variantId,
+      item.stock,
+      "12.00",
+      today
+    );
+  }
+  const { pool } = runDatabase(new URL(state.owner), state.run);
+  try {
+    await pool.query(
+      `INSERT INTO organization_billing (organization_id, state, access_ends_at, cycle_months)
+       VALUES ($1, 'active', now() + interval '365 days', 1)
+       ON CONFLICT (organization_id) DO UPDATE
+         SET state = 'active', access_ends_at = now() + interval '365 days', cycle_months = 1,
+             updated_at = now(), version = organization_billing.version + 1`,
+      [store.organizationId]
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
 async function seed(state: State, loja: Loja): Promise<void> {
   if (state.stores[loja]) {
     log(`loja ${loja} already seeded`);
@@ -590,6 +647,8 @@ async function seed(state: State, loja: Loja): Promise<void> {
     await seedSales(user, store);
   } else if (loja === "limite") {
     await seedLimit(user, store);
+  } else if (loja === "pro") {
+    await seedPro(state, user, store);
   }
   state.stores[loja] = store;
   writeState(state);
@@ -744,20 +803,22 @@ async function storeChecks(state: State): Promise<Check[]> {
       ]);
       const { rows } = await pool.query<{
         members: number;
+        plan: string | null;
         sales: number;
         variants: number;
       }>(
         `SELECT (SELECT count(*)::int FROM memberships WHERE organization_id = $1 AND user_id = $2) AS members,
+                (SELECT state FROM organization_billing WHERE organization_id = $1) AS plan,
                 (SELECT count(*)::int FROM sales WHERE organization_id = $1) AS sales,
                 (SELECT count(*)::int FROM product_variants v JOIN products p ON p.id = v.product_id
                   WHERE p.organization_id = $1) AS variants`,
         [store.organizationId, store.userId]
       );
-      const row = rows[0] ?? { members: 0, sales: 0, variants: 0 };
+      const row = rows[0] ?? { members: 0, plan: null, sales: 0, variants: 0 };
       checks.push([
         `loja ${loja}: seeded`,
         row.members === 1 && seededAsExpected(loja as Loja, row),
-        `${row.variants} variantes, ${row.sales} vendas`,
+        `${row.variants} variantes, ${row.sales} vendas, plano ${row.plan ?? "free"}`,
       ]);
     }
   } finally {
@@ -768,8 +829,11 @@ async function storeChecks(state: State): Promise<Check[]> {
 
 function seededAsExpected(
   loja: Loja,
-  row: { sales: number; variants: number }
+  row: { plan: string | null; sales: number; variants: number }
 ): boolean {
+  if (loja === "pro") {
+    return row.variants >= 2 && row.plan === "active";
+  }
   if (loja === "vendas") {
     return row.variants >= 3 && row.sales >= 8;
   }

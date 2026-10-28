@@ -4,13 +4,20 @@
 #   .claude/skills/verify-polaris/scripts/verify.sh preflight
 #   .claude/skills/verify-polaris/scripts/verify.sh launch [--runtime] [--assinatura]
 #   .claude/skills/verify-polaris/scripts/verify.sh doctor
-#   .claude/skills/verify-polaris/scripts/verify.sh seed vazia|vendas|limite
+#   .claude/skills/verify-polaris/scripts/verify.sh seed vazia|vendas|limite|pro
 #   .claude/skills/verify-polaris/scripts/verify.sh sql "SELECT ..."   (só leitura)
 #   .claude/skills/verify-polaris/scripts/verify.sh drive <arquivo.verify.ts> [--project desktop-claro ...]
 #   .claude/skills/verify-polaris/scripts/verify.sh snap <caminho> [--project celular-escuro ...]
 #   .claude/skills/verify-polaris/scripts/verify.sh evidence
 #   .claude/skills/verify-polaris/scripts/verify.sh cleanup
 set -euo pipefail
+
+# the script uses ${var,,} (bash 4); the bash 3.2 of macOS stops here, with the same line format as the preflight
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "PREFLIGHT FALTA bash: a skill pede bash 4 ou mais (este é ${BASH_VERSION:-desconhecido}) e Linux; instale um bash 4+ e rode com ele"
+  echo "PREFLIGHT FALHOU: 1 item(ns) faltando; resolva e rode \"verify.sh preflight\" de novo"
+  exit 1
+fi
 
 # only builtins until preflight has run: it must work (and say what is missing) even with an empty PATH
 skill_dir="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
@@ -63,6 +70,19 @@ writable_or_creatable() {
   [ -d "${path:-/}" ] && [ -w "${path:-/}" ]
 }
 
+# Chromium and its headless shell (what headless runs use) of the Playwright version in apps/web, in the cache of the
+# machine (PLAYWRIGHT_BROWSERS_PATH or ~/.cache/ms-playwright)
+playwright_browsers_installed() {
+  (cd "$web_root" && NODE_PATH="$web_root/node_modules" "$VERIFY_NODE" -e '
+    const { existsSync } = require("node:fs");
+    const { basename, dirname, join } = require("node:path");
+    const executable = require("@playwright/test").chromium.executablePath();
+    const revision = basename(dirname(dirname(executable))).replace("chromium-", "");
+    const shell = join(dirname(dirname(dirname(executable))), `chromium_headless_shell-${revision}`);
+    process.exit(existsSync(executable) && existsSync(shell) ? 0 : 1);
+  ' >/dev/null 2>&1)
+}
+
 # What the launch needs, one line per missing item with the name of the variable that points at it; nothing is created.
 preflight() {
   local missing=0
@@ -99,7 +119,11 @@ preflight() {
     done
   fi
 
-  [ -d "$web_root/node_modules/@playwright/test" ] || lacks node_modules "dependências não instaladas em $repo_root: bun install --frozen-lockfile"
+  if [ ! -d "$web_root/node_modules/@playwright/test" ]; then
+    lacks node_modules "dependências não instaladas em $repo_root: bun install --frozen-lockfile"
+  elif [ -n "$VERIFY_NODE" ] && [ -x "$VERIFY_NODE" ] && ! playwright_browsers_installed; then
+    lacks PLAYWRIGHT_BROWSERS_PATH "navegador do Playwright não instalado (chromium e chromium_headless_shell): (cd apps/web && bunx playwright install chromium)"
+  fi
   writable_or_creatable "$VERIFY_EVIDENCE_DIR" || lacks VERIFY_EVIDENCE_DIR "$VERIFY_EVIDENCE_DIR não é gravável nem criável; aponte VERIFY_EVIDENCE_DIR para uma pasta fora do repositório"
   writable_or_creatable "$VERIFY_STATE_DIR" || lacks VERIFY_STATE_DIR "$VERIFY_STATE_DIR não é gravável nem criável"
 
