@@ -901,21 +901,34 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "2Cadastrar o 1º produtoÀ mãoImportar planilha",
+      "2Cadastrar o 1º produtoCadastrar à mãoImportar planilha",
       "3Fazer a 1ª venda",
+    ]);
+    // no button under the steps repeats the two ways of the step
+    await expect(checklist.getByRole("link")).toHaveText([
+      "Cadastrar à mão",
+      "Importar planilha",
     ]);
     await expect(
       checklist.getByRole("link", { name: "Cadastrar produto" })
-    ).toHaveAttribute("href", "/products?novo=1");
+    ).toHaveCount(0);
     // the step has its two ways (corte 2.5, T-5): by hand, or the import of a spreadsheet
     const step = checklist.getByRole("listitem").nth(1);
-    await expect(step.getByRole("link", { name: "À mão" })).toHaveAttribute(
-      "href",
-      "/products?novo=1"
-    );
+    await expect(
+      step.getByRole("link", { name: "Cadastrar à mão" })
+    ).toHaveAttribute("href", "/products?novo=1");
     await expect(
       step.getByRole("link", { name: "Importar planilha" })
     ).toHaveAttribute("href", "/products?importar=1");
+    // both are buttons (size sm, 28 px with a mouse), not 14 px text links
+    const boxes = await Promise.all(
+      ["Cadastrar à mão", "Importar planilha"].map((name) =>
+        step.getByRole("link", { name }).boundingBox()
+      )
+    );
+    for (const box of boxes) {
+      expect(box?.height).toBeGreaterThanOrEqual(28);
+    }
     await expect(region(page, "Vendas hoje")).toHaveCount(0);
     await expect(region(page, "Vendas por dia")).toHaveCount(0);
     await expect(
