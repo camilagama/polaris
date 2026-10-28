@@ -14,7 +14,7 @@ Pré-requisitos:
 
 - o PR G no ar: a tela da loja encerrada, com o pedido de cópia dos dados e o desfazer do encerramento. O e-mail manda o dono a essa tela; sem ela, não há onde pedir a cópia nem desfazer. Com ela, o link e o botão do e-mail passam a apontar para essa tela (só a rota, sem token), e só então a flag liga;
 - domínio de envio verificado no Resend;
-- segredo `RESEND_API_KEY` e variável `AUTH_EMAIL_FROM` (em `apps/web/wrangler.jsonc`), que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
+- segredo `RESEND_API_KEY` e variável `AUTH_EMAIL_FROM` (em `apps/web/wrangler.jsonc`), que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos, e também os e-mails de cobrança e as boas-vindas ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
 - `BETTER_AUTH_BASE_URL`, que monta o link;
 - `AUTH_HYPERDRIVE`, pelo qual a função lê o endereço da conta (o papel de autenticação, não o de privacidade).
 
