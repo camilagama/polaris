@@ -30,6 +30,8 @@ const fake = vi.hoisted(() => ({
    * on that read, so no `api.getSession` runs before it).
    */
   getSession: (() => Promise.resolve(null)) as () => Promise<unknown>,
+  /** The `$context` the next instance gets, when a test needs to settle it by hand. */
+  context: undefined as Promise<unknown> | undefined,
   /** Whether the next instance fails to start (its `$context` rejects, as Better Auth's does). */
   startFails: false,
   /** The background task the next request leaves, and what it saw when it ran. */
@@ -49,9 +51,11 @@ vi.mock("@polaris/db/client", () => ({
 
 const createBetterAuth = vi.hoisted(() =>
   vi.fn((options: CapturedOptions) => ({
-    $context: fake.startFails
-      ? Promise.reject(new Error("the start failed"))
-      : Promise.resolve({}),
+    $context:
+      fake.context ??
+      (fake.startFails
+        ? Promise.reject(new Error("the start failed"))
+        : Promise.resolve({})),
     api: {
       getSession: () => {
         fake.apiReads += 1;
@@ -116,6 +120,7 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     fake.holdBackground = undefined;
     fake.getSession = () => Promise.resolve(null);
     fake.startFails = false;
+    fake.context = undefined;
   });
 
   const lastOptions = () =>
@@ -225,6 +230,35 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     fake.getSession = () => Promise.resolve(null);
     await getSession("after-outage", vi.fn(), rotated);
     expect(createBetterAuth.mock.calls.length).toBe(built + 1);
+  });
+
+  it("keeps the instance another request built while it waited to learn that its own start failed", async () => {
+    // the first request's instance: its start is still settling when the request fails
+    let failStart = () => undefined as unknown;
+    fake.context = new Promise((_resolve, reject) => {
+      failStart = () => reject(new Error("the start failed"));
+    });
+    fake.getSession = () => Promise.reject(new Error("the start failed"));
+    const first = getSession("first", vi.fn(), {
+      ...bindings,
+      BETTER_AUTH_SECRET: "m".repeat(32),
+    });
+    const firstOutcome = expect(first).rejects.toThrow("the start failed");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // meanwhile another request of the isolate replaces the instance
+    fake.context = undefined;
+    fake.getSession = () => Promise.resolve(null);
+    const replacement = { ...bindings, BETTER_AUTH_SECRET: "n".repeat(32) };
+    await getSession("second", vi.fn(), replacement);
+    const built = createBetterAuth.mock.calls.length;
+
+    failStart();
+    await firstOutcome;
+
+    // the first request learned about its own instance only: the second one's stays
+    await getSession("third", vi.fn(), replacement);
+    expect(createBetterAuth.mock.calls.length).toBe(built);
   });
 
   it.each([
