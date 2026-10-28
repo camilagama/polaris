@@ -15,7 +15,11 @@ import {
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { dialogEntries, PHONE_QUERY } from "@/ui/dialog-history";
+import {
+  dialogEntries,
+  holdOpenDialog,
+  PHONE_QUERY,
+} from "@/ui/dialog-history";
 import {
   FORM_BODY_CLASS,
   FORM_CLOSE_CLASS,
@@ -131,6 +135,8 @@ function Dialog({
     () => ({ actionsRef: actions, open: open ?? ownOpen }),
     [actions, open, ownOpen]
   );
+  // an open dialog holds the swap of the build (pwa/swap-guard.ts)
+  useEffect(() => (state.open ? holdOpenDialog() : undefined), [state.open]);
   return (
     <DialogRootStateContext.Provider value={state}>
       <DialogPrimitive.Root

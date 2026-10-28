@@ -20,7 +20,7 @@ import { Label } from "@/ui/label";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import {
   LimitHelp,
@@ -233,7 +233,7 @@ export function ProductVariantConfigurationForm({
     valueLines,
     variants,
   });
-  useReportUnsentWork(unsaved);
+  useHoldSwap(unsaved);
   // the dialog keeps what was typed while it is closed by Esc, × or the step back, as it keeps the data
   useEffect(() => {
     onDraftChange(

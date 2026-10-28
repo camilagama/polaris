@@ -171,3 +171,41 @@ export function dialogEntries(): DialogEntries {
   }
   return pageEntries;
 }
+
+/**
+ * How many dialogs are open on the page, of form or not, at any width. A swap of the build reloads the page, which
+ * would close a dialog with whatever it holds, so the swap waits while any is open (`pwa/swap-guard.ts`): the dialog
+ * root says it opened and closed, so no screen has to declare it.
+ */
+let openDialogs = 0;
+const openListeners = new Set<() => void>();
+
+function emitOpen(): void {
+  for (const listener of openListeners) {
+    listener();
+  }
+}
+
+/** A dialog opened; the returned function says it closed (once, however many times it is called). */
+export function holdOpenDialog(): () => void {
+  openDialogs += 1;
+  emitOpen();
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    openDialogs -= 1;
+    emitOpen();
+  };
+}
+
+export function openDialogCount(): number {
+  return openDialogs;
+}
+
+export function subscribeOpenDialogs(listener: () => void): () => void {
+  openListeners.add(listener);
+  return () => openListeners.delete(listener);
+}

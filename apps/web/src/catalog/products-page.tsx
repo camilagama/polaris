@@ -13,7 +13,7 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { keepForReturn, takeKept } from "../lib/kept-for-return";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { isDraftChanged, useHoldSwap } from "../lib/unsent-work";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   LimitHelp,
@@ -741,7 +741,7 @@ export function ProductsPage() {
     dialogWasShown.current = false;
   }, [dialogOpen, dialogProductId, dialogShown]);
   // typed and not sent: the form against an empty one, or against the product being edited
-  useReportUnsentWork(
+  useHoldSwap(
     isDraftChanged(
       draft,
       dialogProduct ? draftOf(dialogProduct) : emptyDraft

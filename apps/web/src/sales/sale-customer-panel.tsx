@@ -23,7 +23,7 @@ import {
 } from "@/ui/dialog";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import {
   type ActionState,
   actionButtonLabels,
@@ -440,7 +440,7 @@ export function SaleCustomerPanel({
 }: SaleCustomerPanelProps) {
   const [state, setState] = useState(initialLinkPanelState);
   // a customer picked and not linked yet (it is cleared when the link is saved)
-  useReportUnsentWork(state.selectedCustomerId !== "");
+  useHoldSwap(state.selectedCustomerId !== "");
   const inFlight = useRef<boolean>(false);
   const linkSequence = useRef<RequestSequence>({ current: 0 });
   const customersSequence = useRef<RequestSequence>({ current: 0 });

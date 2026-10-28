@@ -61,6 +61,8 @@ function SearchField({
         {...props}
         aria-label={label}
         className="[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
+        // a search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
+        data-swap-ignore=""
         enterKeyHint="search"
         onChange={handleChange}
         ref={ref}

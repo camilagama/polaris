@@ -35,7 +35,7 @@ import {
   uploadProductMedia,
 } from "../lib/media-upload";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   LimitHelp,
@@ -244,7 +244,7 @@ export function ProductMediaPanel({
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
   // a photo picked and prepared that was not sent yet
-  useReportUnsentWork(preparedFile !== null);
+  useHoldSwap(preparedFile !== null);
   const fileSelectionGeneration = useRef(0);
   const assetsVersion = useRef(0);
   const commandLock = useRef<boolean>(false);
