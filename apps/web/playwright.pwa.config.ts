@@ -5,10 +5,13 @@ import {
   reuseExistingServer,
   workersFrom,
 } from "./e2e/run-settings";
+import { VISUAL_PROJECT, visualConnectOptions } from "./scripts/visual-browser";
 
 const inCI = Boolean(process.env.CI);
 /** The checks that only make sense on a phone, run by the `chromium-celular` project alone. */
 const PHONE_ONLY = ["**/motion-level.e2e.ts", "**/dialog-voltar.e2e.ts"];
+/** The visual regression: only in its project, with the browser of the pinned image (`scripts/visual-browser.ts`). */
+const VISUAL = ["**/ui-visual.e2e.ts"];
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -16,12 +19,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-desktop",
-      testIgnore: PHONE_ONLY,
+      testIgnore: [...PHONE_ONLY, ...VISUAL],
       use: { ...devices["Desktop Chrome"], browserName: "chromium" },
     },
     {
       name: "chromium-mobile-emulated",
-      testIgnore: PHONE_ONLY,
+      testIgnore: [...PHONE_ONLY, ...VISUAL],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
     // The levels of motion on a phone (t386): a touch screen of 360×740, the phone of the design. The file proves
@@ -34,6 +37,17 @@ export default defineConfig({
         ...devices["Pixel 5"],
         browserName: "chromium",
         viewport: { height: 740, width: 360 },
+      },
+    },
+    // Each test sets its width, touch and theme; the browser is the server of the image that `scripts/pwa-browser-tests.ts`
+    // starts (`bun run test:pwa`, `test:visual`). Without it the spec fails before the first screenshot.
+    {
+      name: VISUAL_PROJECT,
+      testMatch: VISUAL,
+      use: {
+        ...devices["Desktop Chrome"],
+        browserName: "chromium",
+        connectOptions: visualConnectOptions(),
       },
     },
   ],
