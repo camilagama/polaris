@@ -904,9 +904,14 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       "2Cadastrar o 1º produtoÀ mãoImportar planilha",
       "3Fazer a 1ª venda",
     ]);
+    // no button under the steps repeats the two ways of the step
+    await expect(checklist.getByRole("link")).toHaveText([
+      "À mão",
+      "Importar planilha",
+    ]);
     await expect(
       checklist.getByRole("link", { name: "Cadastrar produto" })
-    ).toHaveAttribute("href", "/products?novo=1");
+    ).toHaveCount(0);
     // the step has its two ways (corte 2.5, T-5): by hand, or the import of a spreadsheet
     const step = checklist.getByRole("listitem").nth(1);
     await expect(step.getByRole("link", { name: "À mão" })).toHaveAttribute(
@@ -937,6 +942,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto (feito)");
+    await expect(checklist.getByRole("link", { name: "À mão" })).toHaveCount(0);
     const step = checklist.getByRole("link", {
       name: "Dar entrada no estoque",
     });

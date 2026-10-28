@@ -545,13 +545,17 @@ export function checklistNext(
     : { kind: "stock", productId: firstProductId };
 }
 
+/**
+ * The button under the steps for the next one, or null for "product": that step shows its own two ways ("À mão" and
+ * "Importar planilha"), so a third exit to the same place would only repeat them.
+ */
 export function checklistLink(next: ChecklistNext): {
   href: string;
   label: string;
-} {
+} | null {
   switch (next.kind) {
     case "product":
-      return { href: "/products?novo=1", label: "Cadastrar produto" };
+      return null;
     case "stock":
       return {
         href: `/products?produto=${encodeURIComponent(next.productId)}`,

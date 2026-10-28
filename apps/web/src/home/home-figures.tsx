@@ -114,8 +114,9 @@ function FirstProductWays() {
 }
 
 /**
- * The store that never sold (AC-22, § 5.4): three steps from its real data, with one button to the next one; when
- * the first product has no stock, the next step is "Dar entrada no estoque" on its panel.
+ * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
+ * step has two ways and no button; after it, one button goes to the next step ("Dar entrada no estoque" on the
+ * first product's panel while it has no stock).
  */
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
@@ -157,9 +158,11 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
           </li>
         ))}
       </ol>
-      <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
-        {link.label}
-      </a>
+      {link ? (
+        <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
+          {link.label}
+        </a>
+      ) : null}
     </HomeBlock>
   );
 }

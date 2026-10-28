@@ -352,10 +352,8 @@ describe("checklist (AC-22, § 5.4)", () => {
   const productId = "0199c2d0-0000-7000-8000-0000000000aa";
 
   it("asks for the first product, then for stock on that product, then for the sale", () => {
-    expect(checklistLink(checklistNext(null, false))).toEqual({
-      href: "/products?novo=1",
-      label: "Cadastrar produto",
-    });
+    // the step has its own two ways (À mão, Importar planilha): no button repeats them
+    expect(checklistLink(checklistNext(null, false))).toBeNull();
     expect(checklistLink(checklistNext(productId, false))).toEqual({
       href: `/products?produto=${productId}`,
       label: "Dar entrada no estoque",
