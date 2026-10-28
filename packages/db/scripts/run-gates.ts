@@ -297,7 +297,8 @@ gates.push(
  * is the races of the system (docs/architecture/concurrency-matrix.md): the gates
  * whose races hold the contended lock, start together and fail if they never
  * competed (concurrency-support.ts). Every one of them is also in `ci`, so the
- * suite adds no job and no gate; it only runs the races alone and repeated.
+ * suite adds no gate; it only runs the races alone and repeated, in the nightly
+ * `Concurrency nightly` workflow (3 rounds) and by hand before a release.
  */
 const suites: Record<string, string[]> = {
   // What the CI job runs against its own Postgres 18 service: the gates that do

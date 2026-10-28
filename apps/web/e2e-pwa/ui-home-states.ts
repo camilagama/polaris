@@ -462,7 +462,7 @@ export const homeStates = {
   /** A store that never sold and has no product: the checklist, Meta and Atenção. */
   fresh: (page: Page) =>
     openHome(page, { fresh: true }, (opened) =>
-      opened.getByRole("link", { name: "Cadastrar produto" }).waitFor()
+      opened.getByRole("link", { name: "Importar planilha" }).waitFor()
     ),
   /** A store with sales: every block, with the chart and the map drawn (not the boxes that hold their places). */
   sold: (page: Page) =>

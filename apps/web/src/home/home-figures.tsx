@@ -93,16 +93,20 @@ const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
 
 /** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
 const FIRST_PRODUCT_WAYS = [
-  { href: "/products?novo=1", label: "À mão" },
-  { href: "/products?importar=1", label: "Importar planilha" },
+  { href: "/products?novo=1", label: "Cadastrar à mão", variant: "default" },
+  {
+    href: "/products?importar=1",
+    label: "Importar planilha",
+    variant: "outline",
+  },
 ] as const;
 
 function FirstProductWays() {
   return (
-    <span className="flex flex-wrap gap-x-3 gap-y-1">
+    <span className="flex flex-wrap gap-x-2 gap-y-4">
       {FIRST_PRODUCT_WAYS.map((way) => (
         <a
-          className={buttonVariants({ size: "sm", variant: "link" })}
+          className={buttonVariants({ size: "sm", variant: way.variant })}
           href={way.href}
           key={way.href}
         >
@@ -114,8 +118,9 @@ function FirstProductWays() {
 }
 
 /**
- * The store that never sold (AC-22, § 5.4): three steps from its real data, with one button to the next one; when
- * the first product has no stock, the next step is "Dar entrada no estoque" on its panel.
+ * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
+ * step has two small buttons (by hand, spreadsheet) and no button under the steps; after it, one button goes to the next step ("Dar entrada no estoque" on the
+ * first product's panel while it has no stock).
  */
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
@@ -128,38 +133,55 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
       title="Primeiros passos"
     >
       <ol className="grid gap-2">
-        {STEPS.map((step, index) => (
-          <li className="flex items-center gap-2.5" key={step}>
-            <span
-              aria-hidden="true"
+        {STEPS.map((step, index) => {
+          const withWays = index === 1 && next.kind === "product";
+          // with the two buttons the step is taller: number and name sit on the height of the first line of buttons
+          const line = withWays ? "h-ctl-sm" : "";
+          return (
+            <li
               className={cn(
-                "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
-                done[index] &&
-                  "border-primary bg-primary text-primary-foreground"
+                "flex gap-2.5",
+                withWays ? "items-start" : "items-center"
               )}
+              key={step}
             >
-              {done[index] ? <CheckIcon className="size-3" /> : index + 1}
-            </span>
-            <span
-              className={cn(
-                "flex flex-wrap items-center gap-x-3",
-                done[index] && "text-muted-foreground"
-              )}
-            >
-              <span>
-                {step}
-                {done[index] ? <span className="sr-only"> (feito)</span> : null}
+              <span className={cn("flex items-center", line)}>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
+                    done[index] &&
+                      "border-primary bg-primary text-primary-foreground"
+                  )}
+                >
+                  {done[index] ? <CheckIcon className="size-3" /> : index + 1}
+                </span>
               </span>
-              {index === 1 && next.kind === "product" ? (
-                <FirstProductWays />
-              ) : null}
-            </span>
-          </li>
-        ))}
+              <span
+                className={cn(
+                  "flex flex-wrap items-center gap-x-3 gap-y-2",
+                  done[index] && "text-muted-foreground"
+                )}
+              >
+                <span className={cn("flex items-center", line)}>
+                  <span>
+                    {step}
+                    {done[index] ? (
+                      <span className="sr-only"> (feito)</span>
+                    ) : null}
+                  </span>
+                </span>
+                {withWays ? <FirstProductWays /> : null}
+              </span>
+            </li>
+          );
+        })}
       </ol>
-      <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
-        {link.label}
-      </a>
+      {link ? (
+        <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
+          {link.label}
+        </a>
+      ) : null}
     </HomeBlock>
   );
 }
