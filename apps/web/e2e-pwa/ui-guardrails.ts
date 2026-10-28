@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import axe from "axe-core";
 
 /**
- * The mechanical checks of the interface review (t180): what the UX reviewer finds by measuring, a browser
+ * The mechanical checks of the interface review: what the UX reviewer finds by measuring, a browser
  * measures. Each check runs inside the page and returns the list of what failed, so a test says
  * `toEqual([])` and a control case proves the check catches the fault. The screens they run on are in
  * `ui-screens.ts`; how to add one is in docs/runbooks/testes-de-tela.md.
@@ -467,7 +467,7 @@ function touchTooSmall(
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
  * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
- * over it) and the days of one `[data-slot=calendar]` (a grid of 44 px cells that touch each other, t363: the 48 px
+ * over it) and the days of one `[data-slot=calendar]` (a grid of 44 px cells that touch each other: the 48 px
  * areas of two neighbouring days overlap by about 4 px, 2 px into each cell, not only on the shared edge); a control inside another (a link in a clickable
  * card) is nested.
  */

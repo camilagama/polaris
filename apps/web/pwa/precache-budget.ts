@@ -20,29 +20,29 @@ import {
  *   warns, past 44 KB and past the second mark of 80 KB alike (see `BUDGET_MODE`). The build prints
  *   the interface infrastructure and the screen (the rest of the growth over the baseline) apart, so a review
  *   sees what a screen costs.
- * - the charts chunk (`charts-*.js`, t285, t336), gzipped, 8 KB as the reference of the line, which only warns (like the
- *   others, by the user's decision of 24/10/2026: the charts are Bklit UI as distributed and size is no criterion
+ * - the charts chunk (`charts-*.js`), gzipped, 8 KB as the reference of the line, which only warns (like the
+ *   others, by the user's decision: the charts are Bklit UI as distributed and size is no criterion
  *   until the cut step), a line of its own: the drawing code of the charts, `@visx/*` and d3. It is in the precache so
  *   a chart opens offline, loaded on demand by the screen that asks for it and never with the shell's first script; it
  *   counts here and in no other line, so the baseline of the rest does not move for it. A guard fails the build when a
  *   module of `src/ui/charts/` or `src/ui/bklit/`, or one of the libraries only they bring (`CHARTS_MODULE`) is in any
  *   other chunk (`chartsPlacementProblems`).
- * - the motion chunk (`motion-*.js`, t383, t385), gzipped, 56 KB as the reference of the line, which only warns, a line
+ * - the motion chunk (`motion-*.js`), gzipped, 56 KB as the reference of the line, which only warns, a line
  *   of its own, as the calendar's is: `motion` and what only it brings, which the charts and the filter bar share, each
  *   loaded on demand. It is in the precache so a chart or the bar animates offline, and it counts here and in no other
  *   line. Two guards fail the build: `motion` in a chunk that is neither the charts chunk nor the motion chunk
  *   (`chartsPlacementProblems`), and the motion chunk reachable by static imports from the entry, which would put it in
- *   the shell's first load, or from a screen, which would load it on a phone (`motionLoadProblems`, t385 and t386); only
+ *   the shell's first load, or from a screen, which would load it on a phone (`motionLoadProblems`); only
  *   the `import()` of the charts or of the bar's motion layer (at the `full` level of motion) may load it. A phone still
  *   downloads it with the precache (the charts need it offline), but does not run it outside a chart.
- * - the calendar chunk (`calendar-*.js`, t363, t369), gzipped, at most 26 KB, a line of its own, as the charts' is
- *   (Petković, PR 321, by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
+ * - the calendar chunk (`calendar-*.js`), gzipped, at most 26 KB, a line of its own, as the charts' is
+ *   (by the precedent of the charts): react-day-picker, date-fns and `calendar.tsx`, the month grid
  *   of the date pickers. It is in the precache so a picker shows its month offline (without it a shopkeeper with no
  *   connection would have only "Hoje"), loaded on demand by the first picker that opens and never with the shell's
  *   first script; it counts here and in no other line. The worker does not change: it precaches every file of the
  *   build, and no screen asks for a picker yet, so a production build has no such chunk until one does. A guard fails
  *   the build when a module of the calendar is in any other chunk (`calendarPlacementProblems`).
- * - the heat map chunk (`heatmap-*.js`, t394), gzipped, 16 KB as the reference of the line (the estimate of the v7
+ * - the heat map chunk (`heatmap-*.js`), gzipped, 16 KB as the reference of the line (the estimate of the v7
  *   review was 12 to 16 KB), which only warns, a line of its own, as the calendar's is: the map of the Início (Bklit
  *   UI's `HeatmapChart`, its cells and patterns, `@visx/heatmap`) and the bars of the mean by weekday, loaded on demand
  *   by the Início. What it shares with the charts (the sparkline, d3, `@visx/group`) stays in the charts chunk (the
@@ -52,40 +52,40 @@ import {
  * prints the total, the line and the excess and passes; "block" fails the build. No technical limit stands behind any
  * of the numbers (the Cache API has no per-shell size cap; the browser's storage quota is orders of magnitude above
  * the shell), so they are marks. What fails the build in any mode is structure, not size: the placement guards of the
- * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`, t363), the
- * guard of who loads `motion` (`motionLoadProblems`, t385) and the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
+ * charts (`chartsPlacementProblems`) and of the calendar of the date pickers (`calendarPlacementProblems`), the
+ * guard of who loads `motion` (`motionLoadProblems`) and the guard of the chunks that exist for the browser checks only (`testOnlyChunkProblems`).
  */
 export const FONT_BUDGET_BYTES = 55_000;
 export const PRIMITIVES_BUDGET_GZIP_BYTES = 95_000;
 export const CHARTS_BUDGET_GZIP_BYTES = 8000;
-/** The calendar chunk measured 22 645 B gzip at its first build (t369); a line like the charts', with some room. */
+/** The calendar chunk measured 22 645 B gzip at its first build; a line like the charts', with some room. */
 export const CALENDAR_BUDGET_GZIP_BYTES = 26_000;
-/** The motion chunk measures about 49.5 KB gzip (t385, without the React that the first build of t383 had put in it); a line like the calendar's, with some room. */
+/** The motion chunk measures about 49.5 KB gzip (without the React that its first build had put in it); a line like the calendar's, with some room. */
 export const MOTION_BUDGET_GZIP_BYTES = 56_000;
-/** The heat map chunk (t394): the estimate of the v7 review, 12 to 16 KB gzip; a reference that only warns. */
+/** The heat map chunk: the estimate of the v7 review, 12 to 16 KB gzip; a reference that only warns. */
 export const HEATMAP_BUDGET_GZIP_BYTES = 16_000;
 export type BudgetMode = "warn" | "block";
 
 /**
- * Reference ceiling of the rest line: 44 000 no lote 6 (23/10), medido na t256.
- * Batch 6 took the old CSS out (t256): the shell v5.1 is interface infrastructure paid once (it replaced the old
+ * Reference ceiling of the rest line: 44 000 after batch 6.
+ * Batch 6 took the old CSS out: the shell v5.1 is interface infrastructure paid once (it replaced the old
  * shell, about +5.1 KB gzip) and the offline runtime of F7 (connection with proof, about +4.0 KB gzip) came after
  * the 40 KB of ADR 0103, section 4. Taking `@layer legacy` out freed only about 1.3 KB gzip (the CSS went from
- * 17 305 to 16 139 B); the rest of the growth is JS of the screens. The Arrascaeta set 44 KB on 23/10.
+ * 17 305 to 16 139 B); the rest of the growth is JS of the screens.
  * Whether going past it fails the build is `BUDGET_MODE`.
  */
 export const REST_GROWTH_BUDGET_GZIP_BYTES = 44_000;
 /**
- * The second mark of the rest line (t272, t353): past it the build still passes in "warn", and the warning says so.
- * It was a cap that failed the build; the user's rule (24/10/2026) is that no byte ceiling fails the build until
+ * The second mark of the rest line: past it the build still passes in "warn", and the warning says so.
+ * It was a cap that failed the build; the user's rule is that no byte ceiling fails the build until
  * the cut step, so it only keeps the measure in the log for that step.
  */
 export const REST_GROWTH_MARK_GZIP_BYTES = 80_000;
 /**
  * What going past any of the size lines does (the rest at +44 000 B and its +80 000 B mark, the fonts, the
  * primitives, the charts, the motion chunk and the calendar). "warn" until the cut step before the go-live (Phase 5 of the execution plan), by
- * decision of the user on 23/10/2026 and 24/10/2026 (ADR 0103, amendments): the build prints the total, the line and
- * the excess and passes. The cut step takes `tailwind-merge` out (about -8 KB, measured in t266), trims the JS of the
+ * decision of the user (ADR 0103, amendments): the build prints the total, the line and
+ * the excess and passes. The cut step takes `tailwind-merge` out (about -8 KB), trims the JS of the
  * screens and goes back to "block" with firm ceilings. A constant, not an environment variable: changing it is a
  * reviewed change, and out of the cut step it is a decision of the user.
  */
@@ -109,15 +109,15 @@ const NODE_MODULES_PREFIX = /^.*[\\/]node_modules[\\/]/;
 const PROJECT_PREFIX = /^.*[\\/]apps[\\/]web[\\/]/;
 /** The chunk the charts live in: the one the `import()` of `src/ui/charts/charts.ts` makes, named after that file. */
 const CHARTS_CHUNK = /(^|\/)assets\/charts-[\w-]+\.js$/;
-/** The chunk `motion` lives in, shared by the charts and the filter bar (t383): the one the group named `motion` of the Vite configs makes; a line of its own (t385). */
+/** The chunk `motion` lives in, shared by the charts and the filter bar: the one the group named `motion` of the Vite configs makes; a line of its own. */
 const MOTION_CHUNK = /(^|\/)assets\/motion-[\w-]+\.js$/;
 /**
- * The two chunks that may import the motion chunk statically (t386): the charts and the animated layer of the filter
+ * The two chunks that may import the motion chunk statically: the charts and the animated layer of the filter
  * bar (`src/ui/filter-bar-motion.tsx`, loaded only at the `full` level of motion). Each comes by an `import()` of its own.
  */
 const MOTION_LOADER_CHUNK =
   /(^|\/)assets\/(?:charts|filter-bar-motion|heatmap)-[\w-]+\.js$/;
-/** The chunk of the map of the Início: the one the `import()` of `src/ui/charts/heatmap.ts` makes (t394). */
+/** The chunk of the map of the Início: the one the `import()` of `src/ui/charts/heatmap.ts` makes. */
 const HEATMAP_CHUNK = /(^|\/)assets\/heatmap-[\w-]+\.js$/;
 /**
  * What belongs to the heat map chunk and to nothing else: its entry and the two components of `src/ui/charts/`, the
@@ -133,17 +133,17 @@ const CHARTS_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
 /**
  * The animation library and what only it brings (`motion`, `framer-motion`, `motion-dom`, `motion-utils`). The charts draw
- * with it and so does the filter bar (`src/ui/filter-bar.tsx`, t383), so it cannot sit in the charts chunk alone: it has
+ * with it and so does the filter bar (`src/ui/filter-bar.tsx`), so it cannot sit in the charts chunk alone: it has
  * a chunk of its own, `motion-*.js`, which the charts chunk and the filter bar import. It belongs to that chunk or to the
  * charts chunk and to no other, so it never comes with the shell's first script.
  */
-/** A module of the charts that is not the map's: the charts chunk keeps it, even when the map imports it too (t394). */
+/** A module of the charts that is not the map's: the charts chunk keeps it, even when the map imports it too. */
 export function isSharedChartModule(id: string): boolean {
   return CHARTS_MODULE.test(id) && !HEATMAP_MODULE.test(id);
 }
 export const MOTION_MODULE =
   /[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:motion|framer-motion|motion-dom|motion-utils)[\\/]/;
-/** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes (t363). */
+/** The chunk of the date pickers' month grid: the one the `import()` of `src/ui/calendar.tsx` makes. */
 const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
 /**
  * What belongs to the calendar chunk and to nothing else: `src/ui/calendar.tsx` (not `calendar-on-demand.tsx`, the
@@ -190,7 +190,7 @@ export interface PrecacheSize {
   /** The charts chunk (`CHARTS_CHUNK`): a line of its own, apart from the rest. */
   charts: number;
   fonts: number;
-  /** The heat map chunk (`HEATMAP_CHUNK`): a line of its own, apart from the charts and the rest (t394). */
+  /** The heat map chunk (`HEATMAP_CHUNK`): a line of its own, apart from the charts and the rest. */
   heatmap: number;
   /** The interface infrastructure (see `INTERFACE_MODULE`); counts in the +40 KB line with `rest`. */
   interface: number;
@@ -362,8 +362,8 @@ const isLazyNonLoader = (chunk: ChunkModules) =>
   chunk.isDynamicEntry === true && !MOTION_LOADER_CHUNK.test(chunk.fileName);
 
 /**
- * One problem when the motion chunk can be reached by static imports from an entry of the build (t385) or from a chunk
- * loaded by `import()` other than the charts and the animated layer of the filter bar (t386): a screen of `lazyScreen`,
+ * One problem when the motion chunk can be reached by static imports from an entry of the build or from a chunk
+ * loaded by `import()` other than the charts and the animated layer of the filter bar: a screen of `lazyScreen`,
  * the gallery, a picker. The chunk is made to load on demand, with a chart or with the bar at the `full` level of motion,
  * and a static import on the way from the entry would make it part of the shell's first load, as one from a screen
  * would load it on a phone that opens the screen. Only the `import()` of the charts or of the layer may load it, and an
@@ -409,7 +409,7 @@ export function motionLoadProblems(chunks: readonly ChunkModules[]): string[] {
 }
 
 /**
- * The same guard for the calendar of the date pickers (t363): react-day-picker and date-fns load on demand, when a
+ * The same guard for the calendar of the date pickers: react-day-picker and date-fns load on demand, when a
  * picker opens, never with the shell's first script. Its size has a line of its own (`CALENDAR_BUDGET_GZIP_BYTES`; the
  * chunk is precached so a picker opens offline); here only its place is checked.
  */

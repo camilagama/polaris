@@ -44,7 +44,7 @@ import type {
 import { DeferredHandlerError } from "../src/server/queue/consumer";
 
 /**
- * The consumer of `billing.notice` and the recording of the notices (ADR 0104, decision 7; PR G of design t268 v2,
+ * The consumer of `billing.notice` and the recording of the notices (ADR 0104, decision 7; PR G of the Assinatura design v2,
  * §9) on a real PostgreSQL 18, with the real billing store (billing role), the real `billing_notice_recipient` client
  * (authentication role), the real wiring of the Worker (`billingNoticeDependenciesOf`) and a fake provider of e-mail:
  *   1. an applied fact records its notice and the outbox event in the same transaction, a redelivery records nothing,
@@ -58,7 +58,7 @@ import { DeferredHandlerError } from "../src/server/queue/consumer";
  *   5. cases 3 and 4 of item 5: the owner's refund request repeated with the same request ID records nothing new, and
  *      another request ID records no second `subscription_cancelled` and no second E7; the E7 waits 24 hours, and the
  *      hourly handover (the real `listOwed`) settles it `refunded` once the refund came in;
- *   6. the delivery window counts from the first attempt (t356): a notice never tried goes out at any age, one first
+ *   6. the delivery window counts from the first attempt: a notice never tried goes out at any age, one first
  *      tried more than 23 hours ago is skipped `delivery_window_passed`, the attempt stays written when the send
  *      throws, and the real `listOwed` puts a notice that threw behind the ones never tried, so the next one goes in
  *      the same batch, and among the ones already tried the one tried longest ago (`last_attempted_at`) goes first.

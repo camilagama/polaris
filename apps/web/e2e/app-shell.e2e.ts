@@ -7,7 +7,7 @@ import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The shell v5.1 (t225): the sidebar of the desktop, the bottom bar and "Mais" of the phone, the theme and "Sair",
+ * The shell v5.1: the sidebar of the desktop, the bottom bar and "Mais" of the phone, the theme and "Sair",
  * against a server played by network interception with the offline runtime on (the devices screen has the same).
  */
 
@@ -514,7 +514,7 @@ test.describe("celular (360 px)", () => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* t417: the eight destinations, the tabs, the old addresses, Pendências and the folding column                     */
+/* The eight destinations, the tabs, the old addresses, Pendências and the folding column                           */
 /* -------------------------------------------------------------------------- */
 
 const pathOf = (page: Page) => {

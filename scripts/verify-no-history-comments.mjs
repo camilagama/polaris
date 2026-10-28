@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -6,16 +6,32 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * Comments say why the code is the way it is. Who asked, which task, which review round or which
  * day belong to git, the pull request and the ADR: left in a comment they age, and the next reader
  * takes a one-off fix for a general rule. This check reads only comments (`//`, block and JSDoc),
- * never string contents, and fails on task ids, team names, review vocabulary and dd/mm dates.
- * `ADR 0NNN`, `PRnnn` of the plan, `AC-n`, `GHSA-…` and links stay allowed.
+ * never string contents, and fails on task ids, team names, review vocabulary, pull request numbers
+ * and dates (dd/mm and yyyy-mm-dd). `ADR 0NNN`, `PRnnn` of the plan, `AC-n`, `GHSA-…`, links and a
+ * date between quotes or backticks stay allowed. It walks every source file of the repository except
+ * dependencies, build output and generated files, so a new folder is covered without a list to update.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const sourceSuffix = /\.(?:ts|tsx|mjs)$/;
-const ignoredFolders = new Set(["node_modules", "dist", ".wrangler"]);
-const scannedGroups = [
-  ["apps", ["src", "worker"]],
-  ["packages", ["src", "scripts"]],
-];
+const sourceSuffix = /\.(?:ts|tsx|mjs|js)$/;
+// Dependencies, build output, generated files and local state: nobody writes a comment there.
+export const IGNORED_FOLDERS = new Set([
+  ".codex-worktrees",
+  ".e2e-state",
+  ".git",
+  ".turbo",
+  ".wrangler",
+  "coverage",
+  "dist",
+  "dist-bare",
+  "dist-e2e",
+  "dist-fixture",
+  "drizzle",
+  "generated",
+  "node_modules",
+  "playwright-report",
+  "test-results",
+  "worktrees",
+]);
 
 export const ADVICE =
   "Deixe só o porquê técnico; autoria e histórico ficam no git, no PR ou no ADR.";
@@ -28,6 +44,16 @@ const rules = [
   { kind: "id de tarefa", pattern: /\bt\d{3,4}\b/i },
   { kind: "número de PR", pattern: /\bPR\s+#?\d{3,}\b|\bPR\s*#\d+/ },
   {
+    kind: "número de PR",
+    pattern: /\bpull\s+requests?\s+(?:n[º°o.]\s*)?#?\d+|\bPRs\s+#?\d{3,}\b/i,
+  },
+  {
+    kind: "número de PR",
+    ignoreQuoted: true,
+    // "#374" alone; #000 and #123456 are colors, so a repeated digit and a run longer than four digits pass
+    pattern: /(?<![\p{L}\p{N}_&#/])#(?!(\d)\1{2})\d{3,4}(?![\p{L}\p{N}_])/u,
+  },
+  {
     kind: "nome de pessoa ou bot",
     pattern: word(
       "Léo|Leo Moura|Rodrigo|Filipe|Petković|Petkovic|Everton|Diego|Arrascaeta|Juan|Bruno|Adriano|Jorginho"
@@ -35,11 +61,24 @@ const rules = [
   },
   { kind: "vocabulário de revisão", pattern: /\brodada\s+\d+/i },
   { kind: "vocabulário de revisão", pattern: /\bvale corrigir\b/i },
-  { kind: "vocabulário de revisão", pattern: /\bbloqueia\b/i },
+  {
+    kind: "vocabulário de revisão",
+    // the verdict, not the verb: the word as a tag (in brackets, backticks or bold, or opening the comment
+    // before a colon) or aimed at the pull request; "o lock bloqueia a entrega" is a reason
+    pattern:
+      /[[(`*]\s*bloqueia\s*[\])`*]|^\s*(?:\*\s*)?bloqueia\s*[:—–-]|\bbloqueia\s+(?:o\s+)?(?:PR|pull request)\b|\bbloqueia\s+o\s+merge(?=\s*(?:[.,;:)\]]|$)|\s+d[oa]\s+(?:PR|pull request)\b)/i,
+  },
   { kind: "vocabulário de revisão", pattern: /\bmenor\s+\d+/i },
   { kind: "vocabulário de revisão", pattern: /\bVC\d+/ },
   { kind: "vocabulário de revisão", pattern: /\bPR-\d+/ },
   { kind: "vocabulário de revisão", pattern: /\bachado do\b/i },
+  {
+    kind: "data",
+    ignoreQuoted: true,
+    // yyyy-mm-dd, as in "2026-10-28"; a year and month alone ("2026-10") is a period
+    pattern:
+      /(?<![\d-])\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?![\d-])/,
+  },
   {
     kind: "data",
     ignoreQuoted: true,
@@ -299,36 +338,26 @@ export function checkSource(source) {
 }
 
 function walk(directory, found) {
-  for (const entry of readdirSync(directory)) {
-    if (ignoredFolders.has(entry)) {
-      continue;
-    }
-    const full = path.join(directory, entry);
-    if (statSync(full).isDirectory()) {
-      walk(full, found);
-    } else if (sourceSuffix.test(entry) && !entry.endsWith(".d.ts")) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (!IGNORED_FOLDERS.has(entry.name)) {
+        walk(full, found);
+      }
+    } else if (
+      entry.isFile() &&
+      sourceSuffix.test(entry.name) &&
+      !entry.name.endsWith(".d.ts")
+    ) {
       found.push(full);
     }
   }
 }
 
-/** Every scanned source file under `base` (the repository root), tests included. */
+/** Every source file under `base` (the repository root), tests, e2e, scripts and configs included. */
 export function collectFiles(base = root) {
   const found = [];
-  for (const [group, folders] of scannedGroups) {
-    const groupPath = path.join(base, group);
-    for (const name of readdirSync(groupPath)) {
-      for (const folder of folders) {
-        const scanned = path.join(groupPath, name, folder);
-        try {
-          statSync(scanned);
-        } catch {
-          continue;
-        }
-        walk(scanned, found);
-      }
-    }
-  }
+  walk(base, found);
   return found.sort();
 }
 

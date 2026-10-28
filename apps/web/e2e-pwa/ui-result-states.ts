@@ -117,7 +117,7 @@ const COMPLETE_SUMMARY = (from: string, to: string) => ({
 });
 
 /**
- * The month with no cost of the goods known (T399-3): every item line sold has an unknown cost, so the server's CMV is
+ * The month with no cost of the goods known: every item line sold has an unknown cost, so the server's CMV is
  * zero for lack of data. The cards of the result and the margin and the CMV say "—", and the bar of the parts goes.
  */
 const NO_COST_SUMMARY = (from: string, to: string) => {
@@ -364,7 +364,7 @@ export const resultStates = {
     await showScreenAlone(page);
   },
 
-  /** No cost of the goods known (T399-3): the cards and the CMV with the dash, the parts without their bar. */
+  /** No cost of the goods known: the cards and the CMV with the dash, the parts without their bar. */
   async noCost(page: Page) {
     await openResultLab(page, { noCost: true });
     await page
@@ -387,7 +387,7 @@ export const resultStates = {
 
   /**
    * The period read with an incomplete estimate: the warning, the badges, the chart with the first day hatched and the
-   * cost line from the second day on (AC-9, emenda de 25/10), and the chain.
+   * cost line from the second day on (AC-9), and the chain.
    */
   async list(page: Page) {
     await openResultLab(page);

@@ -1344,7 +1344,7 @@ async function waitOf(owner: Pool, organizationId: string) {
 }
 
 /**
- * No store is deleted before the owner was told (ADR 0102, amended, decision of 20/10/2026): the schedule and the run
+ * No store is deleted before the owner was told (ADR 0102, amended): the schedule and the run
  * wait while the current closure cycle has no `d7` or `rescheduled` notice with `sent_at` filled, for the closure period
  * and for the Admin's path alike, and a store held back lands in the alert of a store left behind. Each check removes
  * the notice to prove the refusal and puts it back to prove the purge goes on.
@@ -1628,7 +1628,7 @@ async function deliveredNoticeScenario(
     "the notice delivered is a condition of the Admin's purge too: scheduled by the case it is not taken, and with it gone while the run holds it the mark and the purge refuse; it runs when the notice is delivered"
   );
 
-  // the notice must have been delivered at least 7 days ago (decision of 20/10/2026): a late notice, or a purge the Admin
+  // the notice must have been delivered at least 7 days ago: a late notice, or a purge the Admin
   // schedules, never deletes the store hours after the owner was told. The latest of the d7 and rescheduled notices counts.
   const settle = CLOSURE_PURGE_MIN_NOTICE_DAYS * 24;
   const aged = (id: string, hoursAgo: number) =>

@@ -123,7 +123,7 @@ const NO_SURCHARGE_MONTH: FixtureMonth = {
   ],
 };
 
-/** October with no cost of the goods known (T399-3): every item line sold has an unknown cost; fees and expenses known. */
+/** October with no cost of the goods known: every item line sold has an unknown cost; fees and expenses known. */
 const NO_COST_MONTH: FixtureMonth = {
   expenses: [
     { amount: 3000, linked: false },

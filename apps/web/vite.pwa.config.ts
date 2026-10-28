@@ -55,7 +55,7 @@ export default defineConfig({
               priority: 30,
               test: MOTION_MODULE,
             },
-            // the charts and the map of the Início (t394) share the sparkline, d3 and visx: they stay in the charts
+            // the charts and the map of the Início share the sparkline, d3 and visx: they stay in the charts
             // chunk, so the map's chunk has only the map (the guards of `pwa/precache-budget.ts`)
             {
               includeDependenciesRecursively: false,

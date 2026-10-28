@@ -38,7 +38,7 @@ import {
 } from "../src/server/billing/owner-commands";
 
 /**
- * The owner's billing commands (ADR 0104, decisions 3 and 4; PR D of design t268 v2) on a real PostgreSQL 18, with
+ * The owner's billing commands (ADR 0104, decisions 3 and 4; PR D of the Assinatura design v2) on a real PostgreSQL 18, with
  * the real billing store and inbox (`recordEvent` and `processEvent`) and a fake provider:
  *   1. the refund decides by the state: cancel ok → refund fails (`refund_pending`) → another request ID → one
  *      `subscription_cancelled` and one refund, and the refund's webhook then answers every new request the same;

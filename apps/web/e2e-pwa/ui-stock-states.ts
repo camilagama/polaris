@@ -4,7 +4,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The states of the stock screen the interface guardrails measure (t194): the screen in the lab of the screens
+ * The states of the stock screen the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=stock`) over the real offline runtime, with the server answered by the test
  * (`page.route`) and synthetic data only. The lab's own controls are hidden at the end of each state, so what
  * is measured is the screen alone. Same shape as `ui-sale-states.ts`.

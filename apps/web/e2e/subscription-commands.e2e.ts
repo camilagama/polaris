@@ -5,7 +5,7 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The owner's commands on the Assinatura (corte assinatura-e-cancelar, AC-21 to AC-34 and AC-42 to AC-44; design
- * t268 v2, § 4 and § 11) in the real route, with the API answered by the test: cancel the renewal (2 taps, the true
+ * da Assinatura v2, § 4 and § 11) in the real route, with the API answered by the test: cancel the renewal (2 taps, the true
  * loss, what stays, the optional reason, the result), the refund by the app with the card, by support with Pix, the
  * refund not done (AS-42), the edges of the window on the clock, paying the charge that failed (exact host,
  * `noopener`) and each refusal of the commands with its own text.
@@ -19,9 +19,9 @@ const ORGANIZATION = {
 const SESSION_USER = { email: "dona@exemplo.test", id: "u", name: "Ana Dona" };
 /** Asaas's page of the charge that failed: the test answers it, so nothing leaves the machine. */
 const OVERDUE_PAGE = "https://sandbox.asaas.com/i/e2e-overdue";
-/** 23/10/2026 at noon in São Paulo. */
+/** `23/10/2026` at noon in São Paulo. */
 const NOW = new Date("2026-10-23T15:00:00.000Z");
-/** The last second of a window whose first charge was on 23/10/2026: 23:59:59 of 30/10 in São Paulo. */
+/** The last second of a window whose first charge was on `23/10/2026`: 23:59:59 of `30/10` in São Paulo. */
 const UNTIL = "2026-10-31T02:59:59.999Z";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -596,10 +596,10 @@ test("relógio nas bordas da janela: às 23:59:59 do 7º dia o botão está; às
   });
   await expect(page.getByRole("button", REFUND_BUTTON)).toBeVisible();
   await page.clock.fastForward("00:59");
-  // 23:59:59 of 30/10 in São Paulo: still the last second of the window
+  // 23:59:59 of `30/10` in São Paulo: still the last second of the window
   await expect(page.getByRole("button", REFUND_BUTTON)).toBeVisible();
   await page.clock.fastForward("00:02");
-  // 00:00:01 of 31/10: the server's `until` has passed, and the plan read again has no refund (no clock of the
+  // 00:00:01 of `31/10`: the server's `until` has passed, and the plan read again has no refund (no clock of the
   // client hides the button: the server's answer does)
   await expect(page.getByRole("button", REFUND_BUTTON)).toHaveCount(0);
   await expect.poll(() => calls.reads).toBeGreaterThanOrEqual(2);

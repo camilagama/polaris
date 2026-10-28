@@ -5,7 +5,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of Aparelhos and Pendências, as the interface
- * guardrails measure them (t237): each screen in the lab of the screens (`/offline-screens-lab?screen=…`), Aparelhos
+ * guardrails measure them: each screen in the lab of the screens (`/offline-screens-lab?screen=…`), Aparelhos
  * over the real offline runtime with the server answered by the test (`page.route`), Pendências over synthetic data
  * (`src/offline-poc/notice-lab-pages.tsx`). The lab's own controls are hidden at the end of each state, so what is
  * measured is the screen alone. Same shape as `ui-stock-states.ts`.

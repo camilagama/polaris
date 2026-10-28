@@ -35,11 +35,11 @@ const MOTION_IMPORT = /from\s+"motion|import\s+"motion/;
 
 /**
  * A component that only loads on demand is in the gallery through its loader, as in the app: a static import of it
- * would put its chunk in the gallery's and fail the placement guard of `pwa/precache-budget.ts` (t363).
+ * would put its chunk in the gallery's and fail the placement guard of `pwa/precache-budget.ts`.
  */
 const ON_DEMAND_LOADER: Record<string, string> = {
   calendar: "calendar-on-demand",
-  // the animated layer of the bar comes by `import()` only at the full level of motion (t386)
+  // the animated layer of the bar comes by `import()` only at the full level of motion
   "filter-bar-motion": "filter-bar",
 };
 

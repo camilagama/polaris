@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * Correções de usabilidade do staging, lote 1 (t213; U-NN são os achados do Diego e do Petković de 22/10).
+ * Correções de usabilidade do staging, lote 1 (U-NN são os achados da revisão de usabilidade).
  * Navegador de verdade, com o servidor substituído por respostas no formato do RPC.
  */
 const ORGANIZATION = {

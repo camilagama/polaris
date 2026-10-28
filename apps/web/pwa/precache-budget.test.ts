@@ -224,7 +224,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(
       budgetWarnings(withGrowth(REST_GROWTH_MARK_GZIP_BYTES + 1), floor, "warn")
     ).toEqual([expect.stringContaining("+80000 B mark by 1 B")]);
-    // far past (+83 007 B, the PR 306 on the main at +77 520 B): passes in "warn", fails in "block" (the reviewer's number)
+    // far past (+83 007 B, the main at +77 520 B): passes in "warn", fails in "block" (the reviewer's number)
     const pr306 = withGrowth(83_007);
     expect(budgetProblems(pr306, floor, "warn")).toEqual([]);
     const [pr306Warning] = budgetWarnings(pr306, floor, "warn");
@@ -1156,7 +1156,7 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         isDynamicEntry: true,
         modules: anyModule,
       },
-      // a lazy screen with the bar: the bar itself does not import motion (t386)
+      // a lazy screen with the bar: the bar itself does not import motion
       {
         fileName: "assets/ui-gallery-ghi.js",
         imports: ["assets/react-def.js"],
@@ -1225,7 +1225,7 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         modules: anyModule,
       },
     ];
-    // the screen imports a bar that imports motion statically, as the bar of t383 did
+    // the screen imports a bar that imports motion statically, as the bar did
     expect(motionLoadProblems(graph(["assets/filter-bar-ab1.js"]))).toEqual([
       expect.stringContaining(
         "assets/ui-gallery-ghi.js -> assets/filter-bar-ab1.js -> assets/motion-B0SXIb_6.js"

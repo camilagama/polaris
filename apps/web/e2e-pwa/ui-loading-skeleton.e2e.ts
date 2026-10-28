@@ -5,7 +5,7 @@ import { saleDetailStates } from "./ui-sale-detail-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The loading of the stock, of the sale detail and of the sales history (t300): a `role="status"` card that carries
+ * The loading of the stock, of the sale detail and of the sales history: a `role="status"` card that carries
  * the sentence for the screen reader and, as the picture, the skeleton (hidden from the screen reader). The states
  * are the ones the guardrails open (`ui-*-states.ts`), the read never answers.
  */

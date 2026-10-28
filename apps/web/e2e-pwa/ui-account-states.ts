@@ -5,7 +5,7 @@ import { hold, json, settle } from "./ui-entry-states";
 
 /**
  * The states of the first access (no organization yet), of the acceptance (`/aceite`) and of the legal texts the
- * interface guardrails measure (t239): the pages of the pwa-e2e build under the CSP of `_headers`, with the session
+ * interface guardrails measure: the pages of the pwa-e2e build under the CSP of `_headers`, with the session
  * and the server answered by the test (`page.route`) and synthetic data only.
  */
 const ORGANIZATION = {

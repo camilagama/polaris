@@ -146,7 +146,7 @@ describe("moneyDelta", () => {
 });
 
 describe("dayReading (Vendas hoje)", () => {
-  // 2026-10-25 is a Sunday; the four before it: `18/10`, `11/10`, `04/10` and `27/09`
+  // `2026-10-25` is a Sunday; the four before it: `18/10`, `11/10`, `04/10` and `27/09`
   const sundays: Record<string, [string, number]> = {
     "2026-09-27": ["150.00", 2],
     "2026-10-04": ["187.40", 1],
@@ -184,7 +184,7 @@ describe("dayReading (Vendas hoje)", () => {
   });
 
   it("writes the feminine for a weekday that is feminine", () => {
-    // 2026-10-23 is a Friday: `16/10`, `09/10`, `02/10` and `25/09`
+    // `2026-10-23` is a Friday: `16/10`, `09/10`, `02/10` and `25/09`
     const month = days("2026-10-01", "2026-10-31", (date) =>
       ["2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23"].includes(date)
         ? { netSales: "100.00", salesCount: 1 }
@@ -257,7 +257,7 @@ describe("todaySeries", () => {
     expect(series[0]?.date).toBe("2026-09-26");
     expect(series[29]?.date).toBe(TODAY);
     expect(series[0]?.netSales).toBe("5.00");
-    // 2026-10-01 is not in either series
+    // `2026-10-01` is not in either series
     expect(series[5]).toEqual({
       date: "2026-10-01",
       netSales: "0.00",

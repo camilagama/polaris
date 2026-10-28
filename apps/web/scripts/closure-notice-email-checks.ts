@@ -35,8 +35,8 @@ import {
 } from "./organization-purge-automatic-checks";
 
 /**
- * The e-mail of the closure notices and the act of the support (ADR 0102 amended, line E of design t107, conditions of
- * the security review of 20/10/2026) on a real PostgreSQL 18, with the real functions and roles: the address is read
+ * The e-mail of the closure notices and the act of the support (ADR 0102 amended, conditions of
+ * the security review) on a real PostgreSQL 18, with the real functions and roles: the address is read
  * only by the function of the authentication role, only for a notice still owed and only when verified; the provider
  * (a fake that records what it got) takes the notice's ID as its key; the handover sends the latest notice owed and
  * settles the earlier ones `skipped`; and the support sends a `d7` again or dismisses it, never by an UPDATE, under a

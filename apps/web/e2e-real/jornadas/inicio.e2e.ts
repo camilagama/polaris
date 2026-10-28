@@ -12,7 +12,7 @@ const FLUSH_MS = 11_000;
 type Stats = Map<string, { scans: number; writes: number }>;
 
 /**
- * Journey of the Início (corte inicio.md AC-5, AC-23; desenho t269 v2, § 5.4) on the real stack: the sale of today is
+ * Journey of the Início (corte inicio.md AC-5, AC-23; desenho do Início v2, § 5.4) on the real stack: the sale of today is
  * in Hoje with its exact amount, and opening the page inserts, updates and deletes nothing in any table of the
  * database (pg_stat_user_tables before and after, with the reads of the page shown in the same statistics). The goal
  * whose period ended, the one write the page may cause, is proved by the `home-writes` gate on PostgreSQL 18.

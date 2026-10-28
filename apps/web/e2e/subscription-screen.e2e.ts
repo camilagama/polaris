@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The Assinatura (corte assinatura-e-cancelar, AC-8 to AC-19 and AC-35; design t268 v2, § 11) in the real route,
+ * The Assinatura (corte assinatura-e-cancelar, AC-8 to AC-19 and AC-35; design da Assinatura v2, § 11) in the real route,
  * with the API answered by the test: each state of `billing.readPlan`, the offer with the catalog's prices and the
  * server's methods, the card's checkout (one call for a double click), the return of the card's page read again
  * every 5 s, Pix Automático with its code and its page and no "7 dias", each refusal of the checkout with its own
@@ -36,7 +36,7 @@ const PHONE = /telefone/i;
 const FREE_WORD = /grátis/;
 const SUBSCRIBE_ACTION = /Assinar|Começar/;
 const REFUND_WORD = /reembolso/i;
-/** 23/10/2026 at noon in São Paulo: the first charge of a trial started now is on 30/10/2026. */
+/** `23/10/2026` at noon in São Paulo: the first charge of a trial started now is on `30/10/2026`. */
 const NOW = new Date("2026-10-23T15:00:00.000Z");
 
 const rpc = (json: unknown, status = 200) => ({
