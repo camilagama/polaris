@@ -865,6 +865,13 @@ describe("mapStockError", () => {
     ).toMatchObject({ reason: "x_new", refreshBalance: true });
   });
 
+  it("answers a 413 as not done and keeps editing open", () => {
+    const failure = mapStockError("receive", { code: "PAYLOAD_TOO_LARGE" });
+    expect(failure.message).toContain("não foi registrado");
+    expect(failure.unknownOutcome).toBe(false);
+    expect(failure.discardAttempt).toBe(false);
+  });
+
   it("only trusts the reason of a 400, 404 or 409", () => {
     expect(
       mapStockError("count", {
