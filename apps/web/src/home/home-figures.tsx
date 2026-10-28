@@ -119,7 +119,7 @@ function FirstProductWays() {
 
 /**
  * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
- * step has two ways and no button; after it, one button goes to the next step ("Dar entrada no estoque" on the
+ * step has two small buttons (by hand, spreadsheet) and no button under the steps; after it, one button goes to the next step ("Dar entrada no estoque" on the
  * first product's panel while it has no stock).
  */
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
