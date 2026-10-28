@@ -22,7 +22,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **15.37** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **16.19** | 7 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.81** | 7 | ✓ |
-| `sidebar-accent-foreground` / `sidebar-accent` | item atual e item em hover do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.41** | 7 | ✓ |
 | `destructive` / `card` | texto de erro (FieldError, Alert destructive) | Field, Alert | **7.46** | 7 | ✓ |
 | `destructive` / `destructive/10 sobre card` | texto de erro em Badge e Button destructive (claro: /10) | Badge, Button destructive | **6.3** | 4.5 | ✓ |
 | `primary-foreground` / `destructive` | texto sobre vermelho sólido (se usado) | extensão | **7.46** | 4.5 | ✓ |
@@ -94,7 +95,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **10.46** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **11.58** | 7 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.48** | 7 | ✓ |
-| `sidebar-accent-foreground` / `sidebar-accent` | item atual e item em hover do menu lateral | SidebarMenuButton | **12.41** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.19** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.08** | 7 | ✓ |
 | `destructive` / `card` | texto de erro (FieldError, Alert destructive) | Field, Alert | **7.63** | 7 | ✓ |
 | `destructive` / `destructive/20 sobre card` | texto de erro em Badge e Button destructive (escuro: /20) | Badge, Button destructive | **5.19** | 4.5 | ✓ |
 | `primary-foreground` / `destructive` | texto sobre vermelho sólido (se usado) | extensão | **8.28** | 4.5 | ✓ |
@@ -113,8 +115,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **5.73** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.88** | 3 | ✓ |
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **6.03** | 3 | ✓ |
-| `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.32** | 1.0 | ✓ |
-| `border` / `background` | divisória sobre o fundo | border-border | **1.43** | 1.0 | ✓ |
+| `border sobre card` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão); `border` é `branco a 6%` | border-border | **1.19** | 1.0 | ✓ |
+| `border sobre popover` / `popover` | borda de diálogo, menu e painel aberto dentro do cartão (decorativa) | border-border | **1.20** | 1.0 | ✓ |
+| `card-ring sobre card` / `card` | anel de 1 px do cartão do catálogo público (decorativo) | card-ring | **1.19** | 1.0 | ✓ |
+| `border sobre background` / `background` | divisória sobre o fundo | border-border | **1.17** | 1.0 | ✓ |
+| `sidebar-border sobre sidebar` / `sidebar` | divisória da lateral e borda do cartão da loja (decorativa) | border-sidebar-border | **1.15** | 1.0 | ✓ |
+| `sidebar-accent` / `sidebar` | fundo do item atual contra a lateral (decorativo: o ponto esmeralda, o peso 500 e o aria-current dizem onde se está) | SidebarMenuButton | **1.14** | 1.0 | ✓ |
+| `sidebar-hover` / `sidebar` | fundo do item em hover contra a lateral (decorativo) | SidebarMenuButton | **1.07** | 1.0 | ✓ |
 | `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **7.67** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **5.72** | 3 | ✓ |
 | `chart-result` / `card` | série do resultado (v7) | Chart | **4.38** | 3 | ✓ |

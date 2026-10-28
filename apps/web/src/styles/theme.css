@@ -54,6 +54,7 @@
   --sidebar-primary: oklch(0.2 0.005 85);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.93 0.006 85);
+  --sidebar-hover: oklch(0.945 0.006 85);
   --sidebar-accent-foreground: oklch(0.2 0.005 85);
   --sidebar-border: oklch(0.925 0.005 85);
   --sidebar-ring: oklch(0.585 0.115 165);
@@ -101,7 +102,7 @@
   --accent: oklch(0.33 0.0035 85);
   --accent-foreground: oklch(0.945 0.005 85);
   --destructive: oklch(0.77 0.13 25);
-  --border: oklch(0.32 0.0035 85);
+  --border: oklch(1 0 0 / 0.06);
   --input: oklch(0.55 0.0035 85);
   --ring: oklch(0.64 0.134 165);
   --chart-1: oklch(0.74 0.14 165);
@@ -122,9 +123,10 @@
   --sidebar-foreground: oklch(0.78 0.004 85);
   --sidebar-primary: oklch(0.93 0.005 85);
   --sidebar-primary-foreground: oklch(0.2 0.0035 85);
-  --sidebar-accent: oklch(0.28 0.0035 85);
+  --sidebar-accent: oklch(0.235 0.0035 85);
+  --sidebar-hover: oklch(0.21 0.0035 85);
   --sidebar-accent-foreground: oklch(0.945 0.005 85);
-  --sidebar-border: oklch(0.275 0.0035 85);
+  --sidebar-border: oklch(1 0 0 / 0.06);
   --sidebar-ring: oklch(0.64 0.134 165);
   /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.81 0.11 80);
@@ -138,7 +140,7 @@
   --btn-shine: oklch(1 0 0 / 0);
   --btn-drop: oklch(0 0 0 / 0.5);
   --card-glow: oklch(1 0 0 / 0.04);
-  --card-ring: oklch(0.945 0.005 85 / 0.06);
+  --card-ring: oklch(1 0 0 / 0.06);
 }
 
 /* The variables Bklit UI's chart blocks read (src/ui/bklit/charts/), mapped once to the tokens above and to nothing of
@@ -210,6 +212,7 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
