@@ -39,10 +39,9 @@ test("onboarding: abre a loja com nome e fuso, e repetir não duplica", async ({
   // with its two ways in the step (no button under the steps)
   const checklist = page.getByRole("region", { name: "Primeiros passos" });
   await expect(checklist).toContainText("Loja criada");
-  await expect(checklist.getByRole("link", { name: "À mão" })).toHaveAttribute(
-    "href",
-    "/products?novo=1"
-  );
+  await expect(
+    checklist.getByRole("link", { name: "Cadastrar à mão" })
+  ).toHaveAttribute("href", "/products?novo=1");
 
   const organizations = async () =>
     (

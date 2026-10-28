@@ -546,7 +546,7 @@ export function checklistNext(
 }
 
 /**
- * The button under the steps for the next one, or null for "product": that step shows its own two ways ("À mão" and
+ * The button under the steps for the next one, or null for "product": that step shows its own two ways ("Cadastrar à mão" and
  * "Importar planilha"), so a third exit to the same place would only repeat them.
  */
 export function checklistLink(next: ChecklistNext): {
