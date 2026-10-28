@@ -1,7 +1,9 @@
 /**
- * The page's only way to the Admin API: a GET of JSON from this origin, one call per action and never repeated by
- * itself (each read may be counted or audited by the server). Every answer that is not the data becomes one of the
- * problems below, each with its own sentence; no code, status or message of the server reaches the screen (AC-14).
+ * The page's only way to the Admin API: a GET of JSON, or a POST of a JSON body, to this origin, one call per action
+ * and never repeated by itself (each read may be counted or audited by the server). A POST goes as
+ * `application/json` from the page's own origin, which the browser names in `Origin`: the server refuses a write
+ * without both (ADR 0070). Every answer that is not the data becomes one of the problems below, each with its own
+ * sentence; no code, status or message of the server reaches the screen (AC-14).
  */
 
 export type Problem =
@@ -12,10 +14,18 @@ export type Problem =
   | "not_found"
   | "plan_catalog_incomplete"
   | "rate_limited"
+  | "refused"
   | "session"
   | "unavailable";
 
-type ApiResult<T> = { data: T; ok: true } | { ok: false; problem: Problem };
+export interface ApiFailure {
+  ok: false;
+  problem: Problem;
+  /** With `rate_limited`: the seconds the server said to wait (`Retry-After`), when it said. */
+  retryAfterSeconds?: number;
+}
+
+type ApiResult<T> = { data: T; ok: true } | ApiFailure;
 
 export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   failed: "Erro no Admin. Tente de novo; se continuar, avise a engenharia.",
@@ -27,6 +37,7 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   plan_catalog_incomplete:
     "O catálogo de planos está incompleto; avise a engenharia.",
   rate_limited: "Muitas consultas em pouco tempo. Espere e tente de novo.",
+  refused: "Consulta recusada: confira se o caso está aberto e é desta loja.",
   session: "Sua sessão do Access acabou. Recarregue a página.",
   unavailable:
     "O Admin está indisponível agora. Tente de novo em alguns minutos.",
@@ -36,6 +47,10 @@ export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface Api {
   get: <T>(path: string) => Promise<ApiResult<T>>;
+  post: <T>(
+    path: string,
+    body: Readonly<Record<string, string>>
+  ) => Promise<ApiResult<T>>;
 }
 
 const STATUS_PROBLEMS: Readonly<Record<number, Problem>> = {
@@ -67,6 +82,13 @@ async function problemOf(response: Response): Promise<Problem> {
     return "session";
   }
   const known = STATUS_PROBLEMS[response.status];
+  if (response.status === 403) {
+    // the refund window's one refusal (a closed case, a case of another store, an inactive operator) is not a
+    // missing capability: it has its own sentence, which does not say which of them it was (AC-10)
+    return (await errorCode(response)) === "refund_window_read_refused"
+      ? "refused"
+      : "forbidden";
+  }
   if (known !== undefined) {
     return known;
   }
@@ -78,29 +100,56 @@ async function problemOf(response: Response): Promise<Problem> {
   return "failed";
 }
 
+const SECONDS = /^\d{1,6}$/;
+
+async function failureOf(response: Response): Promise<ApiFailure> {
+  const problem = await problemOf(response);
+  if (problem !== "rate_limited") {
+    return { ok: false, problem };
+  }
+  const wait = response.headers.get("retry-after") ?? "";
+  return SECONDS.test(wait)
+    ? { ok: false, problem, retryAfterSeconds: Number(wait) }
+    : { ok: false, problem };
+}
+
 export function createApi(fetchJson: Fetch): Api {
+  const send = async <T>(
+    path: string,
+    init: RequestInit
+  ): Promise<ApiResult<T>> => {
+    let response: Response;
+    try {
+      // the method, headers and body are the caller's; how the request goes out is not
+      response = await fetchJson(path, {
+        ...init,
+        cache: "no-store",
+        credentials: "same-origin",
+        redirect: "manual",
+      });
+    } catch {
+      return { ok: false, problem: "network" };
+    }
+    if (!response.ok) {
+      return failureOf(response);
+    }
+    try {
+      return { data: (await response.json()) as T, ok: true };
+    } catch {
+      return { ok: false, problem: "failed" };
+    }
+  };
   return {
-    get: async <T>(path: string): Promise<ApiResult<T>> => {
-      let response: Response;
-      try {
-        response = await fetchJson(path, {
-          cache: "no-store",
-          credentials: "same-origin",
-          headers: { accept: "application/json" },
-          method: "GET",
-          redirect: "manual",
-        });
-      } catch {
-        return { ok: false, problem: "network" };
-      }
-      if (!response.ok) {
-        return { ok: false, problem: await problemOf(response) };
-      }
-      try {
-        return { data: (await response.json()) as T, ok: true };
-      } catch {
-        return { ok: false, problem: "failed" };
-      }
-    },
+    get: (path) =>
+      send(path, { headers: { accept: "application/json" }, method: "GET" }),
+    post: (path, body) =>
+      send(path, {
+        body: JSON.stringify(body),
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      }),
   };
 }

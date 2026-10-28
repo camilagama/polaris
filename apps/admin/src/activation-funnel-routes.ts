@@ -16,7 +16,8 @@ import { fromThisSite } from "./support-routes";
 
 /**
  * The activation funnel in the Admin (corte 2.4, ADR 0071 amended): `GET /api/funnel?weeks=N`, JSON only, read by the
- * operator in the browser behind Access; the screen comes with the Admin's own (Phase 9). It asks for `platform:read`
+ * operator in the browser behind Access, by the Admin page's Funil area (ui/views/funnel.ts), once when the area opens
+ * and once per "Atualizar". It asks for `platform:read`
  * (an aggregate of the platform, no store's), takes nothing but `weeks` (1 to 26: no window or filter to move, so no
  * store is isolated by difference), and reads only through `admin_read_activation_funnel`, which records an event of
  * the operator (no content) in the same transaction as the read. The answer is checked against a closed contract on

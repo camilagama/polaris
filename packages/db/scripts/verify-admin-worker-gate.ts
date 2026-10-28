@@ -33,8 +33,13 @@ const expectedDatabase =
 const TEAM_DOMAIN = "polaris-test.cloudflareaccess.com";
 const ISSUER = `https://${TEAM_DOMAIN}`;
 const VITEST_TIMEOUT_MS = 5 * 60_000;
-/** The reads of GET /api/funnel that worker.workerd-db.test.ts answers (its loop over weeks 1, 4 and 26): change both. */
-const ACTIVATION_FUNNEL_ANSWERED_READS = 3;
+/**
+ * The reads of GET /api/funnel the Worker answers: 3 in worker.workerd-db.test.ts (its loop over weeks 1, 4 and 26),
+ * and in page.workerd-db.test.ts the 30 of the hour (`ACTIVATION_FUNNEL_READS_PER_HOUR`) before its 429. Each test
+ * file runs in its own isolate, so each counts its hour apart; if they shared one, page.workerd-db.test.ts would stop
+ * short of 30 answered reads and fail. Change them together.
+ */
+const ACTIVATION_FUNNEL_ANSWERED_READS = 3 + 30;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const failureLine =
   /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
@@ -214,6 +219,14 @@ async function run() {
       ),
       trial: await screenStore(`Tela ${suffix} em teste`, "free", true),
     };
+    // the Pro store had its first charge yesterday: its refund window is open, and the page shows its date
+    const firstChargeAt = (
+      await owner.pool.query<{ at: Date }>(
+        "UPDATE public.organization_billing SET first_charge_at = now() - interval '1 day', first_charge_amount = '49.90'::numeric WHERE organization_id = $1 RETURNING first_charge_at AS at",
+        [screen.hostile.id]
+      )
+    ).rows[0]?.at;
+    assert.ok(firstChargeAt, "the Pro store of the page has a billing record");
     const customer = async (
       organizationId: string,
       name: string,
@@ -278,7 +291,11 @@ async function run() {
           reactivate: orgReactivate.organizationId,
           suspend: orgSuspend.organizationId,
         },
-        screen: { prefix: `Tela ${suffix}`, ...screen },
+        screen: {
+          firstChargeAt: firstChargeAt.toISOString(),
+          prefix: `Tela ${suffix}`,
+          ...screen,
+        },
         principals: {
           disabled: disabledSubject,
           ownerId,
@@ -370,7 +387,36 @@ async function run() {
       assert.equal(row.detail, null, "the funnel's event holds no content");
     }
     tests.push(
-      "each answered read of GET /api/funnel left one activation_funnel.read event of the owner, with no store, case or content; the refused ones (weeks out of range, a disabled operator) left none"
+      "each answered read of GET /api/funnel left one activation_funnel.read event of the owner, with no store, case or content; the refused ones (weeks out of range, a disabled operator, the 429 of the hour) left none"
+    );
+    // the page read the Pro store's refund window once under its open case; the refusals (a case of another store,
+    // the case once closed) left nothing
+    const windowReads = await owner.pool.query<{
+      organization_id: string;
+      principal_id: string;
+      support_case_id: string;
+    }>(
+      "SELECT event.principal_id, event.organization_id, event.support_case_id FROM public.platform_audit_events AS event WHERE event.event_type = 'billing.refund_window_read' AND event.organization_id = ANY($1)",
+      [[screen.free.id, screen.hostile.id, screen.trial.id]]
+    );
+    assert.equal(
+      windowReads.rows.length,
+      1,
+      "one audited read of the refund window"
+    );
+    const [windowRead] = windowReads.rows;
+    assert.equal(windowRead?.principal_id, ownerId);
+    assert.equal(windowRead?.organization_id, screen.hostile.id);
+    assert.equal(
+      await count(
+        "SELECT count(*)::text AS n FROM public.support_cases WHERE id = $1 AND organization_id = $2",
+        [windowRead?.support_case_id, screen.hostile.id]
+      ),
+      1,
+      "the read was under a case of the same store"
+    );
+    tests.push(
+      "the page's read of the refund window left one billing.refund_window_read event of the owner, under the store's own case; the refused reads (another store's case, a closed case) left none"
     );
     // the disabled operator's attempt at a suspension left the organization alone
     assert.equal(await status(orgA.organizationId), "active");

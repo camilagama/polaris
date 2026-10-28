@@ -8,7 +8,7 @@
     "check": "bun run typecheck",
     "dev": "bun run build:ui && wrangler dev --port 5175",
     "test": "bun run build:ui && cd ../.. && vitest run --project node --project admin-workerd apps/admin",
-    "typecheck": "bun run build:ui && tsc --noEmit && tsc --noEmit -p ui"
+    "typecheck": "bun run build:ui && tsc --noEmit && tsc --noEmit -p ui && tsc --noEmit -p tsconfig.page-e2e.json"
   },
   "dependencies": {
     "@polaris/contracts": "workspace:*",
