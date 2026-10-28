@@ -10,6 +10,7 @@ import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   acknowledgeProfileReview,
   addAdjustment,
+  adjustmentFieldKey,
   addItem,
   attemptAfterFailure,
   autoSelectOnlyVariants,
@@ -457,6 +458,92 @@ describe("exact totals and command body", () => {
       { kind: "surcharge", value: { percentage: "5", type: "percentage" } },
       { kind: "freight", value: { amount: "15.00", type: "fixed" } },
     ]);
+  });
+
+  describe("percentage adjustment above the cap", () => {
+    const genericAdjustmentMessage =
+      "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.";
+
+    function withAdjustment(
+      kind: "discount" | "surcharge",
+      value: string,
+      valueType: "fixed" | "percentage" = "percentage"
+    ) {
+      return updateAdjustment(
+        addAdjustment(validForm(), "adj-cap"),
+        "adj-cap",
+        { kind, value, valueType }
+      );
+    }
+
+    it("says the cap for a discount of 150%", () => {
+      const result = evaluate(withAdjustment("discount", "150"));
+      expect(result.body).toBeNull();
+      expect(result.errors[formFieldKeys.adjustments]).toBe(
+        "O percentual vai até 100%."
+      );
+    });
+
+    it("says the cap for a surcharge above 100% and for 100,000001", () => {
+      for (const value of ["150", "100,000001", "101", "0150", "00150,5"]) {
+        const result = evaluate(withAdjustment("surcharge", value));
+        expect(result.errors[formFieldKeys.adjustments], value).toBe(
+          "O percentual vai até 100%."
+        );
+      }
+    });
+
+    it("accepts exactly 100% and 100,000000%", () => {
+      for (const value of ["100", "100,000000", "0100"]) {
+        const result = evaluate(withAdjustment("discount", value));
+        expect(result.errors[formFieldKeys.adjustments], value).toBeUndefined();
+        expect(result.body, value).not.toBeNull();
+      }
+    });
+
+    it("keeps the current message for a negative fixed value", () => {
+      const result = evaluate(withAdjustment("discount", "-5", "fixed"));
+      // the form refuses a minus sign as a format error before any calculation (the generic text is the server's)
+      expect(result.errors[adjustmentFieldKey("adj-cap")]).toBe(
+        "Use até 2 casas decimais, com vírgula ou ponto (ex.: 49,90)."
+      );
+      expect(result.body).toBeNull();
+    });
+
+    it("keeps the current message for the other invalid adjustment, and for the server when the percentage is within the cap", () => {
+      expect(
+        mapSaleSubmitError(
+          { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+          [
+            {
+              kind: "discount",
+              value: { percentage: "100", type: "percentage" },
+            },
+          ]
+        ).message
+      ).toBe(genericAdjustmentMessage);
+      expect(
+        mapSaleSubmitError({
+          code: "BAD_REQUEST",
+          data: { reason: "invalid_sale_adjustment" },
+        }).message
+      ).toBe(genericAdjustmentMessage);
+    });
+
+    it("says the cap when the server refuses an adjustment and the sent percentage is above 100", () => {
+      const failure = mapSaleSubmitError(
+        { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+        [
+          {
+            kind: "surcharge",
+            value: { percentage: "150", type: "percentage" },
+          },
+        ]
+      );
+      expect(failure.message).toBe("O percentual vai até 100%.");
+      expect(failure.reason).toBe("invalid_sale_adjustment");
+      expect(failure.refreshData).toBe(false);
+    });
   });
 
   it("warns, without blocking, when the quantity exceeds the shown balance", () => {
