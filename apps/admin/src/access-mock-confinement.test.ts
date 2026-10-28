@@ -159,6 +159,10 @@ describe("the simulated Access stays in the test configuration", () => {
         seen.set(file, text);
         for (const [, specifier] of text.matchAll(IMPORT)) {
           const target = resolve(dirname(file), specifier as string);
+          // the page's script and sheet are Text modules, not code the Worker runs (src/ui/ui-guard.test.ts reads them)
+          if (target.endsWith(".txt")) {
+            continue;
+          }
           pending.push(target.endsWith(".ts") ? target : `${target}.ts`);
         }
       }

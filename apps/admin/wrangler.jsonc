@@ -8,6 +8,15 @@
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker.ts",
+  // The operator's page script and sheet, built by `build:ui` (package.json) and embedded as text: no Assets binding,
+  // so every file passes through the Worker and its Access verification (corte admin-tela-v1, D-2).
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/ui/generated/*.txt"],
+      "fallthrough": false
+    }
+  ],
   // Production defaults (ADR 0094); each environment repeats the whole block.
   // Logs stay at 100% because the platform samples a request as a whole and has no separate rate for errors:
   // lowering the rate would drop error events with the rest. Invocation logs are off, so only our own

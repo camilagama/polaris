@@ -92,6 +92,8 @@ function setup(
         headers: {
           "cf-access-jwt-assertion": "token",
           "content-type": "application/json",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...headers,
         },
         method,
@@ -102,7 +104,11 @@ function setup(
     app.fetch(
       new Request(`https://admin.example.invalid${PATH}`, {
         body: text,
-        headers: { "cf-access-jwt-assertion": "token", "content-type": type },
+        headers: {
+          "cf-access-jwt-assertion": "token",
+          "content-type": type,
+          origin: "https://admin.example.invalid",
+        },
         method: "POST",
       }),
       bindings

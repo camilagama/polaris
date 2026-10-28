@@ -12,6 +12,7 @@ import type { PlatformCapability } from "@polaris/domain/admin/platform-capabili
 import { describeError } from "@polaris/observability/wide-event";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
+import { fromThisSite } from "./support-routes";
 
 /**
  * The activation funnel in the Admin (corte 2.4, ADR 0071 amended): `GET /api/funnel?weeks=N`, JSON only, read by the
@@ -256,8 +257,8 @@ export function activationFunnelRoutes(
     if (weeks === null) {
       return context.json({ error: "invalid_request" }, 400);
     }
-    // every read is written down and counted: a link on another site must not spend the operator's reads
-    if (context.req.header("sec-fetch-site") === "cross-site") {
+    // every read is written down and counted: another origin, even of the same site, must not spend the operator's reads
+    if (!fromThisSite(context)) {
       return context.json({ error: "forbidden" }, 403);
     }
     const principalId = context.get("principal").id;

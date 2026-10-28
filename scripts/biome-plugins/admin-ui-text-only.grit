@@ -1,0 +1,70 @@
+or {
+  `$element.innerHTML = $value`,
+  `$element.outerHTML = $value`,
+  `$element.adoptedStyleSheets = $value`,
+  `$element["innerHTML"] = $value`,
+  `$element["outerHTML"] = $value`,
+  `$element["innerHTML"]`,
+  `$element["outerHTML"]`,
+  `document.cookie = $value`,
+  `$element.innerHTML`,
+  `$element[$key] = $value`,
+  `$element.setHTMLUnsafe($arguments)`,
+  `$document.parseHTMLUnsafe($arguments)`,
+  `$range.createContextualFragment($arguments)`,
+  `$document.execCommand($arguments)`,
+  `$frame.srcdoc`,
+  `new DOMParser()`,
+  `new Worker($arguments)`,
+  `new SharedWorker($arguments)`,
+  `import($arguments)`,
+  `Reflect.set($arguments)`,
+  `Object.assign($arguments)`,
+  `$target.postMessage($arguments)`,
+  `$global.eval($arguments)`,
+  `$global.Function($arguments)`,
+  `Function($arguments)`,
+  `$global.setTimeout($arguments)`,
+  `$global.setInterval($arguments)`,
+  `$global.localStorage`,
+  `$global.sessionStorage`,
+  `$global.indexedDB`,
+  `$global.caches`,
+  `caches`,
+  `window.name`,
+  `$document.cookie`,
+  `$document.cookie = $value`,
+  `window.name = $value`,
+  `eval`,
+  `$element.outerHTML`,
+  `$element.insertAdjacentHTML($arguments)`,
+  `$element.adoptedStyleSheets`,
+  `document.write($arguments)`,
+  `document.writeln($arguments)`,
+  `document.cookie`,
+  `eval($arguments)`,
+  `new Function($arguments)`,
+  `setTimeout($arguments)`,
+  `setInterval($arguments)`,
+  `localStorage`,
+  `sessionStorage`,
+  `indexedDB`,
+  `$document.createElement($tag)` where {
+    $tag <: or {
+      `"style"`,
+      `"script"`,
+      `'style'`,
+      `'script'`
+    }
+  },
+  `$document.createElementNS($namespace, $tag)` where {
+    $tag <: or {
+      `"style"`,
+      `"script"`,
+      `'style'`,
+      `'script'`
+    }
+  }
+} as $hit where {
+  register_diagnostic(span=$hit, message="apps/admin/ui writes only text: no HTML from a string, no eval, no inline style or script element, no timer and nothing kept in the browser (corte admin-tela-v1, AC-7, AC-11, AC-12).", severity="error")
+}

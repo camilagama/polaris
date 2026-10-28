@@ -43,6 +43,9 @@ function support(
     cancelPurge: vi.fn(() =>
       Promise.resolve({ changed: true, status: "closed" })
     ),
+    classify: vi.fn((_principal, _organization, internal) =>
+      Promise.resolve({ changed: true, internal })
+    ),
     close: vi.fn(() =>
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
@@ -58,9 +61,6 @@ function support(
           noticeId: "0199a0a0-0000-7000-8000-0000000000f1",
           reissue: 1,
         })
-    ),
-    classify: vi.fn((_principal, _organization, internal) =>
-      Promise.resolve({ changed: true, internal })
     ),
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
     // the purge confirms the organization named is the case's own (org_1)
@@ -127,6 +127,8 @@ function setup(
 ) {
   const supportDependencies = support(overrides);
   const dependencies: AdminDependencies = {
+    accessLog: { read: vi.fn() },
+    activationFunnel: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
         email: null,
@@ -136,9 +138,6 @@ function setup(
         subject: "subject-1",
       })
     ),
-    accessLog: { read: vi.fn() },
-    activationFunnel: { read: vi.fn() },
-    refundWindow: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),
@@ -155,6 +154,7 @@ function setup(
       role: vi.fn(),
       scope: vi.fn(),
     },
+    refundWindow: { read: vi.fn() },
     report: vi.fn(),
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),
     support: supportDependencies,
@@ -166,6 +166,8 @@ function setup(
         ...init,
         headers: {
           "cf-access-jwt-assertion": "token",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...(init.headers ?? {}),
         },
       }),
@@ -531,6 +533,60 @@ describe("who may do what, and from where", () => {
       { origin: "https://admin.example.invalid" }
     );
     expect(sameOrigin.status).toBe(200);
+  });
+
+  it("refuses a change that does not name this origin, before anything is called", async () => {
+    const { dependencies, support: calls } = setup();
+    const app = createAdminApp(dependencies);
+    const response = await app.fetch(
+      new Request(
+        `https://admin.example.invalid/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+        {
+          body: JSON.stringify({ field: "email" }),
+          headers: {
+            "cf-access-jwt-assertion": "token",
+            "content-type": "application/json",
+          },
+          method: "POST",
+        }
+      ),
+      bindings
+    );
+    expect(response.status).toBe(403);
+    expect(calls.reveal).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["same-site", 403],
+    ["cross-site", 403],
+    ["same-origin", 200],
+    ["none", 200],
+  ] as const)(
+    "judges a change by Sec-Fetch-Site %s even with this origin",
+    async (site, status) => {
+      const { send, support: calls } = setup();
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+        { field: "email" },
+        { "sec-fetch-site": site }
+      );
+      expect(response.status).toBe(status);
+      expect(calls.reveal).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+    }
+  );
+
+  it("leaves the reads of the support routes as they were (no Origin is sent with a GET)", async () => {
+    const { dependencies, support: calls } = setup();
+    const app = createAdminApp(dependencies);
+    const response = await app.fetch(
+      new Request("https://admin.example.invalid/api/support-cases", {
+        headers: { "cf-access-jwt-assertion": "token" },
+      }),
+      bindings
+    );
+    expect(response.status).toBe(200);
+    expect(calls.list).toHaveBeenCalledTimes(1);
   });
 
   it("needs the login like every other API route", async () => {

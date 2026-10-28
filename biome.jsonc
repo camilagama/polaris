@@ -271,6 +271,59 @@
       }
     },
     {
+      // The Admin page's script (corte admin-tela-v1, D-1 and D-2): browser code that writes only text. It imports
+      // nothing of the store's app, of the database, of auth or of the server (types of the domain and the contracts
+      // only), and the plugin refuses every way of turning a string into HTML or code, an inline style or script
+      // element, a timer and browser storage. `src/ui/ui-guard.test.ts` plants each one and expects it refused.
+      "includes": ["apps/admin/ui/**", "!apps/admin/ui/test-dom.ts"],
+      "plugins": ["./scripts/biome-plugins/admin-ui-text-only.grit"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/*",
+                      "@polaris/*/**",
+                      "!@polaris/domain/admin/organization-diagnostics",
+                      "!@polaris/contracts/admin-activation-funnel",
+                      "@/**",
+                      "**/web/**",
+                      "**/src/**",
+                      "**/db/**",
+                      "hono",
+                      "hono/**",
+                      "react",
+                      "react/**",
+                      "react-dom",
+                      "react-dom/**",
+                      "pg",
+                      "pg/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "better-auth",
+                      "better-auth/**",
+                      "evlog",
+                      "evlog/**",
+                      "cloudflare:*",
+                      "node:*"
+                    ],
+                    "message": "The Admin page's script imports nothing of the store's app, the database, auth or the server: only its own files and types of the Admin's domain report and contracts (corte admin-tela-v1, AC-13)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // evlog is the logger's engine and runs with its own masking off (the Polaris policy masks in `emit`):
       // only packages/observability imports it.
       "includes": [
