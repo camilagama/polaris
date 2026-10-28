@@ -36,7 +36,7 @@ import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
 
 /**
- * The Início (`/`, desenho t269 v2, § 4 and § 5): "Nova venda" at once, at the top, depending on no read; then Hoje,
+ * The Início (`/`, Início design, § 4 and § 5): "Nova venda" at once, at the top, depending on no read; then Hoje,
  * Mês, Meta, Precisa de atenção, Mais vendidos and the chart, in this order at 360 px, and in two columns from 1024
  * px with Nova venda, Hoje and Mês above the fold (AC-4). A store that never sold sees the checklist in place of the
  * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only

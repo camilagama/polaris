@@ -30,7 +30,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The owner's billing self-service, the database part (ADR 0104, PR B of design t268 v2, migration 0100), on a real
+ * The owner's billing self-service, the database part (ADR 0104, migration 0100), on a real
  * PostgreSQL 18:
  *   1. the new columns of `organization_billing`: written only by the billing role, invisible to the tenant, three of
  *      them readable by the Admin owner (and its closed list of columns), and their checks;
@@ -550,7 +550,7 @@ async function run() {
     current = await record(tenantC);
     assert.equal(current?.revoked_reason, "refund");
     assert.notEqual(current?.state, "active");
-    // a new subscription: a new window of the right of withdrawal (decision of 23/10/2026)
+    // a new subscription: a new window of the right of withdrawal
     await billing.attachProvider(
       tenantC.organizationId,
       "asaas",

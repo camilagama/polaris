@@ -377,7 +377,7 @@ export function dismissClosureNotice(
 }
 
 /**
- * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
+ * Places a legal hold on the case's organization (ADR 0081): while it is in force the
  * purge is neither scheduled nor run. `storageTouched` tells that a scheduled purge already removed objects from
  * the storage (they do not come back). The operator names the organization (a confirmation) and a review date
  * (in the future, at most 366 days away: when it passes the hold stays and is listed as due for review). Placing

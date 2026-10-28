@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { StatusNav } from "./screen-parts";
 
 /**
- * The state choice of a list (t300) drawn without a browser: the roles Base UI gives the Tabs, the chosen tab and the
+ * The state choice of a list drawn without a browser: the roles Base UI gives the Tabs, the chosen tab and the
  * lock while an action runs. The arrows, Tab and the list asked again are in the browser specs of each screen
  * (`e2e/tabs-keyboard.ts`).
  */

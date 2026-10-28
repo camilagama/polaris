@@ -362,7 +362,7 @@ describe("approved periods", () => {
   it("count calendar months, moving a day that does not exist to the next month", () => {
     const expiry = (from: string) =>
       retentionExpiry("auth_security_audit", new Date(from)).toISOString();
-    // 29/02 of a leap year + 12 months: the next February has no 29th, so it ends in March
+    // `29/02` of a leap year + 12 months: the next February has no 29th, so it ends in March
     expect(expiry("2028-02-29T10:00:00.000Z")).toBe("2029-03-01T10:00:00.000Z");
     // an ordinary day keeps its day and its time
     expect(expiry("2026-10-18T23:59:59.000Z")).toBe("2027-10-18T23:59:59.000Z");
@@ -379,7 +379,7 @@ describe("approved periods", () => {
     expect(() => approvedRetention("auth_security_audit")).toThrow(
       RetentionNotApprovedError
     );
-    // 29/02 of a leap year plus 12 months: 2027 has no 29th of February, so it ends in March
+    // `29/02` of a leap year plus 12 months: 2027 has no 29th of February, so it ends in March
     expect(
       retentionExpiry(
         "auth_security_audit",
@@ -413,7 +413,7 @@ describe("approved periods", () => {
     expect(() => approvedRetention("auth_access_log")).toThrow(
       RetentionNotApprovedError
     );
-    // 31/08 + 6 months is 03/03 (February has no 31st), and the margin of 30 days comes after it
+    // `31/08` + 6 months is `03/03` (February has no 31st), and the margin of 30 days comes after it
     expect(
       retentionExpiry(
         "auth_access_log",
@@ -458,7 +458,7 @@ describe("approved periods", () => {
         new Date("2026-10-19T10:00:00.000Z")
       ).toISOString()
     ).toBe("2031-10-19T10:00:00.000Z");
-    // the amendment of 21/10/2026 (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
+    // the amendment (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
     expect(policy.legalSources).toContain(
       "LGPD (Lei 13.709/2018), art. 7º, VI"
     );
@@ -519,7 +519,7 @@ describe("approved periods", () => {
   });
 
   it("keep the tenant's operational data until the purge, which no job expires", () => {
-    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after the 90 days of the closure
+    // ADR 0081: Polaris is the processor, the purge removes them after the 90 days of the closure
     for (const retentionClass of [
       "sales_records",
       "inventory_ledger",
@@ -538,7 +538,7 @@ describe("approved periods", () => {
   });
 
   it("keep the tenant's audit past the purge, proposed by class, with the legal review pending", () => {
-    // decision of 19/10/2026 (ADR 0081 amended): no row of the audit leaves in the purge; only a period removes it
+    // ADR 0081 amended: no row of the audit leaves in the purge; only a period removes it
     expect(TENANT_AUDIT_RETENTION.security).toEqual({
       from: "event",
       months: 12,

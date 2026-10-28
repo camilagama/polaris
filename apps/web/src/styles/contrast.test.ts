@@ -132,7 +132,7 @@ describe.each([
 });
 
 /**
- * The two colors of the charts of src/ui/charts/ (t285): the ink (`--chart-5`, the series) and the middle gray
+ * The two colors of the charts of src/ui/charts/: the ink (`--chart-5`, the series) and the middle gray
  * (`--chart-3`, the dashed second series and the third part of a bar), each over the card they are drawn on. Both pairs
  * are rows of the tables above; this one says they cannot be taken out of the map, and holds them to the bar of a graphic
  * element (WCAG 1.4.11, 3:1) with the ink held to the 4.5:1 of text, since the line carries the series for whoever

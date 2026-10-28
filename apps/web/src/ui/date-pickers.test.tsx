@@ -12,7 +12,7 @@ import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
 /**
- * The markup of the date pickers (t363): the accessible names and the error of the buttons, and the month grid of
+ * The markup of the date pickers: the accessible names and the error of the buttons, and the month grid of
  * the calendar (Portuguese caption and arrows, the chosen day, the disabled days with their reason, the sizes and
  * the focus in the classes). The browser checks (e2e-pwa/ui-date-pickers.e2e.ts) click, type and measure them in
  * the gallery.

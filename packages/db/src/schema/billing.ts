@@ -608,7 +608,7 @@ const privacyOwnerRole = "polaris_privacy_owner";
 const adminOwnerRole = "polaris_admin_owner";
 
 /**
- * The optional reason the owner gives when cancelling the renewal (ADR 0104, decision 3, item 10 of design t268):
+ * The optional reason the owner gives when cancelling the renewal (ADR 0104, decision 3):
  * free text with no organization and no person, only the day (São Paulo; never the moment, so it does not match the
  * ledger's fact), the state and the cycle. Only the billing role writes it, only the Admin owner reads it, and the
  * privacy maintenance deletes it 12 months after `recorded_on` (`billing_cancellation_feedback` in `retention.ts`).

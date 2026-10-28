@@ -1,4 +1,4 @@
-/** The destinations of the menu (the map of navigation of 26/10, § 1): eight, and Pendências while it has something. */
+/** The destinations of the menu (the navigation map, § 1): eight, and Pendências while it has something. */
 export type NavId =
   | "attention"
   | "customers"

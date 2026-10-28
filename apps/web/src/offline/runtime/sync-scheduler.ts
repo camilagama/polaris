@@ -11,7 +11,7 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  *   even with the connection not proven (an answer of the Worker to it is what proves it again);
  * - at start and on the return to the page (`refresh`): the same try, unless some tab of this browser
  *   pulled the store less than 60 s ago and nothing is queued. Each screen is its own page load, so
- *   without this every change of screen was a pull (the ~2.5 s pulls of the QA of 26/10);
+ *   without this every change of screen was a pull (the ~2.5 s pulls seen in QA);
  * - when the connection comes back: a sync about 1 s later (±20%, so tabs and devices do not come back
  *   together);
  * - after `sync_failed` (a 5xx, a 429), and after a transient failure the runtime still keeps quiet (a Worker

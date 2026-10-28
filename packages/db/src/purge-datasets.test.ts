@@ -16,7 +16,7 @@ const migration = readFileSync(
   new URL("../drizzle/0075_organization_purge.sql", import.meta.url),
   "utf8"
 );
-// the audit leaves the purge in this one (ADR 0081, amended 19/10/2026): it redefines the function
+// the audit leaves the purge in this one (ADR 0081, amended): it redefines the function
 const auditMigration = readFileSync(
   new URL("../drizzle/0080_auditoria_sobrevive_ao_purge.sql", import.meta.url),
   "utf8"

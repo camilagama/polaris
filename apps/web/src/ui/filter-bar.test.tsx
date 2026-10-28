@@ -17,7 +17,7 @@ import {
 } from "@/ui/filter-bar-model";
 
 /**
- * The rules of the filter bar (t383) and its first paint. The rules (what a filter is, what its pill says, what adding,
+ * The rules of the filter bar and its first paint. The rules (what a filter is, what its pill says, what adding,
  * editing, removing and "Limpar tudo" do, when motion is off) are pure functions in `filter-bar-model.ts`, tested here
  * without a browser; the markup of the bar is rendered to a string for the names, the `<search>` and the field that
  * cannot be used. That a touch opens the menu or the editor, where the focus goes and what the sizes are needs a

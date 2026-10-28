@@ -41,7 +41,7 @@ import {
 
 /**
  * The audit of the tenant survives the purge, is immutable and leaves only by a period, on a real PostgreSQL 18
- * (ADR 0081, amended 19/10/2026). It proves: the foreign key to the organization restricts; the triggers of the three
+ * (ADR 0081, amended). It proves: the foreign key to the organization restricts; the triggers of the three
  * audit tables (and the platform audit's) are ENABLE ALWAYS and refuse UPDATE, DELETE and TRUNCATE even under
  * `session_replication_role = replica`; the CHECK and the class of `event_type` are the domain's registry, and a type
  * outside it fails at the INSERT; the purge of an organization keeps every row of its audit; and the expiry removes only

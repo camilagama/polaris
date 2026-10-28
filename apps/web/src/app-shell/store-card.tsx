@@ -37,7 +37,7 @@ const STORE_MENU_LABEL_NO_LOGOUT = "Loja e tema";
  *
  * The protected logout (`useLogout`) lives in the sidebar, which outlives the card when the width crosses 760 px,
  * and its notices here, in the card, which is always on screen, and not in the menu, which closes on the click: the
- * item only calls `start`, and the dialog of the pending queue or the message of a failed sign-out appears under the card after the menu has closed (Rodrigo, 25/10, vale corrigir 1).
+ * item only calls `start`, and the dialog of the pending queue or the message of a failed sign-out appears under the card after the menu has closed.
  * When the flow fails, or the dialog is dismissed, the focus goes back to the button of the menu.
  */
 export function StoreCard({
@@ -165,7 +165,7 @@ export function StoreCard({
             ) : null}
             {runtime ? (
               <>
-                {/* last and apart from the rest, so it is not chosen by mistake (Rodrigo, 25/10, menor 3) */}
+                {/* last and apart from the rest, so it is not chosen by mistake */}
                 <DropdownMenuSeparator className="my-1.5" />
                 <DropdownMenuItem disabled={logout.busy} onClick={logout.start}>
                   <LogOutIcon aria-hidden="true" />

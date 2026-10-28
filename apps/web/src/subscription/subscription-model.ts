@@ -19,8 +19,8 @@ import {
 } from "./plan-notice";
 
 /**
- * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17; design t268 v2, § 11; the wireframes of
- * the Petković). Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
+ * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17; design, § 11; the wireframes).
+ * Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
  * counted on the client but the day the trial's first charge would fall on, before any checkout (the same rule the
  * server sets at the provider).
  */
@@ -102,7 +102,7 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   const charge = plan.nextCharge;
   if (plan.state === "trialing") {
     return {
-      // the Pix trial counts from the bank's approval: no number of days (AC-12, amendment t268)
+      // the Pix trial counts from the bank's approval: no number of days (AC-12)
       badge: {
         text:
           plan.method === "pix_automatic" ? "teste grátis" : "7 dias grátis",
@@ -390,7 +390,7 @@ export interface OfferTerms {
 }
 
 /**
- * The box above the button (AC-12, amendment t268): with the trial, "Começar os 7 dias grátis" on the card and
+ * The box above the button (AC-12): with the trial, "Começar os 7 dias grátis" on the card and
  * "Começar o teste grátis" on Pix, which counts from the bank's approval; without it, "Assinar o Pro" and that the
  * trial was used. Never "sem cartão".
  */
@@ -510,7 +510,7 @@ export function checkoutReturnOf(search: string): CheckoutReturn | null {
     : null;
 }
 
-/** Every 5 s for up to 2 min, then "Atualizar" (design t268 v2, § 3, T-1). */
+/** Every 5 s for up to 2 min, then "Atualizar" (design, § 3). */
 export const REREAD_EVERY_MS = 5000;
 export const REREAD_FOR_MS = 120_000;
 

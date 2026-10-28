@@ -89,7 +89,7 @@ function fakeApi(
 
 /** The clock of the tests. */
 const clock = new Date("2026-10-27T13:00:00.000Z");
-/** 27/10 + 1 month, through the end of 27/11 in São Paulo. */
+/** `27/10` + 1 month, through the end of `27/11` in São Paulo. */
 const monthlyEnd = new Date("2026-11-28T03:00:00.000Z");
 
 async function deliver(
@@ -919,7 +919,7 @@ describe("reconcileWooviSubscription", () => {
       now: clock,
       subscription: subscription(),
     });
-    // 27/08 + 1 month ended at the end of 27/09
+    // `27/08` + 1 month ended at the end of `27/09`
     expect(events.map((entry) => entry.fact.type)).toEqual([
       "trial_method_ready",
     ]);

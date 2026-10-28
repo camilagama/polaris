@@ -4,7 +4,7 @@ import type { BillingFact, BillingRecord } from "./facts";
 import { type BillingEvent, GRACE_DAYS } from "./subscription-state";
 
 /**
- * The notices of the billing cycle and the welcome (ADR 0104, decision 7; design t268 v2, §9): which notice a change
+ * The notices of the billing cycle and the welcome (ADR 0104, decision 7): which notice a change
  * of the billing record, or the hour that passes, records. A notice is a row of `billing_notices` (one per store, kind
  * and `dedupeKey`, so the same transition twice records one) and an outbox event `billing.notice` written in the same
  * transaction; whether it still goes out is decided when it is sent, by the consumer (`noticeStillTrue`, PR G). Pure:
@@ -19,7 +19,7 @@ export const BILLING_NOTICE_KINDS = Object.freeze([
   "charge_receipt",
   "renewal_cancelled",
   "refund_confirmed",
-  // the notice 7 days before the renewal of the yearly cycle (Q-E1, decision of the user of 23/10/2026; named here)
+  // the notice 7 days before the renewal of the yearly cycle
   "annual_renewal_reminder",
   "welcome",
 ] as const);
@@ -415,8 +415,7 @@ function periodOfEvent(event: BillingFact | null): Date | undefined {
 }
 
 /**
- * Whether a notice recorded earlier is still true now, when it is about to go out (ADR 0104, decision 7; design t268
- * v2, §9): null to send it, or the reason it is skipped. The common rules come first, top to bottom (the e-mail off,
+ * Whether a notice recorded earlier is still true now, when it is about to go out (ADR 0104, decision 7): null to send it, or the reason it is skipped. The common rules come first, top to bottom (the e-mail off,
  * a closed store, a link replaced by a new subscription; the welcome follows only the first), then the row of its kind,
  * then an amount that was never recorded. Pure: the consumer reads the notice, the record and the store, and marks the
  * notice with the answer.

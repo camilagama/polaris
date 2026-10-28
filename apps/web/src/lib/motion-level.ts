@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * How much the interface moves (ADR 0103, "Níveis de movimento"; decision of 25/10/2026). One definition, read by the
+ * How much the interface moves (ADR 0103, "Níveis de movimento"). One definition, read by the
  * CSS through `<html data-motion>` (the `motion-full:` variant of theme.css) and by the code that animates in
  * JavaScript (the filter bar, the charts and the panel of the phone) through `useMotionLevel()` or `readMotionLevel()`.
  * No component reads the width or the pointer on its own.

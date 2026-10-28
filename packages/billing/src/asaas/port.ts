@@ -48,7 +48,7 @@ export interface AsaasPortConfig {
 
 /**
  * Where the provider's page sends the payer back, built from the app's origin: the Assinatura screen, which reads
- * the plan again (design t268 v2, § 11). The client never names these URLs: an open redirect through the checkout
+ * the plan again. The client never names these URLs: an open redirect through the checkout
  * would otherwise be one request away.
  */
 export function checkoutReturnUrls(appBaseUrl: string): CheckoutReturnUrls {
@@ -188,7 +188,7 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
         return "discarded";
       } catch (error: unknown) {
         // a checkout cancelled before answers 400 to a second cancel, and one Asaas
-        // does not know answers 404 (sandbox, 19/10/2026): nothing is left to give up.
+        // does not know answers 404 (sandbox): nothing is left to give up.
         // The ID is checked before the call, so a 400 is not a malformed one; an
         // expired or paid checkout was not measured and is read the same way (the
         // fact paid without a reservation still starts no trial). A refused key

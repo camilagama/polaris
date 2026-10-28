@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { countLooseClock } from "./gate-clock-scan";
 
 /**
- * No loose clock in the gates (t438; dreaming of 27/10: 5 times in 4 PRs, and the economics gate of PR 306 left the
+ * No loose clock in the gates (5 times in 4 PRs, and the economics gate of PR 306 left the
  * main CI red). `Date.now()` and `new Date()` with no argument tell the time of the day the gate runs, so a day
  * worked out from them changes with the hour. A gate that needs a day takes it from `gate-clock.ts` (a clock fixed at
  * the start of the run, helpers that take the clock as an argument, tested on fixed clocks around midnight in São

@@ -120,7 +120,7 @@ interface ResultCardsProps {
  * dias sem custo informado", with neither (AC-9). With no cost of the goods known (`cogsCoverageOf` is "none") the
  * result and the margin show a dash, the badge and one line each: the server's figures are then the sales, never an
  * estimate. The margin is the server's, with no sparkline. On a phone the sparklines are drawn finished; the reading
- * by the finger stays (t386).
+ * by the finger stays.
  */
 export function ResultCards({
   comparison,

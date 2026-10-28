@@ -171,7 +171,7 @@ describe("dia e fuso", () => {
       });
 
       it("o dia lido volta igual, também na troca de horário de verão", () => {
-        // 08/03/2026 em Nova York e 05/04/2026 em Auckland mudam o relógio
+        // `08/03/2026` em Nova York e `05/04/2026` em Auckland mudam o relógio
         for (const iso of [
           "2026-03-08",
           "2026-04-05",

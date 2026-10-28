@@ -314,7 +314,7 @@ const noAxis = () => "";
 
 /**
  * The area chart of the charts chunk, with the sales and the dashed cost line, broken on a hatched day whose cost is
- * unknown (AC-9, emenda de 25/10).
+ * unknown (AC-9).
  */
 function Drawing({ label, series }: { label: string; series: ResultSeries }) {
   const { data, note, secondary, spoken } = useDrawingData(series);
@@ -392,7 +392,7 @@ interface ResultChartProps {
 
 /**
  * "Vendas × custos por dia" (AC-4 to AC-12): the sales of each day and the costs against them, hatched and broken on a
- * day whose cost is unknown (AC-9, emenda de 25/10). The total of sales, the total of costs and the best day are written above the drawing, and "Ver os
+ * day whose cost is unknown (AC-9). The total of sales, the total of costs and the best day are written above the drawing, and "Ver os
  * números" has the table: the numbers hold without the drawing. The period is cut at the store's today, read from the
  * server's clock; what the days to come cost closes the table.
  */

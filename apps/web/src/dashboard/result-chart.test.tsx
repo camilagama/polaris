@@ -8,8 +8,8 @@ import { addDays } from "./result-period";
 import { resultSeries } from "./result-series";
 
 /**
- * The markup of "Vendas × custos por dia" (AC-9 and AC-11 with the emenda de 25/10): the five sentences of support of
- * the Petković (26/10 00:41), the summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
+ * The markup of "Vendas × custos por dia" (AC-9 and AC-11): the five sentences of support, the
+ * summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
  * day of unknown cost says "sem custo informado", never R$ 0,00. The drawing itself is measured in the browser.
  */
 

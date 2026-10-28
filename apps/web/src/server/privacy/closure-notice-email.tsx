@@ -19,7 +19,7 @@ import {
 import { emailColors } from "../email-colors.generated";
 
 /**
- * The e-mail of a closure notice (ADR 0102 amended, design t107 §5), one per milestone: the request, D minus 30 and
+ * The e-mail of a closure notice (ADR 0102 amended, design § 5), one per milestone: the request, D minus 30 and
  * minus 7 days, D, and a purge rescheduled after a legal hold. Only what the condition of the security review allows:
  * the store's name, the dates in the organization's calendar and a link to the panel, which asks the owner to sign in
  * (no token in the URL). Nothing of the owner (name, address) is in the text; the address only goes to the provider.

@@ -136,7 +136,7 @@ export function createAuthenticatedRequestContext(
     overrides.readAcceptedLegalVersions ?? readAcceptedLegalVersions;
   // Built once per isolate: assembling Better Auth costs more CPU than a cold isolate has left in the Free plan.
   // It holds configuration only. The `db` it reads through is the one of the running request, resolved at each
-  // call from the request scope; no `pool` and no `db` of a request stays here (ADR 0017, emenda de 24/10/2026).
+  // call from the request scope; no `pool` and no `db` of a request stays here (ADR 0017).
   // Only `getSession` is reachable from it; the `/api/auth/*` routes have an instance of their own, built the same way
   // (`auth/handler.ts`).
   interface SessionAuthEntry {

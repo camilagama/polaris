@@ -4,7 +4,7 @@ import { AreaChart } from "./area-chart";
 import { Sparkline } from "./sparkline";
 
 /**
- * The markup of what Polaris adds around the blocks of Bklit UI (ADR 0103, amendment "Gráficos", t336): the name and
+ * The markup of what Polaris adds around the blocks of Bklit UI (ADR 0103, amendment "Gráficos"): the name and
  * the summary a screen reader gets, the reading line, the legend, the keyboard control and the empty state. The blocks
  * measure their box with a ResizeObserver, so the plot itself has no width on the server and is not in this markup:
  * what the browser draws (the reveal, the tooltip with the value in pt-BR, the arrows moving the point in focus, the

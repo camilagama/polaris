@@ -918,7 +918,7 @@ type LocalDateTimeParse =
 
 /**
  * Reads a `datetime-local` value as a moment in the device time zone. A date
- * that does not exist (31/02) is invalid rather than rolled over.
+ * that does not exist (`31/02`) is invalid rather than rolled over.
  */
 export function parseLocalDateTime(text: string): LocalDateTimeParse {
   const trimmed = text.trim();

@@ -23,7 +23,7 @@ import {
 import { readRhythmCopy } from "./rhythm-copy";
 
 /**
- * The Início's copy on the device (desenho t269 v2, § 7.2; ADR 0056, emenda (ii)): A, the month, lives under the key
+ * The Início's copy on the device (Início design, § 7.2; ADR 0056, emenda (ii)): A, the month, lives under the key
  * of the period summary that the Resultado also keeps; here, under `polaris.offline.home.<org>`, the rest of what
  * the Início showed: B (the days before the month), the goal of the card and whether the store already sold. All of
  * it as the server said it, never a figure of the device; read back only after the shape checks, and gone with the

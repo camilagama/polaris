@@ -52,7 +52,7 @@ import {
 import type { Challenge } from "./turnstile";
 
 /*
- * The pieces of the entry pages in the interface v5.2 (ADR 0103; design v5.2 of 20/10: Google first, the password
+ * The pieces of the entry pages in the interface v5.2 (ADR 0103; design v5.2: Google first, the password
  * after the e-mail): `/entrar`, `/criar-conta`, "Confirme seu e-mail", `/confirmar-email`, `/esqueci-a-senha`,
  * `/redefinir-senha` and `/desbloquear`. "Trocar senha" inside the app uses the same fields and notices.
  */

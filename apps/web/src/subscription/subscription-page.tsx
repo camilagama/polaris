@@ -65,7 +65,7 @@ function Unavailable({ text }: { text: string }) {
 }
 
 /**
- * The Assinatura (corte assinatura-e-cancelar, B; design t268 v2, § 11): only for whom has `billing:manage`, with the
+ * The Assinatura (corte assinatura-e-cancelar, B; design, § 11): only for whom has `billing:manage`, with the
  * billing self-service on. The server says the same (`FORBIDDEN billing_manage_required`, `NOT_FOUND`): the screen
  * only does not ask.
  */
