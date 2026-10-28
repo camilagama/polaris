@@ -2,6 +2,7 @@ import type {
   PushCommandReadModel,
   PushResultReadModel,
 } from "@polaris/contracts";
+import { isPayloadTooLarge } from "../lib/rpc-error";
 import {
   type BootstrapSource,
   isLocalStoreReady,
@@ -27,6 +28,14 @@ import type { Outbox } from "./outbox/outbox";
  * done with it, and keeping it would keep the typed name, phone and email on
  * the device, so it is dropped and the queue goes on (ADR 0079).
  *
+ * A batch closes by size too: the server refuses a body above `RPC_BODY_MAX_BYTES`
+ * (413), and a queue of big commands sent by count alone would meet that wall again
+ * with the same batch, forever. The batch closes at `PUSH_BATCH_TARGET_BYTES`, always
+ * with at least one command (one alone is at most ~262 KiB). If the server still answers
+ * 413, the batch goes back to waiting and the next one is half as long; a single command
+ * that is still refused stays in the queue (it is neither dropped nor rejected) and the
+ * run ends with `PushPayloadTooLargeError`.
+ *
  * A request that fails (no network, server down) puts the batch back to waiting
  * and throws: the same commands, with the same IDs, go out next time, and the
  * server replays what it already did. Sending twice is always safe.
@@ -36,6 +45,17 @@ export type PushFunction = (input: {
 }) => Promise<{
   results: PushResultReadModel[];
 }>;
+
+/** The target size of a `sync.push` body: the server's ceiling is 512 KiB, the rest is the margin of the envelope. */
+export const PUSH_BATCH_TARGET_BYTES = 400 * 1024;
+
+/** One command is still refused as too large: it stays in the queue, and the run stops without a quick retry. */
+export class PushPayloadTooLargeError extends Error {
+  constructor(options: { cause: unknown }) {
+    super("sync_push_payload_too_large", options);
+    this.name = "PushPayloadTooLargeError";
+  }
+}
 
 class SyncResponseMismatchError extends Error {
   constructor() {
@@ -88,16 +108,29 @@ function toPushCommand(command: OutboxCommand): PushCommandReadModel {
   };
 }
 
+const encoder = new TextEncoder();
+
+/** The bytes the command takes on the wire (UTF-8 of its JSON). */
+function pushCommandBytes(command: OutboxCommand): number {
+  return encoder.encode(JSON.stringify(toPushCommand(command))).length;
+}
+
 async function waitingHead(
   outbox: Outbox,
   batchSize: number
 ): Promise<OutboxCommand[]> {
   const { commands } = await outbox.snapshot();
   const batch: OutboxCommand[] = [];
+  let bytes = 0;
   for (const command of commands) {
     if (command.status !== "pending" || batch.length >= batchSize) {
       break;
     }
+    const size = pushCommandBytes(command);
+    if (batch.length > 0 && bytes + size > PUSH_BATCH_TARGET_BYTES) {
+      break;
+    }
+    bytes += size;
     batch.push(command);
   }
   return batch;
@@ -191,11 +224,42 @@ async function catchUp(
   }
 }
 
+/**
+ * Marks the batch "sending" and pushes it. A 413 puts it back and answers the size of the next one (half as
+ * many commands); a 413 of a single command stays in the queue and ends the run. Any other failure puts it back and throws.
+ */
+async function sendBatch(
+  outbox: Outbox,
+  batch: OutboxCommand[],
+  push: PushFunction
+): Promise<
+  | { response: Awaited<ReturnType<PushFunction>> }
+  | { refusedAlone: unknown }
+  | { splitTo: number }
+> {
+  for (const command of batch) {
+    // biome-ignore lint/performance/noAwaitInLoops: marked one by one, in order
+    await outbox.markSending(command.commandId);
+  }
+  try {
+    return { response: await push({ commands: batch.map(toPushCommand) }) };
+  } catch (error) {
+    await putBack(outbox, batch);
+    if (!isPayloadTooLarge(error)) {
+      throw error;
+    }
+    if (batch.length === 1) {
+      return { refusedAlone: error };
+    }
+    return { splitTo: Math.max(1, Math.floor(batch.length / 2)) };
+  }
+}
+
 export async function syncOutbox(
   request: SyncOutboxRequest
 ): Promise<SyncOutboxSummary> {
   const { outbox, push } = request;
-  const batchSize = Math.max(1, Math.min(request.batchSize ?? 20, 50));
+  let batchSize = Math.max(1, Math.min(request.batchSize ?? 20, 50));
   if (request.recover !== false) {
     await outbox.recoverInterrupted();
   }
@@ -217,18 +281,16 @@ export async function syncOutbox(
     if (batch.length === 0) {
       break;
     }
-    for (const command of batch) {
-      // biome-ignore lint/performance/noAwaitInLoops: marked one by one, in order
-      await outbox.markSending(command.commandId);
+    summary.requests += 1;
+    const sent = await sendBatch(outbox, batch, push);
+    if ("refusedAlone" in sent) {
+      throw new PushPayloadTooLargeError({ cause: sent.refusedAlone });
     }
-    let response: Awaited<ReturnType<PushFunction>>;
-    try {
-      summary.requests += 1;
-      response = await push({ commands: batch.map(toPushCommand) });
-    } catch (error) {
-      await putBack(outbox, batch);
-      throw error;
+    if ("splitTo" in sent) {
+      batchSize = sent.splitTo;
+      continue;
     }
+    const { response } = sent;
     const byId = new Map(response.results.map((r) => [r.commandId, r]));
     if (batch.some((command) => !byId.has(command.commandId))) {
       await putBack(outbox, batch);

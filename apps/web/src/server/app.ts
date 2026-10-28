@@ -22,6 +22,7 @@ import {
   rpcRateLimitMiddleware,
 } from "./middleware/rate-limit";
 import { requestIdMiddleware } from "./middleware/request-id";
+import { rpcBodyLimitMiddleware } from "./middleware/rpc-body-limit";
 import {
   markMatchedProcedure,
   routeTimingMiddleware,
@@ -123,6 +124,7 @@ export function createServerApp({
   app.use("/rpc/*", originCheckMiddleware);
   app.use("/api/*", originCheckMiddleware);
   app.use("/rpc/*", rpcRateLimitMiddleware);
+  app.use("/rpc/*", rpcBodyLimitMiddleware);
   app.use("/api/products/:productId/media", mediaUploadRateLimitMiddleware);
   app.use("/rpc/*", async (context, next) => {
     const { matched, response } = await rpcHandler.handle(context.req.raw, {
