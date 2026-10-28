@@ -72,12 +72,14 @@ const definiteCodes = new Set([
   "CONFLICT",
   "FORBIDDEN",
   "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
   "UNAUTHORIZED",
 ]);
 
 /**
  * True when the server answered definitively (a 4xx): the command did not take
- * effect. Network failures, 5xx and anything unrecognized may have taken
+ * effect. The 413 counts: the Worker answers it before the procedure runs, and a body cut while it is read
+ * never reaches the procedure as a complete call. Network failures, 5xx and anything unrecognized may have taken
  * effect, so callers must treat them as an unknown outcome.
  */
 export function isDefiniteRpcRejection(error: unknown): boolean {

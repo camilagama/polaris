@@ -150,6 +150,29 @@ describe("the body ceiling of /rpc", () => {
     expect(state.pulled).toBeLessThan(RPC_BODY_MAX_BYTES + 256 * KIB);
   });
 
+  it("never hands the procedure a call cut at the ceiling, even when what was read is valid JSON", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { post, reached } = setup();
+    const call = new TextEncoder().encode(callOfSize(KIB));
+    const padding = new Uint8Array(RPC_BODY_MAX_BYTES + KIB - call.length).fill(
+      32
+    );
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(call);
+        for (let offset = 0; offset < padding.length; offset += 64 * KIB) {
+          controller.enqueue(padding.subarray(offset, offset + 64 * KIB));
+        }
+        controller.close();
+      },
+    });
+
+    const response = await post(stream);
+
+    await expectFixedRefusal(response, 413, "payload_too_large");
+    expect(reached).not.toHaveBeenCalled();
+  });
+
   it("cuts a body that is larger than the small Content-Length it declares", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { post, reached } = setup();
