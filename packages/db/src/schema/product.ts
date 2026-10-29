@@ -1,3 +1,4 @@
+import { MAX_PRODUCT_VARIANT_SKU_LENGTH } from "@polaris/domain/catalog/product";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -147,6 +148,10 @@ export const productVariants = pgTable(
           AND ${table.sku} !~ '^[[:space:]]|[[:space:]]$'
         )
       `
+    ),
+    check(
+      "product_variants_sku_max_length",
+      sql`${table.sku} IS NULL OR char_length(${table.sku}) <= ${sql.raw(String(MAX_PRODUCT_VARIANT_SKU_LENGTH))}`
     ),
     index("product_variants_organization_product_idx").on(
       table.organizationId,
