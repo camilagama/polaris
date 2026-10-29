@@ -180,6 +180,19 @@ describe("a call the platform killed (the regime of the Free plan)", () => {
     );
     expect(isPlatformCut(new TypeError("Failed to fetch"))).toBe(false);
     expect(isPlatformCut(new NoWorkerAnswerError("unproven"))).toBe(false);
+    expect(
+      isPlatformCut({
+        code: "CONFLICT",
+        data: { reason: "platform_cut" },
+        status: 409,
+      })
+    ).toBe(false);
+    expect(
+      isPlatformCut({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "platform_cut" },
+      })
+    ).toBe(false);
     expect(isPlatformCut({ code: "TOO_MANY_REQUESTS", status: 429 })).toBe(
       false
     );

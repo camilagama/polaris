@@ -150,10 +150,16 @@ export function isTransientReadFailure(error: unknown): boolean {
  * of the Free plan, 1102, "code had hung": `server_failed` in `connection.ts`, which gives it
  * `PLATFORM_CUT_REASON`). In the regime of the Free plan every call of the Worker dies like this for minutes,
  * whatever it is. Never an answer of the Worker itself, its 503 `server_busy` included: that one is a fault of the
- * call, which may be the same each time it goes.
+ * call, which may be the same each time it goes. The reason is only ever born in the client (`connection.ts`) and
+ * only on a 5xx, so a status below 500 is no cut whatever the reason says.
  */
 export function isPlatformCut(error: unknown): boolean {
-  return rpcErrorReason(error) === PLATFORM_CUT_REASON;
+  const { status } = (error ?? {}) as { status?: unknown };
+  return (
+    rpcErrorReason(error) === PLATFORM_CUT_REASON &&
+    typeof status === "number" &&
+    status >= 500
+  );
 }
 
 /**

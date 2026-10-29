@@ -26,6 +26,7 @@ const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
     code,
     ...(reason ? { data: { reason } } : {}),
+    ...(code === "SERVICE_UNAVAILABLE" ? { status: 503 } : {}),
   });
 
 describe("valores das opções, um por linha", () => {
