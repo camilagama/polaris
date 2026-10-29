@@ -80,6 +80,8 @@ const MUG = {
 interface OpenOptions {
   /** What the screen shows when it is ready (the count line). */
   count?: string;
+  /** The read of one variant (the link from the sale) is refused. */
+  entryReadFails?: boolean;
   /** Appended to the address of the lab: `&filtro=sem-custo`. */
   search?: string;
 }
@@ -90,7 +92,11 @@ let listRequests: string[] = [];
 async function openStockLab(
   page: Page,
   stored: string,
-  { count = "2 variantes", search = "" }: OpenOptions = {}
+  {
+    count = "2 variantes",
+    entryReadFails = false,
+    search = "",
+  }: OpenOptions = {}
 ) {
   listRequests = [];
   await page.addInitScript((theme) => {
@@ -101,6 +107,23 @@ async function openStockLab(
     const body = route.request().postData() ?? "";
     listRequests.push(body);
     const wanted = VARIANT_IDS.exec(body)?.[1];
+    if (wanted !== undefined && entryReadFails) {
+      return route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "FORBIDDEN",
+            data: null,
+            defined: false,
+            message: "FORBIDDEN",
+            status: 403,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 403,
+      });
+    }
     if (wanted !== undefined) {
       return route.fulfill(
         rpc({
@@ -408,6 +431,24 @@ test("?entrada= de uma variante que não existe diz isso em uma linha, sem erro,
   await expect(
     page.getByRole("heading", { name: "Receber estoque" })
   ).toBeVisible();
+});
+
+test("?entrada= com a leitura recusada não afirma que a variante não existe", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    entryReadFails: true,
+    search: `&entrada=${MUG.variantId}`,
+  });
+  await expect(
+    page.getByText(
+      "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByText("Não achamos essa variante")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
 });
 
 test("?entrada= que não é um id não lê nada e abre a tela como sempre", async ({

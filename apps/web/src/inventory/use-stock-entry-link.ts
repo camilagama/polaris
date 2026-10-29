@@ -16,16 +16,19 @@ export type StockEntryLookup =
   | { status: "none" }
   | { status: "loading" }
   | { entry: InventoryBalanceEntryReadModel; status: "found" }
-  | { status: "missing" };
+  | { status: "missing" }
+  | { status: "unavailable" };
 
 const NONE: StockEntryLookup = { status: "none" };
 const LOADING: StockEntryLookup = { status: "loading" };
 const MISSING: StockEntryLookup = { status: "missing" };
+const UNAVAILABLE: StockEntryLookup = { status: "unavailable" };
 
 /**
  * The variant a link from the sale (`?entrada=`) asks to receive stock for. The parameter is taken out of the address
  * at once (a reload does not reopen the panel); the variant is read by id, from the device when there is no connection.
- * Anything that cannot be read is `missing`, which the screen says in a line and never as an error.
+ * A variant that is not there is `missing`, and one that could not be read is `unavailable`: the screen says each in a
+ * line and never as an error, and never claims the variant does not exist when it only could not be read.
  */
 export function useStockEntryLink(
   organizationId: string,
@@ -59,11 +62,18 @@ export function useStockEntryLink(
       return;
     }
     let current = true;
-    const finish = (entry: InventoryBalanceEntryReadModel | undefined) => {
+    const finish = (
+      entry: InventoryBalanceEntryReadModel | undefined,
+      failed = false
+    ) => {
       if (!current) {
         return;
       }
       settled.current = true;
+      if (failed) {
+        setLookup(UNAVAILABLE);
+        return;
+      }
       setLookup(entry ? { entry, status: "found" } : MISSING);
     };
     const read =
@@ -82,7 +92,7 @@ export function useStockEntryLink(
               ),
             { isCurrent: () => current }
           ).then((page) => page.entries[0]);
-    read.then(finish).catch(() => finish(undefined));
+    read.then((entry) => finish(entry)).catch(() => finish(undefined, true));
     return () => {
       current = false;
     };

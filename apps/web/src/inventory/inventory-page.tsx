@@ -62,12 +62,13 @@ function isStockAction(value: string | undefined): value is StockAction {
   return STOCK_ACTIONS.some((action) => action === value);
 }
 
-function EntryNotFoundNotice() {
+function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
   return (
     <Alert variant="warning">
       <AlertDescription>
-        Não achamos essa variante no estoque. Procure o produto na lista e use
-        Receber.
+        {unavailable
+          ? "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+          : "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."}
       </AlertDescription>
     </Alert>
   );
@@ -292,10 +293,13 @@ export function InventoryPage() {
     const current = open;
     setOpen(null);
     if (current) {
+      // the variant of the link may not be in the list: the focus then goes to the content
       focusLater(() =>
-        document
-          .getElementById(triggerId(current.target.variantId, current.action))
-          ?.focus()
+        (
+          document.getElementById(
+            triggerId(current.target.variantId, current.action)
+          ) ?? document.getElementById("conteudo")
+        )?.focus()
       );
     }
   }, [open]);
@@ -311,7 +315,9 @@ export function InventoryPage() {
       </header>
 
       {offline ? <OfflineStockNotice /> : null}
-      {entryLink.status === "missing" ? <EntryNotFoundNotice /> : null}
+      {entryLink.status === "missing" || entryLink.status === "unavailable" ? (
+        <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
+      ) : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
         <SearchField

@@ -2364,7 +2364,11 @@ function stockShortages(
   const shortages: StockShortage[] = [];
   for (const [variantId, total] of requested) {
     const balance = stock[variantId];
-    if (balance?.status === "ready" && total > balance.value.quantity) {
+    if (balance?.status !== "ready") {
+      // a line whose balance the screen never read may be the one refused: no line is named then
+      return [];
+    }
+    if (total > balance.value.quantity) {
       shortages.push({
         balance: balance.value.quantity,
         label: labels.get(variantId) ?? "item sem nome",

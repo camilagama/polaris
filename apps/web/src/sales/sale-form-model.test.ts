@@ -2068,6 +2068,25 @@ describe("the refusal for stock", () => {
     expect(unread.phase === "failed" && unread.failure.entry).toBeNull();
   });
 
+  it("names no line when the balance of one of them was never read: that one may be the refused", () => {
+    const failure = describeStockRefusal(refused, {
+      canAdjustStock: true,
+      items: [
+        { quantity: 3, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      labels,
+      stock: {
+        ...stockOf({ [first]: 1 }),
+        [second]: { message: "Falhou.", status: "error" },
+      },
+    });
+    expect(failure.phase === "failed" && failure.failure.entry).toBeNull();
+    expect(failure.phase === "failed" && failure.failure.message).toBe(
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
+    );
+  });
+
   it("leaves every other failure as it was", () => {
     const other = failSubmission({ code: "CONFLICT" });
     expect(
