@@ -62,14 +62,21 @@ describe("quem usa a cópia da janela anterior", () => {
   });
 
   it("o Resultado, o Histórico e a Meta não a conhecem", () => {
-    for (const screen of ["dashboard", "sales/sale-history", "goals"]) {
+    const files = sources(SRC).map((path) =>
+      relative(SRC, path).split(sep).join("/")
+    );
+    for (const screen of [
+      "dashboard",
+      "sales/sale-history",
+      "home/home-goal",
+    ]) {
+      const ofScreen = files.filter((path) => path.startsWith(screen));
+      // a prefix that matches no file checks nothing
+      expect(ofScreen.length).toBeGreaterThan(0);
       expect(
-        sources(SRC)
-          .map((path) => relative(SRC, path).split(sep).join("/"))
-          .filter((path) => path.startsWith(screen))
-          .filter((path) =>
-            KNOWS_THE_COPY.test(readFileSync(join(SRC, path), "utf8"))
-          )
+        ofScreen.filter((path) =>
+          KNOWS_THE_COPY.test(readFileSync(join(SRC, path), "utf8"))
+        )
       ).toEqual([]);
     }
   });
