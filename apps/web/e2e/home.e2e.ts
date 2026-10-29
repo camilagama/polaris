@@ -177,6 +177,14 @@ class FakeServer {
   latencyMs = 0;
   /** The store's date of the sale that `sale.get` returns. */
   saleOccurredOn = "2026-09-12";
+  /** The expenses of the store, whatever the month asked: `expense.list` returns the active ones, or the voided. */
+  readonly expenses: Array<{
+    competenceOn: string;
+    description: string;
+    id: string;
+    status: "active" | "voided";
+    version: number;
+  }> = [];
 
   /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
   readonly held = new Map<string, Promise<void>>();
@@ -318,6 +326,26 @@ class FakeServer {
     };
   }
 
+  expenseView(expense: FakeServer["expenses"][number]) {
+    return {
+      ...EXPENSE_CATEGORY_FIELDS,
+      amount: "80.00",
+      competenceOn: expense.competenceOn,
+      createdAt: new Date(this.now).toISOString(),
+      description: expense.description,
+      id: expense.id,
+      organizationId: ORGANIZATION_ID,
+      payee: null,
+      recurringRuleId: null,
+      saleId: null,
+      status: expense.status,
+      updatedAt: new Date(this.now).toISOString(),
+      version: expense.version,
+      voidedAt:
+        expense.status === "voided" ? new Date(this.now).toISOString() : null,
+    };
+  }
+
   answer(procedure: string, input: Record<string, unknown>) {
     switch (procedure) {
       case "report/periodSummary":
@@ -354,30 +382,42 @@ class FakeServer {
         });
       case "expense/listCategories":
         return json({ categories: [EXPENSE_CATEGORY] });
-      case "expense/list":
+      case "expense/list": {
+        const rows = this.expenses.filter(
+          (expense) => expense.status === (input.status ?? "active")
+        );
         return json({
-          count: 0,
-          expenses: [],
+          count: rows.length,
+          expenses: rows.map((expense) => this.expenseView(expense)),
           nextCursor: null,
           total: "0.00",
         });
-      case "expense/create":
-        return json({
-          ...EXPENSE_CATEGORY_FIELDS,
-          amount: "80.00",
+      }
+      case "expense/create": {
+        const created = {
           competenceOn: String(input.competenceOn),
-          createdAt: new Date(this.now).toISOString(),
           description: String(input.description),
-          id: "0199c2d0-0000-7000-8000-0000000000e1",
-          organizationId: ORGANIZATION_ID,
-          payee: null,
-          recurringRuleId: null,
-          saleId: null,
-          status: "active",
-          updatedAt: new Date(this.now).toISOString(),
+          id: `0199c2d0-0000-7000-8000-0000000000f${this.expenses.length}`,
+          status: "active" as const,
           version: 1,
-          voidedAt: null,
-        });
+        };
+        this.expenses.push(created);
+        return json(this.expenseView(created));
+      }
+      case "expense/update":
+      case "expense/void": {
+        const found = this.expenses.find((expense) => expense.id === input.id);
+        if (!found) {
+          return null;
+        }
+        if (procedure === "expense/void") {
+          found.status = "voided";
+        } else {
+          found.competenceOn = String(input.competenceOn);
+        }
+        found.version += 1;
+        return json({ changed: true, expense: this.expenseView(found) });
+      }
       case "sale/list":
         return json({
           hasMore: false,
@@ -407,6 +447,8 @@ const HOME_PROCEDURES = new Set([
   "expense/create",
   "expense/list",
   "expense/listCategories",
+  "expense/update",
+  "expense/void",
   "goal/list",
   "inventory/listBalances",
   "report/dailySales",
@@ -1918,7 +1960,12 @@ test.describe("janela anterior do Início: o que muda neste aparelho", () => {
   });
 });
 
-test.describe("janela anterior do Início: uma despesa lançada neste aparelho", () => {
+test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
+  const fillCompetence = async (page: Page, competenceOn: string) => {
+    await pickDate(page, "Data de competência", competenceOn);
+    await page.getByLabel("Valor (R$)").fill("80");
+    await page.getByLabel("Descrição").fill("Conta de luz");
+  };
   const registerExpense = async (page: Page, competenceOn: string) => {
     await page.goto("/expenses");
     await page
@@ -1929,49 +1976,100 @@ test.describe("janela anterior do Início: uma despesa lançada neste aparelho",
       name: "Nova despesa",
     });
     await expect(form).toBeVisible();
-    await pickDate(page, "Data de competência", competenceOn);
-    await page.getByLabel("Valor (R$)").fill("80");
+    await fillCompetence(page, competenceOn);
     await form
       .getByRole("combobox", { exact: true, name: "Categoria" })
       .click();
     await page.getByRole("option", { exact: true, name: "Aluguel" }).click();
-    await page.getByLabel("Descrição").fill("Conta de luz");
     await page.getByRole("button", { name: "Registrar despesa" }).click();
     await expect(page.getByText("Despesa registrada.")).toBeVisible();
   };
-
-  test("com competência de antes do mês: a próxima abertura relê as duas", async ({
-    page,
-  }) => {
+  const editExpense = async (page: Page, competenceOn: string) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { name: "Editar despesa Conta de luz" })
+      .click();
+    await pickDate(page, "Data de competência", competenceOn);
+    await page.getByRole("button", { name: "Salvar alterações" }).click();
+    await expect(page.getByText("Despesa atualizada.")).toBeVisible();
+  };
+  const voidExpense = async (page: Page) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { name: "Anular despesa Conta de luz" })
+      .click();
+    await expect(page.getByText("Despesa anulada.")).toBeVisible();
+  };
+  const seeded = (competenceOn: string) => {
     const server = new FakeServer(SOLD);
-    await openWithCopy(page, server);
-
-    await registerExpense(page, "2026-09-15");
+    server.expenses.push({
+      competenceOn,
+      description: "Conta de luz",
+      id: "0199c2d0-0000-7000-8000-0000000000e9",
+      status: "active",
+      version: 1,
+    });
+    return server;
+  };
+  /** Opens the Início again and says how many of the two windows it read: [B, A]. */
+  const reopened = async (page: Page, server: FakeServer) => {
     const beforeB = beforeReads(server);
     const beforeA = monthReads(server);
     await page.goto("/");
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    expect([beforeReads(server), monthReads(server)]).toEqual([
-      beforeB + 1,
-      beforeA + 1,
-    ]);
+    return [beforeReads(server) - beforeB, monthReads(server) - beforeA];
+  };
+
+  test("registrar com competência de antes do mês: a próxima abertura relê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await registerExpense(page, "2026-09-15");
+    expect(await reopened(page, server)).toEqual([1, 1]);
   });
 
-  test("com competência do mês corrente: a janela anterior segue da cópia, só o mês é lido", async ({
+  test("registrar com competência do mês corrente: a janela anterior segue da cópia, só o mês é lido", async ({
     page,
   }) => {
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
-
     await registerExpense(page, "2026-10-03");
-    const beforeB = beforeReads(server);
-    const beforeA = monthReads(server);
-    await page.goto("/");
-    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    expect([beforeReads(server), monthReads(server)]).toEqual([
-      beforeB,
-      beforeA + 1,
-    ]);
+    expect(await reopened(page, server)).toEqual([0, 1]);
+  });
+
+  test("editar a competência de uma despesa do mês para antes dele: relê as duas", async ({
+    page,
+  }) => {
+    const server = seeded("2026-10-05");
+    await openWithCopy(page, server);
+    await editExpense(page, "2026-09-15");
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("editar a competência de uma despesa de antes do mês para dentro dele: relê as duas", async ({
+    page,
+  }) => {
+    const server = seeded("2026-09-15");
+    await openWithCopy(page, server);
+    await editExpense(page, "2026-10-05");
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("anular uma despesa de antes do mês: relê as duas", async ({ page }) => {
+    const server = seeded("2026-09-15");
+    await openWithCopy(page, server);
+    await voidExpense(page);
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("anular uma despesa do mês corrente: a janela anterior segue da cópia", async ({
+    page,
+  }) => {
+    const server = seeded("2026-10-05");
+    await openWithCopy(page, server);
+    await voidExpense(page);
+    expect(await reopened(page, server)).toEqual([0, 1]);
   });
 });
 
