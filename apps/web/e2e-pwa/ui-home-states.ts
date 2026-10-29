@@ -325,9 +325,7 @@ async function openHomeOffline(page: Page, copy: boolean) {
   await cutHomeNetwork(page);
   await page
     .getByText(
-      copy
-        ? "Último resultado confirmado"
-        : "Sem internet e sem números guardados neste aparelho",
+      copy ? "Confirmado em" : "Sem internet e sem números guardados",
       { exact: false }
     )
     .first()

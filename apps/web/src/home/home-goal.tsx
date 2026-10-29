@@ -118,7 +118,11 @@ function goalState(goal: GoalReadModel): string | null {
   return null;
 }
 
-/** The estimate under the amounts (v7 § 3 item 9): where the rhythm of the last 7 days takes the goal. */
+/** What the (i) of the goal says of its estimate: the rhythm it is made of. */
+const PROJECTION_HELP =
+  "Estimativa: a média dos últimos 7 dias repetida até o fim da meta.";
+
+/** The estimate under the amounts (v7 § 3 item 9): where the current rhythm takes the goal. */
 function ProjectionLine({ projection }: { projection: GoalProjection }) {
   if (projection.kind === "no_sales") {
     return (
@@ -133,20 +137,18 @@ function ProjectionLine({ projection }: { projection: GoalProjection }) {
   if (projection.kind === "reaches") {
     return (
       <p className="mt-1.5 text-support" data-goal-projection="batida">
-        No ritmo dos últimos 7 dias, a meta é batida{" "}
-        {projection.onLastDay ? "até" : "em"} {projection.on}.{" "}
-        <span className="text-muted-foreground">Estimativa.</span>
+        No ritmo atual, a meta deve ser batida{" "}
+        {projection.onLastDay ? "até" : "em"} {projection.on}.
       </p>
     );
   }
   return (
     <p className="mt-1.5 text-support" data-goal-projection="">
-      No ritmo dos últimos 7 dias, chega a{" "}
+      No ritmo atual, deve chegar a{" "}
       <span className="font-medium tabular-nums">
         <MoneyText text={projection.value} />
       </span>{" "}
-      em {projection.on}.{" "}
-      <span className="text-muted-foreground">Estimativa.</span>
+      em {projection.on}.
     </p>
   );
 }
@@ -211,50 +213,15 @@ function ActiveGoal({
   );
 }
 
-/** No goal: the empty ring, dashed, and the way to set one (v7 § 3 item 9). */
+/** No goal: the title of the block and the way to set one, nothing else (the button says what the sentence did). */
 function NoGoal() {
-  const radius = RING_SIZE / 2 - 8 - RING_WIDTH / 2;
   return (
-    <div className="flex min-w-0 items-center gap-4">
-      <div
-        aria-hidden="true"
-        className="relative grid shrink-0 place-items-center"
-        data-goal-ring="vazio"
-        style={{ height: RING_SIZE, width: RING_SIZE }}
-      >
-        <svg
-          aria-hidden="true"
-          className="col-start-1 row-start-1 text-border"
-          height={RING_SIZE}
-          viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-          width={RING_SIZE}
-        >
-          <circle
-            cx={RING_SIZE / 2}
-            cy={RING_SIZE / 2}
-            fill="none"
-            r={radius}
-            stroke="currentColor"
-            strokeDasharray="4 5"
-            strokeWidth={RING_WIDTH}
-          />
-        </svg>
-        <span className="col-start-1 row-start-1 font-semibold text-lg text-muted-foreground">
-          —
-        </span>
-      </div>
-      <div className="grid min-w-0 justify-items-start gap-3">
-        <p className="text-muted-foreground">
-          Defina quanto quer vender no mês e acompanhe aqui.
-        </p>
-        <a
-          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
-          href="/dashboard?meta=nova"
-        >
-          Definir meta
-        </a>
-      </div>
-    </div>
+    <a
+      className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
+      href="/dashboard?meta=nova"
+    >
+      Definir meta
+    </a>
   );
 }
 
@@ -344,7 +311,13 @@ export function GoalBlock({
     );
   }
   return (
-    <HomeBlock id="home-goal" title="Meta">
+    <HomeBlock
+      id="home-goal"
+      title="Meta"
+      {...(view.kind === "active" && projection
+        ? { help: { about: "Meta", text: PROJECTION_HELP } }
+        : {})}
+    >
       {view.kind === "active" ? (
         <ActiveGoal
           daysLeft={today ? goalDaysLeftText(view.goal, today) : null}

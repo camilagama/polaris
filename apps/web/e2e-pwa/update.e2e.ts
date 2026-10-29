@@ -423,6 +423,6 @@ test("um documento antigo pede o pedaço do gráfico de um build já limpo: os n
   await expect(
     chart.getByRole("button", { name: "Tentar novamente" })
   ).toBeVisible();
-  await expect(chart).toContainText("Melhor dia");
+  await expect(chart).toContainText("R$");
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$");
 });

@@ -42,7 +42,7 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await cutHomeNetwork(page);
   await startHomeLab(page, user);
   const chart = page.getByRole("region", { name: "Vendas por dia" });
-  await expect(page.getByText("Último resultado confirmado")).toBeVisible({
+  await expect(page.getByText("Confirmado em")).toBeVisible({
     timeout: 20_000,
   });
   await expect(chart.getByRole("img")).toBeVisible({ timeout: 20_000 });
@@ -81,8 +81,8 @@ test("sem o pedaço no Cache Storage e sem rede: os números ficam e o gráfico 
   await expect(
     chart.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  // the figures stay: the total, the best day and "Ver os números"
-  await expect(chart).toContainText("Melhor dia");
+  // the figures stay: the total, the period and "Ver os números"
+  await expect(chart).toContainText("R$");
   await expect(
     chart.getByRole("button", { name: "Ver os números" })
   ).toBeVisible();
