@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { READ_PROCEDURES } from "../src/lib/read-gate";
+import { pickDate } from "./date-pickers";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -351,6 +352,32 @@ class FakeServer {
           replayed: false,
           restocked: [{ position: 0, quantity: 1, variantId: VARIANT }],
         });
+      case "expense/listCategories":
+        return json({ categories: [EXPENSE_CATEGORY] });
+      case "expense/list":
+        return json({
+          count: 0,
+          expenses: [],
+          nextCursor: null,
+          total: "0.00",
+        });
+      case "expense/create":
+        return json({
+          ...EXPENSE_CATEGORY_FIELDS,
+          amount: "80.00",
+          competenceOn: String(input.competenceOn),
+          createdAt: new Date(this.now).toISOString(),
+          description: String(input.description),
+          id: "0199c2d0-0000-7000-8000-0000000000e1",
+          organizationId: ORGANIZATION_ID,
+          payee: null,
+          recurringRuleId: null,
+          saleId: null,
+          status: "active",
+          updatedAt: new Date(this.now).toISOString(),
+          version: 1,
+          voidedAt: null,
+        });
       case "sale/list":
         return json({
           hasMore: false,
@@ -377,6 +404,9 @@ const KILLED_FOR_CPU = {
 const WORKER_PATHS = /\/(rpc|api)\//;
 
 const HOME_PROCEDURES = new Set([
+  "expense/create",
+  "expense/list",
+  "expense/listCategories",
   "goal/list",
   "inventory/listBalances",
   "report/dailySales",
@@ -386,6 +416,24 @@ const HOME_PROCEDURES = new Set([
   "sale/getCustomerLink",
   "sale/list",
 ]);
+
+const EXPENSE_CATEGORY_FIELDS = {
+  categoryGroup: "operational",
+  categoryId: "0199c2d0-0000-7000-8000-0000000000e2",
+  categoryName: "Aluguel",
+};
+const EXPENSE_CATEGORY = {
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  groupKey: "operational",
+  id: EXPENSE_CATEGORY_FIELDS.categoryId,
+  name: "Aluguel",
+  organizationId: ORGANIZATION_ID,
+  status: "active",
+  systemKey: null,
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version: 1,
+};
 
 const CANCELLED_NOTICE = /Venda cancelada\./;
 const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
@@ -1867,6 +1915,63 @@ test.describe("janela anterior do Início: o que muda neste aparelho", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
 
     expect([beforeReads(server), monthReads(server)]).toEqual([1, 2]);
+  });
+});
+
+test.describe("janela anterior do Início: uma despesa lançada neste aparelho", () => {
+  const registerExpense = async (page: Page, competenceOn: string) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { exact: true, name: "Nova despesa" })
+      .click();
+    const form = page.getByRole("dialog", {
+      exact: true,
+      name: "Nova despesa",
+    });
+    await expect(form).toBeVisible();
+    await pickDate(page, "Data de competência", competenceOn);
+    await page.getByLabel("Valor (R$)").fill("80");
+    await form
+      .getByRole("combobox", { exact: true, name: "Categoria" })
+      .click();
+    await page.getByRole("option", { exact: true, name: "Aluguel" }).click();
+    await page.getByLabel("Descrição").fill("Conta de luz");
+    await page.getByRole("button", { name: "Registrar despesa" }).click();
+    await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  };
+
+  test("com competência de antes do mês: a próxima abertura relê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+
+    await registerExpense(page, "2026-09-15");
+    const beforeB = beforeReads(server);
+    const beforeA = monthReads(server);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([
+      beforeB + 1,
+      beforeA + 1,
+    ]);
+  });
+
+  test("com competência do mês corrente: a janela anterior segue da cópia, só o mês é lido", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+
+    await registerExpense(page, "2026-10-03");
+    const beforeB = beforeReads(server);
+    const beforeA = monthReads(server);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([
+      beforeB,
+      beforeA + 1,
+    ]);
   });
 });
 

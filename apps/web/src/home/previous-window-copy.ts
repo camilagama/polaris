@@ -16,8 +16,9 @@ import { type Period, storeToday } from "./home-model";
  *
  * The copy lives in the page's memory (the runtime off, as in production today) and, with the runtime on, on the
  * device in the Início's own copy (`home-copy.ts`). A return or a cancellation made on this device of a sale from
- * before the open month takes it back at once (`invalidatePreviousWindow`); one made on another device, or in another
- * tab, shows only the next day, or on "Atualizar".
+ * before the open month, or an expense written, edited, voided or restored on this device with a competence from before
+ * it, takes it back at once (`invalidatePreviousWindow`); one made on another device, or in another tab, shows only the
+ * next day, or on "Atualizar".
  */
 
 /** Keeps B as the server just returned it, in the page's memory. The caller asks the guard (no refusal, no sign-out). */
@@ -68,18 +69,18 @@ export function reusablePreviousWindow(
 }
 
 /**
- * A return, a cancellation or an adjustment was made on this device on a sale of `saleDay` (the store's date of the
- * sale; null when it is not known): when that day is before the open month, B no longer says what the server does,
- * so the copy is taken back, in memory and on the device (it still shows without a connection, but is not reused).
- * A sale of the open month is in A, which is always read.
+ * A return, a cancellation or an adjustment of a sale, or an expense, was made on this device on `day` (the store's
+ * date of the sale, or the competence of the expense; null when it is not known): when that day is before the open
+ * month, B no longer says what the server does, so the copy is taken back, in memory and on the device (it still shows
+ * without a connection, but is not reused). A day of the open month is in A, which is always read.
  */
 export function invalidatePreviousWindow(
   storage: PreferenceStorage | null,
   organizationId: string,
-  saleDay: string | null
+  day: string | null
 ): void {
   const kept = keptPreviousWindow(storage, organizationId);
-  if (kept === null || (saleDay !== null && saleDay > kept.period.to)) {
+  if (kept === null || (day !== null && day > kept.period.to)) {
     return;
   }
   previousWindowMemory.delete(organizationId);

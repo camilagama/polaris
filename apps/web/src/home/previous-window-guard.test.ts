@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
  * Only the Início takes the "janela anterior" from the copy of the day: the Resultado, the Histórico and the Meta keep
  * reading the server. The copy is reached by two names, `reusablePreviousWindow` (to take it) and `previousWindowMemory`
  * (the page's memory): outside the files below nothing may name them. A sale's screen may only take the copy back
- * (`invalidatePreviousWindow`).
+ * (`invalidatePreviousWindow`), and so may the Despesas.
  */
 const SRC = join(import.meta.dirname, "..");
 const SOURCE_FILE = /\.(?:ts|tsx)$/;
@@ -21,6 +21,7 @@ const MEMORY = new Set([
   "lib/period-summary-cache.ts",
 ]);
 const INVALIDATES = new Set([
+  "expenses/expenses-page.tsx",
   "home/previous-window-copy.ts",
   "sales/sale-detail-page.tsx",
 ]);
@@ -55,7 +56,7 @@ describe("quem usa a cópia da janela anterior", () => {
     expect(filesNaming("previousWindowMemory")).toEqual([...MEMORY].sort());
   });
 
-  it("a devolução e o cancelamento só a tiram, na tela da venda", () => {
+  it("a devolução, o cancelamento e a despesa só a tiram, nas telas da venda e das despesas", () => {
     expect(filesNaming("invalidatePreviousWindow")).toEqual(
       [...INVALIDATES].sort()
     );
