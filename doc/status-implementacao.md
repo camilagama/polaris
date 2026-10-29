@@ -2652,3 +2652,9 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Troca de versão | Em revisão | Na tela, `useHoldSwap` segura como antes; fora da tela, o rascunho não segura (emenda do ADR 0041). |
 | Provas | Em revisão | Unidade: `sale-draft-storage.test.ts` (ids de produto e variante só UUID ou vazios), `sale-draft-restore.test.ts`, `sale-draft-attempt.test.ts`, `sale-draft-session.test.ts`, `sale-attempt-storage.test.ts`. Navegador: `e2e-pwa/sale-draft.e2e.ts` (desktop e celular emulado) e `e2e-pwa/update.e2e.ts` (com duas builds). Cada teste novo reprova com a peça desligada. |
 | Limites | Registrado | Se o sistema fecha o PWA, o `sessionStorage` pode sumir (aceito, ADR 0041). Leitor de tela e aparelho real não verificados: o roteiro do Pixel 6 (AC-10) é do Diego depois do merge. |
+
+### Aviso de carência: a leitura em andamento é por loja (t506; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Leitura em andamento por loja | Em revisão | `usePlanNoticeFacts` guardava um só `useRef(false)`: trocar de loja com a leitura da anterior em andamento deixava a nova sem leitura até o tique seguinte (até 1 min). Agora o ref guarda o conjunto de lojas com leitura em andamento (`planReadInFlight`, `planReadStarted`, `planReadEnded` em `subscription/plan-notice.ts`); a mesma loja, no mesmo componente, não dispara duas leituras e o fim de uma libera só ela. A resposta atrasada continua indo para a loja que a pediu. Provas: `subscription-model.test.ts` e a guarda de fonte `grace-notice-backoff.test.ts`. Sem mudança de tela, texto ou rede. |
