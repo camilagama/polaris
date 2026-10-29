@@ -2,6 +2,7 @@ import type {
   InventoryBalanceEntryReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
@@ -83,6 +84,7 @@ import {
   canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
+  describeStockRefusal,
   discardLockedSale,
   editSaleDate,
   editSaleForm,
@@ -174,6 +176,10 @@ function draftReadMessage(read: SaleDraftRead): string | null {
 export function SalePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
+  const canAdjustStock = hasCapabilityForRole(
+    organization.role,
+    "inventory:adjust"
+  );
   const now = useNow(CLOCK_TICK_MS);
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
@@ -612,9 +618,21 @@ export function SalePage() {
         );
         return;
       }
-      applyOutcome(await confirmOnServer(prepared), null);
+      const outcome = await confirmOnServer(prepared);
+      applyOutcome(
+        {
+          ...outcome,
+          submission: describeStockRefusal(outcome.submission, {
+            canAdjustStock,
+            items: prepared.request.items,
+            labels: itemLabels(form.items),
+            stock: catalog.stock,
+          }),
+        },
+        null
+      );
     },
-    [applyOutcome, form.items, offlineWorkspace]
+    [applyOutcome, canAdjustStock, catalog.stock, form.items, offlineWorkspace]
   );
 
   const handleSubmit = useCallback(
@@ -860,6 +878,7 @@ export function SalePage() {
               <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (
                   <ItemEditor
+                    canAdjustStock={canAdjustStock}
                     canRemove={form.items.length > 1}
                     errors={evaluation.errors}
                     index={index}

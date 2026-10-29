@@ -16,7 +16,8 @@ import { buttonVariants } from "@/ui/button";
 /**
  * The month grid of the date pickers: the shadcn `calendar` (base-nova) over react-day-picker 10, with the Polaris
  * tokens and rules. Days are 36 px with a mouse and 44 px with touch (shrinking below 360 px so the week fits at
- * 320), focus is the 3 px outline of the other controls, the arrows move the focus between days (DayPicker's own
+ * 320), the cell itself is the touch area (days touch each other and never overlap), focus is the 3 px outline of
+ * the other controls, the arrows move the focus between days (DayPicker's own
  * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled` and says why
  * through `aria-describedby` (the project's rule for a disabled control with a reason), so a screen reader that
  * reaches it hears the reason instead of a silent dimmed number.
@@ -66,7 +67,9 @@ function CalendarDayButton({
       aria-disabled={off || undefined}
       className={cn(
         buttonVariants({ size: "icon", variant: "ghost" }),
-        "size-(--cell-size) font-normal tabular-nums",
+        // the cell is the target: with `touch-hit` its area would reach 2 px into each neighbour; `!` because the
+        // pseudo-element of `touch-hit` sets its own `content`
+        "size-(--cell-size) font-normal tabular-nums before:content-none!",
         "data-[today=true]:font-semibold data-[today=true]:underline data-[today=true]:decoration-2 data-[today=true]:underline-offset-4",
         "data-[outside=true]:bg-transparent! data-[outside=true]:text-muted-foreground! data-[outside=true]:hover:bg-accent!",
         "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-transparent data-[range-middle=true]:text-foreground",

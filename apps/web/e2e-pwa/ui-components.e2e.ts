@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { axeViolations } from "./ui-guardrails";
@@ -195,7 +195,7 @@ for (const theme of THEMES) {
   });
 }
 
-test("com toque, radio, caixa de seleção, botões do contador e campo com R$ têm área de 48 px", async ({
+test("com toque, radio, caixa de seleção, botões do contador e campo com R$ têm área de 44 px", async ({
   isMobile,
   page,
 }) => {
@@ -216,9 +216,59 @@ test("com toque, radio, caixa de seleção, botões do contador e campo com R$ t
     targets.map((target) => target.evaluate(touchArea))
   );
   for (const area of areas) {
-    expect(area.height).toBeGreaterThanOrEqual(48);
-    expect(area.width).toBeGreaterThanOrEqual(48);
+    expect(area.height).toBeGreaterThanOrEqual(44);
+    expect(area.width).toBeGreaterThanOrEqual(44);
   }
+});
+
+test("tamanho por papel: comum 32/36, ação principal 36/44, grupo de 24 px a 8 px um do outro, campo 32/36 e o principal 44 no toque", async ({
+  isMobile,
+  page,
+}) => {
+  await openGallery(page, null);
+  const roles = page.getByRole("region", { name: "Tamanho por papel" });
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox();
+    if (!box) {
+      throw new Error("o controle não tem caixa");
+    }
+    return box;
+  };
+  const common = await boxOf(roles.getByRole("button", { name: "Cancelar" }));
+  expect(common.height).toBeCloseTo(isMobile ? 36 : 32, 1);
+  const main = await boxOf(roles.getByRole("button", { name: "Nova venda" }));
+  expect(main.height).toBeCloseTo(isMobile ? 44 : 36, 1);
+  const inGroup = await Promise.all(
+    ["Aumentar", "Diminuir", "Confirmar"].map((name) =>
+      boxOf(roles.getByRole("button", { exact: true, name }))
+    )
+  );
+  for (const box of inGroup) {
+    expect(box.width).toBeCloseTo(24, 1);
+    expect(box.height).toBeCloseTo(24, 1);
+  }
+  const gaps = inGroup.slice(1).map((box, index) => {
+    const before = inGroup[index];
+    return before ? box.x - (before.x + before.width) : Number.NaN;
+  });
+  expect(gaps).toHaveLength(2);
+  for (const gap of gaps) {
+    expect(gap).toBeCloseTo(8, 1);
+  }
+  // a control of a group has no touch area of its own: the pseudo-element is off
+  const pseudo = await roles
+    .getByRole("button", { exact: true, name: "Aumentar" })
+    .evaluate((element) => getComputedStyle(element, "::before").content);
+  expect(pseudo).toBe("none");
+  const fields = roles.locator("[data-slot=input-group]");
+  expect((await boxOf(fields.nth(0))).height).toBeCloseTo(
+    isMobile ? 36 : 32,
+    1
+  );
+  expect((await boxOf(fields.nth(1))).height).toBeCloseTo(
+    isMobile ? 44 : 32,
+    1
+  );
 });
 
 test('o nome do seletor é só o rótulo: o ícone do gatilho sai da leitura e não deixa o "▼" no texto', async ({

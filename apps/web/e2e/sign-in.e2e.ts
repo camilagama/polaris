@@ -540,7 +540,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     ).toBeVisible();
   });
 
-  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 48 px (V4, V5)", async ({
+  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 44 px (V4, V5)", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -554,7 +554,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
       const link = page.getByRole("link", { name: new RegExp(name) });
       // biome-ignore lint/performance/noAwaitInLoops: one link after the other
       await expect(link).toBeVisible();
-      expect(await touchHeight(link)).toBeGreaterThanOrEqual(48);
+      expect(await touchHeight(link)).toBeGreaterThanOrEqual(44);
     }
     await expect(page.getByText("Leia antes de entrar")).toHaveCount(0);
   });
@@ -590,14 +590,14 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     expect(printed.filter((line) => SECRET_IN_CONSOLE.test(line))).toEqual([]);
   });
 
-  test("a 360 px o botão tem área de toque de 48 px e nada rola para o lado (AC-29)", async ({
+  test("a 360 px o botão tem área de toque de 44 px e nada rola para o lado (AC-29)", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 640, width: 360 });
     await serve(page, newServer());
     await page.goto("/entrar?erro=google&motivo=sessao");
     await expect(googleButton(page)).toBeVisible();
-    expect(await touchHeight(googleButton(page))).toBeGreaterThanOrEqual(48);
+    expect(await touchHeight(googleButton(page))).toBeGreaterThanOrEqual(44);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     );

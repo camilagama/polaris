@@ -20,6 +20,7 @@ import {
   confirmSubmission,
   createBlankSaleForm,
   describeFee,
+  describeStockRefusal,
   discardLockedSale,
   type EvaluationContext,
   editSaleDate,
@@ -847,15 +848,24 @@ describe("loading and empty states", () => {
   });
 
   it("reports stock states, never treating an unknown cost as zero", () => {
-    expect(stockView(undefined)).toBeNull();
-    expect(stockView(loading)?.text).toBe("Consultando estoque…");
-    expect(stockView({ message: "Falhou.", status: "error" })?.tone).toBe(
+    expect(stockView(undefined, true)).toBeNull();
+    expect(stockView(loading, true)?.text).toBe("Consultando estoque…");
+    expect(stockView({ message: "Falhou.", status: "error" }, true)?.tone).toBe(
       "warning"
     );
-    const none = stockView(balance(0, null));
-    expect(none?.text).toContain("Sem estoque");
-    expect(none?.costText).toBe("Custo desconhecido. Margem indeterminada.");
-    const some = stockView(balance(5, "12.340000"));
+    const none = stockView(balance(0, null), true);
+    expect(none?.text).toBe(
+      "Sem estoque: saldo 0. Para vender, dê entrada no estoque."
+    );
+    expect(none?.needsEntry).toBe(true);
+    expect(none?.costText).toBeNull();
+    expect(stockView(balance(0, "12.340000"), true)?.costText).toBeNull();
+    const unknownCost = stockView(balance(3, null), true);
+    expect(unknownCost?.costText).toBe(
+      "Custo desconhecido. Margem indeterminada."
+    );
+    const some = stockView(balance(5, "12.340000"), true);
+    expect(some?.needsEntry).toBe(false);
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
     expect(some?.costText).toBe("Custo médio: R$ 12,34.");
   });
@@ -1133,7 +1143,7 @@ describe("server errors", () => {
     const conflict = mapSaleSubmitError({ code: "CONFLICT" });
     expect(conflict.kind).toBe("conflict");
     expect(conflict.message).toBe(
-      "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda."
+      "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda."
     );
     expect(conflict.refreshData).toBe(true);
     expect(conflict.unknownOutcome).toBe(false);
@@ -1145,7 +1155,7 @@ describe("server errors", () => {
       data: { reason: "insufficient_stock" },
     });
     expect(stock.message).toBe(
-      "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades."
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
     );
     expect(stock.refreshData).toBe(true);
     expect(stock.reason).toBe("insufficient_stock");
@@ -1228,7 +1238,7 @@ describe("server errors", () => {
       data: { reason: "insufficient_stock" },
     });
     expect(attemptAfterFailure(conflict, attempt)).toBeNull();
-    expect(attemptAfterFailure(stock, attempt)).toBe(attempt);
+    expect(attemptAfterFailure(stock, attempt)).toBeNull();
   });
 
   it("falls back to the generic per-code message for a missing or unknown reason", () => {
@@ -1865,5 +1875,240 @@ describe("stepQuantity", () => {
     const evaluation = evaluate(stepped);
     expect(evaluation.errors).toEqual({});
     expect(evaluation.summary?.lines[0]?.quantity).toBe(3);
+  });
+});
+
+describe("the refusal for stock", () => {
+  const first = "77777777-7777-4777-8777-777777777771";
+  const second = "77777777-7777-4777-8777-777777777772";
+  const third = "77777777-7777-4777-8777-777777777773";
+  const fourth = "77777777-7777-4777-8777-777777777774";
+  const fifth = "77777777-7777-4777-8777-777777777775";
+  const labels = new Map([
+    [first, "Caneca esmaltada"],
+    [second, "Vela aromática"],
+    [third, "Sabonete"],
+    [fourth, "Toalha"],
+    [fifth, "Chaveiro"],
+  ]);
+  const body = () => {
+    const { body: built } = evaluate(validForm());
+    if (!built) {
+      throw new Error("expected a valid body");
+    }
+    return built;
+  };
+  const refused = failSubmission({
+    code: "CONFLICT",
+    data: { reason: "insufficient_stock" },
+  });
+  const stockOf = (quantities: Record<string, number>) =>
+    Object.fromEntries(
+      Object.entries(quantities).map(([id, quantity]) => [
+        id,
+        {
+          status: "ready" as const,
+          value: {
+            movingAverageCost: null,
+            quantity,
+            variantId: id,
+            version: 1,
+          },
+        },
+      ])
+    ) as EvaluationContext["stock"];
+  const refuse = (
+    items: { quantity: number; variantId: string }[],
+    quantities: Record<string, number>,
+    canAdjustStock = true
+  ) => {
+    const described = describeStockRefusal(refused, {
+      canAdjustStock,
+      items,
+      labels,
+      stock: stockOf(quantities),
+    });
+    if (described.phase !== "failed") {
+      throw new Error("the refusal stays a definite failure");
+    }
+    return described.failure;
+  };
+
+  it("drops the attempt: the sale after the entry is a new one, with its own command and instant", () => {
+    expect(refused.phase === "failed" && refused.failure.discardAttempt).toBe(
+      true
+    );
+  });
+
+  it("after the refusal and the entry, the next confirmation is a new sale: new command, instant after the entry", () => {
+    const ids = sequentialIds();
+    const refusedAttempt = prepareConfirmation({
+      body: body(),
+      createId: ids,
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      organizationId,
+      previousAttempt: null,
+    });
+    if (!refusedAttempt.ok) {
+      throw new Error("expected a prepared request");
+    }
+    const kept = attemptAfterFailure(refused, refusedAttempt.attempt);
+    expect(kept).toBeNull();
+    const afterEntry = prepareConfirmation({
+      body: body(),
+      createId: ids,
+      now: new Date("2026-05-01T12:20:00.000Z"),
+      organizationId,
+      previousAttempt: kept,
+    });
+    if (!afterEntry.ok) {
+      throw new Error("expected a prepared request");
+    }
+    expect(afterEntry.request.commandId).not.toBe(
+      refusedAttempt.request.commandId
+    );
+    expect(afterEntry.request.occurredAt).toBe("2026-05-01T12:20:00.000Z");
+    expect(afterEntry.request.recordedAt).toBe("2026-05-01T12:20:00.000Z");
+  });
+
+  it("names the one line that lacks stock, with what was asked and the balance, and points the link at it", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 4 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 2, saldo 0)."
+    );
+    expect(failure.entry).toEqual({
+      label: "Caneca esmaltada",
+      variantId: first,
+    });
+  });
+
+  it("counts the lines of one variant together", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 2, variantId: first },
+      ],
+      { [first]: 3 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 4, saldo 3)."
+    );
+  });
+
+  it("says how many lines lack stock, lists them, and links the first", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 0 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: faltam 2 itens no estoque. Caneca esmaltada (pediu 2, saldo 0) e Vela aromática (pediu 1, saldo 0)."
+    );
+    expect(failure.entry?.variantId).toBe(first);
+  });
+
+  it("lists three lines and says how many more", () => {
+    const items = [first, second, third, fourth, fifth].map((id) => ({
+      quantity: 1,
+      variantId: id,
+    }));
+    const failure = refuse(items, {
+      [first]: 0,
+      [fifth]: 0,
+      [fourth]: 0,
+      [second]: 0,
+      [third]: 0,
+    });
+    expect(failure.message).toBe(
+      "A venda não foi registrada: faltam 5 itens no estoque. Caneca esmaltada (pediu 1, saldo 0), Vela aromática (pediu 1, saldo 0), Sabonete (pediu 1, saldo 0) e mais 2."
+    );
+  });
+
+  it("asks for whoever takes care of the stock, with no link, when the role cannot make the entry", () => {
+    const one = refuse(
+      [{ quantity: 2, variantId: first }],
+      { [first]: 0 },
+      false
+    );
+    expect(one.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(one.entry).toBeNull();
+    const many = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 0 },
+      false
+    );
+    expect(many.message).toBe(
+      "A venda não foi registrada: faltam 2 itens no estoque. Caneca esmaltada e Vela aromática. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(many.entry).toBeNull();
+  });
+
+  it("says so plainly, with no link, when no line can be pointed at", () => {
+    const failure = refuse([{ quantity: 1, variantId: first }], {
+      [first]: 9,
+    });
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
+    );
+    expect(failure.entry).toBeNull();
+    const unread = describeStockRefusal(refused, {
+      canAdjustStock: true,
+      items: [{ quantity: 1, variantId: first }],
+      labels,
+      stock: {},
+    });
+    expect(unread.phase === "failed" && unread.failure.entry).toBeNull();
+  });
+
+  it("names no line when the balance of one of them was never read: that one may be the refused", () => {
+    const failure = describeStockRefusal(refused, {
+      canAdjustStock: true,
+      items: [
+        { quantity: 3, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      labels,
+      stock: {
+        ...stockOf({ [first]: 1 }),
+        [second]: { message: "Falhou.", status: "error" },
+      },
+    });
+    expect(failure.phase === "failed" && failure.failure.entry).toBeNull();
+    expect(failure.phase === "failed" && failure.failure.message).toBe(
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
+    );
+  });
+
+  it("leaves every other failure as it was", () => {
+    const other = failSubmission({ code: "CONFLICT" });
+    expect(
+      describeStockRefusal(other, {
+        canAdjustStock: true,
+        items: [{ quantity: 2, variantId: first }],
+        labels,
+        stock: stockOf({ [first]: 0 }),
+      })
+    ).toBe(other);
+  });
+
+  it("offers the entry on the zero-balance line only to who can make it", () => {
+    const zero = balance(0, null);
+    expect(stockView(zero, false)?.text).toBe(
+      "Sem estoque: saldo 0. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(stockView(zero, false)?.text).not.toContain("servidor");
   });
 });

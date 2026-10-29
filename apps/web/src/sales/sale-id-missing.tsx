@@ -5,7 +5,7 @@ import {
   type SaleIdParam,
 } from "./sale-customer-link-model";
 
-/** A link on a line of its own: it gets the 48 px touch area. */
+/** A link on a line of its own: it gets the 44 px touch area. */
 const LINK =
   "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 

@@ -40,7 +40,7 @@ import { SaleReturnPanel } from "./sale-return-panel";
 
 /** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
-/** A link on a line of its own: it gets the 48 px touch area. */
+/** A link on a line of its own: it gets the 44 px touch area. */
 const LINK =
   "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 

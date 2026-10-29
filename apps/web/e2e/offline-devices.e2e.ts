@@ -375,7 +375,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   const link = section.getByRole("link", { name: "Trocar senha" });
   await expect(link).toHaveAttribute("href", "/configuracoes?aba=senha");
   const box = await link.boundingBox();
-  // the outline button of the interface: 32 px with a mouse (36 with touch), and the 48 px touch area is the
+  // the outline button of the interface: 32 px with a mouse (36 with touch), and the 44 px touch area is the
   // guardrails' (check 2); it is still a button, not a link in a paragraph
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
   // after the list, not in the paragraph of the heading
@@ -1305,7 +1305,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   ).toBeVisible();
 });
 
-// the 48 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
+// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
 // the design gives a control with touch (36 px) and that nothing scrolls sideways in the dialog and the panel
 test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
   page,

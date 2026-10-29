@@ -277,8 +277,8 @@ interface QuantityStepperProps {
 }
 
 /**
- * − field +. The field is 64 px wide: with touch each button has a 48 px area, 6 px past each
- * side, and 52 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
+ * − field +. The field is 64 px wide: with touch each button has a 44 px area, 4 px past each
+ * side, and 56 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
  * The buttons are named without the word "quantidade", so the label of the field names the field only.
  */
 export function QuantityStepper({

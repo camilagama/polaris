@@ -564,7 +564,7 @@ test.describe("a 320 px, com toque", () => {
       .getByRole("button")
       .evaluateAll((buttons) =>
         buttons
-          // the text against the box inside the padding (scrollWidth would count the 48 px touch area around it)
+          // the text against the box inside the padding (scrollWidth would count the 44 px touch area around it)
           .filter((button) => {
             const text = document.createRange();
             text.selectNodeContents(button);

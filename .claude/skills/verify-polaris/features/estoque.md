@@ -11,12 +11,14 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 - `estoque-contar` contagem (o saldo passa a ser o contado).
 - `estoque-baixar` baixa com motivo; acima do saldo é recusada.
 - `estoque-movimentos` os movimentos de uma variante.
+- `estoque-entrada-da-venda` o link "Dar entrada no estoque" da venda (`/inventory?entrada=<id da variante>&de=venda`) abre o painel "Receber estoque" dessa variante, em cartão próprio acima da lista, e tira o parâmetro do endereço; variante que não existe mostra "Não achamos essa variante no estoque. Procure o produto na lista e use Receber.".
 
 ## How to get to it (user POV)
 
 - Desktop: link `Estoque` do menu "Principal" (grupo "Catálogo").
 - Celular: link `Estoque` da barra "Destinos".
-- Endereço `/inventory`.
+- Endereço `/inventory`; `/inventory?filtro=sem-saldo` abre a lista só com as variantes sem saldo.
+- Pelo link "Dar entrada no estoque" de Vender: no item com saldo 0 ou na recusa da venda por falta de estoque ([Vender](vender.md)). A volta é por "Vender" no menu: a venda em andamento continua lá.
 
 ## Driving it with verify.sh (Playwright)
 
@@ -31,6 +33,7 @@ Preconditions:
 - **Contar.** `getByRole("button", { name: "Contar estoque de Camiseta básica, Variante padrão" }).click()`; `getByLabel("Quantidade contada").fill("<saldo + 3>")`; `getByRole("button", { exact: true, name: "Revisar" })`; `getByRole("button", { name: "Confirmar contagem" })`. O saldo da linha passa a ser o contado. Variante sem custo pede também "Custo unitário para valoração (R$)" (`apps/web/e2e/stock-screen.e2e.ts`; o drive `estoque-contar`).
 - **Baixar.** `getByRole("button", { name: "Baixar estoque de Camiseta básica, Variante padrão" }).click()`; `getByLabel("Quantidade a baixar").fill("2")`; `getByRole("combobox", { exact: true, name: "Motivo da baixa" }).click()` e `getByRole("option", { exact: true, name: "Avariado" })`; "Revisar"; `getByRole("button", { name: "Confirmar baixa" })`. O saldo da linha cai 2 (drive `estoque-baixar`). Acima do saldo: "A baixa não pode ser maior que o saldo exibido (<saldo>)" (`apps/web/e2e-real/jornadas/estoque.e2e.ts`; esse caminho de recusa não tem drive).
 - **Efeito colateral.** O saldo e os movimentos de uma variante, só leitura (filtre pela loja: `pro` tem os mesmos nomes de produto): `$V sql "SELECT b.quantity, (SELECT string_agg(m.movement_type || ':' || m.quantity_delta, ', ' ORDER BY m.created_at) FROM stock_movements m WHERE m.variant_id = v.id) AS movimentos FROM inventory_balances b JOIN product_variants v ON v.id = b.variant_id JOIN products p ON p.id = v.product_id JOIN organizations o ON o.id = p.organization_id WHERE p.name = 'Camiseta básica' AND o.name LIKE 'qa-verify-vendas%'"`. Depois de `estoque-contar` o último movimento é `inventory_count:3` e, depois de `estoque-baixar`, `write_off:-2`; o `quantity` é o saldo que a tela mostrou.
+- **Entrada pelo link da venda.** Na recusa, `getByRole("link", { name: /Dar entrada no estoque/ }).click()` leva a `/inventory` (o `entrada` some do endereço) com o painel `getByRole("heading", { name: /Receber estoque/ })` aberto para a variante em falta; `getByLabel("Quantidade recebida")`, `getByLabel("Custo unitário (R$)")`, "Revisar" e "Confirmar recebimento", como em Receber. Receita completa em `apps/web/e2e-real/jornadas/venda-sem-estoque.e2e.ts`.
 - **Prova.** `evidence.shot("estoque-revisar", …)` e `evidence.shot("estoque-recebido", "saldo de X para X+5")`; `estoque-contar-revisar`, `estoque-contado`, `estoque-baixar-revisar` e `estoque-baixado` nas outras duas.
 
 ## Gotchas

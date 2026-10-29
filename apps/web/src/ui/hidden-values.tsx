@@ -13,7 +13,7 @@ import { Button } from "./button";
 /**
  * "Esconder valores" (revisão de UI v7, § 6): the toggle (`aria-pressed`) and the text whose amounts it hides. The
  * name of the button stays "Esconder valores" in both states, as a toggle's name does, and the pressed state says
- * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px, or the small size beside small buttons) with a 48 px touch area.
+ * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px, or the small size beside small buttons) with a 44 px touch area.
  */
 export function HideValuesButton({
   className,

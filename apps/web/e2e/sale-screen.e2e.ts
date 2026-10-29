@@ -198,11 +198,11 @@ test("C-1: o campo da quantidade tem 64 px e deixa 48 px ou mais livres entre as
   const free = more.left - less.right;
   expect(free).toBeGreaterThanOrEqual(48);
   if (testInfo.project.name.includes("mobile")) {
-    // with touch the area of each button is 48 × 48 around the 36 px button
-    expect(less.width).toBe(48);
-    expect(more.height).toBe(48);
-    // 64 px of field minus the 6 to 6.5 px each area passes its button (the + has no left border)
-    expect(free).toBeLessThanOrEqual(52);
+    // with touch the area of each button is 44 × 44 around the 36 px button
+    expect(less.width).toBe(44);
+    expect(more.height).toBe(44);
+    // 64 px of field minus the 4 to 4.5 px each area passes its button (the + has no left border)
+    expect(free).toBeLessThanOrEqual(56);
   }
   // the step itself, and − off at 1
   await item.getByRole("button", { name: "Mais uma unidade" }).click();

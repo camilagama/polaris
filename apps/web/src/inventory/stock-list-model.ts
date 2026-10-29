@@ -76,6 +76,19 @@ export function stockListRequest(
   };
 }
 
+export function stockEntryRequest(
+  organizationId: string,
+  variantId: string
+): ListBalancesInput {
+  return {
+    limit: 1,
+    organizationId,
+    productStatus: "all",
+    stock: "all",
+    variantIds: [variantId],
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* List state                                                                 */
 /* -------------------------------------------------------------------------- */

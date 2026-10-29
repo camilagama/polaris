@@ -155,6 +155,7 @@ describe("keeping a locked sale on the device as the same sale", () => {
     confirmingDiscard: false,
     failure: {
       discardAttempt: false,
+      entry: null,
       kind: "network" as const,
       message: "m",
       reason: null,
@@ -212,6 +213,7 @@ describe("the mode of the sale screen", () => {
     confirmingDiscard: false,
     failure: {
       discardAttempt: false,
+      entry: null,
       kind: "network" as const,
       message: "m",
       reason: null,

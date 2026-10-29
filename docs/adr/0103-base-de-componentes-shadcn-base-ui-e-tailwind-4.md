@@ -286,6 +286,13 @@ Pacote D da revisão de UI v7 (Petković, 25/10, § 3 item 10 e § 7 linha D): o
 - **Bytes** (build de produção local, Node 24, gzip nível 9, contra a `origin/main` em `a864dcf3` medida do mesmo jeito, runtime offline desligado): `HEATMAP` **10 041 B** (novo), `CHARTS` de 51 377 B para **51 456 B** (+79 B), a linha do resto de +101 819 B para **+105 167 B** (+3 348 B: o bloco, o modelo e a cópia no Início). Total: cerca de +13,5 KB no precache.
 - **Celular.** Abaixo do `full` o invólucro desliga a entrada de 1 600 ms e o escalonamento das células (`animate={false}`, `animationDuration={0}`, `MotionConfig reducedMotion="always"`, e o bloco lê o `useReducedMotionConfig`), e a leitura do dia troca de uma vez (é texto, sem painel animado). Com o dedo, o dia é lido no `pointerdown` (o `pointerenter` e o `pointerleave` de um toque caem no mesmo lote do React) e fica lido até outro toque.
 
+## Emenda: tamanho de controle pelo papel (28/10/2026)
+
+O usuário decidiu que a regra fixa de "36 px visíveis e 48 de área de toque em tudo" (item 5 da decisão e a nota do Calendário) sai, para o app não ficar com botões grandes demais. Vale a tabela de "Tamanho de controle por papel" do [DESIGN.md](../../DESIGN.md#responsividade-e-toque): controle comum 32 px no mouse e 36 no toque; ação principal da tela 36 e 44 (degrau novo `--h-xl`, `Button size="xl"`); controles em grupo até 24 px com 8 px de espaço entre alvos (WCAG 2.2 AA, 2.5.8); campo 32 e 36, com 44 só no campo principal.
+
+- `touch-hit`, `touch-hit-field` e a área de caixa e rádio passam de 48 para 44 px. Em grupo a área deixa de ser obrigatória: o contêiner leva `data-target-group` e a verificação 2 do e2e exige 24 px e 8 px de espaço, em vez de 44 px.
+- O calendário perde a exceção de dois dias vizinhos: o dia é a própria área (sem `touch-hit`), os dias se encostam e as áreas não se sobrepõem. Nenhuma outra tela muda de tamanho nesta emenda (só a área invisível encolhe); as outras adotam os papéis nos lotes delas.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
@@ -309,3 +316,4 @@ Pacote D da revisão de UI v7 (Petković, 25/10, § 3 item 10 e § 7 linha D): o
 - **Tema escuro depois, só com as variáveis de `.dark` vazias (recomendação do Filipe, D2):** descartada pelo usuário: os dois temas entram na v1, com seletor.
 - **Esmeralda como cor de ação, como o DESIGN.md anterior:** o verde `#17654d` mal se distinguia do cartão no escuro (2,26:1) e obrigava um segundo primário; a tinta funciona nos dois temas e deixa o esmeralda para o que é excepcional.
 - **Migrar tudo de uma vez:** um PR sem fim e sem capturas revisáveis; a ordem acima entrega a Venda primeiro e uma tela por PR depois.
+

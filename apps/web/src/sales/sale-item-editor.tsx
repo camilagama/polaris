@@ -3,8 +3,9 @@ import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { FieldDescription } from "@/ui/field";
+import { stockEntryHref } from "../inventory/stock-entry-link";
 import { QuantityStepper, TextField } from "./sale-fields";
 import {
   type EvaluationContext,
@@ -22,6 +23,7 @@ type LocalSearch = (query: string) => Promise<{
 }>;
 
 interface ItemEditorProps {
+  canAdjustStock: boolean;
   canRemove: boolean;
   errors: Record<string, string>;
   index: number;
@@ -41,6 +43,7 @@ interface ItemEditorProps {
 }
 
 export function ItemEditor({
+  canAdjustStock,
   canRemove,
   errors,
   index,
@@ -58,7 +61,9 @@ export function ItemEditor({
 }: ItemEditorProps) {
   const prefix = `sale-item-${item.draftId}`;
   const chosen = item.variantId !== "";
-  const stockState = chosen ? stockView(stock[item.variantId]) : null;
+  const stockState = chosen
+    ? stockView(stock[item.variantId], canAdjustStock)
+    : null;
   const pickError =
     errors[itemFieldKey(item.draftId, "product")] ??
     errors[itemFieldKey(item.draftId, "variant")];
@@ -109,6 +114,18 @@ export function ItemEditor({
                 >
                   {stockState.text} {localSearch ? "" : stockState.costText}
                 </p>
+              ) : null}
+              {stockState?.needsEntry && canAdjustStock ? (
+                <a
+                  className={cn(
+                    buttonVariants({ size: "sm", variant: "link" }),
+                    "justify-self-start text-support"
+                  )}
+                  href={stockEntryHref(item.variantId)}
+                >
+                  Dar entrada no estoque
+                  <span className="sr-only"> de {item.label}</span>
+                </a>
               ) : null}
               <Button
                 className="justify-self-start text-support"
