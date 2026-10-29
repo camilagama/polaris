@@ -36,6 +36,24 @@ const attempt: SaleAttempt = {
 };
 
 describe("pending sale attempt storage", () => {
+  it("keeps the profile and version of the send, and reads an older attempt without them", () => {
+    const storage = memoryStorage();
+    const sent = {
+      ...attempt,
+      paymentProfile: { expectedVersion: 3, id: "profile-1" },
+    };
+    writeSaleAttempt(storage, organizationId, sent, true);
+    expect(readSaleAttempt(storage, organizationId, now)).toEqual(sent);
+
+    storage.setItem(
+      `polaris.sale.attempt.v1:${organizationId}`,
+      JSON.stringify({ ...attempt, paymentProfile: { id: "p" } })
+    );
+    expect(
+      readSaleAttempt(storage, organizationId, now)?.paymentProfile
+    ).toBeUndefined();
+  });
+
   it("returns the stored attempt after a reload", () => {
     const storage = memoryStorage();
     writeSaleAttempt(storage, organizationId, attempt);
@@ -136,10 +154,11 @@ describe("whether the outcome of the attempt is unknown", () => {
     writeSaleAttempt(storage, organizationId, attempt, true);
     expect(
       readSaleAttemptState(storage, organizationId, now, draftStartedAt)
-    ).toEqual({ attempt, outcomeUnknown: true });
+    ).toEqual({ attempt, outcomeUnknown: true, unsettled: true });
     expect(readSaleAttemptState(storage, organizationId, now)).toEqual({
       attempt,
       outcomeUnknown: false,
+      unsettled: true,
     });
     expect(
       readSaleAttemptState(
@@ -153,8 +172,7 @@ describe("whether the outcome of the attempt is unknown", () => {
     writeSaleAttempt(storage, organizationId, attempt, false);
     expect(
       readSaleAttemptState(storage, organizationId, now, draftStartedAt)
-        ?.outcomeUnknown
-    ).toBe(false);
+    ).toMatchObject({ outcomeUnknown: false, unsettled: false });
   });
 });
 
@@ -176,6 +194,28 @@ describe("clearing the attempts of the tab", () => {
     clearSaleAttempts(storage);
     expect([...storage.data.keys()]).toEqual([
       `polaris.sale.draft.v1:${organizationId}`,
+    ]);
+  });
+
+  it("keeps the attempts sent with no answer when asked, and forgets the settled ones", () => {
+    const storage = memoryStorage();
+    const third = "0198e5f0-0000-7000-8000-000000000003";
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    writeSaleAttempt(storage, other, attempt, false);
+    storage.setItem(`polaris.sale.attempt.v1:${third}`, "{}");
+
+    clearSaleAttempts(storage, third, true);
+    expect([...storage.data.keys()].sort()).toEqual([
+      `polaris.sale.attempt.v1:${organizationId}`,
+      `polaris.sale.attempt.v1:${third}`,
+    ]);
+    expect(readSaleAttempt(storage, organizationId, now)?.commandId).toBe(
+      attempt.commandId
+    );
+
+    clearSaleAttempts(storage, third);
+    expect([...storage.data.keys()]).toEqual([
+      `polaris.sale.attempt.v1:${third}`,
     ]);
   });
 
