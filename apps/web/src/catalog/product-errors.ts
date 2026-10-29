@@ -1,6 +1,6 @@
 import { isLimitReached } from "../subscription/limit-help-model";
 import {
-  legalAcceptanceMessage,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -51,12 +51,12 @@ export function productErrorMessage(
   error: unknown,
   action?: ProductAction | "create" | "update"
 ): string {
-  const unaccepted = legalAcceptanceMessage(
+  const common = commonFailureMessage(
     error,
     action === undefined ? "os produtos" : undefined
   );
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {

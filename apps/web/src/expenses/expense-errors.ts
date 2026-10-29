@@ -1,4 +1,4 @@
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import { commonFailureMessage, rpcErrorCode } from "../lib/rpc-error";
 
 export type ExpenseAction =
   | "category-archive"
@@ -110,9 +110,9 @@ export function expenseErrorMessage(
   error: unknown,
   action: ExpenseAction
 ): string {
-  const unaccepted = legalAcceptanceMessage(error, READ_SUBJECTS[action]);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, READ_SUBJECTS[action]);
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
