@@ -109,31 +109,61 @@ export function skuLengthError(sku: string): string | null {
     : null;
 }
 
-function optionValueLengthError(values: string[]): string | null {
-  // a reduce, not Math.max(...): a paste of many thousands of lines would pass the limit of arguments of a call
-  const longest = values.reduce(
-    (most, value) => Math.max(most, characterCount(value)),
-    0
+function hasTooLongOptionValue(values: string[]): boolean {
+  return values.some(
+    (value) => characterCount(value) > MAX_PRODUCT_OPTION_VALUE_LENGTH
   );
-  return longest > MAX_PRODUCT_OPTION_VALUE_LENGTH
-    ? `Use até ${MAX_PRODUCT_OPTION_VALUE_LENGTH} caracteres por valor. Agora um valor tem ${longest}.`
-    : null;
 }
 
-export function optionValuesError(values: string[]): string | null {
+const SHOWN_LONG_LINES = 3;
+
+function listedLines(lines: number[]): string {
+  const shown = lines.slice(0, SHOWN_LONG_LINES);
+  const rest = lines.length - shown.length;
+  if (rest > 0) {
+    return `${shown.join(", ")} e mais ${rest}`;
+  }
+  return shown.length > 1
+    ? `${shown.slice(0, -1).join(", ")} e ${shown.at(-1)}`
+    : `${shown[0]}`;
+}
+
+/** The lines of the textarea over the limit, by the number the person sees (blank lines count); `null` within it. */
+export function optionValueLengthError(lines: string): string | null {
+  const counts = lines
+    .split(optionValueLineBreak)
+    .map((line) => characterCount(line.trim()));
+  const tooLong = counts.flatMap((count, index) =>
+    count > MAX_PRODUCT_OPTION_VALUE_LENGTH ? [index + 1] : []
+  );
+  const [only] = tooLong;
+  if (only === undefined) {
+    return null;
+  }
+  const prefix = `Use até ${MAX_PRODUCT_OPTION_VALUE_LENGTH} caracteres por valor.`;
+  return tooLong.length === 1
+    ? `${prefix} A linha ${only} tem ${counts[only - 1]}.`
+    : `${prefix} As linhas ${listedLines(tooLong)} passam de ${MAX_PRODUCT_OPTION_VALUE_LENGTH}.`;
+}
+
+function hasRepeatedOptionValue(values: string[]): boolean {
+  return (
+    new Set(values.map((value) => value.toLowerCase())).size !== values.length
+  );
+}
+
+export function optionValuesError(lines: string): string | null {
+  const values = parseOptionValues(lines);
   if (values.length === 0) {
     return "Informe ao menos um valor, um por linha.";
   }
-  const tooLong = optionValueLengthError(values);
+  const tooLong = optionValueLengthError(lines);
   if (tooLong) {
     return tooLong;
   }
-  if (
-    new Set(values.map((value) => value.toLowerCase())).size !== values.length
-  ) {
-    return "Remova valores repetidos nesta opção.";
-  }
-  return null;
+  return hasRepeatedOptionValue(values)
+    ? "Remova valores repetidos nesta opção."
+    : null;
 }
 
 export function selectedOptionNames(
@@ -159,8 +189,11 @@ export function validateVariantDrafts(
   optionValues: Record<ProductVariantOptionName, string[]>,
   variants: VariantDraft[]
 ) {
-  const invalidOptions = optionNames.filter((name) =>
-    optionValuesError(optionValues[name])
+  const invalidOptions = optionNames.filter(
+    (name) =>
+      optionValues[name].length === 0 ||
+      hasTooLongOptionValue(optionValues[name]) ||
+      hasRepeatedOptionValue(optionValues[name])
   );
   const completeVariants = variants.every((variant) => {
     const keys = Object.keys(variant.values).filter((name) =>
@@ -187,7 +220,7 @@ export function validateVariantDrafts(
   return {
     // the values over their limit: the save stays off and says why, at those fields
     tooLongOptions: optionNames.filter((name) =>
-      optionValueLengthError(optionValues[name])
+      hasTooLongOptionValue(optionValues[name])
     ),
     canAdd:
       optionNames.length > 0 &&

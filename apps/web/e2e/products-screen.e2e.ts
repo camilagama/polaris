@@ -1068,6 +1068,10 @@ test("SKU acima de 64: o campo diz a contagem e guarda o texto, 'Salvar SKU' fic
   await expect(field).toHaveAttribute("aria-invalid", "true");
   const describedBy = await field.getAttribute("aria-describedby");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
   // no native maxLength: the whole text stays in the field
   await expect(field).toHaveValue(long);
   await expect(save).toHaveAttribute("aria-disabled", "true");
@@ -1112,7 +1116,7 @@ test("valor de opção acima de 80: o campo diz a contagem e guarda o texto, 'Sa
   const long = `Azul\n${"a".repeat(91)}`;
 
   await values.fill(long);
-  const message = "Use até 80 caracteres por valor. Agora um valor tem 91.";
+  const message = "Use até 80 caracteres por valor. A linha 2 tem 91.";
   await expect(page.getByText(message)).toBeVisible();
   await expect(values).toHaveAttribute("aria-invalid", "true");
   const describedBy = (await values.getAttribute("aria-describedby")) ?? "";
@@ -1120,6 +1124,10 @@ test("valor de opção acima de 80: o campo diz a contagem e guarda o texto, 'Sa
     .split(" ")
     .find((idRef) => idRef.endsWith("-error"));
   await expect(page.locator(`[id="${errorId}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
   await expect(values).toHaveValue(long);
   await expect(save).toHaveAttribute("aria-disabled", "true");
   await expect(save).toHaveAttribute("aria-describedby", errorId ?? "");

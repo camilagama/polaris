@@ -37,8 +37,8 @@ import {
   MAX_VARIANTS,
   optionChoices,
   optionLabel,
+  optionValueLengthError,
   optionValuesError,
-  parseOptionValues,
   productOptionValues,
   selectedOptionNames,
   type VariantConfigurationDraft,
@@ -100,7 +100,8 @@ function OptionValuesField({
   return (
     <ProductTextAreaField
       disabled={disabled}
-      error={optionValuesError(parseOptionValues(lines)) ?? undefined}
+      error={optionValuesError(lines) ?? undefined}
+      errorLive={optionValueLengthError(lines) ? "polite" : undefined}
       hint="Um valor por linha; a caixa digitada é preservada."
       id={`product-variant-values-${name}`}
       label={`Valores de ${optionLabel(name)}`}

@@ -104,7 +104,11 @@ function SkuRow({
       disabled={disabled}
       error={
         shownError
-          ? { id: `product-variant-sku-${variant.id}-error`, text: shownError }
+          ? {
+              id: `product-variant-sku-${variant.id}-error`,
+              live: error ? "assertive" : "polite",
+              text: shownError,
+            }
           : undefined
       }
       onSubmit={handleSubmit}

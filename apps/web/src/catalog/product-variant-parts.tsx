@@ -44,7 +44,9 @@ interface VariantFieldRowProps {
   children: ReactNode;
   disabled: boolean;
   /** The message of the field and the id its `aria-describedby` points to; under the whole row, so the button keeps its line. */
-  error?: { id: string; text: string } | undefined;
+  error?:
+    | { id: string; live?: "assertive" | "polite" | undefined; text: string }
+    | undefined;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -75,7 +77,7 @@ export function VariantFieldRow({
         {buttonLabel}
       </Button>
       {error ? (
-        <FieldError className="col-span-2" id={error.id}>
+        <FieldError className="col-span-2" id={error.id} live={error.live}>
           {error.text}
         </FieldError>
       ) : null}
