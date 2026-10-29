@@ -198,11 +198,19 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
-    return await playwright(
+    const code = await playwright(
       [],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
       browser.container
     );
+    for (const file of new Bun.Glob("test-results/**/*-actual.png").scanSync(
+      "."
+    )) {
+      console.log(
+        `T484B64 ${file} ${(await Bun.file(file).bytes()).toBase64()}`
+      );
+    }
+    return code;
   } finally {
     stopContainer(browser.container);
   }
