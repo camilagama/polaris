@@ -14,8 +14,8 @@ const { ChartFailed: ResultChartFailed } = await import(
 );
 
 /**
- * What the chart says when its chunk does not open: the table of the numbers is under the chart (in "Ver os números"),
- * so the sentence says "abaixo", in the Início and in the Resultado.
+ * What the chart says when its chunk does not open: the sentence points to the table of every day, which is under the
+ * chart (in "Ver os números"), in the Início and in the Resultado (where the totals also stay written above it).
  */
 const WITHOUT_INTERNET =
   "O gráfico abre quando a internet voltar. Os números estão abaixo.";

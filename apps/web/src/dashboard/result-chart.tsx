@@ -66,7 +66,10 @@ function reloadPage() {
   window.location.reload();
 }
 
-/** The text of the Início when the chart does not open (§ 5.5 of its design): the numbers above keep saying everything. */
+/**
+ * The text when the chart does not open: the totals and the best day stay written above the drawing, and the sentence
+ * points to the table of every day ("Ver os números"), which is under it.
+ */
 export function ChartFailed() {
   const online = useConnectionOnline();
   return online ? (
