@@ -51,23 +51,28 @@ const SIDE = [
   "lg:col-start-2 lg:row-start-3",
 ] as const;
 
+const REFRESHING_TEXT = "Atualizando…";
 const NO_COPY_TEXT = "Sem internet e sem números guardados neste aparelho";
 
-/** "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. */
+/**
+ * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
+ * reads the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would drop
+ * it on the body).
+ */
 function RefreshButton({
+  busy,
   className,
-  disabled,
   onClick,
 }: {
+  busy: boolean;
   className?: string;
-  disabled: boolean;
   onClick: () => void;
 }) {
   return (
     <Button
+      aria-disabled={busy || undefined}
       className={cn("max-md:size-ctl-lg max-md:px-0", className)}
-      disabled={disabled}
-      onClick={onClick}
+      onClick={busy ? undefined : onClick}
       type="button"
       variant="outline"
     >
@@ -328,7 +333,9 @@ function figuresLine(
   if (state.figures.status === "ready") {
     return homeUpdatedLine(state.figures.data.month.generatedAt, timezone);
   }
-  return state.figures.status === "loading" ? <SlowReadNote /> : null;
+  return state.figures.status === "loading" ? (
+    <SlowReadNote announce={false} />
+  ) : null;
 }
 
 /**
@@ -381,13 +388,14 @@ function HomeHeader({
           <p
             className="min-h-5 text-muted-foreground text-support"
             id="home-updated"
+            role="status"
           >
             {updated}
           </p>
         </div>
         <div className="flex items-start gap-2 md:hidden">
           {refresh ? (
-            <RefreshButton disabled={refresh.busy} onClick={refresh.onClick} />
+            <RefreshButton busy={refresh.busy} onClick={refresh.onClick} />
           ) : null}
           <HideValuesButton />
         </div>
@@ -395,8 +403,8 @@ function HomeHeader({
       <div className="flex w-full items-start gap-2 sm:w-auto">
         {refresh ? (
           <RefreshButton
+            busy={refresh.busy}
             className="max-md:hidden"
-            disabled={refresh.busy}
             onClick={refresh.onClick}
           />
         ) : null}
@@ -405,6 +413,21 @@ function HomeHeader({
       </div>
     </header>
   );
+}
+
+/** "Atualizar" is offered only where a read can happen; `refreshing` is true while the button's own read runs. */
+function refreshGesture(
+  canRefresh: boolean,
+  reloading: boolean,
+  reload: () => void
+): {
+  refresh: { busy: boolean; onClick: () => void } | null;
+  refreshing: boolean;
+} {
+  return {
+    refresh: canRefresh ? { busy: reloading, onClick: reload } : null,
+    refreshing: canRefresh && reloading,
+  };
 }
 
 /**
@@ -682,6 +705,11 @@ export function HomePage() {
         timezone,
         today,
       });
+  const { refresh, refreshing } = refreshGesture(
+    online && !state.sessionRefused,
+    reloading,
+    reload
+  );
   const goalBlock = pickGoalBlock({
     goal,
     offline,
@@ -710,15 +738,13 @@ export function HomePage() {
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <HomeHeader
         offlineText={offline ? newSaleOfflineText(canSellOffline) : null}
-        refresh={
-          online && !state.sessionRefused
-            ? { busy: reloading, onClick: reload }
-            : null
-        }
-        updated={updated}
+        refresh={refresh}
+        updated={refreshing ? REFRESHING_TEXT : updated}
       />
       <div
-        aria-busy={view === null && state.figures.status === "loading"}
+        aria-busy={
+          refreshing || (view === null && state.figures.status === "loading")
+        }
         className="grid gap-4"
       >
         {blocks.main}

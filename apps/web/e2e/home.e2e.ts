@@ -1796,6 +1796,7 @@ const beforeReads = (server: FakeServer) =>
   periodCalls(server).filter((call) => call.input.to === "2026-09-30").length;
 const monthReads = (server: FakeServer) =>
   periodCalls(server).filter((call) => call.input.from === "2026-10-01").length;
+const UPDATED_AT = /atualizado às \d{2}:\d{2}/;
 const refreshButton = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Atualizar" });
 
@@ -1844,6 +1845,49 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
 
     await expect.poll(() => periodCalls(server).length).toBe(4);
     expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+  });
+
+  test("Atualizar pelo teclado: o foco fica no botão, o status diz 'Atualizando…' e depois 'atualizado às', e um segundo Enter não lê de novo", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(2);
+    const updated = page.locator("#home-updated");
+    await expect(updated).toHaveAttribute("role", "status");
+    await expect(updated).toContainText(UPDATED_AT);
+    const busy = page.locator("[aria-busy='true']:has(#home-today)");
+    await expect(busy).toHaveCount(0);
+
+    let answer: () => void = () => undefined;
+    server.held.set(
+      "report/periodSummary",
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const button = refreshButton(page);
+    await button.focus();
+    await page.keyboard.press("Enter");
+
+    await expect(updated).toHaveText("Atualizando…");
+    await expect(busy).toHaveCount(1);
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).not.toHaveAttribute("disabled");
+    await expect(button).toBeFocused();
+    await expect.poll(() => periodCalls(server).length).toBe(4);
+
+    await page.keyboard.press("Enter");
+    await expect(button).toBeFocused();
+    expect(periodCalls(server)).toHaveLength(4);
+
+    answer();
+    await expect(updated).toHaveText(UPDATED_AT);
+    await expect(busy).toHaveCount(0);
+    await expect(button).not.toHaveAttribute("aria-disabled");
+    await expect(button).toBeFocused();
+    expect(periodCalls(server)).toHaveLength(4);
   });
 
   test("Tentar novamente depois de uma falha também lê as duas", async ({
