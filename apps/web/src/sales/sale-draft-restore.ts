@@ -9,7 +9,7 @@ import {
 } from "./sale-form-model";
 import { itemChangesForEntry } from "./sale-variant-picker-model";
 
-export interface RepricedLine {
+interface RepricedLine {
   /** The price charged on the line now: the new list price when it followed the list, the negotiated one otherwise. */
   chargedUnitPrice: string;
   followedList: boolean;
