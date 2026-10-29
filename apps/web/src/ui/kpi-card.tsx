@@ -217,7 +217,7 @@ export function KpiCard({
   action?: ReactNode;
   chip?: ReactNode;
   className?: string;
-  /** Half the width on a phone: a shorter sparkline (48 px, the touch area of its control). */
+  /** Half the width on a phone: a shorter sparkline (48 px tall; the box is the touch area of its control, with no `touch-hit`). */
   compact?: boolean;
   date: string;
   entity: KpiEntity;
