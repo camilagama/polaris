@@ -66,7 +66,7 @@ function repricedItem(
  *
  * With an attempt whose outcome is unknown (sent, no answer), the cart is left as it was sent: any change to its body
  * gives the next confirmation a new command ID, and a sale the server already recorded would be recorded again. The
- * server checks prices and the catalog at the confirmation anyway.
+ * server still refuses a variant that left the catalog or whose product was archived.
  */
 export function refreshRestoredItems(
   form: SaleFormState,

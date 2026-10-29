@@ -9,7 +9,7 @@ import type { SaleAttempt } from "./sale-form-model";
  * (one tab) and expires quickly: an old attempt must never swallow a new,
  * identical sale. The one exception is an attempt whose outcome is unknown
  * (sent, no answer) whose cart came back from the tab's draft: see
- * `readSaleAttempt`.
+ * `readSaleAttemptState`.
  */
 export const SALE_ATTEMPT_MAX_AGE_MS = 30 * 60 * 1000;
 

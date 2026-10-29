@@ -307,10 +307,12 @@ test("AC-6: resposta perdida, preço mudado e recarga: o carrinho vai como foi, 
   await expect.poll(() => sent.length).toBe(1);
 
   catalog.entries = [{ ...SHIRT, listPrice: "38.00", version: 2 }];
+  const reread = page.waitForResponse("**/rpc/inventory/listBalances");
   await page.reload();
   await page
     .getByRole("heading", { exact: true, name: "Nova venda" })
     .waitFor();
+  await reread;
   await expectCart(page);
   await expect(itemOne(page).getByLabel("Preço cobrado")).toHaveValue("50,00");
   await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
