@@ -1466,7 +1466,7 @@ function stockWarnings(
       total > balance.value.quantity
     ) {
       warnings[item.draftId] =
-        `Quantidade acima do saldo exibido (${balance.value.quantity}). Você pode continuar; a venda é recusada se o saldo não bastar.`;
+        `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
     }
   }
   return warnings;

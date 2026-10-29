@@ -556,7 +556,7 @@ describe("exact totals and command body", () => {
     );
     expect(result.body).not.toBeNull();
     expect(result.stockWarnings[lineOf(form).draftId]).toBe(
-      "Quantidade acima do saldo exibido (1). Você pode continuar; a venda é recusada se o saldo não bastar."
+      "Acima do saldo (1): a venda é recusada se ele não bastar."
     );
   });
 
