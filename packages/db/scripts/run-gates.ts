@@ -71,6 +71,8 @@ const gates: Gate[] = [
   ["economics", "verify-economics-gate.ts"],
   // the daily sales series of the Início's map, aggregated in SQL, equals the engine's daily series
   ["daily-sales", "verify-daily-sales-gate.ts"],
+  // the period summary, aggregated in SQL, equals the engine in every field (scenarios and a property of 200 cases)
+  ["period-summary-sql", "verify-period-summary-sql-gate.ts"],
   ["goals", "verify-goals-gate.ts"],
   // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
   ["home-writes", "verify-home-writes-gate.ts"],
@@ -318,6 +320,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
     "home-writes",
     "billing-catalog",
@@ -443,6 +446,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
   ],
   // Phase 7 (billing and entitlements): grows with every gate of the phase.

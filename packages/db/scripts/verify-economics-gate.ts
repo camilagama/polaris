@@ -668,7 +668,7 @@ async function run() {
       cents(summary.result.netSales)
     );
     assert.equal(summary.reads.products, 3);
-    assert.equal(summary.reads.sales, 5);
+    assert.equal(summary.reads.days, 8);
     tests.push(
       "the most sold products rank by units net of returns (P1 6, then the deleted P3 and P2 with 1 each, by net sales), carry the current name and say when the product was deleted, add up to the units sold and the net sales, and leave out the cancelled sale"
     );

@@ -86,16 +86,7 @@ const result = periodResult(
   ["20.00"]
 );
 
-const reads = {
-  adjustments: 1,
-  cancellations: 0,
-  items: 1,
-  linkedExpenses: 1,
-  operatingExpenses: 1,
-  payments: 1,
-  returnLines: 0,
-  sales: 1,
-};
+const reads = { days: 2 };
 const daily = [
   {
     costs: "95.00",
