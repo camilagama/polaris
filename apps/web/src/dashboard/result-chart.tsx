@@ -78,7 +78,8 @@ export function ChartFailed() {
     </div>
   ) : (
     <p className="text-muted-foreground text-support">
-      O gráfico abre quando a internet voltar. Os totais estão acima e a tabela, abaixo.
+      O gráfico abre quando a internet voltar. Os totais estão acima e a tabela,
+      abaixo.
     </p>
   );
 }
