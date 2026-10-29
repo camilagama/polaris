@@ -37,8 +37,8 @@ import {
   MAX_VARIANTS,
   optionChoices,
   optionLabel,
+  optionValueLengthError,
   optionValuesError,
-  parseOptionValues,
   productOptionValues,
   selectedOptionNames,
   type VariantConfigurationDraft,
@@ -100,7 +100,8 @@ function OptionValuesField({
   return (
     <ProductTextAreaField
       disabled={disabled}
-      error={optionValuesError(parseOptionValues(lines)) ?? undefined}
+      error={optionValuesError(lines) ?? undefined}
+      errorLive={optionValueLengthError(lines) ? "polite" : undefined}
       hint="Um valor por linha; a caixa digitada é preservada."
       id={`product-variant-values-${name}`}
       label={`Valores de ${optionLabel(name)}`}
@@ -251,6 +252,13 @@ export function ProductVariantConfigurationForm({
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
+  // a value over its limit keeps the save reachable and off, reading the message of each field that has one
+  const tooLongReason =
+    validation.tooLongOptions.length > 0
+      ? validation.tooLongOptions
+          .map((name) => `product-variant-values-${name}-error`)
+          .join(" ")
+      : undefined;
   const defaultVariant = configuration.variants.find(
     (variant) => variant.isDefault
   );
@@ -564,7 +572,12 @@ export function ProductVariantConfigurationForm({
           Adicionar combinação
         </Button>
         <Button
-          disabled={!validation.canSubmit || defaultVariantHasSku || isPending}
+          aria-describedby={tooLongReason}
+          aria-disabled={tooLongReason ? true : undefined}
+          disabled={
+            !tooLongReason &&
+            (!validation.canSubmit || defaultVariantHasSku || isPending)
+          }
           type="submit"
         >
           {isPending ? "Salvando…" : "Salvar variantes"}

@@ -1,6 +1,5 @@
 import { traverseContractProcedures } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
-import { STRING_LIMIT_EXCEPTIONS } from "@polaris/contracts/input-string-limits";
 import { describe, expect, it } from "vitest";
 import { OUTBOX_MAX_PAYLOAD_BYTES } from "../../offline/outbox/command";
 import { PUSH_BATCH_TARGET_BYTES } from "../../offline/sync-runner";
@@ -12,16 +11,20 @@ import { RPC_BODY_MAX_BYTES } from "./rpc-body-limit";
  * contract. If someone raises a `.max` of the contract or `OUTBOX_MAX_PAYLOAD_BYTES`, this fails and the ceiling is
  * looked at again, instead of a legitimate call turning into a 413.
  *
- * The walk gives the largest JSON text a value can take, in bytes. A string the contract does not bound by a `.max`
- * (the option values and the SKU of a variant) counts as `UNBOUNDED_STRING_BYTES`, and the fields that do this are
- * exactly the exceptions of the contract (`STRING_LIMIT_EXCEPTIONS`): a new one fails there first. The ceiling is what
- * bounds those in practice; the walk only shows that an ordinary use of them is far below it (the most that stacks is
- * 300 option and variant values of `product.configureVariants`).
+ * The walk gives the largest JSON text a value can take, in bytes. Every input string of the contract has a `.max`
+ * or a fixed-size format (`input-string-limits.test.ts` in the contract): a string without one takes no known number
+ * of bytes, so the walk counts it as infinite and fails.
  */
 const BYTES_PER_CODE_UNIT = 3; // the BMP in UTF-8; an escaped control character is not what a person types
 const NUMBER_BYTES = 25;
 const KEY_OVERHEAD = 4; // the quotes, the colon and the comma
-const UNBOUNDED_STRING_BYTES = 1024;
+/**
+ * Written out so that a change of a `.max` shows here. The largest input is the names of an import checked at once
+ * (`product/namesExisting`). The 300 option and variant values of `product/configureVariants` count at their `.max`
+ * of 160 units each (twice the 80 code points of the refine), more than the 80 × 3 bytes a value can really take.
+ */
+const LARGEST_INPUT = { bytes: 302_554, path: "product/namesExisting" };
+const CONFIGURE_VARIANTS_BYTES = 148_048;
 /** What oRPC adds around the input (`{"json":…,"meta":[…]}`), with room. */
 const FRAME_BYTES = 256;
 
@@ -36,14 +39,11 @@ interface Walk {
   fixed: Record<string, number>;
   /** An array whose length the walk takes as this, instead of its `.max` (the one command of the sync). */
   lengths: Record<string, number>;
-  /** The paths of the strings no `.max` bounds. */
-  unbounded: Set<string>;
 }
 
 const newWalk = (overrides: Partial<Walk> = {}): Walk => ({
   fixed: {},
   lengths: {},
-  unbounded: new Set(),
   ...overrides,
 });
 
@@ -71,7 +71,7 @@ function maxLengthOf(schema: $ZodType): number | undefined {
   return found.length > 0 ? Math.min(...found) : undefined;
 }
 
-function stringBytes(schema: $ZodType, path: string, walk: Walk): number {
+function stringBytes(schema: $ZodType): number {
   const max = maxLengthOf(schema);
   if (max !== undefined) {
     return 2 + max * BYTES_PER_CODE_UNIT;
@@ -86,8 +86,7 @@ function stringBytes(schema: $ZodType, path: string, walk: Walk): number {
       return known;
     }
   }
-  walk.unbounded.add(path);
-  return UNBOUNDED_STRING_BYTES;
+  return Number.POSITIVE_INFINITY;
 }
 
 function objectBytes(
@@ -119,7 +118,7 @@ function maxBytes(schema: $ZodType, path: string, walk: Walk): number {
   const child = (key: string) => def[key] as $ZodType;
   switch (def.type as string) {
     case "string":
-      return stringBytes(schema, path, walk);
+      return stringBytes(schema);
     case "number":
     case "int":
       return NUMBER_BYTES;
@@ -214,34 +213,25 @@ function oneCommandBytes(): number {
   );
 }
 
-/** Every input but the sync's: the largest, the ones nothing bounds, and the fields without a `.max`, by procedure. */
+/** Every input but the sync's, by procedure: the largest, and the ones nothing bounds. */
 function otherInputs() {
   const unbounded: string[] = [];
-  const loose: string[] = [];
+  const byPath = new Map<string, number>();
   let largest = { bytes: 0, path: "" };
   for (const [path, schema] of inputs()) {
     if (path === "sync/push") {
       continue;
     }
-    const walk = newWalk();
-    const bytes = FRAME_BYTES + maxBytes(schema, "", walk);
-    loose.push(...[...walk.unbounded].map((field) => `${path}${field}`));
+    const bytes = FRAME_BYTES + maxBytes(schema, "", newWalk());
+    byPath.set(path, bytes);
     if (!Number.isFinite(bytes)) {
       unbounded.push(path);
     } else if (bytes > largest.bytes) {
       largest = { bytes, path };
     }
   }
-  return { largest, loose: loose.sort(), unbounded };
+  return { byPath, largest, unbounded };
 }
-
-/**
- * The fields no `.max` of the contract bounds, by procedure (each counted as 1 KiB): the list of the contract, which
- * only shrinks, less the `sync/push`, whose input the walk reads apart.
- */
-const LOOSE_FIELDS = STRING_LIMIT_EXCEPTIONS.filter(
-  (path) => !path.startsWith("sync/push")
-);
 
 describe("how the body ceiling of /rpc is derived", () => {
   it("is at least twice the largest payload the outbox keeps", () => {
@@ -258,16 +248,15 @@ describe("how the body ceiling of /rpc is derived", () => {
   });
 
   it("is above the largest input of every other procedure, and every one is bounded", () => {
-    const { largest, unbounded } = otherInputs();
+    const { byPath, largest, unbounded } = otherInputs();
 
     // an input nothing bounds is an input the ceiling could refuse in use: it has to be bounded
     expect(unbounded).toEqual([]);
-    expect(largest.path).not.toBe("");
+    expect(largest).toEqual(LARGEST_INPUT);
     expect(largest.bytes).toBeLessThan(RPC_BODY_MAX_BYTES);
-  });
-
-  it("names every field the contract leaves without a .max", () => {
-    expect(otherInputs().loose).toEqual(LOOSE_FIELDS);
+    expect(byPath.get("product/configureVariants")).toBe(
+      CONFIGURE_VARIANTS_BYTES
+    );
   });
 
   it("closes the batch of the sync below the ceiling, with room for the envelope", () => {
@@ -280,10 +269,20 @@ describe("how the body ceiling of /rpc is derived", () => {
   it("sees a string with no .max, and an array with none, in a schema planted for the purpose", () => {
     const planted = (def: object) => ({ _zod: { def } }) as unknown as $ZodType;
     const text = planted({ checks: [], type: "string" });
-    const walk = newWalk();
 
-    expect(maxBytes(text, ".planted", walk)).toBe(UNBOUNDED_STRING_BYTES);
-    expect([...walk.unbounded]).toEqual([".planted"]);
+    expect(maxBytes(text, ".planted", newWalk())).toBe(
+      Number.POSITIVE_INFINITY
+    );
+    expect(
+      maxBytes(
+        planted({
+          shape: { name: text, size: planted({ type: "number" }) },
+          type: "object",
+        }),
+        "",
+        newWalk()
+      )
+    ).toBe(Number.POSITIVE_INFINITY);
     expect(
       maxBytes(
         planted({ checks: [], element: text, type: "array" }),

@@ -7,12 +7,16 @@ import {
   graceNotice,
   legacyCheckoutReturnPath,
   noPlanReadBackoff,
+  noPlanReadsInFlight,
   PLAN_NOTICE_FOR_MS,
   PLAN_NOTICE_KEY,
   planNoticeIsOld,
   planNoticeRetryDelayMs,
   planReadBackoffFor,
+  planReadEnded,
   planReadFailed,
+  planReadInFlight,
+  planReadStarted,
   planReadSucceeded,
   rememberedPlanNotice,
   rememberPlanNotice,
@@ -1091,5 +1095,37 @@ describe("the wait after failed reads of the notice, by store", () => {
     expect(planReadFailed(afterSwitch, "store-a", T0 + 5 * MINUTE)).toBe(
       afterSwitch
     );
+  });
+});
+
+describe("the reads of the notice in flight, by store", () => {
+  it("does not hold store B back while the read of store A is on its way", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(reads, "store-b")).toBe(false);
+  });
+
+  it("frees only its own store when a read ends", () => {
+    let reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    reads = planReadStarted(reads, "store-b");
+    reads = planReadEnded(reads, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(false);
+    expect(planReadInFlight(reads, "store-b")).toBe(true);
+  });
+
+  it("keeps the same store from starting two reads at once, until the first ends", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(planReadEnded(reads, "store-a"), "store-a")).toBe(
+      false
+    );
+  });
+
+  it("leaves the set it was given untouched", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    planReadEnded(reads, "store-a");
+    planReadStarted(reads, "store-b");
+    expect([...reads]).toEqual(["store-a"]);
+    expect([...noPlanReadsInFlight]).toEqual([]);
   });
 });

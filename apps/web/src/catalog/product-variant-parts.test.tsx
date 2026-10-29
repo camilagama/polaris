@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { VariantSaveNotice } from "./product-variant-parts";
+import { VariantFieldRow, VariantSaveNotice } from "./product-variant-parts";
 
 /**
  * How a save of the SKU or of the list price is said (drawn without a browser): an error is an alert with text and
@@ -43,5 +43,35 @@ describe("VariantSaveNotice", () => {
     expect(markup).toContain("SKU salvo.");
     expect(markup).not.toContain('role="alert"');
     expect(markup).not.toContain("Atualizar variantes");
+  });
+});
+
+describe("VariantFieldRow", () => {
+  const row = (live?: "assertive" | "polite") =>
+    renderToStaticMarkup(
+      <VariantFieldRow
+        blocked
+        buttonLabel="Salvar SKU"
+        disabled={false}
+        error={{ id: "sku-error", live, text: "Use até 64 caracteres." }}
+        onSubmit={noop}
+      >
+        <input aria-describedby="sku-error" aria-invalid="true" />
+      </VariantFieldRow>
+    );
+
+  it("says a refusal of the server as an alert", () => {
+    const markup = row();
+    expect(markup).toContain('role="alert"');
+    expect(markup).not.toContain('role="status"');
+  });
+
+  it("says a count over the limit as a polite status, keeping the id the field and the button point to", () => {
+    const markup = row("polite");
+    expect(markup).toContain('role="status"');
+    expect(markup).not.toContain('role="alert"');
+    expect(markup).toContain('id="sku-error"');
+    expect(markup).toContain('aria-describedby="sku-error"');
+    expect(markup).toContain('aria-disabled="true"');
   });
 });

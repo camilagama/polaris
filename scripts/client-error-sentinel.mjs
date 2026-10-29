@@ -33,8 +33,13 @@ import { pathToFileURL } from "node:url";
  * `--service` is required: staging and production can serve the same SHA, and each one must wake only for its own
  * Worker.
  *
+ * `--mute <file>` lists signatures (one fingerprint per line) that are read and dropped: a muted signature never
+ * wakes, is never held, takes nothing from the cap, and shows only as the number `muted` (lines dropped in this run).
+ * It is the way to silence a forged signature that was already announced without editing the state file by hand. A
+ * line of the file that is not a fingerprint refuses the run before the API is read.
+ *
  * Usage: node scripts/client-error-sentinel.mjs --release <sha> --prev-release <sha> --seen <csv> --service <worker>
- *   [--since 35m] [--spike-per-hour 20] [--now <iso>]
+ *   [--since 35m] [--spike-per-hour 20] [--mute <file>] [--now <iso>]
  */
 
 export const EXIT_OK = 0;
@@ -60,11 +65,14 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const MIN_RELEASE_PREFIX = 7;
 const FINGERPRINT = /^[0-9a-f]{16}$/;
 const RELEASE_SHA = /^[0-9a-f]{7,40}$/;
+const ACCOUNT_ID = /^[0-9a-f]{32}$/;
 const TIE_ID = /^[0-9a-f]{16}\.\d{1,9}\.\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const MARK_EVENTS = ["client_error", "client_error_count"];
 const SYSTEM_WAKES = ["truncated", "flood"];
 const SINCE = /^(\d{1,4})([smh])$/;
 const OPTION_PREFIX = /^--/;
+const COMMENT = /#.*$/;
+const LINE_END = /\r?\n/;
 const MINUTE_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const STATE_HEADER =
   "fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets";
@@ -339,11 +347,12 @@ function pastMark(read, mark) {
   return { next: { at: top, ties }, unseen };
 }
 
-function ingest({ allowed, canonical, lines, now, state }) {
+function ingest({ allowed, canonical, lines, muted, now, state }) {
   const inDay = (ms) => now >= ms && now - ms <= DAY_MS;
   const fresh = new Map();
   let otherRelease = 0;
   let unknownRelease = 0;
+  let mutedLines = 0;
   const add = (fingerprint, ms, count) => {
     const key = minuteKey(ms);
     const buckets = fresh.get(fingerprint) ?? new Map();
@@ -366,6 +375,10 @@ function ingest({ allowed, canonical, lines, now, state }) {
     if (!inDay(line.ms)) {
       continue;
     }
+    if (muted?.has(line.fingerprint)) {
+      mutedLines += 1;
+      continue;
+    }
     if (!allowed(line.release)) {
       otherRelease += 1;
       continue;
@@ -379,6 +392,10 @@ function ingest({ allowed, canonical, lines, now, state }) {
     if (!inDay(line.at)) {
       continue;
     }
+    if (muted?.has(line.fingerprint)) {
+      mutedLines += 1;
+      continue;
+    }
     if (allowed(state.entries.get(line.fingerprint)?.release)) {
       add(line.fingerprint, line.at, line.count);
     } else {
@@ -388,6 +405,7 @@ function ingest({ allowed, canonical, lines, now, state }) {
   return {
     fresh,
     linesIgnoredInvalid: lines.length - read.length,
+    mutedLines,
     otherRelease,
     unknownRelease,
   };
@@ -417,11 +435,22 @@ function windowsOf(entry, now) {
   };
 }
 
-function candidatesOf({ allowed, counts, entries, spikePerHour, today }) {
+function candidatesOf({
+  allowed,
+  counts,
+  entries,
+  muted,
+  spikePerHour,
+  today,
+}) {
   const candidates = [];
   for (const [fingerprint, entry] of entries) {
     const window = counts.get(fingerprint);
-    if (window.day < SILENCE_BELOW || !allowed(entry.release)) {
+    if (
+      window.day < SILENCE_BELOW ||
+      !allowed(entry.release) ||
+      muted?.has(fingerprint)
+    ) {
       continue;
     }
     if (entry.announced === "") {
@@ -470,6 +499,7 @@ function queueOf({ candidates, today, truncated, wakes }) {
 export function evaluate({
   lines,
   now,
+  muted = null,
   prevRelease,
   release,
   spikePerHour = DEFAULT_SPIKE_PER_HOUR,
@@ -490,10 +520,17 @@ export function evaluate({
   const allowed = releaseFilter(release, prevRelease);
   const canonical = (value) =>
     sameRelease(value, release) ? release : prevRelease;
-  const { fresh, linesIgnoredInvalid, otherRelease, unknownRelease } = ingest({
+  const {
+    fresh,
+    linesIgnoredInvalid,
+    mutedLines,
+    otherRelease,
+    unknownRelease,
+  } = ingest({
     allowed,
     canonical,
     lines,
+    muted,
     now,
     state: next,
   });
@@ -530,6 +567,7 @@ export function evaluate({
     allowed,
     counts,
     entries: next.entries,
+    muted,
     spikePerHour,
     today,
   });
@@ -571,6 +609,7 @@ export function evaluate({
       ignoredUnknownRelease: unknownRelease,
       linesIgnoredInvalid,
       linesRead: lines.length,
+      ...(muted ? { muted: mutedLines } : {}),
       newAtThreshold: newSignatures.filter(
         (fingerprint) => counts.get(fingerprint).peak >= NEW_MIN_EVENTS
       ).length,
@@ -659,6 +698,7 @@ export async function fetchLines({
 export function parseArgs(argv) {
   const args = {};
   const names = new Set([
+    "mute",
     "now",
     "prev-release",
     "release",
@@ -683,6 +723,33 @@ export function parseArgs(argv) {
     }
   }
   return args;
+}
+
+/** The fingerprints of a `--mute` file: one per line, blank lines and `#` comments (whole line or after the hash) allowed. */
+export function parseMuteList(text) {
+  const muted = new Set();
+  const lines = text.split(LINE_END);
+  for (const [index, raw] of lines.entries()) {
+    const line = raw.replace(COMMENT, "").trim();
+    if (line === "") {
+      continue;
+    }
+    if (!FINGERPRINT.test(line)) {
+      throw new Error(`--mute file with an invalid line (line ${index + 1})`);
+    }
+    muted.add(line);
+  }
+  return muted;
+}
+
+function readMuteList(path) {
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    throw new Error("--mute file unreadable", { cause: error });
+  }
+  return parseMuteList(text);
 }
 
 function readState(path) {
@@ -741,9 +808,14 @@ export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
       "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required"
     );
   }
+  if (!ACCOUNT_ID.test(accountId)) {
+    return failure(EXIT_USAGE, "CLOUDFLARE_ACCOUNT_ID is not 32 hex digits");
+  }
   let options;
+  let muted = null;
   try {
     options = readOptions(args, now);
+    muted = args.mute === undefined ? null : readMuteList(args.mute);
   } catch (error) {
     return failure(EXIT_USAGE, error.message);
   }
@@ -783,6 +855,7 @@ export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
   try {
     verdict = evaluate({
       lines,
+      muted,
       now: at,
       prevRelease: args["prev-release"],
       release: args.release,

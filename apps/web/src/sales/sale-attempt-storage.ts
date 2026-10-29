@@ -7,7 +7,9 @@ import type { SaleAttempt } from "./sale-form-model";
  * response reuses the same command ID and the server replays the sale it
  * already stored instead of recording a second one. It lives in sessionStorage
  * (one tab) and expires quickly: an old attempt must never swallow a new,
- * identical sale.
+ * identical sale. The one exception is an attempt whose outcome is unknown
+ * (sent, no answer) whose cart came back from the tab's draft: see
+ * `readSaleAttemptState`.
  */
 export const SALE_ATTEMPT_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -17,7 +19,9 @@ function attemptKey(organizationId: string): string {
   return `${KEY_PREFIX}${organizationId}`;
 }
 
-function isAttempt(value: unknown): value is SaleAttempt {
+type StoredAttempt = SaleAttempt & { unsettled?: boolean };
+
+function isAttempt(value: unknown): value is StoredAttempt {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -35,11 +39,28 @@ function isAttempt(value: unknown): value is SaleAttempt {
   );
 }
 
-export function readSaleAttempt(
+export interface SaleAttemptRead {
+  attempt: SaleAttempt;
+  /**
+   * Sent and with no answer, made for the cart that came back from the tab: that cart may already be a sale on the
+   * server, so it must go again exactly as it was sent.
+   */
+  outcomeUnknown: boolean;
+}
+
+/**
+ * `draftStartedAt` is set when the cart came back from the tab's draft (`sale-draft-storage.ts`): an attempt whose
+ * outcome is unknown then lasts as long as that draft, since the same cart is still there and confirming it again must
+ * reach the sale the server may already have. Only an attempt made after the draft started counts (an older one
+ * belongs to another cart), and only an unsettled one: after a definite refusal, a retry hours later must not carry the
+ * instant of the first click.
+ */
+export function readSaleAttemptState(
   storage: PreferenceStorage | null,
   organizationId: string,
-  now: Date
-): SaleAttempt | null {
+  now: Date,
+  draftStartedAt: string | null = null
+): SaleAttemptRead | null {
   try {
     const text = storage?.getItem(attemptKey(organizationId));
     if (!text) {
@@ -49,35 +70,102 @@ export function readSaleAttempt(
     if (!isAttempt(parsed)) {
       return null;
     }
-    const age = now.getTime() - new Date(parsed.recordedAt).getTime();
-    if (!Number.isFinite(age) || age < 0 || age > SALE_ATTEMPT_MAX_AGE_MS) {
+    const recordedAt = new Date(parsed.recordedAt).getTime();
+    const age = now.getTime() - recordedAt;
+    const ofThisCart =
+      parsed.unsettled === true &&
+      draftStartedAt !== null &&
+      recordedAt >= new Date(draftStartedAt).getTime();
+    if (
+      !Number.isFinite(age) ||
+      age < 0 ||
+      (age > SALE_ATTEMPT_MAX_AGE_MS && !ofThisCart)
+    ) {
       storage?.removeItem(attemptKey(organizationId));
       return null;
     }
-    return parsed;
+    const { commandId, occurredAt, signature } = parsed;
+    return {
+      attempt: {
+        commandId,
+        occurredAt,
+        recordedAt: parsed.recordedAt,
+        signature,
+      },
+      outcomeUnknown: ofThisCart,
+    };
   } catch {
     return null;
   }
 }
 
-/** Stores the attempt, or forgets it when null. Failure only loses the safety net. */
+export function readSaleAttempt(
+  storage: PreferenceStorage | null,
+  organizationId: string,
+  now: Date,
+  draftStartedAt: string | null = null
+): SaleAttempt | null {
+  return (
+    readSaleAttemptState(storage, organizationId, now, draftStartedAt)
+      ?.attempt ?? null
+  );
+}
+
+/**
+ * Stores the attempt, or forgets it when null. `unsettled` while it is sent or its outcome is unknown. Failure only
+ * loses the safety net.
+ */
 export function writeSaleAttempt(
   storage: PreferenceStorage | null,
   organizationId: string,
-  attempt: SaleAttempt | null
+  attempt: SaleAttempt | null,
+  unsettled = false
 ): void {
   try {
     if (attempt === null) {
       storage?.removeItem(attemptKey(organizationId));
     } else {
-      storage?.setItem(attemptKey(organizationId), JSON.stringify(attempt));
+      const stored: StoredAttempt = { ...attempt, unsettled };
+      storage?.setItem(attemptKey(organizationId), JSON.stringify(stored));
     }
   } catch {
     // Storage can be full or blocked; the in-memory attempt still works.
   }
 }
 
-export function sessionStorageOrNull(): PreferenceStorage | null {
+type AttemptStorage = PreferenceStorage &
+  Partial<Pick<Storage, "key" | "length">>;
+
+/**
+ * Forgets the attempts of every store of this tab, but the one kept (the store just chosen): they go with the drafts
+ * they were made for, on "Sair", a refused session and a change of store.
+ */
+export function clearSaleAttempts(
+  storage: AttemptStorage | null,
+  keepOrganizationId: string | null = null
+): void {
+  try {
+    if (!storage?.key || storage.length === undefined) {
+      return;
+    }
+    const keep =
+      keepOrganizationId === null ? null : attemptKey(keepOrganizationId);
+    const found: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(KEY_PREFIX) && key !== keep) {
+        found.push(key);
+      }
+    }
+    for (const key of found) {
+      storage.removeItem(key);
+    }
+  } catch {
+    // a blocked storage holds no attempt
+  }
+}
+
+export function sessionStorageOrNull(): Storage | null {
   try {
     return window.sessionStorage;
   } catch {

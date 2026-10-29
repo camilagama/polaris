@@ -21,7 +21,8 @@ import { WORKER_MARK } from "./worker-mark";
 /**
  * The swap of the build by itself (ADR 0041), with two real builds of the app served by the
  * same server: the new build goes in when the tab is hidden and the page holds nothing, never over a dialog, a sale
- * with an item or work in the queue, never at another tab's moment, and the tab held on the old build still opens a
+ * with an item on the screen or work in the queue (a sale left out of the screen does not hold: the tab gives it back
+ * after the reload), never at another tab's moment, and the tab held on the old build still opens a
  * lazy screen of its own build, two builds later. The builds here are urgent (`POLARIS_SWAP_URGENT=1`, the default of
  * `buildVersion`) unless the check is about the settling: the 2 h count from when the device saw the build. The
  * moments that need a clock (the return after 5 min, the idle tab, the 2 h of settling) are in
@@ -158,6 +159,35 @@ test("uma venda com item segura a troca: a aba oculta não troca e a venda conti
     page
       .getByRole("group", { exact: true, name: "Item 1" })
       .getByText("Camiseta do teste")
+  ).toBeVisible();
+});
+
+test("a venda fora da tela não segura a troca: a aba oculta troca, e Vender abre com a venda depois da recarga", async ({
+  buildVersion,
+  page,
+}) => {
+  await waitingOverVersion1(page, buildVersion, "/sales");
+  await addShirtToSale(page);
+  await page
+    .getByRole("link", { exact: true, name: "Início" })
+    .filter({ visible: true })
+    .click();
+  await page
+    .getByRole("heading", { exact: true, level: 1, name: "Início" })
+    .waitFor();
+
+  await setVisibility(page, "hidden");
+  await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
+  await page
+    .getByRole("link", { exact: true, name: "Vender" })
+    .filter({ visible: true })
+    .click();
+  const item = page.getByRole("group", { exact: true, name: "Item 1" });
+  await expect(item.getByText("Camiseta do teste")).toBeVisible();
+  // the variant is chosen (the search left the line) and the screen says the sale came back
+  await expect(item.getByLabel("Produto ou variante")).toHaveCount(0);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Venda em andamento" })
   ).toBeVisible();
 });
 

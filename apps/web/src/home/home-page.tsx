@@ -1,8 +1,10 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { HideValuesButton } from "@/ui/hidden-values";
+import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -21,7 +23,6 @@ import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import { KpiCards } from "./home-kpi-cards";
-import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import {
   copyLine,
   type GoalView,
@@ -31,8 +32,8 @@ import {
   newSaleOfflineText,
   pickGoal,
 } from "./home-model";
-import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
+import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
 
 /**
@@ -44,7 +45,36 @@ import { type HomeFigures, type HomeState, useHome } from "./use-home";
  * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
  */
 
+const REFRESHING_TEXT = "Atualizando…";
 const NO_COPY_TEXT = "Sem internet e sem números guardados";
+
+/**
+ * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
+ * reads the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would drop
+ * it on the body).
+ */
+function RefreshButton({
+  busy,
+  className,
+  onClick,
+}: {
+  busy: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      aria-disabled={busy || undefined}
+      className={cn("max-md:size-ctl-lg max-md:px-0", className)}
+      onClick={busy ? undefined : onClick}
+      type="button"
+      variant="outline"
+    >
+      <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+      <span className="max-md:sr-only">Atualizar</span>
+    </Button>
+  );
+}
 
 /** "Nova venda", and without a connection what it can do then (AC-30), said under it. */
 function NewSale({ offlineText }: { offlineText: string | null }) {
@@ -295,7 +325,9 @@ function figuresLine(
   if (state.figures.status === "ready") {
     return homeUpdatedLine(state.figures.data.month.generatedAt, timezone);
   }
-  return state.figures.status === "loading" ? <SlowReadNote /> : null;
+  return state.figures.status === "loading" ? (
+    <SlowReadNote announce={false} />
+  ) : null;
 }
 
 /**
@@ -332,9 +364,12 @@ function noFigures(today: string): Blocks {
  */
 function HomeHeader({
   offlineText,
+  refresh,
   updated,
 }: {
   offlineText: string | null;
+  /** The gesture "Atualizar", or null when there is nothing to read (no connection, session refused). */
+  refresh: { busy: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
 }) {
   return (
@@ -345,18 +380,46 @@ function HomeHeader({
           <p
             className="min-h-5 text-muted-foreground text-support"
             id="home-updated"
+            role="status"
           >
             {updated}
           </p>
         </div>
-        <HideValuesButton className="md:hidden" />
+        <div className="flex items-start gap-2 md:hidden">
+          {refresh ? (
+            <RefreshButton busy={refresh.busy} onClick={refresh.onClick} />
+          ) : null}
+          <HideValuesButton />
+        </div>
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
+        {refresh ? (
+          <RefreshButton
+            busy={refresh.busy}
+            className="max-md:hidden"
+            onClick={refresh.onClick}
+          />
+        ) : null}
         <HideValuesButton className="max-md:hidden" />
         <NewSale offlineText={offlineText} />
       </div>
     </header>
   );
+}
+
+/** "Atualizar" is offered only where a read can happen; `refreshing` is true while the button's own read runs. */
+function refreshGesture(
+  canRefresh: boolean,
+  reloading: boolean,
+  reload: () => void
+): {
+  refresh: { busy: boolean; onClick: () => void } | null;
+  refreshing: boolean;
+} {
+  return {
+    refresh: canRefresh ? { busy: reloading, onClick: reload } : null,
+    refreshing: canRefresh && reloading,
+  };
 }
 
 /**
@@ -600,6 +663,8 @@ export function HomePage() {
   const {
     online,
     reads,
+    reload,
+    reloading,
     retryFigures,
     retryGoals,
     retryRhythm,
@@ -642,6 +707,11 @@ export function HomePage() {
         timezone,
         today,
       });
+  const { refresh, refreshing } = refreshGesture(
+    online && !state.sessionRefused,
+    reloading,
+    reload
+  );
   const goalBlock = pickGoalBlock({
     goal,
     offline,
@@ -674,10 +744,13 @@ export function HomePage() {
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <HomeHeader
         offlineText={offline ? newSaleOfflineText(canSellOffline) : null}
-        updated={updated}
+        refresh={refresh}
+        updated={refreshing ? REFRESHING_TEXT : updated}
       />
       <div
-        aria-busy={view === null && state.figures.status === "loading"}
+        aria-busy={
+          refreshing || (view === null && state.figures.status === "loading")
+        }
         className="grid gap-4"
       >
         {attention}

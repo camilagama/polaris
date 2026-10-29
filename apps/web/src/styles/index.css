@@ -46,7 +46,7 @@
 /* The lab of those pieces (browser checks only). */
 @source "../offline-poc/screens-lab-shell-pieces.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
-@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
+@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels,sale-draft-bar}.tsx";
 /* The expenses screen (v5.1, segmented since UI-H): the page, the forms in dialogs, the list, the recurring rules, the categories and the month picker. */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
