@@ -3,7 +3,11 @@ import {
   type ProductImportRowInput,
   type ProductImportRowResult,
 } from "@polaris/contracts";
-import { isConnectionFailure, rpcErrorCode } from "../lib/rpc-error";
+import {
+  isConnectionFailure,
+  isPlatformCut,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 import { uuidv7 } from "../lib/uuidv7";
 import type { ImportReadyRow } from "./product-import-rows";
 
@@ -17,18 +21,36 @@ import type { ImportReadyRow } from "./product-import-rows";
  * queue.
  *
  * A 429 pauses for the time the server asked (`Retry-After`) and sends the same row once after it, never right
- * away. A failure that may have taken effect (no answer, a fault of the server, as the CPU limit of the Free plan
- * killing the call: ~10% of the calls of 1 row) sends the same row again, with the same IDs. A row that fails
+ * away. A failure with no answer sends the same row again, with the same IDs; a row that fails so
  * `MAX_ROW_RETRIES` times stops the run where it was, so `skipStuckRow` can leave it out without holding back the
  * rows after it. The plan's refusal stops it for good and says so, for the screen's notice of the limit (corte 1.6).
+ *
+ * The cut of the platform (`isPlatformCut`: the CPU limit of the Free plan killing the Worker, 1102) is not a fault
+ * of the row: it is the sign of the regime, in which every call of the Worker dies for 4 to 26 minutes and that ends
+ * only ~6 minutes after the traffic stops. The run pauses (`REGIME_PAUSE_STEPS_MS`, growing while the cuts go on),
+ * sends the same row again with the same IDs (a call killed after its commit answers `repeated`), and never gives up by itself: it ends when the
+ * rows end or the person stops it. After a pause it goes at half the pace until `PACE_BACK_AFTER_ANSWERS` answers.
+ * The same pause holds the send while the tab's own sales or reads are failing (`busy`): the till comes first.
  */
 
 /**
- * At most one call every 2.5 s: 24 per minute, 20% below the 30 of the bucket (the limiter counts by location and
- * approximately, so calling at the limit gives bursts of 429). It holds for every call of the run, the row sent
- * again after a 429 or a failure too, and across the calls of `runImport` (continuing a stopped run).
+ * At most one call every 7 s (~8.5 per minute): under the ~9 per minute that went with no cut on the Free plan, and far
+ * under the 30 of the bucket. Never below 5 s without a new measure of the regime. It holds for every call of the
+ * run, the row sent again after a 429 or a failure too, and across the calls of `runImport` (continuing a stopped run).
  */
-export const IMPORT_CALL_INTERVAL_MS = 2500;
+export const IMPORT_CALL_INTERVAL_MS = 7000;
+/**
+ * The pauses after a cut of the platform, one step per pause while the regime goes on, then the last one again. Each
+ * is longer than the ~6 minutes the regime takes to end once the traffic stops: the import is part of that traffic.
+ */
+export const REGIME_PAUSE_STEPS_MS = [120_000, 300_000, 600_000] as const;
+/** After a pause the run goes at twice the interval until this many answers in a row; then the pauses start over. */
+export const PACE_BACK_AFTER_ANSWERS = 20;
+/**
+ * The cuts of one row, each on the send right after a pause at the ceiling, that leave it out by itself (`skipStuckRow`) when the row
+ * before it went through: the row itself may be what the Worker cannot finish.
+ */
+export const CUTS_AT_CEILING_TO_SKIP = 3;
 /** The wait after a 429 whose `Retry-After` did not come through. */
 const RATE_LIMITED_FALLBACK_MS = 60_000;
 /** The bounds of the wait after a 429: never right away, never longer than the window of the bucket twice. */
@@ -39,12 +61,27 @@ const MAX_RATE_LIMITED_IN_A_ROW = 3;
 /** The tries again, at the pace, of a row whose answer did not come. */
 const MAX_ROW_RETRIES = 2;
 
+/** Where the run is in the regime of the platform: kept with the run, so a continued run does not start over. */
+interface RegimeState {
+  /** The cuts of the row on its way that came on the send right after a pause at the ceiling. */
+  cutsAtCeiling: number;
+  /** Whether the last pause was the longest one. */
+  lastPauseAtCeiling: boolean;
+  /** Whether the next send is the first after a pause at the ceiling: only its cut counts in `cutsAtCeiling`. */
+  sendAfterCeiling: boolean;
+  /** The pauses since the pace last came back: the step of the next one. */
+  pauses: number;
+  /** The answers still to come at twice the interval. */
+  slowFor: number;
+}
+
 export interface ImportRun {
   readonly importId: string;
   /** When the last call of the run went, for the pace; null before the first. */
   lastSentAt: number | null;
   /** The index of the first row not answered yet: where a stopped run continues. */
   nextIndex: number;
+  readonly regime: RegimeState;
   readonly results: Map<number, ProductImportRowResult>;
   readonly rows: readonly ProductImportRowInput[];
   /** The rows left out by `skipStuckRow`: they never had an answer, so they may or may not have entered. */
@@ -60,6 +97,13 @@ export function createImportRun(
     importId: newId(),
     lastSentAt: null,
     nextIndex: 0,
+    regime: {
+      cutsAtCeiling: 0,
+      lastPauseAtCeiling: false,
+      pauses: 0,
+      sendAfterCeiling: false,
+      slowFor: 0,
+    },
     results: new Map(),
     rows: rows.map((row) => ({
       categoryId: row.categoryId,
@@ -86,6 +130,7 @@ export function skipStuckRow(run: ImportRun): void {
   if (row !== undefined) {
     run.skipped.add(row.rowNumber);
     run.nextIndex += 1;
+    run.regime.cutsAtCeiling = 0;
   }
 }
 
@@ -103,7 +148,14 @@ export type ImportStop =
   | { kind: "aborted" };
 
 export interface ImportSendDependencies {
+  /**
+   * Whether the tab's own work is failing now (the breaker of the reads open, a sale of the queue failing to go): the
+   * run holds its next call in a pause, as after a cut.
+   */
+  busy?: () => boolean;
   now?: () => number;
+  /** A pause of the regime began (when the run goes on by itself) or ended (`null`). */
+  onPause?: (resumeAt: number | null) => void;
   /** Each slice answered, for the progress on the screen. */
   onProgress?: (run: ImportRun) => void;
   organizationId: string;
@@ -135,6 +187,7 @@ function waitFor(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** A failure with no answer, or one the server may not have finished: the same row is tried again. */
 function isTransient(error: unknown): boolean {
   const code = rpcErrorCode(error);
   return (
@@ -149,13 +202,23 @@ function isTransient(error: unknown): boolean {
 
 type SliceOutcome =
   | { kind: "answered"; results: ProductImportRowResult[] }
+  /** The platform killed the call: the regime is on, and the slice may have entered (sent again, it answers `repeated`). */
+  | { kind: "cut" }
+  /** Not sent: the tab's own work is failing (`busy`). */
+  | { kind: "held" }
   /** No answer, or a fault of the server: the slice may have entered. */
   | { error: unknown; kind: "failed" }
   | Exclude<ImportStop, { kind: "done" | "limit_reached" | "interrupted" }>;
 
 type Wait = NonNullable<ImportSendDependencies["wait"]>;
 
-/** Waits until `IMPORT_CALL_INTERVAL_MS` has gone since the last call of the run. */
+/** The interval between two calls now: twice `IMPORT_CALL_INTERVAL_MS` while the run comes back from a pause. */
+function intervalOf(run: ImportRun): number {
+  return run.regime.slowFor > 0
+    ? 2 * IMPORT_CALL_INTERVAL_MS
+    : IMPORT_CALL_INTERVAL_MS;
+}
+
 async function keepPace(
   run: ImportRun,
   now: () => number,
@@ -165,9 +228,10 @@ async function keepPace(
   if (run.lastSentAt === null) {
     return;
   }
+  const interval = intervalOf(run);
   const elapsed = Math.max(now() - run.lastSentAt, 0);
-  if (elapsed < IMPORT_CALL_INTERVAL_MS) {
-    await wait(IMPORT_CALL_INTERVAL_MS - elapsed, signal);
+  if (elapsed < interval) {
+    await wait(interval - elapsed, signal);
   }
 }
 
@@ -185,6 +249,9 @@ async function sendSlice(
     await keepPace(run, now, wait, dependencies.signal);
     if (dependencies.signal?.aborted) {
       return { kind: "aborted" };
+    }
+    if (dependencies.busy?.()) {
+      return { kind: "held" };
     }
     run.lastSentAt = now();
     try {
@@ -213,11 +280,18 @@ async function sendSlice(
         );
         continue;
       }
-      return isTransient(error)
-        ? { error, kind: "failed" }
-        : { error, kind: "refused" };
+      return failureOutcome(error);
     }
   }
+}
+
+function failureOutcome(error: unknown): SliceOutcome {
+  if (isPlatformCut(error)) {
+    return { kind: "cut" };
+  }
+  return isTransient(error)
+    ? { error, kind: "failed" }
+    : { error, kind: "refused" };
 }
 
 /** The rows of the run that did not enter because of the plan, once a slice said the plan is full. */
@@ -287,6 +361,102 @@ function takeAnswer(
   return null;
 }
 
+/** Whether the row before the one on its way had its answer: a cut that repeats is then the row's own, not the regime's. */
+function previousWentThrough(run: ImportRun): boolean {
+  const previous = run.rows[run.nextIndex - 1];
+  return previous !== undefined && run.results.has(previous.rowNumber);
+}
+
+/**
+ * A cut of the row on its way. The same row cut `CUTS_AT_CEILING_TO_SKIP` times, each on the send right after a pause
+ * at the ceiling, while the row before it went through, is left out; true when it was.
+ */
+function noteCut(run: ImportRun): boolean {
+  const { regime } = run;
+  if (!regime.sendAfterCeiling) {
+    return false;
+  }
+  regime.cutsAtCeiling += 1;
+  if (
+    regime.cutsAtCeiling < CUTS_AT_CEILING_TO_SKIP ||
+    !previousWentThrough(run)
+  ) {
+    return false;
+  }
+  skipStuckRow(run);
+  return true;
+}
+
+/** An answer: one step of the way back to the pace; once there, the next pause starts at the first step again. */
+function noteAnswer(run: ImportRun): void {
+  const { regime } = run;
+  regime.cutsAtCeiling = 0;
+  if (regime.slowFor > 0) {
+    regime.slowFor -= 1;
+    if (regime.slowFor === 0) {
+      regime.pauses = 0;
+      regime.lastPauseAtCeiling = false;
+    }
+  }
+}
+
+/** The pause of the regime: no call until it ends (or the screen gives up), then the run comes back at half pace. */
+async function regimePause(
+  run: ImportRun,
+  dependencies: ImportSendDependencies,
+  clock: { now: () => number; wait: Wait }
+): Promise<void> {
+  const { regime } = run;
+  const ceiling = REGIME_PAUSE_STEPS_MS.at(-1) ?? 0;
+  const ms = REGIME_PAUSE_STEPS_MS[regime.pauses] ?? ceiling;
+  regime.pauses += 1;
+  regime.lastPauseAtCeiling = ms === ceiling;
+  regime.sendAfterCeiling = regime.lastPauseAtCeiling;
+  regime.slowFor = PACE_BACK_AFTER_ANSWERS;
+  dependencies.onPause?.(clock.now() + ms);
+  await clock.wait(ms, dependencies.signal);
+  if (!dependencies.signal?.aborted) {
+    dependencies.onPause?.(null);
+  }
+}
+
+/** After a cut or a held send: the stuck row left out when it is one, then the pause; false when the screen gave up. */
+async function pauseForRegime(
+  run: ImportRun,
+  kind: "cut" | "held",
+  dependencies: ImportSendDependencies,
+  clock: { now: () => number; wait: Wait }
+): Promise<boolean> {
+  if (dependencies.signal?.aborted) {
+    return false;
+  }
+  if (kind === "cut" && noteCut(run)) {
+    dependencies.onProgress?.(run);
+  }
+  await regimePause(run, dependencies, clock);
+  if (dependencies.signal?.aborted) {
+    // a pause cut short is no pause: the send after a continue does not come after it
+    run.regime.sendAfterCeiling = false;
+    return false;
+  }
+  return true;
+}
+
+/** `sendSlice`, after which only a cut still counts as the send right after a pause at the ceiling. */
+async function sendAfterPause(
+  run: ImportRun,
+  rows: ProductImportRowInput[],
+  dependencies: ImportSendDependencies,
+  clock: { now: () => number; wait: Wait }
+): Promise<SliceOutcome> {
+  const outcome = await sendSlice(run, rows, dependencies, clock);
+  if (outcome.kind !== "cut") {
+    // held, it waits for a new pause
+    run.regime.sendAfterCeiling = false;
+  }
+  return outcome;
+}
+
 /** Sends the rows of the run from where it stopped, a slice at a time, until every row has its answer or it stops. */
 export async function runImport(
   run: ImportRun,
@@ -303,7 +473,14 @@ export async function runImport(
       run.nextIndex + PRODUCT_IMPORT_BATCH_MAX_ROWS
     );
     // biome-ignore lint/performance/noAwaitInLoops: one slice at a time, the next only after the answer
-    const outcome = await sendSlice(run, rows, dependencies, clock);
+    const outcome = await sendAfterPause(run, rows, dependencies, clock);
+    if (outcome.kind === "cut" || outcome.kind === "held") {
+      // the same rows go again after the pause, with the same IDs; a cut is no try of `MAX_ROW_RETRIES`
+      if (await pauseForRegime(run, outcome.kind, dependencies, clock)) {
+        continue;
+      }
+      return { kind: "aborted" };
+    }
     if (outcome.kind === "failed") {
       const next = afterFailure({
         error: outcome.error,
@@ -325,6 +502,7 @@ export async function runImport(
       return stop;
     }
     retries = 0;
+    noteAnswer(run);
     dependencies.onProgress?.(run);
     if (outcome.results.some((result) => result.status === "limit_reached")) {
       markLimitReached(run);

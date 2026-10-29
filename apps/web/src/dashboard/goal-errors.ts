@@ -1,5 +1,5 @@
 import {
-  legalAcceptanceMessage,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -49,9 +49,9 @@ const READ_SUBJECTS: Partial<Record<GoalAction, string>> = {
 
 /** Portuguese text for a failed goal request. */
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
-  const unaccepted = legalAcceptanceMessage(error, READ_SUBJECTS[action]);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, READ_SUBJECTS[action]);
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {

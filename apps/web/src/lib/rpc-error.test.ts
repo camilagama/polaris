@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
 import {
+  CHANGE_CUT_BY_SERVER,
+  commonFailureMessage,
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isPlatformCut,
+  isTransientReadFailure,
   readErrorMessage,
   rpcErrorCode,
   rpcErrorReason,
+  serverCutWriteMessage,
 } from "./rpc-error";
 
 describe("rpc error helpers", () => {
@@ -139,6 +144,98 @@ describe("a call that got no answer from the Worker", () => {
       readErrorMessage(new NoWorkerAnswerError("unproven"), "o estoque")
     ).toBe(
       "Não foi possível carregar o estoque: a conexão falhou. Tente novamente."
+    );
+  });
+});
+
+const BLAMES_THE_NETWORK = /conexão|internet/;
+const MAY_HAVE_BEEN_SAVED = /pode ter sido salvo/i;
+
+describe("a call the platform killed (the regime of the Free plan)", () => {
+  /** What oRPC gives for the platform's page of a Worker it killed: `connection.ts` names it `platform_cut`. */
+  const platformCut = Object.assign(new Error("cut"), {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "platform_cut" },
+    status: 503,
+  });
+  const workerBusy = Object.assign(new Error("busy"), {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    status: 503,
+  });
+
+  it("is only the platform's 5xx with no mark of the Worker; never the Worker's own 5xx, no answer or a 4xx", () => {
+    expect(isPlatformCut(platformCut)).toBe(true);
+    expect(isPlatformCut(workerBusy)).toBe(false);
+    expect(
+      isPlatformCut(
+        Object.assign(new Error("bad gateway"), {
+          code: "BAD_GATEWAY",
+          status: 502,
+        })
+      )
+    ).toBe(false);
+    expect(isPlatformCut({ code: "INTERNAL_SERVER_ERROR", status: 500 })).toBe(
+      false
+    );
+    expect(isPlatformCut(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isPlatformCut(new NoWorkerAnswerError("unproven"))).toBe(false);
+    expect(
+      isPlatformCut({
+        code: "CONFLICT",
+        data: { reason: "platform_cut" },
+        status: 409,
+      })
+    ).toBe(false);
+    expect(
+      isPlatformCut({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "platform_cut" },
+      })
+    ).toBe(false);
+    expect(isPlatformCut({ code: "TOO_MANY_REQUESTS", status: 429 })).toBe(
+      false
+    );
+    expect(isPlatformCut({ code: "CONFLICT", status: 409 })).toBe(false);
+  });
+
+  it("is a read another try may fix, as the Worker's 503 server_busy still is", () => {
+    expect(isTransientReadFailure(platformCut)).toBe(true);
+    expect(
+      isTransientReadFailure({
+        code: "BAD_GATEWAY",
+        data: { reason: "platform_cut" },
+        status: 502,
+      })
+    ).toBe(true);
+    expect(isTransientReadFailure(workerBusy)).toBe(true);
+    expect(
+      isTransientReadFailure({
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "billing_not_configured" },
+        status: 503,
+      })
+    ).toBe(false);
+  });
+
+  it("is said in a write sent at once as a server that did not confirm, never as the internet", () => {
+    expect(serverCutWriteMessage(platformCut)).toBe(CHANGE_CUT_BY_SERVER);
+    expect(CHANGE_CUT_BY_SERVER).toBe(
+      "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir."
+    );
+    expect(CHANGE_CUT_BY_SERVER).not.toMatch(BLAMES_THE_NETWORK);
+    expect(serverCutWriteMessage(workerBusy)).toBeUndefined();
+    expect(
+      serverCutWriteMessage(new TypeError("Failed to fetch"))
+    ).toBeUndefined();
+    expect(serverCutWriteMessage({ code: "BAD_REQUEST" })).toBeUndefined();
+  });
+
+  it("says 'pode ter sido salvo' only of a write, never of a read", () => {
+    expect(commonFailureMessage(platformCut)).toBe(CHANGE_CUT_BY_SERVER);
+    expect(commonFailureMessage(platformCut, "os produtos")).toBeUndefined();
+    expect(readErrorMessage(platformCut, "os produtos")).not.toMatch(
+      MAY_HAVE_BEEN_SAVED
     );
   });
 });

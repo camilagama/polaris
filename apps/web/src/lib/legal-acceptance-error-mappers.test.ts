@@ -14,6 +14,7 @@ import { mapLinkError } from "../sales/sale-customer-link-model";
 import { loadErrorMessage, mapSaleSubmitError } from "../sales/sale-form-model";
 import { mapReturnError } from "../sales/sale-return-model";
 import {
+  commonFailureMessage,
   legalAcceptanceMessage,
   legalAcceptanceWriteMessage,
   readErrorMessage,
@@ -42,6 +43,14 @@ describe("the shared text of the missing legal acceptance", () => {
     expect(legalAcceptanceMessage(refusal, "as categorias")).toBe(
       `Não foi possível carregar as categorias: ${MISSING}`
     );
+  });
+
+  it("comes first in the common text of a failed call, for a write and for a read", () => {
+    expect(commonFailureMessage(refusal)).toBe(WRITE_TEXT);
+    expect(commonFailureMessage(refusal, "as categorias")).toBe(
+      `Não foi possível carregar as categorias: ${MISSING}`
+    );
+    expect(commonFailureMessage(plainForbidden)).toBeUndefined();
   });
 
   it("leaves every other error to the mapper of the screen", () => {
@@ -137,7 +146,9 @@ describe("every screen error mapper treats the refusal for the missing acceptanc
 const SOURCE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SOURCE_FILE = /\.(ts|tsx)$/;
 const MAPS_FORBIDDEN = /(===|case) "FORBIDDEN"/;
-const TREATS_REFUSAL = /legalAcceptanceMessage\(|isLegalAcceptanceRefusal\(/;
+/** `commonFailureMessage` asks `legalAcceptanceMessage` first (proved in "the shared text…" above). */
+const TREATS_REFUSAL =
+  /legalAcceptanceMessage\(|isLegalAcceptanceRefusal\(|commonFailureMessage\(/;
 const TEST_FILE = /\.test\.(ts|tsx)$/;
 /** Files that name FORBIDDEN without mapping it to a text of a screen, and why. */
 const NOT_SCREEN_MAPPERS = new Map([

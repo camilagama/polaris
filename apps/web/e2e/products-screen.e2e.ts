@@ -41,6 +41,9 @@ const rpc = (json: unknown, status = 200) => ({
   headers: { ...WORKER_MARK },
   status,
 });
+/** What a write the platform cut says (`platformCut` below): it may have been saved. */
+const SERVER_CUT_WRITE =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir.";
 const unavailable = rpc(
   {
     code: "SERVICE_UNAVAILABLE",
@@ -51,6 +54,14 @@ const unavailable = rpc(
   },
   503
 );
+
+/** The page Cloudflare answers for a Worker the platform killed (1102): a 503 with `cf-ray` and no mark. */
+const platformCut = {
+  body: "<html><body>Worker exceeded resource limits</body></html>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d1e2f3a4b5c6d7e-GRU" },
+  status: 503,
+};
 
 /** The body without its scripts: what the person reads and what the markup carries, not the bundle. */
 const bodyMarkup = (page: Page) =>
@@ -847,9 +858,11 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await page.getByRole("button", { name: "Desfazer" }).click();
+  // the Worker's own 503 is a fault it answered, not the platform's cut
   await expect(page.getByRole("alert")).toContainText(
     "O catálogo está temporariamente indisponível."
   );
+  await expect(page.getByRole("alert")).not.toContainText("ocupado");
   const undo = page.getByRole("button", { name: "Desfazer" });
   await expect(undo).toBeEnabled();
   await undo.click();
@@ -864,14 +877,12 @@ test("arquivar que o servidor recusa: o erro é dito e focado e a linha continua
 }) => {
   await openServerScreen(page, {
     lists: [answer([product(1, "Camiseta do teste")])],
-    others: { "product/archive": (route) => route.fulfill(unavailable) },
+    others: { "product/archive": (route) => route.fulfill(platformCut) },
   });
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(alert).toContainText(SERVER_CUT_WRITE);
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Camiseta do teste"
@@ -1259,7 +1270,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
                 },
                 409
               )
-            : unavailable
+            : platformCut
         );
       },
     },
@@ -1270,9 +1281,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await skuSection.getByRole("textbox").fill("CAM-1");
   await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
   const skuAlert = skuSection.getByRole("alert");
-  await expect(skuAlert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(skuAlert).toContainText(SERVER_CUT_WRITE);
   await expect(skuAlert.locator("svg")).toHaveCount(1);
   await expect(skuSection.getByRole("status")).toHaveCount(0);
 
@@ -1284,6 +1293,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await expect(priceSection.getByRole("alert")).toContainText(
     "Não foi possível salvar o preço."
   );
+  await expect(priceSection.getByRole("alert")).not.toContainText("ocupado");
   await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);
 
   skuAnswer = "conflict";

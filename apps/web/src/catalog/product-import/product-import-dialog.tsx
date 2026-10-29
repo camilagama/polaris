@@ -40,6 +40,7 @@ import { type ImportStep, useProductImport } from "./use-product-import";
 const STEP_NAMES: Record<ImportStep["kind"], string> = {
   file: "Passo 1 de 4 · Arquivo",
   paused: "Passo 3 de 4 · Importando",
+  paused_busy: "Passo 3 de 4 · Importando",
   preview: "Passo 2 de 4 · Prévia",
   result: "Passo 4 de 4 · Resultado",
   running: "Passo 3 de 4 · Importando",
@@ -49,6 +50,7 @@ const STEP_NAMES: Record<ImportStep["kind"], string> = {
 const OFFLINE_DETAILS: Record<ImportStep["kind"], string> = {
   file: OFFLINE_DETAIL,
   paused: OFFLINE_DETAIL_RUN,
+  paused_busy: OFFLINE_DETAIL_RUN,
   preview: OFFLINE_DETAIL,
   result: OFFLINE_DETAIL_AFTER,
   running: OFFLINE_DETAIL_RUN,
@@ -86,13 +88,15 @@ export function ProductImportDialog({
   const online = useConnectionOnline();
   const [state, actions] = useProductImport({ categories, onEntered, online });
   const { step } = state;
-  const busy = step.kind === "running";
+  // the pause of the regime is the run still on its way: it goes on by itself
+  const busy = step.kind === "running" || step.kind === "paused_busy";
   const [stopping, setStopping] = useState(false);
   const { help: resultLimitHelp, show: showLimitHelp } = useLimitHelp();
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  // each step starts at its top, read from there; the first one opens on "Escolher arquivo" (`initialFocus`)
-  const stepKind = step.kind;
+  // each step starts at its top, read from there; the first one opens on "Escolher arquivo" (`initialFocus`). The pause
+  // of the regime is no step of its own: the focus stays where it is, and the status says it
+  const stepKind = step.kind === "paused_busy" ? "running" : step.kind;
   useEffect(() => {
     setStopping(false);
     if (stepKind !== "file") {
@@ -196,8 +200,10 @@ export function ProductImportDialog({
         onStop={handleStop}
         pace={state.pace}
         pause={step.kind === "paused" ? step.pause : null}
+        resumeAt={step.kind === "paused_busy" ? step.resumeAt : null}
         run={state.run}
         stopping={stopping}
+        timeZone={organization.timezone}
       />
     );
   }
