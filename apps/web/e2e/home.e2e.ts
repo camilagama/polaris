@@ -2165,7 +2165,8 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
   }) => {
     const server = new FakeServer(SOLD);
     await openHome(page, server, NOON - DAY);
-    await expect(region(page, "Vendas hoje")).toContainText("22/10");
+    // the eve of the server's day: nothing sold on it, and Vendas hoje has no date to say so
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 0,00");
     await expect.poll(() => copyKeys(page)).toHaveLength(3);
     // the copy was read on the eve of the server's day while the device clock still says that eve: the copy is
     // the device's today, not the store's, and the month's answer says so
