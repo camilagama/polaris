@@ -13,14 +13,22 @@ import { pathToFileURL } from "node:url";
  *   cron is every 30 minutes, so a burst that ended 20 minutes ago must still wake);
  * - an announced one wakes when it passes `--spike-per-hour` events in the last hour, once per day;
  * - at most `MAX_WAKES_PER_DAY` wakes per day; the rest is held for the morning summary;
- * - fewer than `SILENCE_BELOW` events in 24 hours is silence.
+ * - fewer than `SILENCE_BELOW` events in 24 hours is silence, except that a full window (`truncated`) is never silence:
+ *   it wakes once per day with `reason: "truncated"` and counts in the cap;
+ * - more than `FLOOD_ABOVE` signatures never announced and at the threshold (the held ones of earlier runs count) wake
+ *   once per day as `reason: "flood"` (one wake of the cap) and the signatures themselves are held.
+ * The watermark assumes the log answers in the order of its timestamps: a line that is indexed after a later one was
+ * already read is not counted.
  * The 10-minute, 1-hour and 24-hour counts come from per-minute buckets kept in the state file (`--seen`), because the
- * window of one run is shorter than the counts the rules need. A bucket read again by the next run (the windows
- * overlap) is replaced by the larger value, never added.
+ * window of one run is shorter than the counts the rules need. The windows of two runs overlap, so each log line is
+ * counted once: the state keeps, per event name, a watermark of the log timestamp (and the lines already read at that
+ * exact instant), and the counts of the lines past it are added to the buckets. A `client_error_count` line is logged
+ * by the next request of the isolate, so it can reach a later run than the minute it counts; adding by line keeps it.
  *
  * The token is read-only (Observability) and never printed or written. The output is one JSON line with fingerprints
  * and numbers only, nothing the client wrote. A failure of the API exits with `EXIT_API_FAILED` and `wake: false`: a
- * broken script is not an alert.
+ * broken script is not an alert. An answer whose lines are all unreadable (`linesRead > 0` and every one invalid) is
+ * a change of format and exits the same way.
  *
  * `--service` is required: staging and production can serve the same SHA, and each one must wake only for its own
  * Worker.
@@ -39,6 +47,7 @@ export const NEW_MIN_EVENTS = 5;
 export const NEW_WINDOW_MINUTES = 10;
 export const MAX_WAKES_PER_DAY = 5;
 export const SILENCE_BELOW = 3;
+export const FLOOD_ABOVE = 3;
 export const DEFAULT_SPIKE_PER_HOUR = 20;
 export const DEFAULT_SINCE = "35m";
 
@@ -50,6 +59,10 @@ const QUERY_LIMIT = 1000;
 const REQUEST_TIMEOUT_MS = 20_000;
 const MIN_RELEASE_PREFIX = 7;
 const FINGERPRINT = /^[0-9a-f]{16}$/;
+const RELEASE_SHA = /^[0-9a-f]{7,40}$/;
+const TIE_ID = /^[0-9a-f]{16}\.\d{1,9}\.\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+const MARK_EVENTS = ["client_error", "client_error_count"];
+const SYSTEM_WAKES = ["truncated", "flood"];
 const SINCE = /^(\d{1,4})([smh])$/;
 const OPTION_PREFIX = /^--/;
 const MINUTE_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -118,6 +131,9 @@ function parseRow(line) {
   if (!FINGERPRINT.test(fingerprint ?? "")) {
     throw new Error("state file with an invalid fingerprint");
   }
+  if (!RELEASE_SHA.test(release ?? "")) {
+    throw new Error("state file with an invalid release");
+  }
   for (const date of [firstSeen, announced, lastWake]) {
     if (date && !Number.isFinite(Date.parse(date))) {
       throw new Error("state file with an invalid date");
@@ -130,24 +146,88 @@ function parseRow(line) {
       buckets: parseBuckets(buckets ?? ""),
       firstSeen: firstSeen ?? "",
       lastWake: lastWake ?? "",
-      release: release ?? "",
+      release,
     },
   ];
 }
 
+function parseTies(text) {
+  const ties = new Map();
+  for (const pair of text.split("|").filter(Boolean)) {
+    const [id, times] = pair.split("~");
+    if (!(TIE_ID.test(id) && Number.isSafeInteger(Number(times)))) {
+      throw new Error("state file with an invalid watermark");
+    }
+    ties.set(id, Number(times));
+  }
+  return ties;
+}
+
+function emptyState() {
+  const marks = {};
+  for (const event of MARK_EVENTS) {
+    marks[event] = { at: null, ties: new Map() };
+  }
+  return {
+    entries: new Map(),
+    marks,
+    wakes: { flood: "", truncated: "" },
+  };
+}
+
+function parseMeta(line, state) {
+  const [tag, name, value, ties] = line.split(",");
+  if (tag === "@mark" && MARK_EVENTS.includes(name)) {
+    const at = Number(value);
+    if (!(Number.isSafeInteger(at) && at > 0)) {
+      throw new Error("state file with an invalid watermark");
+    }
+    state.marks[name] = { at, ties: parseTies(ties ?? "") };
+  } else if (
+    tag === "@wake" &&
+    SYSTEM_WAKES.includes(name) &&
+    Number.isFinite(Date.parse(value ?? ""))
+  ) {
+    state.wakes[name] = value;
+  } else {
+    throw new Error("state file with an unknown line");
+  }
+}
+
 export function parseState(text) {
   const lines = text.split("\n").filter((line) => line.trim() !== "");
+  const state = emptyState();
   if (lines.length === 0) {
-    return new Map();
+    return state;
   }
   if (lines[0] !== STATE_HEADER) {
     throw new Error("state file with an unknown header");
   }
-  return new Map(lines.slice(1).map(parseRow));
+  for (const line of lines.slice(1)) {
+    if (line.startsWith("@")) {
+      parseMeta(line, state);
+    } else {
+      const [fingerprint, entry] = parseRow(line);
+      state.entries.set(fingerprint, entry);
+    }
+  }
+  return state;
 }
 
 export function serializeState(state) {
-  const rows = [...state]
+  const meta = [
+    ...MARK_EVENTS.filter((event) => state.marks[event].at !== null).map(
+      (event) => {
+        const { at, ties } = state.marks[event];
+        const text = [...ties].map(([id, times]) => `${id}~${times}`).join("|");
+        return `@mark,${event},${at},${text}`;
+      }
+    ),
+    ...SYSTEM_WAKES.filter((name) => state.wakes[name] !== "").map(
+      (name) => `@wake,${name},${state.wakes[name]}`
+    ),
+  ];
+  const rows = [...state.entries]
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([fingerprint, entry]) => {
       const buckets = [...entry.buckets]
@@ -163,7 +243,7 @@ export function serializeState(state) {
         buckets,
       ].join(",");
     });
-  return `${[STATE_HEADER, ...rows].join("\n")}\n`;
+  return `${[STATE_HEADER, ...meta, ...rows].join("\n")}\n`;
 }
 
 function emptyEntry(now) {
@@ -178,7 +258,7 @@ function emptyEntry(now) {
 
 function toMs(raw) {
   const ms = typeof raw === "number" ? raw : Date.parse(raw ?? "");
-  return Number.isFinite(ms) ? ms : null;
+  return Number.isFinite(ms) ? Math.trunc(ms) : null;
 }
 
 function sumAfter(buckets, fromMs) {
@@ -191,10 +271,12 @@ function sumAfter(buckets, fromMs) {
   return total;
 }
 
+function wokeOnIso(iso, day) {
+  return iso !== "" && dayOfSaoPaulo(Date.parse(iso)) === day;
+}
+
 function wokeOn(entry, day) {
-  return (
-    entry.lastWake !== "" && dayOfSaoPaulo(Date.parse(entry.lastWake)) === day
-  );
+  return wokeOnIso(entry.lastWake, day);
 }
 
 function releaseFilter(release, prevRelease) {
@@ -202,8 +284,63 @@ function releaseFilter(release, prevRelease) {
     sameRelease(value, release) || sameRelease(value, prevRelease);
 }
 
-function ingest({ allowed, lines, next, now }) {
-  const inDay = (ms) => ms !== null && ms <= now && now - ms <= DAY_MS;
+/** The line as the rules read it, or `null` when it lacks a signature, a time or (for a repeat) a count. */
+function readLine(line) {
+  const { event, fields, timestamp } = line;
+  const ms = toMs(timestamp);
+  if (ms === null || !FINGERPRINT.test(fields.fingerprint ?? "")) {
+    return null;
+  }
+  const repeat = event === "client_error_count";
+  const count = repeat ? fields.count : 1;
+  if (!(Number.isSafeInteger(count) && count >= 1 && count <= 999_999_999)) {
+    return null;
+  }
+  const at = (repeat ? toMs(fields.minute) : null) ?? ms;
+  return {
+    at,
+    count,
+    event,
+    fingerprint: fields.fingerprint,
+    id: `${fields.fingerprint}.${count}.${minuteKey(at)}`,
+    ms,
+    release: fields.release,
+  };
+}
+
+/**
+ * The lines of one event name past its watermark, and the watermark to keep. Lines at the exact instant of the mark
+ * are skipped only as many times as the state saw them (two equal lines at the same millisecond are two lines).
+ * `read` holds no line dated after `now`, so a future date cannot move the mark and mute the real lines that follow.
+ */
+function pastMark(read, mark) {
+  const left = new Map(mark.ties);
+  const unseen = [];
+  for (const line of read) {
+    const spent = left.get(line.id) ?? 0;
+    if (mark.at !== null && line.ms === mark.at && spent > 0) {
+      left.set(line.id, spent - 1);
+    } else if (mark.at === null || line.ms >= mark.at) {
+      unseen.push(line);
+    }
+  }
+  const top = Math.max(mark.at ?? 0, ...read.map((line) => line.ms));
+  if (top === 0) {
+    return { next: mark, unseen };
+  }
+  const ties = top === mark.at ? new Map(mark.ties) : new Map();
+  const here = new Map();
+  for (const line of read.filter((l) => l.ms === top)) {
+    here.set(line.id, (here.get(line.id) ?? 0) + 1);
+  }
+  for (const [id, times] of here) {
+    ties.set(id, Math.max(ties.get(id) ?? 0, times));
+  }
+  return { next: { at: top, ties }, unseen };
+}
+
+function ingest({ allowed, canonical, lines, now, state }) {
+  const inDay = (ms) => now >= ms && now - ms <= DAY_MS;
   const fresh = new Map();
   let otherRelease = 0;
   let unknownRelease = 0;
@@ -213,38 +350,47 @@ function ingest({ allowed, lines, next, now }) {
     buckets.set(key, (buckets.get(key) ?? 0) + count);
     fresh.set(fingerprint, buckets);
   };
-  const valid = (line, event) =>
-    line.event === event && FINGERPRINT.test(line.fields.fingerprint ?? "");
+  const read = lines.map(readLine).filter(Boolean);
+  const dated = read.filter((line) => line.ms <= now);
+  const unseen = {};
+  for (const event of MARK_EVENTS) {
+    const past = pastMark(
+      dated.filter((line) => line.event === event),
+      state.marks[event]
+    );
+    state.marks[event] = past.next;
+    unseen[event] = past.unseen;
+  }
 
-  for (const line of lines.filter((l) => valid(l, "client_error"))) {
-    const { fields, timestamp } = line;
-    const ms = toMs(timestamp);
-    if (!inDay(ms)) {
+  for (const line of unseen.client_error) {
+    if (!inDay(line.ms)) {
       continue;
     }
-    if (!allowed(fields.release)) {
+    if (!allowed(line.release)) {
       otherRelease += 1;
       continue;
     }
-    const entry = next.get(fields.fingerprint) ?? emptyEntry(now);
-    entry.release = fields.release;
-    next.set(fields.fingerprint, entry);
-    add(fields.fingerprint, ms, 1);
+    const entry = state.entries.get(line.fingerprint) ?? emptyEntry(now);
+    entry.release = canonical(line.release);
+    state.entries.set(line.fingerprint, entry);
+    add(line.fingerprint, line.ms, 1);
   }
-  for (const line of lines.filter((l) => valid(l, "client_error_count"))) {
-    const { fields, timestamp } = line;
-    const { count } = fields;
-    const at = toMs(fields.minute) ?? toMs(timestamp);
-    if (!(Number.isSafeInteger(count) && count >= 1 && inDay(at))) {
+  for (const line of unseen.client_error_count) {
+    if (!inDay(line.at)) {
       continue;
     }
-    if (allowed(next.get(fields.fingerprint)?.release)) {
-      add(fields.fingerprint, at, count);
+    if (allowed(state.entries.get(line.fingerprint)?.release)) {
+      add(line.fingerprint, line.at, line.count);
     } else {
       unknownRelease += 1;
     }
   }
-  return { fresh, otherRelease, unknownRelease };
+  return {
+    fresh,
+    linesIgnoredInvalid: lines.length - read.length,
+    otherRelease,
+    unknownRelease,
+  };
 }
 
 function peakOf(buckets, spanMs) {
@@ -271,9 +417,9 @@ function windowsOf(entry, now) {
   };
 }
 
-function candidatesOf({ allowed, counts, next, spikePerHour, today }) {
+function candidatesOf({ allowed, counts, entries, spikePerHour, today }) {
   const candidates = [];
-  for (const [fingerprint, entry] of next) {
+  for (const [fingerprint, entry] of entries) {
     const window = counts.get(fingerprint);
     if (window.day < SILENCE_BELOW || !allowed(entry.release)) {
       continue;
@@ -292,6 +438,29 @@ function candidatesOf({ allowed, counts, next, spikePerHour, today }) {
 }
 
 /**
+ * What wakes, in order: the full window, the flood, then the signatures. A flood replaces the new signatures (they
+ * are held); a full window or a flood that already woke today is not repeated.
+ */
+function queueOf({ candidates, today, truncated, wakes }) {
+  const newOnes = candidates.filter((c) => c.reason === "new");
+  const isFlood = newOnes.length > FLOOD_ABOVE;
+  const system = [];
+  if (truncated && !wokeOnIso(wakes.truncated, today)) {
+    system.push({ reason: "truncated" });
+  }
+  if (isFlood && !wokeOnIso(wakes.flood, today)) {
+    system.push({ count: newOnes.length, reason: "flood" });
+  }
+  return {
+    held: isFlood ? newOnes : [],
+    queue: [
+      ...system,
+      ...(isFlood ? candidates.filter((c) => c.reason !== "new") : candidates),
+    ],
+  };
+}
+
+/**
  * One run of the rules over the lines of the window and the state of the previous runs: the verdict and the state
  * to write. Pure: the clock comes in `now`.
  *
@@ -305,75 +474,103 @@ export function evaluate({
   release,
   spikePerHour = DEFAULT_SPIKE_PER_HOUR,
   state,
+  truncated = false,
 }) {
   const nowIso = new Date(now).toISOString();
-  const next = new Map(
-    [...state].map(([fingerprint, entry]) => [
-      fingerprint,
-      { ...entry, buckets: new Map(entry.buckets) },
-    ])
-  );
+  const next = {
+    entries: new Map(
+      [...state.entries].map(([fingerprint, entry]) => [
+        fingerprint,
+        { ...entry, buckets: new Map(entry.buckets) },
+      ])
+    ),
+    marks: { ...state.marks },
+    wakes: { ...state.wakes },
+  };
   const allowed = releaseFilter(release, prevRelease);
-  const { fresh, otherRelease, unknownRelease } = ingest({
+  const canonical = (value) =>
+    sameRelease(value, release) ? release : prevRelease;
+  const { fresh, linesIgnoredInvalid, otherRelease, unknownRelease } = ingest({
     allowed,
+    canonical,
     lines,
-    next,
     now,
+    state: next,
   });
   for (const [fingerprint, buckets] of fresh) {
-    const entry = next.get(fingerprint);
+    const entry = next.entries.get(fingerprint);
     for (const [key, count] of buckets) {
-      entry.buckets.set(key, Math.max(entry.buckets.get(key) ?? 0, count));
+      entry.buckets.set(key, (entry.buckets.get(key) ?? 0) + count);
     }
   }
 
   const today = dayOfSaoPaulo(now);
   const counts = new Map();
-  let wokeToday = 0;
-  for (const [fingerprint, entry] of next) {
+  let wokeToday = SYSTEM_WAKES.filter((name) =>
+    wokeOnIso(next.wakes[name], today)
+  ).length;
+  for (const [fingerprint, entry] of next.entries) {
     for (const key of entry.buckets.keys()) {
       if (minuteStart(key) + MINUTE_MS <= now - DAY_MS) {
         entry.buckets.delete(key);
       }
     }
     if (entry.buckets.size === 0 && entry.announced === "") {
-      next.delete(fingerprint);
+      next.entries.delete(fingerprint);
       continue;
     }
     wokeToday += wokeOn(entry, today) ? 1 : 0;
     counts.set(fingerprint, windowsOf(entry, now));
   }
   const newSignatures = [...fresh.keys()].filter(
-    (fingerprint) => next.get(fingerprint)?.announced === ""
+    (fingerprint) => next.entries.get(fingerprint)?.announced === ""
   );
 
   const candidates = candidatesOf({
     allowed,
     counts,
-    next,
+    entries: next.entries,
     spikePerHour,
     today,
   });
+  const { held: floodHeld, queue } = queueOf({
+    candidates,
+    today,
+    truncated,
+    wakes: next.wakes,
+  });
   const room = Math.max(0, MAX_WAKES_PER_DAY - wokeToday);
-  const woken = candidates.slice(0, room);
-  for (const { fingerprint } of woken) {
-    const entry = next.get(fingerprint);
+  const woken = queue.slice(0, room);
+  for (const { fingerprint, reason } of woken) {
+    if (fingerprint === undefined) {
+      next.wakes[reason] = nowIso;
+      continue;
+    }
+    const entry = next.entries.get(fingerprint);
     entry.announced = entry.announced || nowIso;
     entry.lastWake = nowIso;
   }
 
-  const describe = ({ fingerprint, reason }) => ({
-    events1h: counts.get(fingerprint).hour,
-    events24h: counts.get(fingerprint).day,
-    fingerprint,
-    peak10m: counts.get(fingerprint).peak,
-    reason,
-  });
+  const describe = (candidate) => {
+    const { fingerprint, reason } = candidate;
+    if (fingerprint === undefined) {
+      return candidate;
+    }
+    return {
+      events1h: counts.get(fingerprint).hour,
+      events24h: counts.get(fingerprint).day,
+      fingerprint,
+      peak10m: counts.get(fingerprint).peak,
+      reason,
+    };
+  };
   return {
     result: {
-      held: candidates.slice(room).map(describe),
+      held: [...floodHeld, ...queue.slice(room)].map(describe),
       ignoredOtherRelease: otherRelease,
       ignoredUnknownRelease: unknownRelease,
+      linesIgnoredInvalid,
+      linesRead: lines.length,
       newAtThreshold: newSignatures.filter(
         (fingerprint) => counts.get(fingerprint).peak >= NEW_MIN_EVENTS
       ).length,
@@ -493,7 +690,7 @@ function readState(path) {
     return parseState(readFileSync(path, "utf8"));
   } catch (error) {
     if (error.code === "ENOENT") {
-      return new Map();
+      return emptyState();
     }
     throw error;
   }
@@ -515,6 +712,11 @@ function readOptions(args, now) {
   const spikePerHour = Number(args["spike-per-hour"] ?? DEFAULT_SPIKE_PER_HOUR);
   if (!(Number.isInteger(spikePerHour) && spikePerHour > 0)) {
     throw new Error("--spike-per-hour invalid");
+  }
+  for (const name of ["release", "prev-release"]) {
+    if (!RELEASE_SHA.test(args[name])) {
+      throw new Error(`--${name} is not a commit hash (7 to 40 hex digits)`);
+    }
   }
   const at = args.now === undefined ? now : Date.parse(args.now);
   if (!Number.isFinite(at)) {
@@ -586,9 +788,22 @@ export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
       release: args.release,
       spikePerHour,
       state,
+      truncated,
     });
   } catch {
     return failure(EXIT_INTERNAL, "evaluation failed");
+  }
+  const { linesIgnoredInvalid, linesRead } = verdict.result;
+  if (linesRead > 0 && linesIgnoredInvalid === linesRead) {
+    return {
+      code: EXIT_API_FAILED,
+      output: {
+        linesIgnoredInvalid,
+        linesRead,
+        reason: "source failed: no line in the expected format",
+        wake: false,
+      },
+    };
   }
   try {
     writeState(args.seen, verdict.state);

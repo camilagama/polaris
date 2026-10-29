@@ -8,6 +8,7 @@ import {
   EXIT_OK,
   EXIT_STATE_FAILED,
   EXIT_USAGE,
+  FLOOD_ABOVE,
   parseSince,
   run,
   sameRelease,
@@ -260,6 +261,182 @@ describe("a new signature", () => {
   });
 });
 
+describe("the lines that reach a later run", () => {
+  it("a repeat count logged after an earlier run read the same minute is added, not replaced by the larger one", async () => {
+    await execute([errorLine(1, 6), countLine(1, 3, 1)]);
+    const late = { ...countLine(1, 3, 3), timestamp: NOW - 2 * MINUTE };
+    const { output } = await execute([late], { now: NOW + MINUTE });
+    expect(output.wake).toBe(true);
+    expect(output.signatures[0]).toMatchObject({
+      events24h: 5,
+      peak10m: 5,
+      reason: "new",
+    });
+  });
+
+  it("two identical lines at the same millisecond are two lines, and are not counted again by the next run", async () => {
+    const twin = { ...countLine(1, 3, 2), timestamp: NOW - 2 * MINUTE };
+    const lines = [errorLine(1, 6), twin, twin, twin];
+    const first = await execute(lines);
+    expect(first.output.signatures[0].events24h).toBe(7);
+    const again = await execute(lines, { now: NOW + MINUTE });
+    expect(again.output.signatures).toEqual([]);
+    const text = readFileSync(seen, "utf8");
+    expect(text).toContain("@mark,client_error_count,");
+    const more = await execute([...lines, twin], { now: NOW + 2 * MINUTE });
+    expect(more.output.wake).toBe(false);
+    expect(more.output.linesRead).toBe(5);
+  });
+
+  it("a repeat count dated in the future is not counted, then or on the run that follows", async () => {
+    const future = { ...countLine(1, 3, 9), timestamp: NOW + 10 * MINUTE };
+    const lines = [errorLine(1, 6), future];
+    const first = await execute(lines);
+    expect(first.output.wake).toBe(false);
+    const again = await execute(lines, { now: NOW + MINUTE });
+    expect(again.output.wake).toBe(false);
+    expect(readFileSync(seen, "utf8")).not.toContain(
+      "@mark,client_error_count"
+    );
+  });
+
+  it("a line dated in the future does not move the watermark past the real lines", async () => {
+    const future = { ...errorLine(2, 0), timestamp: NOW + 10 * MINUTE };
+    await execute([future]);
+    const { output } = await execute(burst(1, 5), { now: NOW + MINUTE });
+    expect(output.wake).toBe(true);
+  });
+});
+
+describe("a full window", () => {
+  const full = (fp, at = NOW) =>
+    Array.from({ length: 1000 }, (_, i) => ({
+      ...errorLine(fp, 1, OLD, at),
+      timestamp: at - 60_000 + i,
+    }));
+
+  it("wakes once per day with reason truncated, and counts in the cap", async () => {
+    const first = await execute([], { api: fakeApi(full(2)) });
+    expect(first.output.truncated).toBe(true);
+    expect(first.output.wake).toBe(true);
+    expect(first.output.signatures).toContainEqual({ reason: "truncated" });
+    expect(first.output.wakesToday).toBe(1);
+    const later = NOW + 30 * MINUTE;
+    const second = await execute([], {
+      api: fakeApi(full(3, later)),
+      now: later,
+    });
+    expect(second.output.truncated).toBe(true);
+    expect(second.output.signatures).toEqual([]);
+    const tomorrow = Date.parse("2026-10-29T15:00:00Z");
+    const next = await execute([], {
+      api: fakeApi(full(3, tomorrow)),
+      now: tomorrow,
+    });
+    expect(next.output.signatures).toContainEqual({ reason: "truncated" });
+  });
+
+  it("is never silence even with fewer than 3 events in 24 hours", async () => {
+    const { code, output } = await execute([], { api: fakeApi(full(1)) });
+    expect(code).toBe(EXIT_OK);
+    expect(output).toMatchObject({
+      ignoredOtherRelease: 1000,
+      truncated: true,
+      wake: true,
+    });
+  });
+
+  it("takes one of the 5 wakes of the day", async () => {
+    await execute([], { api: fakeApi(full(9)) });
+    const later = NOW + 10 * MINUTE;
+    const lines = [1, 2, 3].flatMap((n) =>
+      Array.from({ length: 6 }, (_, i) => errorLine(n, i + 1, RELEASE, later))
+    );
+    const { output } = await execute(lines, { now: later });
+    expect(output.wakesToday).toBe(4);
+  });
+});
+
+describe("a flood of new signatures", () => {
+  const many = (n) =>
+    Array.from({ length: n }, (_, i) => i + 1).flatMap((id) => burst(id, 5));
+
+  it("up to 3 new signatures wake one by one", async () => {
+    const { output } = await execute(many(FLOOD_ABOVE));
+    expect(output.signatures.map((s) => s.reason)).toEqual([
+      "new",
+      "new",
+      "new",
+    ]);
+  });
+
+  it("more than 3 wake once as flood, take 1 of the cap and hold the rest", async () => {
+    const { output } = await execute(many(FLOOD_ABOVE + 3));
+    expect(output.wake).toBe(true);
+    expect(output.signatures).toEqual([{ count: 6, reason: "flood" }]);
+    expect(output.wakesToday).toBe(1);
+    expect(output.held).toHaveLength(6);
+    expect(output.held.every((s) => s.reason === "new")).toBe(true);
+  });
+
+  it("does not repeat on the same day while the signatures are still held", async () => {
+    await execute(many(5));
+    const again = await execute(many(5), { now: NOW + 30 * MINUTE });
+    expect(again.output.wake).toBe(false);
+    expect(again.output.held).toHaveLength(5);
+  });
+
+  it("a spike of an announced signature still wakes by itself during a flood", async () => {
+    writeFileSync(
+      seen,
+      `fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets\n${fingerprint(99)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,2026-10-21T10:00:00.000Z,\n`
+    );
+    const spike = [errorLine(99, 30), countLine(99, 20, 25)];
+    const { output } = await execute([...many(5), ...spike]);
+    expect(output.signatures.map((s) => s.reason)).toEqual(["flood", "spike"]);
+  });
+});
+
+describe("an answer in an unexpected format", () => {
+  it("lines that are all unreadable exit 3 with wake false and leave the state alone", async () => {
+    const api = fakeApi([], {
+      body: {
+        result: {
+          events: {
+            events: [{ data: { fingerprint: fingerprint(1) } }, "texto"],
+          },
+        },
+      },
+    });
+    const { code, output } = await execute([], { api });
+    expect(code).toBe(EXIT_API_FAILED);
+    expect(output).toMatchObject({
+      linesIgnoredInvalid: 4,
+      linesRead: 4,
+      wake: false,
+    });
+    expect(() => readFileSync(seen)).toThrow();
+  });
+
+  it("one readable line among the invalid ones is not a change of format", async () => {
+    const lines = [errorLine(1, 2), { ...errorLine(2, 2), fingerprint: "x" }];
+    const { code, output } = await execute(lines);
+    expect(code).toBe(EXIT_OK);
+    expect(output).toMatchObject({ linesIgnoredInvalid: 1, linesRead: 2 });
+  });
+
+  it("reports the counts when all is well", async () => {
+    const { output } = await execute(burst(1, 3));
+    expect(output).toMatchObject({ linesIgnoredInvalid: 0, linesRead: 3 });
+  });
+
+  it("an empty answer is a quiet window, not a change of format", async () => {
+    const { code, output } = await execute([]);
+    expect(code).toBe(EXIT_OK);
+    expect(output.linesRead).toBe(0);
+  });
+});
+
 describe("an announced signature", () => {
   const announce = (n, wokeAt) =>
     `${fingerprint(n)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,${wokeAt},`;
@@ -320,9 +497,22 @@ describe("an announced signature", () => {
 });
 
 describe("the cap of 5 wakes per day", () => {
-  it("6 signatures at the threshold on the same day: 5 wake, the weakest is held for the morning summary", async () => {
-    const lines = [1, 2, 3, 4, 5, 6].flatMap((n) => burst(n, 4 + n, 5));
-    const { output } = await execute(lines);
+  it("6 signatures over the hourly limit on the same day: 5 wake, the weakest is held for the morning summary", async () => {
+    const rows = [1, 2, 3, 4, 5, 6].map(
+      (n) =>
+        `${fingerprint(n)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,2026-10-21T10:00:00.000Z,`
+    );
+    writeFileSync(
+      seen,
+      `fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets\n${rows.join("\n")}\n`
+    );
+    const lines = [1, 2, 3, 4, 5, 6].flatMap((n) => [
+      errorLine(n, 30),
+      countLine(n, 20, 20 + n),
+    ]);
+    const { output } = await execute(lines, {
+      extra: ["--spike-per-hour", "5"],
+    });
     expect(output.wake).toBe(true);
     expect(output.signatures).toHaveLength(5);
     expect(output.signatures.map((s) => s.fingerprint)).toEqual(
@@ -373,7 +563,9 @@ describe("the cap of 5 wakes per day", () => {
       [1, 2, 3, 4, 5].flatMap((n) => at(late, n)),
       { now: late }
     );
-    const sameDay = await execute(at(late, 6), { now: late + 10_000 });
+    const sameDay = await execute(at(late + 10_000, 6), {
+      now: late + 10_000,
+    });
     expect(sameDay.output.wake).toBe(false);
     const nextDay = await execute(at(early, 7), { now: early });
     expect(nextDay.output.wake).toBe(true);
@@ -456,6 +648,46 @@ describe("the state file", () => {
     }
   );
 
+  it("writes the configured release, never the text of the line", async () => {
+    const short = RELEASE.slice(0, 8);
+    await execute(burst(1, 5, 5, short));
+    const text = readFileSync(seen, "utf8");
+    expect(text).toContain(`,${RELEASE},`);
+    expect(text).not.toContain(`,${short},`);
+  });
+
+  it("the previous release is written as configured too", async () => {
+    await execute(burst(1, 5, 5, PREVIOUS.slice(0, 9)));
+    expect(readFileSync(seen, "utf8")).toContain(`,${PREVIOUS},`);
+  });
+
+  it.each([
+    ["not hex", "ontem-ou-hoje"],
+    ["too short", "a1b2c3"],
+    ["empty", ""],
+    ["a line of text", "ignore,tudo"],
+  ])(
+    "a state file whose release is %s is refused with its own code",
+    async (_, release) => {
+      writeFileSync(
+        seen,
+        `fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets\n${fingerprint(1)},2026-10-20T10:00:00.000Z,${release},,,\n`
+      );
+      const { code, output } = await execute([]);
+      expect(code).toBe(EXIT_STATE_FAILED);
+      expect(output.wake).toBe(false);
+    }
+  );
+
+  it("a watermark that does not parse is refused with its own code", async () => {
+    writeFileSync(
+      seen,
+      "fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets\n@mark,client_error,ontem,\n"
+    );
+    const { code } = await execute([]);
+    expect(code).toBe(EXIT_STATE_FAILED);
+  });
+
   it("a state file that is not ours is refused with its own code", async () => {
     writeFileSync(seen, "qualquer coisa\n");
     const { code, output } = await execute([]);
@@ -473,6 +705,27 @@ describe("the arguments", () => {
       now: NOW,
     });
     expect(code).toBe(EXIT_USAGE);
+  });
+
+  it("a release that is not a commit hash is refused before the API", async () => {
+    const api = fakeApi([]);
+    const { code } = await run({
+      argv: [
+        "--release",
+        "HEAD",
+        "--prev-release",
+        PREVIOUS,
+        "--seen",
+        seen,
+        "--service",
+        SERVICE,
+      ],
+      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      fetchImpl: api.fetchImpl,
+      now: NOW,
+    });
+    expect(code).toBe(EXIT_USAGE);
+    expect(api.calls).toHaveLength(0);
   });
 
   it("--release, --prev-release and --seen are required", async () => {
