@@ -14,14 +14,21 @@ const SLOW_READ_MS = 3000;
  * for the first ~3 s, then the line. A status (the region is there from the start, so the line is announced) with no
  * button: the tries go on by themselves.
  */
-export function SlowReadNote({ className }: { className?: string }) {
+export function SlowReadNote({
+  announce = true,
+  className,
+}: {
+  /** False inside a region that is already a status: the line is announced by it, not twice. */
+  announce?: boolean;
+  className?: string;
+}) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), SLOW_READ_MS);
     return () => clearTimeout(timer);
   }, []);
   return (
-    <span className={className} role="status">
+    <span className={className} role={announce ? "status" : undefined}>
       {slow ? SLOW_READ_TEXT : null}
     </span>
   );
