@@ -22,7 +22,7 @@ describe("lighthouserc.json", () => {
     const found = forbiddenKeysIn(JSON.parse(readFileSync(configUrl, "utf8")));
     expect(
       found,
-      `lighthouserc.json ganhou ${found.join(", ")}. No @lhci/cli 0.15.1 o express (e o body-parser da exceção em docs/runbooks/dependency-audit.md) só atende com collect --staticDistDir, que o config não usa; reveja a frase do runbook antes de usar essas chaves.`
+      `lighthouserc.json ganhou ${found.join(", ")}. No @lhci/cli 0.15.1 o express (e o body-parser fixado por override, ver docs/runbooks/dependency-audit.md) só atende com collect --staticDistDir, que o config não usa; reveja a frase do runbook antes de usar essas chaves.`
     ).toEqual([]);
   });
 
