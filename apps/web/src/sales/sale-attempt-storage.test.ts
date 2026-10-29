@@ -76,3 +76,25 @@ describe("pending sale attempt storage", () => {
     expect(() => writeSaleAttempt(null, organizationId, attempt)).not.toThrow();
   });
 });
+
+describe("the attempt of a cart that came back from the tab's draft", () => {
+  const later = new Date(
+    new Date(attempt.recordedAt).getTime() + SALE_ATTEMPT_MAX_AGE_MS + 60_000
+  );
+
+  it("lasts as long as the draft it was made from", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt);
+    expect(
+      readSaleAttempt(storage, organizationId, later, "2026-10-13T14:50:00.000Z")
+    ).toEqual(attempt);
+  });
+
+  it("an attempt older than the draft belongs to another cart and keeps its own limit", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt);
+    expect(
+      readSaleAttempt(storage, organizationId, later, "2026-10-13T14:56:00.000Z")
+    ).toBeNull();
+  });
+});

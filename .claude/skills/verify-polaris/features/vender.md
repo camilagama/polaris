@@ -10,6 +10,7 @@ A tela Vender (`/sales`) é o formulário "Nova venda": itens buscados no catál
 - `venda-ajuste` "Adicionar ajuste": desconto em percentual ou valor.
 - `venda-pagamento` o método ("Pix", "Dinheiro", "Crédito", "Débito", "Transferência", "Outro") e o perfil de pagamento.
 - `venda-confirmar` "Confirmar venda" mostra a região "Venda confirmada"; o estoque baixa.
+- `venda-em-andamento` a venda montada e não confirmada fica na aba (`sessionStorage`, `polaris.sale.draft.v1:<loja>`): sair de Vender, recarregar ou trocar de build e voltar a devolve, com o `status` "Venda em andamento" e o botão "Limpar venda" sob o título.
 - `venda-sem-produto` loja sem produto: "Cadastre um produto para vender." e o botão "Cadastrar produto".
 
 ## How to get to it (user POV)
@@ -32,6 +33,7 @@ Preconditions:
 - **Desconto.** `getByRole("button", { name: "Adicionar ajuste" })`, depois no `group "Ajuste 1"`: combobox "Tipo de ajuste" → opção "Desconto", combobox "Como informar" → "Percentual (%)", e `getByLabel("Percentual (%)")` (receita de `apps/web/e2e-real/pages/venda.ts`, `fillSale`).
 - **Pagamento.** `getByRole("radiogroup", { name: "Método de pagamento" }).getByRole("radio", { name: "Dinheiro" }).check()`; `getByRole("combobox", { exact: true, name: "Perfil de pagamento" }).click()` e `getByRole("option", { exact: true, name: "Sem perfil de pagamento" }).click()`.
 - **Confirmar.** `getByRole("button", { name: "Confirmar venda" }).click()`. Aparece `getByRole("region", { name: /Venda confirmada|já estava confirmada/ })` com "Subtotal" e "Total devido".
+- **Venda em andamento.** Montada a venda, `getByRole("status").filter({ hasText: "Venda em andamento" })` e `getByRole("button", { exact: true, name: "Limpar venda" })` aparecem sob o título. Vá ao Início pelo menu e volte por "Vender" ou "Nova venda": os mesmos itens. "Limpar venda" com itens abre `getByRole("dialog", { name: "Limpar venda?" })` com "Isso tira os N itens da venda." (um item: "Isso tira o item da venda."); sem item escolhido, limpa sem perguntar. Ao voltar, a linha cuja variante saiu do catálogo (ou cujo produto foi arquivado) sai com o aviso "N itens saíram do catálogo e foram tirados da venda."; um rascunho de outro dia da loja some com "A venda em andamento era de outro dia e foi descartada.".
 - **Efeito colateral.** O Estoque mostra o saldo da Caneca 2 a menos, e o Histórico, uma venda a mais; ou `$V sql "SELECT count(*) FROM sales s JOIN organizations o ON o.id = s.organization_id WHERE o.name LIKE 'qa-verify-vendas%'"`.
 - **Prova.** `evidence.shot("venda-preenchida", …)` antes de confirmar e `evidence.shot("venda-confirmada", …)` depois.
 

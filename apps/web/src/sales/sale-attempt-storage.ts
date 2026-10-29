@@ -35,10 +35,16 @@ function isAttempt(value: unknown): value is SaleAttempt {
   );
 }
 
+/**
+ * `draftStartedAt` is set when the cart of this attempt came back from the tab's draft (`sale-draft-storage.ts`):
+ * the attempt then lasts as long as that draft, since retyping is not what happens, the same cart is still there.
+ * Only an attempt made after the draft started counts; an older one belongs to another cart.
+ */
 export function readSaleAttempt(
   storage: PreferenceStorage | null,
   organizationId: string,
-  now: Date
+  now: Date,
+  draftStartedAt: string | null = null
 ): SaleAttempt | null {
   try {
     const text = storage?.getItem(attemptKey(organizationId));
@@ -49,8 +55,16 @@ export function readSaleAttempt(
     if (!isAttempt(parsed)) {
       return null;
     }
-    const age = now.getTime() - new Date(parsed.recordedAt).getTime();
-    if (!Number.isFinite(age) || age < 0 || age > SALE_ATTEMPT_MAX_AGE_MS) {
+    const recordedAt = new Date(parsed.recordedAt).getTime();
+    const age = now.getTime() - recordedAt;
+    const keptByDraft =
+      draftStartedAt !== null &&
+      recordedAt >= new Date(draftStartedAt).getTime();
+    if (
+      !Number.isFinite(age) ||
+      age < 0 ||
+      (age > SALE_ATTEMPT_MAX_AGE_MS && !keptByDraft)
+    ) {
       storage?.removeItem(attemptKey(organizationId));
       return null;
     }
@@ -77,7 +91,7 @@ export function writeSaleAttempt(
   }
 }
 
-export function sessionStorageOrNull(): PreferenceStorage | null {
+export function sessionStorageOrNull(): Storage | null {
   try {
     return window.sessionStorage;
   } catch {
