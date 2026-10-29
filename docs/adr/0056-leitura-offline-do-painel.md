@@ -58,6 +58,10 @@ Registro datado; a emenda (ii) continua valendo. Pedida pelo desenho do `report.
 - **Com o runtime offline desligado** (a produção hoje), nada vai ao disco: a série e o dia da leitura ficam só na memória da página (`dailySalesMemory`), apagados nas mesmas purgas e perdidos ao sair da página. Voltar ao Início depois de uma venda, voltar à aba e a rede voltar não leem de novo; recarregar a página ou abrir outra aba lê uma vez. Duas leituras que começam juntas (duas abas abertas ao mesmo tempo) podem chamar as duas: o cache é de conferir e depois ler, sem trava.
 - **O cache só é servido depois de uma leitura nova dos números do mês** (`report.periodSummary`) na mesma carga, que pede a mesma capability (`report:read`) do `dailySales`: quem perdeu o acesso recebe a recusa nos números, e a recusa apaga a série (disco e memória) antes de qualquer mapa. Se o `dailySales` passar a pedir outra capability, o cache precisa perguntar por ela.
 
+## Emenda (28/10/2026): a série e o ranking saem do PostgreSQL
+
+Registro datado; a cópia, a série, o ranking e o formato da resposta não mudam. Desde a emenda de 28/10 do [ADR 0054](0054-painel-de-resultado-e-indicador-de-qualidade.md), o servidor calcula o resumo inteiro, com a série diária e os mais vendidos, numa única consulta SQL que reproduz as regras do motor (ADR 0053), em vez de ler os fatos e rodar o motor venda a venda no Worker. O gate `period-summary-sql` prova que o resultado é igual ao do motor em todos os campos, e o motivo do ranking morar no resumo (os itens são lidos uma vez só) continua valendo.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.
