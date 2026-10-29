@@ -165,6 +165,9 @@ async function useEveryControl(page: Page) {
   const name = page.getByLabel("Nome do produto");
   await expect(name).toHaveValue("Camiseta do teste");
   await expect(name).toBeFocused();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Produto · atualizado em 14 de out. de 2026"
+  );
   const category = page.getByRole("combobox", {
     exact: true,
     name: "Categoria",
