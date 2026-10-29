@@ -38,22 +38,28 @@ export function VariantSection({
 }
 
 interface VariantFieldRowProps {
+  /** The value cannot be saved as it is: the button stays reachable, off, and reads the message of the field. */
+  blocked?: boolean | undefined;
   buttonLabel: string;
   children: ReactNode;
   disabled: boolean;
   /** The message of the field and the id its `aria-describedby` points to; under the whole row, so the button keeps its line. */
-  error?: { id: string; text: string } | undefined;
+  error?:
+    | { id: string; live?: "assertive" | "polite" | undefined; text: string }
+    | undefined;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
 /** One variant: the field (with its label) and the button that saves it. */
 export function VariantFieldRow({
+  blocked,
   buttonLabel,
   children,
   disabled,
   error,
   onSubmit,
 }: VariantFieldRowProps) {
+  const off = blocked === true && error !== undefined;
   return (
     <form
       className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2"
@@ -61,11 +67,17 @@ export function VariantFieldRow({
       onSubmit={onSubmit}
     >
       {children}
-      <Button disabled={disabled} type="submit" variant="outline">
+      <Button
+        aria-describedby={off ? error.id : undefined}
+        aria-disabled={off || undefined}
+        disabled={disabled}
+        type="submit"
+        variant="outline"
+      >
         {buttonLabel}
       </Button>
       {error ? (
-        <FieldError className="col-span-2" id={error.id}>
+        <FieldError className="col-span-2" id={error.id} live={error.live}>
           {error.text}
         </FieldError>
       ) : null}

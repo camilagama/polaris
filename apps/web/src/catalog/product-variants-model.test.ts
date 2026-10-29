@@ -13,6 +13,7 @@ import {
   parseOptionValues,
   productOptionValues,
   selectedOptionNames,
+  skuLengthError,
   validateVariantDrafts,
   variantErrorMessage,
   variantLabel,
@@ -39,22 +40,90 @@ describe("valores das opções, um por linha", () => {
   });
 
   it("pede ao menos um valor", () => {
-    expect(optionValuesError([])).toBe(
+    expect(optionValuesError("")).toBe(
       "Informe ao menos um valor, um por linha."
     );
   });
 
   it("recusa repetidos sem diferenciar maiúsculas, e aceita valores distintos", () => {
-    expect(optionValuesError(["Azul", "azul"])).toBe(
+    expect(optionValuesError("Azul\nazul")).toBe(
       "Remova valores repetidos nesta opção."
     );
-    expect(optionValuesError(["Azul", "Preta"])).toBeNull();
+    expect(optionValuesError("Azul\nPreta")).toBeNull();
+  });
+
+  it("aceita 80 caracteres por valor, contados como o domínio (um emoji é um), e diz quantos tem o mais longo", () => {
+    const emoji = "\u{1F600}";
+    expect(
+      optionValuesError(`${"a".repeat(80)}\n${emoji.repeat(80)}`)
+    ).toBeNull();
+    expect(optionValuesError(`P\n${"a".repeat(91)}`)).toBe(
+      "Use até 80 caracteres por valor. A linha 2 tem 91."
+    );
+    expect(optionValuesError(emoji.repeat(81))).toBe(
+      "Use até 80 caracteres por valor. A linha 1 tem 81."
+    );
+  });
+
+  it("diz o número da linha como a pessoa vê, contando linhas em branco e quebras do Windows", () => {
+    expect(optionValuesError(`Azul\r\n\r\n${"a".repeat(99)}`)).toBe(
+      "Use até 80 caracteres por valor. A linha 3 tem 99."
+    );
+  });
+
+  it("com várias linhas longas, lista quais passam do limite; acima de três, as três primeiras e quantas mais", () => {
+    const long = "a".repeat(81);
+    const lines = (longAt: number[]) =>
+      Array.from({ length: 9 }, (_, index) =>
+        longAt.includes(index + 1) ? long : `v${index}`
+      ).join("\n");
+    expect(optionValuesError(lines([2, 5]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 2 e 5 passam de 80."
+    );
+    expect(optionValuesError(lines([2, 5, 7]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 2, 5 e 7 passam de 80."
+    );
+    expect(optionValuesError(lines([1, 2, 5, 7]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 5 e mais 1 passam de 80."
+    );
+    expect(optionValuesError(lines([1, 2, 3, 4, 5, 6]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 3 e mais 3 passam de 80."
+    );
+  });
+
+  it("um valor longo desliga o salvar e diz em qual opção, sem tirar o que foi digitado", () => {
+    const lines = { color: `Azul\n${"a".repeat(81)}`, model: "", size: "P" };
+    const result = validateVariantDrafts(
+      ["color", "size"],
+      productOptionValues(lines),
+      [{ values: { color: "Azul", size: "P" } }]
+    );
+    expect(result.canSubmit).toBe(false);
+    expect(result.tooLongOptions).toEqual(["color"]);
+    expect(productOptionValues(lines).color).toEqual(["Azul", "a".repeat(81)]);
   });
 
   it("lê as três opções de uma vez", () => {
     expect(
       productOptionValues({ color: "Azul\nPreta", model: "", size: "P" })
     ).toEqual({ color: ["Azul", "Preta"], model: [], size: ["P"] });
+  });
+});
+
+describe("tamanho do SKU", () => {
+  it("aceita 64 caracteres depois de aparar e diz a contagem de agora acima disso", () => {
+    expect(skuLengthError(` ${"A".repeat(64)} `)).toBeNull();
+    expect(skuLengthError("A".repeat(71))).toBe(
+      "Use até 64 caracteres. Agora são 71."
+    );
+  });
+
+  it("conta caracteres como o domínio: 64 emojis cabem, 65 não", () => {
+    const emoji = "\u{1F600}";
+    expect(skuLengthError(emoji.repeat(64))).toBeNull();
+    expect(skuLengthError(emoji.repeat(65))).toBe(
+      "Use até 64 caracteres. Agora são 65."
+    );
   });
 });
 
