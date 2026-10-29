@@ -6,9 +6,11 @@ import { pathToFileURL } from "node:url";
  * cron every 30 minutes over a window of 35.
  *
  * The route that writes those lines is public, so whoever controls the body controls the signature: "a new signature
- * wakes" without a limit would be "an attacker wakes". The rules below are that limit:
- * - only the served release and the previous one count (a release is whatever the client said);
- * - a signature never announced wakes with `NEW_MIN_EVENTS` events in `NEW_WINDOW_MINUTES` minutes;
+ * wakes" without a limit would be "an attacker wakes". The rules below are that limit, and what is left of it is
+ * the cap of wakes per day (the served release is in the public bundle, so the release only drops old builds):
+ * - only the served release and the previous one count;
+ * - a signature never announced wakes when any `NEW_WINDOW_MINUTES` minutes hold `NEW_MIN_EVENTS` events (the
+ *   cron is every 30 minutes, so a burst that ended 20 minutes ago must still wake);
  * - an announced one wakes when it passes `--spike-per-hour` events in the last hour, once per day;
  * - at most `MAX_WAKES_PER_DAY` wakes per day; the rest is held for the morning summary;
  * - fewer than `SILENCE_BELOW` events in 24 hours is silence.
@@ -20,14 +22,18 @@ import { pathToFileURL } from "node:url";
  * and numbers only, nothing the client wrote. A failure of the API exits with `EXIT_API_FAILED` and `wake: false`: a
  * broken script is not an alert.
  *
- * Usage: node scripts/client-error-sentinel.mjs --release <sha> --prev-release <sha> --seen <csv> [--since 35m]
- *   [--spike-per-hour 20] [--service <worker>] [--now <iso>]
+ * `--service` is required: staging and production can serve the same SHA, and each one must wake only for its own
+ * Worker.
+ *
+ * Usage: node scripts/client-error-sentinel.mjs --release <sha> --prev-release <sha> --seen <csv> --service <worker>
+ *   [--since 35m] [--spike-per-hour 20] [--now <iso>]
  */
 
 export const EXIT_OK = 0;
 export const EXIT_USAGE = 2;
 export const EXIT_API_FAILED = 3;
 export const EXIT_STATE_FAILED = 4;
+export const EXIT_INTERNAL = 5;
 
 export const NEW_MIN_EVENTS = 5;
 export const NEW_WINDOW_MINUTES = 10;
@@ -46,6 +52,7 @@ const MIN_RELEASE_PREFIX = 7;
 const FINGERPRINT = /^[0-9a-f]{16}$/;
 const SINCE = /^(\d{1,4})([smh])$/;
 const OPTION_PREFIX = /^--/;
+const MINUTE_KEY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const STATE_HEADER =
   "fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets";
 
@@ -88,35 +95,55 @@ export function sameRelease(a, b) {
   return short.length >= MIN_RELEASE_PREFIX && long.startsWith(short);
 }
 
+function parseBuckets(text) {
+  const map = new Map();
+  for (const pair of text.split("|").filter(Boolean)) {
+    const [key, count] = pair.split("~");
+    const valid =
+      MINUTE_KEY.test(key) &&
+      Number.isFinite(minuteStart(key)) &&
+      Number.isSafeInteger(Number(count)) &&
+      Number(count) >= 1;
+    if (!valid) {
+      throw new Error("state file with an invalid bucket");
+    }
+    map.set(key, Number(count));
+  }
+  return map;
+}
+
+function parseRow(line) {
+  const [fingerprint, firstSeen, release, announced, lastWake, buckets] =
+    line.split(",");
+  if (!FINGERPRINT.test(fingerprint ?? "")) {
+    throw new Error("state file with an invalid fingerprint");
+  }
+  for (const date of [firstSeen, announced, lastWake]) {
+    if (date && !Number.isFinite(Date.parse(date))) {
+      throw new Error("state file with an invalid date");
+    }
+  }
+  return [
+    fingerprint,
+    {
+      announced: announced ?? "",
+      buckets: parseBuckets(buckets ?? ""),
+      firstSeen: firstSeen ?? "",
+      lastWake: lastWake ?? "",
+      release: release ?? "",
+    },
+  ];
+}
+
 export function parseState(text) {
-  const state = new Map();
   const lines = text.split("\n").filter((line) => line.trim() !== "");
   if (lines.length === 0) {
-    return state;
+    return new Map();
   }
   if (lines[0] !== STATE_HEADER) {
     throw new Error("state file with an unknown header");
   }
-  for (const line of lines.slice(1)) {
-    const [fingerprint, firstSeen, release, announced, lastWake, buckets] =
-      line.split(",");
-    if (!FINGERPRINT.test(fingerprint ?? "")) {
-      throw new Error("state file with an invalid fingerprint");
-    }
-    const map = new Map();
-    for (const pair of (buckets ?? "").split("|").filter(Boolean)) {
-      const [key, count] = pair.split("~");
-      map.set(key, Number(count));
-    }
-    state.set(fingerprint, {
-      announced: announced ?? "",
-      buckets: map,
-      firstSeen: firstSeen ?? "",
-      lastWake: lastWake ?? "",
-      release: release ?? "",
-    });
-  }
-  return state;
+  return new Map(lines.slice(1).map(parseRow));
 }
 
 export function serializeState(state) {
@@ -170,12 +197,16 @@ function wokeOn(entry, day) {
   );
 }
 
-function ingest({ lines, next, now, prevRelease, release }) {
-  const allowed = (value) =>
+function releaseFilter(release, prevRelease) {
+  return (value) =>
     sameRelease(value, release) || sameRelease(value, prevRelease);
+}
+
+function ingest({ allowed, lines, next, now }) {
   const inDay = (ms) => ms !== null && ms <= now && now - ms <= DAY_MS;
   const fresh = new Map();
-  let ignored = 0;
+  let otherRelease = 0;
+  let unknownRelease = 0;
   const add = (fingerprint, ms, count) => {
     const key = minuteKey(ms);
     const buckets = fresh.get(fingerprint) ?? new Map();
@@ -192,7 +223,7 @@ function ingest({ lines, next, now, prevRelease, release }) {
       continue;
     }
     if (!allowed(fields.release)) {
-      ignored += 1;
+      otherRelease += 1;
       continue;
     }
     const entry = next.get(fields.fingerprint) ?? emptyEntry(now);
@@ -210,30 +241,46 @@ function ingest({ lines, next, now, prevRelease, release }) {
     if (allowed(next.get(fields.fingerprint)?.release)) {
       add(fields.fingerprint, at, count);
     } else {
-      ignored += 1;
+      unknownRelease += 1;
     }
   }
-  return { fresh, ignored };
+  return { fresh, otherRelease, unknownRelease };
+}
+
+function peakOf(buckets, spanMs) {
+  const starts = [...buckets.keys()].map(minuteStart);
+  let peak = 0;
+  for (const from of starts) {
+    let total = 0;
+    for (const [key, count] of buckets) {
+      const at = minuteStart(key);
+      if (at >= from && at < from + spanMs) {
+        total += count;
+      }
+    }
+    peak = Math.max(peak, total);
+  }
+  return peak;
 }
 
 function windowsOf(entry, now) {
   return {
     day: sumAfter(entry.buckets, now - DAY_MS),
     hour: sumAfter(entry.buckets, now - HOUR_MS),
-    recent: sumAfter(entry.buckets, now - NEW_WINDOW_MINUTES * MINUTE_MS),
+    peak: peakOf(entry.buckets, NEW_WINDOW_MINUTES * MINUTE_MS),
   };
 }
 
-function candidatesOf({ counts, next, spikePerHour, today }) {
+function candidatesOf({ allowed, counts, next, spikePerHour, today }) {
   const candidates = [];
   for (const [fingerprint, entry] of next) {
     const window = counts.get(fingerprint);
-    if (window.day < SILENCE_BELOW) {
+    if (window.day < SILENCE_BELOW || !allowed(entry.release)) {
       continue;
     }
     if (entry.announced === "") {
-      if (window.recent >= NEW_MIN_EVENTS) {
-        candidates.push({ fingerprint, reason: "new", weight: window.recent });
+      if (window.peak >= NEW_MIN_EVENTS) {
+        candidates.push({ fingerprint, reason: "new", weight: window.peak });
       }
     } else if (window.hour > spikePerHour && !wokeOn(entry, today)) {
       candidates.push({ fingerprint, reason: "spike", weight: window.hour });
@@ -266,7 +313,13 @@ export function evaluate({
       { ...entry, buckets: new Map(entry.buckets) },
     ])
   );
-  const { fresh, ignored } = ingest({ lines, next, now, prevRelease, release });
+  const allowed = releaseFilter(release, prevRelease);
+  const { fresh, otherRelease, unknownRelease } = ingest({
+    allowed,
+    lines,
+    next,
+    now,
+  });
   for (const [fingerprint, buckets] of fresh) {
     const entry = next.get(fingerprint);
     for (const [key, count] of buckets) {
@@ -294,7 +347,13 @@ export function evaluate({
     (fingerprint) => next.get(fingerprint)?.announced === ""
   );
 
-  const candidates = candidatesOf({ counts, next, spikePerHour, today });
+  const candidates = candidatesOf({
+    allowed,
+    counts,
+    next,
+    spikePerHour,
+    today,
+  });
   const room = Math.max(0, MAX_WAKES_PER_DAY - wokeToday);
   const woken = candidates.slice(0, room);
   for (const { fingerprint } of woken) {
@@ -305,17 +364,18 @@ export function evaluate({
 
   const describe = ({ fingerprint, reason }) => ({
     events1h: counts.get(fingerprint).hour,
-    events10m: counts.get(fingerprint).recent,
     events24h: counts.get(fingerprint).day,
     fingerprint,
+    peak10m: counts.get(fingerprint).peak,
     reason,
   });
   return {
     result: {
       held: candidates.slice(room).map(describe),
-      ignoredOtherRelease: ignored,
+      ignoredOtherRelease: otherRelease,
+      ignoredUnknownRelease: unknownRelease,
       newAtThreshold: newSignatures.filter(
-        (fingerprint) => counts.get(fingerprint).recent >= NEW_MIN_EVENTS
+        (fingerprint) => counts.get(fingerprint).peak >= NEW_MIN_EVENTS
       ).length,
       newSignatures: newSignatures.length,
       signatures: woken.map(describe),
@@ -420,7 +480,7 @@ export function parseArgs(argv) {
     }
     args[name] = argv[i + 1];
   }
-  for (const required of ["release", "prev-release", "seen"]) {
+  for (const required of ["release", "prev-release", "seen", "service"]) {
     if (!args[required]) {
       throw new Error(`--${required} is required`);
     }
@@ -440,7 +500,7 @@ function readState(path) {
 }
 
 function writeState(path, state) {
-  const temp = `${path}.tmp`;
+  const temp = `${path}.${process.pid}.tmp`;
   writeFileSync(temp, serializeState(state));
   renameSync(temp, path);
 }
@@ -449,6 +509,19 @@ const failure = (code, reason) => ({
   code,
   output: { reason, wake: false },
 });
+
+function readOptions(args, now) {
+  const sinceMs = parseSince(args.since ?? DEFAULT_SINCE);
+  const spikePerHour = Number(args["spike-per-hour"] ?? DEFAULT_SPIKE_PER_HOUR);
+  if (!(Number.isInteger(spikePerHour) && spikePerHour > 0)) {
+    throw new Error("--spike-per-hour invalid");
+  }
+  const at = args.now === undefined ? now : Date.parse(args.now);
+  if (!Number.isFinite(at)) {
+    throw new Error("--now invalid");
+  }
+  return { at, sinceMs, spikePerHour };
+}
 
 /** The whole run; returns the JSON to print and the exit code. Does not touch the state file when it fails. */
 export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
@@ -466,26 +539,13 @@ export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
       "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required"
     );
   }
-  let sinceMs;
-  let spikePerHour = DEFAULT_SPIKE_PER_HOUR;
-  let at = now;
+  let options;
   try {
-    sinceMs = parseSince(args.since ?? DEFAULT_SINCE);
-    if (args["spike-per-hour"] !== undefined) {
-      spikePerHour = Number(args["spike-per-hour"]);
-      if (!(Number.isInteger(spikePerHour) && spikePerHour > 0)) {
-        throw new Error("--spike-per-hour invalid");
-      }
-    }
-    if (args.now !== undefined) {
-      at = Date.parse(args.now);
-      if (!Number.isFinite(at)) {
-        throw new Error("--now invalid");
-      }
-    }
+    options = readOptions(args, now);
   } catch (error) {
     return failure(EXIT_USAGE, error.message);
   }
+  const { at, sinceMs, spikePerHour } = options;
 
   let state;
   try {
@@ -517,20 +577,25 @@ export async function run({ argv, env, fetchImpl = fetch, now = Date.now() }) {
     }
   }
 
-  const { result, state: next } = evaluate({
-    lines,
-    now: at,
-    prevRelease: args["prev-release"],
-    release: args.release,
-    spikePerHour,
-    state,
-  });
+  let verdict;
   try {
-    writeState(args.seen, next);
+    verdict = evaluate({
+      lines,
+      now: at,
+      prevRelease: args["prev-release"],
+      release: args.release,
+      spikePerHour,
+      state,
+    });
+  } catch {
+    return failure(EXIT_INTERNAL, "evaluation failed");
+  }
+  try {
+    writeState(args.seen, verdict.state);
   } catch {
     return failure(EXIT_STATE_FAILED, "state file not written");
   }
-  return { code: EXIT_OK, output: { ...result, truncated } };
+  return { code: EXIT_OK, output: { ...verdict.result, truncated } };
 }
 
 async function main() {

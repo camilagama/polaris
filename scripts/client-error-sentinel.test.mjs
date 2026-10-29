@@ -6,6 +6,7 @@ import {
   dayOfSaoPaulo,
   EXIT_API_FAILED,
   EXIT_OK,
+  EXIT_STATE_FAILED,
   EXIT_USAGE,
   parseSince,
   run,
@@ -15,6 +16,7 @@ import {
 const NOW = Date.parse("2026-10-28T15:00:00Z");
 const RELEASE = "a1b2c3d4e5f6";
 const PREVIOUS = "0f9e8d7c6b5a";
+const SERVICE = "polaris-web-staging";
 const OLD = "deadbeef0000";
 const TOKEN = "token-de-teste-que-nao-pode-aparecer";
 const MINUTE = 60_000;
@@ -82,6 +84,8 @@ const execute = (lines, options = {}) => {
       RELEASE,
       "--prev-release",
       PREVIOUS,
+      "--service",
+      SERVICE,
       "--seen",
       seen,
       ...extra,
@@ -112,6 +116,17 @@ describe("the query", () => {
     expect(query.timeframe).toEqual({ from: NOW - 35 * MINUTE, to: NOW });
     expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
     expect(JSON.stringify(output)).not.toContain(TOKEN);
+  });
+
+  it("filters by the Worker of --service", async () => {
+    const api = fakeApi([]);
+    await execute([], { api });
+    expect(api.calls[0].query.parameters.filters).toContainEqual({
+      key: "$metadata.service",
+      operation: "eq",
+      type: "string",
+      value: SERVICE,
+    });
   });
 
   it("uses the window of --since", async () => {
@@ -164,7 +179,7 @@ describe("no one to wake", () => {
 
   it("repeat counts of a signature whose release is unknown are ignored", async () => {
     const { output } = await execute([countLine(1, 3, 50)]);
-    expect(output).toMatchObject({ ignoredOtherRelease: 1, wake: false });
+    expect(output).toMatchObject({ ignoredUnknownRelease: 1, wake: false });
   });
 
   it("a line whose fingerprint is not 16 hex digits is discarded, so no free text reaches the output", async () => {
@@ -187,13 +202,25 @@ describe("a new signature", () => {
     expect(output.signatures).toEqual([
       {
         events1h: 5,
-        events10m: 5,
         events24h: 5,
         fingerprint: fingerprint(1),
+        peak10m: 5,
         reason: "new",
       },
     ]);
     expect(output).toMatchObject({ newAtThreshold: 1, newSignatures: 1 });
+  });
+
+  it("wakes for a burst that ended 20 minutes before the run (the cron is every 30 minutes)", async () => {
+    const lines = [24, 23, 22, 21, 20].map((minutesAgo) =>
+      errorLine(1, minutesAgo)
+    );
+    const { output } = await execute(lines);
+    expect(output.wake).toBe(true);
+    expect(output.signatures[0]).toMatchObject({
+      events1h: 5,
+      peak10m: 5,
+    });
   });
 
   it("5 events spread over 30 minutes is not 5 in 10 minutes", async () => {
@@ -229,7 +256,7 @@ describe("a new signature", () => {
       { now: next }
     );
     expect(output.wake).toBe(true);
-    expect(output.signatures[0].events10m).toBe(5);
+    expect(output.signatures[0].peak10m).toBe(5);
   });
 });
 
@@ -271,6 +298,15 @@ describe("an announced signature", () => {
     );
     const { output } = await execute([errorLine(1, 40), countLine(1, 20, 30)]);
     expect(output.wake).toBe(true);
+  });
+
+  it("does not wake for a signature whose release is no longer the served or the previous one", async () => {
+    writeFileSync(
+      seen,
+      `${header}\n${fingerprint(1)},2026-10-20T10:00:00.000Z,${OLD},2026-10-20T10:00:00.000Z,2026-10-21T10:00:00.000Z,2026-10-28T14:30~30\n`
+    );
+    const { output } = await execute([]);
+    expect(output.wake).toBe(false);
   });
 
   it("exactly N events in the hour does not wake: it is more than N", async () => {
@@ -369,7 +405,16 @@ describe("the API fails", () => {
 
   it("a request that never gets an answer is a failure", async () => {
     const { code, output } = await run({
-      argv: ["--release", RELEASE, "--prev-release", PREVIOUS, "--seen", seen],
+      argv: [
+        "--release",
+        RELEASE,
+        "--prev-release",
+        PREVIOUS,
+        "--seen",
+        seen,
+        "--service",
+        SERVICE,
+      ],
       env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
       fetchImpl: () => Promise.reject(new Error(`falhou com ${TOKEN}`)),
       now: NOW,
@@ -391,6 +436,26 @@ describe("the state file", () => {
     expect(text).toContain(fingerprint(1));
   });
 
+  it.each([
+    ["a date", "x,not-a-date,a1b2c3d4e5f6,,,"],
+    [
+      "a bucket count",
+      "x,2026-10-20T10:00:00.000Z,a1b2c3d4e5f6,,,2026-10-28T14:50~abc",
+    ],
+    ["a bucket minute", "x,2026-10-20T10:00:00.000Z,a1b2c3d4e5f6,,,ontem~3"],
+  ])(
+    "a state file with %s that does not parse is refused with its own code, not a crash",
+    async (_, row) => {
+      writeFileSync(
+        seen,
+        `fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets\n${row.replace("x", fingerprint(1))}\n`
+      );
+      const { code, output } = await execute([]);
+      expect(code).toBe(EXIT_STATE_FAILED);
+      expect(output.wake).toBe(false);
+    }
+  );
+
   it("a state file that is not ours is refused with its own code", async () => {
     writeFileSync(seen, "qualquer coisa\n");
     const { code, output } = await execute([]);
@@ -400,6 +465,16 @@ describe("the state file", () => {
 });
 
 describe("the arguments", () => {
+  it("--service is required", async () => {
+    const { code } = await run({
+      argv: ["--release", RELEASE, "--prev-release", PREVIOUS, "--seen", seen],
+      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      fetchImpl: fakeApi([]).fetchImpl,
+      now: NOW,
+    });
+    expect(code).toBe(EXIT_USAGE);
+  });
+
   it("--release, --prev-release and --seen are required", async () => {
     const { code, output } = await run({
       argv: ["--release", RELEASE],
@@ -414,7 +489,16 @@ describe("the arguments", () => {
   it("without the token in the environment it does not call the API", async () => {
     const api = fakeApi([]);
     const { code } = await run({
-      argv: ["--release", RELEASE, "--prev-release", PREVIOUS, "--seen", seen],
+      argv: [
+        "--release",
+        RELEASE,
+        "--prev-release",
+        PREVIOUS,
+        "--seen",
+        seen,
+        "--service",
+        SERVICE,
+      ],
       env: {},
       fetchImpl: api.fetchImpl,
       now: NOW,
