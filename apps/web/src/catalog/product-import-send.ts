@@ -391,7 +391,6 @@ function noteCut(run: ImportRun): boolean {
 function noteAnswer(run: ImportRun): void {
   const { regime } = run;
   regime.cutsAtCeiling = 0;
-  regime.sendAfterCeiling = false;
   if (regime.slowFor > 0) {
     regime.slowFor -= 1;
     if (regime.slowFor === 0) {
@@ -435,7 +434,12 @@ async function pauseForRegime(
     dependencies.onProgress?.(run);
   }
   await regimePause(run, dependencies, clock);
-  return !dependencies.signal?.aborted;
+  if (dependencies.signal?.aborted) {
+    // a pause cut short is no pause: the send after a continue does not come after it
+    run.regime.sendAfterCeiling = false;
+    return false;
+  }
+  return true;
 }
 
 /** Sends the rows of the run from where it stopped, a slice at a time, until every row has its answer or it stops. */
@@ -455,6 +459,10 @@ export async function runImport(
     );
     // biome-ignore lint/performance/noAwaitInLoops: one slice at a time, the next only after the answer
     const outcome = await sendSlice(run, rows, dependencies, clock);
+    if (outcome.kind !== "cut") {
+      // only the outcome of the send right after the pause counts; held, it waits for a new pause
+      run.regime.sendAfterCeiling = false;
+    }
     if (outcome.kind === "cut" || outcome.kind === "held") {
       // the same rows go again after the pause, with the same IDs; a cut is no try of `MAX_ROW_RETRIES`
       if (await pauseForRegime(run, outcome.kind, dependencies, clock)) {
@@ -473,7 +481,6 @@ export async function runImport(
       }
       // the same rows go again, at the pace, with the same IDs
       retries = next;
-      run.regime.sendAfterCeiling = false;
       continue;
     }
     if (outcome.kind !== "answered") {

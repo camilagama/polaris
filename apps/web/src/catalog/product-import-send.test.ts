@@ -756,6 +756,45 @@ describe("the regime of the Free plan", () => {
     expect(summarizeImport(run)).toMatchObject({ entered: 3, failed: 1 });
   });
 
+  it("does not count the send after a pause at the ceiling that the screen cut short", async () => {
+    // rows 2 and 3 answer; row 4 is cut on every send
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      sent.push(rowNumber);
+      return rowNumber === 4 && sent.length < 40
+        ? Promise.reject(platformCut())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const time = fakeTime();
+    let controller = new AbortController();
+    let ceilings = 0;
+    const { dependencies, run } = setup(4, send, {
+      now: time.now,
+      wait: (ms: number) => {
+        if (ms === CEILING) {
+          ceilings += 1;
+          // the person stops during the second pause at the ceiling
+          if (ceilings === 2) {
+            controller.abort();
+          }
+        }
+        return time.wait(ms);
+      },
+    });
+    dependencies.signal = controller.signal;
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    controller = new AbortController();
+    dependencies.signal = controller.signal;
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // counted: the cuts after the 1st, the 3rd and the 4th pauses at the ceiling (the 2nd was cut short, and the send
+    // after the continue is no send after a pause); the row is left out, and the pause after that cut still goes
+    expect(ceilings).toBe(5);
+    expect(run.skipped).toEqual(new Set([4]));
+  });
+
   it("takes the Worker's own 503 server_busy as a failure of the row, never as the regime: no pause, it stops after the tries", async () => {
     let calls = 0;
     // the fault repeats on every send; past 10 the row would go through, so a run that pauses on it still ends
