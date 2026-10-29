@@ -255,6 +255,16 @@ export function SalePage() {
     },
     [organizationId]
   );
+  const attemptOutcomeUnknown = useCallback(
+    () =>
+      readSaleAttemptState(
+        sessionStorageOrNull(),
+        organizationId,
+        new Date(),
+        draftStartedAt.current
+      )?.outcomeUnknown === true,
+    [organizationId]
+  );
   const inFlightRef = useRef<boolean>(false);
   const confirmedRef = useRef<HTMLElement | null>(null);
 
@@ -280,9 +290,12 @@ export function SalePage() {
 
   const handleProfilesLoaded = useCallback(
     (profiles: PaymentProfileReadModel[]) => {
-      setForm((current) => reconcileProfileReload(current, profiles));
+      const outcomeUnknown = attemptOutcomeUnknown();
+      setForm((current) =>
+        reconcileProfileReload(current, profiles, outcomeUnknown)
+      );
     },
-    []
+    [attemptOutcomeUnknown]
   );
   const catalog = useSaleCatalog(
     organizationId,
@@ -297,7 +310,8 @@ export function SalePage() {
     // coming back online undoes the "no profile" choice made for the person.
     // The mode never changes while a sale is in flight or locked (see above).
     if (offline) {
-      setForm(formForOfflineSale);
+      const outcomeUnknown = attemptOutcomeUnknown();
+      setForm((current) => formForOfflineSale(current, outcomeUnknown));
     }
     if (modeApplied.current) {
       // the lines on the sale keep the balances of the OTHER source otherwise
@@ -308,7 +322,7 @@ export function SalePage() {
       );
     }
     modeApplied.current = true;
-  }, [offline]);
+  }, [attemptOutcomeUnknown, offline]);
   const localWriter = offlineWorkspace?.stores.writer;
   const localOutbox = offlineWorkspace?.stores.outbox;
   const localSearch = useMemo<LocalSearch | undefined>(() => {
