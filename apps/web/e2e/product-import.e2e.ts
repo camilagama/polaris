@@ -618,7 +618,7 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
   expect(tries).toBe(9);
   // which row, and what leaving it out does, said above the buttons before the click
   const skipText =
-    "A linha 3 (Beta) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.";
+    "A linha 3 (Beta) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.";
   await expect(dialog.getByText(skipText)).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: "Pular a linha 3" })

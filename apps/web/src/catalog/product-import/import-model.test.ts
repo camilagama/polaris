@@ -694,7 +694,7 @@ describe("Pular a linha N", () => {
     expect(canSkipRow({ kind: "offline" }, run)).toBe(false);
   });
 
-  it("names the row, by its line in the file and its name, and says it stays out of the store (T478-1)", () => {
+  it("names the row, by its line in the file and its name, and says it stays unconfirmed and to check the product list first (T478-1)", () => {
     const run = createImportRun(
       planImport(preview("Nome\nAlfa\nCaneca esmaltada\n"), [], null).toSend,
       newId
@@ -703,7 +703,7 @@ describe("Pular a linha N", () => {
 
     expect(skipRowTexts(run)).toEqual({
       button: "Pular a linha 3",
-      help: "A linha 3 (Caneca esmaltada) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.",
+      help: "A linha 3 (Caneca esmaltada) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.",
     });
     run.nextIndex = 2;
     expect(skipRowTexts(run)).toBeNull();

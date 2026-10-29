@@ -450,8 +450,8 @@ export function canSkipRow(pause: ImportPause, run: ImportRun): boolean {
 }
 
 /**
- * What a pause that offers to leave the row out says of it, above the buttons: which row, and that it stays out of the
- * store. The run counts it with the rows not confirmed, and it goes to the CSV of the result.
+ * What a pause that offers to leave the row out says of it, above the buttons: which row, and that it stays unconfirmed (it may have
+ * gone in), so the list of products is checked before registering it again. The run counts it with the rows not confirmed, and it goes to the CSV of the result.
  */
 export function skipRowTexts(
   run: ImportRun
@@ -462,7 +462,7 @@ export function skipRowTexts(
   }
   return {
     button: `Pular a linha ${row.rowNumber}`,
-    help: `A linha ${row.rowNumber} (${row.name}) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.`,
+    help: `A linha ${row.rowNumber} (${row.name}) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.`,
   };
 }
 
