@@ -6,6 +6,11 @@ import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { writeSessionMarker } from "../../lib/session-marker";
 import { markSigningOut } from "../../lib/sign-out";
+import {
+  clearSaleAttempts,
+  sessionStorageOrNull,
+} from "../../sales/sale-attempt-storage";
+import { clearSaleDrafts } from "../../sales/sale-draft-storage";
 import { clearPlanNotice } from "../../subscription/plan-notice";
 import type { SignInPath } from "../../lib/sign-in-path";
 
@@ -29,6 +34,8 @@ export function clearSessionCaches(): void {
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
   clearPlanNotice();
+  clearSaleDrafts(sessionStorageOrNull());
+  clearSaleAttempts(sessionStorageOrNull());
 }
 
 /** Leaves the page, forgetting what the session left in this browser. */
