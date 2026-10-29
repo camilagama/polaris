@@ -68,6 +68,10 @@ Registro datado; as emendas anteriores continuam valendo. Pedida pelo desenho do
 - **Invalidação local, na hora.** Uma devolução ou um cancelamento feito neste aparelho, na tela da venda, sobre uma venda anterior ao 1º dia do mês corrente (a data da venda é anterior ao início do mês de A), descarta a cópia da memória e marca a do aparelho com `beforeStale`: ela continua servindo para mostrar sem internet, mas não vale no lugar de uma leitura. A marca vale também quando o resultado da tentativa é incerto (a tela recarrega a venda), e uma leitura nova do servidor a desfaz. Uma venda do mês corrente está em A e não mexe na cópia. O app não tem ajuste de venda confirmada (a venda é um registro que não muda), então não há outro caminho a invalidar.
 - **Custo aceito (D2).** Uma devolução ou um cancelamento feito em outro aparelho, ou em outra aba do mesmo aparelho, e uma despesa registrada com competência passada só aparecem na comparação no dia seguinte da loja ou em "Atualizar".
 
+## Emenda (28/10/2026): a série e o ranking saem do PostgreSQL
+
+Registro datado; a cópia, a série, o ranking e o formato da resposta não mudam. Desde a emenda de 28/10 do [ADR 0054](0054-painel-de-resultado-e-indicador-de-qualidade.md), o servidor calcula o resumo inteiro, com a série diária e os mais vendidos, numa única consulta SQL que reproduz as regras do motor (ADR 0053), em vez de ler os fatos e rodar o motor venda a venda no Worker. O gate `period-summary-sql` prova que o resultado é igual ao do motor em todos os campos, e o motivo do ranking morar no resumo (os itens são lidos uma vez só) continua valendo.
+
 ## Consequências
 
 - Quem abre o painel sem rede vê o último resultado conhecido do mês, com a idade dele à vista; um mês nunca aberto com rede continua sem número.

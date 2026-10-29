@@ -9,14 +9,14 @@ import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
  * shell check (`ui-shell-isolation.e2e.ts`) and the CSP check (`ui-csp.e2e.ts`) open the real page with them, so the
  * chart and its chunk are drawn under the real rules. The states and the errors are proved in `e2e/home.e2e.ts`.
  */
-const ORGANIZATION = {
+export const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
   name: "Loja do teste",
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
 /** `23/10/2026` at noon in Brasília: the month of the figures is the server's, whatever the device's date. */
-const NOW = "2026-10-23T15:00:00.000Z";
+export const NOW = "2026-10-23T15:00:00.000Z";
 const DAY = 86_400_000;
 const RPC_PREFIX = /^\/rpc\//;
 
@@ -195,7 +195,7 @@ function balances(input: Record<string, unknown>) {
 }
 
 /** The answer of one read of the Início in the scenario served. */
-function answer(
+export function answer(
   asked: string,
   input: Record<string, unknown>,
   { failing, fresh }: { failing: boolean; fresh: boolean }
@@ -303,7 +303,7 @@ const COPY_KEYS = /^polaris\.offline\.(home|periodSummary|dailySales)\./;
 /** The charts chunk of a build, by its path. */
 const CHARTS_CHUNK_PATH = /\/assets\/charts-[\w-]+\.js$/;
 
-const HOME_READS = [
+export const HOME_READS = [
   "goal/list",
   "inventory/listBalances",
   "report/dailySales",

@@ -28,13 +28,14 @@ interface ReportRpcDependencies {
 const encoder = new TextEncoder();
 
 /**
- * The period summary of the dashboard: the economics engine over the
- * organization's confirmed records, read in one repeatable-read snapshot, with
- * the cards, the daily series, the most sold products when asked and the
- * account of how complete the estimate is.
+ * The period summary of the dashboard: the organization's confirmed records
+ * aggregated by the database in one statement, with the rules of the economics
+ * engine (ADR 0054), giving the cards, the daily series, the most sold products
+ * when asked and the account of how complete the estimate is.
  *
- * Each read leaves one record with counts only (rows read by table, days, the
- * size of the answer and the time it took) and the organization's opaque ID:
+ * Each read leaves one record with counts only (the rows the database sent,
+ * one per date and one per ranked product, the days, the size of the answer and
+ * the time it took) and the organization's opaque ID:
  * never an amount or a name. The CPU time is the invocation's own, in the
  * Workers Logs of the same `requestId`.
  */

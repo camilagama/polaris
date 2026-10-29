@@ -137,6 +137,7 @@
     "poc:data-export:verify": "bun scripts/verify-data-export-gate.ts",
     "poc:deletion-ledger:verify": "bun scripts/verify-deletion-ledger-gate.ts",
     "poc:event-outbox:verify": "bun scripts/verify-event-outbox-gate.ts",
+    "poc:period-summary-sql:verify": "bun scripts/verify-period-summary-sql-gate.ts",
     "poc:outbox-dispatcher:verify": "bun scripts/verify-outbox-dispatcher-gate.ts",
     "poc:scheduled-jobs:verify": "bun scripts/verify-scheduled-jobs-gate.ts",
     "poc:privacy-cases:verify": "bun scripts/verify-privacy-cases-gate.ts",
