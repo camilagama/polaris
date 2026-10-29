@@ -326,7 +326,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
               onAttention={showLogoutAttention}
               organization={organization}
             />
-            {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them;
+            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them;
                 folded, the links go under the content (`AppFooter`) */}
             <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden" />
           </div>

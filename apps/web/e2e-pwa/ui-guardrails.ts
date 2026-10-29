@@ -156,6 +156,7 @@ const HELPERS = [
   clippingOwners,
   fixedLayerOf,
   touchAreaOf,
+  grownInGroup,
   isInlineLink,
   ownsOverflow,
   insideOwner,
@@ -416,6 +417,25 @@ function touchAreaOf(element: Element) {
   return area;
 }
 
+/**
+ * In page: the area of a control of a `[data-target-group]` grown by 4 px on each side, so two of them closer than 8 px
+ * overlap (WCAG 2.2, 2.5.8); any other control keeps its area.
+ */
+function grownInGroup(
+  element: Element,
+  area: { bottom: number; left: number; right: number; top: number }
+) {
+  if (!element.closest("[data-target-group]")) {
+    return area;
+  }
+  return {
+    bottom: area.bottom + 4,
+    left: area.left - 4,
+    right: area.right + 4,
+    top: area.top - 4,
+  };
+}
+
 /** In page: a link inside a line of running text, which WCAG 2.5.8 exempts from the size. */
 function isInlineLink(element: Element) {
   const parent = element.parentElement;
@@ -454,9 +474,15 @@ function touchTooSmall(
     const area = touchAreaOf(element);
     const width = area.right - area.left;
     const height = area.bottom - area.top;
-    if (width < minimum - 0.5 || height < minimum - 0.5) {
+    // the controls of a group and the days of a month grid answer to WCAG 2.2 (2.5.8): 24 px, not the page minimum
+    const floor =
+      element.closest("[data-target-group]") ||
+      element.matches("[data-slot=calendar] button[data-day]")
+        ? Math.min(minimum, 24)
+        : minimum;
+    if (width < floor - 0.5 || height < floor - 0.5) {
       found.push(
-        `${labelOf(element)} tem área de toque de ${Math.round(width)} × ${Math.round(height)} px (mínimo ${minimum})`
+        `${labelOf(element)} tem área de toque de ${Math.round(width)} × ${Math.round(height)} px (mínimo ${floor})`
       );
     }
   }
@@ -467,15 +493,16 @@ function touchTooSmall(
  * In page: two controls whose touch areas overlap (a tap between them is a guess). The controls of one
  * `[data-slot=button-group]` are one fused unit, and so are the ones of one `[data-slot=input-group]` (the field and
  * the button at its end, "Mostrar" of a password: the field has the area of the group, the button its own, drawn
- * over it) and the days of one `[data-slot=calendar]` (a grid of 44 px cells that touch each other: the 48 px
- * areas of two neighbouring days overlap by about 4 px, 2 px into each cell, not only on the shared edge); a control inside another (a link in a clickable
- * card) is nested.
+ * over it); a control inside another (a link in a clickable card) is nested. The cells of a month grid touch each
+ * other without overlapping (the day has no `touch-hit`), so they need no exception. A control of a
+ * `[data-target-group]` has no area beyond its box and keeps 8 px from the next one (WCAG 2.2, 2.5.8): the check grows
+ * each by 4 px.
  */
 function touchOverlaps(selector: string) {
   const controls = [...document.querySelectorAll(selector)]
     .filter((element) => isShown(element) && !isVisuallyHidden(element))
     .map((element) => ({
-      area: touchAreaOf(element),
+      area: grownInGroup(element, touchAreaOf(element)),
       element,
       layer: fixedLayerOf(element),
       owners: clippingOwners(element),
@@ -513,25 +540,14 @@ function touchOverlaps(selector: string) {
     scrolling.scrollHeight - window.innerHeight - window.scrollY
   );
   const toTop = window.scrollY;
-  /** Two days of one month grid (not its arrows, which keep their own area). */
-  const daysOfOneCalendar = (one: Element, other: Element) => {
-    const calendar = one.closest("[data-slot=calendar]");
-    return (
-      calendar !== null &&
-      calendar === other.closest("[data-slot=calendar]") &&
-      one.matches("button[data-day]") &&
-      other.matches("button[data-day]")
-    );
-  };
-  /** One control fused with the other (a button group, an input group, two days of a calendar) or inside it (a link in a clickable card). */
+  /** One control fused with the other (a button group, an input group) or inside it (a link in a clickable card). */
   const joined = (first: Control, second: Control) =>
     first.element.contains(second.element) ||
     second.element.contains(first.element) ||
     ["button-group", "input-group"].some((slot) => {
       const group = first.element.closest(`[data-slot=${slot}]`);
       return group && group === second.element.closest(`[data-slot=${slot}]`);
-    }) ||
-    daysOfOneCalendar(first.element, second.element);
+    });
   /** How much the two areas overlap, across and down; zero or less is apart. */
   const pairOverlap = (first: Control, second: Control) => {
     const one = reachable(first, second);

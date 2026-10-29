@@ -625,14 +625,14 @@ test("as abas: papel, teclado, altura da lista, área de toque e foco de 3 px", 
   );
   expect(height).toBe(isMobile ? 36 : 32);
 
-  // with touch, each tab has a touch area of at least 48 px
+  // with touch, each tab has a touch area of at least 44 px
   if (isMobile) {
     const areas = await Promise.all(
       [sevenDays, thirtyDays].map((tab) => tab.evaluate(touchArea))
     );
     for (const area of areas) {
-      expect(area.height).toBeGreaterThanOrEqual(48);
-      expect(area.width).toBeGreaterThanOrEqual(48);
+      expect(area.height).toBeGreaterThanOrEqual(44);
+      expect(area.width).toBeGreaterThanOrEqual(44);
     }
   }
 

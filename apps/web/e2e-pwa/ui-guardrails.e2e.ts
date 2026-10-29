@@ -29,7 +29,7 @@ import {
  * docs/runbooks/testes-de-tela.md.
  *
  *   1. nothing leaves its container nor the viewport      4. colors only in OKLCH and tokens: scripts/ui-source-rules.test.ts
- *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: nothing animates with reduce
+ *   2. touch area of 44 px, neighbors do not overlap      5. motion: nothing animates with reduce
  *   3. axe, WCAG 2.2 A and AA                              6. keyboard focus draws the 3 px ring
  */
 
@@ -93,7 +93,7 @@ for (const screen of SCREENS) {
       // One page load for the checks that only read: each reports on its own (soft), so a run shows every fault.
       test(`verificações: ${checks.join(", ")}`, async ({ page }) => {
         await openScreen(screen, page);
-        // the context is what the name says: the 48 px areas of the touch check exist only with `pointer: coarse`
+        // the context is what the name says: the 44 px areas of the touch check exist only with `pointer: coarse`
         expect(
           await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
           "o contexto tem o ponteiro que o nome diz"
@@ -112,7 +112,7 @@ for (const screen of SCREENS) {
               (
                 await touchFaults(page, {
                   exemptInlineLinks: true,
-                  minimum: 48,
+                  minimum: 44,
                 })
               ).sort(),
               "2. área de toque"
@@ -229,7 +229,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     page,
   }) => {
     await openScreen(gallery, page);
-    const check = { exemptInlineLinks: true, minimum: 48 };
+    const check = { exemptInlineLinks: true, minimum: 44 };
     expect(await touchFaults(page, check)).toEqual([]);
     await page.evaluate(() => {
       const main = document.querySelector("main");
@@ -278,7 +278,33 @@ test.describe("controle: cada verificação pega a falha", () => {
       kept.style.height = "20px";
       kept.style.position = "relative";
       field.append(input, end, kept);
-      main?.append(small, first, second, line, row, field);
+      // the controls of a group: from 24 px with no area of their own, but 8 px apart; closer than that, or smaller, fail
+      const group = (name: string, gap: number, size: number) => {
+        const box = document.createElement("div");
+        box.dataset.targetGroup = "";
+        box.style.display = "flex";
+        box.style.gap = `${gap}px`;
+        box.style.marginTop = "40px";
+        for (const part of ["um", "dois"]) {
+          const button = document.createElement("button");
+          button.textContent = `${name} ${part}`;
+          button.style.height = `${size}px`;
+          button.style.width = `${size}px`;
+          box.append(button);
+        }
+        return box;
+      };
+      main?.append(
+        small,
+        first,
+        second,
+        line,
+        row,
+        field,
+        group("Afastado", 8, 24),
+        group("Junto", 2, 24),
+        group("Miúdo", 8, 20)
+      );
     });
     const faults = (await touchFaults(page, check)).join("\n");
     expect(faults).toContain('button "Dentro do campo" tem área de toque');
@@ -290,6 +316,13 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(faults).toContain('a "Ajuda" tem área de toque');
     expect(faults).toContain(
       'a área de toque de button "Vizinho um" se sobrepõe à de button "Vizinho dois"'
+    );
+    expect(faults).not.toContain("Afastado");
+    expect(faults).toContain(
+      'a área de toque de button "Junto um" se sobrepõe à de button "Junto dois"'
+    );
+    expect(faults).toContain(
+      'button "Miúdo um" tem área de toque de 20 × 20 px (mínimo 24)'
     );
   });
 

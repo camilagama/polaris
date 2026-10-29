@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { type ComponentProps, type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
-/* The Polaris text field. With touch the 48 px area comes from the group itself (touch-hit-field): a touch on the
+/* The Polaris text field. With touch the 44 px area comes from the group itself (touch-hit-field): a touch on the
    band above or below the field focuses the text. No role: one field (with or without the "R$" beside it) is no
    group of controls, and a nameless group would only add "group" to what the screen reader says. */
 function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {

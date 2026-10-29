@@ -166,6 +166,12 @@ const SALE_METHODS = [
   { label: "Outro", value: "outro" },
 ];
 
+const GROUP_ACTIONS = [
+  { Icon: PlusIcon, name: "Aumentar" },
+  { Icon: MinusIcon, name: "Diminuir" },
+  { Icon: CheckIcon, name: "Confirmar" },
+] as const;
+
 const LONG_LIST = Array.from(
   { length: 40 },
   (_, index) => `Movimento de estoque ${index + 1}`
@@ -535,6 +541,56 @@ export function UiGallery() {
               <Button variant="destructive">Excluir</Button>
               <Button variant="link">Ver detalhes</Button>
               <Button disabled>Indisponível</Button>
+            </div>
+          </Section>
+
+          <Section title="Tamanho por papel">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
+              <div className="grid content-start gap-2" data-papel="comum">
+                <p className="text-muted-foreground text-support">
+                  Controle comum
+                </p>
+                <Button className="w-fit" variant="outline">
+                  Cancelar
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="principal">
+                <p className="text-muted-foreground text-support">
+                  Ação principal
+                </p>
+                <Button className="w-fit" size="xl">
+                  Nova venda
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="grupo">
+                <p className="text-muted-foreground text-support">
+                  Controles em grupo
+                </p>
+                <div className="flex gap-2" data-target-group="">
+                  {GROUP_ACTIONS.map(({ Icon, name }) => (
+                    <Button
+                      aria-label={name}
+                      className="size-6 before:content-none!"
+                      key={name}
+                      size="icon-xs"
+                      variant="outline"
+                    >
+                      <Icon aria-hidden="true" />
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid content-start gap-2" data-papel="campo">
+                <p className="text-muted-foreground text-support">
+                  Campo de texto
+                </p>
+                <Input aria-label="Campo comum" placeholder="Comum" />
+                <Input
+                  aria-label="Campo principal"
+                  className="touch:h-11"
+                  placeholder="Principal (busca)"
+                />
+              </div>
             </div>
           </Section>
 

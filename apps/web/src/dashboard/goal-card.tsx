@@ -56,8 +56,8 @@ interface GoalCardProps {
 const MUTED = "text-muted-foreground text-support";
 
 /**
- * The text actions of a card: 32 px with a 48 px area, bled out to the card's padding so the words align with the
- * title. Between two lines of them the gap is 16 px, so the areas of 48 px do not meet.
+ * The text actions of a card: 32 px with a 44 px area, bled out to the card's padding so the words align with the
+ * title. Between two lines of them the gap is 16 px, so the areas of 44 px do not meet.
  */
 const ACTIONS = "-mx-2 -mb-1 flex flex-wrap gap-x-1 gap-y-4";
 

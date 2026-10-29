@@ -29,7 +29,7 @@ import { subscriptionStates } from "./ui-subscription-states";
  * The screens the interface guardrails run on, served by the static server of the pwa-e2e build under
  * the CSP of `_headers`. The list grows with each new screen or state: docs/runbooks/testes-de-tela.md says how.
  *
- * Every screen is on the new interface since batch 6: touch area of 48 px, no fault waits for a migration,
+ * Every screen is on the new interface since batch 6: touch area of 44 px, no fault waits for a migration,
  * and the source folders of each one are read by the source rules (`scripts/ui-source-rules.test.ts`).
  */
 export interface UiScreen {
@@ -74,7 +74,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
  *
  * - overflow (1): the widths decide what fits; at 1280 it runs with a mouse and with touch (the context the touch
  *   check loads anyway); the theme does not move a box;
- * - touch (2): the areas of 48 px exist with a coarse pointer, at the two phone widths and on a tablet;
+ * - touch (2): the areas of 44 px exist with a coarse pointer, at the two phone widths and on a tablet;
  * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
  * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
  *

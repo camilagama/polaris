@@ -79,11 +79,13 @@
   --google-yellow: oklch(0.844 0.172 85);
   --google-green: oklch(0.673 0.162 144);
   --google-blue: oklch(0.565 0.163 253);
-  /* visible heights of the controls (mouse); with touch they go one step up in the block below */
+  /* visible heights of the controls (mouse); with touch they go one step up in the block below. `--h-xl` is for the
+     main action of a screen only (DESIGN.md, "Tamanho de controle por papel"): 36 with a mouse, 44 with touch */
   --h-xs: 1.5rem;
   --h-sm: 1.75rem;
   --h-md: 2rem;
   --h-lg: 2.25rem;
+  --h-xl: 2.25rem;
 }
 
 .dark {
@@ -233,6 +235,7 @@
   --spacing-ctl-sm: var(--h-sm);
   --spacing-ctl-md: var(--h-md);
   --spacing-ctl-lg: var(--h-lg);
+  --spacing-ctl-xl: var(--h-xl);
 }
 
 @theme {
@@ -331,6 +334,7 @@
     --h-sm: 2rem;
     --h-md: 2.25rem;
     --h-lg: 2.5rem;
+    --h-xl: 2.75rem;
     --text-title: 1.375rem;
     --text-title--line-height: 1.75rem;
     --text-value-lg: 1.5rem;
@@ -353,13 +357,14 @@
   }
 }
 
-/* A 48 px touch area around a smaller control: an invisible pseudo-element, only with touch */
+/* A 44 px touch area around a smaller control: an invisible pseudo-element, only with touch. The controls of a group
+   (row actions, filters, segments) do not need it: as small as 24 px, with 8 px between targets (WCAG 2.2, 2.5.8). */
 @utility touch-hit {
   @media (pointer: coarse), (max-width: 759.98px) {
     position: relative;
     &::before {
       position: absolute;
-      inset: min(0px, calc(50% - 24px));
+      inset: min(0px, calc(50% - 22px));
       content: "";
     }
   }
@@ -373,7 +378,7 @@
     isolation: isolate;
     &::before {
       position: absolute;
-      inset: min(0px, calc(50% - 24px)) 0;
+      inset: min(0px, calc(50% - 22px)) 0;
       z-index: -1;
       content: "";
     }

@@ -20,7 +20,7 @@ const twMerge = extendTailwindMerge({
       ],
     },
     theme: {
-      spacing: ["ctl-xs", "ctl-sm", "ctl-md", "ctl-lg"],
+      spacing: ["ctl-xs", "ctl-sm", "ctl-md", "ctl-lg", "ctl-xl"],
     },
   },
 });
