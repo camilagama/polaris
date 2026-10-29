@@ -29,6 +29,8 @@ const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
 const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
 const COUNT_SHIRT = "Contar estoque de Camiseta do teste, Azul";
 
+const VARIANT_IDS = /"variantIds":\["([^"]+)"\]/;
+
 const THEMES = [
   { dark: false, name: "claro", stored: "claro" },
   { dark: true, name: "escuro", stored: "escuro" },
@@ -98,6 +100,17 @@ async function openStockLab(
   await page.route("**/rpc/inventory/listBalances", (route) => {
     const body = route.request().postData() ?? "";
     listRequests.push(body);
+    const wanted = VARIANT_IDS.exec(body)?.[1];
+    if (wanted !== undefined) {
+      return route.fulfill(
+        rpc({
+          entries: [SHIRT, JEANS, MUG].filter(
+            (entry) => entry.variantId === wanted
+          ),
+          nextCursor: null,
+        })
+      );
+    }
     if (body.includes('"cost":"unknown"')) {
       return route.fulfill(rpc({ entries: [SHIRT], nextCursor: null }));
     }
@@ -345,6 +358,69 @@ test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas t�
   expect(listRequests[0]).toContain('"stock":"without_stock"');
   expect(listRequests[0]).not.toContain('"cost"');
   await expect(page.getByText("Todas as variantes têm saldo.")).toBeVisible();
+});
+
+test("?entrada= abre o painel de entrada da variante, mesmo arquivada e fora da lista, e tira o parâmetro do endereço", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: `&entrada=${MUG.variantId}&de=venda`,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("Caneca esmaltada · Sem opções. Saldo atual: 0 unidades")
+  ).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  expect(listRequests.some((body) => body.includes(MUG.variantId))).toBe(true);
+  await expect(
+    page.getByRole("button", { name: RECEIVE_JEANS })
+  ).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= de uma variante que não existe diz isso em uma linha, sem erro, e a lista continua", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: "&entrada=0199c2d0-0000-7000-8000-00000000dead",
+  });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= que não é um id não lê nada e abre a tela como sempre", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", { search: "&entrada=../../x" });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  expect(listRequests.some((body) => body.includes("variantIds"))).toBe(false);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
 });
 
 for (const value of [

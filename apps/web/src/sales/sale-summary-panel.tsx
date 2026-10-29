@@ -1,10 +1,12 @@
+import PackagePlusIcon from "lucide-react/dist/esm/icons/package-plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
+import { stockEntryHref } from "../inventory/stock-entry-link";
 import { focusLater } from "../lib/focus";
 import {
   type FeeLine,
@@ -201,6 +203,22 @@ function FailureNotice({
         <TriangleAlertIcon aria-hidden="true" />
         <AlertDescription className="grid min-w-0 justify-items-start gap-2">
           <p className="mb-0!">{submission.failure.message}</p>
+          {submission.failure.entry === null ? null : (
+            <a
+              className={cn(
+                buttonVariants({ size: "sm", variant: "outline" }),
+                "h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+              )}
+              href={stockEntryHref(submission.failure.entry.variantId)}
+            >
+              <PackagePlusIcon aria-hidden="true" data-icon="inline-start" />
+              Dar entrada no estoque
+              <span className="sr-only">
+                {" "}
+                de {submission.failure.entry.label}
+              </span>
+            </a>
+          )}
           {submission.failure.refreshData ? (
             <Button
               className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"

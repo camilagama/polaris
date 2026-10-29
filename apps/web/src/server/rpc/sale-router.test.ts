@@ -28,6 +28,7 @@ import {
 import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adjustments";
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
+import { logger } from "@polaris/observability/logger";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -292,6 +293,53 @@ describe("sale.confirm RPC", () => {
       client.sale.confirm({ ...validInput, occurredAt: "2026-10-13" })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(confirmSale).not.toHaveBeenCalled();
+  });
+
+  it("counts a refusal for stock by store and origin, with no product and no amount", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    const confirmSale = vi
+      .fn<ConfirmSale>()
+      .mockRejectedValue(new InsufficientStockError());
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    });
+    const calls = info.mock.calls.filter(
+      ([event]) => event === "sale_refused_insufficient_stock"
+    );
+    expect(calls).toEqual([
+      [
+        "sale_refused_insufficient_stock",
+        {
+          organizationId,
+          origin: "online",
+          requestId: expect.any(String),
+        },
+      ],
+    ]);
+    info.mockRestore();
+  });
+
+  it("does not count the other refusals of a sale as a refusal for stock", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    const confirmSale = vi
+      .fn<ConfirmSale>()
+      .mockRejectedValue(new SaleProductUnavailableError());
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(
+      info.mock.calls.filter(
+        ([event]) => event === "sale_refused_insufficient_stock"
+      )
+    ).toEqual([]);
+    info.mockRestore();
   });
 
   it.each([
