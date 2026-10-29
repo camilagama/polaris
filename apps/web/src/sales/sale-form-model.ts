@@ -718,14 +718,18 @@ export function autoSelectOnlyVariants(
 
 export interface StockView {
   costText: string | null;
+  needsEntry: boolean;
   quantity: number | null;
   text: string;
   tone: "neutral" | "ok" | "warning";
 }
 
+const askForEntryText = "Peça a quem cuida do estoque para dar entrada.";
+
 /** Current balance and moving average cost for a chosen variant. */
 export function stockView(
-  load: Loadable<InventoryBalanceReadModel> | undefined
+  load: Loadable<InventoryBalanceReadModel> | undefined,
+  canAdjustStock: boolean
 ): StockView | null {
   if (load === undefined) {
     return null;
@@ -733,6 +737,7 @@ export function stockView(
   if (load.status === "loading") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
       text: "Consultando estoque…",
       tone: "neutral",
@@ -741,26 +746,29 @@ export function stockView(
   if (load.status === "error") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
       text: `${load.message} Você ainda pode vender; o servidor confirma o saldo.`,
       tone: "warning",
     };
   }
   const { movingAverageCost, quantity } = load.value;
+  if (quantity === 0) {
+    return {
+      costText: null,
+      needsEntry: true,
+      quantity,
+      text: `Sem estoque: saldo 0. ${canAdjustStock ? "Para vender, dê entrada no estoque." : askForEntryText}`,
+      tone: "warning",
+    };
+  }
   const costText =
     movingAverageCost === null
       ? "Custo desconhecido. Margem indeterminada."
       : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
-  if (quantity === 0) {
-    return {
-      costText,
-      quantity,
-      text: "Sem estoque: saldo 0. O servidor recusa a venda se o saldo continuar insuficiente.",
-      tone: "warning",
-    };
-  }
   return {
     costText,
+    needsEntry: false,
     quantity,
     text: `Saldo atual: ${quantity} ${quantity === 1 ? "unidade" : "unidades"}.`,
     tone: "ok",
@@ -1729,6 +1737,7 @@ type SaleFailureKind =
 export interface SaleSubmitFailure {
   /** The attempt cannot be resent as is: the next confirm gets a fresh attempt. */
   discardAttempt: boolean;
+  entry: { label: string; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
@@ -1748,12 +1757,15 @@ interface ReasonOutcome {
 const variantGoneMessage =
   "Uma das variantes não existe mais nesta loja. Remova a linha, atualize os dados e revise a venda.";
 
+const stockRefusalFallbackMessage =
+  "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um.";
+
 const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "insufficient_stock",
     {
-      message:
-        "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades.",
+      discardAttempt: true,
+      message: stockRefusalFallbackMessage,
       refreshData: true,
     },
   ],
@@ -1894,6 +1906,7 @@ function failure(
 ): SaleSubmitFailure {
   return {
     discardAttempt: options.discardAttempt ?? false,
+    entry: null,
     kind,
     message,
     reason: options.reason ?? null,
@@ -1927,7 +1940,7 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
     case "CONFLICT":
       return failure(
         "conflict",
-        "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda.",
+        "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda.",
         { refreshData: true }
       );
     default:
@@ -2327,11 +2340,126 @@ export function failSubmission(
     : { failure: mapped, phase: "failed" };
 }
 
+const MAX_LISTED_SHORTAGES = 3;
+
+interface StockShortage {
+  balance: number;
+  label: string;
+  requested: number;
+  variantId: string;
+}
+
+function stockShortages(
+  items: readonly { quantity: number; variantId: string }[],
+  labels: ReadonlyMap<string, string>,
+  stock: EvaluationContext["stock"]
+): StockShortage[] {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    requested.set(
+      item.variantId,
+      (requested.get(item.variantId) ?? 0) + item.quantity
+    );
+  }
+  const shortages: StockShortage[] = [];
+  for (const [variantId, total] of requested) {
+    const balance = stock[variantId];
+    if (balance?.status !== "ready") {
+      // a line whose balance the screen never read may be the one refused: no line is named then
+      return [];
+    }
+    if (total > balance.value.quantity) {
+      shortages.push({
+        balance: balance.value.quantity,
+        label: labels.get(variantId) ?? "item sem nome",
+        requested: total,
+        variantId,
+      });
+    }
+  }
+  return shortages;
+}
+
+function listWithAnd(parts: readonly string[]): string {
+  if (parts.length <= 1) {
+    return parts.join("");
+  }
+  return `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}`;
+}
+
+function listShortages(parts: readonly string[]): string {
+  return parts.length > MAX_LISTED_SHORTAGES
+    ? `${parts.slice(0, MAX_LISTED_SHORTAGES).join(", ")} e mais ${parts.length - MAX_LISTED_SHORTAGES}`
+    : listWithAnd(parts);
+}
+
+function stockRefusalNotice(
+  shortages: readonly StockShortage[],
+  canAdjustStock: boolean
+): Pick<SaleSubmitFailure, "entry" | "message"> {
+  const [first] = shortages;
+  if (first === undefined) {
+    return { entry: null, message: stockRefusalFallbackMessage };
+  }
+  const prefix = "A venda não foi registrada:";
+  const detailed = shortages.map(
+    (shortage) =>
+      `${shortage.label} (pediu ${shortage.requested}, saldo ${shortage.balance})`
+  );
+  const names = shortages.map((shortage) => shortage.label);
+  const only = shortages.length === 1;
+  let message: string;
+  if (canAdjustStock) {
+    message = only
+      ? `${prefix} falta estoque de ${detailed[0]}.`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(detailed)}.`;
+  } else {
+    message = only
+      ? `${prefix} falta estoque de ${first.label}. ${askForEntryText}`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(names)}. ${askForEntryText}`;
+  }
+  return {
+    entry: canAdjustStock
+      ? { label: first.label, variantId: first.variantId }
+      : null,
+    message,
+  };
+}
+
+interface SentStock {
+  canAdjustStock: boolean;
+  items: readonly { quantity: number; variantId: string }[];
+  labels: ReadonlyMap<string, string>;
+  stock: EvaluationContext["stock"];
+}
+
+/**
+ * The server does not say which line lacks stock: the refusal names the lines whose request is above the balance the
+ * screen holds, and says so plainly when none can be pointed at.
+ */
+export function describeStockRefusal(
+  state: SubmissionState,
+  sent: SentStock
+): SubmissionState {
+  if (
+    state.phase !== "failed" ||
+    state.failure.reason !== "insufficient_stock"
+  ) {
+    return state;
+  }
+  const notice = stockRefusalNotice(
+    stockShortages(sent.items, sent.labels, sent.stock),
+    sent.canAdjustStock
+  );
+  return { ...state, failure: { ...state.failure, ...notice } };
+}
+
 /** The final domain validation rejected the form before any request. */
 export function rejectSubmission(message: string): SubmissionState {
   return {
     failure: {
       discardAttempt: false,
+      entry: null,
       kind: "bad_request",
       message,
       reason: null,

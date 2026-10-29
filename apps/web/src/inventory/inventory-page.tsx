@@ -4,7 +4,9 @@ import {
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
@@ -39,10 +41,13 @@ import {
   readStockLinkFilters,
 } from "./stock-list-model";
 import { type StockTarget, stockTarget } from "./stock-target";
+import { useStockEntryLink } from "./use-stock-entry-link";
 import { useStockList } from "./use-stock-list";
 
 interface OpenCommand {
   action: StockAction;
+  /** Opened by the link from the sale: it stands above the list, whether or not the list holds the variant. */
+  standalone: boolean;
   /** The balance as the row showed it when the panel opened. */
   target: StockTarget;
 }
@@ -55,6 +60,18 @@ const STANDALONE_LINK = `touch-hit ${LINK}`;
 
 function isStockAction(value: string | undefined): value is StockAction {
   return STOCK_ACTIONS.some((action) => action === value);
+}
+
+function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
+  return (
+    <Alert variant="warning">
+      <AlertDescription>
+        {unavailable
+          ? "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+          : "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** Said at the top of the screen while there is no connection. */
@@ -215,6 +232,20 @@ export function InventoryPage() {
   const { applyBalance, filters, loadMore, reload, setFilters, state } =
     useStockList(organizationId, offlineWorkspace, linkFilters);
   const [open, setOpen] = useState<OpenCommand | null>(null);
+  const entryLink = useStockEntryLink(organizationId, offlineWorkspace);
+  const offlineRef = useRef(offline);
+  offlineRef.current = offline;
+  useEffect(() => {
+    if (entryLink.status === "found") {
+      setOpen({
+        action: "receive",
+        standalone: true,
+        target: stockTarget(entryLink.entry, {
+          costUnavailable: offlineRef.current,
+        }),
+      });
+    }
+  }, [entryLink]);
   const today = useMemo(
     () => calendarDayInTimezone(new Date(), organization.timezone),
     [organization.timezone]
@@ -252,6 +283,7 @@ export function InventoryPage() {
       }
       setOpen({
         action: stockAction,
+        standalone: false,
         target: stockTarget(entry, { costUnavailable: offline }),
       });
     },
@@ -261,10 +293,13 @@ export function InventoryPage() {
     const current = open;
     setOpen(null);
     if (current) {
+      // the variant of the link may not be in the list: the focus then goes to the content
       focusLater(() =>
-        document
-          .getElementById(triggerId(current.target.variantId, current.action))
-          ?.focus()
+        (
+          document.getElementById(
+            triggerId(current.target.variantId, current.action)
+          ) ?? document.getElementById("conteudo")
+        )?.focus()
       );
     }
   }, [open]);
@@ -280,6 +315,9 @@ export function InventoryPage() {
       </header>
 
       {offline ? <OfflineStockNotice /> : null}
+      {entryLink.status === "missing" || entryLink.status === "unavailable" ? (
+        <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
+      ) : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
         <SearchField
@@ -340,6 +378,24 @@ export function InventoryPage() {
         </p>
       ) : null}
 
+      {open?.standalone ? (
+        <Card className="gap-0 py-0">
+          <div className="p-(--card-spacing)">
+            <StockCommandPanel
+              action={open.action}
+              key={`${open.target.variantId}-${open.action}`}
+              local={offlineWorkspace ?? undefined}
+              onBalance={applyBalance}
+              onClose={handleClose}
+              onReloadList={reload}
+              organizationId={organizationId}
+              target={open.target}
+              today={today}
+            />
+          </div>
+        </Card>
+      ) : null}
+
       {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
@@ -381,12 +437,16 @@ export function InventoryPage() {
                 key={row.id}
                 onOpen={handleOpen}
                 otherPanelOpen={
-                  open !== null && open.target.variantId !== row.id
+                  open !== null &&
+                  (open.standalone || open.target.variantId !== row.id)
                 }
-                panelOpen={open?.target.variantId === row.id}
+                panelOpen={
+                  open?.standalone === false && open.target.variantId === row.id
+                }
                 row={row}
               >
-                {open?.target.variantId === row.id ? (
+                {open?.standalone === false &&
+                open.target.variantId === row.id ? (
                   <StockCommandPanel
                     action={open.action}
                     key={`${open.target.variantId}-${open.action}`}
