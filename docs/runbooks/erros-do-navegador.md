@@ -54,7 +54,7 @@ Nenhuma recusa (429, 400, 413, 415) escreve uma linha por requisição, e a rota
 
 ## Ler
 
-Na API de telemetria do Workers Logs (`POST /accounts/{id}/workers/observability/telemetry/query`) ou no painel, filtre por `event = client_error` e agrupe por `fingerprint`; some os `client_error_count` da mesma assinatura. A retenção é a da plataforma (3 dias no Free). A leitura automática (o script e o cron) é uma tarefa à parte e não existe ainda.
+Na API de telemetria do Workers Logs (`POST /accounts/{id}/workers/observability/telemetry/query`) ou no painel, filtre por `event = client_error` e agrupe por `fingerprint`; some os `client_error_count` da mesma assinatura. A retenção é a da plataforma (3 dias no Free). A leitura automática é o `scripts/client-error-sentinel.mjs` (sem LLM, para um cron de 30 minutos): `node scripts/client-error-sentinel.mjs --release <sha servido> --prev-release <sha anterior> --seen <csv de estado> --since 35m`, com `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` (só leitura do Observability) no ambiente. Imprime um JSON com `wake` e as assinaturas e contagens, e acorda com uma assinatura nova de 5 eventos em 10 minutos ou uma já vista acima de 20 por hora (uma vez por dia), no máximo 5 vezes por dia (o resto sai em `held`, para o resumo da manhã), e nunca com menos de 3 eventos em 24 horas; só vale o `release` servido ou o anterior. Falha da API sai com código 3 e `wake: false`. A rotina e o token são do responsável.
 
 ## Conter uma enxurrada
 
