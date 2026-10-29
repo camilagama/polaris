@@ -555,9 +555,35 @@ describe("exact totals and command body", () => {
       context({ stock: { [variantId]: balance(1, null) } })
     );
     expect(result.body).not.toBeNull();
-    expect(result.stockWarnings[lineOf(form).draftId]).toContain(
-      "Quantidade acima do saldo exibido (1)"
+    expect(result.stockWarnings[lineOf(form).draftId]).toBe(
+      "Quantidade acima do saldo exibido (1). Você pode continuar; a venda é recusada se o saldo não bastar."
     );
+  });
+
+  it("shows no quantity warning at balance 0, where the zero-balance line already says what to do", () => {
+    const form = validForm();
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.body).not.toBeNull();
+    expect(result.stockWarnings).toEqual({});
+  });
+
+  it("shows no quantity warning on any line of a variant at balance 0", () => {
+    let form = addItem(validForm(), "item-2");
+    form = selectItemProduct(form, "item-2", productId);
+    form = selectItemVariant(form, "item-2", variantId, "Camiseta — Azul / M");
+    form = updateItem(form, "item-2", {
+      chargedUnitPrice: "10",
+      listedUnitPrice: "10",
+      quantity: "2",
+    });
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.stockWarnings).toEqual({});
   });
 
   it("sums repeated lines of the same variant for the stock warning", () => {
@@ -2110,5 +2136,16 @@ describe("the refusal for stock", () => {
       "Sem estoque: saldo 0. Peça a quem cuida do estoque para dar entrada."
     );
     expect(stockView(zero, false)?.text).not.toContain("servidor");
+  });
+
+  it("tells the seller they can still sell when the balance could not be read", () => {
+    const text = stockView(
+      { message: "Não foi possível ler o estoque.", status: "error" },
+      true
+    )?.text;
+    expect(text).toBe(
+      "Não foi possível ler o estoque. Você ainda pode vender: o saldo é conferido ao confirmar."
+    );
+    expect(text).not.toContain("servidor");
   });
 });
