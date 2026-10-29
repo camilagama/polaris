@@ -584,7 +584,7 @@ function touchOverlaps(selector: string) {
 
 /**
  * 2. Touch targets: every pointer control has a touch area of at least `minimum` px on both sides and the
- * touch areas of neighbors do not overlap. Run it in a context with touch (`pointer: coarse`): the 48 px
+ * touch areas of neighbors do not overlap. Run it in a context with touch (`pointer: coarse`): the 44 px
  * area exists only then.
  */
 export async function touchFaults(
