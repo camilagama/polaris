@@ -1,0 +1,135 @@
+{
+  "ci": {
+    "collect": {
+      "numberOfRuns": 3,
+      "puppeteerLaunchOptions": {
+        "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+      },
+      "puppeteerScript": "scripts/lighthouse-login.cjs",
+      "settings": {
+        "enableErrorReporting": false,
+        "formFactor": "mobile",
+        "onlyCategories": ["performance"],
+        "screenEmulation": {
+          "deviceScaleFactor": 1.75,
+          "disabled": false,
+          "height": 823,
+          "mobile": true,
+          "width": 412
+        },
+        "throttling": {
+          "cpuSlowdownMultiplier": 4,
+          "downloadThroughputKbps": 1474.56,
+          "requestLatencyMs": 562.5,
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "uploadThroughputKbps": 675
+        },
+        "throttlingMethod": "simulate"
+      },
+      "url": [
+        "http://127.0.0.1:4381/entrar",
+        "http://127.0.0.1:4383/loja-horizonte",
+        "http://127.0.0.1:4382/"
+      ]
+    },
+    "upload": {
+      "outputDir": ".lighthouseci/relatorios",
+      "target": "filesystem"
+    },
+    "assert": {
+      "assertMatrix": [
+        {
+          "aggregationMethod": "median",
+          "matchingUrlPattern": ":4381/entrar$",
+          "assertions": {
+            "cumulative-layout-shift": [
+              "warn",
+              {
+                "maxNumericValue": 0.1
+              }
+            ],
+            "largest-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 200
+              }
+            ],
+            "resource-summary:script:size": [
+              "warn",
+              {
+                "maxNumericValue": 334607
+              }
+            ]
+          }
+        },
+        {
+          "aggregationMethod": "median",
+          "matchingUrlPattern": ":4383/loja-horizonte$",
+          "assertions": {
+            "cumulative-layout-shift": [
+              "warn",
+              {
+                "maxNumericValue": 0.1
+              }
+            ],
+            "largest-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 200
+              }
+            ],
+            "resource-summary:script:size": [
+              "warn",
+              {
+                "maxNumericValue": 159382
+              }
+            ]
+          }
+        },
+        {
+          "aggregationMethod": "median",
+          "matchingUrlPattern": ":4382/$",
+          "assertions": {
+            "cumulative-layout-shift": [
+              "warn",
+              {
+                "maxNumericValue": 0.1
+              }
+            ],
+            "largest-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 200
+              }
+            ],
+            "resource-summary:script:size": [
+              "warn",
+              {
+                "maxNumericValue": 477882
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
