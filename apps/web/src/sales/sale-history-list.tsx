@@ -67,7 +67,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
       {chevron ? (
         <ChevronRightIcon
           aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
+          className="hidden size-4 shrink-0 text-muted-foreground min-[22rem]:block"
         />
       ) : null}
     </>
