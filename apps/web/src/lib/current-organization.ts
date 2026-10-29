@@ -31,7 +31,10 @@ import { clearPeriodSummaryCaches } from "./period-summary-cache";
 import { rpcErrorCode } from "./rpc-error";
 import { writeSessionMarker } from "./session-marker";
 import { isSigningOut } from "./sign-out";
-import { sessionStorageOrNull } from "../sales/sale-attempt-storage";
+import {
+  clearSaleAttempts,
+  sessionStorageOrNull,
+} from "../sales/sale-attempt-storage";
 import { clearSaleDrafts } from "../sales/sale-draft-storage";
 
 interface OrganizationContextValue {
@@ -101,6 +104,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           clearPaymentProfileCaches(browserStorage());
           clearPeriodSummaryCaches(browserStorage());
           clearSaleDrafts(sessionStorageOrNull());
+          clearSaleAttempts(sessionStorageOrNull());
         }
         // the flag is the server's word: a list from the device's copy does not carry it
         setBillingSelfService(false);
@@ -153,6 +157,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const select = useCallback((organizationId: string) => {
     // the cart of the store left behind is not kept: it would come back after the person forgot it
     clearSaleDrafts(sessionStorageOrNull(), organizationId);
+    clearSaleAttempts(sessionStorageOrNull(), organizationId);
     writePreferredOrganizationId(browserStorage(), organizationId);
     setLoad((current) => selectOrganization(current, organizationId));
   }, []);

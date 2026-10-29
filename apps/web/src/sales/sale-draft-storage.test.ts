@@ -146,6 +146,21 @@ describe("the sale draft of the tab", () => {
         },
         startedAt: STARTED,
       }),
+      // the ids of the catalog go to the server as they are: only an id the catalog gave, or none
+      JSON.stringify({
+        form: {
+          ...cart(),
+          items: [{ ...cart().items[0], variantId: "../../admin" }],
+        },
+        startedAt: STARTED,
+      }),
+      JSON.stringify({
+        form: {
+          ...cart(),
+          items: [{ ...cart().items[0], productId: `${PRODUCT}x` }],
+        },
+        startedAt: STARTED,
+      }),
     ];
     for (const text of cases) {
       const storage = memoryStorage();

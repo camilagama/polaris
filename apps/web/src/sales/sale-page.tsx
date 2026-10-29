@@ -50,7 +50,7 @@ import {
 } from "./last-prices-model";
 import { OfflineSaleNotice, SavedSalesCard } from "./offline-sale-panels";
 import {
-  readSaleAttempt,
+  readSaleAttemptState,
   sessionStorageOrNull,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
@@ -222,18 +222,24 @@ export function SalePage() {
     modeRef.current && workspace !== null ? workspace : null;
   const offline = offlineWorkspace !== null;
   const [showRequired, setShowRequired] = useState(false);
-  const [restoredAttempt] = useState<SaleAttempt | null>(() =>
-    readSaleAttempt(
+  const [restoredAttempt] = useState(() =>
+    readSaleAttemptState(
       sessionStorageOrNull(),
       organizationId,
       new Date(),
       restoredDraft?.startedAt ?? null
     )
   );
-  const attemptRef = useRef<SaleAttempt | null>(restoredAttempt);
+  const attemptRef = useRef<SaleAttempt | null>(
+    restoredAttempt?.attempt ?? null
+  );
   const rememberAttempt = useCallback(
     (attempt: SaleAttempt | null, unsettled = false) => {
       attemptRef.current = attempt;
+      // an answer that arrives after "Sair" or a refused session must not put back the copy that was dropped
+      if (isSigningOut() || isSessionOver()) {
+        return;
+      }
       writeSaleAttempt(
         sessionStorageOrNull(),
         organizationId,
@@ -353,11 +359,13 @@ export function SalePage() {
           return;
         }
         const spareId = newId();
+        const outcomeUnknown = restoredAttempt?.outcomeUnknown === true;
         const refreshed = refreshRestoredItems(
           formRef.current,
           readIds,
           entries,
-          () => spareId
+          () => spareId,
+          outcomeUnknown
         );
         const message = refreshedDraftMessage(refreshed);
         if (message === null) {
@@ -365,7 +373,13 @@ export function SalePage() {
         }
         setForm(
           (current) =>
-            refreshRestoredItems(current, readIds, entries, () => spareId).form
+            refreshRestoredItems(
+              current,
+              readIds,
+              entries,
+              () => spareId,
+              outcomeUnknown
+            ).form
         );
         setDraftNotice(message);
       })
@@ -374,7 +388,7 @@ export function SalePage() {
       mounted = false;
     };
     // once, for the cart that came back with the mount
-  }, [draftRead, readLines, restoredDraft]);
+  }, [draftRead, readLines, restoredAttempt, restoredDraft]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),

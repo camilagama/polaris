@@ -1,18 +1,29 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
+import { formatBrlAmount } from "../lib/format";
 import { priceFieldText } from "./last-prices-model";
 import {
   createBlankSaleForm,
   type ItemDraft,
+  parseMoneyText,
   type SaleFormState,
 } from "./sale-form-model";
 import { itemChangesForEntry } from "./sale-variant-picker-model";
 
+export interface RepricedLine {
+  /** The price charged on the line now: the new list price when it followed the list, the negotiated one otherwise. */
+  chargedUnitPrice: string;
+  followedList: boolean;
+  label: string;
+  /** The current list price, as the catalog gives it (`38.00`). */
+  listPrice: string;
+}
+
 export interface RefreshedDraft {
   form: SaleFormState;
-  /** Lines whose variant is no longer sellable (gone from the catalog, or its product archived). */
-  removed: number;
-  /** Lines whose list price changed since the cart was built. */
-  repriced: number;
+  /** The labels of the lines whose variant is no longer sellable (gone from the catalog, or its product archived). */
+  removed: string[];
+  /** The lines whose list price changed since the cart was built. */
+  repriced: RepricedLine[];
 }
 
 /** The variants on the cart, each once: what a restored draft reads again. */
@@ -27,7 +38,7 @@ export function draftVariantIds(form: SaleFormState): string[] {
 function repricedItem(
   item: ItemDraft,
   listPrice: string | null
-): ItemDraft | null {
+): { followedList: boolean; item: ItemDraft } | null {
   if (listPrice === null) {
     return null;
   }
@@ -38,9 +49,12 @@ function repricedItem(
   // a negotiated price is the person's number and stays; one that followed the list follows it again
   const followedList = item.chargedUnitPrice === item.listedUnitPrice;
   return {
-    ...item,
-    chargedUnitPrice: followedList ? fresh : item.chargedUnitPrice,
-    listedUnitPrice: fresh,
+    followedList,
+    item: {
+      ...item,
+      chargedUnitPrice: followedList ? fresh : item.chargedUnitPrice,
+      listedUnitPrice: fresh,
+    },
   };
 }
 
@@ -49,21 +63,29 @@ function repricedItem(
  * catalog is taken out, and the list price and the label are the current ones. Only the variants that were read are
  * judged: a line picked after the read came from a fresh search already. The total is never kept: it is computed from
  * the lines again.
+ *
+ * With an attempt whose outcome is unknown (sent, no answer), the cart is left as it was sent: any change to its body
+ * gives the next confirmation a new command ID, and a sale the server already recorded would be recorded again. The
+ * server checks prices and the catalog at the confirmation anyway.
  */
 export function refreshRestoredItems(
   form: SaleFormState,
   readIds: readonly string[],
   entries: readonly InventoryBalanceEntryReadModel[],
-  createId: () => string
+  createId: () => string,
+  outcomeUnknown: boolean
 ): RefreshedDraft {
+  if (outcomeUnknown) {
+    return { form, removed: [], repriced: [] };
+  }
   const read = new Set(readIds);
   const sellable = new Map(
     entries
       .filter((entry) => entry.productStatus === "active")
       .map((entry) => [entry.variantId, entry])
   );
-  let removed = 0;
-  let repriced = 0;
+  const removed: string[] = [];
+  const repriced: RepricedLine[] = [];
   const items: ItemDraft[] = [];
   for (const item of form.items) {
     if (!read.has(item.variantId)) {
@@ -72,15 +94,20 @@ export function refreshRestoredItems(
     }
     const entry = sellable.get(item.variantId);
     if (!entry) {
-      removed += 1;
+      removed.push(item.label);
       continue;
     }
     const current = { ...item, ...itemChangesForEntry(entry) };
     const priced = repricedItem(current, entry.listPrice);
-    if (priced) {
-      repriced += 1;
+    if (priced && entry.listPrice !== null) {
+      repriced.push({
+        chargedUnitPrice: priced.item.chargedUnitPrice,
+        followedList: priced.followedList,
+        label: priced.item.label,
+        listPrice: entry.listPrice,
+      });
     }
-    items.push(priced ?? current);
+    items.push(priced?.item ?? current);
   }
   return {
     form: {
@@ -99,26 +126,40 @@ export const DRAFT_RECORDED_MESSAGE =
 export const DRAFT_UNREADABLE_MESSAGE =
   "Não foi possível recuperar a venda em andamento.";
 
+/** "A", "A e B", "A, B e C". */
+function listOfNames(names: readonly string[]): string {
+  if (names.length <= 1) {
+    return names.join("");
+  }
+  return `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
+}
+
+function removedText(labels: readonly string[]): string {
+  return labels.length === 1
+    ? `O item ${labels[0]} saiu do catálogo e foi tirado da venda.`
+    : `Os itens ${listOfNames(labels)} saíram do catálogo e foram tirados da venda.`;
+}
+
+function repricedText(line: RepricedLine): string {
+  const listed = `${line.label}: preço de tabela atualizado para ${formatBrlAmount(line.listPrice)}`;
+  if (line.followedList) {
+    return `${listed}; o preço cobrado acompanhou.`;
+  }
+  const charged = parseMoneyText(line.chargedUnitPrice);
+  return charged.kind === "ok"
+    ? `${listed}; o preço cobrado continua ${formatBrlAmount(charged.value)}.`
+    : `${listed}; o preço cobrado não mudou.`;
+}
+
 /** What the screen says after the cart was read again, or null when nothing changed. */
 export function refreshedDraftMessage({
   removed,
   repriced,
 }: RefreshedDraft): string | null {
-  const parts: string[] = [];
-  if (removed > 0) {
-    parts.push(
-      removed === 1
-        ? "1 item saiu do catálogo e foi tirado da venda."
-        : `${removed} itens saíram do catálogo e foram tirados da venda.`
-    );
-  }
-  if (repriced > 0) {
-    parts.push(
-      repriced === 1
-        ? "O preço de tabela de 1 item foi atualizado."
-        : `O preço de tabela de ${repriced} itens foi atualizado.`
-    );
-  }
+  const parts = [
+    ...(removed.length > 0 ? [removedText(removed)] : []),
+    ...repriced.map(repricedText),
+  ];
   return parts.length > 0 ? parts.join(" ") : null;
 }
 

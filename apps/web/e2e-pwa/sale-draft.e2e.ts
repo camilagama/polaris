@@ -8,12 +8,14 @@ import { WORKER_MARK } from "./worker-mark";
 /**
  * The sale being built survives leaving Vender, a reload and the way back by "Vender" and "Nova venda", in the app
  * with the server answered by the test (synthetic data). It lives in the tab's `sessionStorage`, never in
- * `localStorage`; "Limpar venda" asks first when there are items; a line that left the catalog is taken out with a
- * notice; and a lost answer, a reload and a second confirmation send the same command ID. The swap of the build with
- * the cart out of the screen is in `update.e2e.ts`.
+ * `localStorage`; "Limpar venda" asks first when there are items; a line that left the catalog is taken out, and a new
+ * list price taken, with a notice that names the item; and a lost answer, a reload and a second confirmation send the
+ * same command ID, even when the catalog changed in between. The swap of the build with the cart out of the screen is
+ * in `update.e2e.ts`.
  */
 const SHIRT_OPTION = /Camiseta do teste/;
 const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
+const ATTEMPT_KEY = `polaris.sale.attempt.v1:${ORGANIZATION.id}`;
 const CONFIRMED_REGION = /Venda confirmada/;
 const SUBMIT_NAME = /Confirmar venda|Tentar novamente/;
 
@@ -38,7 +40,7 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
-/** The catalog the server answers now: a test takes the shirt out of it. */
+/** The catalog the server answers now: a test takes the shirt out of it, or changes its price. */
 interface Catalog {
   entries: (typeof SHIRT)[];
 }
@@ -185,9 +187,10 @@ test("AC-4: ao voltar, o item que saiu do catálogo é tirado com aviso anunciad
 
   catalog.entries = [];
   await menuLink(page, "Vender").click();
-  const notice = page
-    .locator("[aria-live]")
-    .filter({ hasText: "1 item saiu do catálogo e foi tirado da venda." });
+  const notice = page.locator("[aria-live]").filter({
+    hasText:
+      "O item Camiseta do teste · Azul saiu do catálogo e foi tirado da venda.",
+  });
   await expect(notice).toBeVisible();
   await expectBlankLine(page);
   // the payment stays: only the line that left was taken out
@@ -196,6 +199,24 @@ test("AC-4: ao voltar, o item que saiu do catálogo é tirado com aviso anunciad
       .getByRole("radiogroup", { name: "Método de pagamento" })
       .getByRole("radio", { name: "Pix" })
   ).toBeChecked();
+});
+
+test("AC-4: ao voltar, o preço de tabela novo entra com aviso do item, do valor e do preço cobrado", async ({
+  page,
+}) => {
+  const catalog = await serveSale(page);
+  await openSale(page);
+  await buildCart(page);
+  await goHome(page);
+
+  catalog.entries = [{ ...SHIRT, listPrice: "38.00", version: 2 }];
+  await menuLink(page, "Vender").click();
+  const notice = page.locator("[aria-live]").filter({
+    hasText:
+      "Camiseta do teste · Azul: preço de tabela atualizado para R$ 38,00; o preço cobrado acompanhou.",
+  });
+  await expect(notice).toBeVisible();
+  await expect(itemOne(page).getByLabel("Preço cobrado")).toHaveValue("38,00");
 });
 
 test("AC-7: Limpar venda pede confirmação com itens, e sem itens limpa em um toque", async ({
@@ -271,6 +292,35 @@ test("AC-6: resposta perdida, recarga e nova confirmação levam o mesmo command
   expect(sent[1]).toBe(sent[0]);
 });
 
+test("AC-6: resposta perdida, preço mudado e recarga: o carrinho vai como foi, com o mesmo commandId e sem aviso", async ({
+  page,
+}) => {
+  const catalog = await serveSale(page);
+  const sent: unknown[] = [];
+  await page.route("**/rpc/sale/confirm", (route: Route) => {
+    sent.push(route.request().postDataJSON());
+    return route.abort("connectionreset");
+  });
+  await openSale(page);
+  await buildCart(page);
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(1);
+
+  catalog.entries = [{ ...SHIRT, listPrice: "38.00", version: 2 }];
+  await page.reload();
+  await page
+    .getByRole("heading", { exact: true, name: "Nova venda" })
+    .waitFor();
+  await expectCart(page);
+  await expect(itemOne(page).getByLabel("Preço cobrado")).toHaveValue("50,00");
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toEqual(sent[0]);
+  await expect(
+    page.locator("[aria-live]").filter({ hasText: "preço de tabela" })
+  ).toHaveCount(0);
+});
+
 test("AC-3 e AC-6: a venda confirmada nunca volta como rascunho", async ({
   page,
 }) => {
@@ -322,6 +372,11 @@ test("AC-3: trocar de loja apaga a venda da loja deixada", async ({
   );
   await openSale(page);
   await buildCart(page);
+  // the attempt of a sale sent with no answer goes with the cart it was made for
+  await page.evaluate(
+    (key) => window.sessionStorage.setItem(key, "{}"),
+    ATTEMPT_KEY
+  );
 
   const chooseStore = async (name: string) => {
     await page.getByRole("button", { name: "Loja, tema e Sair" }).click();
@@ -334,7 +389,9 @@ test("AC-3: trocar de loja apaga a venda da loja deixada", async ({
   await page
     .getByRole("heading", { exact: true, name: "Nova venda" })
     .waitFor();
-  expect(await storageKeys(page, "sessionStorage")).not.toContain(DRAFT_KEY);
+  const kept = await storageKeys(page, "sessionStorage");
+  expect(kept).not.toContain(DRAFT_KEY);
+  expect(kept).not.toContain(ATTEMPT_KEY);
 
   await chooseStore("Loja do teste");
   await menuLink(page, "Vender").click();

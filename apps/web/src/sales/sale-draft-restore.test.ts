@@ -70,9 +70,13 @@ function cartOfThree(): SaleFormState {
   let form = createBlankSaleForm(createId);
   form = addItem(form, createId());
   form = addItem(form, createId());
-  form = updateItem(form, "draft-1", line(SHIRT));
-  form = updateItem(form, "draft-2", line(CAP, { chargedUnitPrice: "45,00" }));
-  form = updateItem(form, "draft-3", line(MUG));
+  form = updateItem(form, "draft-1", line(SHIRT, { label: "Camiseta" }));
+  form = updateItem(
+    form,
+    "draft-2",
+    line(CAP, { chargedUnitPrice: "45,00", label: "Boné" })
+  );
+  form = updateItem(form, "draft-3", line(MUG, { label: "Caneca" }));
   form = selectPaymentMethod(form, "pix");
   return selectProfileChoice(form, NO_PROFILE_CHOICE, []);
 }
@@ -85,17 +89,26 @@ describe("a cart that came back from the tab, read again", () => {
       form,
       readIds,
       [entry(SHIRT), entry(CAP, { productStatus: "archived" })],
-      ids()
+      ids(),
+      false
     );
 
     expect(refreshed.form.items.map((item) => item.variantId)).toEqual([SHIRT]);
-    expect(refreshed.removed).toBe(2);
+    expect(refreshed.removed).toEqual(["Boné", "Caneca"]);
     expect(refreshedDraftMessage(refreshed)).toBe(
-      "2 itens saíram do catálogo e foram tirados da venda."
+      "Os itens Boné e Caneca saíram do catálogo e foram tirados da venda."
     );
     expect(
-      refreshedDraftMessage({ ...refreshed, removed: 1, repriced: 0 })
-    ).toBe("1 item saiu do catálogo e foi tirado da venda.");
+      refreshedDraftMessage({ ...refreshed, removed: ["Vela aromática"] })
+    ).toBe("O item Vela aromática saiu do catálogo e foi tirado da venda.");
+    expect(
+      refreshedDraftMessage({
+        ...refreshed,
+        removed: ["Vela aromática", "Boné", "Caneca"],
+      })
+    ).toBe(
+      "Os itens Vela aromática, Boné e Caneca saíram do catálogo e foram tirados da venda."
+    );
   });
 
   it("takes the current list price; a negotiated price stays the person's", () => {
@@ -105,10 +118,11 @@ describe("a cart that came back from the tab, read again", () => {
       draftVariantIds(form),
       [
         entry(SHIRT, { listPrice: "55.00" }),
-        entry(CAP, { listPrice: "60.00" }),
+        entry(CAP, { listPrice: "60.00", productName: "Boné" }),
         entry(MUG),
       ],
-      ids()
+      ids(),
+      false
     );
     const [shirt, cap, mug] = refreshed.form.items;
 
@@ -122,9 +136,13 @@ describe("a cart that came back from the tab, read again", () => {
       listedUnitPrice: "60,00",
     });
     expect(mug).toMatchObject({ chargedUnitPrice: "50,00" });
-    expect(refreshed.repriced).toBe(2);
+    expect(refreshed.repriced.map((item) => item.label)).toEqual([
+      "Camiseta · Azul",
+      "Boné · Azul",
+    ]);
     expect(refreshedDraftMessage(refreshed)).toBe(
-      "O preço de tabela de 2 itens foi atualizado."
+      "Camiseta · Azul: preço de tabela atualizado para R$ 55,00; o preço cobrado acompanhou. " +
+        "Boné · Azul: preço de tabela atualizado para R$ 60,00; o preço cobrado continua R$ 45,00."
     );
   });
 
@@ -134,7 +152,8 @@ describe("a cart that came back from the tab, read again", () => {
       form,
       draftVariantIds(form),
       [entry(SHIRT, { listPrice: "55.00" })],
-      ids()
+      ids(),
+      false
     );
     const evaluation = evaluateSaleForm(
       refreshed.form,
@@ -147,13 +166,13 @@ describe("a cart that came back from the tab, read again", () => {
 
   it("judges only the variants read: a line picked after the read stays", () => {
     const form = updateItem(cartOfThree(), "draft-3", line(MUG));
-    const refreshed = refreshRestoredItems(form, [SHIRT], [], ids());
+    const refreshed = refreshRestoredItems(form, [SHIRT], [], ids(), false);
 
     expect(refreshed.form.items.map((item) => item.variantId)).toEqual([
       CAP,
       MUG,
     ]);
-    expect(refreshed.removed).toBe(1);
+    expect(refreshed.removed).toEqual(["Camiseta"]);
   });
 
   it("with every line gone, the cart has one empty line to start again", () => {
@@ -162,7 +181,8 @@ describe("a cart that came back from the tab, read again", () => {
       form,
       draftVariantIds(form),
       [],
-      () => "fresh"
+      () => "fresh",
+      false
     );
 
     expect(refreshed.form.items).toEqual(
@@ -177,7 +197,8 @@ describe("a cart that came back from the tab, read again", () => {
       form,
       draftVariantIds(form),
       [entry(SHIRT), entry(CAP), entry(MUG)],
-      ids()
+      ids(),
+      false
     );
     expect(refreshedDraftMessage(refreshed)).toBeNull();
   });

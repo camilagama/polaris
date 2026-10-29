@@ -86,11 +86,20 @@ const methods = new Set<string>([
 ]);
 const adjustmentKinds = new Set<string>(ADJUSTMENT_KINDS.map(([kind]) => kind));
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Empty on a line with nothing chosen yet; otherwise an id the catalog gave. */
+const isCatalogId = (value: unknown): boolean =>
+  value === "" || (typeof value === "string" && uuidPattern.test(value));
+
 function isItem(value: unknown): boolean {
   return (
     hasExactKeys(value, SALE_DRAFT_SHAPE.item) &&
     SALE_DRAFT_SHAPE.item.every((key) => isText(value[key])) &&
-    value.draftId !== ""
+    value.draftId !== "" &&
+    isCatalogId(value.productId) &&
+    isCatalogId(value.variantId)
   );
 }
 

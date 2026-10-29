@@ -1,5 +1,15 @@
+import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
-import { readSaleAttempt, writeSaleAttempt } from "./sale-attempt-storage";
+import {
+  readSaleAttempt,
+  readSaleAttemptState,
+  writeSaleAttempt,
+} from "./sale-attempt-storage";
+import {
+  draftVariantIds,
+  refreshedDraftMessage,
+  refreshRestoredItems,
+} from "./sale-draft-restore";
 import { readSaleDraft, writeSaleDraft } from "./sale-draft-storage";
 import {
   createBlankSaleForm,
@@ -28,6 +38,7 @@ function memoryStorage() {
 }
 
 const ORG = "0199c2d0-0000-7000-8000-00000000a001";
+const SHIRT = "0199c2d0-0000-7000-8000-0000000000b1";
 const STARTED = new Date("2026-10-28T15:00:00.000Z");
 const CLICKED = new Date("2026-10-28T15:02:00.000Z");
 // past the 30 min an attempt lasts alone
@@ -41,7 +52,7 @@ function cart(): SaleFormState {
     listedUnitPrice: "49,90",
     productId: "0199c2d0-0000-7000-8000-0000000000f1",
     quantity: "1",
-    variantId: "0199c2d0-0000-7000-8000-0000000000b1",
+    variantId: SHIRT,
   });
   form = selectPaymentMethod(form, "pix");
   return selectProfileChoice(form, NO_PROFILE_CHOICE, []);
@@ -116,6 +127,93 @@ describe("a lost answer, a reload and the same cart confirmed again", () => {
     const previous = readSaleAttempt(tab, ORG, RELOADED);
     const second = confirmation(cart(), RELOADED, previous);
 
+    expect(second.request.commandId).not.toBe(first.request.commandId);
+  });
+});
+
+/** The shirt as the catalog gives it after the reload: its list price went up while the answer was lost. */
+const repricedShirt: InventoryBalanceEntryReadModel = {
+  isDefaultVariant: false,
+  listPrice: "59.90",
+  movingAverageCost: null,
+  productId: "0199c2d0-0000-7000-8000-0000000000f1",
+  productName: "Camiseta",
+  productStatus: "active",
+  quantity: 5,
+  sku: null,
+  updatedAt: null,
+  values: [{ optionName: "color", optionValueName: "Azul" }],
+  variantId: SHIRT,
+  version: 2,
+};
+
+/** Confirm, the answer is lost, the price changes, the app reloads and reads the cart's variants again. */
+function reloadAfterLostAnswer(
+  catalog: InventoryBalanceEntryReadModel[],
+  settled: boolean
+) {
+  const tab = memoryStorage();
+  const startedAt = STARTED.toISOString();
+  writeSaleDraft(tab, ORG, { form: cart(), startedAt });
+  const first = confirmation(cart(), CLICKED, null);
+  writeSaleAttempt(tab, ORG, first.attempt, !settled);
+
+  const restored = readSaleDraft(tab, ORG, RELOADED, "America/Sao_Paulo");
+  if (restored.kind !== "restored") {
+    throw new Error("the draft must come back");
+  }
+  const previous = readSaleAttemptState(
+    tab,
+    ORG,
+    RELOADED,
+    restored.draft.startedAt
+  );
+  const refreshed = refreshRestoredItems(
+    restored.draft.form,
+    draftVariantIds(restored.draft.form),
+    catalog,
+    newId,
+    previous?.outcomeUnknown === true
+  );
+  const second = confirmation(
+    refreshed.form,
+    RELOADED,
+    previous?.attempt ?? null
+  );
+  return { first, refreshed, second };
+}
+
+describe("a lost answer, then the catalog changed, then a reload", () => {
+  it("the cart goes again as it was sent: the same command ID, one sale, and no notice", () => {
+    const { first, refreshed, second } = reloadAfterLostAnswer(
+      [repricedShirt],
+      false
+    );
+
+    expect(second.request.commandId).toBe(first.request.commandId);
+    expect(second.request.occurredAt).toBe(first.request.occurredAt);
+    expect(second.request).toEqual(first.request);
+    expect(refreshedDraftMessage(refreshed)).toBeNull();
+  });
+
+  it("a line that left the catalog stays too: the server says what it refuses", () => {
+    const { first, refreshed, second } = reloadAfterLostAnswer([], false);
+
+    expect(second.request.commandId).toBe(first.request.commandId);
+    expect(refreshed.form.items.map((item) => item.variantId)).toEqual([SHIRT]);
+    expect(refreshedDraftMessage(refreshed)).toBeNull();
+  });
+
+  it("after a definite refusal the cart is read again and says what changed", () => {
+    const { first, refreshed, second } = reloadAfterLostAnswer(
+      [repricedShirt],
+      true
+    );
+
+    expect(refreshed.form.items[0]?.chargedUnitPrice).toBe("59,90");
+    expect(refreshedDraftMessage(refreshed)).toBe(
+      "Camiseta · Azul: preço de tabela atualizado para R$ 59,90; o preço cobrado acompanhou."
+    );
     expect(second.request.commandId).not.toBe(first.request.commandId);
   });
 });

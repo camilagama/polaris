@@ -46,23 +46,18 @@ async function modules() {
   return { ended, leave };
 }
 
-const drafts = (stored: Map<string, string>) =>
-  [...stored.keys()].filter((key) => key.startsWith(DRAFT));
-
 describe("the sale draft goes with the session", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("'Sair' forgets the draft of every store of the tab", async () => {
+  it("'Sair' forgets the draft of every store of the tab, and the sale's attempt with it", async () => {
     const tab = tabWithDrafts();
     const m = await modules();
 
     m.leave.leaveAfterSignOut("/");
 
-    expect(drafts(tab.stored)).toEqual([]);
-    // the attempt is identifiers only and keeps its own 30 min rule
-    expect([...tab.stored.keys()]).toEqual([`polaris.sale.attempt.v1:${ORG}`]);
+    expect([...tab.stored.keys()]).toEqual([]);
   });
 
   it("a session refused (endSessionHere) forgets them too", async () => {
@@ -71,6 +66,6 @@ describe("the sale draft goes with the session", () => {
 
     m.ended.endSessionHere();
 
-    expect(drafts(tab.stored)).toEqual([]);
+    expect([...tab.stored.keys()]).toEqual([]);
   });
 });

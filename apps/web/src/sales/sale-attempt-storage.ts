@@ -39,6 +39,15 @@ function isAttempt(value: unknown): value is StoredAttempt {
   );
 }
 
+export interface SaleAttemptRead {
+  attempt: SaleAttempt;
+  /**
+   * Sent and with no answer, made for the cart that came back from the tab: that cart may already be a sale on the
+   * server, so it must go again exactly as it was sent.
+   */
+  outcomeUnknown: boolean;
+}
+
 /**
  * `draftStartedAt` is set when the cart came back from the tab's draft (`sale-draft-storage.ts`): an attempt whose
  * outcome is unknown then lasts as long as that draft, since the same cart is still there and confirming it again must
@@ -46,12 +55,12 @@ function isAttempt(value: unknown): value is StoredAttempt {
  * belongs to another cart), and only an unsettled one: after a definite refusal, a retry hours later must not carry the
  * instant of the first click.
  */
-export function readSaleAttempt(
+export function readSaleAttemptState(
   storage: PreferenceStorage | null,
   organizationId: string,
   now: Date,
   draftStartedAt: string | null = null
-): SaleAttempt | null {
+): SaleAttemptRead | null {
   try {
     const text = storage?.getItem(attemptKey(organizationId));
     if (!text) {
@@ -63,23 +72,43 @@ export function readSaleAttempt(
     }
     const recordedAt = new Date(parsed.recordedAt).getTime();
     const age = now.getTime() - recordedAt;
-    const keptByDraft =
+    const ofThisCart =
       parsed.unsettled === true &&
       draftStartedAt !== null &&
       recordedAt >= new Date(draftStartedAt).getTime();
     if (
       !Number.isFinite(age) ||
       age < 0 ||
-      (age > SALE_ATTEMPT_MAX_AGE_MS && !keptByDraft)
+      (age > SALE_ATTEMPT_MAX_AGE_MS && !ofThisCart)
     ) {
       storage?.removeItem(attemptKey(organizationId));
       return null;
     }
     const { commandId, occurredAt, signature } = parsed;
-    return { commandId, occurredAt, recordedAt: parsed.recordedAt, signature };
+    return {
+      attempt: {
+        commandId,
+        occurredAt,
+        recordedAt: parsed.recordedAt,
+        signature,
+      },
+      outcomeUnknown: ofThisCart,
+    };
   } catch {
     return null;
   }
+}
+
+export function readSaleAttempt(
+  storage: PreferenceStorage | null,
+  organizationId: string,
+  now: Date,
+  draftStartedAt: string | null = null
+): SaleAttempt | null {
+  return (
+    readSaleAttemptState(storage, organizationId, now, draftStartedAt)
+      ?.attempt ?? null
+  );
 }
 
 /**
@@ -101,6 +130,38 @@ export function writeSaleAttempt(
     }
   } catch {
     // Storage can be full or blocked; the in-memory attempt still works.
+  }
+}
+
+type AttemptStorage = PreferenceStorage &
+  Partial<Pick<Storage, "key" | "length">>;
+
+/**
+ * Forgets the attempts of every store of this tab, but the one kept (the store just chosen): they go with the drafts
+ * they were made for, on "Sair", a refused session and a change of store.
+ */
+export function clearSaleAttempts(
+  storage: AttemptStorage | null,
+  keepOrganizationId: string | null = null
+): void {
+  try {
+    if (!storage?.key || storage.length === undefined) {
+      return;
+    }
+    const keep =
+      keepOrganizationId === null ? null : attemptKey(keepOrganizationId);
+    const found: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(KEY_PREFIX) && key !== keep) {
+        found.push(key);
+      }
+    }
+    for (const key of found) {
+      storage.removeItem(key);
+    }
+  } catch {
+    // a blocked storage holds no attempt
   }
 }
 
