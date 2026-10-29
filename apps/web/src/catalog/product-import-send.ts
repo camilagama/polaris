@@ -442,6 +442,21 @@ async function pauseForRegime(
   return true;
 }
 
+/** `sendSlice`, after which only a cut still counts as the send right after a pause at the ceiling. */
+async function sendAfterPause(
+  run: ImportRun,
+  rows: ProductImportRowInput[],
+  dependencies: ImportSendDependencies,
+  clock: { now: () => number; wait: Wait }
+): Promise<SliceOutcome> {
+  const outcome = await sendSlice(run, rows, dependencies, clock);
+  if (outcome.kind !== "cut") {
+    // held, it waits for a new pause
+    run.regime.sendAfterCeiling = false;
+  }
+  return outcome;
+}
+
 /** Sends the rows of the run from where it stopped, a slice at a time, until every row has its answer or it stops. */
 export async function runImport(
   run: ImportRun,
@@ -458,11 +473,7 @@ export async function runImport(
       run.nextIndex + PRODUCT_IMPORT_BATCH_MAX_ROWS
     );
     // biome-ignore lint/performance/noAwaitInLoops: one slice at a time, the next only after the answer
-    const outcome = await sendSlice(run, rows, dependencies, clock);
-    if (outcome.kind !== "cut") {
-      // only the outcome of the send right after the pause counts; held, it waits for a new pause
-      run.regime.sendAfterCeiling = false;
-    }
+    const outcome = await sendAfterPause(run, rows, dependencies, clock);
     if (outcome.kind === "cut" || outcome.kind === "held") {
       // the same rows go again after the pause, with the same IDs; a cut is no try of `MAX_ROW_RETRIES`
       if (await pauseForRegime(run, outcome.kind, dependencies, clock)) {
