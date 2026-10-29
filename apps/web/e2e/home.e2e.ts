@@ -1189,7 +1189,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     expect(height).toBeGreaterThan(740);
   });
 
-  const HELPS: ReadonlyArray<[string, string]> = [
+  const HELPS: readonly [string, string][] = [
     [
       "Vendas hoje",
       "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores.",
