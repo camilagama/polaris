@@ -1221,10 +1221,10 @@ async function run() {
     );
     const bandsOf = (cell: Cell) => ({
       after7Days: cell,
-      upTo10Minutes: cell,
       upTo1Day: cell,
       upTo1Hour: cell,
       upTo7Days: cell,
+      upTo10Minutes: cell,
     });
     const cohortAt = (weeksAgo: number) => {
       const { cohort } = byWeek(fixture.funnel, weeksAgo, fixture.clock);
@@ -1513,6 +1513,13 @@ async function run() {
       }
     }
 
+    // k stores created at the start of this week whose only sale is dated 10 days before they existed: they were not
+    // there in the week of the sale, so no week may count them as active, whatever gate ran before this one
+    for (const _ of times(K, () => 0)) {
+      // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+      await createStore(0, { created: "0 minutes", sales: ["-10 days"] });
+    }
+
     // ------------------------------------------------- 4. the whole answer against a direct count
     const final = await read();
     const { funnel } = final;
@@ -1570,7 +1577,9 @@ async function run() {
         GROUP BY 1`
     );
     // the stores active in each week, counted another way: the sales grouped by the week of `confirmed_at` (the
-    // function asks, store by store, whether one falls in the week), and the stores that existed by the week of creation
+    // function asks, store by store, whether one falls in the week), and the stores that existed by the week of creation.
+    // A store counts as active only in the weeks it already existed in: another gate backdates the sales of the stores it
+    // creates just now into earlier weeks, and those sales are not activity of a store that did not exist yet
     const directActive = await owner.pool.query<{
       active: number;
       existing: number;
@@ -1583,7 +1592,8 @@ async function run() {
        )
        SELECT to_char(w, 'YYYY-MM-DD') AS start,
               (SELECT count(DISTINCT s.organization_id)::int FROM public.sales AS s JOIN counted AS c ON c.id = s.organization_id
-                WHERE date_trunc('week', s.confirmed_at AT TIME ZONE '${ZONE}') = w) AS active,
+                WHERE date_trunc('week', s.confirmed_at AT TIME ZONE '${ZONE}') = w
+                  AND date_trunc('week', c.created_at AT TIME ZONE '${ZONE}') <= w) AS active,
               (SELECT count(*)::int FROM counted AS c
                 WHERE date_trunc('week', c.created_at AT TIME ZONE '${ZONE}') <= w) AS existing
          FROM generate_series(date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks',
@@ -1729,7 +1739,7 @@ async function run() {
     );
     assert.equal(cohortKeys.size, 1, "every cohort has the same closed keys");
     tests.push(
-      `the whole answer of 26 weeks (${direct.rows.length} counted stores, from every gate before this one and the fixtures) equals a direct count of the rows computed apart (first sale by ORDER BY, weeks of sale by date_trunc, the cut chosen again in this file, the stores active in each calendar week by the sales grouped by week and the complement by the week of creation), with the same reasons of "unavailable"; the format is closed and holds no identifier or e-mail`
+      `the whole answer of 26 weeks (${direct.rows.length} counted stores, from every gate before this one and the fixtures) equals a direct count of the rows computed apart (first sale by ORDER BY, weeks of sale by date_trunc, the cut chosen again in this file, the stores active in each calendar week by the sales grouped by week, counting a store only from the week it was created, and the complement by the week of creation; five stores created this week with a sale dated before they existed show that no week counts them), with the same reasons of "unavailable"; the format is closed and holds no identifier or e-mail`
     );
 
     const problems = suppressionProblems(funnel);
