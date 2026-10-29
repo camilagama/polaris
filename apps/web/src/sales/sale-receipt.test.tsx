@@ -119,6 +119,38 @@ describe("the history list", () => {
     expect(markup).toContain("Cancelada");
     expect(markup).toContain("Com devoluções");
     expect(markup).toContain("Retroativa");
-    expect(markup).toContain("Cliente: Ana Souza");
+  });
+
+  it("writes customer, method and items on one line, with no 'Cliente:' prefix", () => {
+    const markup = renderToStaticMarkup(
+      <SaleHistoryList offline={false} rows={[row()]} />
+    );
+    expect(markup).toContain("Ana Souza · Pix · 2 itens");
+    expect(markup).toContain("line-clamp-2");
+    expect(markup).not.toContain("Cliente:");
+    const none = renderToStaticMarkup(
+      <SaleHistoryList
+        offline={false}
+        rows={[
+          row({
+            customerText: "Sem cliente",
+            itemCountText: "1 item",
+            methodText: "Dinheiro",
+          }),
+        ]}
+      />
+    );
+    expect(none).toContain("Sem cliente · Dinheiro · 1 item");
+  });
+
+  it("ends the row in a chevron with a connection and has none without one", () => {
+    const online = renderToStaticMarkup(
+      <SaleHistoryList offline={false} rows={[row()]} />
+    );
+    const offline = renderToStaticMarkup(
+      <SaleHistoryList offline rows={[row()]} />
+    );
+    expect(online).toContain("lucide-chevron-right");
+    expect(offline).not.toContain("lucide-chevron-right");
   });
 });

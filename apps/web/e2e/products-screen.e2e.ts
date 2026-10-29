@@ -665,9 +665,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
-  await expect(
-    page.getByText("Cadastre o primeiro para vender.")
-  ).toBeVisible();
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });

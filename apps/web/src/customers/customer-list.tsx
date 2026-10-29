@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { productInitials } from "../catalog/product-search-model";
-import { formatDate, ListNotice } from "../catalog/screen-parts";
+import { ListNotice } from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
@@ -243,18 +243,10 @@ function CustomerRow({
             ) : null}
           </div>
           {contacts ? (
-            <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+            <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
               {contacts}
             </p>
           ) : null}
-          {customer.notes ? (
-            <p className="line-clamp-2 whitespace-pre-line text-muted-foreground text-support [overflow-wrap:anywhere]">
-              {customer.notes}
-            </p>
-          ) : null}
-          <p className="text-muted-foreground text-support">
-            Atualizado em {formatDate(customer.updatedAt)}
-          </p>
           {shownState?.state === "rejected" ? (
             <a
               className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
@@ -268,8 +260,8 @@ function CustomerRow({
           ) : null}
           {isAnonymized ? (
             <p className="text-muted-foreground text-support">
-              Dados pessoais removidos. Este cadastro não pode ser editado nem
-              restaurado; as vendas ligadas a ele mantêm seus valores.
+              Dados pessoais removidos: não dá para editar nem restaurar; as
+              vendas dele não mudam.
             </p>
           ) : null}
           {pendingLabel ? (

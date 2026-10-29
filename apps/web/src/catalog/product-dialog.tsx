@@ -32,6 +32,7 @@ import {
   ProductForm,
   productFormHasErrors,
 } from "./product-form";
+import { formatDate } from "./screen-parts";
 import { ProductMediaPanel } from "./product-media-panel";
 import type { VariantConfigurationDraft } from "./product-variants-model";
 import { ProductVariantsPanel } from "./product-variants-panel";
@@ -165,16 +166,17 @@ function TabScope({
 }
 
 /** Without a connection the strip at the top of the body says it: the line under the title does not repeat it. */
-function dialogTexts(
-  editing: boolean,
+export function dialogTexts(
+  product: ProductReadModel | null,
   isPending: boolean
 ): { description: string; submitLabel: string } {
+  const editing = product !== null;
   let submitLabel = editing ? "Salvar alterações" : "Cadastrar produto";
   if (isPending) {
     submitLabel = "Salvando…";
   }
-  const description = editing
-    ? "Produto"
+  const description = product
+    ? `Produto · atualizado em ${formatDate(product.updatedAt)}`
     : "Um passo só: o produto pode nascer com o estoque.";
   return { description, submitLabel };
 }
@@ -366,7 +368,7 @@ function ProductDialogBody({
     />
   );
 
-  const { description, submitLabel } = dialogTexts(editing, isPending);
+  const { description, submitLabel } = dialogTexts(product, isPending);
 
   return (
     <>

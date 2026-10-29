@@ -194,7 +194,7 @@ const PRODUCTS_SCREENS = [
     name: "Produtos no shell: sem produto",
     open: (page: Page) =>
       openProducts(page, [], () =>
-        expect(page.getByText("Cadastre o primeiro para vender.")).toBeVisible()
+        expect(page.getByText("Nenhum produto ainda")).toBeVisible()
       ),
   },
   {
