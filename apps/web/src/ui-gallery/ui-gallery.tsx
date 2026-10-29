@@ -588,7 +588,7 @@ export function UiGallery() {
                 <Input
                   aria-label="Campo principal"
                   className="touch:h-11"
-                  placeholder="Principal (busca)"
+                  placeholder="Busca"
                 />
               </div>
             </div>
