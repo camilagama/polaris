@@ -7,8 +7,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { ImportReadyRow } from "./product-import-rows";
 import {
+  CUTS_AT_CEILING_TO_SKIP,
   createImportRun,
   IMPORT_CALL_INTERVAL_MS,
+  PACE_BACK_AFTER_ANSWERS,
+  REGIME_PAUSE_STEPS_MS,
   type ImportRun,
   type ImportSendDependencies,
   runImport,
@@ -54,6 +57,24 @@ const created = (rows: ProductImportRowInput[]): ProductImportRowResult[] =>
 
 const rpcError = (code: string) =>
   Object.assign(new Error(code), { code, defined: false });
+
+/** What oRPC throws for the platform's page of a Worker it killed (1102: a 503 with `cf-ray` and no mark). */
+const platformCut = () =>
+  Object.assign(new Error("cut"), {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "platform_cut" },
+    defined: false,
+    status: 503,
+  });
+
+/** The 503 the Worker itself gives an unexpected fault (`unexpectedRpcError`): it carries the mark. */
+const workerBusy = () =>
+  Object.assign(new Error("busy"), {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    status: 503,
+  });
 
 /** A clock that only moves when the run waits, and a record of every wait. */
 function fakeTime() {
@@ -168,7 +189,7 @@ describe("one row per call, by the measure of the Free plan", () => {
     expect(PRODUCT_IMPORT_BATCH_MAX_ROWS).toBe(1);
   });
 
-  it("never sends more than one row, and keeps 2.5 s between any two calls (fake clock)", async () => {
+  it("never sends more than one row, and keeps 7 s between any two calls (fake clock)", async () => {
     const sent: number[] = [];
     const sentAt: number[] = [];
     const time = fakeTime();
@@ -185,11 +206,11 @@ describe("one row per call, by the measure of the Free plan", () => {
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
 
     expect(sent).toEqual(Array.from({ length: 25 }, () => 1));
-    expect(IMPORT_CALL_INTERVAL_MS).toBe(2500);
+    expect(IMPORT_CALL_INTERVAL_MS).toBe(7000);
     expect(sentAt).toEqual(
-      Array.from({ length: 25 }, (_, index) => index * 2500)
+      Array.from({ length: 25 }, (_, index) => index * 7000)
     );
-    expect(time.waits).toEqual(Array.from({ length: 24 }, () => 2500));
+    expect(time.waits).toEqual(Array.from({ length: 24 }, () => 7000));
     expect(
       send.mock.calls.every(([input]) => input.importId === run.importId)
     ).toBe(true);
@@ -202,11 +223,11 @@ describe("one row per call, by the measure of the Free plan", () => {
     });
   });
 
-  it("sends the same row again with the same IDs after a 1102 of one row, at the pace, and goes on", async () => {
+  it("sends the same row again with the same IDs after a 500 with no reason, at the pace, and goes on", async () => {
     const productIds: string[] = [];
     const send = vi.fn((input: SendInput) => {
       productIds.push(input.rows[0]?.productId ?? "");
-      // the CPU limit of the platform kills the first call: no answer, the row may have entered
+      // a fault of the server nobody named, that is not the platform's: the row may have entered
       return productIds.length === 1
         ? Promise.reject(rpcError("INTERNAL_SERVER_ERROR"))
         : Promise.resolve({ results: created(input.rows) });
@@ -223,7 +244,7 @@ describe("one row per call, by the measure of the Free plan", () => {
       run.rows[1]?.productId,
       run.rows[2]?.productId,
     ]);
-    expect(time.waits).toEqual([2500, 2500, 2500]);
+    expect(time.waits).toEqual([7000, 7000, 7000]);
     // the failure is no step of the progress: the screen sees only the rows answered
     expect(progress).toEqual([1, 2, 3]);
     expect(summarizeImport(run)).toMatchObject({ entered: 3, pending: 0 });
@@ -324,8 +345,8 @@ describe("runImport", () => {
     });
 
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
-    // the 1 s of the floor, and then the rest of the pace of 2.5 s since the call refused
-    expect(time.waits).toEqual([1000, 1500, 120_000, 2500]);
+    // the 1 s of the floor, and then the rest of the pace of 7 s since the call refused
+    expect(time.waits).toEqual([1000, 6000, 120_000, 7000]);
   });
 
   it("keeps the pace after a 429 and across a continued run", async () => {
@@ -349,8 +370,8 @@ describe("runImport", () => {
     expect((await runImport(run, dependencies)).kind).toBe("refused");
     expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
 
-    // 2.5 s between any two calls: the row sent again after the 429, and the first call of the continued run
-    expect(sentAt).toEqual([0, 2500, 5000, 7500, 10_000, 12_500]);
+    // 7 s between any two calls: the row sent again after the 429, and the first call of the continued run
+    expect(sentAt).toEqual([0, 7000, 14_000, 21_000, 28_000, 35_000]);
   });
 
   it("takes an answer without every row sent as no answer: nothing moves", async () => {
@@ -512,5 +533,325 @@ describe("runImport", () => {
     expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
     expect(send).toHaveBeenCalledOnce();
     expect(run.nextIndex).toBe(1);
+  });
+});
+
+describe("the regime of the Free plan", () => {
+  const [FIRST, SECOND, CEILING] = REGIME_PAUSE_STEPS_MS;
+
+  it("has the steps of the pause: 2, 5 and 10 minutes, each past the ~6 min the regime takes to end", () => {
+    expect(REGIME_PAUSE_STEPS_MS).toEqual([120_000, 300_000, 600_000]);
+    expect(PACE_BACK_AFTER_ANSWERS).toBe(20);
+    expect(CUTS_AT_CEILING_TO_SKIP).toBe(3);
+  });
+
+  it("pauses 2, 5 and 10 min after three cuts in a row, sends the same row with the same IDs, and ends with every row answered", async () => {
+    const sent: ProductImportRowInput[] = [];
+    let cuts = 3;
+    const send = vi.fn((input: SendInput) => {
+      sent.push(...input.rows);
+      if (input.rows[0]?.rowNumber === 3 && cuts > 0) {
+        cuts -= 1;
+        return Promise.reject(platformCut());
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const pauses: (number | null)[] = [];
+    const { dependencies, run, time } = setup(4, send);
+    dependencies.onPause = (resumeAt) => pauses.push(resumeAt);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    expect(time.waits).toEqual([
+      IMPORT_CALL_INTERVAL_MS,
+      FIRST,
+      SECOND,
+      CEILING,
+      2 * IMPORT_CALL_INTERVAL_MS,
+      2 * IMPORT_CALL_INTERVAL_MS,
+    ]);
+    // the screen hears when each pause ends: the hour it says, and the end
+    const firstCut = IMPORT_CALL_INTERVAL_MS;
+    expect(pauses).toEqual([
+      firstCut + FIRST,
+      null,
+      firstCut + FIRST + SECOND,
+      null,
+      firstCut + FIRST + SECOND + CEILING,
+      null,
+    ]);
+    const third = sent.filter((row) => row.rowNumber === 3);
+    expect(third).toHaveLength(4);
+    expect(new Set(third.map((row) => JSON.stringify(row))).size).toBe(1);
+    expect(third[0]).toEqual(run.rows[1]);
+    expect(summarizeImport(run)).toEqual({
+      entered: 4,
+      existing: 0,
+      failed: 0,
+      limitReached: 0,
+      pending: 0,
+    });
+  });
+
+  it("never gives up by itself on cuts: they are no try of the row, and the first row is never left out", async () => {
+    let cuts = 8;
+    const send = vi.fn((input: SendInput) => {
+      if (cuts > 0) {
+        cuts -= 1;
+        return Promise.reject(platformCut());
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(2, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    expect(time.waits.slice(0, 8)).toEqual([
+      FIRST,
+      SECOND,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+    ]);
+    expect(run.skipped.size).toBe(0);
+    expect(summarizeImport(run)).toMatchObject({ entered: 2, pending: 0 });
+  });
+
+  it("goes at twice the interval after a pause, and back to 7 s after 20 answers in a row", async () => {
+    let cut = false;
+    const send = vi.fn((input: SendInput) => {
+      if (input.rows[0]?.rowNumber === 3 && !cut) {
+        cut = true;
+        return Promise.reject(platformCut());
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(26, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // the row cut goes again right after the pause; it and the next 19 rows are the 20 answers at half pace
+    expect(time.waits).toEqual([
+      IMPORT_CALL_INTERVAL_MS,
+      FIRST,
+      ...Array.from({ length: 19 }, () => 2 * IMPORT_CALL_INTERVAL_MS),
+      ...Array.from({ length: 5 }, () => IMPORT_CALL_INTERVAL_MS),
+    ]);
+  });
+
+  it("starts the pauses over once the pace came back, and grows them while the regime comes back sooner", async () => {
+    // cut at rows 3 and 6 (the pace not back yet: 5 min), then at row 30 (20 answers later: 2 min again)
+    const cutRows = new Set([3, 6, 30]);
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      if (cutRows.delete(rowNumber)) {
+        return Promise.reject(platformCut());
+      }
+      return Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(30, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+    expect(time.waits.filter((ms) => ms >= 60_000)).toEqual([
+      FIRST,
+      SECOND,
+      FIRST,
+    ]);
+  });
+
+  it("holds the send in a pause while the tab's own work is failing, and sends nothing meanwhile", async () => {
+    const busy = [true, true];
+    const send = vi.fn((input: SendInput) =>
+      Promise.resolve({ results: created(input.rows) })
+    );
+    const { dependencies, run, time } = setup(2, send, {
+      busy: () => busy.shift() ?? false,
+    });
+    const calledAt: number[] = [];
+    send.mockImplementation((input: SendInput) => {
+      calledAt.push(time.now());
+      return Promise.resolve({ results: created(input.rows) });
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    expect(time.waits).toEqual([FIRST, SECOND, 2 * IMPORT_CALL_INTERVAL_MS]);
+    expect(calledAt[0]).toBe(FIRST + SECOND);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves out the row cut 3 times after pauses at the ceiling, when the row before it went through, and goes on", async () => {
+    const stuck = 3;
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      sent.push(rowNumber);
+      // cut every time; past 20 tries the row would go through, so a run that never leaves it out still ends
+      return rowNumber === stuck && sent.length < 20
+        ? Promise.reject(platformCut())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const progress: number[] = [];
+    const { dependencies, run, time } = setup(4, send, {
+      onProgress: (current: ImportRun) => progress.push(current.nextIndex),
+    });
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // three cuts to reach the ceiling, then three more after it
+    expect(sent).toEqual([2, 3, 3, 3, 3, 3, 3, 4, 5]);
+    expect(time.waits.filter((ms) => ms >= 60_000)).toEqual([
+      FIRST,
+      SECOND,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+    ]);
+    expect(run.skipped).toEqual(new Set([stuck]));
+    expect(progress).toEqual([1, 2, 3, 4]);
+    expect(summarizeImport(run)).toEqual({
+      entered: 3,
+      existing: 0,
+      failed: 1,
+      limitReached: 0,
+      pending: 0,
+    });
+  });
+
+  it("counts a cut on the send after an answer for nothing: the row is left out only after 3 pauses at the ceiling", async () => {
+    // row 3 brings the pauses to the ceiling and goes through; row 4 is then cut on every send
+    let cutsOfThird = 3;
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      sent.push(rowNumber);
+      if (rowNumber === 3 && cutsOfThird > 0) {
+        cutsOfThird -= 1;
+        return Promise.reject(platformCut());
+      }
+      return rowNumber === 4 && sent.length < 30
+        ? Promise.reject(platformCut())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(4, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // row 4: the send at the pace after row 3 answered, then one send after each of 3 pauses at the ceiling
+    expect(sent.filter((rowNumber) => rowNumber === 4)).toHaveLength(4);
+    expect(time.waits.filter((ms) => ms >= 60_000)).toEqual([
+      FIRST,
+      SECOND,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+    ]);
+    expect(run.skipped).toEqual(new Set([4]));
+    expect(summarizeImport(run)).toMatchObject({ entered: 3, failed: 1 });
+  });
+
+  it("does not count the send after a pause at the ceiling that the screen cut short", async () => {
+    // rows 2 and 3 answer; row 4 is cut on every send
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      sent.push(rowNumber);
+      return rowNumber === 4 && sent.length < 40
+        ? Promise.reject(platformCut())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const time = fakeTime();
+    let controller = new AbortController();
+    let ceilings = 0;
+    const { dependencies, run } = setup(4, send, {
+      now: time.now,
+      wait: (ms: number) => {
+        if (ms === CEILING) {
+          ceilings += 1;
+          // the person stops during the second pause at the ceiling
+          if (ceilings === 2) {
+            controller.abort();
+          }
+        }
+        return time.wait(ms);
+      },
+    });
+    dependencies.signal = controller.signal;
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    controller = new AbortController();
+    dependencies.signal = controller.signal;
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // counted: the cuts after the 1st, the 3rd and the 4th pauses at the ceiling (the 2nd was cut short, and the send
+    // after the continue is no send after a pause); the row is left out, and the pause after that cut still goes
+    expect(ceilings).toBe(5);
+    expect(run.skipped).toEqual(new Set([4]));
+  });
+
+  it("takes the Worker's own 503 server_busy as a failure of the row, never as the regime: no pause, it stops after the tries", async () => {
+    let calls = 0;
+    // the fault repeats on every send; past 10 the row would go through, so a run that pauses on it still ends
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      return input.rows[0]?.rowNumber === 2 && calls <= 10
+        ? Promise.reject(workerBusy())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const pauses: (number | null)[] = [];
+    const { dependencies, run, time } = setup(3, send, {
+      onPause: (resumeAt) => pauses.push(resumeAt),
+    });
+
+    const stop = await runImport(run, dependencies);
+
+    expect(stop.kind).toBe("interrupted");
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(pauses).toEqual([]);
+    expect(time.waits.every((ms) => ms < 60_000)).toBe(true);
+    expect(run.nextIndex).toBe(0);
+  });
+
+  it("stops at once when the screen gives up during a pause", async () => {
+    const controller = new AbortController();
+    const send = vi.fn(() => Promise.reject(platformCut()));
+    const time = fakeTime();
+    const { dependencies, run } = setup(3, send, {
+      now: time.now,
+      signal: controller.signal,
+      wait: (ms: number) => {
+        if (ms >= 60_000) {
+          controller.abort();
+        }
+        return time.wait(ms);
+      },
+    });
+
+    const pauses: (number | null)[] = [];
+    dependencies.onPause = (resumeAt) => pauses.push(resumeAt);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "aborted" });
+    expect(send).toHaveBeenCalledOnce();
+    expect(run.nextIndex).toBe(0);
+    // the pause never says it ended: the screen goes straight to the stop
+    expect(pauses).toEqual([FIRST]);
+  });
+
+  it("takes a response with no mark of the Worker as no answer, never as a cut: it still stops after the tries", async () => {
+    const noAnswer = Object.assign(new Error("no_worker_answer_unproven"), {
+      name: "NoWorkerAnswerError",
+    });
+    const send = vi.fn(() => Promise.reject(noAnswer));
+    const { dependencies, run, time } = setup(2, send);
+
+    expect((await runImport(run, dependencies)).kind).toBe("interrupted");
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(time.waits.every((ms) => ms < 60_000)).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import type {
 } from "@polaris/contracts";
 import { type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import { commonFailureMessage, rpcErrorCode } from "../lib/rpc-error";
 import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
@@ -25,9 +25,9 @@ import {
 const INVALID_PRICE = "Informe um valor em reais, como 59,90.";
 
 function priceErrorMessage(error: unknown): string {
-  const unaccepted = legalAcceptanceMessage(error);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error);
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "CONFLICT") {

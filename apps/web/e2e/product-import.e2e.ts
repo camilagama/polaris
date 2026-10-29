@@ -16,7 +16,8 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
  * - AC-6: the plan's room in the preview (only the first ones, with "Você usa N de M"), and the plan's refusal in the
  *   middle said as the limit, never as a fault of the file;
  * - AC-13: the result in a status, the table with its headers, no sideways scroll at 320 px.
- * Each call is one row and goes at most every 2.5 s (`IMPORT_CALL_INTERVAL_MS`): the tests keep few rows.
+ * - the regime of the Free plan: the platform's cut pauses the run, says the hour it goes on by itself, and it ends.
+ * Each call is one row and goes at most every 7 s (`IMPORT_CALL_INTERVAL_MS`): the tests keep few rows.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -33,12 +34,15 @@ const OFFLINE_REASON = /Importar precisa de conexão/;
 const OFFLINE_REASON_RUN = /Quando ela voltar, continue de onde parou\./;
 const BLAMES_THE_FILE = /arquivo tem erro/i;
 const CANCEL_OR_UNDO = /cancel|desfe|desfaz/i;
-/** A fault of the Worker (as a 1102 of the CPU limit) in the shape of an error of oRPC: nothing created. */
-const SERVER_FAULT = {
-  code: "INTERNAL_SERVER_ERROR",
-  defined: false,
-  message: "Internal server error",
-  status: 500,
+const BUSY_PAUSE =
+  /^O servidor está ocupado\. A importação continua sozinha às \d{2}:\d{2}\.$/;
+const TRY_NOW = /tentar/i;
+/** The page Cloudflare answers for a Worker the platform killed (1102): a 503 with `cf-ray` and no mark. */
+const PLATFORM_CUT = {
+  body: "<html><body>Worker exceeded resource limits</body></html>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d1e2f3a4b5c6d7e-GRU" },
+  status: 503,
 };
 /** Three products by hand, as AC-25 of the Início measured each one (`product-opening-stock.e2e.ts`). */
 const BY_HAND_ACTIONS = 3 * 6;
@@ -104,7 +108,9 @@ const productOf = (name: string, id: string) => ({
 interface ServerOptions {
   /** What each call of `product.importBatch` does before the server answers (by its number, from 1). */
   beforeAnswer?: (call: number, route: Route) => Promise<"answer" | "lost">;
-  /** A row the server never answers: a fault of the Worker each time (a 500, as a 1102 of the CPU), nothing created. */
+  /** The calls of `product.importBatch` the platform kills (by their number, from 1): nothing created. */
+  cutCalls?: ReadonlySet<number>;
+  /** A row the server never answers: the call gets no answer each time, nothing created. */
   faultyRow?: string;
   existing?: readonly string[];
   /** The variants of the store the plan holds; another tab may take some in the middle (`takeRoom`). */
@@ -117,6 +123,7 @@ async function openProducts(
   page: Page,
   {
     beforeAnswer,
+    cutCalls,
     existing = [],
     faultyRow,
     room = 49,
@@ -201,7 +208,10 @@ async function openProducts(
         const rows = body().rows as ImportRow[];
         store.batches.push({ rows });
         if (rows.some((row) => row.name === faultyRow)) {
-          return route.fulfill(rpc(SERVER_FAULT, 500));
+          return route.abort("failed");
+        }
+        if (cutCalls?.has(store.batches.length)) {
+          return route.fulfill(PLATFORM_CUT);
         }
         const results = rows.map(createRow);
         const fate =
@@ -307,6 +317,11 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
   await expect(
     dialog.getByRole("table", { name: "Linhas do arquivo: Já existem" })
   ).toContainText("Já existe um produto com este nome. Fica como está.");
+  await expect(
+    dialog.getByText(
+      "Importar 2 produtos leva até 5 minutos. Deixe esta tela aberta. Se fechar, abra a mesma planilha de novo: o que já entrou não é repetido."
+    )
+  ).toBeVisible();
   // after the preview: nothing written
   expect(store.batches).toHaveLength(0);
   expect(store.products).toHaveLength(before);
@@ -317,7 +332,7 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
   });
   await expect(statusIn(dialog, "1 linha não entrou.")).toBeVisible();
   await expect(
-    statusIn(dialog, "1 já existia e ficou como estava.")
+    statusIn(dialog, "1 já estava na loja e ficou como estava.")
   ).toBeVisible();
   await expect(dialog.getByText(STOCK_TEXT, { exact: true })).toBeVisible();
   // the store has the two valid rows, once each, and nothing of the others
@@ -582,8 +597,8 @@ test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", a
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
   page,
 }) => {
-  // the stuck row is tried 9 times at the pace of the import (2.5 s): about half a minute before "Pular esta linha"
-  test.setTimeout(180_000);
+  // the stuck row is tried 9 times at the pace of the import (7 s): about a minute before "Pular a linha N"
+  test.setTimeout(240_000);
   const store = await openProducts(page, { faultyRow: "Beta" });
   await page.getByRole("button", { name: "Importar planilha" }).click();
   const dialog = dialogOf(page);
@@ -601,13 +616,14 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
     (batch) => batch.rows[0]?.name === "Beta"
   ).length;
   expect(tries).toBe(9);
-  // what the button does is said before the click
+  // which row, and what leaving it out does, said above the buttons before the click
+  const skipText =
+    "A linha 3 (Beta) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.";
+  await expect(dialog.getByText(skipText)).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Pular esta linha" })
-  ).toHaveAccessibleDescription(
-    "A linha fica como não confirmada e a importação segue com a próxima."
-  );
-  await dialog.getByRole("button", { name: "Pular esta linha" }).click();
+    dialog.getByRole("button", { name: "Pular a linha 3" })
+  ).toHaveAccessibleDescription(skipText);
+  await dialog.getByRole("button", { name: "Pular a linha 3" }).click();
 
   await expect(statusIn(dialog, "Importamos 2 produtos.")).toBeVisible({
     timeout: 30_000,
@@ -624,6 +640,50 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
   expect(store.batches.at(-1)?.rows[0]?.name).toBe("Gama");
   expect(store.products.map((product) => product.name)).toEqual([
     "Alfa",
+    "Gama",
+  ]);
+});
+
+test("o corte da plataforma pausa a importação, diz a hora em que ela continua sozinha, e ela termina", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.clock.install();
+  const store = await openProducts(page, { cutCalls: new Set([2]) });
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 3 produtos" }).click();
+
+  await expect(statusIn(dialog, BUSY_PAUSE)).toBeVisible({ timeout: 30_000 });
+  // no "try now" (it would prolong the regime); the person may still stop it, and the dialog stays open
+  await expect(dialog.getByRole("button", { name: TRY_NOW })).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Parar a importação" })
+  ).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Fechar" })).toHaveCount(0);
+  await expect(dialog.getByText("1 de 3", { exact: true })).toBeVisible();
+  expect(store.batches).toHaveLength(2);
+
+  // nothing is sent during the pause; at its end the same row goes again, with the same IDs
+  await page.clock.fastForward("01:59");
+  expect(store.batches).toHaveLength(2);
+  await page.clock.fastForward("00:02");
+  await expect(statusIn(dialog, "Importamos 3 produtos.")).toBeVisible({
+    timeout: 60_000,
+  });
+  const sent = store.batches.map((batch) => batch.rows[0]);
+  expect(sent.map((row) => row?.name)).toEqual([
+    "Alfa",
+    "Beta",
+    "Beta",
+    "Gama",
+  ]);
+  expect(sent[1]).toEqual(sent[2]);
+  expect(store.products.map((product) => product.name)).toEqual([
+    "Alfa",
+    "Beta",
     "Gama",
   ]);
 });

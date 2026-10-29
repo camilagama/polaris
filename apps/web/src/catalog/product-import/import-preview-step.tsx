@@ -11,6 +11,7 @@ import {
   headerNotes,
   type ImportPlan,
   importButtonLabel,
+  importDurationText,
   noCategoryText,
   nothingToImportText,
   overLimitText,
@@ -18,6 +19,7 @@ import {
   previewTableRows,
   type RowSituation,
   SITUATION_LABELS,
+  splitAdviceText,
   type TableRow,
 } from "./import-model";
 import {
@@ -104,6 +106,7 @@ export function ImportPreviewStep({
     offReason = NOTHING_TO_IMPORT_ID;
   }
   const [total, ...groups] = previewCounts(plan);
+  const splitAdvice = splitAdviceText(count);
   return (
     <StepFrame
       bodyRef={bodyRef}
@@ -139,6 +142,16 @@ export function ImportPreviewStep({
         <p className="text-muted-foreground" id={NOTHING_TO_IMPORT_ID}>
           {nothingToImportText(plan)}
         </p>
+      ) : (
+        <p className="text-muted-foreground text-support">
+          {importDurationText(count)}
+        </p>
+      )}
+      {splitAdvice ? (
+        <Alert variant="warning">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertDescription>{splitAdvice}</AlertDescription>
+        </Alert>
       ) : null}
       {limit ? (
         <Alert variant="warning">

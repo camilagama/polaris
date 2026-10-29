@@ -2,7 +2,7 @@ import {
   type CategoryReadModel,
   categoryNameCodePointLength,
 } from "@polaris/contracts";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import { commonFailureMessage, rpcErrorCode } from "../lib/rpc-error";
 
 export type CategoryListStatus = "active" | "archived" | "deleted";
 export type CategoryAction = "archive" | "delete" | "restore";
@@ -55,12 +55,12 @@ export function categoryErrorMessage(
   error: unknown,
   action?: CategoryFailure
 ): string {
-  const unaccepted = legalAcceptanceMessage(
+  const common = commonFailureMessage(
     error,
     action === undefined ? "as categorias" : undefined
   );
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {

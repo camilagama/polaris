@@ -10,12 +10,15 @@ import {
   summarizeImport,
 } from "../product-import-send";
 import {
+  busyPauseText,
+  canSkipRow,
   enteredAndLeft,
   estimateText,
   FAILED_KIND_LABELS,
   failedCsvLabel,
   headerNotes,
   importButtonLabel,
+  importDurationText,
   importTemplateCsv,
   noCategoryText,
   nothingToImportText,
@@ -28,9 +31,12 @@ import {
   readImportFile,
   resultFailedRows,
   resultTexts,
+  skipRowTexts,
+  splitAdviceText,
   stepAfter,
   stockEntered,
   stockText,
+  tillIsFailing,
 } from "./import-model";
 
 const CANCEL_OR_UNDO = /cancel|desfe|desfaz/i;
@@ -193,7 +199,7 @@ describe("the result", () => {
     run.nextIndex = 1;
 
     expect(resultTexts(plan, run)).toEqual({
-      existing: "1 já existia e ficou como estava.",
+      existing: "1 já estava na loja e ficou como estava.",
       limitReached: false,
       notEntered: "3 linhas não entraram, 1 delas pelo limite do plano.",
       title: "Importamos 1 produto.",
@@ -338,7 +344,7 @@ describe("a row the server never answers (Léo, VC1)", () => {
       null,
       true
     );
-    // the screen continues it by itself a few times; then the pause offers "Pular esta linha"
+    // the screen continues it by itself a few times; then the pause offers "Pular a linha 3"
     expect(pause).toBe("continue");
     expect(
       pauseText({ kind: "interrupted" }, summarizeImport(run).entered, 2)
@@ -365,6 +371,73 @@ describe("a row the server never answers (Léo, VC1)", () => {
     expect(csvLine).toBe(
       "B,,,,,,3,Esta linha não foi confirmada. Confira na lista de produtos antes de enviar de novo."
     );
+  });
+});
+
+describe("the same file opened again, after the screen was closed", () => {
+  it("sends only the rows left, and the result says the others were already in the store", async () => {
+    const bytes = "Nome;Preço\nA;1,00\nB;2,00\nC;3,00\nD;4,00\nE;5,00\n";
+    const store = new Set<string>();
+    const namesExisting = (names: readonly string[]) =>
+      names.filter((name) => store.has(name));
+    const sentNames: string[] = [];
+    let clock = 0;
+    const controller = new AbortController();
+    const dependencies = {
+      now: () => clock,
+      organizationId: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0",
+      retryAfterMs: () => null,
+      send: (input: { rows: ProductImportRowInput[] }) => {
+        for (const row of input.rows) {
+          sentNames.push(row.name);
+          store.add(row.name);
+        }
+        // the screen is closed after the second row: the page leaves, and the run stops with it
+        if (store.size === 2) {
+          controller.abort();
+        }
+        return Promise.resolve({
+          results: input.rows.map((row) => ({
+            productId: row.productId,
+            rowNumber: row.rowNumber,
+            status: "created" as const,
+          })),
+        });
+      },
+      wait: (ms: number) => {
+        clock += ms;
+        return Promise.resolve();
+      },
+    };
+
+    const first = planImport(
+      preview(bytes),
+      namesExisting(["A", "B", "C", "D", "E"]),
+      null
+    );
+    const firstRun = createImportRun(first.toSend, newId);
+    expect(
+      await runImport(firstRun, { ...dependencies, signal: controller.signal })
+    ).toEqual({ kind: "aborted" });
+    expect(sentNames).toEqual(["A", "B"]);
+
+    // nothing of the first run was kept on the device: the same file is read and checked again
+    const again = preview(bytes);
+    const second = planImport(
+      again,
+      namesExisting(again.ready.map((row) => row.name)),
+      null
+    );
+    expect(second.existing.map((row) => row.name)).toEqual(["A", "B"]);
+    expect(second.toSend.map((row) => row.name)).toEqual(["C", "D", "E"]);
+    const secondRun = createImportRun(second.toSend, newId);
+    expect(await runImport(secondRun, dependencies)).toEqual({ kind: "done" });
+
+    expect(sentNames).toEqual(["A", "B", "C", "D", "E"]);
+    expect(resultTexts(second, secondRun)).toMatchObject({
+      existing: "2 já estavam na loja e ficaram como estavam.",
+      title: "Importamos 3 produtos.",
+    });
   });
 });
 
@@ -500,16 +573,16 @@ describe("the progress says rows, never a promised time", () => {
     expect(enteredAndLeft(1, 1)).toBe("1 produto entrou; 1 falta.");
     expect(estimateText(2, 12_000, 10)).toBeNull();
     // 6 s a row, 30 rows left: 3 minutes
-    expect(estimateText(5, 30_000, 30)).toBe(
-      "Estimativa pelo ritmo desta importação: cerca de 3 minutos."
+    expect(estimateText(5, 30_000, 30)).toBe("Faltam cerca de 3 minutos.");
+    // the pace seen with a pause of 2 min in it (36 rows in 7 min): 64 left are about 13 minutes, the pause counted
+    expect(estimateText(36, 420_000, 64)).toBe("Faltam cerca de 13 minutos.");
+    // 7 s a row, 450 left; past one hour, said in hours and minutes
+    expect(estimateText(10, 70_000, 450)).toBe("Faltam cerca de 53 minutos.");
+    expect(estimateText(10, 100_000, 450)).toBe(
+      "Faltam cerca de 1 hora e 15 minutos."
     );
-    // the pace of the import (2.5 s a call, ~3 s with the answer): 100 rows left are about 4 to 5 minutes
-    expect(estimateText(10, 30_000, 100)).toBe(
-      "Estimativa pelo ritmo desta importação: cerca de 5 minutos."
-    );
-    expect(estimateText(5, 30_000, 4)).toBe(
-      "Estimativa pelo ritmo desta importação: cerca de 1 minuto."
-    );
+    expect(estimateText(10, 80_000, 450)).toBe("Falta cerca de 1 hora.");
+    expect(estimateText(5, 30_000, 4)).toBe("Falta cerca de 1 minuto.");
     expect(estimateText(5, 30_000, 0)).toBeNull();
   });
 
@@ -520,6 +593,120 @@ describe("the progress says rows, never a promised time", () => {
     expect(stockText(false)).toBe(
       "Estoque de abertura lançado com a data do dia em que cada linha entrou."
     );
+  });
+});
+
+describe("the time before the start (the pace of the Free plan)", () => {
+  it("gives a range, never one number: 100 products 15 to 30 minutes, 500 products 1 to 2 hours", () => {
+    const keepOpen =
+      "Deixe esta tela aberta. Se fechar, abra a mesma planilha de novo: o que já entrou não é repetido.";
+    expect(importDurationText(100)).toBe(
+      `Importar 100 produtos leva de 15 a 30 minutos. ${keepOpen}`
+    );
+    expect(importDurationText(500)).toBe(
+      `Importar 500 produtos leva de 1 a 2 horas. ${keepOpen}`
+    );
+    expect(importDurationText(200)).toBe(
+      `Importar 200 produtos leva de 30 a 45 minutos. ${keepOpen}`
+    );
+    expect(importDurationText(300)).toBe(
+      `Importar 300 produtos leva de 40 a 55 minutos. ${keepOpen}`
+    );
+    expect(importDurationText(400)).toBe(
+      `Importar 400 produtos leva de 55 minutos a 2 horas. ${keepOpen}`
+    );
+    // past 55 minutes it is said in hours
+    expect(importDurationText(330)).toBe(
+      `Importar 330 produtos leva de 45 minutos a 1 hora. ${keepOpen}`
+    );
+    // a few rows meet no regime: one end only
+    expect(importDurationText(1)).toBe(
+      `Importar 1 produto leva até 5 minutos. ${keepOpen}`
+    );
+    expect(importDurationText(30)).toBe(
+      `Importar 30 produtos leva até 5 minutos. ${keepOpen}`
+    );
+    expect(importDurationText(50)).toBe(
+      `Importar 50 produtos leva de 10 a 25 minutos. ${keepOpen}`
+    );
+  });
+
+  it("recommends smaller files above 200 rows to send, without holding the import", () => {
+    expect(splitAdviceText(200)).toBeNull();
+    expect(splitAdviceText(201)).toBe(
+      "São mais de 200 produtos. Se puder, divida a planilha em arquivos menores e importe fora do horário de vendas."
+    );
+  });
+
+  it("says the hour the pause of the regime ends, in the store's time zone, and offers no try now", () => {
+    expect(
+      busyPauseText(Date.UTC(2026, 9, 28, 13, 47), "America/Sao_Paulo")
+    ).toBe("O servidor está ocupado. A importação continua sozinha às 10:47.");
+    // the store's zone, never the device's
+    expect(busyPauseText(Date.UTC(2026, 9, 28, 13, 47), "America/Manaus")).toBe(
+      "O servidor está ocupado. A importação continua sozinha às 09:47."
+    );
+    // near midnight in São Paulo
+    expect(
+      busyPauseText(Date.UTC(2026, 9, 29, 2, 59, 30), "America/Sao_Paulo")
+    ).toBe("O servidor está ocupado. A importação continua sozinha às 23:59.");
+  });
+});
+
+describe("the import gives way to the till of the tab", () => {
+  const calm = {
+    quietRetries: false,
+    reason: null,
+    serverFailing: false,
+    waiting: 0,
+  };
+
+  it("holds while the breaker of the reads is open, or a sale waits after the server died on its send", () => {
+    expect(tillIsFailing(calm)).toBe(false);
+    expect(tillIsFailing({ ...calm, serverFailing: true })).toBe(true);
+    expect(tillIsFailing({ ...calm, reason: "server_busy", waiting: 1 })).toBe(
+      true
+    );
+    expect(tillIsFailing({ ...calm, quietRetries: true, waiting: 2 })).toBe(
+      true
+    );
+  });
+
+  it("does not hold for a queue with nothing waiting, or for a failure that is not the regime", () => {
+    expect(tillIsFailing({ ...calm, reason: "server_busy" })).toBe(false);
+    expect(tillIsFailing({ ...calm, quietRetries: true })).toBe(false);
+    expect(tillIsFailing({ ...calm, reason: "sync_failed", waiting: 3 })).toBe(
+      false
+    );
+  });
+});
+
+describe("Pular a linha N", () => {
+  it("is offered after a row with no answer, and after a stop while the run was at the longest pause", () => {
+    const run = createImportRun(
+      planImport(preview("Nome\nA\nB\n"), [], null).toSend,
+      newId
+    );
+    expect(canSkipRow({ kind: "interrupted" }, run)).toBe(true);
+    expect(canSkipRow({ kind: "stopped" }, run)).toBe(false);
+    run.regime.lastPauseAtCeiling = true;
+    expect(canSkipRow({ kind: "stopped" }, run)).toBe(true);
+    expect(canSkipRow({ kind: "offline" }, run)).toBe(false);
+  });
+
+  it("names the row, by its line in the file and its name, and says it stays unconfirmed and to check the product list first (T478-1)", () => {
+    const run = createImportRun(
+      planImport(preview("Nome\nAlfa\nCaneca esmaltada\n"), [], null).toSend,
+      newId
+    );
+    run.nextIndex = 1;
+
+    expect(skipRowTexts(run)).toEqual({
+      button: "Pular a linha 3",
+      help: "A linha 3 (Caneca esmaltada) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.",
+    });
+    run.nextIndex = 2;
+    expect(skipRowTexts(run)).toBeNull();
   });
 });
 

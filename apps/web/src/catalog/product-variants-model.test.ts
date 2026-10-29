@@ -26,6 +26,7 @@ const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
     code,
     ...(reason ? { data: { reason } } : {}),
+    ...(code === "SERVICE_UNAVAILABLE" ? { status: 503 } : {}),
   });
 
 describe("valores das opções, um por linha", () => {
@@ -250,9 +251,20 @@ describe("mensagens de erro das variantes", () => {
     ).toBe(
       "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente."
     );
-    expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
-      "temporariamente indisponível"
-    );
+    // saving, the server's cut may have saved: never "unavailable"
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "platform_cut"))
+    ).toContain("O servidor está ocupado e não confirmou");
+    expect(
+      variantErrorMessage(
+        refusal("SERVICE_UNAVAILABLE", "platform_cut"),
+        "as variantes"
+      )
+    ).toContain("temporariamente indisponível");
+    // the Worker's own 503 is no cut of the platform
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "server_busy"))
+    ).not.toContain("ocupado");
     expect(variantErrorMessage(new Error("rede"))).toBe(
       "Não foi possível carregar ou salvar as variantes. Tente novamente."
     );

@@ -19,9 +19,11 @@ import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import {
+  CHANGE_CUT_BY_SERVER,
   CHANGE_OUTCOME_UNKNOWN,
+  commonFailureMessage,
   isConnectionFailure,
-  legalAcceptanceMessage,
+  isPlatformCut,
 } from "../lib/rpc-error";
 import { useHoldSwap } from "../lib/unsent-work";
 import {
@@ -46,6 +48,13 @@ const REPEATED_RULES_TEXT =
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
 export const SAVE_NOT_CONFIRMED_TEXT =
   "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve.";
+/** A save whose answer did not come, or that the server cut: it may have been saved. Null for any other failure. */
+function saveNotConfirmedText(cause: unknown): string | null {
+  if (isPlatformCut(cause)) {
+    return `O servidor está ocupado. ${SAVE_NOT_CONFIRMED_TEXT}`;
+  }
+  return isConnectionFailure(cause) ? SAVE_NOT_CONFIRMED_TEXT : null;
+}
 /** What the form and the page say once it was closed to check: the draft is kept, and so is the doubt. */
 const MAYBE_SAVED_TEXT = "Este perfil pode já ter sido salvo.";
 const CHECK_AND_CLOSE_LABEL = "Fechar e conferir";
@@ -59,9 +68,9 @@ function errorText(
   subject?: string,
   fallback = GENERIC_ERROR_TEXT
 ): string {
-  const unaccepted = legalAcceptanceMessage(error, subject);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, subject);
+  if (common !== undefined) {
+    return common;
   }
   const code =
     typeof error === "object" && error !== null && "code" in error
@@ -433,12 +442,13 @@ export function PaymentProfilesPage() {
         saved = true;
         await loadProfiles();
       } catch (cause) {
-        if (isConnectionFailure(cause)) {
-          setUncertain(SAVE_NOT_CONFIRMED_TEXT);
+        const notConfirmed = saveNotConfirmedText(cause);
+        if (notConfirmed === null) {
+          setError(errorText(cause));
+        } else {
+          setUncertain(notConfirmed);
           setMaybeSaved(true);
           readAgainIfAnswers();
-        } else {
-          setError(errorText(cause));
         }
       } finally {
         setPending(false);
@@ -501,8 +511,10 @@ export function PaymentProfilesPage() {
         }
         await loadProfiles();
       } catch (cause) {
-        if (isConnectionFailure(cause)) {
-          setUncertain(CHANGE_OUTCOME_UNKNOWN);
+        if (isConnectionFailure(cause) || isPlatformCut(cause)) {
+          setUncertain(
+            isPlatformCut(cause) ? CHANGE_CUT_BY_SERVER : CHANGE_OUTCOME_UNKNOWN
+          );
           readAgainIfAnswers();
         } else {
           setError(errorText(cause));
