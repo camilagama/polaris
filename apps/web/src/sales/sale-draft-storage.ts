@@ -53,7 +53,11 @@ function hasExactKeys(value: unknown, keys: readonly string[]): value is Shape {
   );
 }
 
-const isText = (value: unknown): value is string => typeof value === "string";
+/** No field the screen writes comes near this; a longer text was not written by this build. */
+const MAX_TEXT_LENGTH = 2000;
+
+const isText = (value: unknown): value is string =>
+  typeof value === "string" && value.length <= MAX_TEXT_LENGTH;
 
 export const SALE_DRAFT_SHAPE = {
   adjustment: ["draftId", "kind", "value", "valueType"],
@@ -121,6 +125,12 @@ function isProfile(value: unknown): boolean {
   );
 }
 
+/** Each line and adjustment is a key of the screen's list: two with one id would be one row. */
+function uniqueDraftIds(rows: readonly unknown[]): boolean {
+  const ids = rows.map((row) => (row as { draftId: string }).draftId);
+  return new Set(ids).size === ids.length;
+}
+
 /** The validator of what is read back: the exact shape this build writes, nothing more. */
 export function isSaleFormState(value: unknown): value is SaleFormState {
   if (!hasExactKeys(value, SALE_DRAFT_SHAPE.form)) {
@@ -137,7 +147,8 @@ export function isSaleFormState(value: unknown): value is SaleFormState {
     adjustments.every(isAdjustment) &&
     isText(occurredAtLocal) &&
     isPayment(payment) &&
-    isProfile(profile)
+    isProfile(profile) &&
+    uniqueDraftIds([...items, ...adjustments])
   );
 }
 
@@ -236,4 +247,27 @@ export function clearSaleDrafts(
   } catch {
     // a blocked storage holds no draft
   }
+}
+
+type SettledListener = (organizationId: string, commandId: string) => void;
+const settledListeners = new Set<SettledListener>();
+
+/**
+ * A sale was recorded (or kept on the device). Said to the other Vender of the page: one that mounted while the sale
+ * was on its way gave the same cart back from the tab, and it must not stay on the screen as a draft.
+ */
+export function announceSaleSettled(
+  organizationId: string,
+  commandId: string
+): void {
+  for (const listener of settledListeners) {
+    listener(organizationId, commandId);
+  }
+}
+
+export function subscribeSaleSettled(listener: SettledListener): () => void {
+  settledListeners.add(listener);
+  return () => {
+    settledListeners.delete(listener);
+  };
 }

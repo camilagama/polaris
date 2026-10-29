@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  announceSaleSettled,
   clearSaleDrafts,
   isSaleFormState,
   readSaleDraft,
   SALE_DRAFT_KEY_PREFIX,
   SALE_DRAFT_SHAPE,
   type SaleDraft,
+  subscribeSaleSettled,
   writeSaleDraft,
 } from "./sale-draft-storage";
 import {
@@ -67,7 +69,7 @@ function cart(): SaleFormState {
   return form;
 }
 
-// 23:59 of 28/10 in São Paulo (UTC−3) is 02:59 of 29/10 in UTC: the store's day, not the UTC one, decides
+// 23:59 in São Paulo (UTC−3) is already the next day in UTC: the store's day, not the UTC one, decides
 const STARTED = "2026-10-28T13:00:00.000Z";
 const LAST_MINUTE = new Date("2026-10-29T02:59:00.000Z");
 const NEXT_DAY = new Date("2026-10-29T03:00:00.000Z");
@@ -133,6 +135,17 @@ describe("the sale draft of the tab", () => {
         form: { ...cart(), payment: { ...cart().payment, method: "cheque" } },
         startedAt: STARTED,
       }),
+      JSON.stringify({
+        form: { ...cart(), items: [cart().items[0], cart().items[0]] },
+        startedAt: STARTED,
+      }),
+      JSON.stringify({
+        form: {
+          ...cart(),
+          items: [{ ...cart().items[0], label: "x".repeat(2001) }],
+        },
+        startedAt: STARTED,
+      }),
     ];
     for (const text of cases) {
       const storage = memoryStorage();
@@ -146,12 +159,11 @@ describe("the sale draft of the tab", () => {
   });
 
   it("accepts every form the screen builds", () => {
-    const createId = ids();
     let form = cart();
-    form = addItem(form, createId());
+    form = addItem(form, "another-line");
     form = selectPaymentMethod(form, "credit_card");
     expect(isSaleFormState(form)).toBe(true);
-    expect(isSaleFormState(createBlankSaleForm(createId))).toBe(true);
+    expect(isSaleFormState(createBlankSaleForm(ids()))).toBe(true);
   });
 
   it("is forgotten when null is written, and a storage that refuses does not break the screen", () => {
@@ -243,5 +255,19 @@ describe("the shape of the draft and the version of its key", () => {
       ],
       profile: ["choice", "reviewNotice", "seenVersion"],
     });
+  });
+});
+
+describe("a sale settled while another Vender of the page shows its cart", () => {
+  it("is told to every Vender listening, with the store and the command", () => {
+    const heard: string[] = [];
+    const stop = subscribeSaleSettled((organizationId, commandId) =>
+      heard.push(`${organizationId}:${commandId}`)
+    );
+    announceSaleSettled(ORG, "command-1");
+    stop();
+    announceSaleSettled(ORG, "command-2");
+
+    expect(heard).toEqual([`${ORG}:command-1`]);
   });
 });

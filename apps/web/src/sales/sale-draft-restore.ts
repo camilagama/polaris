@@ -94,6 +94,8 @@ export function refreshRestoredItems(
 
 export const DRAFT_EXPIRED_MESSAGE =
   "A venda em andamento era de outro dia e foi descartada.";
+export const DRAFT_RECORDED_MESSAGE =
+  "A venda em andamento já foi confirmada ou guardada neste aparelho.";
 export const DRAFT_UNREADABLE_MESSAGE =
   "Não foi possível recuperar a venda em andamento.";
 

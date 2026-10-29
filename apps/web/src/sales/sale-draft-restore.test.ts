@@ -37,7 +37,7 @@ function entry(
     quantity: 5,
     sku: null,
     updatedAt: null,
-    values: [{ optionName: "Cor", optionValueName: "Azul" }],
+    values: [{ optionName: "color", optionValueName: "Azul" }],
     variantId,
     version: 1,
     ...changes,

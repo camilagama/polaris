@@ -113,9 +113,7 @@ async function expectCart(page: Page) {
 
 /** The first line is empty again: the search with nothing typed, one unit. */
 async function expectBlankLine(page: Page) {
-  await expect(itemOne(page).getByLabel("Produto ou variante")).toHaveValue(
-    ""
-  );
+  await expect(itemOne(page).getByLabel("Produto ou variante")).toHaveValue("");
   await expect(itemOne(page).getByLabel("Quantidade")).toHaveValue("1");
 }
 
@@ -141,12 +139,8 @@ test("AC-1, AC-5 e AC-7: a venda montada volta por Vender e por Nova venda, e o 
   await expectCart(page);
 
   // nothing of the cart on the device: no key of the draft, no value with the product on the sale
-  const device = await page.evaluate(() =>
-    Object.entries(window.localStorage)
-  );
-  expect(device.filter(([key]) => key.startsWith("polaris.sale."))).toEqual(
-    []
-  );
+  const device = await page.evaluate(() => Object.entries(window.localStorage));
+  expect(device.filter(([key]) => key.startsWith("polaris.sale."))).toEqual([]);
   expect(
     device.filter(([, value]) => value.includes(SHIRT.productName))
   ).toEqual([]);

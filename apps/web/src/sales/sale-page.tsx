@@ -59,14 +59,17 @@ import { SaleDraftBar } from "./sale-draft-bar";
 import {
   chosenItemCount,
   DRAFT_EXPIRED_MESSAGE,
+  DRAFT_RECORDED_MESSAGE,
   DRAFT_UNREADABLE_MESSAGE,
   draftVariantIds,
   refreshedDraftMessage,
   refreshRestoredItems,
 } from "./sale-draft-restore";
 import {
+  announceSaleSettled,
   readSaleDraft,
   type SaleDraftRead,
+  subscribeSaleSettled,
   writeSaleDraft,
 } from "./sale-draft-storage";
 import {
@@ -229,9 +232,14 @@ export function SalePage() {
   );
   const attemptRef = useRef<SaleAttempt | null>(restoredAttempt);
   const rememberAttempt = useCallback(
-    (attempt: SaleAttempt | null) => {
+    (attempt: SaleAttempt | null, unsettled = false) => {
       attemptRef.current = attempt;
-      writeSaleAttempt(sessionStorageOrNull(), organizationId, attempt);
+      writeSaleAttempt(
+        sessionStorageOrNull(),
+        organizationId,
+        attempt,
+        unsettled
+      );
     },
     [organizationId]
   );
@@ -306,6 +314,27 @@ export function SalePage() {
   }, [localOutbox, localWriter]);
   const { readLines, refresh, resetStock, seedStock } = catalog;
 
+  useEffect(
+    () =>
+      subscribeSaleSettled((settledOrganization, commandId) => {
+        if (
+          settledOrganization !== organizationId ||
+          inFlightRef.current ||
+          attemptRef.current?.commandId !== commandId
+        ) {
+          return;
+        }
+        // this screen gave back, from the tab, a cart that another Vender of the page has just recorded
+        attemptRef.current = null;
+        const blank = createBlankSaleForm(newId);
+        setForm(modeRef.current ? formForOfflineSale(blank) : blank);
+        setShowRequired(false);
+        setDraftNotice(DRAFT_RECORDED_MESSAGE);
+        resetStock();
+      }),
+    [organizationId, resetStock]
+  );
+
   useEffect(() => {
     // set after the mount, so the live region is in the tree before the notice arrives and it is announced
     setDraftNotice(draftReadMessage(draftRead));
@@ -319,16 +348,26 @@ export function SalePage() {
         if (!(mounted && entries)) {
           return;
         }
-        const message = refreshedDraftMessage(
-          refreshRestoredItems(formRef.current, readIds, entries, newId)
+        if (isFormLocked(submissionRef.current)) {
+          // confirmed during the read: the cart on its way is not changed under it
+          return;
+        }
+        const spareId = newId();
+        const refreshed = refreshRestoredItems(
+          formRef.current,
+          readIds,
+          entries,
+          () => spareId
         );
+        const message = refreshedDraftMessage(refreshed);
+        if (message === null) {
+          return;
+        }
         setForm(
           (current) =>
-            refreshRestoredItems(current, readIds, entries, newId).form
+            refreshRestoredItems(current, readIds, entries, () => spareId).form
         );
-        if (message) {
-          setDraftNotice(message);
-        }
+        setDraftNotice(message);
       })
       .catch(() => undefined);
     return () => {
@@ -487,7 +526,8 @@ export function SalePage() {
       outcome: ConfirmationOutcome,
       device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
     ) => {
-      rememberAttempt(outcome.attempt);
+      const sentCommandId = attemptRef.current?.commandId ?? null;
+      rememberAttempt(outcome.attempt, outcome.submission.phase === "locked");
       if (outcome.prices) {
         const remembered = mergeLastPrices(
           lastPrices,
@@ -500,6 +540,10 @@ export function SalePage() {
       if (outcome.completed) {
         // also when the person left Vender while it was sent: a recorded sale never comes back as a draft
         forgetDraft();
+        setDraftNotice(null);
+        if (sentCommandId) {
+          announceSaleSettled(organizationId, sentCommandId);
+        }
       }
       setSubmission(outcome.submission);
       if (!outcome.completed) {
@@ -576,7 +620,7 @@ export function SalePage() {
         setSubmission(rejectSubmission(prepared.message));
         return;
       }
-      rememberAttempt(prepared.attempt);
+      rememberAttempt(prepared.attempt, true);
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
@@ -700,8 +744,8 @@ export function SalePage() {
     }
     const blank = createBlankSaleForm(newId);
     const next = offline ? formForOfflineSale(blank) : blank;
+    // the attempt stays: after a lost answer the same cart typed again must reach the sale the server may have
     forgetDraft();
-    rememberAttempt(null);
     setForm(next);
     setSubmission((current) =>
       current.phase === "failed" ? idleSubmission : current
@@ -710,10 +754,11 @@ export function SalePage() {
     setDraftNotice(null);
     resetStock();
     focusLater(() =>
-      document.getElementById(`sale-item-${next.items[0]?.draftId}-search`)
+      document
+        .getElementById(`sale-item-${next.items[0]?.draftId}-search`)
         ?.focus()
     );
-  }, [forgetDraft, offline, rememberAttempt, resetStock, submission]);
+  }, [forgetDraft, offline, resetStock, submission]);
   const handleSubmitEvent = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       handleSubmit(event).catch(() => undefined);

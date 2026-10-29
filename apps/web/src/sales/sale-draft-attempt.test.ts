@@ -53,7 +53,11 @@ const newId = () => {
   return `0199c2d0-0000-7000-8000-${String(created).padStart(12, "0")}`;
 };
 
-function confirmation(form: SaleFormState, now: Date, previous: SaleAttempt | null) {
+function confirmation(
+  form: SaleFormState,
+  now: Date,
+  previous: SaleAttempt | null
+) {
   const { body } = evaluateSaleForm(
     form,
     { profiles: [], stock: {} },
@@ -85,13 +89,19 @@ describe("a lost answer, a reload and the same cart confirmed again", () => {
     const startedAt = STARTED.toISOString();
     writeSaleDraft(tab, ORG, { form: cart(), startedAt });
     const first = confirmation(cart(), CLICKED, null);
-    writeSaleAttempt(tab, ORG, first.attempt);
+    // sent, and no answer: the outcome is unknown
+    writeSaleAttempt(tab, ORG, first.attempt, true);
 
     const restored = readSaleDraft(tab, ORG, RELOADED, "America/Sao_Paulo");
     if (restored.kind !== "restored") {
       throw new Error("the draft must come back");
     }
-    const previous = readSaleAttempt(tab, ORG, RELOADED, restored.draft.startedAt);
+    const previous = readSaleAttempt(
+      tab,
+      ORG,
+      RELOADED,
+      restored.draft.startedAt
+    );
     const second = confirmation(restored.draft.form, RELOADED, previous);
 
     expect(second.request.commandId).toBe(first.request.commandId);
@@ -101,7 +111,7 @@ describe("a lost answer, a reload and the same cart confirmed again", () => {
   it("without the draft the attempt alone has expired: a new command ID", () => {
     const tab = memoryStorage();
     const first = confirmation(cart(), CLICKED, null);
-    writeSaleAttempt(tab, ORG, first.attempt);
+    writeSaleAttempt(tab, ORG, first.attempt, true);
 
     const previous = readSaleAttempt(tab, ORG, RELOADED);
     const second = confirmation(cart(), RELOADED, previous);

@@ -82,19 +82,42 @@ describe("the attempt of a cart that came back from the tab's draft", () => {
     new Date(attempt.recordedAt).getTime() + SALE_ATTEMPT_MAX_AGE_MS + 60_000
   );
 
-  it("lasts as long as the draft it was made from", () => {
+  it("lasts as long as the draft it was made from, while its outcome is unknown", () => {
     const storage = memoryStorage();
-    writeSaleAttempt(storage, organizationId, attempt);
+    writeSaleAttempt(storage, organizationId, attempt, true);
     expect(
-      readSaleAttempt(storage, organizationId, later, "2026-10-13T14:50:00.000Z")
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:50:00.000Z"
+      )
     ).toEqual(attempt);
+  });
+
+  it("after a definite refusal it keeps its own limit: a retry hours later is a new instant", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, false);
+    expect(
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:50:00.000Z"
+      )
+    ).toBeNull();
   });
 
   it("an attempt older than the draft belongs to another cart and keeps its own limit", () => {
     const storage = memoryStorage();
-    writeSaleAttempt(storage, organizationId, attempt);
+    writeSaleAttempt(storage, organizationId, attempt, true);
     expect(
-      readSaleAttempt(storage, organizationId, later, "2026-10-13T14:56:00.000Z")
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:56:00.000Z"
+      )
     ).toBeNull();
   });
 });
