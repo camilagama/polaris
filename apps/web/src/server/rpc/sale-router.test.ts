@@ -323,6 +323,24 @@ describe("sale.confirm RPC", () => {
     info.mockRestore();
   });
 
+  it("answers the refusal for stock even when the log throws", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {
+      throw new Error("log sink down");
+    });
+    const confirmSale = vi
+      .fn<ConfirmSale>()
+      .mockRejectedValue(new InsufficientStockError());
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    });
+    expect(info).toHaveBeenCalledTimes(1);
+    info.mockRestore();
+  });
+
   it("does not count the other refusals of a sale as a refusal for stock", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
     const confirmSale = vi

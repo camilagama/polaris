@@ -200,6 +200,25 @@ describe("sale.confirm handler", () => {
     info.mockRestore();
   });
 
+  it("keeps the refusal for stock when the log itself throws", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {
+      throw new Error("log sink down");
+    });
+    const confirmSale = vi.fn().mockRejectedValue(new InsufficientStockError());
+    const handler = createSaleConfirmHandler({
+      confirmSale: confirmSale as never,
+    });
+    await expect(
+      handler.execute({} as never, identity, handler.parse(sale), {
+        baseVersion: null,
+        commandId,
+        requestId: "req-1",
+      })
+    ).rejects.toBeInstanceOf(InsufficientStockError);
+    expect(info).toHaveBeenCalledTimes(1);
+    info.mockRestore();
+  });
+
   it("names a profile that changed or went away as its own refusals", () => {
     const { classify } = createSaleConfirmHandler();
     expect(classify(new PaymentProfileVersionConflictError())).toBe(

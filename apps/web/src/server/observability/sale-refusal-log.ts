@@ -10,9 +10,13 @@ export function logSaleRefusedInsufficientStock(fields: {
   origin: "online" | "sync";
   requestId: string | undefined;
 }): void {
-  logger.info("sale_refused_insufficient_stock", {
-    organizationId: opaqueId(fields.organizationId),
-    origin: fields.origin,
-    requestId: fields.requestId,
-  });
+  try {
+    logger.info("sale_refused_insufficient_stock", {
+      organizationId: opaqueId(fields.organizationId),
+      origin: fields.origin,
+      requestId: fields.requestId,
+    });
+  } catch {
+    // A failing log must never turn the refusal into a different failure.
+  }
 }

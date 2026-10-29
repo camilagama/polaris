@@ -753,19 +753,19 @@ export function stockView(
     };
   }
   const { movingAverageCost, quantity } = load.value;
-  const costText =
-    movingAverageCost === null
-      ? "Custo desconhecido. Margem indeterminada."
-      : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
   if (quantity === 0) {
     return {
-      costText,
+      costText: null,
       needsEntry: true,
       quantity,
       text: `Sem estoque: saldo 0. ${canAdjustStock ? "Para vender, dê entrada no estoque." : askForEntryText}`,
       tone: "warning",
     };
   }
+  const costText =
+    movingAverageCost === null
+      ? "Custo desconhecido. Margem indeterminada."
+      : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
   return {
     costText,
     needsEntry: false,

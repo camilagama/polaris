@@ -858,7 +858,12 @@ describe("loading and empty states", () => {
       "Sem estoque: saldo 0. Para vender, dê entrada no estoque."
     );
     expect(none?.needsEntry).toBe(true);
-    expect(none?.costText).toBe("Custo desconhecido. Margem indeterminada.");
+    expect(none?.costText).toBeNull();
+    expect(stockView(balance(0, "12.340000"), true)?.costText).toBeNull();
+    const unknownCost = stockView(balance(3, null), true);
+    expect(unknownCost?.costText).toBe(
+      "Custo desconhecido. Margem indeterminada."
+    );
     const some = stockView(balance(5, "12.340000"), true);
     expect(some?.needsEntry).toBe(false);
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
