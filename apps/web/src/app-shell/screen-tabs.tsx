@@ -61,7 +61,7 @@ export interface TabPanel {
 
 /**
  * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways (Configurações has five), with room
- * above and below for the 48 px touch area of each tab, and the tab that opened is brought into view.
+ * above and below for the 44 px touch area of each tab, and the tab that opened is brought into view.
  */
 export function ScreenTabList({
   children,

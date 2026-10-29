@@ -138,8 +138,8 @@ function MonthGrid({ currentMonth, month, onChoose }: MonthGridProps) {
     [currentMonth, onChoose]
   );
 
-  // gap-2.5: the 48 px touch area of an arrow (32 px + 8 above and below) and the one of a month (44 px + 2) end at the
-  // same line, not one over the other
+  // gap-2.5: the 44 px touch area of an arrow (32 px + 6 above and below) and the one of a month (its own 44 px)
+  // stay apart, not one over the other
   return (
     <div className="grid gap-2.5">
       <div className="flex items-center justify-between gap-2">

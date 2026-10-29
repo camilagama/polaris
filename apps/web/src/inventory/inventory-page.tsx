@@ -50,7 +50,7 @@ interface OpenCommand {
 /** A link inside a sentence: no touch area of its own (a line of text), only the focus ring. */
 const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-/** A link on a line of its own: it gets the 48 px touch area. */
+/** A link on a line of its own: it gets the 44 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
 
 function isStockAction(value: string | undefined): value is StockAction {

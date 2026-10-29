@@ -2,8 +2,9 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-/* Polaris v5.1: heights from the --h-* tokens (`h-ctl-*`: 32/28/24 with a mouse, 36/32/28 with touch; lg 36/40),
-   a 48 px touch area through `touch-hit`, focus as a 3 px outline (`focus-ring`). */
+/* Polaris v5.1: heights from the --h-* tokens (`h-ctl-*`: 32/28/24 with a mouse, 36/32/28 with touch; lg 36/40; xl,
+   the main action of a screen only, 36 with a mouse and 44 with touch), a 44 px touch area through `touch-hit`,
+   focus as a 3 px outline (`focus-ring`). */
 const buttonVariants = cva(
   "group/button touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium text-sm motion-full:transition-[background-color,border-color,color,box-shadow,transform] active:not-aria-[haspopup]:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-invalid:border-destructive [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
@@ -21,6 +22,7 @@ const buttonVariants = cva(
         "icon-xs": "size-ctl-xs [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-ctl-lg px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
         sm: "h-ctl-sm gap-1 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
+        xl: "h-ctl-xl px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
         xs: "h-ctl-xs gap-1 px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {

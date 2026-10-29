@@ -92,9 +92,9 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
   );
 
   it.each(["radio-group.tsx", "checkbox.tsx"])(
-    "%s grows to a touch area of at least 48 px with touch (18 + 2 × 16 = 50 px; measured in e2e-pwa/ui-components)",
+    "%s grows to a touch area of at least 44 px with touch (16 + 2 × 14 = 44 px: the inner box of 18 minus the 1 px border, plus 14 px each side; measured in e2e-pwa/ui-components)",
     (file) => {
-      expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-4");
+      expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-3.5");
     }
   );
 

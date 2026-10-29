@@ -15,7 +15,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
    "Limpar busca" button at the end that empties the field and gives the focus back to it. The name comes from the
    required `label` (there is no visible label above a search box). `type="search"` with the native cancel mark
    hidden, so there is one "X" and it is ours; the mobile keyboard shows "Buscar" (`enterKeyHint`). With touch the
-   button has the 48 px area of every control (`touch-hit`) and the group the one of a field. */
+   button has the 44 px area of every control (`touch-hit`) and the group the one of a field. */
 interface SearchFieldProps
   extends Omit<
     ComponentProps<"input">,

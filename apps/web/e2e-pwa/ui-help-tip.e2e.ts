@@ -197,16 +197,16 @@ test.describe("a 360 px, com toque", () => {
     viewport: { height: 740, width: 360 },
   });
 
-  test("um toque abre, um toque fora fecha, o popup cabe na janela e o alvo tem 48 px", async ({
+  test("um toque abre, um toque fora fecha, o popup cabe na janela e o alvo tem 44 px", async ({
     page,
   }) => {
     await openGallery(page);
     const button = helpButton(page);
     await button.scrollIntoViewIfNeeded();
 
-    // 24 px visible, 48 px to touch: the pseudo-element grows the area (the guardrail measures it)
+    // 24 px visible, 44 px to touch: the pseudo-element grows the area (the guardrail measures it)
     const faults = (
-      await touchFaults(page, { exemptInlineLinks: false, minimum: 48 })
+      await touchFaults(page, { exemptInlineLinks: false, minimum: 44 })
     ).filter((fault) => fault.includes("Sobre "));
     expect(faults).toEqual([]);
 

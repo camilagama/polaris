@@ -169,7 +169,7 @@ export const deviceStates = {
 
   /**
    * The confirmation of a revocation open, with the option ticked and the error of an unsure answer above the buttons:
-   * the dialog stays open, so the checks measure its controls (area of 48 px, contrast, overflow, focus).
+   * the dialog stays open, so the checks measure its controls (area of 44 px, contrast, overflow, focus).
    */
   async revokeConfirming(page: Page) {
     await openDevicesLab(page, {

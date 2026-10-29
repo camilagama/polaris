@@ -147,7 +147,7 @@ export function DateRangePanel({
 
   return (
     <>
-      {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
+      {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
       <fieldset
         aria-label="Atalhos do período"
         className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
