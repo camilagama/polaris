@@ -14,22 +14,23 @@ const { ChartFailed: ResultChartFailed } = await import(
 );
 
 /**
- * What the chart says when its chunk does not open: the table of the numbers is under the chart (in "Ver os números"),
- * so the sentence says "abaixo", in the Início and in the Resultado.
+ * What the chart says when its chunk does not open, by where the numbers sit: in the Início the table is under the
+ * chart (in "Ver os números"); in the Resultado the totals are above the chart and the table is below it.
  */
-const WITHOUT_INTERNET =
+const HOME_WITHOUT_INTERNET =
   "O gráfico abre quando a internet voltar. Os números estão abaixo.";
+const RESULT_WITHOUT_INTERNET =
+  "O gráfico abre quando a internet voltar. Os totais estão acima e a tabela, abaixo.";
 
 describe("o gráfico que não abre, sem internet", () => {
-  for (const [screen, ChartFailed] of [
-    ["Início", HomeChartFailed],
-    ["Resultado", ResultChartFailed],
+  for (const [screen, ChartFailed, sentence] of [
+    ["Início", HomeChartFailed, HOME_WITHOUT_INTERNET],
+    ["Resultado", ResultChartFailed, RESULT_WITHOUT_INTERNET],
   ] as const) {
-    it(`${screen}: diz que os números estão abaixo, onde fica a tabela`, () => {
+    it(`${screen}: diz onde ficam os números`, () => {
       connection.online = false;
       const text = renderToStaticMarkup(<ChartFailed />);
-      expect(text).toContain(WITHOUT_INTERNET);
-      expect(text).not.toContain("estão acima");
+      expect(text).toContain(sentence);
     });
 
     it(`${screen}: com internet, "O gráfico não abriu." e "Tentar novamente"`, () => {

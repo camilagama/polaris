@@ -66,7 +66,7 @@ function reloadPage() {
   window.location.reload();
 }
 
-/** The text of the Início when the chart does not open (§ 5.5 of its design): the numbers above keep saying everything. */
+/** The text of the Resultado when the chart does not open: the totals sit above the chart and the table below it. */
 export function ChartFailed() {
   const online = useConnectionOnline();
   return online ? (
@@ -78,7 +78,7 @@ export function ChartFailed() {
     </div>
   ) : (
     <p className="text-muted-foreground text-support">
-      O gráfico abre quando a internet voltar. Os números estão abaixo.
+      O gráfico abre quando a internet voltar. Os totais estão acima e a tabela, abaixo.
     </p>
   );
 }
