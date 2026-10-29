@@ -254,6 +254,38 @@ export function planReadFailed(
   };
 }
 
+/** The stores whose plan is being read right now: a read of one store never holds back another's. */
+export type PlanReadsInFlight = ReadonlySet<string>;
+
+/** No read in flight. */
+export const noPlanReadsInFlight: PlanReadsInFlight = new Set<string>();
+
+/** A read of this store is already on its way: the same store never starts two at once. */
+export function planReadInFlight(
+  reads: PlanReadsInFlight,
+  organizationId: string
+): boolean {
+  return reads.has(organizationId);
+}
+
+/** A read of this store started. */
+export function planReadStarted(
+  reads: PlanReadsInFlight,
+  organizationId: string
+): PlanReadsInFlight {
+  return new Set(reads).add(organizationId);
+}
+
+/** The read of this store ended, with an answer or not: it frees only this store. */
+export function planReadEnded(
+  reads: PlanReadsInFlight,
+  organizationId: string
+): PlanReadsInFlight {
+  const rest = new Set(reads);
+  rest.delete(organizationId);
+  return rest;
+}
+
 /** Read again: never read, older than the few minutes, or read "in the future" (the device's clock went back). */
 export function planNoticeIsOld(
   remembered: Pick<RememberedNotice, "readAt"> | null,
