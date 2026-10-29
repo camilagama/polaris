@@ -110,7 +110,11 @@ export function skuLengthError(sku: string): string | null {
 }
 
 function optionValueLengthError(values: string[]): string | null {
-  const longest = Math.max(...values.map(characterCount));
+  // a reduce, not Math.max(...): a paste of many thousands of lines would pass the limit of arguments of a call
+  const longest = values.reduce(
+    (most, value) => Math.max(most, characterCount(value)),
+    0
+  );
   return longest > MAX_PRODUCT_OPTION_VALUE_LENGTH
     ? `Use até ${MAX_PRODUCT_OPTION_VALUE_LENGTH} caracteres por valor. Agora um valor tem ${longest}.`
     : null;

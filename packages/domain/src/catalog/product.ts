@@ -183,6 +183,14 @@ export class ProductIdConflictError extends Error {
   }
 }
 
+/**
+ * Over `max` code points. A text of more than 2 × `max` UTF-16 units is over without being walked: a command of the
+ * sync reaches the domain with up to 256 KiB of payload, not bounded by the contract.
+ */
+function exceedsCodePoints(text: string, max: number): boolean {
+  return text.length > 2 * max || [...text].length > max;
+}
+
 export function normalizeProductVariantConfiguration(
   input: ProductVariantConfigurationInput
 ): ProductVariantConfigurationInput {
@@ -216,7 +224,7 @@ export function normalizeProductVariantConfiguration(
       const key = normalized.toLowerCase();
       if (
         !normalized ||
-        [...normalized].length > MAX_PRODUCT_OPTION_VALUE_LENGTH ||
+        exceedsCodePoints(normalized, MAX_PRODUCT_OPTION_VALUE_LENGTH) ||
         normalizedValues.has(key)
       ) {
         throw new ProductVariantConfigurationError();
@@ -385,7 +393,7 @@ export function normalizeProductVariantSku(
     return null;
   }
   const trimmed = sku.trim();
-  if ([...trimmed].length > MAX_PRODUCT_VARIANT_SKU_LENGTH) {
+  if (exceedsCodePoints(trimmed, MAX_PRODUCT_VARIANT_SKU_LENGTH)) {
     throw new ProductVariantSkuError();
   }
   return trimmed || null;

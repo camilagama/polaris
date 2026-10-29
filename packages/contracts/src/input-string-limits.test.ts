@@ -12,11 +12,11 @@ const X_PATTERN = /^x+$/;
  * a `trim` or an `email` alone do not count: the walk cannot read a size out of them.
  *
  * The sweep reads every input of the contract and the payload of the offline `sale.confirm`, which the handler parses
- * with a schema of the contract. The other payloads of `sync/push` (`product.create`, `customer.create`, the stock
- * commands) are read by hand in their handlers, with no schema to walk: what bounds them is the server, first the
- * ceiling of a payload in `sync/push` (256 KiB, refused before it is parsed or hashed), and then the domain, which
- * refuses each field over its limit (`normalizeProductVariantSku`, `normalizeProductName`,
- * `normalizeCustomerProfile`...).
+ * with a schema of the contract. The other payloads of `sync/push` (`product.create`, `customer.create` and
+ * `customer.update`, the stock commands) are read by hand in their handlers, with no schema to walk. What bounds them is
+ * the server: the ceiling of a payload in `sync/push` (256 Ki UTF-16 units of its JSON, refused before it is parsed,
+ * canonicalized or hashed), and then the domain, which refuses each field over its limit (`normalizeProductVariantSku`,
+ * `normalizeProductName`, `normalizeCustomerProfile`...) after linear work on at most that text.
  */
 interface StringInInput {
   bounded: boolean;

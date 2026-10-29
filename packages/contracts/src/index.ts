@@ -238,7 +238,11 @@ export type PublicCatalogSetupReadModel = z.infer<typeof publicCatalogSetup>;
 
 const customerProfileFields = z.object({
   email: z
-    .union([z.string().trim().email().max(254), z.string().trim().length(0)])
+    .union([
+      // the ceiling first: the e-mail pattern has a lookahead that walks the whole text
+      z.string().trim().max(254, { abort: true }).email(),
+      z.string().trim().length(0),
+    ])
     .nullable(),
   name: z.string().trim().min(1).max(200),
   notes: z.string().trim().max(2000).nullable(),
@@ -1615,7 +1619,7 @@ export const billingStartCheckoutInput = z.discriminatedUnion("method", [
       organizationId: organizationIdInput,
       payer: z
         .object({
-          email: z.string().trim().email().max(254),
+          email: z.string().trim().max(254, { abort: true }).email(),
           name: z
             .string()
             .trim()
