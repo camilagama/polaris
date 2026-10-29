@@ -1462,7 +1462,7 @@ function stockWarnings(
     const total = requested.get(item.variantId) ?? 0;
     if (
       balance?.status === "ready" &&
-      balance.value.quantity > 0 &&
+      balance.value.quantity !== 0 &&
       total > balance.value.quantity
     ) {
       warnings[item.draftId] =
