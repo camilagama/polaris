@@ -67,7 +67,7 @@ function reloadPage() {
 }
 
 /** The text of the Início when the chart does not open (§ 5.5 of its design): the numbers above keep saying everything. */
-function ChartFailed() {
+export function ChartFailed() {
   const online = useConnectionOnline();
   return online ? (
     <div className="grid justify-items-start gap-2">
@@ -78,7 +78,7 @@ function ChartFailed() {
     </div>
   ) : (
     <p className="text-muted-foreground text-support">
-      O gráfico abre quando a internet voltar. Os números estão acima.
+      O gráfico abre quando a internet voltar. Os números estão abaixo.
     </p>
   );
 }

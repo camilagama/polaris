@@ -87,7 +87,7 @@ export function ChartFailed() {
     </div>
   ) : (
     <p className="text-muted-foreground text-support">
-      O gráfico abre quando a internet voltar. Os números estão acima.
+      O gráfico abre quando a internet voltar. Os números estão abaixo.
     </p>
   );
 }

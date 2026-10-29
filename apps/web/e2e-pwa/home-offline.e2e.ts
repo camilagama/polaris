@@ -74,7 +74,7 @@ test("sem o pedaço no Cache Storage e sem rede: os números ficam e o gráfico 
   await startHomeLab(page, user);
   const chart = page.getByRole("region", { name: "Vendas por dia" });
   await expect(chart).toContainText(
-    "O gráfico abre quando a internet voltar. Os números estão acima.",
+    "O gráfico abre quando a internet voltar. Os números estão abaixo.",
     { timeout: 20_000 }
   );
   await expect(chart.getByRole("img")).toHaveCount(0);

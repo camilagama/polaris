@@ -1664,6 +1664,33 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     });
   }
 
+  test("Vendas por dia: o melhor dia tem anel cheio, hoje sem venda tem anel vazado e os outros dias não têm anel", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    // the week of the chart sold on the 18th and the 20th; today (`23/10`) sold nothing
+    const { "2026-10-23": _today, ...noSaleToday } = SOLD.days;
+    await openHome(page, new FakeServer({ ...SOLD, days: noSaleToday }));
+    const chart = region(page, "Vendas por dia");
+    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
+    const best = chart.locator("[data-chart-best]");
+    await expect(best).toHaveAttribute("data-chart-mark", "sold");
+    await expect(best).toHaveAttribute("r", "5.5");
+    await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(1);
+    // the ring of today is hollow (a card-colored fill, the stroke in the color of the series) and smaller than the best's
+    const hollow = chart.locator("[data-chart-mark=none]");
+    await expect(hollow).toHaveCount(1);
+    await expect(hollow).toHaveAttribute("fill", "var(--card)");
+    await expect(hollow).toHaveAttribute("r", "3.5");
+    // the best day comes first on the axis, today last: no other day has a ring
+    const xs = await chart
+      .locator("[data-chart-mark]")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Number(node.getAttribute("cx")))
+      );
+    expect(xs[0]).toBeLessThan(xs[1] ?? 0);
+  });
+
   test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com os dois valores, e a ajuda abre pelo teclado", async ({
     page,
   }) => {
