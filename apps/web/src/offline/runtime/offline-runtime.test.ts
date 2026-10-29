@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NoWorkerAnswerError } from "../../lib/connection";
+import { NoWorkerAnswerError, PLATFORM_CUT_REASON } from "../../lib/connection";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { attemptLogout } from "../logout-guard";
@@ -18,6 +18,7 @@ import {
   type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
@@ -2347,8 +2348,9 @@ describe("conexão com prova (F7)", () => {
     it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'server_busy', never 'sync_failed'", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark)
+      // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark), named by the connection
       w.failures.pushError = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
         status: 503,
       });
 
@@ -2368,16 +2370,38 @@ describe("conexão com prova (F7)", () => {
       w.advance(1 / 3600); // 60 s in a row with no good sync
       await runtime.syncNow();
       expect(runtime.getSnapshot().reason).toBe("server_busy");
+      expect(syncStatusLabel(runtime.getSnapshot()).short).toBe("Ocupado · 1");
       expect(runtime.retriesQuietly()).toBe(false);
       expect(runtime.getSnapshot().counts.pending).toBe(1);
       // the queue was not sent: an update must not take it for done
       await expect(runtime.workSource().sync()).rejects.toThrow("sync_failed");
     });
 
+    it("the Worker's own 503 server_busy (a fault it answered) is quiet for 60 s and then 'sync_failed', never 'Ocupado'", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: "server_busy" },
+        status: 503,
+      });
+
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+      expect(runtime.retriesQuietly()).toBe(true);
+
+      w.advance(60 / 3600);
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBe("sync_failed");
+      expect(syncStatusLabel(runtime.getSnapshot()).short).toBe("Envio falhou");
+    });
+
     it("a good sync between two deaths for CPU starts the 60 s again", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      const died = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
+        status: 503,
+      });
       w.failures.pushError = died;
       await runtime.syncNow();
       w.advance(50 / 3600);
@@ -2396,7 +2420,10 @@ describe("conexão com prova (F7)", () => {
     it("a death for CPU long after the last one starts a quiet minute of its own, and no answer is never retried quietly", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      const died = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
+        status: 503,
+      });
       w.failures.pushError = died;
       await runtime.syncNow();
       w.advance(10 / 60); // 10 min with no sync at all (the page hidden)

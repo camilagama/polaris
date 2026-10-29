@@ -1,4 +1,4 @@
-import { isNoAnswer } from "./connection";
+import { isNoAnswer, PLATFORM_CUT_REASON } from "./connection";
 
 /** The oRPC error code (BAD_REQUEST, CONFLICT, ...), when the error has one. */
 export function rpcErrorCode(error: unknown): string | undefined {
@@ -127,15 +127,14 @@ const TRANSIENT_REASON = "server_busy";
 
 /**
  * A READ that failed in a way another try may fix: no answer (`isNoAnswer`, which includes a response without the
- * Worker's mark), `SERVICE_UNAVAILABLE` with no reason or with the transient one the server gives an unexpected fault
- * (`server_busy`; one with another reason, like `billing_not_configured`, is not tried again), or a 5xx with no
- * reason of its own: the 500 of an error nobody named, and the page the runtime or Cloudflare answers for a Worker it
- * killed (the CPU limit, 1102, "code had hung": `server_failed` in `connection.ts`), which oRPC reads as an error of
- * the status it carries (502, 503, 52x...). A 4xx is the server's answer: trying again says the same. A 429 above
- * all: the tab waits for its `Retry-After` (`read-gate.ts`), and the screen says so at once.
+ * Worker's mark), the cut of the platform (`isPlatformCut`), `SERVICE_UNAVAILABLE` with no reason or with the
+ * transient one the server gives an unexpected fault (`server_busy`; one with another reason, like
+ * `billing_not_configured`, is not tried again), or a 5xx with no reason of its own (the 500 of an error nobody
+ * named). A 4xx is the server's answer: trying again says the same. A 429 above all: the tab waits for its
+ * `Retry-After` (`read-gate.ts`), and the screen says so at once.
  */
 export function isTransientReadFailure(error: unknown): boolean {
-  if (isNoAnswer(error)) {
+  if (isNoAnswer(error) || isPlatformCut(error)) {
     return true;
   }
   const reason = rpcErrorReason(error);
@@ -147,13 +146,14 @@ export function isTransientReadFailure(error: unknown): boolean {
 }
 
 /**
- * The server got the call and died on it, or said "try again": a 5xx of the platform for a Worker it killed (the CPU
- * limit of the Free plan, 1102), the router's 503 `server_busy`. Never no answer (`isNoAnswer`): a call that may not
- * have left says nothing about the server. In the regime of the Free plan every call of the Worker dies like this for
- * minutes, whatever it is.
+ * The platform killed the Worker on the call: the page Cloudflare answers with no mark of the Worker (the CPU limit
+ * of the Free plan, 1102, "code had hung": `server_failed` in `connection.ts`, which gives it
+ * `PLATFORM_CUT_REASON`). In the regime of the Free plan every call of the Worker dies like this for minutes,
+ * whatever it is. Never an answer of the Worker itself, its 503 `server_busy` included: that one is a fault of the
+ * call, which may be the same each time it goes.
  */
 export function isPlatformCut(error: unknown): boolean {
-  return !isNoAnswer(error) && isTransientReadFailure(error);
+  return rpcErrorReason(error) === PLATFORM_CUT_REASON;
 }
 
 /**
@@ -161,7 +161,7 @@ export function isPlatformCut(error: unknown): boolean {
  * it blames no network. The screen never sends it again by itself (a write with no idempotency key may double).
  */
 export const CHANGE_CUT_BY_SERVER =
-  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em 1 minuto antes de repetir.";
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir.";
 
 /** The text of a write the server cut (`isPlatformCut`); undefined for any other error. */
 export function serverCutWriteMessage(error: unknown): string | undefined {

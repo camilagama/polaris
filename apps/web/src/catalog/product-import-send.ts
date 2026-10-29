@@ -47,7 +47,7 @@ export const REGIME_PAUSE_STEPS_MS = [120_000, 300_000, 600_000] as const;
 /** After a pause the run goes at twice the interval until this many answers in a row; then the pauses start over. */
 export const PACE_BACK_AFTER_ANSWERS = 20;
 /**
- * The cuts of one row, each after a pause at the ceiling, that leave it out by itself (`skipStuckRow`) when the row
+ * The cuts of one row, each on the send right after a pause at the ceiling, that leave it out by itself (`skipStuckRow`) when the row
  * before it went through: the row itself may be what the Worker cannot finish.
  */
 export const CUTS_AT_CEILING_TO_SKIP = 3;
@@ -63,10 +63,12 @@ const MAX_ROW_RETRIES = 2;
 
 /** Where the run is in the regime of the platform: kept with the run, so a continued run does not start over. */
 interface RegimeState {
-  /** The cuts of the row on its way that came after a pause at the ceiling. */
+  /** The cuts of the row on its way that came on the send right after a pause at the ceiling. */
   cutsAtCeiling: number;
   /** Whether the last pause was the longest one. */
   lastPauseAtCeiling: boolean;
+  /** Whether the next send is the first after a pause at the ceiling: only its cut counts in `cutsAtCeiling`. */
+  sendAfterCeiling: boolean;
   /** The pauses since the pace last came back: the step of the next one. */
   pauses: number;
   /** The answers still to come at twice the interval. */
@@ -99,6 +101,7 @@ export function createImportRun(
       cutsAtCeiling: 0,
       lastPauseAtCeiling: false,
       pauses: 0,
+      sendAfterCeiling: false,
       slowFor: 0,
     },
     results: new Map(),
@@ -365,12 +368,12 @@ function previousWentThrough(run: ImportRun): boolean {
 }
 
 /**
- * A cut of the row on its way. The same row cut `CUTS_AT_CEILING_TO_SKIP` times, each after a pause at the ceiling,
- * while the row before it went through, is left out; true when it was.
+ * A cut of the row on its way. The same row cut `CUTS_AT_CEILING_TO_SKIP` times, each on the send right after a pause
+ * at the ceiling, while the row before it went through, is left out; true when it was.
  */
 function noteCut(run: ImportRun): boolean {
   const { regime } = run;
-  if (!regime.lastPauseAtCeiling) {
+  if (!regime.sendAfterCeiling) {
     return false;
   }
   regime.cutsAtCeiling += 1;
@@ -388,6 +391,7 @@ function noteCut(run: ImportRun): boolean {
 function noteAnswer(run: ImportRun): void {
   const { regime } = run;
   regime.cutsAtCeiling = 0;
+  regime.sendAfterCeiling = false;
   if (regime.slowFor > 0) {
     regime.slowFor -= 1;
     if (regime.slowFor === 0) {
@@ -408,6 +412,7 @@ async function regimePause(
   const ms = REGIME_PAUSE_STEPS_MS[regime.pauses] ?? ceiling;
   regime.pauses += 1;
   regime.lastPauseAtCeiling = ms === ceiling;
+  regime.sendAfterCeiling = regime.lastPauseAtCeiling;
   regime.slowFor = PACE_BACK_AFTER_ANSWERS;
   dependencies.onPause?.(clock.now() + ms);
   await clock.wait(ms, dependencies.signal);
@@ -468,6 +473,7 @@ export async function runImport(
       }
       // the same rows go again, at the pace, with the same IDs
       retries = next;
+      run.regime.sendAfterCeiling = false;
       continue;
     }
     if (outcome.kind !== "answered") {

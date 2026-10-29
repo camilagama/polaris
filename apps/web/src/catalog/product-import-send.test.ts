@@ -62,6 +62,16 @@ const rpcError = (code: string) =>
 const platformCut = () =>
   Object.assign(new Error("cut"), {
     code: "SERVICE_UNAVAILABLE",
+    data: { reason: "platform_cut" },
+    defined: false,
+    status: 503,
+  });
+
+/** The 503 the Worker itself gives an unexpected fault (`unexpectedRpcError`): it carries the mark. */
+const workerBusy = () =>
+  Object.assign(new Error("busy"), {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
     defined: false,
     status: 503,
   });
@@ -710,6 +720,63 @@ describe("the regime of the Free plan", () => {
       limitReached: 0,
       pending: 0,
     });
+  });
+
+  it("counts a cut on the send after an answer for nothing: the row is left out only after 3 pauses at the ceiling", async () => {
+    // row 3 brings the pauses to the ceiling and goes through; row 4 is then cut on every send
+    let cutsOfThird = 3;
+    const sent: number[] = [];
+    const send = vi.fn((input: SendInput) => {
+      const rowNumber = input.rows[0]?.rowNumber ?? 0;
+      sent.push(rowNumber);
+      if (rowNumber === 3 && cutsOfThird > 0) {
+        cutsOfThird -= 1;
+        return Promise.reject(platformCut());
+      }
+      return rowNumber === 4 && sent.length < 30
+        ? Promise.reject(platformCut())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const { dependencies, run, time } = setup(4, send);
+
+    expect(await runImport(run, dependencies)).toEqual({ kind: "done" });
+
+    // row 4: the send at the pace after row 3 answered, then one send after each of 3 pauses at the ceiling
+    expect(sent.filter((rowNumber) => rowNumber === 4)).toHaveLength(4);
+    expect(time.waits.filter((ms) => ms >= 60_000)).toEqual([
+      FIRST,
+      SECOND,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+      CEILING,
+    ]);
+    expect(run.skipped).toEqual(new Set([4]));
+    expect(summarizeImport(run)).toMatchObject({ entered: 3, failed: 1 });
+  });
+
+  it("takes the Worker's own 503 server_busy as a failure of the row, never as the regime: no pause, it stops after the tries", async () => {
+    let calls = 0;
+    // the fault repeats on every send; past 10 the row would go through, so a run that pauses on it still ends
+    const send = vi.fn((input: SendInput) => {
+      calls += 1;
+      return input.rows[0]?.rowNumber === 2 && calls <= 10
+        ? Promise.reject(workerBusy())
+        : Promise.resolve({ results: created(input.rows) });
+    });
+    const pauses: (number | null)[] = [];
+    const { dependencies, run, time } = setup(3, send, {
+      onPause: (resumeAt) => pauses.push(resumeAt),
+    });
+
+    const stop = await runImport(run, dependencies);
+
+    expect(stop.kind).toBe("interrupted");
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(pauses).toEqual([]);
+    expect(time.waits.every((ms) => ms < 60_000)).toBe(true);
+    expect(run.nextIndex).toBe(0);
   });
 
   it("stops at once when the screen gives up during a pause", async () => {

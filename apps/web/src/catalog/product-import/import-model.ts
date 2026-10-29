@@ -301,7 +301,7 @@ function pauseLead(pause: ImportPause): string {
 
 /**
  * What a pause says: why the run stopped, then what entered and what is left. What entered stays (no word of
- * cancelling or undoing: nothing is undone); a row the server never answered says so ("Pular esta linha" goes with it).
+ * cancelling or undoing: nothing is undone); a row the server never answered says so ("Pular a linha N" goes with it).
  */
 export function pauseText(
   pause: ImportPause,
@@ -438,7 +438,7 @@ export function tillIsFailing(till: {
 }
 
 /**
- * Whether a paused run offers "Pular esta linha": after a row the server never answered, and after a stop while the
+ * Whether a paused run offers to leave the row out ("Pular a linha N", `skipRowTexts`): after a row the server never answered, and after a stop while the
  * run was at the longest pause of the regime (a row the Worker cannot finish is cut every time, and the first row,
  * or one right after a row left out, is never left out by the run itself).
  */
@@ -447,6 +447,23 @@ export function canSkipRow(pause: ImportPause, run: ImportRun): boolean {
     pause.kind === "interrupted" ||
     (pause.kind === "stopped" && run.regime.lastPauseAtCeiling)
   );
+}
+
+/**
+ * What a pause that offers to leave the row out says of it, above the buttons: which row, and that it stays out of the
+ * store. The run counts it with the rows not confirmed, and it goes to the CSV of the result.
+ */
+export function skipRowTexts(
+  run: ImportRun
+): { button: string; help: string } | null {
+  const row = run.rows[run.nextIndex];
+  if (row === undefined) {
+    return null;
+  }
+  return {
+    button: `Pular a linha ${row.rowNumber}`,
+    help: `A linha ${row.rowNumber} (${row.name}) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.`,
+  };
 }
 
 /** The pause of the regime: the hour it goes on by itself, in the store's time zone. No "try now": it would prolong the regime. */
@@ -538,13 +555,13 @@ const NO_RUN = {
 
 /**
  * The rows whose name the store already had: from an earlier import of the same file (the way to continue one) or made
- * by hand; the device keeps no record of which, so the text names both.
+ * by hand; the device keeps no record of which, so the text names neither.
  */
 function existingText(count: number): string | null {
   if (count === 0) {
     return null;
   }
-  return `${count} ${plural(count, "já estava na loja (importado antes ou cadastrado) e ficou como estava", "já estavam na loja (importados antes ou cadastrados) e ficaram como estavam")}.`;
+  return `${count} ${plural(count, "já estava na loja e ficou como estava", "já estavam na loja e ficaram como estavam")}.`;
 }
 
 export function resultTexts(

@@ -77,7 +77,7 @@ export interface ProductImportActions {
   finish: () => void;
   readFile: () => void;
   reset: () => void;
-  /** "Pular esta linha": leaves out the row the server never answered (not confirmed) and goes on from the next. */
+  /** "Pular a linha N": leaves out the row the server never answered (not confirmed) and goes on from the next. */
   skip: () => void;
   stop: () => void;
 }

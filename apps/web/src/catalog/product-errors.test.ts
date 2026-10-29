@@ -27,15 +27,23 @@ describe("mensagem de erro de produto", () => {
   it("a escrita que o servidor cortou (regime do Free) diz que pode ter sido salva, sem culpar a internet", () => {
     const cut = Object.assign(new Error("cut"), {
       code: "SERVICE_UNAVAILABLE",
+      data: { reason: "platform_cut" },
       status: 503,
     });
     for (const action of ["create", "update", "archive", "restore"] as const) {
       expect(productErrorMessage(cut, action)).toBe(
-        "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em 1 minuto antes de repetir."
+        "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir."
       );
     }
     // a read keeps its own text: the reads try again by themselves
     expect(productErrorMessage(cut)).not.toContain("ocupado");
+    // the Worker's own 503 is no cut of the platform
+    const workerBusy = Object.assign(new Error("busy"), {
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+      status: 503,
+    });
+    expect(productErrorMessage(workerBusy, "create")).not.toContain("ocupado");
   });
 
   it("sessão recusada: ler diz que não carregou, escrever diz que o produto não mudou", () => {

@@ -13,6 +13,7 @@ import {
   estimateText,
   pauseText,
   progressTitle,
+  skipRowTexts,
   progressValueText,
 } from "./import-model";
 import type { ImportPause } from "./use-product-import";
@@ -25,7 +26,7 @@ interface ImportRunStepProps {
   /** "Ver o resultado": what entered and what did not, the rows not sent among the latter. */
   onFinish: () => void;
   online: boolean;
-  /** "Pular esta linha": the row the server never answered is left out (not confirmed) and the run goes on. */
+  /** "Pular a linha N": the row the server never answered is left out (not confirmed) and the run goes on. */
   onSkip: () => void;
   onStop: () => void;
   /** When this run (or its continuation) started, and from which row: the pace of the estimate. */
@@ -41,11 +42,8 @@ interface ImportRunStepProps {
 }
 
 const SKIP_HELP_ID = "product-import-skip-help";
-/** What "Pular esta linha" does, said before the click: the row is left as not confirmed, the import goes on. */
-const SKIP_HELP =
-  "A linha fica como não confirmada e a importação segue com a próxima.";
 
-type RunFooterProps = { skippable: boolean } & Pick<
+type RunFooterProps = { skip: { button: string } | null } & Pick<
   ImportRunStepProps,
   | "onContinue"
   | "onFinish"
@@ -59,7 +57,7 @@ type RunFooterProps = { skippable: boolean } & Pick<
 /**
  * While rows go: "Parar depois desta linha" (the row on its way gets its answer, then the run stops); in the pause of
  * the regime no row is on its way, so it stops at once. No "try now" there: trying sooner prolongs the regime. On a
- * pause: the result, and continuing from where it stopped; after a row the server never answered, "Pular esta linha"
+ * pause: the result, and continuing from where it stopped; after a row the server never answered, "Pular a linha N"
  * too. With no connection, what sends stays reachable, off, and reads why.
  */
 function RunFooter({
@@ -70,7 +68,7 @@ function RunFooter({
   onStop,
   pause,
   resumeAt,
-  skippable,
+  skip,
   stopping,
 }: RunFooterProps) {
   if (pause === null && resumeAt !== null) {
@@ -103,7 +101,7 @@ function RunFooter({
       <Button onClick={onFinish} type="button" variant="outline">
         Ver o resultado
       </Button>
-      {skippable ? (
+      {skip ? (
         <Button
           aria-describedby={reason ? `${reason} ${SKIP_HELP_ID}` : SKIP_HELP_ID}
           aria-disabled={offline || undefined}
@@ -111,7 +109,7 @@ function RunFooter({
           type="button"
           variant="outline"
         >
-          Pular esta linha
+          {skip.button}
         </Button>
       ) : null}
       <Button
@@ -150,7 +148,8 @@ export function ImportRunStep({
   const done = answeredCount(run);
   const summary = summarizeImport(run);
   const left = count - done;
-  const skippable = pause !== null && canSkipRow(pause, run);
+  const skip =
+    pause !== null && canSkipRow(pause, run) ? skipRowTexts(run) : null;
   const estimate =
     pause === null && resumeAt === null && pace !== null
       ? estimateText(done - pace.fromIndex, Date.now() - pace.startedAt, left)
@@ -171,7 +170,7 @@ export function ImportRunStep({
           onStop={onStop}
           pause={pause}
           resumeAt={resumeAt}
-          skippable={skippable}
+          skip={skip}
           stopping={stopping}
         />
       }
@@ -206,13 +205,13 @@ export function ImportRunStep({
       {pause === null ? (
         <p className="text-muted-foreground text-support">
           Você pode continuar usando o Polaris em outra aba. Não feche esta
-          janela. Se fechar, abra a mesma planilha de novo: o que já entrou não
-          é repetido.
+          tela. Se fechar, abra a mesma planilha de novo: o que já entrou não é
+          repetido.
         </p>
       ) : null}
-      {skippable ? (
+      {skip ? (
         <p className="text-muted-foreground text-support" id={SKIP_HELP_ID}>
-          {SKIP_HELP}
+          {skip.help}
         </p>
       ) : null}
       {pause?.kind === "refused" ? (

@@ -31,6 +31,7 @@ import {
   readImportFile,
   resultFailedRows,
   resultTexts,
+  skipRowTexts,
   splitAdviceText,
   stepAfter,
   stockEntered,
@@ -198,8 +199,7 @@ describe("the result", () => {
     run.nextIndex = 1;
 
     expect(resultTexts(plan, run)).toEqual({
-      existing:
-        "1 já estava na loja (importado antes ou cadastrado) e ficou como estava.",
+      existing: "1 já estava na loja e ficou como estava.",
       limitReached: false,
       notEntered: "3 linhas não entraram, 1 delas pelo limite do plano.",
       title: "Importamos 1 produto.",
@@ -344,7 +344,7 @@ describe("a row the server never answers (Léo, VC1)", () => {
       null,
       true
     );
-    // the screen continues it by itself a few times; then the pause offers "Pular esta linha"
+    // the screen continues it by itself a few times; then the pause offers "Pular a linha 3"
     expect(pause).toBe("continue");
     expect(
       pauseText({ kind: "interrupted" }, summarizeImport(run).entered, 2)
@@ -435,8 +435,7 @@ describe("the same file opened again, after the screen was closed", () => {
 
     expect(sentNames).toEqual(["A", "B", "C", "D", "E"]);
     expect(resultTexts(second, secondRun)).toMatchObject({
-      existing:
-        "2 já estavam na loja (importados antes ou cadastrados) e ficaram como estavam.",
+      existing: "2 já estavam na loja e ficaram como estavam.",
       title: "Importamos 3 produtos.",
     });
   });
@@ -682,7 +681,7 @@ describe("the import gives way to the till of the tab", () => {
   });
 });
 
-describe("Pular esta linha", () => {
+describe("Pular a linha N", () => {
   it("is offered after a row with no answer, and after a stop while the run was at the longest pause", () => {
     const run = createImportRun(
       planImport(preview("Nome\nA\nB\n"), [], null).toSend,
@@ -693,6 +692,21 @@ describe("Pular esta linha", () => {
     run.regime.lastPauseAtCeiling = true;
     expect(canSkipRow({ kind: "stopped" }, run)).toBe(true);
     expect(canSkipRow({ kind: "offline" }, run)).toBe(false);
+  });
+
+  it("names the row, by its line in the file and its name, and says it stays out of the store (T478-1)", () => {
+    const run = createImportRun(
+      planImport(preview("Nome\nAlfa\nCaneca esmaltada\n"), [], null).toSend,
+      newId
+    );
+    run.nextIndex = 1;
+
+    expect(skipRowTexts(run)).toEqual({
+      button: "Pular a linha 3",
+      help: "A linha 3 (Caneca esmaltada) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.",
+    });
+    run.nextIndex = 2;
+    expect(skipRowTexts(run)).toBeNull();
   });
 });
 

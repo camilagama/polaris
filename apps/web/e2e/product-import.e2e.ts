@@ -332,10 +332,7 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
   });
   await expect(statusIn(dialog, "1 linha não entrou.")).toBeVisible();
   await expect(
-    statusIn(
-      dialog,
-      "1 já estava na loja (importado antes ou cadastrado) e ficou como estava."
-    )
+    statusIn(dialog, "1 já estava na loja e ficou como estava.")
   ).toBeVisible();
   await expect(dialog.getByText(STOCK_TEXT, { exact: true })).toBeVisible();
   // the store has the two valid rows, once each, and nothing of the others
@@ -600,7 +597,7 @@ test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", a
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
   page,
 }) => {
-  // the stuck row is tried 9 times at the pace of the import (7 s): about a minute before "Pular esta linha"
+  // the stuck row is tried 9 times at the pace of the import (7 s): about a minute before "Pular a linha N"
   test.setTimeout(240_000);
   const store = await openProducts(page, { faultyRow: "Beta" });
   await page.getByRole("button", { name: "Importar planilha" }).click();
@@ -619,13 +616,14 @@ test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (
     (batch) => batch.rows[0]?.name === "Beta"
   ).length;
   expect(tries).toBe(9);
-  // what the button does is said before the click
+  // which row, and what leaving it out does, said above the buttons before the click
+  const skipText =
+    "A linha 3 (Beta) não teve resposta do servidor. Se pular, ela fica fora da loja; você pode cadastrar depois.";
+  await expect(dialog.getByText(skipText)).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Pular esta linha" })
-  ).toHaveAccessibleDescription(
-    "A linha fica como não confirmada e a importação segue com a próxima."
-  );
-  await dialog.getByRole("button", { name: "Pular esta linha" }).click();
+    dialog.getByRole("button", { name: "Pular a linha 3" })
+  ).toHaveAccessibleDescription(skipText);
+  await dialog.getByRole("button", { name: "Pular a linha 3" }).click();
 
   await expect(statusIn(dialog, "Importamos 2 produtos.")).toBeVisible({
     timeout: 30_000,
