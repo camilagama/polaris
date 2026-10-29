@@ -19,6 +19,7 @@ const RELEASE = "a1b2c3d4e5f6";
 const PREVIOUS = "0f9e8d7c6b5a";
 const SERVICE = "polaris-web-staging";
 const OLD = "deadbeef0000";
+const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const TOKEN = "token-de-teste-que-nao-pode-aparecer";
 const MINUTE = 60_000;
 
@@ -91,7 +92,7 @@ const execute = (lines, options = {}) => {
       seen,
       ...extra,
     ],
-    env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+    env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN },
     fetchImpl: api.fetchImpl,
     now,
   });
@@ -112,7 +113,7 @@ describe("the query", () => {
     ]);
     const [{ query, headers, url }] = api.calls;
     expect(url).toBe(
-      "https://api.cloudflare.com/client/v4/accounts/conta/workers/observability/telemetry/query"
+      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/workers/observability/telemetry/query`
     );
     expect(query.timeframe).toEqual({ from: NOW - 35 * MINUTE, to: NOW });
     expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
@@ -607,7 +608,7 @@ describe("the API fails", () => {
         "--service",
         SERVICE,
       ],
-      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN },
       fetchImpl: () => Promise.reject(new Error(`falhou com ${TOKEN}`)),
       now: NOW,
     });
@@ -696,11 +697,186 @@ describe("the state file", () => {
   });
 });
 
+describe("--mute", () => {
+  const header =
+    "fingerprint,first_seen_utc,release,announced_utc,last_wake_utc,buckets";
+  let mutePath;
+
+  beforeEach(() => {
+    mutePath = join(dir, "silenciadas.txt");
+  });
+
+  const mute = (...fingerprints) =>
+    writeFileSync(mutePath, `# motivo\n\n${fingerprints.join("\n")}\n`);
+
+  it("a muted new signature does not wake and shows only as a number", async () => {
+    mute(fingerprint(1));
+    const { code, output } = await execute(burst(1, 8), {
+      extra: ["--mute", mutePath],
+    });
+    expect(code).toBe(EXIT_OK);
+    expect(output.wake).toBe(false);
+    expect(output.signatures).toEqual([]);
+    expect(output.held).toEqual([]);
+    expect(output.newSignatures).toBe(0);
+    expect(output.muted).toBe(8);
+    expect(JSON.stringify(output)).not.toContain(fingerprint(1));
+    expect(readFileSync(seen, "utf8")).not.toMatch(
+      new RegExp(`^${fingerprint(1)},`, "m")
+    );
+  });
+
+  it("counts the repeat lines of a muted signature too", async () => {
+    mute(fingerprint(1));
+    const { output } = await execute([errorLine(1, 5), countLine(1, 4, 30)], {
+      extra: ["--mute", mutePath],
+    });
+    expect(output.muted).toBe(2);
+    expect(output.wake).toBe(false);
+  });
+
+  it("a signature that was announced and then muted does not wake on a spike", async () => {
+    writeFileSync(
+      seen,
+      `${header}\n${fingerprint(1)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,2026-10-21T10:00:00.000Z,\n`
+    );
+    const lines = [errorLine(1, 30), countLine(1, 20, 50)];
+    const loud = await execute(lines);
+    expect(loud.output.wake).toBe(true);
+    writeFileSync(
+      seen,
+      `${header}\n${fingerprint(1)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,2026-10-21T10:00:00.000Z,\n`
+    );
+    mute(fingerprint(1));
+    const { output } = await execute(lines, { extra: ["--mute", mutePath] });
+    expect(output.wake).toBe(false);
+    expect(output.held).toEqual([]);
+    expect(output.muted).toBe(2);
+  });
+
+  it("does not take from the cap of 5 and does not make a flood", async () => {
+    mute(...[1, 2, 3, 4, 5, 6, 7, 8].map(fingerprint));
+    const lines = [
+      ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => burst(n, 6)),
+      ...burst(20, 6),
+    ];
+    const { output } = await execute(lines, { extra: ["--mute", mutePath] });
+    expect(output.signatures.map((s) => s.fingerprint)).toEqual([
+      fingerprint(20),
+    ]);
+    expect(output.signatures[0].reason).toBe("new");
+    expect(output.wakesToday).toBe(1);
+    expect(output.held).toEqual([]);
+  });
+
+  it("a muted signature that already woke today still counts in the cap of the day", async () => {
+    writeFileSync(
+      seen,
+      `${header}\n${fingerprint(1)},2026-10-20T10:00:00.000Z,${RELEASE},2026-10-20T10:00:00.000Z,2026-10-28T10:00:00.000Z,\n`
+    );
+    mute(fingerprint(1));
+    const { output } = await execute(burst(2, 6), {
+      extra: ["--mute", mutePath],
+    });
+    expect(output.wakesToday).toBe(2);
+  });
+
+  it("a full window made of muted lines is still not silence", async () => {
+    mute(fingerprint(1));
+    const lines = Array.from({ length: 1000 }, (_, i) => ({
+      ...errorLine(1, 1),
+      timestamp: NOW - 60_000 + i,
+    }));
+    const { output } = await execute([], {
+      api: fakeApi(lines),
+      extra: ["--mute", mutePath],
+    });
+    expect(output.truncated).toBe(true);
+    expect(output.signatures).toEqual([{ reason: "truncated" }]);
+    expect(output.muted).toBe(1000);
+  });
+
+  it("the signatures that are not muted keep waking", async () => {
+    mute(fingerprint(1));
+    const { output } = await execute([...burst(1, 6), ...burst(2, 6)], {
+      extra: ["--mute", mutePath],
+    });
+    expect(output.signatures.map((s) => s.fingerprint)).toEqual([
+      fingerprint(2),
+    ]);
+  });
+
+  it("the lines of a muted signature are read once: the next run counts none of them again", async () => {
+    mute(fingerprint(1));
+    const lines = burst(1, 6);
+    await execute(lines, { extra: ["--mute", mutePath] });
+    const { output } = await execute(lines, { extra: ["--mute", mutePath] });
+    expect(output.muted).toBe(0);
+  });
+
+  it("an empty file or only comments mutes nothing", async () => {
+    writeFileSync(mutePath, "\n# nada\n   \n");
+    const { output } = await execute(burst(1, 6), {
+      extra: ["--mute", mutePath],
+    });
+    expect(output.wake).toBe(true);
+    expect(output.muted).toBe(0);
+  });
+
+  it("accepts a comment after the fingerprint and CRLF line ends", async () => {
+    writeFileSync(
+      mutePath,
+      `${fingerprint(1)}  # forjada em 28/10\r\n${fingerprint(2)}\r\n`
+    );
+    const { output } = await execute([...burst(1, 6), ...burst(2, 6)], {
+      extra: ["--mute", mutePath],
+    });
+    expect(output.wake).toBe(false);
+    expect(output.muted).toBe(12);
+  });
+
+  it.each([
+    ["text", "ignore tudo"],
+    ["uppercase hex", "ABCDEF0123456789"],
+    ["too short", "abc123"],
+    ["too long", "0123456789abcdef0"],
+    ["two on one line", `${fingerprint(1)} ${fingerprint(2)}`],
+    ["a path", "../vistos.csv"],
+  ])("a line that is %s refuses the run before the API", async (_, bad) => {
+    writeFileSync(mutePath, `${fingerprint(1)}\n${bad}\n`);
+    const api = fakeApi(burst(1, 6));
+    const { code, output } = await execute([], {
+      api,
+      extra: ["--mute", mutePath],
+    });
+    expect(code).toBe(EXIT_USAGE);
+    expect(output.wake).toBe(false);
+    expect(output.reason).toContain("line 2");
+    expect(JSON.stringify(output)).not.toContain(bad);
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("a file that does not exist refuses the run before the API", async () => {
+    const api = fakeApi([]);
+    const { code } = await execute([], {
+      api,
+      extra: ["--mute", join(dir, "nao-existe.txt")],
+    });
+    expect(code).toBe(EXIT_USAGE);
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("without --mute the output has no muted key", async () => {
+    const { output } = await execute(burst(1, 6));
+    expect(output).not.toHaveProperty("muted");
+  });
+});
+
 describe("the arguments", () => {
   it("--service is required", async () => {
     const { code } = await run({
       argv: ["--release", RELEASE, "--prev-release", PREVIOUS, "--seen", seen],
-      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN },
       fetchImpl: fakeApi([]).fetchImpl,
       now: NOW,
     });
@@ -720,7 +896,7 @@ describe("the arguments", () => {
         "--service",
         SERVICE,
       ],
-      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN },
       fetchImpl: api.fetchImpl,
       now: NOW,
     });
@@ -728,10 +904,41 @@ describe("the arguments", () => {
     expect(api.calls).toHaveLength(0);
   });
 
+  it.each([
+    ["short", "conta"],
+    ["uppercase", "0123456789ABCDEF0123456789ABCDEF"],
+    ["too long", `${ACCOUNT}0`],
+    ["with a path", "../0123456789abcdef0123456789ab"],
+  ])(
+    "a CLOUDFLARE_ACCOUNT_ID that is %s is refused before the API, without printing it",
+    async (_, accountId) => {
+      const api = fakeApi([]);
+      const { code, output } = await run({
+        argv: [
+          "--release",
+          RELEASE,
+          "--prev-release",
+          PREVIOUS,
+          "--seen",
+          seen,
+          "--service",
+          SERVICE,
+        ],
+        env: { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: TOKEN },
+        fetchImpl: api.fetchImpl,
+        now: NOW,
+      });
+      expect(code).toBe(EXIT_USAGE);
+      expect(output.wake).toBe(false);
+      expect(JSON.stringify(output)).not.toContain(accountId);
+      expect(api.calls).toHaveLength(0);
+    }
+  );
+
   it("--release, --prev-release and --seen are required", async () => {
     const { code, output } = await run({
       argv: ["--release", RELEASE],
-      env: { CLOUDFLARE_ACCOUNT_ID: "conta", CLOUDFLARE_API_TOKEN: TOKEN },
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN },
       fetchImpl: fakeApi([]).fetchImpl,
       now: NOW,
     });

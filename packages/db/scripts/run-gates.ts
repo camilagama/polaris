@@ -151,6 +151,8 @@ const gates: Gate[] = [
   ["auth-tables-row-security", "verify-auth-tables-row-security-gate.ts"],
   // one account per (provider_id, account_id) (0106): Better Auth 1.7 refuses a key held by two rows
   ["account-key", "verify-account-key-gate.ts"],
+  // size ceilings of the catalog in code points, the domain numbers (0107): option value 80, SKU 64
+  ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],

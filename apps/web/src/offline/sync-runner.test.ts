@@ -59,7 +59,7 @@ async function setup() {
       });
     }
   };
-  return { outbox, queue };
+  return { lease, outbox, queue };
 }
 
 const KIB = 1024;
@@ -240,5 +240,103 @@ describe("the batch of sync.push", () => {
     ).rejects.toBe(failure);
 
     expect(await outbox.snapshot()).toMatchObject({ pending: 2, sending: 0 });
+  });
+});
+
+describe("a command the server refuses as an invalid payload", () => {
+  it("stays rejected with its whole payload, leaves the others pending, ends the run and lets the queue go on once discarded", async () => {
+    const { lease, outbox, queue } = await setup();
+    const productPayload = {
+      name: "Camiseta",
+      productId: uuid(11),
+      sku: "S".repeat(65),
+      variantId: uuid(12),
+    };
+    await outbox.enqueue({
+      baseVersion: null,
+      commandId: uuid(10),
+      deviceId,
+      lease,
+      organizationId,
+      payload: productPayload,
+      type: "product.create",
+    });
+    await queue(2, KIB, 20);
+    const before = (await outbox.snapshot()).commands.filter(
+      (command) => command.type === "sale.confirm"
+    );
+    const sent: string[][] = [];
+    const push: PushFunction = (input) => {
+      sent.push(input.commands.map((command) => command.commandId));
+      let refused = false;
+      return Promise.resolve({
+        results: input.commands.map((command) => {
+          if (command.type === "product.create") {
+            refused = true;
+            return {
+              code: "invalid_payload",
+              commandId: command.commandId,
+              replayed: false,
+              result: null,
+              status: "rejected" as const,
+            };
+          }
+          return refused
+            ? {
+                code: null,
+                commandId: command.commandId,
+                replayed: false,
+                result: null,
+                status: "not_processed" as const,
+              }
+            : acceptAll([command]).results[0];
+        }) as Awaited<ReturnType<PushFunction>>["results"],
+      });
+    };
+
+    const summary = await syncOutbox({ outbox, push });
+
+    expect(summary).toMatchObject({
+      accepted: 0,
+      notProcessed: 2,
+      rejected: 1,
+      requests: 1,
+    });
+    const snapshot = await outbox.snapshot();
+    expect(snapshot).toMatchObject({ pending: 2, rejected: 1, sending: 0 });
+    expect(snapshot.blockedBy).toMatchObject({
+      commandId: uuid(10),
+      payload: productPayload,
+      rejection: { code: "invalid_payload" },
+      status: "rejected",
+    });
+    const others = snapshot.commands.filter(
+      (command) => command.type === "sale.confirm"
+    );
+    expect(
+      others.map(({ commandId, payload, status }) => ({
+        commandId,
+        payload,
+        status,
+      }))
+    ).toEqual(
+      before.map(({ commandId, payload }) => ({
+        commandId,
+        payload,
+        status: "pending",
+      }))
+    );
+
+    // blocked behind the refusal, a new run ends at once instead of sending it again
+    expect(await syncOutbox({ outbox, push })).toMatchObject({ requests: 0 });
+    expect(sent).toHaveLength(1);
+
+    // discarding it, the only action the panel of attention offers, frees the queue
+    await outbox.discard(uuid(10));
+    expect(await syncOutbox({ outbox, push })).toMatchObject({
+      accepted: 2,
+      requests: 1,
+    });
+    expect(await outbox.snapshot()).toMatchObject({ pending: 0, rejected: 0 });
   });
 });

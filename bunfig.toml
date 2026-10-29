@@ -1,3 +1,2 @@
 [install]
 minimumReleaseAge = 604800
-minimumReleaseAgeExcludes = ["body-parser"]

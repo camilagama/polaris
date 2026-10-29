@@ -476,7 +476,7 @@ describe("minimumReleaseAge (condition 4)", () => {
   it("excludes from the age only the packages of an urgent update, one by one", () => {
     // docs/runbooks/dependency-audit.md: the urgent PR lists the package here and in bunfig.toml;
     // the PR that removes the entry (after 7 days) empties this list again.
-    const URGENT_EXCLUDES: string[] = ["body-parser"];
+    const URGENT_EXCLUDES: string[] = [];
     const entry = BUNFIG_EXCLUDES.exec(installSection(readRoot("bunfig.toml")));
     const excluded = (entry?.[1] ?? "")
       .split(",")

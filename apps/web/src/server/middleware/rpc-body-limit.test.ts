@@ -440,15 +440,50 @@ describe("the 413 as the client sees it", () => {
 });
 
 describe("a field of 500 000 characters, within the ceiling of the body", () => {
+  const variantId = "0199c2d0-0000-7000-8000-000000000002";
   it.each([
-    ["the name", { name: "a".repeat(500_000), organizationId: "o" }],
-    ["the organization", { name: "x", organizationId: "a".repeat(500_000) }],
+    [
+      "the name",
+      "category/create",
+      { name: "a".repeat(500_000), organizationId: "o" },
+    ],
+    [
+      "the organization",
+      "category/create",
+      { name: "x", organizationId: "a".repeat(500_000) },
+    ],
+    [
+      "the SKU of a variant",
+      "product/setVariantSku",
+      {
+        expectedVersion: 1,
+        organizationId: "o",
+        productId: variantId,
+        sku: "a".repeat(500_000),
+        variantId,
+      },
+    ],
+    [
+      "a value of an option",
+      "product/configureVariants",
+      {
+        expectedVersion: 1,
+        id: variantId,
+        options: [{ name: "color", values: ["a".repeat(500_000)] }],
+        organizationId: "o",
+        variants: [{ values: { color: "Azul" } }],
+      },
+    ],
   ])(
     "in %s is a BAD_REQUEST of under 1 KB that does not echo the text",
-    async (_, input) => {
+    async (_, procedure, input) => {
       const { post, reached } = setup();
 
-      const response = await post(JSON.stringify({ json: input }));
+      const response = await post(
+        JSON.stringify({ json: input }),
+        {},
+        `/rpc/${procedure}`
+      );
 
       const text = await response.text();
       expect(response.status).toBe(400);

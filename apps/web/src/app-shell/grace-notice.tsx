@@ -11,10 +11,15 @@ import {
   graceNotice,
   type PlanNoticeFacts,
   noPlanReadBackoff,
+  noPlanReadsInFlight,
   type PlanReadBackoff,
+  type PlanReadsInFlight,
   planNoticeIsOld,
   planReadBackoffFor,
+  planReadEnded,
   planReadFailed,
+  planReadInFlight,
+  planReadStarted,
   planReadSucceeded,
   type RememberedNotice,
   rememberedPlanNotice,
@@ -45,19 +50,20 @@ function usePlanNoticeFacts(
   );
   const remembered = JSON.parse(text) as RememberedNotice | null;
   const old = planNoticeIsOld(remembered, now.getTime());
-  const reading = useRef(false);
+  // the stores with a read on its way: the answer of one frees only that one
+  const reading = useRef<PlanReadsInFlight>(noPlanReadsInFlight);
   // the wait after the reads that failed in a row, of the store it was counted for (never carried to another)
   const failed = useRef<PlanReadBackoff>(noPlanReadBackoff(organizationId));
   useEffect(() => {
     failed.current = planReadBackoffFor(failed.current, organizationId);
     if (
       !(enabled && online && readsItself && old) ||
-      reading.current ||
+      planReadInFlight(reading.current, organizationId) ||
       now.getTime() < failed.current.retryAt
     ) {
       return;
     }
-    reading.current = true;
+    reading.current = planReadStarted(reading.current, organizationId);
     orpcClient.billing
       .readPlan({ organizationId })
       .then((plan) => {
@@ -72,7 +78,7 @@ function usePlanNoticeFacts(
         );
       })
       .finally(() => {
-        reading.current = false;
+        reading.current = planReadEnded(reading.current, organizationId);
       });
     // `now` too: an old copy is read again on the next minute, and a failed read once its wait is over
   }, [enabled, now, old, online, organizationId, readsItself]);

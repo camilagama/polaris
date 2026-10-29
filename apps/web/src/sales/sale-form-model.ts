@@ -459,11 +459,14 @@ export function selectProfileChoice(
 /**
  * Reconciles the chosen profile with a fresh list of active profiles. A profile
  * that changed (or disappeared) forces the operator to review the fee preview
- * again before the sale can be confirmed.
+ * again before the sale can be confirmed. With an attempt whose outcome is unknown, a profile that left the list does
+ * not clear the choice: the evaluation already refuses it, and clearing it would let the next choice send another body
+ * under a new command ID, for a sale the server may have recorded.
  */
 export function reconcileProfileReload(
   form: SaleFormState,
-  profiles: readonly PaymentProfileReadModel[]
+  profiles: readonly PaymentProfileReadModel[],
+  outcomeUnknown = false
 ): SaleFormState {
   const { choice, seenVersion } = form.profile;
   if (choice === "" || choice === NO_PROFILE_CHOICE) {
@@ -471,6 +474,9 @@ export function reconcileProfileReload(
   }
   const profile = profiles.find((candidate) => candidate.id === choice);
   if (!profile) {
+    if (outcomeUnknown) {
+      return form;
+    }
     return {
       ...form,
       profile: {
@@ -2265,10 +2271,14 @@ export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
 /**
  * The form while the sale will be queued on the device: the sale is dated now, so
  * a typed date is dropped. The payment profile stays the person's choice (the
- * profiles of the last connection are offered, ADR 0049).
+ * profiles of the last connection are offered, ADR 0049). The typed date is part of the body the command ID was made
+ * for, so it stays while the outcome of an attempt is unknown.
  */
-export function formForOfflineSale(form: SaleFormState): SaleFormState {
-  return { ...form, occurredAtLocal: "" };
+export function formForOfflineSale(
+  form: SaleFormState,
+  outcomeUnknown = false
+): SaleFormState {
+  return outcomeUnknown ? form : { ...form, occurredAtLocal: "" };
 }
 
 export const idleSubmission: SubmissionState = { phase: "idle" };

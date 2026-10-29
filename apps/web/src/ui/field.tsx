@@ -128,12 +128,16 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
 }
 
 /* The error of a field: `role="alert"`, as the field errors of the sale today, with an icon besides the color.
-   Renders nothing without a message. */
+   `live="polite"` is `role="status"`, for a message that is rewritten at each key (a count over a limit): an alert
+   would read every new number. Renders nothing without a message. */
 function FieldError({
   children,
   className,
+  live = "assertive",
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & {
+  live?: "assertive" | "polite" | undefined;
+}) {
   if (!children) {
     return null;
   }
@@ -144,7 +148,7 @@ function FieldError({
         className
       )}
       data-slot="field-error"
-      role="alert"
+      role={live === "polite" ? "status" : "alert"}
       {...props}
     >
       <CircleAlertIcon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
