@@ -50,6 +50,7 @@ import {
   removeItem,
   requestDiscard,
   resolveSaleAttempt,
+  type SaleAttempt,
   type SaleFormState,
   type SubmissionState,
   saleDateDetails,
@@ -699,6 +700,52 @@ describe("payment profile choice and fee preview", () => {
     const reset = reconcileProfileReload(creditCardForm(), []);
     expect(reset.profile.choice).toBe("");
     expect(reset.profile.reviewNotice).toContain("não está mais ativo");
+  });
+});
+
+describe("a profile that left the list after a lost answer", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  const ids = sequentialIds();
+
+  function attemptOf(form: SaleFormState, previous: SaleAttempt | null) {
+    const { body } = evaluate(form, context({ profiles: [profile()] }));
+    if (body === null) {
+      throw new Error("expected a valid body");
+    }
+    return resolveSaleAttempt(previous, body, organizationId, ids, now);
+  }
+
+  it("keeps the body and the command ID while the outcome is unknown", () => {
+    const form = creditCardForm();
+    const sent = attemptOf(form, null);
+    const reloaded = reconcileProfileReload(form, [], true);
+    expect(reloaded).toBe(form);
+    expect(evaluate(reloaded, context({ profiles: [profile()] })).body).toEqual(
+      evaluate(form).body
+    );
+    expect(attemptOf(reloaded, sent).commandId).toBe(sent.commandId);
+    expect(
+      evaluate(reloaded, context({ profiles: [] })).errors[
+        formFieldKeys.profile
+      ]
+    ).toContain("não está na lista");
+  });
+
+  it("clears the choice and the next choice is a new attempt when no outcome is unknown", () => {
+    const form = creditCardForm();
+    const sent = attemptOf(form, null);
+    const reloaded = reconcileProfileReload(form, [], false);
+    expect(reloaded.profile.choice).toBe("");
+    expect(reloaded.profile.reviewNotice).toContain("não está mais ativo");
+    const retyped = selectProfileChoice(reloaded, NO_PROFILE_CHOICE, []);
+    expect(attemptOf(retyped, sent).commandId).not.toBe(sent.commandId);
+  });
+
+  it("asks for the review of a changed version and keeps the choice", () => {
+    const form = creditCardForm();
+    const reloaded = reconcileProfileReload(form, [profile(4)], true);
+    expect(reloaded.profile.reviewNotice).toContain("mudou");
+    expect(reloaded.profile.choice).toBe(form.profile.choice);
   });
 });
 
