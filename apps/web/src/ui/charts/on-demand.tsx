@@ -126,7 +126,7 @@ function Reserved({
     >
       {floor === undefined ? null : (
         <div
-          className="absolute inset-x-0 border-border/70 border-t"
+          className="absolute inset-x-0 border-border border-t"
           data-chart-floor=""
           style={{ bottom: floor }}
         />

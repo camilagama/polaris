@@ -50,16 +50,19 @@ interface FieldTextsProps {
   error: string | undefined;
   hint: ReactNode;
   id: string;
+  live?: "assertive" | "polite" | undefined;
 }
 
 /** The help and the error under a control. */
-export function FieldTexts({ error, hint, id }: FieldTextsProps) {
+export function FieldTexts({ error, hint, id, live }: FieldTextsProps) {
   return (
     <>
       {hint ? (
         <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
       ) : null}
-      <FieldError id={`${id}-error`}>{error}</FieldError>
+      <FieldError id={`${id}-error`} live={live}>
+        {error}
+      </FieldError>
     </>
   );
 }

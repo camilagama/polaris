@@ -1029,6 +1029,130 @@ test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com
   ).toBeVisible();
 });
 
+/** What the server answers an input its contract refuses (a tab of an older build sends a text over the limit). */
+const inputRefused = rpc(
+  {
+    code: "BAD_REQUEST",
+    data: { issues: [] },
+    defined: false,
+    message: "Input validation failed",
+    status: 400,
+  },
+  400
+);
+
+test("SKU acima de 64: o campo diz a contagem e guarda o texto, 'Salvar SKU' fica desligado com o motivo e nada é enviado; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+      "product/setVariantSku": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  const field = skuSection.getByRole("textbox");
+  const save = skuSection.getByRole("button", { name: "Salvar SKU" });
+  const long = `SKU-${"A".repeat(67)}`;
+
+  await field.fill(long);
+  const message = "Use até 64 caracteres. Agora são 71.";
+  await expect(skuSection.getByText(message)).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const describedBy = await field.getAttribute("aria-describedby");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  // no native maxLength: the whole text stays in the field
+  await expect(field).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", describedBy ?? "");
+  await field.press("Enter");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue(long);
+  expect(sent).toEqual([]);
+
+  // within the limit the message goes; a server that still refuses the input keeps what was typed
+  await field.fill("CAM-001");
+  await expect(skuSection.getByText(message)).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-disabled", "true");
+  await save.click();
+  await expect(skuSection.getByRole("alert")).toContainText(
+    "Revise os valores e as combinações informadas."
+  );
+  await expect(field).toHaveValue("CAM-001");
+  expect(sent).toHaveLength(1);
+});
+
+test("valor de opção acima de 80: o campo diz a contagem e guarda o texto, 'Salvar variantes' fica desligado com o motivo; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/configureVariants": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  const values = page.getByLabel("Valores de Cor");
+  const save = page.getByRole("button", { name: "Salvar variantes" });
+  const long = `Azul\n${"a".repeat(91)}`;
+
+  await values.fill(long);
+  const message = "Use até 80 caracteres por valor. A linha 2 tem 91.";
+  await expect(page.getByText(message)).toBeVisible();
+  await expect(values).toHaveAttribute("aria-invalid", "true");
+  const describedBy = (await values.getAttribute("aria-describedby")) ?? "";
+  const errorId = describedBy
+    .split(" ")
+    .find((idRef) => idRef.endsWith("-error"));
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  await expect(values).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", errorId ?? "");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  expect(sent).toEqual([]);
+
+  // within the limit, one combination, and a server that still refuses: the values and the combination stay
+  await values.fill("Azul\nPreta");
+  await expect(page.getByText(message)).toHaveCount(0);
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  await save.click();
+  await expect(
+    page.getByText("Revise os valores e as combinações informadas.")
+  ).toBeVisible();
+  await expect(values).toHaveValue("Azul\nPreta");
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Cor" })
+  ).toHaveText("Azul");
+  expect(sent).toHaveLength(1);
+});
+
 test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são repetidas, e os rótulos e o exemplo do preço cabem em 360 px", async ({
   page,
 }, testInfo) => {

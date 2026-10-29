@@ -5,6 +5,10 @@ export type ProductLifecycleAction = "archive" | "delete" | "restore";
 
 export const PRODUCT_VARIANT_OPTION_NAMES = ["model", "color", "size"] as const;
 export const MAX_PRODUCT_VARIANTS = 50;
+/** In code points, after the trim: a value is "GG", "Azul-marinho", "iPhone 15 Pro Max". */
+export const MAX_PRODUCT_OPTION_VALUE_LENGTH = 80;
+/** In code points, after the trim: the codes of an ERP or a marketplace (up to 50) and a GTIN-14 with a prefix. */
+export const MAX_PRODUCT_VARIANT_SKU_LENGTH = 64;
 
 export type ProductVariantOptionName =
   (typeof PRODUCT_VARIANT_OPTION_NAMES)[number];
@@ -47,6 +51,15 @@ export class ProductVariantNotFoundError extends Error {
   constructor() {
     super("product_variant_not_found");
     this.name = "ProductVariantNotFoundError";
+  }
+}
+
+export class ProductVariantSkuError extends Error {
+  readonly code = "invalid_product_variant_sku";
+
+  constructor() {
+    super("invalid_product_variant_sku");
+    this.name = "ProductVariantSkuError";
   }
 }
 
@@ -170,6 +183,14 @@ export class ProductIdConflictError extends Error {
   }
 }
 
+/**
+ * Over `max` code points. A text of more than 2 × `max` UTF-16 units is over without being walked: a command of the
+ * sync reaches the domain with up to 256 KiB of payload, not bounded by the contract.
+ */
+function exceedsCodePoints(text: string, max: number): boolean {
+  return text.length > 2 * max || [...text].length > max;
+}
+
 export function normalizeProductVariantConfiguration(
   input: ProductVariantConfigurationInput
 ): ProductVariantConfigurationInput {
@@ -201,7 +222,11 @@ export function normalizeProductVariantConfiguration(
     for (const value of option.values) {
       const normalized = value.trim();
       const key = normalized.toLowerCase();
-      if (!normalized || normalizedValues.has(key)) {
+      if (
+        !normalized ||
+        exceedsCodePoints(normalized, MAX_PRODUCT_OPTION_VALUE_LENGTH) ||
+        normalizedValues.has(key)
+      ) {
         throw new ProductVariantConfigurationError();
       }
       values.push(normalized);
@@ -367,7 +392,11 @@ export function normalizeProductVariantSku(
   if (sku === null || sku === undefined) {
     return null;
   }
-  return sku.trim() || null;
+  const trimmed = sku.trim();
+  if (exceedsCodePoints(trimmed, MAX_PRODUCT_VARIANT_SKU_LENGTH)) {
+    throw new ProductVariantSkuError();
+  }
+  return trimmed || null;
 }
 
 export function deriveProductLifecycle(
