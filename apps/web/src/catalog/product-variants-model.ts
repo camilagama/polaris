@@ -3,6 +3,10 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import {
+  MAX_PRODUCT_OPTION_VALUE_LENGTH,
+  MAX_PRODUCT_VARIANT_SKU_LENGTH,
+} from "@polaris/domain/catalog/product";
+import {
   commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -92,9 +96,33 @@ export function parseOptionValues(lines: string): string[] {
     .filter(Boolean);
 }
 
+/** Counted in code points, like the domain: an emoji is one character, not the two UTF-16 units of `.length`. */
+function characterCount(text: string): number {
+  return [...text].length;
+}
+
+/** The SKU over its limit, said at the field with the count of now; `null` within it. The domain trims it first. */
+export function skuLengthError(sku: string): string | null {
+  const count = characterCount(sku.trim());
+  return count > MAX_PRODUCT_VARIANT_SKU_LENGTH
+    ? `Use até ${MAX_PRODUCT_VARIANT_SKU_LENGTH} caracteres. Agora são ${count}.`
+    : null;
+}
+
+function optionValueLengthError(values: string[]): string | null {
+  const longest = Math.max(...values.map(characterCount));
+  return longest > MAX_PRODUCT_OPTION_VALUE_LENGTH
+    ? `Use até ${MAX_PRODUCT_OPTION_VALUE_LENGTH} caracteres por valor. Agora um valor tem ${longest}.`
+    : null;
+}
+
 export function optionValuesError(values: string[]): string | null {
   if (values.length === 0) {
     return "Informe ao menos um valor, um por linha.";
+  }
+  const tooLong = optionValueLengthError(values);
+  if (tooLong) {
+    return tooLong;
   }
   if (
     new Set(values.map((value) => value.toLowerCase())).size !== values.length
@@ -153,6 +181,10 @@ export function validateVariantDrafts(
     new Set(combinationKeys).size === combinationKeys.length;
 
   return {
+    // the values over their limit: the save stays off and says why, at those fields
+    tooLongOptions: optionNames.filter((name) =>
+      optionValueLengthError(optionValues[name])
+    ),
     canAdd:
       optionNames.length > 0 &&
       invalidOptions.length === 0 &&

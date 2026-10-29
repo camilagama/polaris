@@ -1,6 +1,10 @@
 import type { ContractRouterClient } from "@orpc/contract";
 import { oc } from "@orpc/contract";
 import {
+  MAX_PRODUCT_OPTION_VALUE_LENGTH,
+  MAX_PRODUCT_VARIANT_SKU_LENGTH,
+} from "@polaris/domain/catalog/product";
+import {
   MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS,
   WRITE_OFF_REASON_CODES,
 } from "@polaris/domain/inventory/write-off-stock";
@@ -738,6 +742,18 @@ export type ProductMediaRemoveResponse = z.infer<
 
 const productVariantOptionName = z.enum(["model", "color", "size"]);
 
+const productOptionValueInput = codePointText(MAX_PRODUCT_OPTION_VALUE_LENGTH)
+  .min(1)
+  .refine((value) => [...value].length <= MAX_PRODUCT_OPTION_VALUE_LENGTH, {
+    message: "invalid_product_variant_configuration",
+  });
+
+const productVariantSkuInput = codePointText(
+  MAX_PRODUCT_VARIANT_SKU_LENGTH
+).refine((sku) => [...sku].length <= MAX_PRODUCT_VARIANT_SKU_LENGTH, {
+  message: "invalid_product_variant_sku",
+});
+
 const productVariantOptionValue = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -937,6 +953,12 @@ const salePaymentInput = z.object({
   method: z.enum(SALE_PAYMENT_METHODS),
 });
 
+/** A device writes `toISOString()` (24 characters); the fraction of a second of an ISO instant takes any number of digits. */
+const offlineSaleInstant = z
+  .string()
+  .max(64, { abort: true })
+  .datetime({ offset: true });
+
 /**
  * The payload of the offline `sale.confirm` command (plan PR57): what a device
  * can state about a sale without the server. The command ID, the organization
@@ -950,10 +972,10 @@ export const offlineSalePayloadSchema = z
   .object({
     adjustments: z.array(saleAdjustmentInput).max(20),
     items: z.array(saleItemInput).min(1).max(200),
-    occurredAt: z.string().datetime({ offset: true }),
+    occurredAt: offlineSaleInstant,
     payment: salePaymentInput,
     paymentProfile: salePaymentProfileSelection.nullable().optional(),
-    recordedAt: z.string().datetime({ offset: true }),
+    recordedAt: offlineSaleInstant,
   })
   .strict();
 export type OfflineSalePayload = z.infer<typeof offlineSalePayloadSchema>;
@@ -2482,7 +2504,7 @@ export const polarisContract = {
               z.object({
                 name: productVariantOptionName,
                 // a product has at most 50 variants, so more values than that for one option cannot be used
-                values: z.array(z.string().trim().min(1)).min(1).max(50),
+                values: z.array(productOptionValueInput).min(1).max(50),
               })
             )
             .min(1)
@@ -2493,9 +2515,9 @@ export const polarisContract = {
               z.object({
                 values: z
                   .object({
-                    color: z.string().trim().min(1).optional(),
-                    model: z.string().trim().min(1).optional(),
-                    size: z.string().trim().min(1).optional(),
+                    color: productOptionValueInput.optional(),
+                    model: productOptionValueInput.optional(),
+                    size: productOptionValueInput.optional(),
                   })
                   .strict(),
               })
@@ -2624,7 +2646,7 @@ export const polarisContract = {
           expectedVersion: z.number().int().positive(),
           organizationId: organizationIdInput,
           productId: z.string().uuid(),
-          sku: z.string().nullable(),
+          sku: productVariantSkuInput.nullable(),
           variantId: z.string().uuid(),
         })
       )

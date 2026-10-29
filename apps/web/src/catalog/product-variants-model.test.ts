@@ -13,6 +13,7 @@ import {
   parseOptionValues,
   productOptionValues,
   selectedOptionNames,
+  skuLengthError,
   validateVariantDrafts,
   variantErrorMessage,
   variantLabel,
@@ -51,10 +52,50 @@ describe("valores das opções, um por linha", () => {
     expect(optionValuesError(["Azul", "Preta"])).toBeNull();
   });
 
+  it("aceita 80 caracteres por valor, contados como o domínio (um emoji é um), e diz quantos tem o mais longo", () => {
+    const emoji = "\u{1F600}";
+    expect(optionValuesError(["a".repeat(80), emoji.repeat(80)])).toBeNull();
+    expect(optionValuesError(["P", "a".repeat(91)])).toBe(
+      "Use até 80 caracteres por valor. Agora um valor tem 91."
+    );
+    expect(optionValuesError([emoji.repeat(81)])).toBe(
+      "Use até 80 caracteres por valor. Agora um valor tem 81."
+    );
+  });
+
+  it("um valor longo desliga o salvar e diz em qual opção, sem tirar o que foi digitado", () => {
+    const lines = { color: `Azul\n${"a".repeat(81)}`, model: "", size: "P" };
+    const result = validateVariantDrafts(
+      ["color", "size"],
+      productOptionValues(lines),
+      [{ values: { color: "Azul", size: "P" } }]
+    );
+    expect(result.canSubmit).toBe(false);
+    expect(result.tooLongOptions).toEqual(["color"]);
+    expect(productOptionValues(lines).color).toEqual(["Azul", "a".repeat(81)]);
+  });
+
   it("lê as três opções de uma vez", () => {
     expect(
       productOptionValues({ color: "Azul\nPreta", model: "", size: "P" })
     ).toEqual({ color: ["Azul", "Preta"], model: [], size: ["P"] });
+  });
+});
+
+describe("tamanho do SKU", () => {
+  it("aceita 64 caracteres depois de aparar e diz a contagem de agora acima disso", () => {
+    expect(skuLengthError(` ${"A".repeat(64)} `)).toBeNull();
+    expect(skuLengthError("A".repeat(71))).toBe(
+      "Use até 64 caracteres. Agora são 71."
+    );
+  });
+
+  it("conta caracteres como o domínio: 64 emojis cabem, 65 não", () => {
+    const emoji = "\u{1F600}";
+    expect(skuLengthError(emoji.repeat(64))).toBeNull();
+    expect(skuLengthError(emoji.repeat(65))).toBe(
+      "Use até 64 caracteres. Agora são 65."
+    );
   });
 });
 

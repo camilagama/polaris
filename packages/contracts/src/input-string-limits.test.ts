@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { $ZodType } from "zod/v4/core";
-import { polarisContract } from "./index";
-import { STRING_LIMIT_EXCEPTIONS } from "./input-string-limits";
+import { offlineSalePayloadSchema, polarisContract } from "./index";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const X_PATTERN = /^x+$/;
@@ -11,6 +10,13 @@ const X_PATTERN = /^x+$/;
  * Every string an input can hold needs a `.max` or a `.length`: a string with no ceiling can take the whole body of
  * `/rpc`, and a `refine` that walks it (`[...text]`) then spends CPU of the Free plan on it. A `regex`, a `refine`,
  * a `trim` or an `email` alone do not count: the walk cannot read a size out of them.
+ *
+ * The sweep reads every input of the contract and the payload of the offline `sale.confirm`, which the handler parses
+ * with a schema of the contract. The other payloads of `sync/push` (`product.create`, `customer.create`, the stock
+ * commands) are read by hand in their handlers, with no schema to walk: what bounds them is the server, first the
+ * ceiling of a payload in `sync/push` (256 KiB, refused before it is parsed or hashed), and then the domain, which
+ * refuses each field over its limit (`normalizeProductVariantSku`, `normalizeProductName`,
+ * `normalizeCustomerProfile`...).
  */
 interface StringInInput {
   bounded: boolean;
@@ -48,144 +54,11 @@ const LEAVES = new Set([
 const OPAQUE_EXCEPTIONS = ["sync/push.commands[].payload"];
 
 /**
- * The 133 paths that had no ceiling when this rule came in, frozen: `STRING_LIMIT_EXCEPTIONS` may only be a part of
- * them. Listing a new field as an exception means editing this list too, and that shows in the diff.
+ * The largest `.max` a free text may take, in UTF-16 units: the description of a product (5000). A bigger number is
+ * still a ceiling, so the rule reads it here instead of trusting any number; the derivation of the body ceiling of
+ * `/rpc` then adds every one of them up.
  */
-const STRING_LIMIT_BASELINE = [
-  "billing/cancelRenewal.organizationId",
-  "billing/cancelRenewal.requestId",
-  "billing/openOverduePayment.organizationId",
-  "billing/openOverduePayment.requestId",
-  "billing/readPlan.organizationId",
-  "billing/requestRefund.organizationId",
-  "billing/requestRefund.requestId",
-  "billing/startCheckout|0.organizationId",
-  "billing/startCheckout|1.organizationId",
-  "billing/startCheckout|1.payer.taxId",
-  "category/archive.organizationId",
-  "category/create.name",
-  "category/create.organizationId",
-  "category/delete.organizationId",
-  "category/list.organizationId",
-  "category/rename.name",
-  "category/rename.organizationId",
-  "category/restore.organizationId",
-  "customer/anonymizeForPrivacy.organizationId",
-  "customer/archive.organizationId",
-  "customer/create.organizationId",
-  "customer/findPossibleDuplicates.organizationId",
-  "customer/list.organizationId",
-  "customer/restore.organizationId",
-  "customer/update.organizationId",
-  "dataExport/list.organizationId",
-  "dataExport/listClosed.organizationId",
-  "dataExport/request.organizationId",
-  "dataExport/requestClosed.organizationId",
-  "expense/archiveCategory.organizationId",
-  "expense/archiveRule.organizationId",
-  "expense/create.competenceOn",
-  "expense/create.description",
-  "expense/create.organizationId",
-  "expense/create.payee",
-  "expense/createCategory.name",
-  "expense/createCategory.organizationId",
-  "expense/createRule.description",
-  "expense/createRule.endsOn",
-  "expense/createRule.organizationId",
-  "expense/createRule.payee",
-  "expense/createRule.startsOn",
-  "expense/list.from",
-  "expense/list.organizationId",
-  "expense/list.to",
-  "expense/listCategories.organizationId",
-  "expense/listRules.organizationId",
-  "expense/renameCategory.name",
-  "expense/renameCategory.organizationId",
-  "expense/restore.organizationId",
-  "expense/restoreCategory.organizationId",
-  "expense/restoreRule.organizationId",
-  "expense/update.competenceOn",
-  "expense/update.description",
-  "expense/update.organizationId",
-  "expense/update.payee",
-  "expense/updateRule.description",
-  "expense/updateRule.endsOn",
-  "expense/updateRule.organizationId",
-  "expense/updateRule.payee",
-  "expense/void.organizationId",
-  "goal/cancel.organizationId",
-  "goal/create.endsOn",
-  "goal/create.organizationId",
-  "goal/create.startsOn",
-  "goal/list.organizationId",
-  "goal/targetChanges.organizationId",
-  "goal/update.organizationId",
-  "inventory/getBalance.organizationId",
-  "inventory/inventoryCount.occurredOn",
-  "inventory/inventoryCount.organizationId",
-  "inventory/listBalances.organizationId",
-  "inventory/receiveStock.occurredOn",
-  "inventory/receiveStock.organizationId",
-  "inventory/writeOffStock.occurredOn",
-  "inventory/writeOffStock.organizationId",
-  "inventory/writeOffStock.reasonNote",
-  "offline/issueLease.organizationId",
-  "organization/closedStatus.organizationId",
-  "organization/recoverClosure.organizationId",
-  "organization/requestClosure.organizationId",
-  "paymentProfile/archive.organizationId",
-  "paymentProfile/create.organizationId",
-  "paymentProfile/list.organizationId",
-  "paymentProfile/restore.organizationId",
-  "paymentProfile/update.organizationId",
-  "plan/operationalSelection.organizationId",
-  "plan/selectOperationalVariants.organizationId",
-  "product/archive.organizationId",
-  "product/configureVariants.options[].values[]",
-  "product/configureVariants.organizationId",
-  "product/configureVariants.variants[].values.color",
-  "product/configureVariants.variants[].values.model",
-  "product/configureVariants.variants[].values.size",
-  "product/create.organizationId",
-  "product/delete.organizationId",
-  "product/getVariants.organizationId",
-  "product/importBatch.organizationId",
-  "product/list.organizationId",
-  "product/namesExisting.organizationId",
-  "product/restore.organizationId",
-  "product/setVariantListPrice.organizationId",
-  "product/setVariantSku.organizationId",
-  "product/setVariantSku.sku",
-  "product/update.description",
-  "product/update.organizationId",
-  "publicCatalog/publishProducts.organizationId",
-  "publicCatalog/saveProfile.organizationId",
-  "publicCatalog/setPublished.organizationId",
-  "publicCatalog/setup.organizationId",
-  "publicCatalog/unpublishProducts.organizationId",
-  "report/dailySales.from",
-  "report/dailySales.organizationId",
-  "report/dailySales.to",
-  "report/periodSummary.from",
-  "report/periodSummary.organizationId",
-  "report/periodSummary.to",
-  "sale/assignCustomer.organizationId",
-  "sale/cancel.organizationId",
-  "sale/confirm.organizationId",
-  "sale/get.organizationId",
-  "sale/getCustomerLink.organizationId",
-  "sale/list.occurredFrom",
-  "sale/list.occurredTo",
-  "sale/list.organizationId",
-  "sale/reassignCustomer.organizationId",
-  "sale/return.organizationId",
-  "sale/unassignCustomer.organizationId",
-  "sync/bootstrapPage.organizationId",
-  "sync/getCursor.organizationId",
-  "sync/pull.cursor",
-  "sync/pull.organizationId",
-  "sync/push.organizationId",
-];
+const MAX_INPUT_STRING_UNITS = 5000;
 
 interface Check {
   _zod: { check: (payload: unknown) => unknown; def: Record<string, unknown> };
@@ -342,27 +215,13 @@ function refinesWithoutAbortingCeiling(found: StringInInput[]): string[] {
     .map((entry) => entry.path);
 }
 
-/** What breaks the rule, for a set of found strings, a list of exceptions and the frozen baseline. */
-function problemsOf(
-  found: StringInInput[],
-  exceptions: readonly string[],
-  baseline: readonly string[]
-): string[] {
-  const loose = looseIn(found);
-  return [
-    ...loose
-      .filter((path) => !exceptions.includes(path))
-      .map((path) => `no ceiling: ${path}`),
-    ...exceptions
-      .filter((path) => !loose.includes(path))
-      .map((path) => `bounded but still an exception: ${path}`),
-    ...exceptions
-      .filter((path) => !baseline.includes(path))
-      .map((path) => `exception outside the baseline: ${path}`),
-    ...(exceptions.join("\n") === [...exceptions].sort().join("\n")
-      ? []
-      : ["exceptions out of order"]),
-  ];
+/** The strings whose ceiling is above the one a free text may take. */
+function overCeiling(found: StringInInput[]): string[] {
+  return found
+    .filter(
+      (entry) => entry.max !== undefined && entry.max > MAX_INPUT_STRING_UNITS
+    )
+    .map((entry) => `${entry.path} (${entry.max})`);
 }
 
 function inputsOf(
@@ -382,9 +241,12 @@ function inputsOf(
   );
 }
 
-const contractStrings = inputsOf(polarisContract, "").flatMap(
-  ({ path, schema }) => stringsIn(schema, path)
-);
+const contractStrings = [
+  ...inputsOf(polarisContract, "").flatMap(({ path, schema }) =>
+    stringsIn(schema, path)
+  ),
+  ...stringsIn(offlineSalePayloadSchema, "sync/push.sale.confirm.payload"),
+];
 
 function contractString(path: string): $ZodType {
   const found = contractStrings.find((entry) => entry.path === path);
@@ -395,26 +257,20 @@ function contractString(path: string): $ZodType {
 }
 
 describe("the input strings of the contract", () => {
-  it("leave without a ceiling exactly the listed exceptions", () => {
-    expect(looseIn(contractStrings)).toEqual([...STRING_LIMIT_EXCEPTIONS]);
-    expect(
-      problemsOf(
-        contractStrings,
-        STRING_LIMIT_EXCEPTIONS,
-        STRING_LIMIT_BASELINE
-      )
-    ).toEqual([]);
+  it("all have a ceiling: there is no exception", () => {
+    expect(looseIn(contractStrings)).toEqual([]);
   });
 
-  it("only shrink: the exceptions are a part of the frozen baseline of 133", () => {
-    expect(STRING_LIMIT_BASELINE).toHaveLength(133);
-    expect(new Set(STRING_LIMIT_BASELINE).size).toBe(133);
-    expect(STRING_LIMIT_BASELINE).toEqual([...STRING_LIMIT_BASELINE].sort());
+  it("have no ceiling above the one of a free text", () => {
+    expect(overCeiling(contractStrings)).toEqual([]);
+  });
+
+  it("include the payload of the offline sale.confirm", () => {
     expect(
-      STRING_LIMIT_EXCEPTIONS.filter(
-        (path) => !STRING_LIMIT_BASELINE.includes(path)
-      )
-    ).toEqual([]);
+      contractStrings
+        .filter((entry) => entry.path.startsWith("sync/push.sale.confirm."))
+        .map((entry) => entry.path)
+    ).toContain("sync/push.sale.confirm.payload.occurredAt");
   });
 
   it("stop a long text before every refine of a string: a ceiling that aborts comes first", () => {
@@ -605,37 +461,21 @@ describe("the walk over input strings, on planted schemas", () => {
   });
 });
 
-describe("the rule over the list of exceptions, on planted lists", () => {
-  const found = stringsIn(
-    z.object({ a: z.string(), b: z.string().max(3), c: z.string() }),
-    "p"
-  );
-  const baseline = ["p.a", "p.b", "p.c"];
-
-  it("passes when the exceptions are exactly the strings without a ceiling", () => {
-    expect(problemsOf(found, ["p.a", "p.c"], baseline)).toEqual([]);
-  });
-
-  it("refuses a new field without a ceiling that is not listed", () => {
-    expect(problemsOf(found, ["p.a"], baseline)).toEqual(["no ceiling: p.c"]);
-  });
-
-  it("refuses an exception that gained a `.max`: the list shrinks in the same change", () => {
-    expect(problemsOf(found, ["p.a", "p.b", "p.c"], baseline)).toEqual([
-      "bounded but still an exception: p.b",
-    ]);
-  });
-
-  it("refuses an exception outside the baseline", () => {
-    expect(problemsOf(found, ["p.a", "p.c"], ["p.a"])).toEqual([
-      "exception outside the baseline: p.c",
-    ]);
-  });
-
-  it("refuses a list out of order", () => {
-    expect(problemsOf(found, ["p.c", "p.a"], baseline)).toEqual([
-      "exceptions out of order",
-    ]);
+describe("the ceiling of a free text, on planted schemas", () => {
+  it("refuses a `.max` or a `.length` above it, and takes the smallest of a string's ceilings", () => {
+    expect(
+      overCeiling(
+        stringsIn(
+          z.object({
+            a: z.string().max(MAX_INPUT_STRING_UNITS),
+            b: z.string().max(MAX_INPUT_STRING_UNITS + 1),
+            c: z.string().length(1_000_000),
+            d: z.string().max(1_000_000).max(10),
+          }),
+          "input"
+        )
+      )
+    ).toEqual(["input.b (5001)", "input.c (1000000)"]);
   });
 });
 
@@ -687,6 +527,11 @@ const CODE_POINT_FIELDS: [path: string, codePoints: number][] = [
   ["expense/updateRule.description", 200],
   ["expense/updateRule.payee", 120],
   ["inventory/writeOffStock.reasonNote", 500],
+  ["product/configureVariants.options[].values[]", 80],
+  ["product/configureVariants.variants[].values.color", 80],
+  ["product/configureVariants.variants[].values.model", 80],
+  ["product/configureVariants.variants[].values.size", 80],
+  ["product/setVariantSku.sku", 64],
 ];
 
 describe.each(CODE_POINT_FIELDS)(
