@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
 import { ScreenTitle } from "../app-shell/screen-title";
 import { ScreenTabList } from "../app-shell/screen-tabs";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { invalidatePreviousWindow } from "../home/previous-window-copy";
+import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
@@ -42,6 +44,13 @@ function savedMessage(
   return month === shownMonth
     ? base
     : `${base} Ela pertence a ${formatMonthLabel(month)}, que não é o mês exibido.`;
+}
+
+/** The home's copy of the days before the month no longer holds once an expense of a past competence changed here. */
+function dropPreviousWindow(organizationId: string, competences: string[]) {
+  for (const competenceOn of competences) {
+    invalidatePreviousWindow(browserStorage(), organizationId, competenceOn);
+  }
 }
 
 function Heading() {
@@ -132,6 +141,12 @@ export function ExpensesPage() {
       }
       if (outcome === "ok") {
         markPeriodSummaryStale();
+        dropPreviousWindow(
+          organizationId,
+          target
+            ? [input.competenceOn, target.competenceOn]
+            : [input.competenceOn]
+        );
       }
       closeForm();
       await refresh();
@@ -171,6 +186,7 @@ export function ExpensesPage() {
       });
       if (outcome === "ok") {
         markPeriodSummaryStale();
+        dropPreviousWindow(organizationId, [expense.competenceOn]);
       }
       if (outcome !== "failed") {
         if (editing?.id === expense.id) {
