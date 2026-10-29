@@ -88,7 +88,7 @@ No primeiro contato, cada elemento diz o número, o nome e no máximo uma linha 
 | Linha sob o título da página | 1 linha a 360 px, cerca de 45 caracteres | Só data, período ou estado da leitura. Nunca uma frase que explica a tela. |
 | Cartão de KPI | nome e data, número, chip e **1** linha de apoio | A linha de apoio é a contagem ou o aviso. "Com o que compara" e "como é calculado" vão para a ajuda. Nada repete o título ("2 vendas", não "2 vendas hoje" sob "Vendas hoje"). |
 | Linha de lista (produto, cliente, venda) | título e 1 linha de metadados separada por "·" | |
-| Item de "Precisa de atenção" | 1 linha com o número | A tela de destino diz o que fazer; o item não. |
+| Item de "Precisa de ação" | 1 linha com o número | A tela de destino diz o que fazer; o item não. |
 | Estado vazio | 1 frase de até 60 caracteres e 1 ação | Sem segunda frase explicando a tela. |
 | Estado de erro | 1 frase e "Tentar novamente" | |
 | Estado de carregamento | só para o leitor de tela (esqueleto) | |
