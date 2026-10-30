@@ -1,4 +1,5 @@
 import { type MouseEvent, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
@@ -44,7 +45,7 @@ function ExportEntry({
 }) {
   return (
     <li
-      className="grid gap-2 border-border border-t py-3 first:border-t-0 first:pt-0 last:pb-0"
+      className="grid min-w-0 gap-2 border-border border-t py-3 [overflow-wrap:anywhere] first:border-t-0 first:pt-0 last:pb-0"
       data-export-state={view.kind}
     >
       <div className="grid gap-0.5">
@@ -57,11 +58,10 @@ function ExportEntry({
           {view.files.map((file) => (
             <li className="min-w-0 max-w-full" key={file.ordinal}>
               <a
-                className={buttonVariants({
-                  className:
-                    "h-auto min-h-ctl-md max-w-full whitespace-normal py-1.5 text-left",
-                  variant: "outline",
-                })}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-auto min-h-ctl-md max-w-full whitespace-normal py-1.5 text-left [overflow-wrap:anywhere]"
+                )}
                 href={fileHref(view.id, file.ordinal)}
                 onClick={online ? undefined : stopOffline}
                 {...connectionControlProps(online)}
@@ -113,7 +113,7 @@ export function DataExportList({
           Atualizar
         </Button>
       </CardHeader>
-      <CardContent className="grid gap-3">
+      <CardContent className="grid min-w-0 gap-3">
         {loadError ? (
           <Alert role="alert" variant="destructive">
             <AlertDescription>{loadError}</AlertDescription>
@@ -123,7 +123,7 @@ export function DataExportList({
           <p className="text-muted-foreground">{NO_EXPORTS_TEXT}</p>
         ) : null}
         {exports !== null && exports.length > 0 ? (
-          <ul className="grid">
+          <ul className="grid min-w-0">
             {exports.map((item) => (
               <ExportEntry
                 fileHref={fileHref}

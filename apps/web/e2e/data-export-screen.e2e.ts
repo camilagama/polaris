@@ -286,6 +286,45 @@ test("cada estado da cópia tem o seu texto, sem código técnico (AC-3)", async
   expect(await page.locator("main").innerText()).not.toMatch(TECHNICAL);
 });
 
+test("a 360 e a 320 px, nomes longos de arquivo não fazem a página rolar de lado (AC-9)", async ({
+  page,
+}) => {
+  await openScreen(page, {
+    lists: [
+      [
+        copy({
+          ...READY,
+          files: [
+            {
+              name: "polaris-imagens-2026-10-30-parte-1-de-3.zip",
+              ordinal: 1,
+              sizeBytes: 31_500_000,
+            },
+          ],
+          formats: ["json", "csv", "images"],
+        }),
+      ],
+    ],
+  });
+  for (const width of [360, 320]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one width after the other
+    await page.setViewportSize({ height: 740, width });
+    await expect(list(page)).toContainText("Sua cópia está pronta.");
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth
+    );
+    expect(overflow, `${width} px`).toBeLessThanOrEqual(0);
+    const link = await list(page).getByRole("link").boundingBox();
+    const card = await list(page).boundingBox();
+    expect(
+      (link?.x ?? 0) + (link?.width ?? 0),
+      `${width} px`
+    ).toBeLessThanOrEqual((card?.x ?? 0) + (card?.width ?? 0));
+  }
+});
+
 test("as recusas do pedido: limite de 3, já em preparo e o 503 que não se repete sozinho", async ({
   page,
 }) => {
