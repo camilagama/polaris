@@ -43,7 +43,7 @@ export const LEGAL_DOCUMENTS: Readonly<
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "00e40b0c63ece47443b65ae51fde58a7c198a8b48446c4a4c552c056054c9f67",
+    sha256: "0d0dbd92bc703a2253b3b2049566ac19aa20fd607a2a40ec22c98995783167fc",
     version: 1,
   }),
 });
