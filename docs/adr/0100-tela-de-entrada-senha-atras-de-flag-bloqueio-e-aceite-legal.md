@@ -150,7 +150,7 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
   - marcador `[preencher` ou `[confirmar` (sem diferenciar maiúsculas, com ou sem espaço depois do colchete) no molde, no texto, na linha da versão (data de vigência) ou no valor de uma variável;
   - ficha `{{…}}` que sobra no texto final ou aparece no valor de uma variável;
   - e-mail inválido em `VITE_LEGAL_CONTATO_EMAIL` ou `VITE_LEGAL_DPO_EMAIL`;
-  - caractere invisível (de controle, de formato ou separador que não seja o espaço comum) ou de Markdown (`*`, `[`, `]`, `<`, `>`, `|`, crase) no valor de uma variável;
+  - caractere invisível (de controle, de formato, privado, não atribuído ou separador que não seja o espaço comum) ou de Markdown (`*`, `[`, `]`, `<`, `>`, `|`, crase) no valor de uma variável;
   - o aviso de rascunho ainda existente.
 
   Em qualquer modo de build, o texto com hash diferente do da constante, o arquivo da versão que falta, o texto que não cabe no Markdown restrito, dois títulos com a mesma âncora e `effectiveFrom` que não seja `AAAA-MM-DD` ou `null` também param o build.
