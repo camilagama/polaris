@@ -1916,13 +1916,25 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       await expect(tooltipRows).toHaveCount(0);
       expect(await at()).toEqual(before);
 
+      const frameKeys = await box(area);
+      await page.mouse.move(
+        frameKeys.x + frameKeys.width / 2,
+        frameKeys.y + frameKeys.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
+      await expect(reading).toHaveCount(0);
+      await page.keyboard.press("ArrowLeft");
+      await expect(reading).toContainText("20/10");
+      await expect(tooltipRows).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
       await chart.getByRole("slider").blur();
       await expect(reading).toHaveCount(0);
       expect(await at()).toEqual(before);
 
       const frameNow = await box(area);
       await page.mouse.move(
-        frameNow.x + frameNow.width / 2,
+        frameNow.x + frameNow.width / 3,
         frameNow.y + frameNow.height / 2
       );
       await expect(tooltipRows.first()).toBeVisible();

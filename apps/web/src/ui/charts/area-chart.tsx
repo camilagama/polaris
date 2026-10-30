@@ -431,6 +431,7 @@ export function AreaChart({
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(
     null
   );
+  const [pointerOver, setPointerOver] = useState(false);
   const last = data.length - 1;
   const active =
     picked && picked.key === signature ? Math.min(picked.index, last) : last;
@@ -455,10 +456,12 @@ export function AreaChart({
     (event: ChangeEvent<HTMLInputElement>) => {
       const index = Number(event.currentTarget.value);
       setPicked({ index, key: signature });
+      setPointerOver(false);
       handle.current?.show(index);
     },
     [signature]
   );
+  const pointed = useCallback(() => setPointerOver(true), []);
   const show = useCallback(() => handle.current?.show(active), [active]);
   const hide = useCallback(() => {
     handle.current?.hide();
@@ -490,7 +493,7 @@ export function AreaChart({
   const place = readingPlace({
     atRest: readingAtRest,
     loading,
-    picked: picked?.key === signature,
+    picked: picked?.key === signature && !pointerOver,
   });
 
   return (
@@ -512,6 +515,7 @@ export function AreaChart({
       ) : null}
       <div
         className="relative isolate rounded-md"
+        onPointerMove={pointed}
         style={{ height: boxHeight }}
       >
         <ReadingAt place={place} reading={reading} where="over" />
