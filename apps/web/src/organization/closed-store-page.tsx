@@ -382,6 +382,7 @@ function useUndo(store: ClosedStore) {
       const storage = browserStorage();
       rememberClosedStore(storage, store.id, null);
       writePreferredOrganizationId(storage, store.id);
+      // the button stays locked until the Início replaces the page: a second tap would be refused as "not undone"
       window.location.assign(REOPENED_PATH);
     } catch (error: unknown) {
       const failure = undoFailure(error);
@@ -396,7 +397,6 @@ function useUndo(store: ClosedStore) {
           failure.kind === "window_over" ? closedAfterWindow(store) : store,
       });
       setDialog(false);
-    } finally {
       sending.current = false;
       setPending(false);
     }

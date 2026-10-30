@@ -371,12 +371,19 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
 
 describe("the device of a closed store (AC-11)", () => {
   it("says when the store was closed, in its time zone, and that the queue stays", () => {
-    expect(deviceClosedText(STORE)).toBe(
+    expect(deviceClosedText(STORE, true)).toBe(
       "Esta loja foi encerrada em 20 de outubro de 2026. A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila."
     );
-    expect(deviceClosedText(null)).toBe(
+    expect(deviceClosedText(null, true)).toBe(
       "Esta loja foi encerrada. A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila."
     );
+  });
+
+  it("never says the copy was deleted before the device confirmed it", () => {
+    expect(deviceClosedText(STORE, false)).toBe(
+      "Esta loja foi encerrada em 20 de outubro de 2026. O que não foi enviado continua guardado na fila deste aparelho."
+    );
+    expect(deviceClosedText(null, false)).not.toContain("apagada");
     expect(DEVICE_CLOSED_LINK).toBe("Ver a loja encerrada");
   });
 });

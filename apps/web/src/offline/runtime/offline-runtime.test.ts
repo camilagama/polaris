@@ -2369,6 +2369,24 @@ describe("a server that says the organization was closed", () => {
     await expectClosedDrop(w, runtime, before, device);
   });
 
+  it("told for a store this runtime does not have open: its lease goes now, and nothing of the open store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const otherLease = `polaris.offline.lease.${userId}.org-2`;
+    w.keyValues.write(otherLease, "{}");
+
+    await runtime.dropClosedCopy("org-2");
+
+    expect(w.keyValues.read(otherLease)).toBeNull();
+    expect(w.keyValues.read(leaseKeyName)).not.toBeNull();
+    expect(w.wiped).toEqual([]);
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      phase: "ready",
+    });
+  });
+
   it("stopping clears the mark: another store opens as usual", async () => {
     const w = world();
     const runtime = w.make();

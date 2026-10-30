@@ -48,11 +48,22 @@ export function ClosedStoreNotice({
 }) {
   const runtime = useOfflineRuntime();
   const [store, setStore] = useState<ClosedStore | null>(null);
+  const [copyDropped, setCopyDropped] = useState(runtime === null);
   const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let current = true;
-    runtime?.dropClosedCopy(organizationId).catch(() => undefined);
+    runtime
+      ?.dropClosedCopy(organizationId)
+      .then(() => {
+        const after = runtime.getSnapshot();
+        if (current) {
+          setCopyDropped(
+            after.organizationClosed && after.reason !== "purge_failed"
+          );
+        }
+      })
+      .catch(() => undefined);
     const storage = browserStorage();
     clearOrganizationsCache(storage);
     clearPaymentProfileCaches(storage);
@@ -91,7 +102,7 @@ export function ClosedStoreNotice({
     >
       <TriangleAlertIcon aria-hidden="true" />
       <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
-        <p>{deviceClosedText(store)}</p>
+        <p>{deviceClosedText(store, copyDropped)}</p>
         {store ? (
           <a
             className={TEXT_LINK}

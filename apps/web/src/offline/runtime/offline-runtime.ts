@@ -554,10 +554,16 @@ export class OfflineRuntime {
     this.closedOrganizations.add(organizationId);
     await this.startRun?.catch(() => undefined);
     await this.inFlight?.catch(() => undefined);
-    if (
-      this.organizationId !== organizationId ||
-      this.snapshot.organizationClosed
-    ) {
+    if (this.organizationId !== organizationId) {
+      // not the store this runtime has open: its lease goes now, its copy at the start that finds it closed
+      const user =
+        this.userId ?? this.dependencies.keyValues.read(SESSION_USER_KEY);
+      if (user) {
+        this.dependencies.keyValues.remove(leaseKey(user, organizationId));
+      }
+      return;
+    }
+    if (this.snapshot.organizationClosed) {
       return;
     }
     const { namespace, stores, userId } = this;
@@ -1649,7 +1655,7 @@ export class OfflineRuntime {
         this.userId = userId;
       }
     } catch {
-      // without knowing who is signed in nothing is opened; the next opening drops the copy
+      // without knowing who is signed in nothing is opened, and nothing can be dropped: `purge_failed` says so
     }
     await this.dropClosedAtStart(organizationId, generation);
   }
@@ -1661,7 +1667,7 @@ export class OfflineRuntime {
    */
   private async dropClosedAtStart(organizationId: string, generation: number) {
     const { userId } = this;
-    let reason = "organization_closed";
+    let reason = userId ? "organization_closed" : "purge_failed";
     if (userId) {
       this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
       try {

@@ -317,9 +317,19 @@ export const DEVICE_CLOSED_LINK = "Ver a loja encerrada";
 const DEVICE_CLOSED_REST =
   "A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila.";
 
-/** The notice of a device whose store was closed; without the date while it is not known (or not the user's to read). */
-export function deviceClosedText(store: ClosedStore | null): string {
-  return store
-    ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}. ${DEVICE_CLOSED_REST}`
-    : `Esta loja foi encerrada. ${DEVICE_CLOSED_REST}`;
+const DEVICE_COPY_KEPT_REST =
+  "O que não foi enviado continua guardado na fila deste aparelho.";
+
+/**
+ * The notice of a device whose store was closed; without the date while it is not known (or not the user's to read).
+ * It says the copy was deleted only once the device confirmed it.
+ */
+export function deviceClosedText(
+  store: ClosedStore | null,
+  copyDropped: boolean
+): string {
+  const closed = store
+    ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}.`
+    : "Esta loja foi encerrada.";
+  return `${closed} ${copyDropped ? DEVICE_CLOSED_REST : DEVICE_COPY_KEPT_REST}`;
 }
