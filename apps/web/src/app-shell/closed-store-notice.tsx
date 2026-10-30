@@ -6,7 +6,10 @@ import {
   browserStorage,
   clearOrganizationsCache,
 } from "../lib/current-organization-model";
-import { useOrganizationClosedHere } from "../lib/organization-closed";
+import {
+  closedStoreToShow,
+  useOrganizationsClosedHere,
+} from "../lib/organization-closed";
 import { orpcClient } from "../lib/orpc";
 import { clearPaymentProfileCaches } from "../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../lib/period-summary-cache";
@@ -27,12 +30,13 @@ import { TEXT_LINK } from "../sign-in/entry-ui";
  * from the runtime's own push and lease (its snapshot says so, for the store it runs).
  */
 export function useClosedStoreHere(currentId: string | null): string | null {
-  const marked = useOrganizationClosedHere();
+  const marked = useOrganizationsClosedHere();
   const snapshot = useRuntimeSnapshot();
-  if (marked) {
-    return marked.organizationId;
-  }
-  return snapshot?.organizationClosed && currentId ? currentId : null;
+  return closedStoreToShow(
+    marked,
+    currentId,
+    snapshot?.organizationClosed === true
+  );
 }
 
 /**
