@@ -2,12 +2,14 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   attentionLines,
-  bestDayText,
+  bestDay,
   checklistLink,
   checklistNext,
   copyStanding,
   goalDaysLeftText,
+  copyLine,
   goalPeriodShort,
+  periodShort,
   goalProjection,
   homePeriods,
   homeReads,
@@ -172,11 +174,11 @@ describe("the chart comes from the series of A and B (AC-17)", () => {
     expect(sumNetSales(month)).toBe("125.60");
   });
 
-  it("writes the best day once, and none when nothing sold", () => {
-    expect(bestDayText(lastDays(before, month, "2026-10-23", 7))).toBe(
-      "Melhor dia: 23/10, R$ 100,10"
+  it("finds the best day of a period, and none when nothing sold", () => {
+    expect(bestDay(lastDays(before, month, "2026-10-23", 7))?.date).toBe(
+      "2026-10-23"
     );
-    expect(bestDayText(series("2026-10-01", "2026-10-07"))).toBeNull();
+    expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });
 
@@ -259,8 +261,14 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
     expect(pickGoal([], "2026-10-23", zone)).toEqual({ kind: "none" });
   });
 
-  it("writes the period as 'de dd/mm a dd/mm'", () => {
-    expect(goalPeriodShort(goal({}))).toBe("de 01/10 a 31/10");
+  it("writes the period of a goal the short way", () => {
+    expect(goalPeriodShort(goal({}))).toBe("1 a 31/10");
+  });
+
+  it("writes a period inside a month as '1 a 31/10', across two as '26/09 a 25/10', and one day as '25/10'", () => {
+    expect(periodShort("2026-10-17", "2026-10-23")).toBe("17 a 23/10");
+    expect(periodShort("2026-09-26", "2026-10-25")).toBe("26/09 a 25/10");
+    expect(periodShort("2026-10-25", "2026-10-25")).toBe("25/10");
   });
 });
 
@@ -287,8 +295,8 @@ describe("attentionLines (AC-12 to AC-14)", () => {
       {
         href: "/attention",
         id: "device",
-        next: "Corrija e envie de novo.",
-        text: "2 operações deste aparelho precisam de atenção",
+        next: null,
+        text: "2 registros recusados neste aparelho",
       },
       {
         href: "/inventory?filtro=sem-custo",
@@ -299,7 +307,7 @@ describe("attentionLines (AC-12 to AC-14)", () => {
       {
         href: "/inventory?filtro=sem-saldo",
         id: "without-stock",
-        next: "Dê entrada no estoque.",
+        next: null,
         text: "3 variantes sem saldo",
       },
     ]);
@@ -509,10 +517,27 @@ describe("offlineGoal (§ 7.3)", () => {
   });
 });
 
+describe("copyLine (AC-28, AC-31)", () => {
+  // 15:30 UTC is 12:30 in São Paulo
+  const confirmed = "2026-10-14T15:30:00.000Z";
+
+  it("says when the copy was confirmed, in the store's clock", () => {
+    expect(copyLine(confirmed, "America/Sao_Paulo", false)).toBe(
+      "Confirmado em 14/10 12:30"
+    );
+  });
+
+  it("adds that it may be out of date, and only then", () => {
+    expect(copyLine(confirmed, "America/Sao_Paulo", true)).toBe(
+      "Confirmado em 14/10 12:30 · pode estar desatualizado"
+    );
+  });
+});
+
 describe("newSaleOfflineText (AC-30)", () => {
   it("promete a venda sem internet só quando o aparelho pode vender", () => {
     expect(newSaleOfflineText(true)).toBe(
-      "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
+      "Sem internet. A venda é enviada quando a conexão voltar."
     );
     expect(newSaleOfflineText(false)).toBe(
       "Sem internet: para vender é preciso conexão."

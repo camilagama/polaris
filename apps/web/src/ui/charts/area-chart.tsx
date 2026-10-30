@@ -47,6 +47,8 @@ const RANGE_CLASS =
   "focus-ring pointer-events-none absolute inset-0 m-0 size-full appearance-none rounded-md bg-transparent [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none";
 /* the dash of the second series: the legend and the line draw the same one */
 const DASH = "5,4";
+/** The share of its color a `subtle` line keeps. */
+const SUBTLE_PERCENT = 55;
 const Y_LINES = 4;
 const INK: ChartColor = "var(--chart-5)";
 const GRAY: ChartColor = "var(--chart-3)";
@@ -64,6 +66,11 @@ interface AreaChartSecondary {
   legend: string;
   /** The short name in the reading of the day ("Custos"). */
   name: string;
+  /**
+   * A context line that does not compete with the main one: 1 px at 55 % of its color, and no legend (the help of the
+   * block and the reading of a day name it).
+   */
+  subtle?: boolean;
   /** What an unknown value is called: in the reading and the tooltip ("sem custo informado") and in the legend of the hatch. */
   unknown?: { legend: string; text: string };
 }
@@ -92,8 +99,16 @@ export interface AreaChartProps {
    * (`all`, a week); only the best day and today (`key`, 30 days); only the best day (`best`, the default).
    */
   markers?: DayMarkers;
-  /** The value of the best day and of today written above their rings. */
-  valueLabels?: boolean;
+  /**
+   * The value written above the rings: the best day's and today's (`true`), or only the best day's, with its date
+   * (`"peak"`, "18/10 · R$ 1.840,00").
+   */
+  valueLabels?: boolean | "peak";
+  /**
+   * Whether the line that reads the day in focus shows at rest (the last day). Without it (`false`) the line shows only
+   * while the keyboard control has moved the focus, so nothing sits above the drawing for good. True by default.
+   */
+  readingAtRest?: boolean;
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
   still?: boolean;
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
@@ -139,6 +154,19 @@ function useMotion(still: boolean) {
       } as const);
 }
 
+/** Whether the line that reads the day in focus is on the screen: at rest if the caller wants it, else once the keyboard moved the focus. */
+function showsReading({
+  atRest,
+  loading,
+  picked,
+}: {
+  atRest: boolean;
+  loading: boolean;
+  picked: boolean;
+}): boolean {
+  return !loading && (atRest || picked);
+}
+
 function EmptyChart({
   className,
   height,
@@ -170,7 +198,7 @@ interface PlotProps {
   best: number | null;
   markers: DayMarkers;
   still: boolean;
-  valueLabels: boolean;
+  valueLabels: boolean | "peak";
   color: ChartColor | undefined;
   formatValue: (value: number) => string;
   handle: MutableRefObject<ChartHandle | null>;
@@ -212,6 +240,7 @@ function Plot({
   );
   const style = useMemo(() => ({ height }), [height]);
   const secondaryColor = secondary?.color ?? GRAY;
+  const subtle = secondary?.subtle === true;
   const content = useCallback(
     ({ index }: { index: number }) => (
       <TooltipLines
@@ -255,7 +284,12 @@ function Plot({
             dataKey="drawnSecondary"
             fill={secondaryColor}
             fillOpacity={0}
-            stroke={secondaryColor}
+            stroke={
+              subtle
+                ? `color-mix(in oklab, ${secondaryColor} ${SUBTLE_PERCENT}%, transparent)`
+                : secondaryColor
+            }
+            {...(subtle ? { strokeWidth: 1 } : {})}
           />
         ) : null}
         {/* with an unknown day the block only lends its scale to the known values (it would draw an unknown one as a
@@ -289,6 +323,7 @@ function Plot({
           handle={handle}
           label={valueLabels ? formatValue : null}
           markers={markers}
+          peakOnly={valueLabels === "peak"}
         />
       </BklitAreaChart>
     </MotionConfig>
@@ -324,6 +359,7 @@ export function AreaChart({
   markers = "best",
   name = "Vendas",
   rangeLabel = "Dia",
+  readingAtRest = true,
   readingNote,
   secondary,
   spokenNote,
@@ -397,15 +433,19 @@ export function AreaChart({
     secondary,
   };
   const boxHeight = height + EXTRA_HEIGHT;
+  const readingShown = showsReading({
+    atRest: readingAtRest,
+    loading,
+    picked: picked?.key === signature,
+  });
 
   return (
     <div className={cn("grid gap-2", className)} data-chart="">
-      {loading ? (
+      {readingShown ? <Reading {...reading} /> : null}
+      {loading && readingAtRest ? (
         <p aria-hidden="true" className="min-h-[1.125rem]" />
-      ) : (
-        <Reading {...reading} />
-      )}
-      {secondary ? (
+      ) : null}
+      {secondary && !secondary.subtle ? (
         <Legend
           color={color ?? INK}
           dash={DASH}

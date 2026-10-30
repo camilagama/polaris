@@ -3,7 +3,10 @@ import {
   divideHalfUp,
   type KpiReading,
   moneyDelta,
+  NOT_PROFIT_NOR_CASH,
   percentDelta,
+  resultHelp,
+  ticketHelp,
 } from "../home/home-kpis";
 import { salesCountText, shortDate } from "../home/home-model";
 import {
@@ -200,8 +203,6 @@ interface ReadContext {
   priorSales: Prior;
   range: string;
   result: ResultKind;
-  /** "no mês" or "no período". */
-  scope: string;
   sum: Cumulative;
   /** The whole period, as the server's cards read it: "outubro inteiro". */
   whole: string;
@@ -210,25 +211,27 @@ interface ReadContext {
 function salesReading({
   atRest,
   cards,
-  date,
   priorSales,
   range,
-  scope,
   sum,
 }: ReadContext): KpiReading {
   const before = priorSales.sum;
-  const delta = before ? percentDelta(sum.net, before.net) : null;
-  let note: string | null = delta ? `vs. ${priorSales.range}` : null;
-  if (!delta && before && before.count === 0) {
-    note = `Sem vendas de ${priorSales.range} para comparar`;
+  const delta = before
+    ? percentDelta(sum.net, before.net, `em relação a ${priorSales.range}`)
+    : null;
+  let compare = "";
+  if (delta) {
+    compare = ` Compara com ${priorSales.range}.`;
+  } else if (before && before.count === 0) {
+    compare = ` Sem vendas de ${priorSales.range}, não há comparação.`;
   }
+  const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: atRest
-      ? `${salesCountText(cards.salesCount)} ${scope}`
-      : `${salesCountText(sum.count)} até ${shortDate(date)}`,
+    count: count === 0 ? "Nenhuma venda ainda" : salesCountText(count),
     date: range,
     delta,
-    note,
+    help: `Vendas líquidas de ${range}.${compare}`,
+    note: null,
     value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
   };
 }
@@ -252,7 +255,7 @@ function resultReading({
     atRest && (known === null || known !== cents(cards.operatingResult));
   const delta =
     !card && known !== null && prior.sum && prior.sum.result !== null
-      ? moneyDelta(known, prior.sum.result)
+      ? moneyDelta(known, prior.sum.result, `em relação a ${prior.range}`)
       : null;
   let value: string | null =
     known === null ? null : Money.fromMinorUnits(known).toString();
@@ -260,10 +263,15 @@ function resultReading({
     value = cards.operatingResult;
   }
   return {
-    count: "Não é lucro líquido nem dinheiro já recebido.",
+    count: NOT_PROFIT_NOR_CASH,
     date: card ? whole : range,
     delta,
-    note: delta ? `vs. ${prior.range}` : null,
+    help: resultHelp(
+      card ? "do período inteiro" : `de ${range}`,
+      delta ? prior.range : null,
+      result.kind === "incomplete" ? result : null
+    ),
+    note: null,
     value,
   };
 }
@@ -276,35 +284,24 @@ function ticketReading({
   cards,
   priorSales,
   range,
-  scope,
   sum,
 }: ReadContext): KpiReading {
   const ticket = ticketOf(sum);
   const priorTicket = ticketOf(priorSales.sum);
   const delta =
     ticket !== null && priorTicket !== null
-      ? percentDelta(ticket, priorTicket)
+      ? percentDelta(ticket, priorTicket, `em relação a ${priorSales.range}`)
       : null;
   let value: string | null = cards.ticket;
   if (!atRest) {
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
-  let count: Pick<KpiReading, "count" | "countNarrow"> = {
-    count: `Média por venda de ${range}`,
-  };
-  if (value === null) {
-    count = { count: "Sem vendas no período" };
-  } else if (atRest) {
-    count = {
-      count: `Média por venda ${scope}`,
-      countNarrow: "Média por venda",
-    };
-  }
   return {
-    ...count,
+    count: value === null ? "Sem vendas no período" : "",
     date: range,
     delta,
-    note: delta ? `vs. ${priorSales.range}` : null,
+    help: ticketHelp(range, delta ? priorSales.range : null),
+    note: null,
     value,
   };
 }
@@ -364,7 +361,6 @@ export function resultKpis({
   const priorResult = priorReader(previous);
   const priorSales = priorReader(previousSales);
   const month = isWholeMonth(period) ? monthName(period.from) : null;
-  const scope = month ? "no mês" : "no período";
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
   const result = resultKindOf(days);
@@ -383,7 +379,6 @@ export function resultKpis({
       // a period that has not started has no day yet: its dates are the whole period
       range: days.length > 0 ? rangeText(period.from, date) : whole,
       result,
-      scope,
       sum: sums[at] ?? { count: 0, net: 0n, result: 0n },
       whole,
     };

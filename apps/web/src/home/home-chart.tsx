@@ -1,4 +1,3 @@
-import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import { useCallback } from "react";
 import { Button } from "@/ui/button";
 import { OnDemandAreaChart } from "@/ui/charts/on-demand";
@@ -28,10 +27,9 @@ import {
 import { useIsMobile } from "../lib/use-mobile";
 import {
   addDays,
-  bestDay,
-  bestDayText,
   chartValue,
   lastDays,
+  periodShort,
   shortDate,
   sumNetSales,
 } from "./home-model";
@@ -39,10 +37,12 @@ import { HomeBlock } from "./home-parts";
 import type { HomeFigures } from "./use-home";
 
 /**
- * The chart of net sales by day, 7 days open by default or 30 (AC-17, AC-18, AC-21, § 6): the total and the best day
- * written above it, the area chart of the charts chunk, and "Ver os números" with the table of every day, which is the
- * proof that the drawing hides nothing. A period with no sale says so instead of a drawing on the floor. When the
- * chunk does not open the numbers stay, and the sentence of § 5.5 says why.
+ * The chart of net sales by day, 7 days open by default or 30 (AC-17, AC-18, AC-21, § 6): in the header the title with
+ * its (i) and the compact 7 / 30 selector; under it the total and the period it adds up, the area chart of the charts
+ * chunk with only the peak written (with its date) and, in the foot, "Ver os números" with the table of every day and
+ * of the days before, which is the proof that the drawing hides nothing. The days before are a faint dashed line, named
+ * by the (i) and by the reading of a day, which shows only while a day is read. A period with no sale says so instead
+ * of a drawing on the floor. When the chunk does not open the numbers stay, and the sentence of § 5.5 says why.
  */
 
 const GROUP_OF_THREE = /\B(?=(\d{3})+(?!\d))/g;
@@ -87,7 +87,7 @@ export function ChartFailed() {
     </div>
   ) : (
     <p className="text-muted-foreground text-support">
-      O gráfico abre quando a internet voltar. Os números estão acima.
+      O gráfico abre quando a internet voltar. Os números estão abaixo.
     </p>
   );
 }
@@ -117,10 +117,10 @@ const points = (series: Series) =>
   }));
 
 /**
- * The area of the period, in the green of the sales (v7 § 4): a ring on every day of the week (full when it sold,
- * hollow on a zero) or on the best day and today of the 30, their values written above them, and the days before in
- * dashed grey with the legend when they were read. With the values hidden the amounts, the axis and the spoken values
- * are masked; the shape stays.
+ * The area of the period, in the green of the sales (v7 § 4): a ring on the best day and on today (full when it sold,
+ * hollow on a zero), only the value of the best day written, with its date, and the days before in a faint dashed
+ * grey with no legend when they were read. With the values hidden the amounts, the axis and the spoken values are
+ * masked; the shape stays.
  */
 function DayChart({
   days,
@@ -143,14 +143,14 @@ function DayChart({
       formatAxis={hidden ? noAxis : axisMoney}
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
-      height={days === 7 ? 180 : 220}
+      height={still ? 140 : 200}
       label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
-      legend="Vendas líquidas"
-      markers={days === 7 ? "all" : "key"}
+      markers="key"
       name="Vendas"
       rangeLabel={`Dia, últimos ${days} dias`}
+      readingAtRest={false}
       still={still}
-      valueLabels
+      valueLabels="peak"
       {...(hidden ? {} : { axisUnit: "R$" })}
       {...(earlier
         ? {
@@ -159,12 +159,66 @@ function DayChart({
               data: points(earlier),
               legend: `${days} dias antes`,
               name: `${days} dias antes`,
+              subtle: true,
             },
           }
         : {})}
     />
   );
 }
+
+/**
+ * The table of "Ver os números": every day of the period with its net sales and, when the days before were read, theirs
+ * beside it. It is the way to the numbers for a screen reader and without the chart, so it holds both values of every day.
+ */
+export function NumbersTable({
+  days,
+  earlier,
+  series,
+}: {
+  days: 7 | 30;
+  earlier: Series | null;
+  series: Series;
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Dia</TableHead>
+          <TableHead className="text-right" scope="col">
+            Vendas líquidas
+          </TableHead>
+          {earlier ? (
+            <TableHead className="text-right" scope="col">
+              {`${days} dias antes`}
+            </TableHead>
+          ) : null}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {series.map((day, index) => (
+          <TableRow key={day.date}>
+            <TableCell>{formatCalendarDate(day.date)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              <MoneyText text={formatBrlAmount(day.netSales)} />
+            </TableCell>
+            {earlier ? (
+              <TableCell className="text-right text-muted-foreground tabular-nums">
+                <MoneyText
+                  text={formatBrlAmount(earlier[index]?.netSales ?? "0")}
+                />
+              </TableCell>
+            ) : null}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** The link of "Ver os números": small, underlined, at the right of the foot of the block. */
+const NUMBERS_LINK =
+  "touch-hit focus-ring ml-auto w-fit rounded-sm text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
 
 function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   const series = lastDays(
@@ -175,11 +229,10 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   );
   const earlier = comparison(figures, days);
   const total = sumNetSales(series);
-  const best = bestDay(series);
   // a period of returns only (net below zero) still has a drawing: "Sem vendas" is for a period with nothing
   const sold = series.some((day) => chartValue(day.netSales) !== 0);
-  const range = `de ${shortDate(series[0]?.date ?? figures.today)} a ${shortDate(figures.today)}`;
-  const summary = `Vendas líquidas por dia, ${range}: ${formatBrlAmount(total)} no total`;
+  const first = series[0]?.date ?? figures.today;
+  const summary = `Vendas líquidas por dia, de ${shortDate(first)} a ${shortDate(figures.today)}: ${formatBrlAmount(total)} no total`;
   return (
     <div className="grid gap-3">
       <p className="grid gap-0.5">
@@ -187,19 +240,8 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           <MoneyText text={formatBrlAmount(total)} />
         </span>
         <span className="text-muted-foreground text-support">
-          {`Vendas líquidas ${range}`}
+          {periodShort(first, figures.today)}
         </span>
-        {best ? (
-          <span className="flex items-center gap-1.5 text-support">
-            <span
-              aria-hidden="true"
-              className="size-2 shrink-0 rounded-full bg-chart-sales"
-            />
-            <span>
-              <MoneyText text={bestDayText(series) ?? ""} />
-            </span>
-          </span>
-        ) : null}
       </p>
       {sold ? (
         <DayChart
@@ -213,42 +255,22 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
       )}
       {/* the table of the other period opens closed, as it did with a panel for each period */}
       <Collapsible key={days}>
-        <CollapsibleTrigger
-          className="group/numbers w-fit"
-          render={<Button size="sm" variant="ghost" />}
-        >
+        <CollapsibleTrigger className={NUMBERS_LINK}>
           Ver os números
-          <ChevronDownIcon
-            aria-hidden="true"
-            className="motion-full:transition-transform group-data-[panel-open]/numbers:rotate-180"
-            data-icon="inline-end"
-          />
         </CollapsibleTrigger>
         <CollapsiblePanel className="pt-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Dia</TableHead>
-                <TableHead className="text-right" scope="col">
-                  Vendas líquidas
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {series.map((day) => (
-                <TableRow key={day.date}>
-                  <TableCell>{formatCalendarDate(day.date)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    <MoneyText text={formatBrlAmount(day.netSales)} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <NumbersTable days={days} earlier={earlier} series={series} />
         </CollapsiblePanel>
       </Collapsible>
     </div>
   );
+}
+
+/** What the (i) of the block says: the faint line when there is one, and the way to read a day. */
+export function chartHelp(days: 7 | 30, hasEarlier: boolean): string {
+  return hasEarlier
+    ? `A linha tracejada são os ${days} dias anteriores. Toque num dia para ver os dois valores.`
+    : "Vendas líquidas de cada dia. Toque num dia para ver o valor.";
 }
 
 /** The tab of the chart: the page keeps it, so it outlasts the connection going and coming back. */
@@ -267,23 +289,36 @@ export function ChartBlock({
     (value: unknown) => onDays(value === "30" ? "30" : "7"),
     [onDays]
   );
+  const period = days === "30" ? 30 : 7;
   return (
-    <HomeBlock
-      className="lg:col-start-1 lg:row-start-2"
-      id="home-chart"
-      title="Vendas por dia"
-    >
-      <Tabs onValueChange={choose} value={days}>
-        <TabsList aria-label="Período do gráfico">
-          <TabsTrigger value="7">7 dias</TabsTrigger>
-          <TabsTrigger value="30">30 dias</TabsTrigger>
-        </TabsList>
+    <Tabs className="gap-0" onValueChange={choose} value={days}>
+      <HomeBlock
+        action={
+          <TabsList
+            aria-label="Período do gráfico"
+            className="h-7 rounded-md p-0.5"
+          >
+            <TabsTrigger className="px-2 text-xs" value="7">
+              7 dias
+            </TabsTrigger>
+            <TabsTrigger className="px-2 text-xs" value="30">
+              30 dias
+            </TabsTrigger>
+          </TabsList>
+        }
+        help={{
+          about: "Vendas por dia",
+          text: chartHelp(period, comparison(figures, period) !== null),
+        }}
+        id="home-chart"
+        title="Vendas por dia"
+      >
         {/* one panel for both periods, so the chart is the same instance when the tab changes: no new reveal of a chart
             that mounted again (the data change at once and the y axis tweens, 500 ms) */}
         <TabsContent value={days}>
-          <Period days={days === "30" ? 30 : 7} figures={figures} />
+          <Period days={period} figures={figures} />
         </TabsContent>
-      </Tabs>
-    </HomeBlock>
+      </HomeBlock>
+    </Tabs>
   );
 }
