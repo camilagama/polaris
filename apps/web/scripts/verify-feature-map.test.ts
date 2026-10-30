@@ -13,6 +13,7 @@ import {
   type TabScreenId,
   tabHref,
 } from "../src/app-shell/navigation-model";
+import { isClosedStorePath } from "../src/lib/closed-store-path";
 import { isLegalAcceptancePath } from "../src/lib/legal-acceptance";
 
 /**
@@ -39,9 +40,15 @@ const acceptanceSource = readFileSync(
   "utf8"
 );
 
+const closedStoreSource = readFileSync(
+  join(web, "src/lib/closed-store-path.ts"),
+  "utf8"
+);
+
 const KEY = /^\s*"(\/[^"]*)":/gm;
 const ANY_KEY = /^\s*(?:"[^"]*"|'[^']*'|[\w$]+|\[[^\]]+\]):/gm;
 const ACCEPTANCE = /const LEGAL_ACCEPTANCE_PATH = "(\/[^"]*)";/;
+const CLOSED_STORE = /const CLOSED_STORE_PATH = "(\/[^"]*)";/;
 const ENTRY_IDS = /export type EntryPageId =([^;]*);/;
 const UNION_MEMBER = /\| "/g;
 const H2 = /^## (.+)$/gm;
@@ -130,6 +137,7 @@ const shellRoutes = tableKeys(navigationSource, "ROUTES");
 const entryPages = tableKeys(navigationSource, "ENTRY_PAGES");
 const legacyAddresses = tableKeys(navigationSource, "LEGACY_ADDRESSES");
 const acceptancePath = ACCEPTANCE.exec(acceptanceSource)?.[1];
+const closedStorePath = CLOSED_STORE.exec(closedStoreSource)?.[1];
 const entryIds =
   ENTRY_IDS.exec(navigationSource)?.[1]?.match(UNION_MEMBER)?.length ?? 0;
 const appTabs: Tab[] = (Object.keys(SCREEN_TABS) as TabScreenId[]).flatMap(
@@ -178,7 +186,7 @@ describe("the router read from the source is the router the app resolves", () =>
     }
   });
 
-  it("every page of the sign-in group, old address and the acceptance path is one the app opens", () => {
+  it("every page of the sign-in group, old address, the acceptance path and the closed store's panel is one the app opens", () => {
     for (const path of entryPages.keys) {
       expect(entryPageFor(path), path).not.toBeNull();
     }
@@ -186,6 +194,7 @@ describe("the router read from the source is the router the app resolves", () =>
       expect(legacyAddress(path, "", ""), path).not.toBeNull();
     }
     expect(acceptancePath && isLegalAcceptancePath(acceptancePath)).toBe(true);
+    expect(closedStorePath && isClosedStorePath(closedStorePath)).toBe(true);
   });
 });
 
@@ -197,6 +206,7 @@ describe("the feature map of verify-polaris names every address of the app", () 
       ...legacyAddresses.keys,
       ...Object.values(LEGAL_PATHS),
       acceptancePath as string,
+      closedStorePath as string,
     ];
     expect(missingFromMap(destinationsText, paths, appTabs)).toEqual([]);
   });

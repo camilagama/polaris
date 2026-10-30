@@ -19,8 +19,11 @@ const noSnapshot = (): RuntimeSnapshot | null => null;
 /** The runtime's figures for display; null when the runtime is not enabled. */
 export function useRuntimeSnapshot(): RuntimeSnapshot | null {
   const runtime = useOfflineRuntime();
+  const read = runtime ? runtime.getSnapshot : noSnapshot;
+  // the same reading for a static render of the screen
   return useSyncExternalStore(
     runtime ? runtime.subscribe : noSubscription,
-    runtime ? runtime.getSnapshot : noSnapshot
+    read,
+    read
   );
 }
