@@ -85,6 +85,27 @@ describe("what the screen says when a call fails", () => {
     );
   });
 
+  it("says a write with a 503 of another reason may have been saved too, and a read keeps the old text", () => {
+    const other = {
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "other" },
+    };
+    for (const action of [
+      "create",
+      "rename",
+      "archive",
+      "restore",
+      "delete",
+    ] as const) {
+      expect(categoryErrorMessage(other, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    expect(categoryErrorMessage(other)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
   it("falls back to a sentence that asks to try again", () => {
     expect(categoryErrorMessage(new Error("boom"), "delete")).toBe(
       "Não foi possível concluir a operação. Tente novamente."

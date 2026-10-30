@@ -1,4 +1,8 @@
-import { commonFailureMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 
 export type ExpenseAction =
   | "category-archive"
@@ -133,7 +137,9 @@ export function expenseErrorMessage(
     return notFoundMessage(action);
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "As despesas estão temporariamente indisponíveis. Tente novamente.";
+    return READ_SUBJECTS[action] === undefined
+      ? CHANGE_FAULT_UNKNOWN
+      : "As despesas estão temporariamente indisponíveis. Tente novamente.";
   }
   return fallbackMessage(action);
 }

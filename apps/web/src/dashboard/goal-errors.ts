@@ -1,4 +1,5 @@
 import {
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -83,7 +84,9 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
     return "A meta não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "As metas estão temporariamente indisponíveis. Tente novamente.";
+    return READ_SUBJECTS[action] === undefined
+      ? CHANGE_FAULT_UNKNOWN
+      : "As metas estão temporariamente indisponíveis. Tente novamente.";
   }
   return fallbackMessage(action);
 }

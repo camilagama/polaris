@@ -342,6 +342,16 @@ describe("mensagens de erro das variantes", () => {
         "as variantes"
       )
     ).toContain("temporariamente indisponível");
+    // a 503 of another reason is the same doubt on a write, and the read keeps its text
+    expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "other"))).toBe(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    );
+    expect(
+      variantErrorMessage(
+        refusal("SERVICE_UNAVAILABLE", "other"),
+        "as variantes"
+      )
+    ).toContain("temporariamente indisponível");
     // the Worker's own 503 is no cut of the platform
     expect(
       variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "server_busy"))

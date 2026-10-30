@@ -1,4 +1,5 @@
 import {
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -47,6 +48,13 @@ const REFUSALS: Readonly<Record<string, string>> = {
 /** The text of a refusal of the profile, by the reason the server (or the domain check) gives. */
 export function profileRefusalText(reason: string): string | undefined {
   return REFUSALS[reason];
+}
+
+/** A 503 of a read keeps its text; a direct write may have been saved, so it never invites a second try. */
+function unavailableMessage(action: PublicCatalogAction): string {
+  return action === "load"
+    ? "O catálogo público está temporariamente indisponível. Tente novamente."
+    : CHANGE_FAULT_UNKNOWN;
 }
 
 function fallback(action: PublicCatalogAction): string {
@@ -122,7 +130,7 @@ function publicCatalogRefusalMessage(
     }
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo público está temporariamente indisponível. Tente novamente.";
+    return unavailableMessage(action);
   }
   return fallback(action);
 }
