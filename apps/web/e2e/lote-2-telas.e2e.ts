@@ -47,6 +47,17 @@ const serverBusy = rpc(
   503
 );
 
+const unavailableForAnotherReason = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "billing_not_configured" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+
 type Handler = (route: Route) => Promise<void>;
 const reply =
   (json: unknown): Handler =>
@@ -543,6 +554,33 @@ test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, nã
   await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
     "Bia Souza"
   );
+});
+
+test("Clientes: cadastrar com um 503 de outro motivo também diz que pode ter sido salvo e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(unavailableForAnotherReason);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  expect(created).toBe(1);
 });
 
 for (const width of FORM_WIDTHS) {

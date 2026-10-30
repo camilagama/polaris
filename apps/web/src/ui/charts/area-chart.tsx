@@ -515,6 +515,7 @@ export function AreaChart({
       ) : null}
       <div
         className="relative isolate rounded-md"
+        onPointerDown={pointed}
         onPointerMove={pointed}
         style={{ height: boxHeight }}
       >
