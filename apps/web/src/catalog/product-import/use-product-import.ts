@@ -1,6 +1,5 @@
 import type { CategoryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { firstProductRegistered } from "../../app-shell/first-steps";
 import { canManageBilling } from "../../lib/billing-access";
 import { browserConnection } from "../../lib/browser-connection";
 import { useCurrentOrganization } from "../../lib/current-organization";
@@ -20,8 +19,8 @@ import {
   previewImport,
 } from "../product-import-rows";
 import {
+  announceEnteredProduct,
   createImportRun,
-  enteredProductId,
   type ImportRun,
   runImport,
   skipStuckRow,
@@ -214,10 +213,7 @@ export function useProductImport({
             }
           },
           onProgress: () => {
-            const productId = enteredProductId(run);
-            if (productId !== null) {
-              firstProductRegistered(organizationId, productId);
-            }
+            announceEnteredProduct(run, organizationId);
             setTick((count) => count + 1);
           },
           organizationId,

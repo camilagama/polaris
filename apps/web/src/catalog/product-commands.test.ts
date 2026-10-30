@@ -23,15 +23,33 @@ const INPUT = {
 };
 
 const COMMAND_ID = "c1";
+const PRODUCT_ID = "p1";
 
-/** The queue after the send: the command is still in it unless the server accepted it. */
-function workspace(options: { accepted?: boolean; online: boolean }) {
-  const queue = { commands: [{ commandId: COMMAND_ID, status: "pending" }] };
+/** What the send does to the queue the device holds: the server answers it, or nothing reaches it. */
+type Send = "accepted" | "discarded" | "failed" | "refused" | "waiting";
+
+function workspace(options: { online: boolean; send: Send }) {
+  const queue = {
+    commands: [{ commandId: COMMAND_ID, status: "pending" }] as {
+      commandId: string;
+      status: string;
+    }[],
+  };
+  const productIds = [PRODUCT_ID];
   const syncNow = vi.fn(() => {
-    if (options.accepted) {
+    if (options.send === "accepted") {
       queue.commands = [];
     }
-    return Promise.resolve();
+    if (options.send === "discarded") {
+      queue.commands = [];
+      productIds.length = 0;
+    }
+    if (options.send === "refused") {
+      queue.commands = [{ commandId: COMMAND_ID, status: "rejected" }];
+    }
+    return options.send === "failed"
+      ? Promise.reject(new Error("offline"))
+      : Promise.resolve();
   });
   return {
     online: options.online,
@@ -41,7 +59,7 @@ function workspace(options: { accepted?: boolean; online: boolean }) {
         lease: "lease",
         organizationId: ORGANIZATION,
         outbox: { snapshot: () => Promise.resolve(queue) },
-        writer: {},
+        writer: { keys: () => Promise.resolve(productIds) },
       }),
       syncNow,
     },
@@ -50,7 +68,7 @@ function workspace(options: { accepted?: boolean; online: boolean }) {
 
 const QUEUED = {
   command: { commandId: COMMAND_ID },
-  rows: { product: { id: "p1" } },
+  rows: { product: { id: PRODUCT_ID } },
 };
 
 async function settle() {
@@ -90,7 +108,7 @@ describe("registering the first product", () => {
   it("moves the steps after the connected device sent it and the server accepted it", async () => {
     createOfflineProduct.mockResolvedValue(QUEUED);
     await createProduct(
-      workspace({ accepted: true, online: true }),
+      workspace({ online: true, send: "accepted" }),
       ORGANIZATION,
       INPUT,
       { ids: newProductIds(), today: "2026-10-30" }
@@ -100,33 +118,26 @@ describe("registering the first product", () => {
     );
   });
 
-  it("keeps one of three when the server refused or did not answer the queued product", async () => {
+  it.each<[string, Send]>([
+    ["the server refused it", "refused"],
+    ["the server has not answered it", "waiting"],
+    ["a person discarded it from the queue", "discarded"],
+    ["the send failed", "failed"],
+  ])("keeps one of three when %s", async (_name, send) => {
     createOfflineProduct.mockResolvedValue(QUEUED);
-    const device = workspace({ accepted: false, online: true });
-    await createProduct(device, ORGANIZATION, INPUT, {
-      ids: newProductIds(),
-      today: "2026-10-30",
-    });
+    await createProduct(
+      workspace({ online: true, send }),
+      ORGANIZATION,
+      INPUT,
+      { ids: newProductIds(), today: "2026-10-30" }
+    );
     await settle();
     expect(rememberedFirstSteps(ORGANIZATION, null)).toBe(1);
   });
 
   it("keeps one of three while the product is only on the device, without a connection", async () => {
     createOfflineProduct.mockResolvedValue(QUEUED);
-    const device = workspace({ accepted: true, online: false });
-    await createProduct(device, ORGANIZATION, INPUT, {
-      ids: newProductIds(),
-      today: "2026-10-30",
-    });
-    await settle();
-    expect(rememberedFirstSteps(ORGANIZATION, null)).toBe(1);
-  });
-
-  it("keeps one of three when the send itself fails", async () => {
-    createOfflineProduct.mockResolvedValue(QUEUED);
-    const device = workspace({ accepted: true, online: true });
-    (device as unknown as { runtime: { syncNow: unknown } }).runtime.syncNow =
-      () => Promise.reject(new Error("offline"));
+    const device = workspace({ online: false, send: "accepted" });
     await createProduct(device, ORGANIZATION, INPUT, {
       ids: newProductIds(),
       today: "2026-10-30",

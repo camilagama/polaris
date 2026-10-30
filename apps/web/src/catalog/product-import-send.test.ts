@@ -4,12 +4,17 @@ import {
   type ProductImportRowInput,
   type ProductImportRowResult,
 } from "@polaris/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clearFirstSteps,
+  rememberedFirstSteps,
+  rememberFirstSteps,
+} from "../app-shell/first-steps";
 import type { ImportReadyRow } from "./product-import-rows";
 import {
   CUTS_AT_CEILING_TO_SKIP,
   createImportRun,
-  enteredProductId,
+  announceEnteredProduct,
   IMPORT_CALL_INTERVAL_MS,
   PACE_BACK_AFTER_ANSWERS,
   REGIME_PAUSE_STEPS_MS,
@@ -252,7 +257,7 @@ describe("one row per call, by the measure of the Free plan", () => {
   });
 });
 
-describe("the product an import created", () => {
+describe("the foot of the menu after an import", () => {
   const answer = (
     run: ImportRun,
     status: "created" | "repeated" | "exists_by_name" | "limit_reached"
@@ -263,25 +268,32 @@ describe("the product an import created", () => {
         ? { productId: row.productId, rowNumber: row.rowNumber, status }
         : { rowNumber: row.rowNumber, status };
     run.results.set(row.rowNumber, result);
-    return row.productId;
   };
 
+  beforeEach(() => {
+    clearFirstSteps(null);
+    rememberFirstSteps(organizationId, { firstProductId: null }, null);
+  });
+
   it.each(["created", "repeated"] as const)(
-    "is the product of a row the server answered %s",
+    "goes from one of three to two when a row was answered %s",
     (status) => {
       const run = createImportRun(readyRows(2), newId);
-      expect(enteredProductId(run)).toBeNull();
-      const productId = answer(run, status);
-      expect(enteredProductId(run)).toBe(productId);
+      announceEnteredProduct(run, organizationId);
+      expect(rememberedFirstSteps(organizationId, null)).toBe(1);
+      answer(run, status);
+      announceEnteredProduct(run, organizationId);
+      expect(rememberedFirstSteps(organizationId, null)).toBe(2);
     }
   );
 
-  it("is none when the rows were only skipped, refused or left out by the plan", () => {
+  it("stays at one of three when the rows were only skipped or left out by the plan", () => {
     const run = createImportRun(readyRows(2), newId);
     answer(run, "exists_by_name");
-    expect(enteredProductId(run)).toBeNull();
+    announceEnteredProduct(run, organizationId);
     answer(run, "limit_reached");
-    expect(enteredProductId(run)).toBeNull();
+    announceEnteredProduct(run, organizationId);
+    expect(rememberedFirstSteps(organizationId, null)).toBe(1);
   });
 });
 

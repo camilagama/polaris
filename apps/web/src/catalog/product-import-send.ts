@@ -3,6 +3,7 @@ import {
   type ProductImportRowInput,
   type ProductImportRowResult,
 } from "@polaris/contracts";
+import { firstProductRegistered } from "../app-shell/first-steps";
 import {
   isConnectionFailure,
   isPlatformCut,
@@ -512,14 +513,20 @@ export async function runImport(
   return { kind: "done" };
 }
 
-/** The product of a row the server created (or had created by an earlier send of the same row), if any row was. */
-export function enteredProductId(run: ImportRun): string | null {
+/**
+ * Tells the foot of the menu that the store has its first product once a row of the import entered (the server
+ * answered it created, or repeated from an earlier send); rows only skipped, refused or left out by the plan say nothing.
+ */
+export function announceEnteredProduct(
+  run: ImportRun,
+  organizationId: string
+): void {
   for (const result of run.results.values()) {
     if (result.status === "created" || result.status === "repeated") {
-      return result.productId;
+      firstProductRegistered(organizationId, result.productId);
+      return;
     }
   }
-  return null;
 }
 
 export interface ImportSummary {

@@ -2,6 +2,7 @@ import type { ProductReadModel } from "@polaris/contracts";
 import { firstProductRegistered } from "../app-shell/first-steps";
 import { orpcClient } from "../lib/orpc";
 import { uuidv7 } from "../lib/uuidv7";
+import type { LocalWriter } from "../offline/bootstrap";
 import type { Outbox } from "../offline/outbox/outbox";
 import { createOfflineProduct } from "../offline/product-create";
 import type { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
@@ -56,19 +57,29 @@ export interface NewProductInput {
 }
 
 /**
- * Sends the queue and, once the command has left it (the outbox only drops a command the server accepted; a refused
- * one stays and a failed send leaves it waiting), tells the foot of the menu that the store has its first product.
+ * Sends the queue and, once the command has left it with its product still on the device, tells the foot of the menu
+ * that the store has its first product. The outbox drops a command the server accepted; a refused one stays and a
+ * failed send leaves it waiting. A person discarding the product removes the command too, but takes the local rows
+ * with it, so only the rows still there say it was accepted.
  */
 function announceWhenAccepted(
   workspace: NonNullable<Workspace>,
-  stores: { outbox: Pick<Outbox, "snapshot"> },
+  stores: {
+    outbox: Pick<Outbox, "snapshot">;
+    writer: Pick<LocalWriter, "keys">;
+  },
   created: { commandId: string; organizationId: string; productId: string }
 ): void {
   workspace.runtime
     .syncNow()
-    .then(() => stores.outbox.snapshot())
-    .then(({ commands }) => {
-      if (!commands.some((entry) => entry.commandId === created.commandId)) {
+    .then(() =>
+      Promise.all([stores.outbox.snapshot(), stores.writer.keys("products")])
+    )
+    .then(([{ commands }, productIds]) => {
+      const queued = commands.some(
+        (entry) => entry.commandId === created.commandId
+      );
+      if (!queued && productIds.includes(created.productId)) {
         firstProductRegistered(created.organizationId, created.productId);
       }
     })
