@@ -1863,6 +1863,85 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.keyboard.press("Escape");
     await expect(help).toBeFocused();
   });
+
+  for (const viewport of [
+    { height: 740, width: 360 },
+    { height: 800, width: 1280 },
+  ]) {
+    test(`Vendas por dia: ler um dia pelo teclado não move o gráfico nem o que vem depois (${viewport.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      const area = chart.locator("[data-chart-area]");
+      const numbers = chart.getByRole("button", { name: "Ver os números" });
+      const box = async (locator: Locator) => {
+        const found = await locator.boundingBox();
+        if (!found) {
+          throw new Error("elemento sem caixa");
+        }
+        return found;
+      };
+      const at = async () => ({
+        area: await box(area),
+        numbers: await box(numbers),
+        region: await box(chart),
+      });
+      await expect(area).toBeVisible();
+      await chart.getByRole("slider").focus();
+      const before = await at();
+      await page.keyboard.press("ArrowLeft");
+      const reading = chart.locator("[data-chart-reading]");
+      await expect(reading).toContainText(
+        "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
+      );
+      await expect(reading).toBeVisible();
+      const tooltipRows = chart.locator("[data-chart-tooltip-row]");
+      await expect(tooltipRows).toHaveCount(0);
+      const during = await at();
+      expect(during).toEqual(before);
+
+      const read = await box(reading);
+      const frame = await box(area.locator(".."));
+      expect(read.x).toBeGreaterThanOrEqual(frame.x);
+      expect(read.y).toBeGreaterThanOrEqual(frame.y);
+      expect(read.x + read.width).toBeLessThanOrEqual(frame.x + frame.width);
+      expect(read.y + read.height).toBeLessThanOrEqual(frame.y + frame.height);
+      expect(read.x - frame.x).toBeLessThan(frame.width / 4);
+      expect(read.y - frame.y).toBeLessThan(frame.height / 4);
+
+      await page.keyboard.press("ArrowLeft");
+      await expect(reading).toContainText("21/10");
+      await expect(tooltipRows).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      const frameKeys = await box(area);
+      await page.mouse.move(
+        frameKeys.x + frameKeys.width / 2,
+        frameKeys.y + frameKeys.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
+      await expect(reading).toHaveCount(0);
+      await page.keyboard.press("ArrowLeft");
+      await expect(reading).toContainText("20/10");
+      await expect(tooltipRows).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      await chart.getByRole("slider").blur();
+      await expect(reading).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      const frameNow = await box(area);
+      await page.mouse.move(
+        frameNow.x + frameNow.width / 3,
+        frameNow.y + frameNow.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
+      await expect(reading).toHaveCount(0);
+      expect(await at()).toEqual(before);
+    });
+  }
 });
 
 test.describe("meta (AC-10, AC-11)", () => {

@@ -37,10 +37,16 @@ import {
   seriesMax,
   yAxisMargin,
 } from "./chart-data";
-import { Legend, Reading, spokenValue, TooltipLines } from "./chart-text";
+import {
+  type DayReading,
+  Legend,
+  Reading,
+  spokenValue,
+  TooltipLines,
+} from "./chart-text";
 
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
-   drawing shows the point in focus, with the tooltip of the block) and deaf to the pointer (the box under it moves
+   drawing shows the point in focus: cursor, dot and date pill, and the tooltip of the block unless the reading is over the box) and deaf to the pointer (the box under it moves
    the focus), so that its box is the box of the chart, which is what a touch finds, and the 3 px outline of the
    keyboard focus goes round the chart. */
 const RANGE_CLASS =
@@ -106,7 +112,8 @@ export interface AreaChartProps {
   valueLabels?: boolean | "peak";
   /**
    * Whether the line that reads the day in focus shows at rest (the last day). Without it (`false`) the line shows only
-   * while the keyboard control has moved the focus, so nothing sits above the drawing for good. True by default.
+   * while the keyboard control has moved the focus, and then over the corner of the drawing, out of the flow, so
+   * nothing sits above the drawing for good and reading a day moves nothing. True by default.
    */
   readingAtRest?: boolean;
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
@@ -154,8 +161,11 @@ function useMotion(still: boolean) {
       } as const);
 }
 
-/** Whether the line that reads the day in focus is on the screen: at rest if the caller wants it, else once the keyboard moved the focus. */
-function showsReading({
+/**
+ * Where the line that reads the day in focus is: above the drawing at rest if the caller wants it there, over the corner
+ * of the drawing once the keyboard moved the focus, or not on the screen.
+ */
+function readingPlace({
   atRest,
   loading,
   picked,
@@ -163,8 +173,37 @@ function showsReading({
   atRest: boolean;
   loading: boolean;
   picked: boolean;
-}): boolean {
-  return !loading && (atRest || picked);
+}): "above" | "over" | null {
+  if (loading) {
+    return null;
+  }
+  if (atRest) {
+    return "above";
+  }
+  return picked ? "over" : null;
+}
+
+const READING_OVER_CLASS =
+  "pointer-events-none absolute top-1 left-1 z-[60] max-w-[calc(100%-0.5rem)] rounded-sm bg-card/90 px-1.5 py-0.5";
+
+function ReadingAt({
+  place,
+  reading,
+  where,
+}: {
+  place: "above" | "over" | null;
+  reading: DayReading;
+  where: "above" | "over";
+}) {
+  if (place !== where) {
+    return null;
+  }
+  return (
+    <Reading
+      {...reading}
+      {...(where === "over" ? { className: READING_OVER_CLASS } : {})}
+    />
+  );
 }
 
 function EmptyChart({
@@ -196,6 +235,7 @@ function EmptyChart({
 interface PlotProps {
   axisText: (value: number, isTop: boolean) => string;
   best: number | null;
+  boxHidden: boolean;
   markers: DayMarkers;
   still: boolean;
   valueLabels: boolean | "peak";
@@ -216,6 +256,7 @@ interface PlotProps {
 function Plot({
   axisText,
   best,
+  boxHidden,
   markers,
   still,
   valueLabels,
@@ -242,18 +283,28 @@ function Plot({
   const secondaryColor = secondary?.color ?? GRAY;
   const subtle = secondary?.subtle === true;
   const content = useCallback(
-    ({ index }: { index: number }) => (
-      <TooltipLines
-        color={color ?? INK}
-        formatValue={formatValue}
-        name={name}
-        note={readingNote?.(index) ?? null}
-        point={points[index]}
-        secondary={secondary}
-        secondaryColor={secondaryColor}
-      />
-    ),
-    [color, formatValue, name, points, readingNote, secondary, secondaryColor]
+    ({ index }: { index: number }) =>
+      boxHidden ? null : (
+        <TooltipLines
+          color={color ?? INK}
+          formatValue={formatValue}
+          name={name}
+          note={readingNote?.(index) ?? null}
+          point={points[index]}
+          secondary={secondary}
+          secondaryColor={secondaryColor}
+        />
+      ),
+    [
+      boxHidden,
+      color,
+      formatValue,
+      name,
+      points,
+      readingNote,
+      secondary,
+      secondaryColor,
+    ]
   );
   return (
     <MotionConfig reducedMotion={motion.reducedMotion}>
@@ -312,6 +363,7 @@ function Plot({
           />
         ) : null}
         <ChartTooltip
+          {...(boxHidden ? { className: "hidden" } : {})}
           content={content}
           damping={motion.damping}
           dateLabels={labels}
@@ -335,10 +387,12 @@ function Plot({
  * their own animation (reveal, y-domain tween, morph of the path when the data changes, spring of the cursor and of the
  * tooltip), and what the blocks do not bring: the colors by the tokens (`theme.css`), the dates and the money in pt-BR, a
  * name and a summary for a screen reader (`role="img"`), a native range input that walks through the points with the
- * arrows, the reading line above the drawing and the levels of motion (none of it on a phone).
+ * arrows, the reading line and the levels of motion (none of it on a phone).
  *
- * The day in focus is read in a line of text above the drawing (the last one, until the arrows move it); the pointer
- * and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
+ * The day in focus is read in a line of text (the last one, until the arrows move it): above the drawing when it is
+ * there at rest, else inside the box, over the top left corner, so reading a day never moves what follows the chart; over
+ * the box the arrows draw no tooltip (it would sit on the reading), and the cursor, the dot and the date pill mark the day.
+ * The pointer and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
  * With `secondary` the chart draws a second, dashed line on the same scale (the costs against the sales of the
  * Resultado). The chart is a reinforcement and never the only source of a number: the caller writes the total and the
  * best day beside it, and "Ver os números" shows the table.
@@ -377,6 +431,7 @@ export function AreaChart({
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(
     null
   );
+  const [pointerOver, setPointerOver] = useState(false);
   const last = data.length - 1;
   const active =
     picked && picked.key === signature ? Math.min(picked.index, last) : last;
@@ -401,10 +456,12 @@ export function AreaChart({
     (event: ChangeEvent<HTMLInputElement>) => {
       const index = Number(event.currentTarget.value);
       setPicked({ index, key: signature });
+      setPointerOver(false);
       handle.current?.show(index);
     },
     [signature]
   );
+  const pointed = useCallback(() => setPointerOver(true), []);
   const show = useCallback(() => handle.current?.show(active), [active]);
   const hide = useCallback(() => {
     handle.current?.hide();
@@ -433,15 +490,15 @@ export function AreaChart({
     secondary,
   };
   const boxHeight = height + EXTRA_HEIGHT;
-  const readingShown = showsReading({
+  const place = readingPlace({
     atRest: readingAtRest,
     loading,
-    picked: picked?.key === signature,
+    picked: picked?.key === signature && !pointerOver,
   });
 
   return (
     <div className={cn("grid gap-2", className)} data-chart="">
-      {readingShown ? <Reading {...reading} /> : null}
+      <ReadingAt place={place} reading={reading} where="above" />
       {loading && readingAtRest ? (
         <p aria-hidden="true" className="min-h-[1.125rem]" />
       ) : null}
@@ -456,7 +513,12 @@ export function AreaChart({
           secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
         />
       ) : null}
-      <div className="relative rounded-md" style={{ height: boxHeight }}>
+      <div
+        className="relative isolate rounded-md"
+        onPointerMove={pointed}
+        style={{ height: boxHeight }}
+      >
+        <ReadingAt place={place} reading={reading} where="over" />
         <div
           aria-label={label}
           className="size-full"
@@ -466,6 +528,7 @@ export function AreaChart({
           <Plot
             axisText={axisText}
             best={bestIndex(data)}
+            boxHidden={place === "over"}
             color={color}
             markers={markers}
             still={still}
