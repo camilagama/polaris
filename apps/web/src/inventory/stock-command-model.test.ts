@@ -1073,11 +1073,17 @@ describe("informing the cost of units on hand (the cost panel)", () => {
         message: "Informe o custo de cada unidade.",
       },
     ]);
-    const zero = confirming(
-      filled("cost", { valuationUnitCost: "0" }, unknownCostTarget)
-    );
-    const { body } = validateStockDraft(zero.draft, zero.target, zero.today);
-    expect(body).toMatchObject({ valuationUnitCost: "0" });
+    for (const [typed, sent] of [
+      ["0", "0"],
+      ["0,00", "0.00"],
+    ] as const) {
+      const zero = confirming(
+        filled("cost", { valuationUnitCost: typed }, unknownCostTarget)
+      );
+      expect(visibleStockIssues(zero)).toEqual([]);
+      const { body } = validateStockDraft(zero.draft, zero.target, zero.today);
+      expect(body).toMatchObject({ action: "cost", valuationUnitCost: sent });
+    }
   });
 
   it("sums up the cost, the units it covers and that it is final (AC-4)", () => {
@@ -1092,11 +1098,13 @@ describe("informing the cost of units on hand (the cost panel)", () => {
     expect(costSummaryText(body(costFields, unknownCostTarget))).toBe(
       "R$ 12,50 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
     );
-    expect(
-      costSummaryText(body({ valuationUnitCost: "0" }, unknownCostTarget))
-    ).toBe(
-      "R$ 0,00 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
-    );
+    for (const typed of ["0", "0,00"]) {
+      expect(
+        costSummaryText(body({ valuationUnitCost: typed }, unknownCostTarget))
+      ).toBe(
+        "R$ 0,00 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
+      );
+    }
     expect(costUnitsText(5)).toBe("Para as 5 unidades que você tem agora.");
     expect(costUnitsText(1)).toBe("Para a unidade que você tem agora.");
   });
@@ -1155,7 +1163,7 @@ describe("informing the cost of units on hand (the cost panel)", () => {
     expect(failure).toMatchObject({
       discardAttempt: true,
       message:
-        "O saldo mudou depois que você abriu o painel (uma venda, um recebimento ou outro movimento). Atualizamos o saldo: revise e confirme o custo de novo.",
+        "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo.",
       refreshBalance: true,
     });
     const sent = prepareStockSubmission({

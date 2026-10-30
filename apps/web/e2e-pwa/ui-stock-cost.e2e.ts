@@ -88,6 +88,24 @@ test.describe("Estoque, Informar custo", () => {
     expect(await axeFaults(page)).toEqual([]);
   });
 
+  for (const typed of ["0", "0,00"]) {
+    test(`custo ${typed} passa na revisão e o resumo diz R$ 0,00`, async ({
+      page,
+    }) => {
+      await stockStates.cost(page);
+      await page.getByLabel(COST_FIELD).fill(typed);
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await expect(
+        page.getByText(
+          "R$ 0,00 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
+        )
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Confirmar custo" })
+      ).toBeVisible();
+    });
+  }
+
   test("envia a contagem do saldo lido com o custo, e a linha mostra o custo", async ({
     page,
   }) => {
@@ -167,7 +185,7 @@ test.describe("Estoque, Informar custo", () => {
     await page.getByRole("button", { name: "Confirmar custo" }).click();
     await expect(
       page.getByText(
-        "O saldo mudou depois que você abriu o painel (uma venda, um recebimento ou outro movimento). Atualizamos o saldo: revise e confirme o custo de novo."
+        "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo."
       )
     ).toBeVisible();
     await expect(
