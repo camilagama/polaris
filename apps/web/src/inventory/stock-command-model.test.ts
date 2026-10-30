@@ -3,6 +3,9 @@ import {
   backToStockEditing,
   canCloseStock,
   cancelDiscardStock,
+  costRefusedOffline,
+  costSummaryText,
+  costUnitsText,
   discardLockedStock,
   editStockField,
   isStockDraftChanged,
@@ -35,6 +38,7 @@ import type { StockTarget } from "./stock-target";
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const variantId = "0199c2d0-0000-7000-8000-000000000002";
 const today = "2026-10-13";
+const COST_PATH_JARGON = /contagem|contar|valora/i;
 
 const target: StockTarget = {
   archived: false,
@@ -211,7 +215,7 @@ describe("receive validation", () => {
 
   it("blocks receiving into a positive balance of unknown cost", () => {
     expect(stockActionBlock("receive", unknownCostTarget)).toBe(
-      "Sem custo conhecido, não dá para receber. Faça antes uma contagem com o custo unitário."
+      "Antes de receber, informe o custo das unidades que você já tem."
     );
     expect(
       stockActionBlock("receive", { ...unknownCostTarget, quantity: 0 })
@@ -781,7 +785,7 @@ describe("mapStockError", () => {
     [
       "CONFLICT",
       "inventory_cost_unavailable",
-      "custo conhecido",
+      "informe o custo",
       { refreshBalance: true },
     ],
     [
@@ -1015,5 +1019,183 @@ describe("isStockDraftChanged (the sign that the session notice warns about)", (
       replayed: false,
     });
     expect(isStockDraftChanged(done)).toBe(false);
+  });
+});
+
+describe("informing the cost of units on hand (the cost panel)", () => {
+  const costFields = { valuationUnitCost: "12,5" };
+
+  it("is a count of the balance as read, with its version and the cost (AC-2)", () => {
+    const prepared = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("cost", costFields, unknownCostTarget)),
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    expect(prepared.call).toEqual({
+      action: "count",
+      input: {
+        commandId: "00000000-0000-4000-8000-000000000001",
+        commandVersion: 1,
+        expectedVersion: 3,
+        occurredOn: today,
+        organizationId,
+        physicalQuantity: 5,
+        valuationUnitCost: "12.5",
+        variantId,
+      },
+    });
+  });
+
+  it("follows a balance read again: the quantity and the version are the new ones", () => {
+    const state = retargetStock(filled("cost", costFields, unknownCostTarget), {
+      movingAverageCost: null,
+      quantity: 4,
+      variantId,
+      version: 9,
+    });
+    expect(
+      validateStockDraft(state.draft, state.target, state.today).body
+    ).toMatchObject({ expectedVersion: 9, physicalQuantity: 4 });
+  });
+
+  it("asks for the cost when the field is empty, and accepts zero (AC-4)", () => {
+    const empty = reviewStock(filled("cost", {}, unknownCostTarget));
+    expect(empty.step).toBe("editing");
+    expect(visibleStockIssues(empty)).toEqual([
+      {
+        empty: true,
+        field: "valuationUnitCost",
+        message: "Informe o custo de cada unidade.",
+      },
+    ]);
+    const zero = confirming(
+      filled("cost", { valuationUnitCost: "0" }, unknownCostTarget)
+    );
+    const { body } = validateStockDraft(zero.draft, zero.target, zero.today);
+    expect(body).toMatchObject({ valuationUnitCost: "0" });
+  });
+
+  it("sums up the cost, the units it covers and that it is final (AC-4)", () => {
+    const body = (fields: Record<string, string>, forTarget: StockTarget) => {
+      const state = filled("cost", fields, forTarget);
+      const found = validateStockDraft(state.draft, state.target, today).body;
+      if (found?.action !== "cost") {
+        throw new Error("no cost body");
+      }
+      return found;
+    };
+    expect(costSummaryText(body(costFields, unknownCostTarget))).toBe(
+      "R$ 12,50 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
+    );
+    expect(
+      costSummaryText(body({ valuationUnitCost: "0" }, unknownCostTarget))
+    ).toBe(
+      "R$ 0,00 por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado."
+    );
+    expect(costUnitsText(5)).toBe("Para as 5 unidades que você tem agora.");
+    expect(costUnitsText(1)).toBe("Para a unidade que você tem agora.");
+  });
+
+  it("confirms with its own words and says the cost after it is saved", () => {
+    const state = confirming(filled("cost", costFields, unknownCostTarget));
+    expect(stockSubmitLabel(state)).toBe("Confirmar custo");
+    const done = stockSucceeded(state, {
+      balance: {
+        movingAverageCost: "12.500000",
+        quantity: 5,
+        variantId,
+        version: 4,
+      },
+      replayed: false,
+    });
+    expect(done.submission).toMatchObject({
+      message: "Custo informado: R$ 12,50 por unidade.",
+      queued: false,
+    });
+  });
+
+  it("is refused, not kept on the device, when the connection drops: it is never queued", () => {
+    const refused = costRefusedOffline(
+      confirming(filled("cost", costFields, unknownCostTarget))
+    );
+    expect(refused.submission).toMatchObject({
+      failure: {
+        message:
+          "Sem conexão. O custo não foi gravado: confirme de novo quando a conexão voltar.",
+      },
+      phase: "failed",
+    });
+    expect(refused.step).toBe("confirming");
+  });
+
+  it("answers a version conflict with its own words, a fresh attempt and a new read", () => {
+    const failure = mapStockError("cost", {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    expect(failure).toMatchObject({
+      discardAttempt: true,
+      message:
+        "O saldo mudou depois que você abriu o painel (uma venda, um recebimento ou outro movimento). Atualizamos o saldo: revise e confirme o custo de novo.",
+      refreshBalance: true,
+    });
+    const sent = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("cost", costFields, unknownCostTarget)),
+    });
+    const failed = stockFailed(sent.state, {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    expect(failed.attempt).toBeNull();
+    expect(failed.step).toBe("editing");
+  });
+
+  it("is blocked once the cost is known, the balance is 0, or there is no connection", () => {
+    expect(stockActionBlock("cost", unknownCostTarget)).toBeNull();
+    expect(stockActionBlock("cost", target)).toBe(
+      "Esta variante já tem custo: R$ 10,00 por unidade."
+    );
+    expect(
+      stockActionBlock("cost", { ...unknownCostTarget, quantity: 0 })
+    ).toBe(
+      "Esta variante está com saldo 0. Para informar o custo, dê entrada no estoque."
+    );
+    expect(
+      stockActionBlock("cost", { ...unknownCostTarget, costUnavailable: true })
+    ).toContain("Sem conexão");
+  });
+
+  it("never says count or valuation on its path (AC-6)", () => {
+    const state = confirming(filled("cost", costFields, unknownCostTarget));
+    const texts = [
+      stockActionBlock("receive", unknownCostTarget),
+      stockSubmitLabel(state),
+      stockConsequence("cost"),
+      mapStockError("cost", {
+        code: "CONFLICT",
+        data: { reason: "inventory_version_conflict" },
+      }).message,
+      mapStockError("cost", {
+        code: "BAD_REQUEST",
+        data: { reason: "invalid_inventory_count_input" },
+      }).message,
+      mapStockError("cost", new TypeError("x")).message,
+      mapStockError("receive", {
+        code: "CONFLICT",
+        data: { reason: "inventory_cost_unavailable" },
+      }).message,
+      ...visibleStockIssues(
+        reviewStock(filled("cost", {}, unknownCostTarget))
+      ).map((found) => found.message),
+    ];
+    for (const text of texts) {
+      expect(text).not.toMatch(COST_PATH_JARGON);
+    }
   });
 });

@@ -1,20 +1,17 @@
 import type { MouseEvent } from "react";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
-import {
-  STOCK_ACTION_LABELS,
-  STOCK_ACTIONS,
-  type StockAction,
-} from "./stock-command-model";
-import type { StockRow } from "./stock-list-model";
+import type { StockAction } from "./stock-command-model";
+import { type StockRow, stockRowActions } from "./stock-list-model";
 
 /** Names the line that says why the row buttons are off while a panel is open. */
 export const PANEL_OPEN_REASON_ID = "stock-panel-open-reason";
 export const PANEL_OPEN_REASON =
   "Há um painel aberto. Termine ou feche esse painel para usar os botões.";
 
+/** By the button's place in the row: "Informar custo" stands where "Contar" was and gives it back once the cost is known. */
 export const triggerId = (variantId: string, action: StockAction) =>
-  `stock-trigger-${variantId}-${action}`;
+  `stock-trigger-${variantId}-${action === "cost" ? "count" : action}`;
 
 interface RowActionsProps {
   disabled: boolean;
@@ -29,12 +26,12 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
       aria-label={`Movimentos de ${row.productName}, ${row.variantText}`}
       className="w-full md:w-fit"
     >
-      {STOCK_ACTIONS.map((action) => (
+      {stockRowActions(row.target).map(({ action, label, name }) => (
         // aria-disabled, not disabled: the button stays reachable and reads why it is off (the line above the list)
         <Button
           aria-describedby={disabled ? PANEL_OPEN_REASON_ID : undefined}
           aria-disabled={disabled || undefined}
-          aria-label={`${STOCK_ACTION_LABELS[action].trigger} estoque de ${row.productName}, ${row.variantText}`}
+          aria-label={name}
           className="flex-1 md:flex-none"
           data-stock-action={action}
           data-variant-id={row.id}
@@ -44,7 +41,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
           type="button"
           variant="outline"
         >
-          {STOCK_ACTION_LABELS[action].trigger}
+          {label}
         </Button>
       ))}
     </ButtonGroup>

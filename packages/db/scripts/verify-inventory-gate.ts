@@ -12,11 +12,13 @@ import {
   InventoryVersionConflictError,
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
+import { resultQuality } from "@polaris/domain/economics/period-summary";
 import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { readPeriodSummary } from "../src/economics-repository";
 import {
   getInventoryBalance,
   inventoryCount,
@@ -46,7 +48,14 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { runClock, storeDay, storeNoon } from "./gate-clock";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import {
+  confirmPlainSale,
+  createSellableProduct,
+  createTenantFixture as createSalesTenantFixture,
+  withTenantAs,
+} from "./sales-gate-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -1096,6 +1105,172 @@ async function main(): Promise<void> {
       InvalidInventoryCountInputError
     );
 
+    // Informing the cost of units on hand: a count of the balance as read, with its version and a valuation cost,
+    // sets the unknown average and leaves the quantity where it was; a stale version is refused and changes nothing.
+    const costInformedProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "inventory-cost-informed"
+    );
+    const costInformedVariantId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      costInformedProductId
+    );
+    const costInformedMovements = async () =>
+      (
+        await admin.pool.query<{ count: number }>(
+          "SELECT count(*)::integer AS count FROM public.stock_movements WHERE organization_id = $1 AND variant_id = $2",
+          [fixtureA.organizationId, costInformedVariantId]
+        )
+      ).rows[0]?.count;
+    const unknownCostOpening = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: 0,
+          occurredOn: "2026-10-09",
+          physicalQuantity: 6,
+          requestId: randomUUID(),
+          variantId: costInformedVariantId,
+        })
+    );
+    assert.equal(unknownCostOpening.balance.quantity, 6);
+    assert.equal(unknownCostOpening.balance.movingAverageCost, null);
+    assert.equal(await costInformedMovements(), 1);
+    const costInformed = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: unknownCostOpening.balance.version,
+          occurredOn: "2026-10-10",
+          physicalQuantity: unknownCostOpening.balance.quantity,
+          requestId: randomUUID(),
+          valuationUnitCost: "12.5",
+          variantId: costInformedVariantId,
+        })
+    );
+    assert.equal(costInformed.replayed, false);
+    assert.equal(costInformed.movement.quantityDelta, 0);
+    assert.equal(costInformed.movement.physicalQuantity, 6);
+    assert.equal(costInformed.movement.unitCost, "12.500000");
+    assert.equal(costInformed.balance.quantity, 6);
+    assert.equal(costInformed.balance.movingAverageCost, "12.500000");
+    assert.equal(
+      costInformed.balance.version,
+      unknownCostOpening.balance.version + 1
+    );
+    assert.equal(await costInformedMovements(), 2);
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "inventory:adjust",
+        (transaction, identity) =>
+          inventoryCount(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            expectedVersion: unknownCostOpening.balance.version,
+            occurredOn: "2026-10-10",
+            physicalQuantity: unknownCostOpening.balance.quantity,
+            requestId: randomUUID(),
+            valuationUnitCost: "99",
+            variantId: costInformedVariantId,
+          })
+      ),
+      InventoryVersionConflictError
+    );
+    const afterStaleCost = await withTenant(
+      runtime.database,
+      fixtureA,
+      "inventory:adjust",
+      (transaction, identity) =>
+        getInventoryBalance(transaction, identity, costInformedVariantId)
+    );
+    assert.equal(afterStaleCost.quantity, 6);
+    assert.equal(afterStaleCost.movingAverageCost, "12.500000");
+    assert.equal(afterStaleCost.version, costInformed.balance.version);
+    assert.equal(await costInformedMovements(), 2);
+
+    // The cost informed afterwards does not reach back: a sale of those units on an earlier day keeps its unknown
+    // cost, so the summary of that period reads the same numbers and the same quality before and after.
+    const pastTenant = await createSalesTenantFixture(
+      admin.pool,
+      "inventory-cost-informed-past"
+    );
+    const pastRuntime = { adminPool: admin.pool, db: runtime.database };
+    const pastProduct = await createSellableProduct(
+      pastRuntime,
+      pastTenant,
+      `custo informado ${randomUUID()}`,
+      { cost: null, quantity: 6 }
+    );
+    const pastDay = storeDay(runClock, -2);
+    await confirmPlainSale(
+      pastRuntime,
+      pastTenant,
+      [{ quantity: 1, variantId: pastProduct.variantId }],
+      { occurredAt: storeNoon(pastDay) }
+    );
+    const pastSummary = () =>
+      withTenantAs(
+        runtime.database,
+        pastTenant,
+        "report:read",
+        (transaction, identity) =>
+          readPeriodSummary(transaction, identity, {
+            from: pastDay,
+            to: pastDay,
+          })
+      );
+    const summaryBefore = await pastSummary();
+    assert.equal(summaryBefore.result.salesCount, 1);
+    assert.equal(summaryBefore.result.unknown.costItems, 1);
+    assert.ok(
+      resultQuality(summaryBefore.result).missing.includes("unknown_cost")
+    );
+    const pastBalance = await withTenantAs(
+      runtime.database,
+      pastTenant,
+      "inventory:adjust",
+      (transaction, identity) =>
+        getInventoryBalance(transaction, identity, pastProduct.variantId)
+    );
+    assert.equal(pastBalance.quantity, 5);
+    assert.equal(pastBalance.movingAverageCost, null);
+    const pastCostInformed = await withTenantAs(
+      runtime.database,
+      pastTenant,
+      "inventory:adjust",
+      (transaction, identity) =>
+        inventoryCount(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          expectedVersion: pastBalance.version,
+          occurredOn: storeDay(runClock, 0),
+          physicalQuantity: pastBalance.quantity,
+          requestId: randomUUID(),
+          valuationUnitCost: "8.00",
+          variantId: pastProduct.variantId,
+        })
+    );
+    assert.equal(pastCostInformed.balance.quantity, 5);
+    assert.equal(pastCostInformed.balance.movingAverageCost, "8.000000");
+    const summaryAfter = await pastSummary();
+    assert.deepEqual(summaryAfter, summaryBefore);
+    assert.deepEqual(
+      resultQuality(summaryAfter.result),
+      resultQuality(summaryBefore.result)
+    );
+
     // The races below hold the product lock first, release their racers from one
     // start barrier and fail if the database never saw them blocked on a lock
     // (concurrency-support.ts); each round repeats a race with fresh data.
@@ -1867,6 +2042,8 @@ async function main(): Promise<void> {
             "explicit valuation initializes an unknown average and known averages cannot be revalued by count",
             "explicit valuation cannot be attached to a zero physical count at the database boundary",
             "unknown-cost counts preserve null valuation without inventing zero cost",
+            "a zero-delta count with valuation sets an unknown average without moving the quantity, and a stale one changes nothing",
+            "a cost informed later leaves the period summary of an earlier sale with the same numbers and quality",
             "database rejects new inventory_count rows without count payload metadata",
             "default variant configuration blocked after history even at zero",
             "concurrent receipts serialize into the materialized balance",

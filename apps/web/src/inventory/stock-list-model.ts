@@ -5,6 +5,7 @@ import type {
 } from "@polaris/contracts";
 import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
+import { canInformCost, type StockAction } from "./stock-command-model";
 import {
   costText,
   type StockTarget,
@@ -221,6 +222,55 @@ export function stockBalanceUpdated(
 /* -------------------------------------------------------------------------- */
 /* Views                                                                      */
 /* -------------------------------------------------------------------------- */
+
+/** One button of a row: the command it opens, its text, and its accessible name. */
+export interface StockRowAction {
+  action: StockAction;
+  label: string;
+  name: string;
+}
+
+/**
+ * Receive, count and write off, in that order. Units with an unknown cost offer "Informar custo" where counting
+ * was; a variant with no units and no cost offers "Dar entrada" (receiving asks for the cost). Without a connection
+ * the cost is not on the device, so the three stay as they are.
+ */
+export function stockRowActions(target: StockTarget): StockRowAction[] {
+  const subject = `${target.productName}, ${target.variantText}`;
+  const noUnitsNoCost =
+    target.quantity === 0 &&
+    target.movingAverageCost === null &&
+    !target.costUnavailable;
+  return [
+    noUnitsNoCost
+      ? {
+          action: "receive",
+          label: "Dar entrada",
+          name: `Dar entrada no estoque de ${subject}`,
+        }
+      : {
+          action: "receive",
+          label: "Receber",
+          name: `Receber estoque de ${subject}`,
+        },
+    canInformCost(target)
+      ? {
+          action: "cost",
+          label: "Informar custo",
+          name: `Informar custo de ${target.productName} · ${target.variantText}`,
+        }
+      : {
+          action: "count",
+          label: "Contar",
+          name: `Contar estoque de ${subject}`,
+        },
+    {
+      action: "write_off",
+      label: "Baixar",
+      name: `Baixar estoque de ${subject}`,
+    },
+  ];
+}
 
 export interface StockRow {
   archived: boolean;

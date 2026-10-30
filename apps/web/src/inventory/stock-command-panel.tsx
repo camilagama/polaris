@@ -20,12 +20,14 @@ import {
   backToStockEditing,
   canCloseStock,
   cancelDiscardStock,
+  costRefusedOffline,
   discardLockedStock,
   editStockField,
   firstInvalidStockField,
   isStockDraftChanged,
   mapStockError,
   prepareStockSubmission,
+  receiveNeedsCost,
   requestDiscardStock,
   retargetStock,
   reviewStock,
@@ -76,6 +78,8 @@ interface StockCommandPanelProps {
   ) => void;
   /** The variant or its product changed under the screen. */
   onReloadList: () => void;
+  /** The receive panel is blocked by the unknown cost of the units on hand: open the cost panel in its place. */
+  onInformCost?: ((target: StockTarget) => void) | undefined;
   target: StockTarget;
   today: string;
 }
@@ -163,6 +167,7 @@ export function StockCommandPanel({
   local,
   onBalance,
   onClose,
+  onInformCost,
   onReloadList,
   organizationId,
   target,
@@ -221,6 +226,10 @@ export function StockCommandPanel({
   const handleBack = useCallback(
     () => setState((current) => backToStockEditing(current)),
     []
+  );
+  const handleInformCost = useCallback(
+    () => onInformCost?.(state.target),
+    [onInformCost, state.target]
   );
   const handleDiscardRequest = useCallback(
     () => setState((current) => requestDiscardStock(current)),
@@ -297,6 +306,14 @@ export function StockCommandPanel({
     if (inFlight.current) {
       return;
     }
+    if (
+      local &&
+      state.action === "cost" &&
+      state.submission.phase !== "locked"
+    ) {
+      setState(costRefusedOffline(state));
+      return;
+    }
     const prepared = prepareStockSubmission({
       createId: newId,
       organizationId,
@@ -352,6 +369,8 @@ export function StockCommandPanel({
   );
 
   const block = stockActionBlock(action, state.target);
+  const informCost =
+    onInformCost && !local && receiveNeedsCost(action, state.target);
   const issues = visibleStockIssues(state);
   const errors: Partial<Record<StockFieldName, string>> = {};
   // one message per field: a refusal that belongs to a field replaces the local check there
@@ -436,7 +455,20 @@ export function StockCommandPanel({
       ) : null}
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
-          <AlertDescription>{block}</AlertDescription>
+          <AlertDescription className="grid justify-items-start gap-2">
+            <p>{block}</p>
+            {informCost ? (
+              <Button
+                aria-label={`Informar custo de ${state.target.productName} · ${state.target.variantText}`}
+                onClick={handleInformCost}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Informar custo
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
       <form className="grid gap-4" noValidate onSubmit={handleSubmitForm}>

@@ -48,13 +48,18 @@ export interface StockResult {
   replayed: boolean;
 }
 
-export type StockAction = "count" | "receive" | "write_off";
+/** `cost` is a count with the balance as read and a valuation cost: it sets the unknown cost and leaves the quantity. */
+export type StockAction = "cost" | "count" | "receive" | "write_off";
 
 export const STOCK_ACTIONS: readonly StockAction[] = [
   "receive",
   "count",
   "write_off",
 ];
+
+export function isStockAction(value: string | undefined): value is StockAction {
+  return value === "cost" || STOCK_ACTIONS.some((action) => action === value);
+}
 
 interface ActionLabels {
   confirm: string;
@@ -66,6 +71,12 @@ interface ActionLabels {
 
 export const STOCK_ACTION_LABELS: Readonly<Record<StockAction, ActionLabels>> =
   {
+    cost: {
+      confirm: "Confirmar custo",
+      noun: "o custo",
+      title: "Informar custo",
+      trigger: "Informar custo",
+    },
     count: {
       confirm: "Confirmar contagem",
       noun: "a contagem",
@@ -118,6 +129,10 @@ export type StockFieldName =
 
 export type StockDraft =
   | {
+      action: "cost";
+      valuationUnitCost: string;
+    }
+  | {
       action: "count";
       occurredOn: string;
       physicalQuantity: string;
@@ -141,6 +156,7 @@ export type StockDraft =
 export const STOCK_FIELD_ORDER: Readonly<
   Record<StockAction, readonly StockFieldName[]>
 > = {
+  cost: ["valuationUnitCost"],
   count: ["physicalQuantity", "valuationUnitCost", "occurredOn"],
   receive: ["quantity", "unitCost", "occurredOn"],
   write_off: ["quantity", "reasonCode", "reasonNote", "occurredOn"],
@@ -150,6 +166,8 @@ function initialStockDraft(action: StockAction, today: string): StockDraft {
   switch (action) {
     case "receive":
       return { action, occurredOn: today, quantity: "", unitCost: "" };
+    case "cost":
+      return { action, valuationUnitCost: "" };
     case "count":
       return {
         action,
@@ -258,6 +276,13 @@ export type StockCall =
 /** What a valid draft would send, before ids are attached. */
 type StockBody =
   | {
+      action: "cost";
+      expectedVersion: number;
+      occurredOn: string;
+      physicalQuantity: number;
+      valuationUnitCost: string;
+    }
+  | {
       action: "count";
       expectedVersion: number;
       occurredOn: string;
@@ -293,20 +318,51 @@ export interface StockValidation {
 const MAX_QUANTITY_TEXT = formatQuantity(MAX_INVENTORY_QUANTITY);
 
 const COST_BLOCK_MESSAGE =
-  "Sem custo conhecido, não dá para receber. Faça antes uma contagem com o custo unitário.";
+  "Antes de receber, informe o custo das unidades que você já tem.";
+
+/**
+ * Units on hand whose cost is not known, as read from the server: only then can a cost be informed. Without a
+ * connection the device does not know the cost, so it never offers to inform one.
+ */
+export function canInformCost(target: StockTarget): boolean {
+  return (
+    target.quantity > 0 &&
+    target.movingAverageCost === null &&
+    !target.costUnavailable
+  );
+}
+
+/** The receive panel is blocked because the cost of the units on hand is unknown: it offers to inform it. */
+export function receiveNeedsCost(
+  action: StockAction,
+  target: StockTarget
+): boolean {
+  return action === "receive" && canInformCost(target);
+}
+
+function costActionBlock(target: StockTarget): string | null {
+  if (target.costUnavailable) {
+    return "Sem conexão. O custo só pode ser informado com conexão.";
+  }
+  if (target.movingAverageCost !== null) {
+    return `Esta variante já tem custo: ${formatBrlAmount(target.movingAverageCost)} por unidade.`;
+  }
+  if (target.quantity === 0) {
+    return "Esta variante está com saldo 0. Para informar o custo, dê entrada no estoque.";
+  }
+  return null;
+}
 
 /** Why the action cannot be started on this variant, or null when it can. */
 export function stockActionBlock(
   action: StockAction,
   target: StockTarget
 ): string | null {
-  if (
-    action === "receive" &&
-    target.quantity > 0 &&
-    target.movingAverageCost === null &&
-    !target.costUnavailable
-  ) {
+  if (receiveNeedsCost(action, target)) {
     return COST_BLOCK_MESSAGE;
+  }
+  if (action === "cost") {
+    return costActionBlock(target);
   }
   if (action === "write_off" && target.quantity === 0) {
     return "Não há saldo para baixar: esta variante está com saldo 0.";
@@ -475,6 +531,29 @@ function validateCount(
     : null;
 }
 
+function validateCost(
+  draft: Extract<StockDraft, { action: "cost" }>,
+  target: StockTarget,
+  today: string,
+  issues: StockIssue[]
+): StockBody | null {
+  const valuation = costIssue(
+    parseUnitCost(draft.valuationUnitCost),
+    "valuationUnitCost",
+    issues,
+    "Informe o custo de cada unidade."
+  );
+  return issues.length === 0 && valuation !== null
+    ? {
+        action: "cost",
+        expectedVersion: target.version,
+        occurredOn: today,
+        physicalQuantity: target.quantity,
+        valuationUnitCost: valuation,
+      }
+    : null;
+}
+
 function validateWriteOff(
   draft: Extract<StockDraft, { action: "write_off" }>,
   target: StockTarget,
@@ -534,6 +613,8 @@ export function validateStockDraft(
   let body: StockBody | null;
   if (draft.action === "receive") {
     body = validateReceive(draft, target, today, issues);
+  } else if (draft.action === "cost") {
+    body = validateCost(draft, target, today, issues);
   } else if (draft.action === "count") {
     body = validateCount(draft, target, today, issues);
   } else {
@@ -595,6 +676,20 @@ function receiveCostLine(
   }
 }
 
+/** The one line the cost panel asks to accept: the cost, the units it covers, and that it is final. */
+export function costSummaryText(
+  body: Extract<StockBody, { action: "cost" }>
+): string {
+  return `${formatBrlAmount(body.valuationUnitCost)} por unidade, para ${unitsText(body.physicalQuantity)}. Depois de confirmar, o custo não pode ser editado.`;
+}
+
+/** "Para as 5 unidades que você tem agora.": the quantity the cost covers is the balance, not a field. */
+export function costUnitsText(quantity: number): string {
+  return quantity === 1
+    ? "Para a unidade que você tem agora."
+    : `Para as ${unitsText(quantity)} que você tem agora.`;
+}
+
 /** What the operator is about to register, in plain terms. */
 export function stockSummary(
   body: StockBody,
@@ -623,6 +718,9 @@ export function stockSummary(
     if (cost) {
       lines.push(cost);
     }
+    return lines;
+  }
+  if (body.action === "cost") {
     return lines;
   }
   if (body.action === "count") {
@@ -674,6 +772,8 @@ export function stockConsequence(action: StockAction): string {
   switch (action) {
     case "receive":
       return "Entra no histórico e muda o custo médio. Não dá para editar; um erro se corrige com contagem ou baixa.";
+    case "cost":
+      return "Depois de confirmar, o custo não pode ser editado.";
     case "count":
       return "A contagem substitui o saldo pela quantidade contada e fica no histórico, mesmo sem diferença; ela falha se o saldo mudar enquanto você confirma.";
     default:
@@ -853,6 +953,38 @@ function genericFailure(code: string | undefined): StockFailure {
   }
 }
 
+/** The refusals of the cost path in its own words: it never says count or valuation. */
+const costReasonOutcomes = new Map<string, ReasonOutcome>([
+  [
+    "inventory_version_conflict",
+    {
+      discardAttempt: true,
+      message:
+        "O saldo mudou depois que você abriu o painel (uma venda, um recebimento ou outro movimento). Atualizamos o saldo: revise e confirme o custo de novo.",
+      refreshBalance: true,
+    },
+  ],
+  [
+    "invalid_inventory_count_input",
+    {
+      discardAttempt: true,
+      message:
+        "O servidor não aceitou o custo: esta variante já tem custo ou está sem saldo. Atualizamos o saldo.",
+      refreshBalance: true,
+    },
+  ],
+]);
+
+function reasonOutcome(
+  action: StockAction,
+  reason: string
+): ReasonOutcome | undefined {
+  return (
+    (action === "cost" ? costReasonOutcomes.get(reason) : undefined) ??
+    reasonOutcomes.get(reason)
+  );
+}
+
 /**
  * Maps an oRPC error. A 4xx answer is definite (nothing was recorded) and
  * keeps editing open; network, 5xx and unknown errors may have taken effect and
@@ -876,7 +1008,7 @@ export function mapStockError(
   const refinable =
     code === "BAD_REQUEST" || code === "NOT_FOUND" || code === "CONFLICT";
   const reason = refinable ? (rpcErrorReason(error) ?? null) : null;
-  const outcome = reason === null ? undefined : reasonOutcomes.get(reason);
+  const outcome = reason === null ? undefined : reasonOutcome(action, reason);
   if (outcome) {
     const { field } = outcome;
     return stockFailure(outcome.message, {
@@ -1140,6 +1272,18 @@ function buildCall(
       },
     };
   }
+  if (body.action === "cost") {
+    // the count the server already has: the balance as read, its version, and the cost; no quantity is typed
+    return {
+      action: "count",
+      input: {
+        ...base,
+        expectedVersion: body.expectedVersion,
+        physicalQuantity: body.physicalQuantity,
+        valuationUnitCost: body.valuationUnitCost,
+      },
+    };
+  }
   return {
     action: "write_off",
     input: {
@@ -1253,6 +1397,9 @@ function stockSuccessMessage(
   if (result.replayed) {
     return `Este mesmo pedido já tinha sido registrado. Nada foi duplicado. ${balanceText}`;
   }
+  if (action === "cost") {
+    return `Custo informado: ${costText(result.balance.movingAverageCost)} por unidade.`;
+  }
   if (action === "receive") {
     return `Recebimento registrado. ${balanceText} Custo médio: ${costText(result.balance.movingAverageCost)}.`;
   }
@@ -1330,6 +1477,24 @@ export function stockQueueFailed(
     step: "editing",
     submission: {
       failure: stockFailure(message, field === undefined ? {} : { field }),
+      phase: "failed",
+    },
+  };
+}
+
+/**
+ * The connection dropped while the cost panel was open: a cost is never kept on the device to be sent later (the
+ * balance it names could change meanwhile), so nothing was sent and the panel says so.
+ */
+export function costRefusedOffline(
+  state: StockCommandState
+): StockCommandState {
+  return {
+    ...state,
+    submission: {
+      failure: stockFailure(
+        "Sem conexão. O custo não foi gravado: confirme de novo quando a conexão voltar."
+      ),
       phase: "failed",
     },
   };
