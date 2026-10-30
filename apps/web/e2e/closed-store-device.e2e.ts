@@ -473,6 +473,7 @@ const AFTER_TEXT =
   "2 operações deste aparelho não foram enviadas e nunca mais serão: esta loja não volta. Elas não estão na cópia dos seus dados.";
 const DISCARD_BUTTON = "Descartar o que não foi enviado…";
 const DISCARD_ANY = /Descartar/;
+const CHECKING = "Conferindo as operações guardadas neste aparelho";
 const DISCARDED = "Operações descartadas neste aparelho.";
 
 async function seedOtherStore(page: Page, userId: string) {
@@ -598,6 +599,10 @@ async function leaveTwoSalesAndOpenPanel(
       name: "Loja do teste está encerrada",
     })
   ).toBeVisible();
+  await expect(queueSection(page)).toBeVisible({ timeout: 30_000 });
+  await expect(queueSection(page)).not.toContainText(CHECKING, {
+    timeout: 30_000,
+  });
   return { other, panelStart, queued };
 }
 
