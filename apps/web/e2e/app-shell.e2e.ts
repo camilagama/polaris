@@ -1211,9 +1211,25 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     expect((trial?.y ?? 0) + (trial?.height ?? 0)).toBeLessThanOrEqual(
       card?.y ?? 0
     );
+    // two lines each, taller than a destination (32 px) and not cut by it
+    expect(steps?.height ?? 0).toBeGreaterThan(40);
+    expect(trial?.height ?? 0).toBeGreaterThan(48);
+    for (const link of [stepsLink(page), trialLink(page)]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one link at a time
+      const cut = await link.evaluate(
+        (element) => element.scrollHeight > element.clientHeight
+      );
+      expect(cut).toBe(false);
+    }
     expect(reads.plan).toBe(1);
     await trialLink(page).click();
     await page.waitForURL("**/configuracoes?aba=assinatura");
+    await expect(trialLink(page)).toBeVisible();
+    // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
+    await page.context().setOffline(true);
+    await expect(trialLink(page)).toHaveCount(0);
+    await page.context().setOffline(false);
+    await expect(trialLink(page)).toBeVisible();
   });
 
   test("sem billing:manage (papel sem a permissão), nada da assinatura aparece nem é lido, nem em Mais", async ({
@@ -1224,6 +1240,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     await page.goto("/products");
     // the steps are not of the billing: they stay
     await expect(stepsLink(page)).toBeVisible();
+    await page.waitForLoadState("networkidle");
     await expect(trialLink(page)).toHaveCount(0);
     await expect(page.getByText("Teste grátis")).toHaveCount(0);
     await expect(page.locator("[data-menu-trial]")).toHaveCount(0);
@@ -1247,7 +1264,12 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       steps: null,
     });
     await page.goto("/products");
-    await expect(page.locator("[data-store-card]")).toBeVisible();
+    // the store is loaded (the card is there with or without one) and the network is quiet: only then is the
+    // absence worth something
+    await expect(page.locator("[data-store-card]")).toContainText(
+      "Loja do teste"
+    );
+    await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
     await expect(page.getByText("Teste grátis")).toHaveCount(0);
     expect(reads.plan).toBe(0);
@@ -1258,11 +1280,22 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serveFoot(page, { steps: null });
-    await page.route("**/rpc/billing/readPlan", (route) =>
-      route.fulfill(json({ ...TRIAL_PLAN, nextCharge: null, state: "active" }))
-    );
+    const reads = { active: 0 };
+    await page.route("**/rpc/billing/readPlan", (route) => {
+      reads.active += 1;
+      return route.fulfill(
+        json({ ...TRIAL_PLAN, nextCharge: null, state: "active" })
+      );
+    });
     await page.goto("/products");
-    await expect(page.locator("[data-store-card]")).toBeVisible();
+    // the plan was read and answered: only then is the absence of the trial worth something
+    await expect.poll(() => reads.active).toBe(1);
+    // the store is loaded (the card is there with or without one) and the network is quiet: only then is the
+    // absence worth something
+    await expect(page.locator("[data-store-card]")).toContainText(
+      "Loja do teste"
+    );
+    await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
   });
 

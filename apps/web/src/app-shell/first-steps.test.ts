@@ -3,6 +3,7 @@ import {
   clearFirstSteps,
   FIRST_STEPS_KEY,
   firstStepsCount,
+  firstSaleConfirmed,
   firstStepsDone,
   rememberedFirstSteps,
   rememberFirstSteps,
@@ -68,6 +69,15 @@ describe("the first steps of the menu", () => {
       store.values.set(FIRST_STEPS_KEY, value);
       expect(rememberedFirstSteps("loja-a", store)).toBeNull();
     }
+  });
+
+  it("are over once the server confirms a sale of the store, and only of that store", () => {
+    const store = fakeStore();
+    rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
+    firstSaleConfirmed("loja-b", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBe(2);
+    firstSaleConfirmed("loja-a", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBeNull();
   });
 
   it("are dropped when the session ends", () => {

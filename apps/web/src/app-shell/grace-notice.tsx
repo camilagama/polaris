@@ -4,7 +4,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { buttonVariants } from "@/ui/button";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { orpcClient } from "../lib/orpc";
+import { isSigningOut } from "../lib/sign-out";
 import { useNow } from "../lib/use-now";
+import { isSessionOver } from "../offline/runtime/session-ended";
 import {
   graceNotice,
   type PlanNoticeFacts,
@@ -66,7 +68,10 @@ export function usePlanNoticeFacts(
       .readPlan({ organizationId })
       .then((plan) => {
         failed.current = planReadSucceeded(failed.current, organizationId);
-        rememberPlanNotice(organizationId, plan);
+        // an answer after the sign-out would write back what the sign-out dropped
+        if (!(isSessionOver() || isSigningOut())) {
+          rememberPlanNotice(organizationId, plan);
+        }
       })
       .catch(() => {
         failed.current = planReadFailed(

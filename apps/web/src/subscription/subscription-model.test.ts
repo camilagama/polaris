@@ -989,6 +989,13 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       }),
       JSON.stringify({
         accessEndsAt: null,
+        nextChargeOn: "10/11",
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
         nextChargeOn: 20_261_110,
         organizationId: "loja-a",
         readAt: 1,
@@ -1012,26 +1019,36 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
 const DAY_WORD = /dia/;
 
 describe("trialChargeDay (the trial at the foot of the menu)", () => {
+  const TODAY = "2026-10-29";
+
   it("is the dd/mm of the first charge, in a trial only", () => {
     expect(
-      trialChargeDay({ nextChargeOn: "2026-11-10", state: "trialing" })
+      trialChargeDay({ nextChargeOn: "2026-11-10", state: "trialing" }, TODAY)
     ).toBe("10/11");
     for (const state of ["active", "grace", "free", "trial_setup"] as const) {
-      expect(trialChargeDay({ nextChargeOn: "2026-11-10", state })).toBeNull();
+      expect(
+        trialChargeDay({ nextChargeOn: "2026-11-10", state }, TODAY)
+      ).toBeNull();
     }
   });
 
   it("is nothing without a charge to come (the renewal was cancelled)", () => {
     expect(
-      trialChargeDay({ nextChargeOn: null, state: "trialing" })
+      trialChargeDay({ nextChargeOn: null, state: "trialing" }, TODAY)
     ).toBeNull();
   });
 
+  it("is the day itself on the day of the charge, and nothing once it is past", () => {
+    const trial = { nextChargeOn: "2026-10-29", state: "trialing" } as const;
+    expect(trialChargeDay(trial, "2026-10-29")).toBe("29/10");
+    expect(trialChargeDay(trial, "2026-10-30")).toBeNull();
+  });
+
   it("never says a count of days (AS-3, AC-12)", () => {
-    const text = trialChargeDay({
-      nextChargeOn: "2026-11-01",
-      state: "trialing",
-    });
+    const text = trialChargeDay(
+      { nextChargeOn: "2026-11-01", state: "trialing" },
+      TODAY
+    );
     expect(text).toBe("01/11");
     expect(text).not.toMatch(DAY_WORD);
   });

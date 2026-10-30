@@ -1,11 +1,12 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import { Money } from "@polaris/domain/money/money";
 import { MoneyText } from "@/ui/hidden-values";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import { firstStepsDone } from "../app-shell/first-steps";
+import { FIRST_STEPS_ANCHOR, firstStepsDone } from "../app-shell/first-steps";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
@@ -124,13 +125,21 @@ function FirstProductWays() {
  * first product's panel while it has no stock).
  */
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
+  // the foot of the menu links here from any screen: the block comes after the reads, past the browser's own scroll
+  useEffect(() => {
+    if (window.location.hash === `#${FIRST_STEPS_ANCHOR}`) {
+      document
+        .getElementById(FIRST_STEPS_ANCHOR)
+        ?.scrollIntoView({ block: "center" });
+    }
+  }, []);
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
   const link = checklistLink(next);
   const done = firstStepsDone(checklist);
   return (
     <HomeBlock
       className="lg:col-span-2"
-      id="home-checklist"
+      id={FIRST_STEPS_ANCHOR}
       title="Primeiros passos"
     >
       <ol className="grid gap-2">

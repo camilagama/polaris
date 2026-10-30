@@ -1,16 +1,17 @@
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import ListChecksIcon from "lucide-react/dist/esm/icons/list-checks";
-import { useSyncExternalStore } from "react";
+import { type MouseEvent, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/ui/sidebar";
 import {
+  FIRST_STEPS_ANCHOR,
   FIRST_STEPS_TOTAL,
   rememberedFirstSteps,
   subscribeFirstSteps,
 } from "./first-steps";
 import { tabHref } from "./navigation-model";
 
-const FIRST_STEPS_HREF = "/#home-checklist";
+const FIRST_STEPS_HREF = `/#${FIRST_STEPS_ANCHOR}`;
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /** The width of the ink in the bar, by the steps done (1 or 2: with the 3 done the store sold and the item is gone). */
@@ -30,9 +31,15 @@ export function useFirstSteps(organizationId: string | null): number | null {
   return organizationId === null ? null : done;
 }
 
-/** Two lines taller than a destination; folded, the icon of a destination, with the text in its tooltip. */
-const ITEM =
-  "h-auto touch:h-auto min-h-8 touch:min-h-12 items-start py-2 [&>svg]:mt-0.5 group-data-[collapsible=icon]:min-h-0 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:py-2";
+/** The icon on the first of the two lines; folded, centered as a destination's. */
+const ITEM = "[&>svg]:mt-0.5 group-data-[collapsible=icon]:[&>svg]:mt-0";
+
+/** On the Início itself the link only scrolls: the "Mais" panel of the phone, a modal dialog, closes to show the block. */
+function closeSheetOnTheSamePage(event: MouseEvent<HTMLAnchorElement>) {
+  if (window.location.pathname === "/") {
+    event.currentTarget.closest("dialog")?.close();
+  }
+}
 
 function FirstStepsItem({ done }: { done: number }) {
   const text = `${done} de ${FIRST_STEPS_TOTAL}`;
@@ -41,8 +48,10 @@ function FirstStepsItem({ done }: { done: number }) {
       <SidebarMenuButton
         aria-label={`Primeiros passos, ${text} concluídos`}
         className={ITEM}
+        size="lg"
         data-menu-first-steps=""
         href={FIRST_STEPS_HREF}
+        onClick={closeSheetOnTheSamePage}
         tooltip={`Primeiros passos · ${text}`}
       >
         <ListChecksIcon aria-hidden />
@@ -76,6 +85,7 @@ function TrialItem({ chargeDay }: { chargeDay: string }) {
       <SidebarMenuButton
         aria-label={`Teste grátis, primeira cobrança em ${chargeDay}, abrir Assinatura`}
         className={ITEM}
+        size="lg"
         data-menu-trial=""
         href={SUBSCRIPTION_HREF}
         tooltip={`Teste grátis · 1ª cobrança em ${chargeDay}`}

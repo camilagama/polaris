@@ -32,6 +32,8 @@ export function untilText(instant: string): string {
   return `${date}, ${time}`;
 }
 
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Whole calendar days from `today` to `day` (both `AAAA-MM-DD`), never negative. */
 export function daysUntil(day: string, today: string): number {
   const at = (date: string) => new Date(`${date}T00:00:00.000Z`).getTime();
@@ -92,13 +94,19 @@ export function graceNotice(
 
 /**
  * "dd/mm" of the first charge of a trial, for the foot of the menu: the date and never a count of days, because the
- * Pix trial counts from the bank's approval (AS-3, AC-12). Null out of a trial, and when there is no charge to come
- * (the renewal was cancelled).
+ * Pix trial counts from the bank's approval (AS-3, AC-12). Null out of a trial, when there is no charge to come (the
+ * renewal was cancelled), and when the day kept is before `today` (São Paulo's `AAAA-MM-DD`): the trial is over, and
+ * the copy no longer says what the server knows.
  */
 export function trialChargeDay(
-  plan: Pick<RememberedNotice, "nextChargeOn" | "state">
+  plan: Pick<RememberedNotice, "nextChargeOn" | "state">,
+  today: string
 ): string | null {
-  if (plan.state !== "trialing" || plan.nextChargeOn === null) {
+  if (
+    plan.state !== "trialing" ||
+    plan.nextChargeOn === null ||
+    plan.nextChargeOn < today
+  ) {
     return null;
   }
   const [, month, day] = plan.nextChargeOn.split("-");
@@ -210,7 +218,11 @@ export function rememberedPlanNotice(
       !(
         value.accessEndsAt === null || typeof value.accessEndsAt === "string"
       ) ||
-      !(value.nextChargeOn === null || typeof value.nextChargeOn === "string")
+      !(
+        value.nextChargeOn === null ||
+        (typeof value.nextChargeOn === "string" &&
+          CALENDAR_DAY.test(value.nextChargeOn))
+      )
     ) {
       return null;
     }

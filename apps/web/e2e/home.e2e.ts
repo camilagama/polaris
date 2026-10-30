@@ -1342,6 +1342,39 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await page.waitForURL(PRODUCT_LINK);
   });
 
+  test("o link do pé do menu leva ao bloco, vindo de outra tela e de Mais no celular", async ({
+    page,
+  }) => {
+    // short enough that the block starts below the fold
+    await page.setViewportSize({ height: 340, width: 360 });
+    const server = new FakeServer(
+      empty({ all: 1, unknownCost: 1, withoutStock: 1, withStock: 0 })
+    );
+    server.now = NOON;
+    await page.clock.install({ time: new Date(NOON) });
+    await serve(page, server);
+    // a full load of the address: the block comes after the reads, so the page scrolls to it by itself
+    await page.goto("/#home-checklist");
+    const title = page.getByRole("heading", {
+      exact: true,
+      name: "Primeiros passos",
+    });
+    await expect(title).toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(title).not.toBeInViewport();
+    // on the Início itself, from "Mais": the panel closes and the page goes to the block
+    await page.getByRole("button", { exact: true, name: "Mais" }).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    await panel
+      .getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 2 de 3 concluídos",
+      })
+      .click();
+    await expect(panel).toBeHidden();
+    await expect(title).toBeInViewport();
+  });
+
   test("com estoque, o botão vai à Venda", async ({ page }) => {
     await openHome(
       page,

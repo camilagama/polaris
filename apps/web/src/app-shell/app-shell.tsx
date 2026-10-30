@@ -1,3 +1,4 @@
+import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
@@ -50,6 +51,7 @@ import {
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
 import { canManageBilling } from "../lib/billing-access";
+import { useConnectionOnline } from "../lib/browser-connection";
 import {
   type CurrentOrganization,
   useOrganizationLoad,
@@ -59,6 +61,7 @@ import {
   useLegalAcceptanceRequired,
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
+import { useNow } from "../lib/use-now";
 import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
@@ -644,6 +647,8 @@ function useShellProgress(
   routeId: RouteId | undefined
 ) {
   const organization = sessionOver ? null : current;
+  const online = useConnectionOnline();
+  const now = useNow(60_000);
   const planFacts = usePlanNoticeFacts(
     organization?.organizationId ?? "",
     organization !== null &&
@@ -654,7 +659,11 @@ function useShellProgress(
     routeId !== "subscription"
   );
   return {
-    chargeDay: planFacts === null ? null : trialChargeDay(planFacts),
+    // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
+    chargeDay:
+      planFacts === null || (routeId === "subscription" && !online)
+        ? null
+        : trialChargeDay(planFacts, saoPauloDateOf(now)),
     firstSteps: useFirstSteps(organization?.organizationId ?? null),
     planFacts,
   };

@@ -2,10 +2,13 @@
  * The "Primeiros passos" of a store that never sold, as the foot of the menu shows them on every screen: the same
  * three steps as the checklist of the Início (Loja criada, Cadastrar o 1º produto, Fazer a 1ª venda), which reads them
  * and tells the shell. Kept for this tab only (`sessionStorage`, or the page's memory where the browser refuses it):
- * the shell reads nothing of its own, and shows what the Início read last in this tab.
+ * the shell reads nothing of its own, and shows what the Início read last in this tab, until the server confirms a sale.
  */
 
 export const FIRST_STEPS_TOTAL = 3;
+
+/** The id of the block of the steps on the Início, where the foot of the menu links. */
+export const FIRST_STEPS_ANCHOR = "home-checklist";
 
 /** What the Início knows of the steps: the product it found, or that the store sold (then there are no steps). */
 export interface FirstStepsFacts {
@@ -25,7 +28,7 @@ export function firstStepsCount(facts: FirstStepsFacts): number {
 export const FIRST_STEPS_KEY = "polaris.home.firstSteps";
 
 interface RememberedSteps {
-  /** Null once the store sold: the steps do not come back. */
+  /** Null for no steps to show: the store sold, or this person does not read its stock (no checklist on the Início). */
   done: number | null;
   organizationId: string;
 }
@@ -57,7 +60,7 @@ function tell(): void {
   }
 }
 
-/** The Início read the steps of the store (`null`: it sold), and the foot of the menu follows at once. */
+/** The Início read the steps of the store (`null`: none to show), and the foot of the menu follows at once. */
 export function rememberFirstSteps(
   organizationId: string,
   facts: FirstStepsFacts | null,
@@ -110,6 +113,19 @@ export function rememberedFirstSteps(
     return value.done;
   } catch {
     return null;
+  }
+}
+
+/**
+ * The server confirmed a sale of this store: its steps are over at once, on every screen. A sale kept on the device is
+ * not one yet (it is not an official sale until the server confirms it); the Início reads the steps again anyway.
+ */
+export function firstSaleConfirmed(
+  organizationId: string,
+  store: SessionStore | null = sessionStore()
+): void {
+  if (rememberedFirstSteps(organizationId, store) !== null) {
+    rememberFirstSteps(organizationId, null, store);
   }
 }
 

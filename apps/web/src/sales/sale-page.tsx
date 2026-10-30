@@ -38,6 +38,7 @@ import type {
 } from "../offline/runtime/offline-runtime";
 import { isSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { firstSaleConfirmed } from "../app-shell/first-steps";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import {
@@ -585,6 +586,9 @@ export function SalePage() {
         setDraftNotice(null);
         if (sentCommandId) {
           announceSaleSettled(organizationId, sentCommandId);
+        }
+        if (device === null) {
+          firstSaleConfirmed(organizationId);
         }
       }
       setSubmission(outcome.submission);
