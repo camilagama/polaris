@@ -1942,6 +1942,25 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       expect(await at()).toEqual(before);
     });
   }
+
+  test("Vendas por dia: o toque (só o pointerdown, sem movimento) devolve o gráfico ao dedo depois de ler um dia pelo teclado", async ({
+    page,
+  }) => {
+    await openHome(page, new FakeServer(SOLD));
+    const chart = region(page, "Vendas por dia");
+    const area = chart.locator("[data-chart-area]");
+    await expect(area).toBeVisible();
+    await chart.getByRole("slider").focus();
+    await page.keyboard.press("ArrowLeft");
+    const reading = chart.locator("[data-chart-reading]");
+    await expect(reading).toContainText("22/10");
+
+    await area.dispatchEvent("pointerdown", {
+      isPrimary: true,
+      pointerType: "touch",
+    });
+    await expect(reading).toHaveCount(0);
+  });
 });
 
 test.describe("meta (AC-10, AC-11)", () => {
