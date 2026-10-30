@@ -49,7 +49,9 @@ const READ_SUBJECTS: Partial<Record<GoalAction, string>> = {
 
 /** Portuguese text for a failed goal request. */
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
-  const common = commonFailureMessage(error, READ_SUBJECTS[action]);
+  const common = commonFailureMessage(error, READ_SUBJECTS[action], {
+    directWrite: READ_SUBJECTS[action] === undefined,
+  });
   if (common !== undefined) {
     return common;
   }

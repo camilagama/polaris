@@ -1521,7 +1521,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await priceSection.getByRole("textbox").fill("59,90");
   await priceSection.getByRole("button", { name: "Salvar preço" }).click();
   await expect(priceSection.getByRole("alert")).toContainText(
-    "Não foi possível salvar o preço."
+    CHANGE_FAULT_UNKNOWN
   );
   await expect(priceSection.getByRole("alert")).not.toContainText("ocupado");
   await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);

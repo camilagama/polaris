@@ -65,6 +65,15 @@ function saveNotConfirmedText(cause: unknown): string | null {
 const MAYBE_SAVED_TEXT = "Este perfil pode já ter sido salvo.";
 const CHECK_AND_CLOSE_LABEL = "Fechar e conferir";
 
+/** Every doubt of a save that sends the person to "Fechar e conferir", with or without the prefix of the server's cut. */
+export function offersCheckAndClose(uncertain: string | null): boolean {
+  return (
+    uncertain !== null &&
+    (uncertain.includes(SAVE_NOT_CONFIRMED_TEXT) ||
+      uncertain === CHANGE_FAULT_UNKNOWN)
+  );
+}
+
 const GENERIC_ERROR_TEXT =
   "Não foi possível concluir a operação. Revise os dados e tente novamente.";
 const LOAD_ERROR_TEXT = "Não foi possível carregar os perfis. Tente novamente.";
@@ -519,9 +528,16 @@ export function PaymentProfilesPage() {
         }
         await loadProfiles();
       } catch (cause) {
-        if (isConnectionFailure(cause) || isPlatformCut(cause)) {
+        const faultUnknown = unconfirmedWriteFaultMessage(cause);
+        if (
+          isConnectionFailure(cause) ||
+          isPlatformCut(cause) ||
+          faultUnknown !== undefined
+        ) {
           setUncertain(
-            isPlatformCut(cause) ? CHANGE_CUT_BY_SERVER : CHANGE_OUTCOME_UNKNOWN
+            isPlatformCut(cause)
+              ? CHANGE_CUT_BY_SERVER
+              : (faultUnknown ?? CHANGE_OUTCOME_UNKNOWN)
           );
           readAgainIfAnswers();
         } else {
@@ -589,8 +605,7 @@ export function PaymentProfilesPage() {
                 regionRef={feedbackRef}
                 uncertain={uncertain}
                 uncertainAction={
-                  uncertain === SAVE_NOT_CONFIRMED_TEXT ||
-                  uncertain === CHANGE_FAULT_UNKNOWN
+                  maybeSaved && offersCheckAndClose(uncertain)
                     ? { label: CHECK_AND_CLOSE_LABEL, onClick: handleDismiss }
                     : undefined
                 }

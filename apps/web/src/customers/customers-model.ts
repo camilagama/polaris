@@ -81,7 +81,8 @@ export function customerErrorMessage(
       ? legalAcceptanceMessage(error)
       : commonFailureMessage(
           error,
-          action === "load" ? "os clientes" : undefined
+          action === "load" ? "os clientes" : undefined,
+          { directWrite: action !== "load" }
         );
   if (common !== undefined) {
     return common;

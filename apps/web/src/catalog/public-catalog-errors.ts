@@ -81,7 +81,8 @@ export function publicCatalogErrorMessage(
   return (
     commonFailureMessage(
       error,
-      action === "load" ? "o catálogo público" : undefined
+      action === "load" ? "o catálogo público" : undefined,
+      { directWrite: action !== "load" }
     ) ?? publicCatalogRefusalMessage(error, action)
   );
 }

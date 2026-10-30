@@ -89,3 +89,37 @@ describe("goalErrorMessage", () => {
     );
   });
 });
+
+describe("goalErrorMessage com o 503 de uma escrita", () => {
+  const busy = { code: "SERVICE_UNAVAILABLE", data: { reason: "server_busy" } };
+
+  it("a escrita que o servidor ocupado não confirmou diz que pode ter sido salva e não convida a repetir", () => {
+    for (const action of ["create", "update", "cancel"] as const) {
+      const message = goalErrorMessage(busy, action);
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+      expect(goalErrorMessage({ code: "SERVICE_UNAVAILABLE" }, action)).toBe(
+        message
+      );
+    }
+  });
+
+  it("as leituras mantêm o texto de antes", () => {
+    for (const action of ["load", "history"] as const) {
+      expect(goalErrorMessage(busy, action)).toBe(
+        "As metas estão temporariamente indisponíveis. Tente novamente."
+      );
+    }
+  });
+
+  it("um 503 com outro motivo não vira dúvida de escrita", () => {
+    expect(
+      goalErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        "create"
+      )
+    ).toBe("As metas estão temporariamente indisponíveis. Tente novamente.");
+  });
+});

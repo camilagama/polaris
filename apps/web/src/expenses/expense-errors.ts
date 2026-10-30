@@ -110,7 +110,9 @@ export function expenseErrorMessage(
   error: unknown,
   action: ExpenseAction
 ): string {
-  const common = commonFailureMessage(error, READ_SUBJECTS[action]);
+  const common = commonFailureMessage(error, READ_SUBJECTS[action], {
+    directWrite: READ_SUBJECTS[action] === undefined,
+  });
   if (common !== undefined) {
     return common;
   }
