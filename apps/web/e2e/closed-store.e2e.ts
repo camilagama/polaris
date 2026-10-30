@@ -490,7 +490,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
           key,
           JSON.stringify([{ id, name: "Loja do teste" }])
         ),
-      ["polaris.closedStores", STORE_ID]
+      ["polaris.closedStores", STORE_ID] as const
     );
     await undoButton(page).click();
     await confirmUndo(page).dblclick();

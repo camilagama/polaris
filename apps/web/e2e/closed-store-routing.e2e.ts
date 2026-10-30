@@ -188,7 +188,7 @@ test("a linha nunca fala de uma loja que o servidor lista como ativa", async ({
         key,
         JSON.stringify([{ id, name: "Loja nova" }])
       ),
-    [CLOSED_STORES_KEY, ACTIVE_ID]
+    [CLOSED_STORES_KEY, ACTIVE_ID] as const
   );
   await page.goto("/");
   await expect(home(page)).toBeVisible();

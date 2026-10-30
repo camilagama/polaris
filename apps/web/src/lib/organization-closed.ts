@@ -23,7 +23,7 @@ export function markOrganizationClosed(organizationId: string): void {
   }
 }
 
-export function organizationClosedHere(): OrganizationClosedHere | null {
+function organizationClosedHere(): OrganizationClosedHere | null {
   return closed;
 }
 

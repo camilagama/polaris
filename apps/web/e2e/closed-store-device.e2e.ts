@@ -393,7 +393,7 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     // the lease the device kept is gone (revoked with the closure): the next opening asks for a new one
     await page.evaluate(
       (key) => window.localStorage.removeItem(key),
-      [leaseKey(server.userId)]
+      leaseKey(server.userId)
     );
     server.refusing = "lease";
     await page.context().setOffline(false);
