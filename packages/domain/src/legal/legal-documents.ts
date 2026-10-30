@@ -36,14 +36,14 @@ export const LEGAL_DOCUMENTS: Readonly<
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "966a0f8962c7818267e6298a6700d14bb681414c4dc64f1afb3fee3fdc6e9c65",
+    sha256: "06902d14b829096f80a6eeff742a51222f4f72296db0affb1ae94c363e48e0b7",
     version: 1,
   }),
   terms: Object.freeze({
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "718c0edfc8774270b985d2935f22be7f95fad8a27035e4a8d20890d543aee43c",
+    sha256: "00e40b0c63ece47443b65ae51fde58a7c198a8b48446c4a4c552c056054c9f67",
     version: 1,
   }),
 });
