@@ -63,6 +63,7 @@ const serverBusy = rpc(
   },
   503
 );
+const CUT_SAVE_DOUBT = /^O servidor está ocupado\. .*Fechar e conferir/;
 const badRequest = rpc(
   {
     code: "BAD_REQUEST",
@@ -559,6 +560,69 @@ test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fec
   ).toHaveCount(0);
   await page.waitForTimeout(6000);
   expect(creates).toBe(1);
+});
+
+test("salvar que o servidor cortou, com o prefixo 'O servidor está ocupado.', também oferece 'Fechar e conferir'", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "paymentProfile/create": (route) =>
+        route.fulfill({
+          body: "<html><body>Worker exceeded resource limits</body></html>",
+          contentType: "text/html",
+          headers: { "cf-ray": "8d1e2f3a4b5c6d7e-GRU" },
+          status: 503,
+        }),
+    },
+  });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  await page.getByLabel("Nome do perfil").fill("Maquininha");
+  await page.getByRole("button", { name: "Criar perfil" }).click();
+  await expect(page.getByText(CUT_SAVE_DOUBT)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Fechar e conferir" })
+  ).toBeVisible();
+});
+
+test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
+  page,
+}) => {
+  let archives = 0;
+  let lists = 0;
+  await openServerScreen(page, {
+    lists: [
+      (route) => {
+        lists += 1;
+        return route.fulfill(rpc({ profiles: [MACHINE] }));
+      },
+    ],
+    others: {
+      "paymentProfile/archive": (route) => {
+        archives += 1;
+        return route.fulfill(serverBusy);
+      },
+    },
+  });
+  await page
+    .getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
+    .click();
+  await expect(
+    page.getByText(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    )
+  ).toBeVisible();
+  await expect.poll(() => lists).toBeGreaterThan(1);
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(archives).toBe(1);
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  await expect(
+    page.getByRole("button", { name: "Fechar e conferir" })
+  ).toHaveCount(0);
 });
 
 test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56)", async ({

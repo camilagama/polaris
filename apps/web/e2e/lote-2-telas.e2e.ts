@@ -513,6 +513,38 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await expect(name).toBeFocused();
 });
 
+test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await expect(page.getByText("salvo neste aparelho")).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
+    "Bia Souza"
+  );
+});
+
 for (const width of FORM_WIDTHS) {
   test(`Clientes a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
     page,
