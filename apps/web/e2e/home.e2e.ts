@@ -1380,7 +1380,9 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await page.getByRole("button", { name: "Novo produto" }).first().click();
     await page.getByLabel("Nome do produto").fill("Bolsa de couro");
     await page.getByRole("button", { name: "Cadastrar produto" }).click();
-    await expect(page.getByText("Bolsa de couro").first()).toBeVisible();
+    await expect(page.locator("[data-product-id]")).toContainText(
+      "Bolsa de couro"
+    );
     await expect(steps(2)).toBeVisible();
     await expect(steps(1)).toHaveCount(0);
 
