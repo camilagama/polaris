@@ -1897,6 +1897,8 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
         "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
       );
       await expect(reading).toBeVisible();
+      const tooltipRows = chart.locator("[data-chart-tooltip-row]");
+      await expect(tooltipRows).toHaveCount(0);
       const during = await at();
       expect(during).toEqual(before);
 
@@ -1911,9 +1913,19 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
 
       await page.keyboard.press("ArrowLeft");
       await expect(reading).toContainText("21/10");
+      await expect(tooltipRows).toHaveCount(0);
       expect(await at()).toEqual(before);
 
       await chart.getByRole("slider").blur();
+      await expect(reading).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      const frameNow = await box(area);
+      await page.mouse.move(
+        frameNow.x + frameNow.width / 2,
+        frameNow.y + frameNow.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
       await expect(reading).toHaveCount(0);
       expect(await at()).toEqual(before);
     });

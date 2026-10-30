@@ -46,7 +46,7 @@ import {
 } from "./chart-text";
 
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
-   drawing shows the point in focus, with the tooltip of the block) and deaf to the pointer (the box under it moves
+   drawing shows the point in focus: cursor, dot and date pill, and the tooltip of the block unless the reading is over the box) and deaf to the pointer (the box under it moves
    the focus), so that its box is the box of the chart, which is what a touch finds, and the 3 px outline of the
    keyboard focus goes round the chart. */
 const RANGE_CLASS =
@@ -235,6 +235,7 @@ function EmptyChart({
 interface PlotProps {
   axisText: (value: number, isTop: boolean) => string;
   best: number | null;
+  boxHidden: boolean;
   markers: DayMarkers;
   still: boolean;
   valueLabels: boolean | "peak";
@@ -255,6 +256,7 @@ interface PlotProps {
 function Plot({
   axisText,
   best,
+  boxHidden,
   markers,
   still,
   valueLabels,
@@ -281,18 +283,28 @@ function Plot({
   const secondaryColor = secondary?.color ?? GRAY;
   const subtle = secondary?.subtle === true;
   const content = useCallback(
-    ({ index }: { index: number }) => (
-      <TooltipLines
-        color={color ?? INK}
-        formatValue={formatValue}
-        name={name}
-        note={readingNote?.(index) ?? null}
-        point={points[index]}
-        secondary={secondary}
-        secondaryColor={secondaryColor}
-      />
-    ),
-    [color, formatValue, name, points, readingNote, secondary, secondaryColor]
+    ({ index }: { index: number }) =>
+      boxHidden ? null : (
+        <TooltipLines
+          color={color ?? INK}
+          formatValue={formatValue}
+          name={name}
+          note={readingNote?.(index) ?? null}
+          point={points[index]}
+          secondary={secondary}
+          secondaryColor={secondaryColor}
+        />
+      ),
+    [
+      boxHidden,
+      color,
+      formatValue,
+      name,
+      points,
+      readingNote,
+      secondary,
+      secondaryColor,
+    ]
   );
   return (
     <MotionConfig reducedMotion={motion.reducedMotion}>
@@ -351,6 +363,7 @@ function Plot({
           />
         ) : null}
         <ChartTooltip
+          {...(boxHidden ? { className: "hidden" } : {})}
           content={content}
           damping={motion.damping}
           dateLabels={labels}
@@ -377,7 +390,8 @@ function Plot({
  * arrows, the reading line and the levels of motion (none of it on a phone).
  *
  * The day in focus is read in a line of text (the last one, until the arrows move it): above the drawing when it is
- * there at rest, else inside the box, over the top left corner, so reading a day never moves what follows the chart.
+ * there at rest, else inside the box, over the top left corner, so reading a day never moves what follows the chart; over
+ * the box the arrows draw no tooltip (it would sit on the reading), and the cursor, the dot and the date pill mark the day.
  * The pointer and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
  * With `secondary` the chart draws a second, dashed line on the same scale (the costs against the sales of the
  * Resultado). The chart is a reinforcement and never the only source of a number: the caller writes the total and the
@@ -510,6 +524,7 @@ export function AreaChart({
           <Plot
             axisText={axisText}
             best={bestIndex(data)}
+            boxHidden={place === "over"}
             color={color}
             markers={markers}
             still={still}
