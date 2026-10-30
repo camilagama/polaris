@@ -1,6 +1,11 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
-import { confirmSale, fillSale, type SaleLineInput } from "../pages/venda";
+import {
+  confirmSale,
+  fillSale,
+  type SaleLineInput,
+  termValue,
+} from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
 const ZONE = "America/Sao_Paulo";
@@ -51,10 +56,15 @@ test("primeira venda: a linha com os dois links aparece na 1ª venda confirmada 
   // the Início reads the steps of a store that never sold and keeps them in this tab
   await page.goto("/");
   await expect
-    .poll(() =>
-      page.evaluate((key) => sessionStorage.getItem(key), FIRST_STEPS_KEY)
+    .poll(async () =>
+      page.evaluate((key) => {
+        const kept = sessionStorage.getItem(key);
+        return kept === null
+          ? null
+          : (JSON.parse(kept) as { done: number }).done;
+      }, FIRST_STEPS_KEY)
     )
-    .not.toBeNull();
+    .toBe(2);
 
   await page.goto("/sales");
   await fillSale(page, [LINE], []);
@@ -66,9 +76,11 @@ test("primeira venda: a linha com os dois links aparece na 1ª venda confirmada 
   await expect(toResult).toHaveAttribute("href", "/dashboard");
   await expect(toHome).not.toBeFocused();
   await expect(toResult).not.toBeFocused();
+  const firstId = await termValue(first, "Venda").innerText();
   // the form started over: the second sale, confirmed by the same server, has no line
   await fillSale(page, [LINE], []);
   const second = await confirmSale(page);
+  await expect(termValue(second, "Venda")).not.toHaveText(firstId);
   await expect(second).not.toContainText("1ª venda registrada");
   await expect(page.getByRole("link", { name: "Ver o Início" })).toHaveCount(0);
 

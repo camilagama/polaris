@@ -21,7 +21,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
-import { firstSaleConfirmed } from "../app-shell/first-steps";
+import {
+  confirmedSaleWasFirst,
+  deviceSaleKept,
+} from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
@@ -174,18 +177,16 @@ function draftReadMessage(read: SaleDraftRead): string | null {
   return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
 }
 
-/**
- * The sale the server just confirmed, when it is the first of the store as this tab knew it: a sale it already had
- * (replayed) is not new, even when the steps were still open here.
- */
 function firstSaleIdOf(
   organizationId: string,
   submission: SubmissionState
 ): string | null {
-  const first = firstSaleConfirmed(organizationId);
-  return first && submission.phase === "confirmed" && !submission.sale.replayed
-    ? submission.sale.saleId
-    : null;
+  const confirmed = submission.phase === "confirmed" ? submission.sale : null;
+  const first = confirmedSaleWasFirst(
+    organizationId,
+    confirmed?.replayed ?? false
+  );
+  return first && confirmed ? confirmed.saleId : null;
 }
 
 export function SalePage() {
@@ -604,6 +605,8 @@ export function SalePage() {
         }
         if (device === null) {
           setFirstSaleId(firstSaleIdOf(organizationId, outcome.submission));
+        } else {
+          deviceSaleKept(organizationId);
         }
       }
       setSubmission(outcome.submission);
