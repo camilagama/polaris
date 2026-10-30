@@ -679,10 +679,10 @@ function useShellProgress(
 function useClosedNotice(load: OrganizationLoad): ReactNode {
   const currentId = load.status === "ready" ? load.current.id : null;
   const closedHere = useClosedStoreHere(currentId);
-  if (closedHere === null || (currentId !== null && currentId !== closedHere)) {
+  if (closedHere === null) {
     return null;
   }
-  return <ClosedStoreNotice organizationId={closedHere} />;
+  return <ClosedStoreNotice key={closedHere} organizationId={closedHere} />;
 }
 
 function FirstAccessPage({
