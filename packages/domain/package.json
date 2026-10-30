@@ -41,6 +41,7 @@
     "./money/money": "./src/money/money.ts",
     "./organization/closure": "./src/organization/closure.ts",
     "./organization/closure-deadlines": "./src/organization/closure-deadlines.ts",
+    "./legal/legal-company": "./src/legal/legal-company.ts",
     "./legal/legal-documents": "./src/legal/legal-documents.ts",
     "./events/dead-letter": "./src/events/dead-letter.ts",
     "./events/outbox": "./src/events/outbox.ts",

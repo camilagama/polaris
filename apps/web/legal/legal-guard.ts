@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import {
+  fillLegalCompanyFields,
+  findUnfilledFields,
+  LEGAL_COMPANY_FIELDS,
+  type LegalCompanyValues,
+} from "@polaris/domain/legal/legal-company";
+import {
   findPendingMarkers,
   LEGAL_CONTENT_SLUGS,
   LEGAL_DOCUMENT_IDS,
@@ -18,11 +24,16 @@ import { parseMarkdown } from "../src/legal/markdown";
  * Always: each document has the text of the version in force, and the SHA-256 of that text is the
  * one in the constant (so a text that changed without a new version, or a constant that was not
  * updated, stops the build), and the text parses with the restricted Markdown (so a text the page
- * cannot render never reaches a user). Production (see `isProductionBuild`) only: no `[preencher...]` or `[confirmar com o usuário antes
- * de publicar...]` marker left in the text or in the version line, and no draft notice. Staging may
- * carry them, and the page shows them.
+ * cannot render never reaches a user). The hash is the one of the template, with its `{{FICHA}}`
+ * tokens, and the text that must parse is the filled one: the company data comes from the `VITE_LEGAL_*`
+ * variables and never changes a version. Production (see `isProductionBuild`) only: no `[preencher...]` or `[confirmar com o usuário antes
+ * de publicar...]` marker left in the text, in the version line or in a value, no `{{` token left in
+ * the final text, a value for each variable (an e-mail where it must be one), and no draft notice.
+ * Staging may carry the markers, and the page shows them; where a variable is absent it shows an example.
  */
 export interface LegalGuardInput {
+  /** The `VITE_LEGAL_*` variables of the build, which fill the tokens of the templates. */
+  company: LegalCompanyEnv;
   /** The constant under check; the real one unless a test brings its own. */
   documents?: Readonly<Record<LegalDocumentId, LegalDocumentVersion>>;
   /** The draft notice under check; the real one unless a test brings its own. */
@@ -40,6 +51,25 @@ export interface LegalGuardResult {
 }
 
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
+const emailLocalPart = /^[A-Za-z0-9._%+-]+$/;
+const domainLabel = /^[A-Za-z0-9-]+$/;
+const topLevelDomain = /^[A-Za-z]{2,}$/;
+const markdownOrInvisible = /[\p{C}\p{Z}*[\]<>|`]/u;
+const exampleValue = /exemplo|@example\.(?:com|org|net)$/iu;
+
+function isEmailAddress(value: string): boolean {
+  const parts = value.split("@");
+  const labels = (parts[1] ?? "").split(".");
+  return (
+    parts.length === 2 &&
+    emailLocalPart.test(parts[0] ?? "") &&
+    labels.length >= 2 &&
+    labels.every((label) => domainLabel.test(label)) &&
+    topLevelDomain.test(labels.at(-1) ?? "")
+  );
+}
+
+export type LegalCompanyEnv = Readonly<Record<string, string | undefined>>;
 
 /**
  * The build that carries the pending markers of the legal texts says so twice: `CLOUDFLARE_ENV` is
@@ -60,12 +90,49 @@ export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/** Outside production an absent variable takes its example; in production it is a problem. */
+export function legalCompanyValues(
+  env: LegalCompanyEnv,
+  production: boolean
+): { problems: string[]; values: LegalCompanyValues } {
+  const problems: string[] = [];
+  const values: Record<string, string> = {};
+  for (const { env: name, example, kind, token } of LEGAL_COMPANY_FIELDS) {
+    const value = (env[name] ?? "").trim();
+    if (value === "") {
+      if (production) {
+        problems.push(`variável ${name} ausente ou vazia`);
+      } else {
+        values[token] = example;
+      }
+      continue;
+    }
+    values[token] = value;
+    if (production && exampleValue.test(value)) {
+      problems.push(`variável ${name} com valor de exemplo: "${value}"`);
+    } else if (findPendingMarkers(value).length > 0) {
+      problems.push(`variável ${name} com marcador pendente: "${value}"`);
+    } else if (
+      value.includes("{{") ||
+      markdownOrInvisible.test(value.replaceAll(" ", ""))
+    ) {
+      problems.push(
+        `variável ${name} com ficha, caractere invisível ou de Markdown`
+      );
+    } else if (kind === "email" && !isEmailAddress(value)) {
+      problems.push(`variável ${name} não é um e-mail válido`);
+    }
+  }
+  return { problems, values };
+}
+
 export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
   const documents = input.documents ?? LEGAL_DOCUMENTS;
   const draftNotice =
     input.draftNotice === undefined ? LEGAL_DRAFT_NOTICE : input.draftNotice;
   const errors: string[] = [];
-  const pending: string[] = [];
+  const company = legalCompanyValues(input.company, input.production);
+  const pending: string[] = [...company.problems];
   for (const document of LEGAL_DOCUMENT_IDS) {
     const { effectiveFrom, sha256, version } = documents[document];
     const where = `content/${LEGAL_CONTENT_SLUGS[document]}/v${version}.md`;
@@ -83,7 +150,8 @@ export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
           "Texto mudado pede versão nova (e hash novo) em packages/domain/src/legal/legal-documents.ts."
       );
     }
-    const text = new TextDecoder().decode(bytes);
+    const template = new TextDecoder().decode(bytes);
+    const text = fillLegalCompanyFields(template, company.values);
     try {
       const ids = parseMarkdown(text).flatMap((block) =>
         block.kind === "heading" ? [block.id] : []
@@ -99,7 +167,10 @@ export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
       );
     }
     pending.push(
-      ...findPendingMarkers(text).map((marker) => `${document}: ${marker}`),
+      ...findPendingMarkers(template).map((marker) => `${document}: ${marker}`),
+      ...findUnfilledFields(text).map(
+        (field) => `${document}: ficha sem valor ${field}`
+      ),
       ...findPendingMarkers(legalVersionLine(document, documents)).map(
         (marker) => `${document}: ${marker} (data de vigência)`
       )
