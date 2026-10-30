@@ -20,7 +20,8 @@ import {
  * nothing new is asked of the server. Money is added and divided in exact cents (the ticket is rounded half-up to the
  * cent, as the server rounds the card's); a percent is a ratio of two exact sums, rounded half-up to one place.
  *
- * - Vendas hoje: the net sales of a day against the mean of the 4 same weekdays before it.
+ * - Vendas hoje: the net sales of a day against the mean of the 4 same weekdays before it. No date at rest: the title and
+ *   the header say it is today; reading another day puts it ("qui, 22/10") at the top right.
  * - Vendas no mês: the net sales from the 1st to a day, against the same days of the previous month.
  * - Resultado estimado: the same, in reais, and only when every day of both sides has a known result (AC-9: a sum of
  *   the known days is never shown as the total). Without it, the number at rest is the server's card of the whole
@@ -44,6 +45,8 @@ export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
 
 /** The chip of a card: its text, whether it went up (green) or not (neutral: selling less is not an error). */
 export interface Delta {
+  /** What the change is against, for the name of the chip: "em relação a 1 a 23/09". */
+  basis?: string;
   /** True when the text is an amount in reais (the result's chip), which "Esconder valores" hides. */
   money: boolean;
   /** What a screen reader says in place of `text`, when the sign does not read well ("16,0 vezes" for "16,0×"). */
@@ -96,57 +99,111 @@ function multipleText(
  * five digits says less than "16,0×"); null over a base that is not above zero (a percent over nothing, or over a
  * negative, says nothing).
  */
-export function percentDelta(current: bigint, base: bigint): Delta | null {
+export function percentDelta(
+  current: bigint,
+  base: bigint,
+  basis?: string
+): Delta | null {
   if (base <= 0n) {
     return null;
   }
+  const named = basis === undefined ? {} : { basis };
   const tenths = divideHalfUp((current - base) * 1000n, base);
   if (tenths >= MULTIPLE_FROM_TENTHS) {
-    return { money: false, ...multipleText(current, base), trend: "up" };
+    return {
+      ...named,
+      money: false,
+      ...multipleText(current, base),
+      trend: "up",
+    };
   }
-  return { money: false, text: percentText(tenths), trend: trendOf(tenths) };
+  return {
+    ...named,
+    money: false,
+    text: percentText(tenths),
+    trend: trendOf(tenths),
+  };
 }
 
 /** "+R$ 436,86", "-R$ 12,00", "R$ 0,00": the difference in reais (the result's chip, § 3 item 4). */
-export function moneyDelta(current: bigint, base: bigint): Delta {
+export function moneyDelta(
+  current: bigint,
+  base: bigint,
+  basis?: string
+): Delta {
   const difference = current - base;
   const text = formatBrlAmount(Money.fromMinorUnits(difference).toString());
   return {
+    ...(basis === undefined ? {} : { basis }),
     money: true,
     text: difference > 0n ? `+${text}` : text,
     trend: trendOf(difference),
   };
 }
 
+/** The weekdays: `plural` for the line of the card ("média das sextas"), `long` for the help ("4 sextas-feiras"). */
 const WEEKDAYS = [
-  { article: "Os", name: "domingo", of: "dos", plural: "domingos" },
-  { article: "As", name: "segunda-feira", of: "das", plural: "segundas" },
-  { article: "As", name: "terça-feira", of: "das", plural: "terças" },
-  { article: "As", name: "quarta-feira", of: "das", plural: "quartas" },
-  { article: "As", name: "quinta-feira", of: "das", plural: "quintas" },
-  { article: "As", name: "sexta-feira", of: "das", plural: "sextas" },
-  { article: "Os", name: "sábado", of: "dos", plural: "sábados" },
+  { in: "nos", long: "domingos", of: "dos", plural: "domingos", short: "dom" },
+  {
+    in: "nas",
+    long: "segundas-feiras",
+    of: "das",
+    plural: "segundas",
+    short: "seg",
+  },
+  {
+    in: "nas",
+    long: "terças-feiras",
+    of: "das",
+    plural: "terças",
+    short: "ter",
+  },
+  {
+    in: "nas",
+    long: "quartas-feiras",
+    of: "das",
+    plural: "quartas",
+    short: "qua",
+  },
+  {
+    in: "nas",
+    long: "quintas-feiras",
+    of: "das",
+    plural: "quintas",
+    short: "qui",
+  },
+  {
+    in: "nas",
+    long: "sextas-feiras",
+    of: "das",
+    plural: "sextas",
+    short: "sex",
+  },
+  { in: "nos", long: "sábados", of: "dos", plural: "sábados", short: "sáb" },
 ] as const;
 
 function weekdayOf(day: string) {
   return WEEKDAYS[new Date(`${day}T00:00:00.000Z`).getUTCDay()] ?? WEEKDAYS[0];
 }
 
-/** "domingo, 25/10": the date of the card of a day. */
+/** "qui, 22/10": the date of the card of a day other than today. */
 function weekdayDate(day: string): string {
-  return `${weekdayOf(day).name}, ${shortDate(day)}`;
+  return `${weekdayOf(day).short}, ${shortDate(day)}`;
 }
 
 /** What a card says for one day, or for the period up to it. */
 export interface KpiReading {
-  /** The line under the number: the count, or what the number is. */
+  /** The count or the line of the card: "12 vendas", "Nenhuma venda ainda"; empty when the card has none. */
   count: string;
-  /** A shorter `count` for a card of half the width on a phone, when the long one does not fit there. */
-  countNarrow?: string;
-  /** The date at the top right: "domingo, 25/10" or "1 a 25/10". */
+  /**
+   * The date: "1 a 25/10" for the cards of the month (their group says it once), "" for Vendas hoje at rest, and the
+   * weekday and day ("qui, 22/10") when another day is read.
+   */
   date: string;
   delta: Delta | null;
-  /** The comparison under the chip ("vs. 1 a 25/09"), or why there is none ("Os 4 domingos anteriores não tiveram venda"). */
+  /** What the (i) says: what the number is, and what it compares with or why there is no comparison (up to 2 sentences). */
+  help: string;
+  /** What stays in sight of the comparison, only Vendas hoje ("vs. média das sextas"); the others say it in the (i). */
   note: string | null;
   /** The amount as the server writes money, or null when there is none (a ticket with no sale). */
   value: string | null;
@@ -184,30 +241,35 @@ export function dayReading(
   const entry = all.get(day) ?? { date: day, netSales: "0.00", salesCount: 0 };
   const previous = [7, 14, 21, 28].map((back) => all.get(addDays(day, -back)));
   const weekday = weekdayOf(day);
+  const against = `média ${weekday.of} 4 ${weekday.long} anteriores`;
   let delta: Delta | null = null;
   let note: string | null = null;
+  let compare = "";
   if (previous.every((item) => item !== undefined)) {
     const known = previous as Day[];
     const sold = known.reduce((total, item) => total + item.salesCount, 0);
     const sum = known.reduce((total, item) => total + cents(item.netSales), 0n);
     if (sold === 0) {
-      note = `${weekday.article} 4 ${weekday.plural} anteriores não tiveram venda`;
+      compare = ` Sem venda ${weekday.in} 4 ${weekday.long} anteriores, não há comparação.`;
     } else {
       // the mean of the 4 is sum / 4: the day against it is (4 × day − sum) / sum
+      // the base is in sight on the card ("vs. média das sextas"): the chip needs no name that says it again
       delta = percentDelta(cents(entry.netSales) * 4n, sum);
-      note = delta
-        ? `vs. média ${weekday.of} 4 ${weekday.plural} anteriores`
-        : null;
+      if (delta) {
+        note = `vs. média ${weekday.of} ${weekday.plural}`;
+        compare = ` Compara com a ${against}.`;
+      }
     }
   }
-  let count = `${salesCountText(entry.salesCount)} ${day === today ? "hoje" : `em ${shortDate(day)}`}`;
+  let count = salesCountText(entry.salesCount);
   if (entry.salesCount === 0) {
-    count = day === today ? "Nenhuma venda hoje ainda" : "Nenhuma venda";
+    count = day === today ? "Nenhuma venda ainda" : "Nenhuma venda";
   }
   return {
     count,
-    date: weekdayDate(day),
+    date: day === today ? "" : weekdayDate(day),
     delta,
+    help: `Vendas líquidas de ${day === today ? "hoje" : weekdayDate(day)}.${compare}`,
     note,
     value: entry.netSales,
   };
@@ -294,24 +356,27 @@ interface ReadContext {
 function salesReading({
   atRest,
   cards,
-  date,
   previous,
   previousRange,
   range,
   sum,
 }: ReadContext): KpiReading {
-  const delta = previous ? percentDelta(sum.net, previous.net) : null;
-  let note: string | null = delta ? `vs. ${previousRange}` : null;
-  if (!delta && previous && previous.count === 0) {
-    note = `Sem vendas de ${previousRange} para comparar`;
+  const delta = previous
+    ? percentDelta(sum.net, previous.net, `em relação a ${previousRange}`)
+    : null;
+  let compare = "";
+  if (delta) {
+    compare = ` Compara com ${previousRange}.`;
+  } else if (previous && previous.count === 0) {
+    compare = ` Sem vendas de ${previousRange}, não há comparação.`;
   }
+  const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: atRest
-      ? `${salesCountText(cards.salesCount)} no mês`
-      : `${salesCountText(sum.count)} até ${shortDate(date)}`,
+    count: count === 0 ? "Nenhuma venda ainda" : salesCountText(count),
     date: range,
     delta,
-    note,
+    help: `Vendas líquidas de ${range}.${compare}`,
+    note: null,
     value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
   };
 }
@@ -331,6 +396,7 @@ function resultReading({
       count: NO_KNOWN_COST_RESULT,
       date: atRest ? wholeMonth : range,
       delta: null,
+      help: resultHelp(`de ${range}`, null, null),
       note: null,
       value: null,
     };
@@ -340,7 +406,7 @@ function resultReading({
     sum.result !== null &&
     previous &&
     previous.result !== null
-      ? moneyDelta(sum.result, previous.result)
+      ? moneyDelta(sum.result, previous.result, `em relação a ${previousRange}`)
       : null;
   // with every day known, the number is the sum from the 1st to the day read, at rest too: the same account as the
   // chip and the sparkline ("1 a 25/10"), never the whole month with the expenses dated after today. Without the
@@ -352,10 +418,15 @@ function resultReading({
       : null;
   const card = atRest && known === null;
   return {
-    count: "Não é lucro líquido nem dinheiro já recebido.",
+    count: NOT_PROFIT_NOR_CASH,
     date: card ? wholeMonth : range,
     delta,
-    note: delta ? `vs. ${previousRange}` : null,
+    help: resultHelp(
+      card ? "do mês inteiro" : `de ${range}`,
+      delta ? previousRange : null,
+      result.kind === "incomplete" ? result : null
+    ),
+    note: null,
     value: card ? cards.operatingResult : known,
   };
 }
@@ -375,26 +446,19 @@ function ticketReading({
   const previousTicket = ticketOf(previous);
   const delta =
     ticket !== null && previousTicket !== null
-      ? percentDelta(ticket, previousTicket)
+      ? percentDelta(ticket, previousTicket, `em relação a ${previousRange}`)
       : null;
   let value: string | null = cards.ticket;
   if (!atRest) {
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
-  let count: Pick<KpiReading, "count" | "countNarrow"> = {
-    count: `Média por venda de ${range}`,
-  };
-  if (value === null) {
-    count = { count: "Sem vendas no período" };
-  } else if (atRest) {
-    // at 360 px "no mês" does not fit the card of half the width; its date already says the month
-    count = { count: "Média por venda no mês", countNarrow: "Média por venda" };
-  }
   return {
-    ...count,
+    // nothing under the number at rest: what it is and what it compares with are in the (i)
+    count: value === null ? "Sem vendas no período" : "",
     date: range,
     delta,
-    note: delta ? `vs. ${previousRange}` : null,
+    help: ticketHelp(range, delta ? previousRange : null),
+    note: null,
     value,
   };
 }
@@ -501,7 +565,42 @@ export function monthKpis(
   };
 }
 
-/** "1 de 23 dias sem custo informado: o gráfico do resultado volta quando o custo for conhecido." (§ 3 item 4). */
+/** The warning of the result card that is never hidden: what the number is not. */
+export const NOT_PROFIT_NOR_CASH = "Não é lucro líquido nem caixa";
+
+/** "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9). */
 export function unknownDaysText(unknown: number, total: number): string {
-  return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo informado: o gráfico do resultado volta quando o custo for conhecido.`;
+  return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo`;
+}
+
+/**
+ * Whether "estimativa incompleta · N de M dias sem custo" fits one line of the card at 360 px (13 px text, with room
+ * left for two digits on each side: a month never has more). A longer count, which a long period of the Resultado
+ * can have, goes to the (i), which says it in words (`resultHelp`).
+ */
+export function unknownDaysFit(unknown: number, total: number): boolean {
+  return unknown <= 99 && total <= 99;
+}
+
+/**
+ * What the (i) of the result card says: what the number is for `span` ("de 1 a 23/10", "do mês inteiro") and what it
+ * compares with. With a count of days that does not fit the card, the sentence of the days takes the place of the
+ * comparison (the chip, which has none then, would not say it).
+ */
+export function resultHelp(
+  span: string,
+  compare: string | null,
+  missing: { total: number; unknown: number } | null
+): string {
+  const first = `Vendas menos custos, taxas e despesas ${span}.`;
+  if (missing && !unknownDaysFit(missing.unknown, missing.total)) {
+    return `${first} ${missing.unknown} de ${missing.total} dias ainda sem custo informado.`;
+  }
+  return compare ? `${first} Compara com ${compare}.` : first;
+}
+
+/** What the (i) of the ticket says. */
+export function ticketHelp(range: string, compare: string | null): string {
+  const first = `Vendas líquidas divididas pelo número de vendas, de ${range}.`;
+  return compare ? `${first} Compara com ${compare}.` : first;
 }

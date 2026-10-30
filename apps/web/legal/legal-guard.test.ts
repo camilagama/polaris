@@ -1,9 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  fillLegalCompanyFields,
+  findUnfilledFields,
+  LEGAL_COMPANY_FIELDS,
+} from "@polaris/domain/legal/legal-company";
+import {
   LEGAL_CONTENT_SLUGS,
   LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENTS,
+  LEGAL_DRAFT_NOTICE,
   type LegalDocumentId,
   type LegalDocumentVersion,
 } from "@polaris/domain/legal/legal-documents";
@@ -11,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkLegalDocuments,
   isProductionBuild,
+  legalCompanyValues,
   sha256Hex,
 } from "./legal-guard";
 
@@ -28,7 +35,14 @@ const readRepositoryText = (document: LegalDocumentId, version: number) => {
     return null;
   }
 };
+const pendingMarkerStart = /\[\s*(?:preencher|confirmar)/iu;
 const encode = (text: string) => new TextEncoder().encode(text);
+const company = {
+  VITE_LEGAL_CONTATO_EMAIL: "contato@empresa.com.br",
+  VITE_LEGAL_DPO_EMAIL: "dpo@empresa.com.br",
+  VITE_LEGAL_ENDERECO: "Rua das Flores, 10, Centro",
+  VITE_LEGAL_RAZAO_SOCIAL: "Agência Summit Serviços Digitais Ltda.",
+};
 
 describe("the texts in the repository", () => {
   it.each(LEGAL_DOCUMENT_IDS)(
@@ -58,10 +72,39 @@ describe("the texts in the repository", () => {
 
   it("agree with the constant and the restricted Markdown, which no build mode relaxes", () => {
     const { errors } = checkLegalDocuments({
+      company: {},
       production: false,
       readText: readRepositoryText,
     });
     expect(errors).toEqual([]);
+  });
+
+  it.each(LEGAL_DOCUMENT_IDS)(
+    "the hash of %s is the one of the template, with its tokens, and not of the filled text",
+    (document) => {
+      const { sha256, version } = LEGAL_DOCUMENTS[document];
+      const bytes = readRepositoryText(document, version) ?? new Uint8Array();
+      const template = new TextDecoder().decode(bytes);
+      expect(findUnfilledFields(template).length).toBeGreaterThan(0);
+      expect(sha256Hex(bytes)).toBe(sha256);
+      const { values } = legalCompanyValues(company, true);
+      const filled = fillLegalCompanyFields(template, values);
+      expect(findUnfilledFields(filled)).toEqual([]);
+      expect(sha256Hex(encode(filled))).not.toBe(sha256);
+    }
+  );
+
+  it("carry each of the four tokens of the company, and no pending marker of its own", () => {
+    const templates = LEGAL_DOCUMENT_IDS.map((document) =>
+      new TextDecoder().decode(
+        readRepositoryText(document, LEGAL_DOCUMENTS[document].version) ??
+          new Uint8Array()
+      )
+    ).join("\n");
+    for (const { token } of LEGAL_COMPANY_FIELDS) {
+      expect(templates).toContain(token);
+    }
+    expect(templates).not.toMatch(pendingMarkerStart);
   });
 });
 
@@ -85,6 +128,7 @@ const publish = (
     )
   ) as Record<LegalDocumentId, LegalDocumentVersion>;
   return {
+    company,
     documents,
     readText: (document: LegalDocumentId) => encode(texts[document]),
   };
@@ -151,12 +195,178 @@ describe("the markers and the draft notice (AC-9, AC-10)", () => {
     ]);
   });
 
-  it("today the real texts have markers and the notice, so a production build would stop", () => {
+  it("today the real texts, with every variable set, stop a production build only for the draft notice and the effective date", () => {
     const { errors } = checkLegalDocuments({
+      company,
       production: true,
       readText: readRepositoryText,
     });
-    expect(errors.length).toBeGreaterThan(0);
+    expect(errors).toEqual([
+      "Build de produção com texto legal ainda não final: terms: [preencher na publicação] (data de vigência).",
+      "Build de produção com texto legal ainda não final: privacy: [preencher na publicação] (data de vigência).",
+      `Build de produção com texto legal ainda não final: aviso de rascunho: "${LEGAL_DRAFT_NOTICE}".`,
+    ]);
+  });
+});
+
+describe("the company variables (VITE_LEGAL_*)", () => {
+  const templates = {
+    privacy: "# Política\n\n## 1. Um\n\nDPO: **{{DPO_EMAIL}}**.\n",
+    terms:
+      "# Termos\n\n## 1. Um\n\n**{{EMPRESA_RAZAO_SOCIAL}}**, **{{EMPRESA_ENDERECO}}**, **{{CONTATO_EMAIL}}**.\n",
+  };
+  const run = (env: Record<string, string | undefined>, production: boolean) =>
+    checkLegalDocuments({
+      ...publish(templates, "2026-11-01"),
+      company: env,
+      draftNotice: null,
+      production,
+    });
+
+  it("let a production build through when every variable is a valid public value", () => {
+    expect(run(company, true)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it.each(Object.keys(company))(
+    "stop a production build when %s is missing, empty or only spaces",
+    (name) => {
+      for (const value of [undefined, "", "   "]) {
+        const { errors } = run({ ...company, [name]: value }, true);
+        expect(errors.join("\n")).toContain(
+          `Build de produção com texto legal ainda não final: variável ${name} ausente ou vazia.`
+        );
+      }
+    }
+  );
+
+  it("name every missing variable when none is set", () => {
+    const { errors } = run({}, true);
+    for (const name of Object.keys(company)) {
+      expect(errors.join("\n")).toContain(name);
+    }
+  });
+
+  it("stop a production build that still has a token in the final text", () => {
+    const texts = {
+      ...templates,
+      terms: `${templates.terms}\nOutro: {{OUTRA_FICHA}}.\n`,
+    };
+    const input = { ...publish(texts, "2026-11-01"), draftNotice: null };
+    const production = checkLegalDocuments({
+      ...input,
+      company,
+      production: true,
+    });
+    expect(production.errors).toEqual([
+      "Build de produção com texto legal ainda não final: terms: ficha sem valor {{OUTRA_FICHA}}.",
+    ]);
+    const staging = checkLegalDocuments({
+      ...input,
+      company,
+      production: false,
+    });
+    expect(staging.errors).toEqual([]);
+    expect(staging.warnings).toEqual([
+      "terms: ficha sem valor {{OUTRA_FICHA}}",
+    ]);
+  });
+
+  it.each([
+    "[preencher: e-mail]",
+    "[confirmar com o usuário antes de publicar]",
+    "[Preencher",
+  ])("stop a production build when a value carries the marker %s", (marker) => {
+    const { errors } = run(
+      { ...company, VITE_LEGAL_RAZAO_SOCIAL: `Summit ${marker}` },
+      true
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(
+      "VITE_LEGAL_RAZAO_SOCIAL com marcador pendente"
+    );
+  });
+
+  it.each([
+    "dpo@",
+    "dpo",
+    "dpo@empresa",
+    "dpo empresa@x.com",
+    "a@b@c.com",
+    "dpo@empresa.c",
+  ])("stop a production build when the e-mail %j is not valid", (value) => {
+    for (const name of ["VITE_LEGAL_CONTATO_EMAIL", "VITE_LEGAL_DPO_EMAIL"]) {
+      const { errors } = run({ ...company, [name]: value }, true);
+      expect(errors.join("\n")).toContain(`${name} não é um e-mail válido`);
+    }
+  });
+
+  it.each([
+    "Rua A\nRua B",
+    "Rua **A**",
+    "Rua [A](/x)",
+    "Rua <b>A</b>",
+    "{{DPO_EMAIL}}",
+    "Rua\tA",
+    "Rua A",
+    "Rua‮A",
+  ])(
+    "stop a production build when the value %j would change the Markdown or the tokens",
+    (value) => {
+      const { errors } = run({ ...company, VITE_LEGAL_ENDERECO: value }, true);
+      expect(errors.join("\n")).toContain("VITE_LEGAL_ENDERECO");
+    }
+  );
+
+  it("show examples that say so, with no error, where staging has no variable", () => {
+    const { values } = legalCompanyValues({}, false);
+    expect(Object.keys(values).sort()).toEqual(
+      LEGAL_COMPANY_FIELDS.map((field) => field.token).sort()
+    );
+    expect(values["{{EMPRESA_RAZAO_SOCIAL}}"]).toContain("exemplo");
+    expect(values["{{EMPRESA_ENDERECO}}"]).toContain("exemplo");
+    expect(values["{{CONTATO_EMAIL}}"]).toContain("exemplo");
+    expect(values["{{DPO_EMAIL}}"]).toContain("exemplo");
+    expect(run({}, false)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it.each([
+    "Razão Social de Exemplo Ltda. (exemplo)",
+    "Empresa Exemplo Ltda.",
+    "contato@example.com",
+    "contato@example.org",
+  ])("stop a production build that carries the example %j", (value) => {
+    for (const name of Object.keys(company)) {
+      const { errors } = run({ ...company, [name]: value }, true);
+      expect(errors.join("\n")).toContain(
+        `variável ${name} com valor de exemplo`
+      );
+    }
+  });
+
+  it("let the examples through staging, which shows them on purpose", () => {
+    expect(
+      run(
+        { ...company, VITE_LEGAL_DPO_EMAIL: "dpo-exemplo@example.com" },
+        false
+      )
+    ).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("keep the examples out of a production build that has no variable", () => {
+    expect(legalCompanyValues({}, true).values).toEqual({});
+  });
+
+  it("only warn in staging about a value that still has a marker or is not an e-mail", () => {
+    const result = run(
+      {
+        ...company,
+        VITE_LEGAL_DPO_EMAIL: "dpo@",
+        VITE_LEGAL_RAZAO_SOCIAL: "[confirmar]",
+      },
+      false
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toHaveLength(2);
   });
 });
 

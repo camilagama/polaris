@@ -61,7 +61,7 @@ O ADR 0104 (decisão 1) só deixa `BILLING_SELF_SERVICE_ENABLED` ir a `"true"` e
 2. **`BILLING_SUPPORT_EMAIL` com uma caixa que alguém lê.** O rodapé diz "responda este e-mail ou escreva para" ela. Se estiver vazia ou inválida, nada sai (acima); se a caixa existe e ninguém a lê, o aviso sai e a dúvida do lojista cai no vazio (isto o código não confere: é verificação de quem liga). Os e-mails que o suporte enviar dessa caixa também passam pelo DMARC (seção seguinte).
 3. **DMARC em aplicação em produção:** a etapa 2 (`p=quarantine`) ou a 3 (`p=reject`) em vigor, depois dos 14 dias e das 20 mensagens da etapa 1. É o mínimo que o desenho exige para cobrar (ADR 0104, decisão 1; Rodrigo, 28/10/2026); os 14 dias da etapa 2 correm daí em diante e se cumprem antes de ir a `reject`. O código não confere o DMARC. Sem ele, o comprovante pode ir para o spam ou ser recusado, e o lojista também não o recebe.
 4. **A versão do Worker com a página da assinatura, os comandos e o consumidor** (ADR 0104, decisão 1: PRs E, E2 e G na `main`), **e o PR D-admin na `main`**. O botão de todo e-mail de cobrança leva à página da assinatura (`/subscription`), a mesma que a chave liga: numa versão sem ela, o botão leva a lugar nenhum.
-5. **O rodapé com a razão social definitiva** (`[P48: razão social]`), no código e nos Termos juntos (ADR 0104; `BILLING_EMAIL_SUPPLIER` em `billing-notice-email.tsx`).
+5. **A razão social definitiva** (`[P48: razão social]`), em dois passos separados, porque são duas fontes e trocar só uma deixa a outra com o nome antigo (ADR 0104): (a) no código, a constante `BILLING_EMAIL_SUPPLIER` em `billing-notice-email.tsx`, que é o rodapé dos e-mails; (b) nos Termos, a variável `VITE_LEGAL_RAZAO_SOCIAL` do build (`vars` do GitHub Actions; o passo do workflow de produção ainda não existe).
 6. **Com Pix, o roteiro do operador** (ADR 0104, decisão 8).
 7. **A prova no staging, no Gate 7** (passo do Diego, **BLOQUEADO**, não falho, até o Gate 7 chegar): ligar as chaves no staging, receber um e-mail real de cobrança e conferir os cabeçalhos ("Conferir num e-mail real"). Repita a conferência no primeiro e-mail de produção, depois de ligar.
 8. **Só então** a chave em produção.
@@ -127,6 +127,6 @@ Atenção, vale para todos os caminhos: com o e-mail desligado, cada aviso devid
 - `[P48: domínio de produção]`: o domínio do remetente, os registros de SPF, DKIM e DMARC e a caixa do `rua`.
 - `[P48: caixa de suporte de produção]`: o valor de `BILLING_SUPPORT_EMAIL`.
 - `[P48: e-mail do encarregado]`: o canal do titular para estes avisos ([privacidade](../business-rules/privacy.md)).
-- `[P48: razão social]`: a identificação do fornecedor no rodapé (`BILLING_EMAIL_SUPPLIER` em `billing-notice-email.tsx`), que muda no código e nos Termos juntos antes de ligar em produção (ADR 0104).
+- `[P48: razão social]`: a identificação do fornecedor no rodapé (`BILLING_EMAIL_SUPPLIER` em `billing-notice-email.tsx`) e nos Termos (`VITE_LEGAL_RAZAO_SOCIAL`): são dois passos separados, e os dois mudam antes de ligar em produção (ADR 0104; passo 5 da ordem de ligar).
 - Região e DPA do Resend (transferência internacional): a confirmar antes de enviar de verdade; não é P48.
 - Revisão jurídica do texto: recomendada antes do go-live, sem bloquear.

@@ -42,6 +42,10 @@ import { seedQaStore } from "./seed-qa-store";
  * - `EXPLAIN (ANALYZE, BUFFERS)` of the period's sales query, as the runtime
  *   role under RLS.
  *
+ * `readPeriodSummary` is aggregated by the database (ADR 0054): the rows read
+ * and the CPU of the engine here are those of `readPeriodFacts` and the engine,
+ * which the goals still run and which define the summary.
+ *
  * The CPU of the Worker is NOT this: Bun on this machine is not workerd on
  * Cloudflare. The staging measure (in the PR) is the one that counts.
  *

@@ -15,6 +15,7 @@ import {
   ProductIdConflictError,
   ProductNameError,
   ProductVariantSkuConflictError,
+  ProductVariantSkuError,
 } from "@polaris/domain/catalog/product";
 import {
   InventoryOccurredInFutureError,
@@ -118,6 +119,7 @@ const payloadErrors = [
   InventoryQuantityLimitError,
   ProductDescriptionError,
   ProductNameError,
+  ProductVariantSkuError,
 ];
 
 function isPayloadError(error: unknown): boolean {

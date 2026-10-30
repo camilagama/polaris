@@ -5,28 +5,26 @@ import {
   useConnectionReturn,
   workerAnswers,
 } from "../lib/browser-connection";
-import { browserStorage } from "../lib/current-organization-model";
 import { isNoAnswer } from "../lib/connection";
+import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
 import { orpcClient } from "../lib/orpc";
-import { readWithRetry } from "../lib/read-with-retry";
 import {
   clearOrganizationResultCopies,
   isPeriodSummary,
   type StoredPeriodSummary,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
+import { readWithRetry } from "../lib/read-with-retry";
 import { isLegalAcceptanceRefusal, rpcErrorCode } from "../lib/rpc-error";
 import { isSigningOut } from "../lib/sign-out";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { isSessionOver } from "../offline/runtime/session-ended";
-import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
-  type DailySeries,
-  isDailySeries,
-  rhythmPeriod,
-} from "./home-rhythm-model";
-import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
+  type FirstStepsFacts,
+  rememberFirstSteps,
+} from "../app-shell/first-steps";
+import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
   type BalancesPage,
   homePeriods,
@@ -37,6 +35,16 @@ import {
   shouldRefreshOnReturn,
   storeToday,
 } from "./home-model";
+import {
+  type DailySeries,
+  isDailySeries,
+  rhythmPeriod,
+} from "./home-rhythm-model";
+import {
+  rememberPreviousWindow,
+  reusablePreviousWindow,
+} from "./previous-window-copy";
+import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
 
 /**
  * The reads of the Início: A and B (the figures), G (the goals) and S (no stock) in
@@ -221,17 +229,92 @@ async function readSummary(
   return summary;
 }
 
+/**
+ * The month (always read) and B: `reused`, the copy of the store's day (`previous-window-copy.ts`), or else read. Only
+ * the month's answer proves the session and the capability, so a refusal there leaves nothing of B on the screen.
+ */
 async function readFigures(
   organizationId: string,
   isCurrent: IsCurrent,
-  today: string
+  today: string,
+  reused: StoredPeriodSummary | null
 ): Promise<Omit<HomeFigures, "today">> {
   const { before, month } = homePeriods(today);
   const [monthSummary, beforeSummary] = await Promise.all([
     readSummary(organizationId, isCurrent, month.from, month.to, 3),
-    readSummary(organizationId, isCurrent, before.from, before.to),
+    reused ?? readSummary(organizationId, isCurrent, before.from, before.to),
   ]);
   return { before: beforeSummary, month: monthSummary };
+}
+
+interface FiguresOfTheDay {
+  figures: Omit<HomeFigures, "today">;
+  /** B came from the copy: it keeps the stamp of the read it came from, and is not written again. */
+  reusedBefore: boolean;
+  today: string;
+}
+
+/**
+ * The figures asked for the device's `guess` of the store's today, then, when the server's answer says the day (or the
+ * month) is another, for the server's: a B taken from the copy of the guessed day is not taken for another day (it is
+ * read). `reusable` says which copy of B may stand in for a read of a day; `onAnswer` hears the first answer's clock.
+ */
+async function readFiguresOfTheDay(
+  organizationId: string,
+  isCurrent: IsCurrent,
+  guess: string,
+  timezone: string | null,
+  reusable: (day: string) => StoredPeriodSummary | null,
+  onAnswer: (generatedAt: string) => void
+): Promise<FiguresOfTheDay> {
+  let reused = reusable(guess);
+  let figures = await readFigures(organizationId, isCurrent, guess, reused);
+  onAnswer(figures.month.generatedAt);
+  const today = storeToday(figures.month.generatedAt, timezone);
+  if (today.slice(0, 7) !== guess.slice(0, 7)) {
+    // the device's month is not the server's (a wrong clock, the turn of the month): read the server's
+    reused = reusable(today);
+    figures = await readFigures(organizationId, isCurrent, today, reused);
+  } else if (reused !== null && reusable(today) === null) {
+    // the device's day is not the server's: the copy of the guessed day is not of today, so B is read
+    reused = null;
+    const { before } = homePeriods(today);
+    figures = {
+      ...figures,
+      before: await readSummary(
+        organizationId,
+        isCurrent,
+        before.from,
+        before.to
+      ),
+    };
+  }
+  return { figures, reusedBefore: reused !== null, today };
+}
+
+/** Keeps B in the page's memory; nothing once the store refused this person its results, the session ended or "Sair" began. */
+function keepPreviousWindow(
+  organizationId: string,
+  summary: StoredPeriodSummary,
+  copyRefused: { current: boolean }
+) {
+  if (!(copyRefused.current || isSessionOver() || isSigningOut())) {
+    rememberPreviousWindow(organizationId, summary);
+  }
+}
+
+/**
+ * Tells the foot of the menu the steps the Início read (`when` the read is still the current one); never while the
+ * session ends, which drops them.
+ */
+function tellFirstSteps(
+  organizationId: string,
+  facts: FirstStepsFacts | null,
+  when: boolean
+): void {
+  if (when && !(isSessionOver() || isSigningOut())) {
+    rememberFirstSteps(organizationId, facts);
+  }
 }
 
 /**
@@ -381,7 +464,11 @@ export function useHome(
   );
 
   const loadFigures = useCallback(
-    async (ticket: number, keep: boolean): Promise<HomeFigures | null> => {
+    async (
+      ticket: number,
+      keep: boolean,
+      force: boolean
+    ): Promise<HomeFigures | null> => {
       if (!reads.report) {
         settle(ticket, "figures", { block: { status: "hidden" } });
         return null;
@@ -395,15 +482,30 @@ export function useHome(
           timezone
         );
         const isCurrent = () => ticket === sequence.current.numbers;
-        let figures = await readFigures(organizationId, isCurrent, guess);
-        skew.current = Date.parse(figures.month.generatedAt) - Date.now();
-        const today = storeToday(figures.month.generatedAt, timezone);
-        // the device's month is not the server's (a wrong clock, the turn of the month): read the server's
-        if (today.slice(0, 7) !== guess.slice(0, 7)) {
-          figures = await readFigures(organizationId, isCurrent, today);
-        }
+        // B comes from the copy of the store's day, unless the gesture asks for the server ("Atualizar", "Tentar
+        // novamente") or the refusal of this store was already seen here
+        const { figures, reusedBefore, today } = await readFiguresOfTheDay(
+          organizationId,
+          isCurrent,
+          guess,
+          timezone,
+          (day) =>
+            force || copyRefused.current
+              ? null
+              : reusablePreviousWindow(
+                  OFFLINE_RUNTIME_ENABLED ? browserStorage() : null,
+                  organizationId,
+                  homePeriods(day).before,
+                  day,
+                  timezone
+                ),
+          (generatedAt) => {
+            skew.current = Date.parse(generatedAt) - Date.now();
+          }
+        );
         const ready = { ...figures, today };
         if (ticket === sequence.current.numbers) {
+          keepPreviousWindow(organizationId, ready.before, copyRefused);
           keepCopy(reads.report && !copyRefused.current, (storage) => {
             writePeriodSummaryCache(
               storage,
@@ -415,7 +517,10 @@ export function useHome(
                 signingOut: isSigningOut(),
               }
             );
-            const change: Partial<HomeCopy> = { before: ready.before };
+            // a B taken from the copy is not written again: it keeps the stamp of the read it came from
+            const change: Partial<HomeCopy> = reusedBefore
+              ? {}
+              : { before: ready.before };
             if (!noSaleCounted(ready.month, ready.before)) {
               change.hadSale = true;
             }
@@ -445,26 +550,27 @@ export function useHome(
 
   const loadChecklist = useCallback(
     async (ticket: number, figures: HomeFigures | null) => {
-      if (
-        figures === null ||
-        !reads.sales ||
-        !noSaleCounted(figures.month, figures.before)
-      ) {
+      const current = () => ticket === sequence.current.numbers;
+      const unasked = figures === null || !reads.sales;
+      if (unasked || !noSaleCounted(figures.month, figures.before)) {
+        // the figures counted a sale: the foot of the menu drops its steps too
+        tellFirstSteps(organizationId, null, !unasked && current());
         settle(ticket, "checklist", { block: { data: null, status: "ready" } });
         return;
       }
       try {
         const read = await readChecklist(
           organizationId,
-          () => ticket === sequence.current.numbers,
+          current,
           reads.inventory
         );
-        if (read === "sold" && ticket === sequence.current.numbers) {
+        const data = read === "sold" ? null : read;
+        tellFirstSteps(organizationId, data, current());
+        if (read === "sold" && current()) {
           keepCopy(reads.report && !copyRefused.current, (storage) =>
             writeHomeCopy(storage, organizationId, { hadSale: true })
           );
         }
-        const data = read === "sold" ? null : read;
         settle(ticket, "checklist", { block: { data, status: "ready" } });
       } catch (error) {
         // not knowing whether the store sold, the figures stand with their empty states
@@ -613,8 +719,8 @@ export function useHome(
 
   /** The figures, then the checklist and the map that depend on them; the stock waits for them only to decide on C. */
   const loadNumbers = useCallback(
-    (ticket: number, keep: boolean) => {
-      const figures = loadFigures(ticket, keep);
+    (ticket: number, keep: boolean, force: boolean) => {
+      const figures = loadFigures(ticket, keep, force);
       const checklist = figures.then((read) => loadChecklist(ticket, read));
       const rhythm = figures.then((read) => loadRhythm(ticket, read, keep));
       return { checklist, figures, rhythm };
@@ -624,13 +730,14 @@ export function useHome(
 
   /** The figures and what hangs on them (the checklist, and the stock, which waits for them only to decide on C). */
   const loadNumbersAndStock = useCallback(
-    (keep: boolean) => {
+    (keep: boolean, force: boolean) => {
       sequence.current.numbers += 1;
       const ticket = sequence.current.numbers;
-      const { checklist, figures, rhythm } = loadNumbers(ticket, keep);
+      const { checklist, figures, rhythm } = loadNumbers(ticket, keep, force);
       checklist.catch(() => undefined);
       rhythm.catch(() => undefined);
       loadStock(ticket, figures, keep).catch(() => undefined);
+      return figures;
     },
     [loadNumbers, loadStock]
   );
@@ -642,17 +749,22 @@ export function useHome(
     [loadGoals]
   );
 
-  /** Reads every block; `keep` leaves what is on screen while the new answer comes (a refresh, not an opening). */
+  /**
+   * Reads every block; `keep` leaves what is on screen while the new answer comes (a refresh, not an opening) and
+   * `force` reads B from the server instead of taking the copy of the store's day. Returns the read of the figures
+   * (null without a connection, when nothing is read).
+   */
   const loadAll = useCallback(
-    (keep: boolean) => {
+    (keep: boolean, force = false) => {
       // no read without a connection: the copy is on the screen, and the return of the connection reads
       if (!browserConnection.isOnline()) {
-        return;
+        return null;
       }
       lastReadAt.current = Date.now();
       setState((now) => ({ ...now, sessionRefused: false }));
-      loadNumbersAndStock(keep);
+      const figures = loadNumbersAndStock(keep, force);
       loadGoalsAgain(keep);
+      return figures;
     },
     [loadGoalsAgain, loadNumbersAndStock]
   );
@@ -660,6 +772,19 @@ export function useHome(
   const refresh = useCallback(() => {
     if (!isSessionOver()) {
       loadAll(true);
+    }
+  }, [loadAll]);
+
+  const [reloading, setReloading] = useState(false);
+  /** "Atualizar": every block is read again, and B and the month both come from the server, never from the copy. */
+  const reload = useCallback(() => {
+    if (isSessionOver()) {
+      return;
+    }
+    const read = loadAll(true, true);
+    if (read) {
+      setReloading(true);
+      read.finally(() => setReloading(false)).catch(() => undefined);
     }
   }, [loadAll]);
 
@@ -714,10 +839,9 @@ export function useHome(
   }, [refresh, midnightAt]);
 
   // "Tentar novamente" of the figures reads the stock again too: the line of the unknown cost waits for them
-  const retryFigures = useCallback(
-    () => loadNumbersAndStock(false),
-    [loadNumbersAndStock]
-  );
+  const retryFigures = useCallback(() => {
+    loadNumbersAndStock(false, true).catch(() => undefined);
+  }, [loadNumbersAndStock]);
   const retryGoals = useCallback(() => loadGoalsAgain(false), [loadGoalsAgain]);
   // "Tentar novamente" of the map: only its series, for the today of the figures on the screen
   const retryRhythm = useCallback(() => {
@@ -733,6 +857,8 @@ export function useHome(
   return {
     online,
     reads,
+    reload,
+    reloading,
     retryFigures,
     retryGoals,
     retryRhythm,

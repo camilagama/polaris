@@ -1,10 +1,13 @@
+import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
@@ -15,13 +18,14 @@ import { Card } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
 import { SearchField } from "@/ui/search-field";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusNav } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { STOCK_ACTIONS, type StockAction } from "./stock-command-model";
+import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
 import {
   PANEL_OPEN_REASON,
@@ -37,24 +41,35 @@ import {
   stockListView,
   stockMoreView,
   readStockLinkFilters,
+  type StockAttentionLink,
 } from "./stock-list-model";
+import { LINK, StockActionStrip } from "./stock-action-strip";
 import { type StockTarget, stockTarget } from "./stock-target";
+import { useStockAttention } from "./use-stock-attention";
+import { useStockEntryLink } from "./use-stock-entry-link";
 import { useStockList } from "./use-stock-list";
 
 interface OpenCommand {
   action: StockAction;
+  /** Opened by the link from the sale: it stands above the list, whether or not the list holds the variant. */
+  standalone: boolean;
   /** The balance as the row showed it when the panel opened. */
   target: StockTarget;
 }
 
-/** A link inside a sentence: no touch area of its own (a line of text), only the focus ring. */
-const LINK =
-  "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-/** A link on a line of its own: it gets the 48 px touch area. */
+/** A link on a line of its own: it gets the 44 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
 
-function isStockAction(value: string | undefined): value is StockAction {
-  return STOCK_ACTIONS.some((action) => action === value);
+function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
+  return (
+    <Alert variant="warning">
+      <AlertDescription>
+        {unavailable
+          ? "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+          : "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** Said at the top of the screen while there is no connection. */
@@ -64,12 +79,12 @@ function OfflineStockNotice() {
       <CloudOffIcon aria-hidden="true" />
       <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription>
-        O saldo é o do aparelho, com o que está na fila. Receber, contar e
-        baixar ficam guardados e vão quando a conexão voltar (acompanhe em{" "}
+        Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
+        (veja{" "}
         <a className={LINK} href="/attention">
           Pendências
         </a>
-        ). O custo médio só aparece com conexão.
+        ). Custo médio só com conexão.
       </AlertDescription>
     </Alert>
   );
@@ -129,7 +144,7 @@ function StockItem({
             ) : null}
           </p>
         </div>
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support md:grid-cols-3">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support">
           <Figure label="Saldo">
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span
@@ -154,9 +169,6 @@ function StockItem({
             >
               {row.costText}
             </span>
-          </Figure>
-          <Figure className="col-span-2 md:col-span-1" label="Atualizado">
-            <span className="tabular-nums">{row.updatedText}</span>
           </Figure>
         </dl>
         <RowActions
@@ -212,9 +224,46 @@ export function InventoryPage() {
   const [linkFilters] = useState(() =>
     readStockLinkFilters(window.location.search)
   );
-  const { applyBalance, filters, loadMore, reload, setFilters, state } =
-    useStockList(organizationId, offlineWorkspace, linkFilters);
+  const {
+    applyBalance: applyListBalance,
+    filters,
+    loadMore,
+    reload: reloadList,
+    setFilters,
+    state,
+  } = useStockList(organizationId, offlineWorkspace, linkFilters);
+  const [attentionVersion, setAttentionVersion] = useState(0);
+  const attention = useStockAttention(
+    organizationId,
+    !offline,
+    attentionVersion
+  );
+  const applyBalance = useCallback(
+    (balance: InventoryBalanceReadModel, updatedAt: string | null) => {
+      applyListBalance(balance, updatedAt);
+      setAttentionVersion((version) => version + 1);
+    },
+    [applyListBalance]
+  );
+  const reload = useCallback(() => {
+    reloadList();
+    setAttentionVersion((version) => version + 1);
+  }, [reloadList]);
   const [open, setOpen] = useState<OpenCommand | null>(null);
+  const entryLink = useStockEntryLink(organizationId, offlineWorkspace);
+  const offlineRef = useRef(offline);
+  offlineRef.current = offline;
+  useEffect(() => {
+    if (entryLink.status === "found") {
+      setOpen({
+        action: "receive",
+        standalone: true,
+        target: stockTarget(entryLink.entry, {
+          costUnavailable: offlineRef.current,
+        }),
+      });
+    }
+  }, [entryLink]);
   const today = useMemo(
     () => calendarDayInTimezone(new Date(), organization.timezone),
     [organization.timezone]
@@ -252,6 +301,7 @@ export function InventoryPage() {
       }
       setOpen({
         action: stockAction,
+        standalone: false,
         target: stockTarget(entry, { costUnavailable: offline }),
       });
     },
@@ -261,25 +311,68 @@ export function InventoryPage() {
     const current = open;
     setOpen(null);
     if (current) {
+      // the variant of the link may not be in the list: the focus then goes to the content
       focusLater(() =>
-        document
-          .getElementById(triggerId(current.target.variantId, current.action))
-          ?.focus()
+        (
+          document.getElementById(
+            triggerId(current.target.variantId, current.action)
+          ) ?? document.getElementById("conteudo")
+        )?.focus()
       );
     }
   }, [open]);
+  const handleInformCost = useCallback((target: StockTarget) => {
+    setOpen((current) =>
+      current === null ? current : { ...current, action: "cost", target }
+    );
+  }, []);
   const handleReload = useCallback(() => reload(), [reload]);
+  const handleAttentionLink = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, link: StockAttentionLink) => {
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      // the number counts active products with no search: the list opens on the same ground
+      setFilters({
+        ...readStockLinkFilters(
+          new URL(link.href, window.location.origin).search
+        ),
+        includeArchived: false,
+        query: "",
+      });
+    },
+    [setFilters]
+  );
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <h1 className="text-title">Estoque</h1>
-        <p className="text-muted-foreground text-support">
-          Receba, conte ou baixe. Venda e devolução movem o saldo sozinhas.
-        </p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-title">Estoque</h1>
+          <HelpTip about="Estoque">
+            Receber, contar e baixar mudam o saldo aqui. Venda e devolução mudam
+            sozinhas.
+          </HelpTip>
+        </div>
       </header>
 
+      <StockActionStrip
+        links={attention.links}
+        onApply={handleAttentionLink}
+        unavailable={attention.unavailable}
+      />
+
       {offline ? <OfflineStockNotice /> : null}
+      {entryLink.status === "missing" || entryLink.status === "unavailable" ? (
+        <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
+      ) : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
         <SearchField
@@ -311,9 +404,7 @@ export function InventoryPage() {
               id="stock-archived"
               onCheckedChange={handleArchived}
             />
-            <FieldLabel htmlFor="stock-archived">
-              Incluir produtos arquivados
-            </FieldLabel>
+            <FieldLabel htmlFor="stock-archived">Incluir arquivados</FieldLabel>
           </Field>
           <Button onClick={handleReload} type="button" variant="ghost">
             <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
@@ -338,6 +429,25 @@ export function InventoryPage() {
         >
           {open === null ? null : PANEL_OPEN_REASON}
         </p>
+      ) : null}
+
+      {open?.standalone ? (
+        <Card className="gap-0 py-0">
+          <div className="p-(--card-spacing)">
+            <StockCommandPanel
+              action={open.action}
+              key={`${open.target.variantId}-${open.action}`}
+              local={offlineWorkspace ?? undefined}
+              onBalance={applyBalance}
+              onClose={handleClose}
+              onInformCost={handleInformCost}
+              onReloadList={reload}
+              organizationId={organizationId}
+              target={open.target}
+              today={today}
+            />
+          </div>
+        </Card>
       ) : null}
 
       {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
@@ -381,18 +491,23 @@ export function InventoryPage() {
                 key={row.id}
                 onOpen={handleOpen}
                 otherPanelOpen={
-                  open !== null && open.target.variantId !== row.id
+                  open !== null &&
+                  (open.standalone || open.target.variantId !== row.id)
                 }
-                panelOpen={open?.target.variantId === row.id}
+                panelOpen={
+                  open?.standalone === false && open.target.variantId === row.id
+                }
                 row={row}
               >
-                {open?.target.variantId === row.id ? (
+                {open?.standalone === false &&
+                open.target.variantId === row.id ? (
                   <StockCommandPanel
                     action={open.action}
                     key={`${open.target.variantId}-${open.action}`}
                     local={offlineWorkspace ?? undefined}
                     onBalance={applyBalance}
                     onClose={handleClose}
+                    onInformCost={handleInformCost}
                     onReloadList={reload}
                     organizationId={organizationId}
                     target={open.target}

@@ -150,6 +150,29 @@ describe("the body ceiling of /rpc", () => {
     expect(state.pulled).toBeLessThan(RPC_BODY_MAX_BYTES + 256 * KIB);
   });
 
+  it("never hands the procedure a call cut at the ceiling, even when what was read is valid JSON", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { post, reached } = setup();
+    const call = new TextEncoder().encode(callOfSize(KIB));
+    const padding = new Uint8Array(RPC_BODY_MAX_BYTES + KIB - call.length).fill(
+      32
+    );
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(call);
+        for (let offset = 0; offset < padding.length; offset += 64 * KIB) {
+          controller.enqueue(padding.subarray(offset, offset + 64 * KIB));
+        }
+        controller.close();
+      },
+    });
+
+    const response = await post(stream);
+
+    await expectFixedRefusal(response, 413, "payload_too_large");
+    expect(reached).not.toHaveBeenCalled();
+  });
+
   it("cuts a body that is larger than the small Content-Length it declares", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { post, reached } = setup();
@@ -414,4 +437,62 @@ describe("the 413 as the client sees it", () => {
     expect(isPayloadTooLarge(failure)).toBe(true);
     expect(failure).toMatchObject({ status: 413 });
   });
+});
+
+describe("a field of 500 000 characters, within the ceiling of the body", () => {
+  const variantId = "0199c2d0-0000-7000-8000-000000000002";
+  it.each([
+    [
+      "the name",
+      "category/create",
+      { name: "a".repeat(500_000), organizationId: "o" },
+    ],
+    [
+      "the organization",
+      "category/create",
+      { name: "x", organizationId: "a".repeat(500_000) },
+    ],
+    [
+      "the SKU of a variant",
+      "product/setVariantSku",
+      {
+        expectedVersion: 1,
+        organizationId: "o",
+        productId: variantId,
+        sku: "a".repeat(500_000),
+        variantId,
+      },
+    ],
+    [
+      "a value of an option",
+      "product/configureVariants",
+      {
+        expectedVersion: 1,
+        id: variantId,
+        options: [{ name: "color", values: ["a".repeat(500_000)] }],
+        organizationId: "o",
+        variants: [{ values: { color: "Azul" } }],
+      },
+    ],
+  ])(
+    "in %s is a BAD_REQUEST of under 1 KB that does not echo the text",
+    async (_, procedure, input) => {
+      const { post, reached } = setup();
+
+      const response = await post(
+        JSON.stringify({ json: input }),
+        {},
+        `/rpc/${procedure}`
+      );
+
+      const text = await response.text();
+      expect(response.status).toBe(400);
+      expect(JSON.parse(text)).toMatchObject({
+        json: { code: "BAD_REQUEST", defined: false },
+      });
+      expect(new TextEncoder().encode(text).length).toBeLessThan(1024);
+      expect(text).not.toContain("a".repeat(32));
+      expect(reached).not.toHaveBeenCalled();
+    }
+  );
 });

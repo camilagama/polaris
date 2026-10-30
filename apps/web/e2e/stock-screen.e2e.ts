@@ -27,7 +27,9 @@ const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
 const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
-const COUNT_SHIRT = "Contar estoque de Camiseta do teste, Azul";
+const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
+
+const VARIANT_IDS = /"variantIds":\["([^"]+)"\]/;
 
 const THEMES = [
   { dark: false, name: "claro", stored: "claro" },
@@ -78,26 +80,65 @@ const MUG = {
 interface OpenOptions {
   /** What the screen shows when it is ready (the count line). */
   count?: string;
+  /** The read of one variant (the link from the sale) is refused. */
+  entryReadFails?: boolean;
   /** Appended to the address of the lab: `&filtro=sem-custo`. */
   search?: string;
 }
 
-/** The bodies of the reads the screen sent, in order (what each filter asked the server for). */
+/** The bodies of the reads of the list the screen sent, in order (what each filter asked the server for). */
 let listRequests: string[] = [];
+/** The two reads of "Precisa de ação", a page of 100 each: the store's counts, whatever the filters. */
+let attentionRequests: string[] = [];
 
 async function openStockLab(
   page: Page,
   stored: string,
-  { count = "2 variantes", search = "" }: OpenOptions = {}
+  {
+    count = "2 variantes",
+    entryReadFails = false,
+    search = "",
+  }: OpenOptions = {}
 ) {
   listRequests = [];
+  attentionRequests = [];
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
   // the lab has no server: the list comes from here, and it answers by the filters the screen sent
   await page.route("**/rpc/inventory/listBalances", (route) => {
     const body = route.request().postData() ?? "";
-    listRequests.push(body);
+    (body.includes('"limit":100') ? attentionRequests : listRequests).push(
+      body
+    );
+    const wanted = VARIANT_IDS.exec(body)?.[1];
+    if (wanted !== undefined && entryReadFails) {
+      return route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "FORBIDDEN",
+            data: null,
+            defined: false,
+            message: "FORBIDDEN",
+            status: 403,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 403,
+      });
+    }
+    if (wanted !== undefined) {
+      return route.fulfill(
+        rpc({
+          entries: [SHIRT, JEANS, MUG].filter(
+            (entry) => entry.variantId === wanted
+          ),
+          nextCursor: null,
+        })
+      );
+    }
     if (body.includes('"cost":"unknown"')) {
       return route.fulfill(rpc({ entries: [SHIRT], nextCursor: null }));
     }
@@ -133,7 +174,7 @@ async function openStockLab(
   await expect(
     page.getByRole("heading", { exact: true, name: "Estoque" })
   ).toBeVisible();
-  await expect(page.getByText(count)).toBeVisible();
+  await expect(page.getByText(count, { exact: true })).toBeVisible();
 }
 
 async function useEveryControl(page: Page) {
@@ -145,9 +186,7 @@ async function useEveryControl(page: Page) {
     "true"
   );
   await filter.getByRole("tab", { name: "Todas" }).click();
-  await page
-    .getByRole("checkbox", { name: "Incluir produtos arquivados" })
-    .click();
+  await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
   await expect(page.getByText("3 variantes")).toBeVisible();
   await expect(page.getByText("Arquivado", { exact: true })).toBeVisible();
   await expect(
@@ -182,11 +221,9 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("button", { name: RECEIVE_JEANS })).toBeFocused();
 
-  // a count (the valuation field, as the cost is unknown) and a write-off (the choice list and the note)
-  await page.getByRole("button", { name: COUNT_SHIRT }).click();
-  await expect(
-    page.getByLabel("Custo unitário para valoração (R$)")
-  ).toBeVisible();
+  // the cost of units with none (where counting was) and a write-off (the choice list and the note)
+  await page.getByRole("button", { name: INFORM_SHIRT }).click();
+  await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
   await page.getByRole("button", { name: "Fechar" }).click();
   await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await page
@@ -282,6 +319,27 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
   expect(listRequests.at(-1)).not.toContain('"cost"');
 });
 
+test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda com o filtro da lista", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const strip = page.locator('[data-slot="action-strip"]');
+  await expect(strip).toContainText("1 variante sem custo");
+  await expect.poll(() => attentionRequests.length).toBe(2);
+  expect(
+    attentionRequests.some((body) => body.includes('"cost":"unknown"'))
+  ).toBe(true);
+  expect(
+    attentionRequests.every((body) => body.includes('"productStatus":"active"'))
+  ).toBe(true);
+  await stockFilter(page, "Sem saldo").click();
+  await expect(page.getByText("0 variantes", { exact: true })).toBeVisible();
+  await expect(strip).toContainText("1 variante sem custo");
+  await strip.getByRole("link", { name: "1 variante sem custo" }).click();
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  expect(attentionRequests).toHaveLength(2);
+});
+
 test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   page,
 }) => {
@@ -301,6 +359,8 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   expect(listRequests.at(-1)).toContain('"cost":"unknown"');
 });
 
+const MUG_PANEL =
+  /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido · último movimento \d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}/;
 const COUNT_LINE = /^\d+ variantes?/;
 
 test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
@@ -345,6 +405,85 @@ test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas t�
   expect(listRequests[0]).toContain('"stock":"without_stock"');
   expect(listRequests[0]).not.toContain('"cost"');
   await expect(page.getByText("Todas as variantes têm saldo.")).toBeVisible();
+});
+
+test("?entrada= abre o painel de entrada da variante, mesmo arquivada e fora da lista, e tira o parâmetro do endereço", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: `&entrada=${MUG.variantId}&de=venda`,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(page.getByText(MUG_PANEL)).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  expect(listRequests.some((body) => body.includes(MUG.variantId))).toBe(true);
+  await expect(
+    page.getByRole("button", { name: RECEIVE_JEANS })
+  ).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= de uma variante que não existe diz isso em uma linha, sem erro, e a lista continua", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: "&entrada=0199c2d0-0000-7000-8000-00000000dead",
+  });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= com a leitura recusada não afirma que a variante não existe", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    entryReadFails: true,
+    search: `&entrada=${MUG.variantId}`,
+  });
+  await expect(
+    page.getByText(
+      "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByText("Não achamos essa variante")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+});
+
+test("?entrada= que não é um id não lê nada e abre a tela como sempre", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", { search: "&entrada=../../x" });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  expect(listRequests.some((body) => body.includes("variantIds"))).toBe(false);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
 });
 
 for (const value of [
@@ -409,11 +548,9 @@ for (const width of [360, 320]) {
     expect(measured.past).toBe(0);
     expect(new Set(measured.heights).size).toBe(1);
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window
-    // from a variant without cost the way forward is a count with the unit cost
-    await page.getByRole("button", { name: COUNT_SHIRT }).click();
-    await expect(
-      page.getByLabel("Custo unitário para valoração (R$)")
-    ).toBeVisible();
+    // from a variant with units and no cost the way forward is to inform the cost
+    await page.getByRole("button", { name: INFORM_SHIRT }).click();
+    await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
     const past = await page.evaluate(() => {
       const limit = window.innerWidth + 0.5;
       const heading = [...document.querySelectorAll("h1")].find(

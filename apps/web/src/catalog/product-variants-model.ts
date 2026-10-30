@@ -3,7 +3,12 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import {
-  legalAcceptanceMessage,
+  MAX_PRODUCT_OPTION_VALUE_LENGTH,
+  MAX_PRODUCT_VARIANT_SKU_LENGTH,
+} from "@polaris/domain/catalog/product";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -92,16 +97,74 @@ export function parseOptionValues(lines: string): string[] {
     .filter(Boolean);
 }
 
-export function optionValuesError(values: string[]): string | null {
+/** Counted in code points, like the domain: an emoji is one character, not the two UTF-16 units of `.length`. */
+function characterCount(text: string): number {
+  return [...text].length;
+}
+
+/** The SKU over its limit, said at the field with the count of now; `null` within it. The domain trims it first. */
+export function skuLengthError(sku: string): string | null {
+  const count = characterCount(sku.trim());
+  return count > MAX_PRODUCT_VARIANT_SKU_LENGTH
+    ? `Use até ${MAX_PRODUCT_VARIANT_SKU_LENGTH} caracteres. Agora são ${count}.`
+    : null;
+}
+
+function hasTooLongOptionValue(values: string[]): boolean {
+  return values.some(
+    (value) => characterCount(value) > MAX_PRODUCT_OPTION_VALUE_LENGTH
+  );
+}
+
+const SHOWN_LONG_LINES = 3;
+
+function listedLines(lines: number[]): string {
+  const shown = lines.slice(0, SHOWN_LONG_LINES);
+  const rest = lines.length - shown.length;
+  if (rest > 0) {
+    return `${shown.join(", ")} e mais ${rest}`;
+  }
+  return shown.length > 1
+    ? `${shown.slice(0, -1).join(", ")} e ${shown.at(-1)}`
+    : `${shown[0]}`;
+}
+
+/** The lines of the textarea over the limit, by the number the person sees (blank lines count); `null` within it. */
+export function optionValueLengthError(lines: string): string | null {
+  const counts = lines
+    .split(optionValueLineBreak)
+    .map((line) => characterCount(line.trim()));
+  const tooLong = counts.flatMap((count, index) =>
+    count > MAX_PRODUCT_OPTION_VALUE_LENGTH ? [index + 1] : []
+  );
+  const [only] = tooLong;
+  if (only === undefined) {
+    return null;
+  }
+  const prefix = `Use até ${MAX_PRODUCT_OPTION_VALUE_LENGTH} caracteres por valor.`;
+  return tooLong.length === 1
+    ? `${prefix} A linha ${only} tem ${counts[only - 1]}.`
+    : `${prefix} As linhas ${listedLines(tooLong)} passam de ${MAX_PRODUCT_OPTION_VALUE_LENGTH}.`;
+}
+
+function hasRepeatedOptionValue(values: string[]): boolean {
+  return (
+    new Set(values.map((value) => value.toLowerCase())).size !== values.length
+  );
+}
+
+export function optionValuesError(lines: string): string | null {
+  const values = parseOptionValues(lines);
   if (values.length === 0) {
     return "Informe ao menos um valor, um por linha.";
   }
-  if (
-    new Set(values.map((value) => value.toLowerCase())).size !== values.length
-  ) {
-    return "Remova valores repetidos nesta opção.";
+  const tooLong = optionValueLengthError(lines);
+  if (tooLong) {
+    return tooLong;
   }
-  return null;
+  return hasRepeatedOptionValue(values)
+    ? "Remova valores repetidos nesta opção."
+    : null;
 }
 
 export function selectedOptionNames(
@@ -127,8 +190,11 @@ export function validateVariantDrafts(
   optionValues: Record<ProductVariantOptionName, string[]>,
   variants: VariantDraft[]
 ) {
-  const invalidOptions = optionNames.filter((name) =>
-    optionValuesError(optionValues[name])
+  const invalidOptions = optionNames.filter(
+    (name) =>
+      optionValues[name].length === 0 ||
+      hasTooLongOptionValue(optionValues[name]) ||
+      hasRepeatedOptionValue(optionValues[name])
   );
   const completeVariants = variants.every((variant) => {
     const keys = Object.keys(variant.values).filter((name) =>
@@ -153,6 +219,10 @@ export function validateVariantDrafts(
     new Set(combinationKeys).size === combinationKeys.length;
 
   return {
+    // the values over their limit: the save stays off and says why, at those fields
+    tooLongOptions: optionNames.filter((name) =>
+      hasTooLongOptionValue(optionValues[name])
+    ),
     canAdd:
       optionNames.length > 0 &&
       invalidOptions.length === 0 &&
@@ -174,9 +244,11 @@ export const VARIANT_LIMIT_REACHED =
   "Seu plano chegou ao limite de variantes. Nada foi alterado.";
 
 export function variantErrorMessage(error: unknown, subject?: string): string {
-  const unaccepted = legalAcceptanceMessage(error, subject);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, subject, {
+    directWrite: subject === undefined,
+  });
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -198,7 +270,9 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
     return "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo está temporariamente indisponível. Tente novamente.";
+    return subject === undefined
+      ? CHANGE_FAULT_UNKNOWN
+      : "O catálogo está temporariamente indisponível. Tente novamente.";
   }
   return "Não foi possível carregar ou salvar as variantes. Tente novamente.";
 }

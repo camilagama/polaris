@@ -41,6 +41,9 @@ const rpc = (json: unknown, status = 200) => ({
   headers: { ...WORKER_MARK },
   status,
 });
+/** What a write the platform cut says (`platformCut` below): it may have been saved. */
+const SERVER_CUT_WRITE =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir.";
 const unavailable = rpc(
   {
     code: "SERVICE_UNAVAILABLE",
@@ -51,6 +54,29 @@ const unavailable = rpc(
   },
   503
 );
+
+/** The Worker's own 503 for an unexpected fault, with its reason: on a write it may have come after the COMMIT. */
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+/** What a direct write that met `serverBusy` says: it may have been saved, so no second try is offered. */
+const CHANGE_FAULT_UNKNOWN =
+  "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
+
+/** The page Cloudflare answers for a Worker the platform killed (1102): a 503 with `cf-ray` and no mark. */
+const platformCut = {
+  body: "<html><body>Worker exceeded resource limits</body></html>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d1e2f3a4b5c6d7e-GRU" },
+  status: 503,
+};
 
 /** The body without its scripts: what the person reads and what the markup carries, not the bundle. */
 const bodyMarkup = (page: Page) =>
@@ -154,6 +180,9 @@ async function useEveryControl(page: Page) {
   const name = page.getByLabel("Nome do produto");
   await expect(name).toHaveValue("Camiseta do teste");
   await expect(name).toBeFocused();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Produto · atualizado em 14 de out. de 2026"
+  );
   const category = page.getByRole("combobox", {
     exact: true,
     name: "Categoria",
@@ -654,9 +683,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
-  await expect(
-    page.getByText("Cadastre o primeiro para vender.")
-  ).toBeVisible();
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });
@@ -741,6 +768,98 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   );
 });
 
+test("cadastrar o 1º produto muda o pé do menu de 1 de 3 para 2 de 3 sem abrir o Início", async ({
+  page,
+}) => {
+  const created = product(1, "Bolsa de couro");
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([]), answer([created])],
+    others: {
+      "product/create": (route) => route.fulfill(rpc(created)),
+    },
+  });
+  const steps = (done: number) =>
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: `Primeiros passos, ${done} de 3 concluídos`,
+    });
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  await more.click();
+  await expect(steps(1)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Mais" })).toBeHidden();
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(
+    page.getByText("Produto “Bolsa de couro” cadastrado.")
+  ).toBeVisible();
+  await more.click();
+  await expect(steps(2)).toBeVisible();
+  await expect(steps(1)).toHaveCount(0);
+});
+
+test("o cadastro que o servidor recusa deixa o pé do menu em 1 de 3", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: { "product/create": (route) => route.fulfill(unavailable) },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: "Primeiros passos, 1 de 3 concluídos",
+    })
+  ).toBeVisible();
+});
+
+test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "product/create": (route) => {
+        created += 1;
+        return route.fulfill(serverBusy);
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
+  await expect(page.getByRole("alert")).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+});
+
 test("arquivar pelo menu: 'Arquivando…' na linha, o resultado dito e focado e a lista lida de novo", async ({
   page,
 }) => {
@@ -816,7 +935,7 @@ test("desfazer o arquivamento restaura o produto pela mesma chamada do Restaurar
   );
 });
 
-test("o desfazer que o servidor recusa diz o erro e o botão continua para tentar de novo", async ({
+test("o desfazer que o servidor ocupado não confirmou diz que pode ter sido salvo e o botão continua", async ({
   page,
 }) => {
   const shirt = product(1, "Camiseta do teste");
@@ -834,7 +953,7 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
       "product/restore": (route) => {
         restores += 1;
         return restores === 1
-          ? route.fulfill(unavailable)
+          ? route.fulfill(serverBusy)
           : route.fulfill(
               rpc({
                 changed: true,
@@ -847,9 +966,9 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  // the Worker's own 503 is a fault it answered, not the platform's cut: the restore may have been saved
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
+  await expect(page.getByRole("alert")).not.toContainText("ocupado");
   const undo = page.getByRole("button", { name: "Desfazer" });
   await expect(undo).toBeEnabled();
   await undo.click();
@@ -864,14 +983,12 @@ test("arquivar que o servidor recusa: o erro é dito e focado e a linha continua
 }) => {
   await openServerScreen(page, {
     lists: [answer([product(1, "Camiseta do teste")])],
-    others: { "product/archive": (route) => route.fulfill(unavailable) },
+    others: { "product/archive": (route) => route.fulfill(platformCut) },
   });
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(alert).toContainText(SERVER_CUT_WRITE);
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Camiseta do teste"
@@ -1016,6 +1133,130 @@ test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com
   await expect(
     skuSection.getByRole("button", { name: "Atualizar variantes" })
   ).toBeVisible();
+});
+
+/** What the server answers an input its contract refuses (a tab of an older build sends a text over the limit). */
+const inputRefused = rpc(
+  {
+    code: "BAD_REQUEST",
+    data: { issues: [] },
+    defined: false,
+    message: "Input validation failed",
+    status: 400,
+  },
+  400
+);
+
+test("SKU acima de 64: o campo diz a contagem e guarda o texto, 'Salvar SKU' fica desligado com o motivo e nada é enviado; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+      "product/setVariantSku": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  const field = skuSection.getByRole("textbox");
+  const save = skuSection.getByRole("button", { name: "Salvar SKU" });
+  const long = `SKU-${"A".repeat(67)}`;
+
+  await field.fill(long);
+  const message = "Use até 64 caracteres. Agora são 71.";
+  await expect(skuSection.getByText(message)).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const describedBy = await field.getAttribute("aria-describedby");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  // no native maxLength: the whole text stays in the field
+  await expect(field).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", describedBy ?? "");
+  await field.press("Enter");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue(long);
+  expect(sent).toEqual([]);
+
+  // within the limit the message goes; a server that still refuses the input keeps what was typed
+  await field.fill("CAM-001");
+  await expect(skuSection.getByText(message)).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-disabled", "true");
+  await save.click();
+  await expect(skuSection.getByRole("alert")).toContainText(
+    "Revise os valores e as combinações informadas."
+  );
+  await expect(field).toHaveValue("CAM-001");
+  expect(sent).toHaveLength(1);
+});
+
+test("valor de opção acima de 80: o campo diz a contagem e guarda o texto, 'Salvar variantes' fica desligado com o motivo; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/configureVariants": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  const values = page.getByLabel("Valores de Cor");
+  const save = page.getByRole("button", { name: "Salvar variantes" });
+  const long = `Azul\n${"a".repeat(91)}`;
+
+  await values.fill(long);
+  const message = "Use até 80 caracteres por valor. A linha 2 tem 91.";
+  await expect(page.getByText(message)).toBeVisible();
+  await expect(values).toHaveAttribute("aria-invalid", "true");
+  const describedBy = (await values.getAttribute("aria-describedby")) ?? "";
+  const errorId = describedBy
+    .split(" ")
+    .find((idRef) => idRef.endsWith("-error"));
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  await expect(values).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", errorId ?? "");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  expect(sent).toEqual([]);
+
+  // within the limit, one combination, and a server that still refuses: the values and the combination stay
+  await values.fill("Azul\nPreta");
+  await expect(page.getByText(message)).toHaveCount(0);
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  await save.click();
+  await expect(
+    page.getByText("Revise os valores e as combinações informadas.")
+  ).toBeVisible();
+  await expect(values).toHaveValue("Azul\nPreta");
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Cor" })
+  ).toHaveText("Azul");
+  expect(sent).toHaveLength(1);
 });
 
 test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são repetidas, e os rótulos e o exemplo do preço cabem em 360 px", async ({
@@ -1259,7 +1500,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
                 },
                 409
               )
-            : unavailable
+            : platformCut
         );
       },
     },
@@ -1270,9 +1511,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await skuSection.getByRole("textbox").fill("CAM-1");
   await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
   const skuAlert = skuSection.getByRole("alert");
-  await expect(skuAlert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(skuAlert).toContainText(SERVER_CUT_WRITE);
   await expect(skuAlert.locator("svg")).toHaveCount(1);
   await expect(skuSection.getByRole("status")).toHaveCount(0);
 
@@ -1282,8 +1521,9 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await priceSection.getByRole("textbox").fill("59,90");
   await priceSection.getByRole("button", { name: "Salvar preço" }).click();
   await expect(priceSection.getByRole("alert")).toContainText(
-    "Não foi possível salvar o preço."
+    CHANGE_FAULT_UNKNOWN
   );
+  await expect(priceSection.getByRole("alert")).not.toContainText("ocupado");
   await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);
 
   skuAnswer = "conflict";

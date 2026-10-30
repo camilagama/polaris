@@ -18,6 +18,7 @@ import {
   splitExisting,
 } from "../product-import-rows";
 import {
+  IMPORT_CALL_INTERVAL_MS,
   type ImportRun,
   type ImportStop,
   summarizeImport,
@@ -25,8 +26,9 @@ import {
 
 /**
  * What the dialog "Importar planilha" says and decides, apart from React (corte 2.5):
- * what of the file enters, what the plan holds, the rows of the tables and the sentences of each step. The dialog never
- * promises a time: the progress is the rows answered, and an estimate only from the pace of this import, said as one.
+ * what of the file enters, what the plan holds, the rows of the tables and the sentences of each step. Before the
+ * start the dialog gives a range of time (`importDurationText`), never one number; during the run, the time left comes
+ * only from the pace of this import, its pauses included.
  */
 
 type OkPreview = Extract<ImportPreview, { kind: "ok" }>;
@@ -299,7 +301,7 @@ function pauseLead(pause: ImportPause): string {
 
 /**
  * What a pause says: why the run stopped, then what entered and what is left. What entered stays (no word of
- * cancelling or undoing: nothing is undone); a row the server never answered says so ("Pular esta linha" goes with it).
+ * cancelling or undoing: nothing is undone); a row the server never answered says so ("Pular a linha N" goes with it).
  */
 export function pauseText(
   pause: ImportPause,
@@ -309,9 +311,23 @@ export function pauseText(
   return `${pauseLead(pause)} ${enteredAndLeft(entered, left)}`;
 }
 
+const MINUTE_MS = 60_000;
+
+/** "1 hora", "1 hora e 20 minutos", "45 minutos". */
+function durationWords(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const minutePart = `${rest} ${plural(rest, "minuto", "minutos")}`;
+  if (hours === 0) {
+    return minutePart;
+  }
+  const hourPart = `${hours} ${plural(hours, "hora", "horas")}`;
+  return rest === 0 ? hourPart : `${hourPart} e ${minutePart}`;
+}
+
 /**
- * An estimate of the time left, only from the pace of this import (the rows answered since it started or continued),
- * said as one; `null` before three rows, too few for a pace.
+ * The time left, only from the pace of this import (the rows answered since it started or continued, the pauses
+ * included), said as an estimate; `null` before three rows, too few for a pace.
  */
 export function estimateText(
   answered: number,
@@ -321,10 +337,143 @@ export function estimateText(
   if (answered < 3 || elapsedMs <= 0 || left <= 0) {
     return null;
   }
-  const minutes = Math.ceil(((elapsedMs / answered) * left) / 60_000);
-  const time =
-    minutes <= 1 ? "cerca de 1 minuto" : `cerca de ${minutes} minutos`;
-  return `Estimativa pelo ritmo desta importação: ${time}.`;
+  const minutes = Math.max(
+    1,
+    Math.ceil(((elapsedMs / answered) * left) / MINUTE_MS)
+  );
+  const verb = minutes === 1 || minutes === 60 ? "Falta" : "Faltam";
+  return `${verb} cerca de ${durationWords(minutes)}.`;
+}
+
+/** The share of the calls the regime of the Free plan cuts on an ordinary day, each sent again. */
+const CUT_SHARE = 0.1;
+/** What one regime of the platform costs a run: its pauses and the half pace after them. */
+const REGIME_COST_MS = 15 * MINUTE_MS;
+/** A run this long meets, at most, one more regime. */
+const REGIME_EVERY_MS = 45 * MINUTE_MS;
+/** A run shorter than this is not counted to meet one. */
+const REGIME_FROM_MS = 5 * MINUTE_MS;
+
+function ceilTo(minutes: number, step: number): number {
+  return Math.max(step, Math.ceil(minutes / step) * step);
+}
+
+interface RangeEnd {
+  unit: "horas" | "minutos";
+  value: number;
+}
+
+/** One end of the range: whole hours from one hour up, 5 minutes below. */
+function rangeEnd(ms: number, round: (hours: number) => number): RangeEnd {
+  const minutes = ms / MINUTE_MS;
+  if (minutes <= 55) {
+    return { unit: "minutos", value: ceilTo(minutes, 5) };
+  }
+  return { unit: "horas", value: Math.max(1, round(minutes / 60)) };
+}
+
+function rangeEndWords({ unit, value }: RangeEnd): string {
+  return unit === "horas"
+    ? `${value} ${plural(value, "hora", "horas")}`
+    : `${value} minutos`;
+}
+
+/**
+ * The time of an import before it starts, as a range: the rows at the pace plus the share of cuts at the low end,
+ * and the pauses of the regimes it may meet at the high end (one for every 45 minutes). 100 rows: 15 to 30
+ * minutes; 500: 1 to 2 hours.
+ */
+function importDurationRange(count: number): {
+  high: RangeEnd;
+  low: RangeEnd;
+} {
+  const base = count * IMPORT_CALL_INTERVAL_MS * (1 + CUT_SHARE);
+  const regimes = base < REGIME_FROM_MS ? 0 : Math.ceil(base / REGIME_EVERY_MS);
+  return {
+    high: rangeEnd(base + regimes * REGIME_COST_MS, Math.ceil),
+    low: rangeEnd(base, Math.floor),
+  };
+}
+
+/** "até 5 minutos", "de 15 a 30 minutos", "de 45 minutos a 2 horas", "de 1 a 2 horas". */
+function rangeWords(low: RangeEnd, high: RangeEnd): string {
+  if (low.unit === high.unit && low.value === high.value) {
+    return `até ${rangeEndWords(high)}`;
+  }
+  const from = low.unit === high.unit ? low.value : rangeEndWords(low);
+  return `de ${from} a ${rangeEndWords(high)}`;
+}
+
+/** What the preview says of the time before "Importar": the range, keep the screen open, and how to continue. */
+export function importDurationText(count: number): string {
+  const { high, low } = importDurationRange(count);
+  return `Importar ${count} ${plural(count, "produto", "produtos")} leva ${rangeWords(low, high)}. Deixe esta tela aberta. Se fechar, abra a mesma planilha de novo: o que já entrou não é repetido.`;
+}
+
+/** Above this many rows to send, the preview recommends smaller files (without holding the import). */
+const IMPORT_SPLIT_FROM_ROWS = 200;
+
+export function splitAdviceText(count: number): string | null {
+  return count > IMPORT_SPLIT_FROM_ROWS
+    ? `São mais de ${IMPORT_SPLIT_FROM_ROWS} produtos. Se puder, divida a planilha em arquivos menores e importe fora do horário de vendas.`
+    : null;
+}
+
+/**
+ * Whether the tab's own work is failing now, so the import holds its next call: the breaker of the reads open, or a
+ * command of the queue (a sale) waiting after the server died on its send (`server_busy`, or the quiet failures of
+ * the first 60 s). A send that failed otherwise (a 413, a 429) is not the server's regime, and would hold the import
+ * for nothing.
+ */
+export function tillIsFailing(till: {
+  quietRetries: boolean;
+  reason: string | null;
+  serverFailing: boolean;
+  waiting: number;
+}): boolean {
+  return (
+    till.serverFailing ||
+    (till.waiting > 0 && (till.reason === "server_busy" || till.quietRetries))
+  );
+}
+
+/**
+ * Whether a paused run offers to leave the row out ("Pular a linha N", `skipRowTexts`): after a row the server never answered, and after a stop while the
+ * run was at the longest pause of the regime (a row the Worker cannot finish is cut every time, and the first row,
+ * or one right after a row left out, is never left out by the run itself).
+ */
+export function canSkipRow(pause: ImportPause, run: ImportRun): boolean {
+  return (
+    pause.kind === "interrupted" ||
+    (pause.kind === "stopped" && run.regime.lastPauseAtCeiling)
+  );
+}
+
+/**
+ * What a pause that offers to leave the row out says of it, above the buttons: which row, and that it stays unconfirmed (it may have
+ * gone in), so the list of products is checked before registering it again. The run counts it with the rows not confirmed, and it goes to the CSV of the result.
+ */
+export function skipRowTexts(
+  run: ImportRun
+): { button: string; help: string } | null {
+  const row = run.rows[run.nextIndex];
+  if (row === undefined) {
+    return null;
+  }
+  return {
+    button: `Pular a linha ${row.rowNumber}`,
+    help: `A linha ${row.rowNumber} (${row.name}) não teve resposta do servidor. Se pular, ela fica como não confirmada: confira na lista de produtos antes de cadastrar de novo.`,
+  };
+}
+
+/** The pause of the regime: the hour it goes on by itself, in the store's time zone. No "try now": it would prolong the regime. */
+export function busyPauseText(resumeAt: number, timeZone: string): string {
+  const hour = new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(resumeAt);
+  return `O servidor está ocupado. A importação continua sozinha às ${hour}.`;
 }
 
 /** The rows that did not enter, for the table and the CSV of the result: what already existed is not a failure. */
@@ -404,6 +553,17 @@ const NO_RUN = {
   pending: 0,
 };
 
+/**
+ * The rows whose name the store already had: from an earlier import of the same file (the way to continue one) or made
+ * by hand; the device keeps no record of which, so the text names neither.
+ */
+function existingText(count: number): string | null {
+  if (count === 0) {
+    return null;
+  }
+  return `${count} ${plural(count, "já estava na loja e ficou como estava", "já estavam na loja e ficaram como estavam")}.`;
+}
+
 export function resultTexts(
   plan: ImportPlan,
   run: ImportRun | null
@@ -421,10 +581,7 @@ export function resultTexts(
     summary.limitReached;
   const existing = plan.existing.length + summary.existing;
   return {
-    existing:
-      existing === 0
-        ? null
-        : `${existing} ${plural(existing, "já existia e ficou como estava", "já existiam e ficaram como estavam")}.`,
+    existing: existingText(existing),
     limitReached: summary.limitReached > 0,
     notEntered: notEnteredText(
       notEntered,
@@ -503,6 +660,8 @@ export type ImportStep =
   | { kind: "file" }
   | { kind: "preview" }
   | { kind: "running" }
+  /** The regime of the platform (or the tab's own failing sales): the run waits, and goes on by itself at `resumeAt`. */
+  | { kind: "paused_busy"; resumeAt: number }
   | { kind: "paused"; pause: ImportPause }
   /** `limit`: the server stopped at the plan's limit (another tab made products after the preview). */
   | { kind: "result"; limit: boolean };

@@ -79,7 +79,7 @@ const PROFILE = {
   version: 3,
 };
 
-const CONFIRMED = {
+export const CONFIRMED_SALE = {
   adjustments: [
     {
       amount: "10.00",
@@ -170,14 +170,14 @@ async function serveSale(page: Page) {
     return route.fulfill(rpc({ entries, nextCursor: null }));
   });
   await page.route("**/rpc/sale/confirm", (route: Route) =>
-    route.fulfill(rpc(CONFIRMED))
+    route.fulfill(rpc(CONFIRMED_SALE))
   );
   await page.route("**/rpc/sale/getCustomerLink", (route: Route) =>
     route.fulfill(
       rpc({
         current: { customerId: null, version: 0 },
         history: [],
-        saleId: CONFIRMED.sale.id,
+        saleId: CONFIRMED_SALE.sale.id,
       })
     )
   );

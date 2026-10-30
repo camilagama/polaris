@@ -37,16 +37,24 @@ import {
   seriesMax,
   yAxisMargin,
 } from "./chart-data";
-import { Legend, Reading, spokenValue, TooltipLines } from "./chart-text";
+import {
+  type DayReading,
+  Legend,
+  Reading,
+  spokenValue,
+  TooltipLines,
+} from "./chart-text";
 
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
-   drawing shows the point in focus, with the tooltip of the block) and deaf to the pointer (the box under it moves
+   drawing shows the point in focus: cursor, dot and date pill, and the tooltip of the block unless the reading is over the box) and deaf to the pointer (the box under it moves
    the focus), so that its box is the box of the chart, which is what a touch finds, and the 3 px outline of the
    keyboard focus goes round the chart. */
 const RANGE_CLASS =
   "focus-ring pointer-events-none absolute inset-0 m-0 size-full appearance-none rounded-md bg-transparent [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none";
 /* the dash of the second series: the legend and the line draw the same one */
 const DASH = "5,4";
+/** The share of its color a `subtle` line keeps. */
+const SUBTLE_PERCENT = 55;
 const Y_LINES = 4;
 const INK: ChartColor = "var(--chart-5)";
 const GRAY: ChartColor = "var(--chart-3)";
@@ -64,6 +72,11 @@ interface AreaChartSecondary {
   legend: string;
   /** The short name in the reading of the day ("Custos"). */
   name: string;
+  /**
+   * A context line that does not compete with the main one: 1 px at 55 % of its color, and no legend (the help of the
+   * block and the reading of a day name it).
+   */
+  subtle?: boolean;
   /** What an unknown value is called: in the reading and the tooltip ("sem custo informado") and in the legend of the hatch. */
   unknown?: { legend: string; text: string };
 }
@@ -92,8 +105,17 @@ export interface AreaChartProps {
    * (`all`, a week); only the best day and today (`key`, 30 days); only the best day (`best`, the default).
    */
   markers?: DayMarkers;
-  /** The value of the best day and of today written above their rings. */
-  valueLabels?: boolean;
+  /**
+   * The value written above the rings: the best day's and today's (`true`), or only the best day's, with its date
+   * (`"peak"`, "18/10 · R$ 1.840,00").
+   */
+  valueLabels?: boolean | "peak";
+  /**
+   * Whether the line that reads the day in focus shows at rest (the last day). Without it (`false`) the line shows only
+   * while the keyboard control has moved the focus, and then over the corner of the drawing, out of the flow, so
+   * nothing sits above the drawing for good and reading a day moves nothing. True by default.
+   */
+  readingAtRest?: boolean;
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
   still?: boolean;
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
@@ -139,6 +161,51 @@ function useMotion(still: boolean) {
       } as const);
 }
 
+/**
+ * Where the line that reads the day in focus is: above the drawing at rest if the caller wants it there, over the corner
+ * of the drawing once the keyboard moved the focus, or not on the screen.
+ */
+function readingPlace({
+  atRest,
+  loading,
+  picked,
+}: {
+  atRest: boolean;
+  loading: boolean;
+  picked: boolean;
+}): "above" | "over" | null {
+  if (loading) {
+    return null;
+  }
+  if (atRest) {
+    return "above";
+  }
+  return picked ? "over" : null;
+}
+
+const READING_OVER_CLASS =
+  "pointer-events-none absolute top-1 left-1 z-[60] max-w-[calc(100%-0.5rem)] rounded-sm bg-card/90 px-1.5 py-0.5";
+
+function ReadingAt({
+  place,
+  reading,
+  where,
+}: {
+  place: "above" | "over" | null;
+  reading: DayReading;
+  where: "above" | "over";
+}) {
+  if (place !== where) {
+    return null;
+  }
+  return (
+    <Reading
+      {...reading}
+      {...(where === "over" ? { className: READING_OVER_CLASS } : {})}
+    />
+  );
+}
+
 function EmptyChart({
   className,
   height,
@@ -168,9 +235,10 @@ function EmptyChart({
 interface PlotProps {
   axisText: (value: number, isTop: boolean) => string;
   best: number | null;
+  boxHidden: boolean;
   markers: DayMarkers;
   still: boolean;
-  valueLabels: boolean;
+  valueLabels: boolean | "peak";
   color: ChartColor | undefined;
   formatValue: (value: number) => string;
   handle: MutableRefObject<ChartHandle | null>;
@@ -188,6 +256,7 @@ interface PlotProps {
 function Plot({
   axisText,
   best,
+  boxHidden,
   markers,
   still,
   valueLabels,
@@ -212,19 +281,30 @@ function Plot({
   );
   const style = useMemo(() => ({ height }), [height]);
   const secondaryColor = secondary?.color ?? GRAY;
+  const subtle = secondary?.subtle === true;
   const content = useCallback(
-    ({ index }: { index: number }) => (
-      <TooltipLines
-        color={color ?? INK}
-        formatValue={formatValue}
-        name={name}
-        note={readingNote?.(index) ?? null}
-        point={points[index]}
-        secondary={secondary}
-        secondaryColor={secondaryColor}
-      />
-    ),
-    [color, formatValue, name, points, readingNote, secondary, secondaryColor]
+    ({ index }: { index: number }) =>
+      boxHidden ? null : (
+        <TooltipLines
+          color={color ?? INK}
+          formatValue={formatValue}
+          name={name}
+          note={readingNote?.(index) ?? null}
+          point={points[index]}
+          secondary={secondary}
+          secondaryColor={secondaryColor}
+        />
+      ),
+    [
+      boxHidden,
+      color,
+      formatValue,
+      name,
+      points,
+      readingNote,
+      secondary,
+      secondaryColor,
+    ]
   );
   return (
     <MotionConfig reducedMotion={motion.reducedMotion}>
@@ -255,7 +335,12 @@ function Plot({
             dataKey="drawnSecondary"
             fill={secondaryColor}
             fillOpacity={0}
-            stroke={secondaryColor}
+            stroke={
+              subtle
+                ? `color-mix(in oklab, ${secondaryColor} ${SUBTLE_PERCENT}%, transparent)`
+                : secondaryColor
+            }
+            {...(subtle ? { strokeWidth: 1 } : {})}
           />
         ) : null}
         {/* with an unknown day the block only lends its scale to the known values (it would draw an unknown one as a
@@ -278,6 +363,7 @@ function Plot({
           />
         ) : null}
         <ChartTooltip
+          {...(boxHidden ? { className: "hidden" } : {})}
           content={content}
           damping={motion.damping}
           dateLabels={labels}
@@ -289,6 +375,7 @@ function Plot({
           handle={handle}
           label={valueLabels ? formatValue : null}
           markers={markers}
+          peakOnly={valueLabels === "peak"}
         />
       </BklitAreaChart>
     </MotionConfig>
@@ -300,10 +387,12 @@ function Plot({
  * their own animation (reveal, y-domain tween, morph of the path when the data changes, spring of the cursor and of the
  * tooltip), and what the blocks do not bring: the colors by the tokens (`theme.css`), the dates and the money in pt-BR, a
  * name and a summary for a screen reader (`role="img"`), a native range input that walks through the points with the
- * arrows, the reading line above the drawing and the levels of motion (none of it on a phone).
+ * arrows, the reading line and the levels of motion (none of it on a phone).
  *
- * The day in focus is read in a line of text above the drawing (the last one, until the arrows move it); the pointer
- * and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
+ * The day in focus is read in a line of text (the last one, until the arrows move it): above the drawing when it is
+ * there at rest, else inside the box, over the top left corner, so reading a day never moves what follows the chart; over
+ * the box the arrows draw no tooltip (it would sit on the reading), and the cursor, the dot and the date pill mark the day.
+ * The pointer and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
  * With `secondary` the chart draws a second, dashed line on the same scale (the costs against the sales of the
  * Resultado). The chart is a reinforcement and never the only source of a number: the caller writes the total and the
  * best day beside it, and "Ver os números" shows the table.
@@ -324,6 +413,7 @@ export function AreaChart({
   markers = "best",
   name = "Vendas",
   rangeLabel = "Dia",
+  readingAtRest = true,
   readingNote,
   secondary,
   spokenNote,
@@ -341,6 +431,7 @@ export function AreaChart({
   const [picked, setPicked] = useState<{ index: number; key: string } | null>(
     null
   );
+  const [pointerOver, setPointerOver] = useState(false);
   const last = data.length - 1;
   const active =
     picked && picked.key === signature ? Math.min(picked.index, last) : last;
@@ -365,10 +456,12 @@ export function AreaChart({
     (event: ChangeEvent<HTMLInputElement>) => {
       const index = Number(event.currentTarget.value);
       setPicked({ index, key: signature });
+      setPointerOver(false);
       handle.current?.show(index);
     },
     [signature]
   );
+  const pointed = useCallback(() => setPointerOver(true), []);
   const show = useCallback(() => handle.current?.show(active), [active]);
   const hide = useCallback(() => {
     handle.current?.hide();
@@ -397,15 +490,19 @@ export function AreaChart({
     secondary,
   };
   const boxHeight = height + EXTRA_HEIGHT;
+  const place = readingPlace({
+    atRest: readingAtRest,
+    loading,
+    picked: picked?.key === signature && !pointerOver,
+  });
 
   return (
     <div className={cn("grid gap-2", className)} data-chart="">
-      {loading ? (
+      <ReadingAt place={place} reading={reading} where="above" />
+      {loading && readingAtRest ? (
         <p aria-hidden="true" className="min-h-[1.125rem]" />
-      ) : (
-        <Reading {...reading} />
-      )}
-      {secondary ? (
+      ) : null}
+      {secondary && !secondary.subtle ? (
         <Legend
           color={color ?? INK}
           dash={DASH}
@@ -416,7 +513,13 @@ export function AreaChart({
           secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
         />
       ) : null}
-      <div className="relative rounded-md" style={{ height: boxHeight }}>
+      <div
+        className="relative isolate rounded-md"
+        onPointerDown={pointed}
+        onPointerMove={pointed}
+        style={{ height: boxHeight }}
+      >
+        <ReadingAt place={place} reading={reading} where="over" />
         <div
           aria-label={label}
           className="size-full"
@@ -426,6 +529,7 @@ export function AreaChart({
           <Plot
             axisText={axisText}
             best={bestIndex(data)}
+            boxHidden={place === "over"}
             color={color}
             markers={markers}
             still={still}

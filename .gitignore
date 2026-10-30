@@ -31,3 +31,6 @@ apps/admin/src/ui/generated/
 packages/domain/reports/
 packages/domain/.stryker-tmp/
 packages/domain/stryker-setup-*.js
+
+# Lighthouse CI (apps/web, test:lighthouse): os relatórios de cada rodada
+apps/web/.lighthouseci/

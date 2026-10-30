@@ -1,3 +1,4 @@
+import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import type { HistoryRow } from "./sale-history-model";
@@ -26,20 +27,20 @@ export function SaleStatusBadges({
   );
 }
 
-const ROW = "flex items-center gap-3 px-3 py-2.5 md:px-4";
+const ROW = "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4";
 
-function RowBody({ row }: { row: HistoryRow }) {
+function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
     <>
       <span
         aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
+        className="hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
       >
         {row.customerInitials}
       </span>
-      <div className="grid min-w-0 flex-1 gap-0.5">
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="font-medium">
+          <p className="whitespace-nowrap font-medium">
             {row.dateText}
             {row.timeText ? (
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -55,17 +56,24 @@ function RowBody({ row }: { row: HistoryRow }) {
             statusTone={row.statusTone}
           />
         </div>
-        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-          Cliente: {row.customerText}
-        </p>
-        <p className="text-muted-foreground text-support">
-          {row.methodText} · {row.itemCountText}
+        <p className="flex min-w-0 text-muted-foreground text-support">
+          <span className="min-w-[5ch] truncate">{row.customerText}</span>
+          <span className="flex max-w-[calc(100%_-_5ch)] shrink-0 whitespace-pre">
+            <span className="overflow-hidden text-ellipsis">{` · ${row.methodText}`}</span>
+            <span className="shrink-0">{` · ${row.itemCountText}`}</span>
+          </span>
         </p>
       </div>
       <Money
-        className="shrink-0 font-semibold text-value-md tracking-tight"
+        className="shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
         text={row.totalText}
       />
+      {chevron ? (
+        <ChevronRightIcon
+          aria-hidden="true"
+          className="size-3.5 shrink-0 text-muted-foreground md:size-4"
+        />
+      ) : null}
     </>
   );
 }
@@ -80,14 +88,14 @@ function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
     <li>
       {offline ? (
         <div className={ROW}>
-          <RowBody row={row} />
+          <RowBody chevron={false} row={row} />
         </div>
       ) : (
         <a
           className={`${ROW} focus-ring hover:bg-muted/50 focus-visible:-outline-offset-3`}
           href={row.detailHref}
         >
-          <RowBody row={row} />
+          <RowBody chevron row={row} />
         </a>
       )}
     </li>

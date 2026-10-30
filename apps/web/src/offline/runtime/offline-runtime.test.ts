@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NoWorkerAnswerError } from "../../lib/connection";
+import { NoWorkerAnswerError, PLATFORM_CUT_REASON } from "../../lib/connection";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createReadGate, type ReadGate } from "../../lib/read-gate";
 import { attemptLogout } from "../logout-guard";
@@ -18,6 +18,7 @@ import {
   type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
@@ -2194,6 +2195,231 @@ describe("a server that waits for the legal acceptance", () => {
   });
 });
 
+function closedRefusal(): Error {
+  return Object.assign(new Error("organization closed"), {
+    code: "FORBIDDEN",
+    data: { reason: "organization_closed" },
+    status: 403,
+  });
+}
+
+describe("a server that says the organization was closed", () => {
+  const scope = `${userId}-${organizationId}`;
+  const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+  const sessionUserKey = "polaris.offline.session-user";
+
+  async function commandsOf(w: ReturnType<typeof world>) {
+    const kept = w.stores.get(scope);
+    return ((await kept?.outbox.snapshot())?.commands ?? []).map(
+      ({ commandId, payload, status, type }) => ({
+        commandId,
+        payload,
+        status,
+        type,
+      })
+    );
+  }
+
+  async function expectClosedDrop(
+    w: ReturnType<typeof world>,
+    runtime: ReturnType<ReturnType<typeof world>["make"]>,
+    before: Awaited<ReturnType<typeof commandsOf>>,
+    device: string | null
+  ) {
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      organizationClosed: true,
+      phase: "unavailable",
+      reason: "organization_closed",
+      sessionRefused: false,
+    });
+    expect(runtime.context()).toBeNull();
+    expect(w.wiped).toEqual([scope]);
+    expect(w.purged).toEqual([]);
+    expect(w.keyValues.read(leaseKeyName)).toBeNull();
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.keyValues.read(sessionUserKey)).toBe(userId);
+    expect(await commandsOf(w)).toEqual(before);
+  }
+
+  it("on the push: the collections and the lease go, the queue stays as it was, and the session is not refused", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+    expect(before).toHaveLength(2);
+
+    w.failures.push = true;
+    w.failures.pushCode = "FORBIDDEN";
+    w.failures.pushData = { reason: "organization_closed" };
+    await runtime.syncNow();
+
+    expect(w.calls.push).toBeGreaterThan(0);
+    await expectClosedDrop(w, runtime, before, device);
+    const pushes = w.calls.push;
+    await runtime.syncNow();
+    expect(w.calls.push).toBe(pushes);
+  });
+
+  it("on the renewal of the lease, at a sync: the same drop, and never the refused session", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    w.advance(73); // the lease ended, so the sync has to ask for a new one
+    w.failures.issueLease.push(closedRefusal());
+    await runtime.syncNow();
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("on the renewal while a cached lease still works: the cached lease does not stand in for a closed store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    w.advance(61); // inside the 12 h before the exp: the sync renews, and the old lease would still do
+    w.failures.issueLease.push(closedRefusal());
+    await runtime.syncNow();
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("on the lease asked at start: the device is not forgotten nor registered again, the collections go and the queue stays", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    const registered = w.calls.registerDevice;
+    w.keyValues.remove(leaseKeyName);
+
+    w.failures.issueLease.push(closedRefusal());
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(w.calls.registerDevice).toBe(registered);
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told by a screen's own read: the same drop, once, and the remembered user stays", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    await runtime.dropClosedCopy(organizationId);
+    await runtime.dropClosedCopy(organizationId);
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told while the runtime is still starting: the drop waits for the start, which does not undo it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    w.keyValues.remove(leaseKeyName);
+
+    let release: () => void = () => undefined;
+    w.gates.issueLease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runtime = w.make();
+    const starting = runtime.start(organizationId);
+    const dropping = runtime.dropClosedCopy(organizationId);
+    release();
+    await Promise.all([starting, dropping]);
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told before the runtime started for the store: the start that follows drops the copy instead of opening it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    const leases = w.calls.issueLease;
+
+    const runtime = w.make();
+    await runtime.dropClosedCopy(organizationId);
+    expect(w.wiped).toEqual([]);
+    await runtime.start(organizationId);
+
+    expect(w.calls.issueLease).toBe(leases);
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told for a store this runtime does not have open: its lease goes now, and nothing of the open store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const otherLease = `polaris.offline.lease.${userId}.org-2`;
+    w.keyValues.write(otherLease, "{}");
+
+    await runtime.dropClosedCopy("org-2");
+
+    expect(w.keyValues.read(otherLease)).toBeNull();
+    expect(w.keyValues.read(leaseKeyName)).not.toBeNull();
+    expect(w.wiped).toEqual([]);
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      phase: "ready",
+    });
+  });
+
+  it("stopping clears the mark: another store opens as usual", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.dropClosedCopy(organizationId);
+    expect(runtime.getSnapshot().organizationClosed).toBe(true);
+
+    await runtime.stop();
+    expect(runtime.getSnapshot().organizationClosed).toBe(false);
+    await runtime.start("org-2");
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      phase: "ready",
+    });
+  });
+
+  it("contrast: a FORBIDDEN with no reason on the push is a refused session, not a closed store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.push = true;
+    w.failures.pushCode = "FORBIDDEN";
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      reason: "session_refused",
+      sessionRefused: true,
+    });
+  });
+});
+
 describe("conexão com prova (F7)", () => {
   const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
 
@@ -2344,11 +2570,12 @@ describe("conexão com prova (F7)", () => {
       });
     });
 
-    it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'sync_failed'", async () => {
+    it("a Worker killed for CPU (1102) is not offline and says nothing for 60 s; then 'server_busy', never 'sync_failed'", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark)
+      // what oRPC throws for the platform's HTML 503 (`server_failed`: cf-ray, no mark), named by the connection
       w.failures.pushError = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
         status: 503,
       });
 
@@ -2367,15 +2594,39 @@ describe("conexão com prova (F7)", () => {
 
       w.advance(1 / 3600); // 60 s in a row with no good sync
       await runtime.syncNow();
-      expect(runtime.getSnapshot().reason).toBe("sync_failed");
+      expect(runtime.getSnapshot().reason).toBe("server_busy");
+      expect(syncStatusLabel(runtime.getSnapshot()).short).toBe("Ocupado · 1");
       expect(runtime.retriesQuietly()).toBe(false);
       expect(runtime.getSnapshot().counts.pending).toBe(1);
+      // the queue was not sent: an update must not take it for done
+      await expect(runtime.workSource().sync()).rejects.toThrow("sync_failed");
+    });
+
+    it("the Worker's own 503 server_busy (a fault it answered) is quiet for 60 s and then 'sync_failed', never 'Ocupado'", async () => {
+      const w = world();
+      const runtime = await readyWithQueue(w);
+      w.failures.pushError = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: "server_busy" },
+        status: 503,
+      });
+
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBeNull();
+      expect(runtime.retriesQuietly()).toBe(true);
+
+      w.advance(60 / 3600);
+      await runtime.syncNow();
+      expect(runtime.getSnapshot().reason).toBe("sync_failed");
+      expect(syncStatusLabel(runtime.getSnapshot()).short).toBe("Envio falhou");
     });
 
     it("a good sync between two deaths for CPU starts the 60 s again", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      const died = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
+        status: 503,
+      });
       w.failures.pushError = died;
       await runtime.syncNow();
       w.advance(50 / 3600);
@@ -2394,7 +2645,10 @@ describe("conexão com prova (F7)", () => {
     it("a death for CPU long after the last one starts a quiet minute of its own, and no answer is never retried quietly", async () => {
       const w = world();
       const runtime = await readyWithQueue(w);
-      const died = new ORPCError("SERVICE_UNAVAILABLE", { status: 503 });
+      const died = new ORPCError("SERVICE_UNAVAILABLE", {
+        data: { reason: PLATFORM_CUT_REASON },
+        status: 503,
+      });
       w.failures.pushError = died;
       await runtime.syncNow();
       w.advance(10 / 60); // 10 min with no sync at all (the page hidden)

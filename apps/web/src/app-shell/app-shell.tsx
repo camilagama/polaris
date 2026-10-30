@@ -1,3 +1,4 @@
+import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
@@ -49,15 +50,19 @@ import {
 } from "@/ui/sidebar";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { canManageBilling } from "../lib/billing-access";
+import { useConnectionOnline } from "../lib/browser-connection";
 import {
   type CurrentOrganization,
   useOrganizationLoad,
 } from "../lib/current-organization";
+import type { OrganizationLoad } from "../lib/current-organization-model";
 import {
   legalAcceptancePath,
   useLegalAcceptanceRequired,
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
+import { useNow } from "../lib/use-now";
 import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
@@ -70,9 +75,13 @@ import {
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
+import { ClosedStoreNotice, useClosedStoreHere } from "./closed-store-notice";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
-import { GraceNoticeSlot } from "./grace-notice";
+import { FirstAccess } from "./first-access";
+import { trialChargeDay } from "../subscription/plan-notice";
+import { GraceNoticeSlot, usePlanNoticeFacts } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
+import { MenuProgress, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
@@ -192,6 +201,10 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
 }
 
 interface AppSidebarProps {
+  /** "dd/mm" of the first charge of the trial, for the foot of the menu. */
+  chargeDay: string | null;
+  /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
+  firstSteps: number | null;
   navId: NavId | null;
   /** The screen works only with a connection: the state says so while offline (U-54). */
   onlineOnly: boolean;
@@ -203,7 +216,13 @@ interface AppSidebarProps {
  * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot. Pendências
  * is there only while this device has a refused record, with the count (map of navigation, § 1).
  */
-function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
+function AppSidebar({
+  chargeDay,
+  firstSteps,
+  navId,
+  onlineOnly,
+  organization,
+}: AppSidebarProps) {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
   // the answer of "Sair" may come after "Mais" was closed, or with the column folded: open it to show the warning
   const showLogoutAttention = useCallback(() => {
@@ -243,7 +262,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       <SidebarContent>
         <nav aria-label="Principal">
           {navGroups(items).map((group) => (
-            <SidebarGroup key={group.label ?? "inicio"}>
+            <SidebarGroup key={group.label ?? group.items[0]?.id}>
               {group.label ? (
                 <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               ) : null}
@@ -302,6 +321,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
         {isMobile ? (
           // the phone keeps "Sair" straight in "Mais", with the theme
           <div className="grid gap-3 p-1">
+            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
             <ThemeSegmented />
             {organization || email ? (
               <div className="grid min-w-0 gap-0.5">
@@ -320,13 +340,14 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
         ) : (
           // the desktop: the card of the store, with the theme, the other stores and "Sair" in its menu (v7 § 3 item 12)
           <div className="grid gap-3 p-1">
+            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
             <StoreCard
               email={email}
               logout={logout}
               onAttention={showLogoutAttention}
               organization={organization}
             />
-            {/* with touch, the 48 px areas of the menu button and of the links would meet: 12 px more between them;
+            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them;
                 folded, the links go under the content (`AppFooter`) */}
             <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden" />
           </div>
@@ -619,6 +640,90 @@ function ShellNotices({
   );
 }
 
+/**
+ * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace and the trial
+ * at the foot of the menu, only for whom manages the billing; nothing of either once the session is over.
+ */
+function useShellProgress(
+  current: CurrentOrganization | null,
+  sessionOver: boolean,
+  routeId: RouteId | undefined
+) {
+  const organization = sessionOver ? null : current;
+  const online = useConnectionOnline();
+  const now = useNow(60_000);
+  const planFacts = usePlanNoticeFacts(
+    organization?.organizationId ?? "",
+    organization !== null &&
+      canManageBilling(
+        organization.billingSelfService,
+        organization.organization.role
+      ),
+    routeId !== "subscription"
+  );
+  return {
+    // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
+    chargeDay:
+      planFacts === null || (routeId === "subscription" && !online)
+        ? null
+        : trialChargeDay(planFacts, saoPauloDateOf(now)),
+    firstSteps: useFirstSteps(organization?.organizationId ?? null),
+    planFacts,
+  };
+}
+
+/**
+ * The store this page worked in was closed: its notice takes the place of the page (and of the first access, once the
+ * organizations are read again without it), so nothing sends the person to the sign-in screen or round again.
+ */
+function useClosedNotice(load: OrganizationLoad): ReactNode {
+  const currentId = load.status === "ready" ? load.current.id : null;
+  const closedHere = useClosedStoreHere(currentId);
+  if (closedHere === null || (currentId !== null && currentId !== closedHere)) {
+    return null;
+  }
+  return <ClosedStoreNotice organizationId={closedHere} />;
+}
+
+function FirstAccessPage({
+  acceptanceNotice,
+  closedNotice,
+  onOpened,
+  sessionNotice,
+}: {
+  acceptanceNotice: boolean;
+  closedNotice: ReactNode;
+  onOpened: () => void;
+  sessionNotice: boolean;
+}) {
+  if (closedNotice) {
+    return (
+      <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
+        <main className="mx-auto max-w-[420px]" id="conteudo">
+          {closedNotice}
+        </main>
+      </div>
+    );
+  }
+  return (
+    <>
+      {sessionNotice || acceptanceNotice ? (
+        <div className="flow-root bg-background px-(--gutter) pt-4">
+          <div className="mx-auto max-w-[420px]">
+            {sessionNotice ? <SessionEndedNotice alone /> : null}
+            {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
+          </div>
+        </div>
+      ) : null}
+      <FirstAccess>
+        <Suspense fallback={<PageLoading fullPage />}>
+          <OrganizationSetup onOpened={onOpened} />
+        </Suspense>
+      </FirstAccess>
+    </>
+  );
+}
+
 interface AppShellProps {
   children: ReactNode;
   /** An online-only screen with a form: offline, the notice says the typed text stays. */
@@ -670,23 +775,21 @@ export function AppShell({
           select,
         }
       : null;
+  const { chargeDay, firstSteps, planFacts } = useShellProgress(
+    organization,
+    sessionOver,
+    routeId
+  );
+  const closedNotice = useClosedNotice(load);
   // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
   if (requiresOrganization && load.status === "empty" && !accessExpired) {
     return (
-      <>
-        {showNotice || showAcceptanceNotice ? (
-          // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
-          <div className="flow-root bg-background px-(--gutter) pt-4">
-            <div className="mx-auto max-w-[420px]">
-              {showNotice ? <SessionEndedNotice alone /> : null}
-              {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
-            </div>
-          </div>
-        ) : null}
-        <Suspense fallback={<PageLoading fullPage />}>
-          <OrganizationSetup onOpened={reload} />
-        </Suspense>
-      </>
+      <FirstAccessPage
+        acceptanceNotice={showAcceptanceNotice}
+        closedNotice={closedNotice}
+        onOpened={reload}
+        sessionNotice={showNotice}
+      />
     );
   }
   return (
@@ -698,6 +801,8 @@ export function AppShell({
         Ir para o conteúdo
       </a>
       <AppSidebar
+        chargeDay={chargeDay}
+        firstSteps={firstSteps}
         navId={navId}
         onlineOnly={onlineOnly}
         organization={organization}
@@ -718,17 +823,20 @@ export function AppShell({
             session={showNotice}
           />
           <GraceNoticeSlot
-            hidden={sessionOver}
+            facts={planFacts}
             onSubscription={routeId === "subscription"}
-            organization={organization}
           />
-          <OfflineAccessGate>
-            {requiresOrganization ? (
-              <OrganizationGate>{children}</OrganizationGate>
-            ) : (
-              children
-            )}
-          </OfflineAccessGate>
+          {closedNotice && requiresOrganization ? (
+            closedNotice
+          ) : (
+            <OfflineAccessGate>
+              {requiresOrganization ? (
+                <OrganizationGate>{children}</OrganizationGate>
+              ) : (
+                children
+              )}
+            </OfflineAccessGate>
+          )}
         </main>
         <AppFooter />
         <BottomBar navId={navId} />

@@ -1,4 +1,5 @@
 import { HideValuesButton } from "@/ui/hidden-values";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ReactNode,
@@ -32,6 +33,7 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
 import { waitingOperations } from "../offline/runtime/sync-status";
 import { formatLastConfirmed, formatUpdatedUntil } from "./dashboard-model";
+import { EmptyResult } from "./empty-result";
 import { groupGoals } from "./goal-model";
 import { GoalsPanel } from "./goals-panel";
 import { OfflineCopyNotice } from "./offline-copy-notice";
@@ -180,6 +182,8 @@ function CardNote({
 }
 
 interface ContentProps {
+  /** `expense:create`: the empty period offers the way to a new expense only to who can register one. */
+  canCreateExpense: boolean;
   /** The days of the period before the one asked for, for the chips of the cards (null while not read, or when the result's chip cannot exist: `resultChipPeriod`). */
   comparison: ComparisonDays | null;
   /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
@@ -203,6 +207,7 @@ function onScreen<T extends { period: Period }>(
 }
 
 function Content({
+  canCreateExpense,
   comparison,
   salesComparison,
   period,
@@ -233,11 +238,7 @@ function Content({
   // the store's today on the server's clock of the figures, the same that cuts the chart (AC-6)
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   if (summary.quality.level === "no_data") {
-    return (
-      <CardNote description="Escolha outro período ou registre vendas e despesas.">
-        {`Sem vendas nem despesas em ${shown}`}
-      </CardNote>
-    );
+    return <EmptyResult canCreateExpense={canCreateExpense} period={shown} />;
   }
   return (
     <div
@@ -284,6 +285,10 @@ interface Selection {
  */
 export function DashboardPage() {
   const { organization, organizationId } = useCurrentOrganization();
+  const canCreateExpense = hasCapabilityForRole(
+    organization.role,
+    "expense:create"
+  );
   // the first read has only the device's clock to name "hoje"; the server's answer corrects it (below)
   const [today, setToday] = useState(() =>
     calendarDayInTimezone(new Date(), organization.timezone)
@@ -408,6 +413,7 @@ export function DashboardPage() {
           ) : null}
           <div aria-busy={state.isLoading} className="grid gap-5">
             <Content
+              canCreateExpense={canCreateExpense}
               comparison={comparison}
               salesComparison={salesComparison}
               period={period}

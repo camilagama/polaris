@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearSaleAttempts,
   readSaleAttempt,
+  readSaleAttemptState,
   SALE_ATTEMPT_MAX_AGE_MS,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
@@ -11,6 +13,10 @@ function memoryStorage() {
   return {
     data,
     getItem: (key: string) => data.get(key) ?? null,
+    key: (index: number) => [...data.keys()][index] ?? null,
+    get length() {
+      return data.size;
+    },
     removeItem: (key: string) => {
       data.delete(key);
     },
@@ -30,6 +36,24 @@ const attempt: SaleAttempt = {
 };
 
 describe("pending sale attempt storage", () => {
+  it("keeps the profile and version of the send, and reads an older attempt without them", () => {
+    const storage = memoryStorage();
+    const sent = {
+      ...attempt,
+      paymentProfile: { expectedVersion: 3, id: "profile-1" },
+    };
+    writeSaleAttempt(storage, organizationId, sent, true);
+    expect(readSaleAttempt(storage, organizationId, now)).toEqual(sent);
+
+    storage.setItem(
+      `polaris.sale.attempt.v1:${organizationId}`,
+      JSON.stringify({ ...attempt, paymentProfile: { id: "p" } })
+    );
+    expect(
+      readSaleAttempt(storage, organizationId, now)?.paymentProfile
+    ).toBeUndefined();
+  });
+
   it("returns the stored attempt after a reload", () => {
     const storage = memoryStorage();
     writeSaleAttempt(storage, organizationId, attempt);
@@ -74,5 +98,138 @@ describe("pending sale attempt storage", () => {
   it("works without storage", () => {
     expect(readSaleAttempt(null, organizationId, now)).toBeNull();
     expect(() => writeSaleAttempt(null, organizationId, attempt)).not.toThrow();
+  });
+});
+
+describe("the attempt of a cart that came back from the tab's draft", () => {
+  const later = new Date(
+    new Date(attempt.recordedAt).getTime() + SALE_ATTEMPT_MAX_AGE_MS + 60_000
+  );
+
+  it("lasts as long as the draft it was made from, while its outcome is unknown", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    expect(
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:50:00.000Z"
+      )
+    ).toEqual(attempt);
+  });
+
+  it("after a definite refusal it keeps its own limit: a retry hours later is a new instant", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, false);
+    expect(
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:50:00.000Z"
+      )
+    ).toBeNull();
+  });
+
+  it("an attempt older than the draft belongs to another cart and keeps its own limit", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    expect(
+      readSaleAttempt(
+        storage,
+        organizationId,
+        later,
+        "2026-10-13T14:56:00.000Z"
+      )
+    ).toBeNull();
+  });
+});
+
+describe("whether the outcome of the attempt is unknown", () => {
+  const draftStartedAt = "2026-10-13T14:50:00.000Z";
+
+  it("is unknown only for an unsettled attempt made for the cart that came back", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    expect(
+      readSaleAttemptState(storage, organizationId, now, draftStartedAt)
+    ).toEqual({ attempt, outcomeUnknown: true, unsettled: true });
+    expect(readSaleAttemptState(storage, organizationId, now)).toEqual({
+      attempt,
+      outcomeUnknown: false,
+      unsettled: true,
+    });
+    expect(
+      readSaleAttemptState(
+        storage,
+        organizationId,
+        now,
+        "2026-10-13T14:56:00.000Z"
+      )?.outcomeUnknown
+    ).toBe(false);
+
+    writeSaleAttempt(storage, organizationId, attempt, false);
+    expect(
+      readSaleAttemptState(storage, organizationId, now, draftStartedAt)
+    ).toMatchObject({ outcomeUnknown: false, unsettled: false });
+  });
+});
+
+describe("clearing the attempts of the tab", () => {
+  const other = "0198e5f0-0000-7000-8000-000000000002";
+
+  it("forgets every store's attempt, or all but the store just chosen, and nothing else of the tab", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    writeSaleAttempt(storage, other, attempt, true);
+    storage.setItem(`polaris.sale.draft.v1:${organizationId}`, "{}");
+
+    clearSaleAttempts(storage, other);
+    expect([...storage.data.keys()].sort()).toEqual([
+      `polaris.sale.attempt.v1:${other}`,
+      `polaris.sale.draft.v1:${organizationId}`,
+    ]);
+
+    clearSaleAttempts(storage);
+    expect([...storage.data.keys()]).toEqual([
+      `polaris.sale.draft.v1:${organizationId}`,
+    ]);
+  });
+
+  it("keeps the attempts sent with no answer when asked, and forgets the settled ones", () => {
+    const storage = memoryStorage();
+    const third = "0198e5f0-0000-7000-8000-000000000003";
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    writeSaleAttempt(storage, other, attempt, false);
+    storage.setItem(`polaris.sale.attempt.v1:${third}`, "{}");
+
+    clearSaleAttempts(storage, third, true);
+    expect([...storage.data.keys()].sort()).toEqual([
+      `polaris.sale.attempt.v1:${organizationId}`,
+      `polaris.sale.attempt.v1:${third}`,
+    ]);
+    expect(readSaleAttempt(storage, organizationId, now)?.commandId).toBe(
+      attempt.commandId
+    );
+
+    clearSaleAttempts(storage, third);
+    expect([...storage.data.keys()]).toEqual([
+      `polaris.sale.attempt.v1:${third}`,
+    ]);
+  });
+
+  it("a storage that refuses or cannot list its keys does not break the page", () => {
+    const blocked = {
+      getItem: () => null,
+      key: () => {
+        throw new Error("blocked");
+      },
+      length: 1,
+      removeItem: () => undefined,
+      setItem: () => undefined,
+    };
+    expect(() => clearSaleAttempts(blocked)).not.toThrow();
+    expect(() => clearSaleAttempts(null)).not.toThrow();
   });
 });

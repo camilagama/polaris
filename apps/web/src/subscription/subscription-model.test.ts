@@ -7,15 +7,20 @@ import {
   graceNotice,
   legacyCheckoutReturnPath,
   noPlanReadBackoff,
+  noPlanReadsInFlight,
   PLAN_NOTICE_FOR_MS,
   PLAN_NOTICE_KEY,
   planNoticeIsOld,
   planNoticeRetryDelayMs,
   planReadBackoffFor,
+  planReadEnded,
   planReadFailed,
+  planReadInFlight,
+  planReadStarted,
   planReadSucceeded,
   rememberedPlanNotice,
   rememberPlanNotice,
+  trialChargeDay,
   untilText,
 } from "./plan-notice";
 import {
@@ -694,6 +699,9 @@ describe("waitsForProvider and abandonedCheckoutText", () => {
 });
 
 describe("checkoutRefusal", () => {
+  const CHECKOUT_UNCONFIRMED =
+    "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
+
   const cases: [string, string, boolean, boolean, string][] = [
     [
       "CONFLICT",
@@ -740,9 +748,9 @@ describe("checkoutRefusal", () => {
     [
       "SERVICE_UNAVAILABLE",
       "billing_provider_unavailable",
-      false,
       true,
-      "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
+      true,
+      CHECKOUT_UNCONFIRMED,
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -828,10 +836,55 @@ describe("checkoutRefusal", () => {
     );
   });
 
-  it("allows retry on SERVICE_UNAVAILABLE without a known reason", () => {
-    expect(
-      checkoutRefusal({ code: "SERVICE_UNAVAILABLE", data: {}, message: "" })
-    ).toMatchObject({ reread: false, retry: true });
+  it.each([
+    [
+      "a 503 with no reason",
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+    ],
+    ["a 503 with no body", { code: "SERVICE_UNAVAILABLE" }],
+    [
+      "the server_busy of the Worker",
+      rpcError("SERVICE_UNAVAILABLE", "server_busy"),
+    ],
+    [
+      "the cut of the platform (503)",
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ],
+    [
+      "the cut of the platform (500)",
+      { ...rpcError("INTERNAL_SERVER_ERROR", "platform_cut"), status: 500 },
+    ],
+  ])(
+    "does not know whether the page was opened on %s, and says nothing was charged only because creating it never charges",
+    (_, error) => {
+      expect(checkoutRefusal(error)).toEqual({
+        reread: true,
+        retry: true,
+        text: CHECKOUT_UNCONFIRMED,
+      });
+    }
+  );
+
+  it("never says the service did not answer, which blames the provider for what the screen does not know", () => {
+    for (const error of [
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+      rpcError("SERVICE_UNAVAILABLE", "billing_provider_unavailable"),
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ]) {
+      expect(checkoutRefusal(error).text).not.toContain("não respondeu");
+    }
+  });
+
+  it("asks to reread on an unknown reason, with no word about a charge", () => {
+    const refusal = checkoutRefusal(
+      rpcError("INTERNAL_SERVER_ERROR", "something_new")
+    );
+    expect(refusal).toEqual({
+      reread: true,
+      retry: false,
+      text: "Não foi possível começar a assinatura agora. Atualize e tente de novo.",
+    });
+    expect(refusal.text).not.toContain("cobrado");
   });
 
   it("asks to reread on an unknown CONFLICT", () => {
@@ -910,19 +963,43 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
   };
   const GRACE_FACTS = {
     accessEndsAt: "2026-10-31T03:00:00.000Z",
+    nextCharge: null,
     state: "grace",
   } as const;
 
-  it("keeps only the state, the end of the access, the store and when it was read", () => {
+  it("keeps only the state, the end of the access, the day of the next charge, the store and when it was read", () => {
     const store = fakeStore();
     rememberPlanNotice("loja-a", GRACE_FACTS, 1000, store);
     expect(JSON.parse(store.values.get(PLAN_NOTICE_KEY) ?? "null")).toEqual({
       accessEndsAt: "2026-10-31T03:00:00.000Z",
+      nextChargeOn: null,
       organizationId: "loja-a",
       readAt: 1000,
       state: "grace",
     });
-    expect(rememberedPlanNotice("loja-a", store)).toMatchObject(GRACE_FACTS);
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      accessEndsAt: GRACE_FACTS.accessEndsAt,
+      state: "grace",
+    });
+  });
+
+  it("keeps the day of the first charge of a trial, never its amount", () => {
+    const store = fakeStore();
+    rememberPlanNotice(
+      "loja-a",
+      {
+        accessEndsAt: "2026-11-10T03:00:00.000Z",
+        nextCharge: { amount: "24.90", on: "2026-11-10" },
+        state: "trialing",
+      },
+      1000,
+      store
+    );
+    expect(store.values.get(PLAN_NOTICE_KEY)).not.toContain("24.90");
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      nextChargeOn: "2026-11-10",
+      state: "trialing",
+    });
   });
 
   it("never gives one store's plan to another", () => {
@@ -946,9 +1023,31 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       JSON.stringify({ organizationId: "loja-a", readAt: "x", state: "grace" }),
       JSON.stringify({
         accessEndsAt: 1,
+        nextChargeOn: null,
         organizationId: "loja-a",
         readAt: 1,
         state: "grace",
+      }),
+      // kept before the day of the charge was: read again
+      JSON.stringify({
+        accessEndsAt: null,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: "10/11",
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: 20_261_110,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
       }),
     ]) {
       store.values.set(PLAN_NOTICE_KEY, value);
@@ -962,6 +1061,44 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
     clearPlanNotice(store);
     expect(store.values.has(PLAN_NOTICE_KEY)).toBe(false);
     expect(rememberedPlanNotice("loja-a", store)).toBeNull();
+  });
+});
+
+const DAY_WORD = /dia/;
+
+describe("trialChargeDay (the trial at the foot of the menu)", () => {
+  const TODAY = "2026-10-29";
+
+  it("is the dd/mm of the first charge, in a trial only", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: "2026-11-10", state: "trialing" }, TODAY)
+    ).toBe("10/11");
+    for (const state of ["active", "grace", "free", "trial_setup"] as const) {
+      expect(
+        trialChargeDay({ nextChargeOn: "2026-11-10", state }, TODAY)
+      ).toBeNull();
+    }
+  });
+
+  it("is nothing without a charge to come (the renewal was cancelled)", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: null, state: "trialing" }, TODAY)
+    ).toBeNull();
+  });
+
+  it("is the day itself on the day of the charge, and nothing once it is past", () => {
+    const trial = { nextChargeOn: "2026-10-29", state: "trialing" } as const;
+    expect(trialChargeDay(trial, "2026-10-29")).toBe("29/10");
+    expect(trialChargeDay(trial, "2026-10-30")).toBeNull();
+  });
+
+  it("never says a count of days (AS-3, AC-12)", () => {
+    const text = trialChargeDay(
+      { nextChargeOn: "2026-11-01", state: "trialing" },
+      TODAY
+    );
+    expect(text).toBe("01/11");
+    expect(text).not.toMatch(DAY_WORD);
   });
 });
 
@@ -1091,5 +1228,37 @@ describe("the wait after failed reads of the notice, by store", () => {
     expect(planReadFailed(afterSwitch, "store-a", T0 + 5 * MINUTE)).toBe(
       afterSwitch
     );
+  });
+});
+
+describe("the reads of the notice in flight, by store", () => {
+  it("does not hold store B back while the read of store A is on its way", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(reads, "store-b")).toBe(false);
+  });
+
+  it("frees only its own store when a read ends", () => {
+    let reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    reads = planReadStarted(reads, "store-b");
+    reads = planReadEnded(reads, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(false);
+    expect(planReadInFlight(reads, "store-b")).toBe(true);
+  });
+
+  it("keeps the same store from starting two reads at once, until the first ends", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(planReadEnded(reads, "store-a"), "store-a")).toBe(
+      false
+    );
+  });
+
+  it("leaves the set it was given untouched", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    planReadEnded(reads, "store-a");
+    planReadStarted(reads, "store-b");
+    expect([...reads]).toEqual(["store-a"]);
+    expect([...noPlanReadsInFlight]).toEqual([]);
   });
 });

@@ -536,6 +536,12 @@ function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
   );
 }
 
+/** The height of an item: one line of 32 px (48 with touch), or "lg", two lines as tall as they need from there. */
+const MENU_BUTTON_SIZES = {
+  default: "h-8 touch:h-12 items-center",
+  lg: "min-h-8 touch:min-h-12 items-start group-data-[collapsible=icon]:items-center",
+} as const;
+
 /**
  * A destination of the menu: a link (the shell has no other kind of item), marked with `data-active`. Folded, it is its
  * icon, with the name in a tooltip to the right (the name stays the name of the link, for a screen reader).
@@ -543,15 +549,20 @@ function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
 function SidebarMenuButton({
   className,
   isActive = false,
+  size = "default",
   tooltip,
   ...props
-}: ComponentProps<"a"> & { isActive?: boolean; tooltip?: string }) {
+}: ComponentProps<"a"> & {
+  isActive?: boolean;
+  size?: keyof typeof MENU_BUTTON_SIZES;
+  tooltip?: string;
+}) {
   // outside a provider (the parts shown alone in the gallery) the column is never folded
   const state = useContext(SidebarContext)?.state;
   const button = (
     <a
       className={cx(
-        "peer/menu-button focus-ring relative flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
+        `peer/menu-button focus-ring relative flex ${MENU_BUTTON_SIZES[size]} w-full gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0`,
         className
       )}
       data-active={isActive ? "" : undefined}

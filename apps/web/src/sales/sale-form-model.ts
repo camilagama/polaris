@@ -67,6 +67,16 @@ export const SALE_METHODS: ReadonlyArray<readonly [SaleMethod, string]> = [
   ["other", "Outro"],
 ];
 
+/** The short names of the choice cards of the sale and of the line of the history; the summary and the receipt keep the full ones of SALE_METHODS. */
+export const SALE_METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
+  ["pix", "Pix"],
+  ["cash", "Dinheiro"],
+  ["credit_card", "Crédito"],
+  ["debit_card", "Débito"],
+  ["bank_transfer", "Transferência"],
+  ["other", "Outro"],
+];
+
 export const ADJUSTMENT_KINDS: ReadonlyArray<
   readonly [AdjustmentKind, string]
 > = [
@@ -459,11 +469,14 @@ export function selectProfileChoice(
 /**
  * Reconciles the chosen profile with a fresh list of active profiles. A profile
  * that changed (or disappeared) forces the operator to review the fee preview
- * again before the sale can be confirmed.
+ * again before the sale can be confirmed. With an attempt whose outcome is unknown, a profile that left the list does
+ * not clear the choice: the evaluation already refuses it, and clearing it would let the next choice send another body
+ * under a new command ID, for a sale the server may have recorded.
  */
 export function reconcileProfileReload(
   form: SaleFormState,
-  profiles: readonly PaymentProfileReadModel[]
+  profiles: readonly PaymentProfileReadModel[],
+  outcomeUnknown = false
 ): SaleFormState {
   const { choice, seenVersion } = form.profile;
   if (choice === "" || choice === NO_PROFILE_CHOICE) {
@@ -471,6 +484,9 @@ export function reconcileProfileReload(
   }
   const profile = profiles.find((candidate) => candidate.id === choice);
   if (!profile) {
+    if (outcomeUnknown) {
+      return form;
+    }
     return {
       ...form,
       profile: {
@@ -712,14 +728,18 @@ export function autoSelectOnlyVariants(
 
 export interface StockView {
   costText: string | null;
+  needsEntry: boolean;
   quantity: number | null;
   text: string;
   tone: "neutral" | "ok" | "warning";
 }
 
+const askForEntryText = "Peça a quem cuida do estoque para dar entrada.";
+
 /** Current balance and moving average cost for a chosen variant. */
 export function stockView(
-  load: Loadable<InventoryBalanceReadModel> | undefined
+  load: Loadable<InventoryBalanceReadModel> | undefined,
+  canAdjustStock: boolean
 ): StockView | null {
   if (load === undefined) {
     return null;
@@ -727,6 +747,7 @@ export function stockView(
   if (load.status === "loading") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
       text: "Consultando estoque…",
       tone: "neutral",
@@ -735,26 +756,29 @@ export function stockView(
   if (load.status === "error") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
-      text: `${load.message} Você ainda pode vender; o servidor confirma o saldo.`,
+      text: `${load.message} Você ainda pode vender: o saldo é conferido ao confirmar.`,
       tone: "warning",
     };
   }
   const { movingAverageCost, quantity } = load.value;
+  if (quantity === 0) {
+    return {
+      costText: null,
+      needsEntry: true,
+      quantity,
+      text: `Sem estoque: saldo 0. ${canAdjustStock ? "Para vender, dê entrada no estoque." : askForEntryText}`,
+      tone: "warning",
+    };
+  }
   const costText =
     movingAverageCost === null
       ? "Custo desconhecido. Margem indeterminada."
       : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
-  if (quantity === 0) {
-    return {
-      costText,
-      quantity,
-      text: "Sem estoque: saldo 0. O servidor recusa a venda se o saldo continuar insuficiente.",
-      tone: "warning",
-    };
-  }
   return {
     costText,
+    needsEntry: false,
     quantity,
     text: `Saldo atual: ${quantity} ${quantity === 1 ? "unidade" : "unidades"}.`,
     tone: "ok",
@@ -1446,9 +1470,13 @@ function stockWarnings(
   for (const item of items) {
     const balance = stock[item.variantId];
     const total = requested.get(item.variantId) ?? 0;
-    if (balance?.status === "ready" && total > balance.value.quantity) {
+    if (
+      balance?.status === "ready" &&
+      balance.value.quantity !== 0 &&
+      total > balance.value.quantity
+    ) {
       warnings[item.draftId] =
-        `Quantidade acima do saldo exibido (${balance.value.quantity}). Você pode continuar; o servidor confirma o estoque e recusa a venda se for insuficiente.`;
+        `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
     }
   }
   return warnings;
@@ -1609,6 +1637,8 @@ export function evaluateSaleForm(
 export interface SaleAttempt {
   commandId: string;
   occurredAt: string;
+  /** The profile and version the body was sent with, for a resend whose first answer was lost. Absent in older attempts. */
+  paymentProfile?: SaleCommandBody["paymentProfile"] | undefined;
   /** Device clock when the attempt started; local evidence only. */
   recordedAt: string;
   signature: string;
@@ -1625,7 +1655,8 @@ function bodySignature(
 /**
  * The server replays a repeated command ID only for an identical payload, so
  * an identical retry keeps the previous command ID and commercial instant. Any
- * change to the payload (including a new profile version) starts a new attempt.
+ * change to the payload (including a new profile version) starts a new attempt,
+ * but for the version kept by `bodyOfUnsettledAttempt`.
  */
 export function resolveSaleAttempt(
   previous: SaleAttempt | null,
@@ -1642,9 +1673,44 @@ export function resolveSaleAttempt(
   return {
     commandId: createId(),
     occurredAt: occurredAtOverride ?? now.toISOString(),
+    paymentProfile: body.paymentProfile,
     recordedAt: now.toISOString(),
     signature,
   };
+}
+
+/**
+ * An attempt sent with no answer may already be a sale on the server, which replays it before it looks at the profile
+ * version. When the only change to the body is the version of the same profile, edited in the meantime, the body goes
+ * again with the version it was sent with: the live one would be another payload, a new command ID and the sale twice.
+ * If the sale never reached the server, that version is refused as a version conflict, a definite answer.
+ */
+function bodyOfUnsettledAttempt(
+  previous: SaleAttempt | null,
+  body: SaleCommandBody,
+  organizationId: string,
+  occurredAtOverride: string | null
+): SaleCommandBody {
+  const sent = previous?.paymentProfile;
+  if (
+    previous === null ||
+    !sent ||
+    body.paymentProfile?.id !== sent.id ||
+    body.paymentProfile.expectedVersion === sent.expectedVersion
+  ) {
+    return body;
+  }
+  const sentBody = {
+    ...body,
+    paymentProfile: {
+      ...body.paymentProfile,
+      expectedVersion: sent.expectedVersion,
+    },
+  };
+  return bodySignature(sentBody, organizationId, occurredAtOverride) ===
+    previous.signature
+    ? sentBody
+    : body;
 }
 
 export type PreparedConfirmation =
@@ -1657,6 +1723,8 @@ export type PreparedConfirmation =
  * shape or arithmetic reasons.
  */
 export function prepareConfirmation(input: {
+  /** The previous attempt was sent with no answer: see `bodyOfUnsettledAttempt`. */
+  attemptUnsettled?: boolean;
   body: SaleCommandBody;
   createId: () => string;
   now: Date;
@@ -1676,16 +1744,24 @@ export function prepareConfirmation(input: {
       ok: false,
     };
   }
+  const body = input.attemptUnsettled
+    ? bodyOfUnsettledAttempt(
+        input.previousAttempt,
+        input.body,
+        input.organizationId,
+        override
+      )
+    : input.body;
   const attempt = resolveSaleAttempt(
     input.previousAttempt,
-    input.body,
+    body,
     input.organizationId,
     input.createId,
     input.now,
     override
   );
   const command = {
-    ...input.body,
+    ...body,
     commandId: attempt.commandId,
     occurredAt: attempt.occurredAt,
     recordedAt: attempt.recordedAt,
@@ -1723,6 +1799,7 @@ type SaleFailureKind =
 export interface SaleSubmitFailure {
   /** The attempt cannot be resent as is: the next confirm gets a fresh attempt. */
   discardAttempt: boolean;
+  entry: { label: string; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
@@ -1742,12 +1819,15 @@ interface ReasonOutcome {
 const variantGoneMessage =
   "Uma das variantes não existe mais nesta loja. Remova a linha, atualize os dados e revise a venda.";
 
+const stockRefusalFallbackMessage =
+  "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um.";
+
 const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "insufficient_stock",
     {
-      message:
-        "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades.",
+      discardAttempt: true,
+      message: stockRefusalFallbackMessage,
       refreshData: true,
     },
   ],
@@ -1888,6 +1968,7 @@ function failure(
 ): SaleSubmitFailure {
   return {
     discardAttempt: options.discardAttempt ?? false,
+    entry: null,
     kind,
     message,
     reason: options.reason ?? null,
@@ -1921,7 +2002,7 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
     case "CONFLICT":
       return failure(
         "conflict",
-        "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda.",
+        "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda.",
         { refreshData: true }
       );
     default:
@@ -2265,10 +2346,14 @@ export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
 /**
  * The form while the sale will be queued on the device: the sale is dated now, so
  * a typed date is dropped. The payment profile stays the person's choice (the
- * profiles of the last connection are offered, ADR 0049).
+ * profiles of the last connection are offered, ADR 0049). The typed date is part of the body the command ID was made
+ * for, so it stays while the outcome of an attempt is unknown.
  */
-export function formForOfflineSale(form: SaleFormState): SaleFormState {
-  return { ...form, occurredAtLocal: "" };
+export function formForOfflineSale(
+  form: SaleFormState,
+  outcomeUnknown = false
+): SaleFormState {
+  return outcomeUnknown ? form : { ...form, occurredAtLocal: "" };
 }
 
 export const idleSubmission: SubmissionState = { phase: "idle" };
@@ -2317,11 +2402,126 @@ export function failSubmission(
     : { failure: mapped, phase: "failed" };
 }
 
+const MAX_LISTED_SHORTAGES = 3;
+
+interface StockShortage {
+  balance: number;
+  label: string;
+  requested: number;
+  variantId: string;
+}
+
+function stockShortages(
+  items: readonly { quantity: number; variantId: string }[],
+  labels: ReadonlyMap<string, string>,
+  stock: EvaluationContext["stock"]
+): StockShortage[] {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    requested.set(
+      item.variantId,
+      (requested.get(item.variantId) ?? 0) + item.quantity
+    );
+  }
+  const shortages: StockShortage[] = [];
+  for (const [variantId, total] of requested) {
+    const balance = stock[variantId];
+    if (balance?.status !== "ready") {
+      // a line whose balance the screen never read may be the one refused: no line is named then
+      return [];
+    }
+    if (total > balance.value.quantity) {
+      shortages.push({
+        balance: balance.value.quantity,
+        label: labels.get(variantId) ?? "item sem nome",
+        requested: total,
+        variantId,
+      });
+    }
+  }
+  return shortages;
+}
+
+function listWithAnd(parts: readonly string[]): string {
+  if (parts.length <= 1) {
+    return parts.join("");
+  }
+  return `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}`;
+}
+
+function listShortages(parts: readonly string[]): string {
+  return parts.length > MAX_LISTED_SHORTAGES
+    ? `${parts.slice(0, MAX_LISTED_SHORTAGES).join(", ")} e mais ${parts.length - MAX_LISTED_SHORTAGES}`
+    : listWithAnd(parts);
+}
+
+function stockRefusalNotice(
+  shortages: readonly StockShortage[],
+  canAdjustStock: boolean
+): Pick<SaleSubmitFailure, "entry" | "message"> {
+  const [first] = shortages;
+  if (first === undefined) {
+    return { entry: null, message: stockRefusalFallbackMessage };
+  }
+  const prefix = "A venda não foi registrada:";
+  const detailed = shortages.map(
+    (shortage) =>
+      `${shortage.label} (pediu ${shortage.requested}, saldo ${shortage.balance})`
+  );
+  const names = shortages.map((shortage) => shortage.label);
+  const only = shortages.length === 1;
+  let message: string;
+  if (canAdjustStock) {
+    message = only
+      ? `${prefix} falta estoque de ${detailed[0]}.`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(detailed)}.`;
+  } else {
+    message = only
+      ? `${prefix} falta estoque de ${first.label}. ${askForEntryText}`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(names)}. ${askForEntryText}`;
+  }
+  return {
+    entry: canAdjustStock
+      ? { label: first.label, variantId: first.variantId }
+      : null,
+    message,
+  };
+}
+
+interface SentStock {
+  canAdjustStock: boolean;
+  items: readonly { quantity: number; variantId: string }[];
+  labels: ReadonlyMap<string, string>;
+  stock: EvaluationContext["stock"];
+}
+
+/**
+ * The server does not say which line lacks stock: the refusal names the lines whose request is above the balance the
+ * screen holds, and says so plainly when none can be pointed at.
+ */
+export function describeStockRefusal(
+  state: SubmissionState,
+  sent: SentStock
+): SubmissionState {
+  if (
+    state.phase !== "failed" ||
+    state.failure.reason !== "insufficient_stock"
+  ) {
+    return state;
+  }
+  const notice = stockRefusalNotice(
+    stockShortages(sent.items, sent.labels, sent.stock),
+    sent.canAdjustStock
+  );
+  return { ...state, failure: { ...state.failure, ...notice } };
+}
+
 /** The final domain validation rejected the form before any request. */
 export function rejectSubmission(message: string): SubmissionState {
   return {
     failure: {
       discardAttempt: false,
+      entry: null,
       kind: "bad_request",
       message,
       reason: null,

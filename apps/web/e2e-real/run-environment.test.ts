@@ -178,4 +178,19 @@ describe("the environment of an e2e run", () => {
       PREVIEW_VARIABLES_MISSING
     );
   });
+
+  it("gives the keys of the offline runtime to the preview the stack lists them for, never to the build", () => {
+    const names = ["OFFLINE_LEASE_SECRET", "SYNC_PAYLOAD_HASH_SECRET"];
+    const environment = {
+      E2E_PREVIEW_VARIABLES: names.join(","),
+      OFFLINE_LEASE_SECRET: "a".repeat(64),
+      SYNC_PAYLOAD_HASH_SECRET: "b".repeat(64),
+    };
+    const preview = closedEnvironment(environment, "preview");
+    const build = closedEnvironment(environment, "build");
+    for (const name of names) {
+      expect(preview[name], name).toHaveLength(64);
+      expect(build[name], name).toBeUndefined();
+    }
+  });
 });

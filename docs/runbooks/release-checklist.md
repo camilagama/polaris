@@ -164,8 +164,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 20. Deploy de produção com `CLOUDFLARE_ENV=production` (BLOCK)
 
-- Critério: o build de `apps/web` define `LEGAL_DRAFT_BUILD=1` por padrão (`apps/web/package.json`), e esse valor só deixa passar os marcadores `[preencher: ...]` das páginas legais quando não há ambiente nomeado. O deploy de produção define `CLOUDFLARE_ENV=production` no comando de build, e com ele o guarda legal recusa o build que ainda tenha marcador ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Sem essa variável, o build sai como rascunho e a produção publicaria os marcadores.
-- Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador, e passar depois da revisão jurídica).
+- Critério: o build de `apps/web` define `LEGAL_DRAFT_BUILD=1` por padrão (`apps/web/package.json`), e esse valor só deixa passar os marcadores `[preencher: ...]` das páginas legais quando não há ambiente nomeado. O deploy de produção também define `VITE_LEGAL_RAZAO_SOCIAL`, `VITE_LEGAL_ENDERECO`, `VITE_LEGAL_CONTATO_EMAIL` e `VITE_LEGAL_DPO_EMAIL` (dado público, que vai para o navegador), lidas das `vars` do GitHub Actions; a lista do que o build de produção reprova está na emenda de 30/10/2026 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). Estado: o passo que passa as `vars` ao build entra no workflow do staging depois do PR dos textos legais, aplicado pelo mantenedor, e o de produção ainda não existe: confira que ele existe antes de promover; até lá, o staging mostra os valores de exemplo. Trocar um desses valores é mudar a variável e fazer o deploy de novo; o hash e a versão do texto não mudam. A razão social do rodapé dos e-mails de cobrança é outra fonte (`BILLING_EMAIL_SUPPLIER`, [e-mail de autenticação e cobrança](email-auth.md#ordem-de-ligar)). O deploy de produção define `CLOUDFLARE_ENV=production` no comando de build, e com ele o guarda legal recusa o build que ainda tenha marcador ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Sem essa variável, o build sai como rascunho e a produção publicaria os marcadores e os valores de exemplo no lugar dos dados da empresa.
+- Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador ou variável `VITE_LEGAL_*` faltando, e passar depois da revisão jurídica), e a leitura de `/termos` e `/privacidade` no build do SHA candidato, com os quatro valores no texto.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
 ### 21. Sentry do navegador ligado, com source maps enviados e nenhum `.map` servido (WARN)
@@ -190,7 +190,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
-- `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. Antes dele, o e-mail manda o dono pedir a cópia ou desfazer o encerramento num painel que não existe. Com o PR G, o link e o botão do e-mail apontam para essa tela. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
+- `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. O G1 entrega o painel `/loja-encerrada` com o pedido de cópia, e o link e o botão do e-mail já apontam para ele; o desfazer pelo painel é do G2, e até lá o e-mail convida a desfazer num painel que ainda não desfaz. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
 - `BILLING_SUPPORT_EMAIL` (a caixa do rodapé e do `reply-to` dos e-mails de cobrança e do E1, ADR 0104) fica vazia no `wrangler.jsonc` até o responsável definir a caixa do ambiente; sem ela, `BILLING_SELF_SERVICE_ENABLED` e `WELCOME_EMAIL_ENABLED` ligados não enviam nada e os avisos saem `email_not_configured`.
 - `WELCOME_EMAIL_ENABLED` (boas-vindas, E1, ADR 0104) só fica `"true"` com o consumidor de `billing.notice` no ar (PR G do F1), a base legal do E1 confirmada (EM-37) e a P48. Antes do consumidor, cada boas-vindas gravada vira evento sem handler: tentativas, DLQ e incidente. Ligada, a varredura horária grava as boas-vindas só das lojas criadas nas últimas 24 horas (não manda atrasadas).
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
@@ -225,6 +225,32 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Para ligar em produção: remover a trava de `scripts/verify-staging-isolation.mjs` no mesmo PR que muda a var, com a evidência deste item.
 - Severidade: proposta (BLOCK), pendente de decisão do Arrascaeta.
 - Evidência: o ambiente, a data, a linha vista (sem valores de cliente) e o valor de `invocation_logs`.
+
+### 28. Frases de estado dos Termos e da Política (BLOCK, proposta)
+
+- Critério: nenhuma frase dos Termos ou da Política que dependa do estado do produto ("ainda não…", "enquanto…") fica falsa no ambiente que a promoção liga. Cada linha da tabela abaixo é conferida contra o que a promoção liga; a frase falsa é trocada no mesmo PR que liga a função, nunca antes dela (a frase 2 muda no PR da ligação de `CLOSURE_NOTICE_EMAIL_ENABLED` ou depois dele).
+- Regra de versão: enquanto só houver aceites de contas de teste, a v1 se edita no lugar; depois do primeiro aceite de pessoa real, mudança de texto vira v2 com novo aceite e "o que mudou" na tela de aceite (§11 dos Termos). O PR que troca uma frase diz qual dos dois casos vale.
+- `apps/web/src/legal/legal-state-phrases.test.ts` lê a tabela e procura cada frase, literalmente, no arquivo indicado. Frase que muda no `.md` sem mudar aqui, ou o contrário, reprova o teste; frase nova com "ainda não" ou "não estiver" no `.md` sem linha aqui também reprova (outras formas, como "quando estiver ligado", dependem da revisão).
+
+<!-- legal-state-phrases:start -->
+
+| # | Arquivo | Frase | Fica falsa quando | Quem troca |
+| --- | --- | --- | --- | --- |
+| 1 | termos | `ele não confere os outros aparelhos` | a fila dos outros aparelhos passar a ser conferida antes de encerrar | o PR que muda a conferência da tela de encerrar (`OTHER_DEVICES_TEXT`, `closure-model.ts`) |
+| 1 | privacidade | `ele não confere os outros aparelhos` | a mesma condição da linha anterior | o mesmo PR |
+| 2 | termos | `Os avisos por e-mail (ao encerrar, 30 dias antes, 7 dias antes e no dia) ainda não estão disponíveis.` | `CLOSURE_NOTICE_EMAIL_ENABLED` for ligada | o PR que liga a flag, ou um posterior |
+| 3 | termos | `enquanto o pagamento automático não estiver disponível, a tela avisa que a cobrança precisa ser cancelada lá` | `billingSelfService` / `BILLING_SELF_SERVICE_ENABLED` for ligada (a tela já escolhe o texto pela flag) | o PR que liga a flag |
+| 4 | termos | `O pagamento por cartão (Asaas) ainda não está disponível.` | o cartão entrar no ar (decisão do lançamento e Gate 7) | o PR que liga o cartão |
+| 4 | privacidade | `O pagamento por cartão ainda não está disponível` | a mesma condição da linha anterior | o mesmo PR |
+| 4 | privacidade | `ainda não ligados: processam os pagamentos` | Asaas ou Woovi forem ligados em produção | o PR que liga o provedor |
+| 5 | privacidade | `Resend (Estados Unidos, a confirmar no contrato), ainda não ligado` | o envio dos e-mails do sistema for ligado no ambiente em que a pessoa lê a Política (o staging já envia por `araute.app`) | o PR que liga o envio; a conferência no staging é do Arrascaeta |
+| 6 | termos | `A exportação está na tela da loja e, depois do encerramento, no painel da loja encerrada.` | a aba "Seus dados" ou o painel da loja encerrada saírem | o PR que os remove ou move |
+| 7 | termos | `revogar um aparelho perdido ou roubado (tela Aparelhos)` | a aba Aparelhos não existir no build do ambiente (ela depende do runtime offline) | o PR que muda o build; a conferência no staging é do Arrascaeta |
+| 8 | termos | `Você pode abrir outra loja depois de encerrar uma` | o roteamento que leva a pessoa à criação de uma nova loja depois de encerrar sair | o PR que muda o roteamento |
+
+<!-- legal-state-phrases:end -->
+
+- Evidência: o SHA, a tabela conferida linha a linha contra o que a promoção liga, e o teste verde.
 
 ## Veredito
 

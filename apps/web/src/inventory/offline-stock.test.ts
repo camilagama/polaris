@@ -23,7 +23,11 @@ import {
   valuationApplies,
 } from "./stock-command-model";
 import { stockRows } from "./stock-list-model";
-import { type StockTarget, stockTarget, targetCostText } from "./stock-target";
+import {
+  type StockTarget,
+  stockTarget,
+  targetBalanceText,
+} from "./stock-target";
 
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
@@ -128,7 +132,9 @@ describe("a target without the cost on the device", () => {
   it("offers no valuation field and no cost preview, and says the cost needs a connection", () => {
     expect(valuationApplies(offlineTarget)).toBe(false);
     expect(valuationApplies(onlineUnknownCost)).toBe(true);
-    expect(targetCostText(offlineTarget)).toBe("Disponível com conexão");
+    expect(targetBalanceText(offlineTarget)).toContain(
+      "custo médio só com conexão"
+    );
 
     const receive = filled(
       "receive",

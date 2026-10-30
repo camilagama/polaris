@@ -20,12 +20,14 @@ import {
   backToStockEditing,
   canCloseStock,
   cancelDiscardStock,
+  costRefusedOffline,
   discardLockedStock,
   editStockField,
   firstInvalidStockField,
   isStockDraftChanged,
   mapStockError,
   prepareStockSubmission,
+  receiveNeedsCost,
   requestDiscardStock,
   retargetStock,
   reviewStock,
@@ -38,6 +40,7 @@ import {
   type StockResult,
   startStockCommand,
   stockActionBlock,
+  stockConfirmRoute,
   stockFailed,
   stockFieldRefusal,
   stockQueueFailed,
@@ -56,7 +59,7 @@ import {
 import {
   costText,
   type StockTarget,
-  targetCostText,
+  targetBalanceText,
   unitsText,
 } from "./stock-target";
 
@@ -76,6 +79,8 @@ interface StockCommandPanelProps {
   ) => void;
   /** The variant or its product changed under the screen. */
   onReloadList: () => void;
+  /** The receive panel is blocked by the unknown cost of the units on hand: open the cost panel in its place. */
+  onInformCost?: ((target: StockTarget) => void) | undefined;
   target: StockTarget;
   today: string;
 }
@@ -163,6 +168,7 @@ export function StockCommandPanel({
   local,
   onBalance,
   onClose,
+  onInformCost,
   onReloadList,
   organizationId,
   target,
@@ -221,6 +227,10 @@ export function StockCommandPanel({
   const handleBack = useCallback(
     () => setState((current) => backToStockEditing(current)),
     []
+  );
+  const handleInformCost = useCallback(
+    () => onInformCost?.(state.target),
+    [onInformCost, state.target]
   );
   const handleDiscardRequest = useCallback(
     () => setState((current) => requestDiscardStock(current)),
@@ -297,6 +307,11 @@ export function StockCommandPanel({
     if (inFlight.current) {
       return;
     }
+    const route = stockConfirmRoute(state, local !== undefined);
+    if (route === "refuse") {
+      setState(costRefusedOffline(state));
+      return;
+    }
     const prepared = prepareStockSubmission({
       createId: newId,
       organizationId,
@@ -309,10 +324,7 @@ export function StockCommandPanel({
     inFlight.current = true;
     try {
       const { call } = prepared;
-      // An attempt locked on the server (outcome unknown) is retried there, as it
-      // was sent: sending it to the device with another payload could record the
-      // movement twice.
-      if (local && state.submission.phase !== "locked") {
+      if (route === "device") {
         await confirmOnDevice(call);
         return;
       }
@@ -352,6 +364,8 @@ export function StockCommandPanel({
   );
 
   const block = stockActionBlock(action, state.target);
+  const informCost =
+    onInformCost && !local && receiveNeedsCost(action, state.target);
   const issues = visibleStockIssues(state);
   const errors: Partial<Record<StockFieldName, string>> = {};
   // one message per field: a refusal that belongs to a field replaces the local check there
@@ -422,9 +436,8 @@ export function StockCommandPanel({
           {labels.title}
         </h3>
         <p className="text-muted-foreground text-support">
-          {state.target.productName} · {state.target.variantText}. Saldo atual:{" "}
-          {unitsText(state.target.quantity)} · custo médio:{" "}
-          {targetCostText(state.target)}.
+          {state.target.productName} · {state.target.variantText}.{" "}
+          {targetBalanceText(state.target)}
         </p>
       </div>
       {state.target.archived ? (
@@ -437,7 +450,20 @@ export function StockCommandPanel({
       ) : null}
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
-          <AlertDescription>{block}</AlertDescription>
+          <AlertDescription className="grid justify-items-start">
+            <p>{block}</p>
+            {informCost ? (
+              <Button
+                aria-label={`Informar custo de ${state.target.productName} · ${state.target.variantText}`}
+                onClick={handleInformCost}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Informar custo
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
       <form className="grid gap-4" noValidate onSubmit={handleSubmitForm}>

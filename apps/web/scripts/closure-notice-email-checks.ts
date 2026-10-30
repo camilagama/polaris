@@ -454,14 +454,17 @@ async function emailScenario(
   assert.ok(message);
   assert.equal(message.idempotencyKey, notice.id);
   assert.equal(message.to, address);
-  // every link of the message is the panel: the app's origin, with no path, query or token
+  // every link of the message is the panel of the closed store on the app's origin, with no store, query or token
   const links = [...message.html.matchAll(/href="([^"]*)"/g)].map(
     (match) => new URL(match[1] ?? "")
   );
   assert.ok(links.length > 0, "the message links to the panel");
   for (const link of links) {
     assert.equal(link.origin, new URL(CONFIG.appOrigin).origin);
-    assert.equal(`${link.pathname}${link.search}${link.hash}`, "/");
+    assert.equal(
+      `${link.pathname}${link.search}${link.hash}`,
+      "/loja-encerrada"
+    );
   }
   assert.ok(!message.html.includes(address), "the address is not in the text");
   const delivered = (await rowsOf(owner, store.organizationId)).find(

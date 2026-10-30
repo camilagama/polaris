@@ -16,6 +16,7 @@ import {
   render,
   Text,
 } from "react-email";
+import { closedStorePath } from "../../lib/closed-store-path";
 import { emailColors } from "../email-colors.generated";
 
 /**
@@ -53,9 +54,9 @@ function formatTime(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
-/** The panel of the store: the app's own origin, with no path parameter, query or token. */
+/** The panel of the closed store on the app's own origin: a fixed path, with no store, query or token. */
 export function closureNoticePanelUrl(appOrigin: string): string {
-  return `${new URL(appOrigin).origin}/`;
+  return new URL(closedStorePath(), new URL(appOrigin).origin).toString();
 }
 
 export interface ClosureNoticeContent {
@@ -111,8 +112,7 @@ export function closureNoticeContent(
   const beforeDeletionDay =
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
   const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua loja)`;
-  // The panel of a closed store is not on the app yet, so from D on there is nothing to open: no button, and no link
-  // that would only lead to the sign-in.
+  // From D on a copy can no longer be asked for, so the e-mail invites nothing: no button, and no link to the panel.
   const panelLabel = beforeDeletionDay ? "Abrir o painel" : null;
   const copyLine = beforeDeletionDay
     ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${copyLimit}.`

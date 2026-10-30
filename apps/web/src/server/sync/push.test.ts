@@ -167,6 +167,21 @@ describe("pushCommands", () => {
     });
   });
 
+  it("hands the request of the push to the handler, for its logs", async () => {
+    const { execute, value } = handler();
+    const { run } = frame(() => accepted);
+    await pushCommands([await command(1)], {
+      ...dependencies(run, [value]),
+      requestId: "req-1",
+    });
+    expect(execute).toHaveBeenCalledWith(
+      {},
+      {},
+      { name: "Cliente 1" },
+      { baseVersion: null, commandId: uuid(1), requestId: "req-1" }
+    );
+  });
+
   it("stops at the first rejection: the rest are not processed, in order", async () => {
     const { value } = handler();
     const { calls, run } = frame((n) =>

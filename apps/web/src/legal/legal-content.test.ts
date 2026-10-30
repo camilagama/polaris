@@ -183,9 +183,7 @@ describe("the terms of use", () => {
       "a tela avisa que a cobrança precisa ser cancelada lá"
     );
     expect(text).toContain("A tela avisa as datas ao encerrar.");
-    expect(text).toContain(
-      "O Polaris ainda não confere o que está guardado nos aparelhos antes de encerrar"
-    );
+    expect(text).toContain("ele não confere os outros aparelhos");
   });
 
   it("count the 7 days of regret from the first charge (decision of 19/10/2026)", () => {
@@ -305,7 +303,8 @@ describe("the essentials box (V5)", () => {
       const box = essentialItems(document).join(" ");
       expect(box).toContain("90 dias");
       expect(box).toContain("5 anos");
-      expect(box).toContain("ainda não confere");
+      expect(box).toContain("neste aparelho");
+      expect(box).toContain("não confere os outros aparelhos");
       // the conditional form of the text (AC-20): nothing is promised that the text does not promise
       expect(box).not.toContain("e-mail");
       // any deletion in the box is in the conditional form of the text ("podemos apagar")

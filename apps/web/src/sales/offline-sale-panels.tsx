@@ -17,7 +17,7 @@ import { Money } from "./sale-summary-panel";
 
 const LINK =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-/** A link on a line of its own (or in a row of controls): it gets the 48 px touch area; a link inside a sentence does not need it. */
+/** A link on a line of its own (or in a row of controls): it gets the 44 px touch area; a link inside a sentence does not need it. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
 
 /** Said at the top of the sale form while there is no connection. */

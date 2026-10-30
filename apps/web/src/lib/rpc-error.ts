@@ -1,4 +1,4 @@
-import { isNoAnswer } from "./connection";
+import { isNoAnswer, PLATFORM_CUT_REASON } from "./connection";
 
 /** The oRPC error code (BAD_REQUEST, CONFLICT, ...), when the error has one. */
 export function rpcErrorCode(error: unknown): string | undefined {
@@ -31,6 +31,19 @@ export function isLegalAcceptanceRefusal(error: unknown): boolean {
   return (
     rpcErrorCode(error) === "FORBIDDEN" &&
     rpcErrorReason(error) === "legal_acceptance_required"
+  );
+}
+
+/**
+ * The server refused the call because the organization was closed (ADR 0081): a FORBIDDEN with its own reason, read
+ * before any refused session. The device drops its copy and its leases but keeps the queue, and the screen offers the
+ * closed store's panel; the session itself is fine, so nothing goes to the sign-in screen. A FORBIDDEN without this
+ * reason is never taken for it.
+ */
+export function isOrganizationClosedRefusal(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" &&
+    rpcErrorReason(error) === "organization_closed"
   );
 }
 
@@ -72,12 +85,14 @@ const definiteCodes = new Set([
   "CONFLICT",
   "FORBIDDEN",
   "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
   "UNAUTHORIZED",
 ]);
 
 /**
  * True when the server answered definitively (a 4xx): the command did not take
- * effect. Network failures, 5xx and anything unrecognized may have taken
+ * effect. The 413 counts: the Worker answers it before the procedure runs, and a body cut while it is read
+ * never reaches the procedure as a complete call. Network failures, 5xx and anything unrecognized may have taken
  * effect, so callers must treat them as an unknown outcome.
  */
 export function isDefiniteRpcRejection(error: unknown): boolean {
@@ -125,15 +140,14 @@ const TRANSIENT_REASON = "server_busy";
 
 /**
  * A READ that failed in a way another try may fix: no answer (`isNoAnswer`, which includes a response without the
- * Worker's mark), `SERVICE_UNAVAILABLE` with no reason or with the transient one the server gives an unexpected fault
- * (`server_busy`; one with another reason, like `billing_not_configured`, is not tried again), or a 5xx with no
- * reason of its own: the 500 of an error nobody named, and the page the runtime or Cloudflare answers for a Worker it
- * killed (the CPU limit, 1102, "code had hung": `server_failed` in `connection.ts`), which oRPC reads as an error of
- * the status it carries (502, 503, 52x...). A 4xx is the server's answer: trying again says the same. A 429 above
- * all: the tab waits for its `Retry-After` (`read-gate.ts`), and the screen says so at once.
+ * Worker's mark), the cut of the platform (`isPlatformCut`), `SERVICE_UNAVAILABLE` with no reason or with the
+ * transient one the server gives an unexpected fault (`server_busy`; one with another reason, like
+ * `billing_not_configured`, is not tried again), or a 5xx with no reason of its own (the 500 of an error nobody
+ * named). A 4xx is the server's answer: trying again says the same. A 429 above all: the tab waits for its
+ * `Retry-After` (`read-gate.ts`), and the screen says so at once.
  */
 export function isTransientReadFailure(error: unknown): boolean {
-  if (isNoAnswer(error)) {
+  if (isNoAnswer(error) || isPlatformCut(error)) {
     return true;
   }
   const reason = rpcErrorReason(error);
@@ -142,4 +156,80 @@ export function isTransientReadFailure(error: unknown): boolean {
   }
   const { status } = (error ?? {}) as { status?: unknown };
   return typeof status === "number" && status >= 500 && reason === undefined;
+}
+
+/**
+ * The platform killed the Worker on the call: the page Cloudflare answers with no mark of the Worker (the CPU limit
+ * of the Free plan, 1102, "code had hung": `server_failed` in `connection.ts`, which gives it
+ * `PLATFORM_CUT_REASON`). In the regime of the Free plan every call of the Worker dies like this for minutes,
+ * whatever it is. Never an answer of the Worker itself, its 503 `server_busy` included: that one is a fault of the
+ * call, which may be the same each time it goes. The reason is only ever born in the client (`connection.ts`) and
+ * only on a 5xx, so a status below 500 is no cut whatever the reason says.
+ */
+export function isPlatformCut(error: unknown): boolean {
+  const { status } = (error ?? {}) as { status?: unknown };
+  return (
+    rpcErrorReason(error) === PLATFORM_CUT_REASON &&
+    typeof status === "number" &&
+    status >= 500
+  );
+}
+
+/**
+ * A write sent at once (no queue) that the server cut: it may have been saved, so the text never says it was not, and
+ * it blames no network. The screen never sends it again by itself (a write with no idempotency key may double).
+ */
+export const CHANGE_CUT_BY_SERVER =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir.";
+
+/** The text of a write the server cut (`isPlatformCut`); undefined for any other error. */
+export function serverCutWriteMessage(error: unknown): string | undefined {
+  return isPlatformCut(error) ? CHANGE_CUT_BY_SERVER : undefined;
+}
+
+/**
+ * A direct write (no queue, no idempotency key) that met a 503. The Worker's own `server_busy` may come at the COMMIT
+ * or after it, and a 503 with no reason is the same doubt: `unconfirmedWriteFaultMessage` covers both. A screen whose
+ * write mapper says every 503 of a write is this one does the same for any other reason: the change may be saved, so
+ * the text never says it was not and never invites a second try, which could double it.
+ */
+export const CHANGE_FAULT_UNKNOWN =
+  "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
+
+/** The text of a direct write the Worker answered with a 503 `server_busy` (or with no reason, as `isTransientReadFailure` also counts it: doubt is the safe side); undefined for any other error. */
+export function unconfirmedWriteFaultMessage(
+  error: unknown
+): string | undefined {
+  if (rpcErrorCode(error) !== "SERVICE_UNAVAILABLE") {
+    return undefined;
+  }
+  const reason = rpcErrorReason(error);
+  return reason === undefined || reason === TRANSIENT_REASON
+    ? CHANGE_FAULT_UNKNOWN
+    : undefined;
+}
+
+interface CommonFailureOptions {
+  /** The call is a direct write: its 503 `server_busy` says the change may have been saved (`CHANGE_FAULT_UNKNOWN`). */
+  directWrite?: boolean;
+}
+
+/**
+ * What a screen says of a failed call before its own codes: the missing legal acceptance (`legalAcceptanceMessage`)
+ * and, for a write (no `subject`), the server's cut (`serverCutWriteMessage`) and, when the screen says it is a direct
+ * write, the 503 `server_busy` (`unconfirmedWriteFaultMessage`). Undefined for any other error.
+ */
+export function commonFailureMessage(
+  error: unknown,
+  subject?: string,
+  options: CommonFailureOptions = {}
+): string | undefined {
+  const legal = legalAcceptanceMessage(error, subject);
+  if (legal !== undefined || subject !== undefined) {
+    return legal;
+  }
+  return (
+    serverCutWriteMessage(error) ??
+    (options.directWrite ? unconfirmedWriteFaultMessage(error) : undefined)
+  );
 }

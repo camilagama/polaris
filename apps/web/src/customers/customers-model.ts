@@ -1,5 +1,10 @@
 import type { CustomerReadModel } from "@polaris/contracts";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  legalAcceptanceMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import type { CustomerDraft } from "./customer-draft";
@@ -71,12 +76,17 @@ export function customerErrorMessage(
   ) {
     return "Este cliente já tem uma alteração ou um cadastro aguardando envio. Espere o envio ou resolva em Pendências.";
   }
-  const unaccepted = legalAcceptanceMessage(
-    error,
-    action === "load" ? "os clientes" : undefined
-  );
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  // the duplicate check is a read: a cut of it is no write that may have been saved
+  const common =
+    action === "duplicate-check"
+      ? legalAcceptanceMessage(error)
+      : commonFailureMessage(
+          error,
+          action === "load" ? "os clientes" : undefined,
+          { directWrite: action !== "load" }
+        );
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -101,7 +111,9 @@ export function customerErrorMessage(
     return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "A lista de clientes está temporariamente indisponível. Tente novamente.";
+    return action === "load"
+      ? "A lista de clientes está temporariamente indisponível. Tente novamente."
+      : CHANGE_FAULT_UNKNOWN;
   }
   if (action === "load") {
     return "Não foi possível carregar os clientes. Tente novamente.";

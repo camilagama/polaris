@@ -11,7 +11,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const SHIRT_ROW = /Camiseta do teste/;
 const SUBMITTED =
-  /Confirmar (?:recebimento|contagem|baixa)|Tentar novamente \(seguro\)/;
+  /Confirmar (?:recebimento|contagem|baixa|custo)|Tentar novamente \(seguro\)/;
 
 const rpc = (body: unknown, status = 200) => ({
   body: JSON.stringify({ json: body, meta: [] }),
@@ -43,7 +43,7 @@ const entry = (
   ...overrides,
 });
 
-// the cost of the shirt is unknown (a count may set it), the jeans have one, the cap is out of stock and the
+// the cost of the shirt is unknown ("Informar custo" sets it), the jeans have one, the cap is out of stock and the
 // mug is archived, so the list shows every tone a row has
 const SHIRT = entry(1, "Camiseta do teste", "Azul", 5, null);
 const JEANS = entry(2, "Calça jeans", "42", 3, "62.400000");
@@ -94,6 +94,32 @@ const refusal = (reason: string) =>
     400
   );
 
+/** The rows the read asks for: by balance and by cost, as the server filters them. */
+function matching(body: string, entries: readonly unknown[]) {
+  return (entries as (typeof SHIRT)[]).filter(
+    (row) =>
+      (!body.includes("without_stock") || row.quantity === 0) &&
+      (!body.includes('"with_stock"') || row.quantity > 0) &&
+      (!body.includes('"cost":"unknown"') || row.movingAverageCost === null)
+  );
+}
+
+/**
+ * The reads of "Precisa de ação" (a page of 100 of active products) are told apart from the list's (a page of 50):
+ * they count the rows that fit, whatever the list was asked for.
+ */
+function attentionPage(body: string, entries: readonly unknown[]) {
+  if (!body.includes('"limit":100')) {
+    return null;
+  }
+  return {
+    entries: matching(body, entries).filter(
+      (row) => row.productStatus === "active"
+    ),
+    nextCursor: null,
+  };
+}
+
 interface ServedList {
   /** Called for each read of the list, with the body the screen sent; answers the route. */
   answer: (body: string, route: Route) => Promise<void> | void;
@@ -103,8 +129,15 @@ const served = (
   entries: readonly unknown[],
   nextCursor: string | null = null
 ): ServedList => ({
-  answer: (_body, route) =>
-    route.fulfill(rpc({ entries, nextCursor })) as Promise<void>,
+  answer: (body, route) =>
+    route.fulfill(
+      rpc(
+        attentionPage(body, entries) ?? {
+          entries: matching(body, entries),
+          nextCursor,
+        }
+      )
+    ) as Promise<void>,
 });
 
 async function serveList(page: Page, list: ServedList) {
@@ -112,6 +145,18 @@ async function serveList(page: Page, list: ServedList) {
     list.answer(route.request().postData() ?? "", route)
   );
 }
+
+const serverFailure = () =>
+  rpc(
+    {
+      code: "INTERNAL_SERVER_ERROR",
+      data: undefined,
+      defined: false,
+      message: "Internal server error",
+      status: 500,
+    },
+    500
+  );
 
 /** The list of the stock screen answered with the synthetic rows: for the screen opened in the real shell. */
 export async function serveStockRows(page: Page) {
@@ -178,12 +223,53 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
   await page.getByRole("listbox").waitFor({ state: "detached" });
 }
 
+async function openCost(page: Page) {
+  await openList(page);
+  await page
+    .getByRole("button", { name: "Informar custo de Camiseta do teste · Azul" })
+    .click();
+  await page.getByLabel("Custo de cada unidade (R$)").waitFor();
+}
+
 export const stockStates = {
-  /** A count of the shirt, whose cost is unknown: the valuation field shows. */
+  /** A count of the jeans, whose cost is known: the quantity and the date, no cost field. */
   async count(page: Page) {
     await openList(page);
-    await openCommand(page, "Contar", "Camiseta do teste");
+    await openCommand(page, "Contar", "Calça jeans");
     await page.getByLabel("Quantidade contada").fill("7");
+    await showScreenAlone(page);
+  },
+
+  /** The shirt has units and no cost: the cost panel, with the units it covers as a line and the cost field. */
+  async cost(page: Page) {
+    await openCost(page);
+    await showScreenAlone(page);
+  },
+
+  /** The cost typed and reviewed: the summary that says it cannot be edited, before the confirmation. */
+  async costConfirming(page: Page) {
+    await openCost(page);
+    await page.getByLabel("Custo de cada unidade (R$)").fill("12,50");
+    await review(page).click();
+    await confirm(page).waitFor();
+    await showScreenAlone(page);
+  },
+
+  async costDone(page: Page) {
+    await page.route("**/rpc/inventory/inventoryCount", (route: Route) =>
+      route.fulfill(
+        rpc({
+          balance: balance(5, "12.500000"),
+          movement: { ...movement, movementType: "count", quantityDelta: 0 },
+          replayed: false,
+        })
+      )
+    );
+    await openCost(page);
+    await page.getByLabel("Custo de cada unidade (R$)").fill("12,50");
+    await review(page).click();
+    await confirm(page).click();
+    await page.getByText("Custo informado: R$ 12,50 por unidade.").waitFor();
     await showScreenAlone(page);
   },
 
@@ -194,24 +280,32 @@ export const stockStates = {
     await showScreenAlone(page);
   },
 
+  /** The reads of "Precisa de ação" fail while the list answers: the strip says its notices are unavailable. */
+  async attentionUnavailable(page: Page) {
+    await openStockLab(page, {
+      answer: (body, route) =>
+        route.fulfill(
+          body.includes('"limit":100')
+            ? serverFailure()
+            : rpc({ entries: matching(body, ROWS), nextCursor: "cursor-2" })
+        ) as Promise<void>,
+    });
+    await rowOf(page, SHIRT_ROW).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
+    await showScreenAlone(page);
+  },
+
   /** The read failed: the message and the retry. */
   async error(page: Page) {
     await openStockLab(page, {
-      answer: (_body, route) =>
-        route.fulfill(
-          rpc(
-            {
-              code: "INTERNAL_SERVER_ERROR",
-              data: undefined,
-              defined: false,
-              message: "Internal server error",
-              status: 500,
-            },
-            500
-          )
-        ) as Promise<void>,
+      answer: (_body, route) => route.fulfill(serverFailure()) as Promise<void>,
     });
     await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
     await showScreenAlone(page);
   },
 
@@ -239,10 +333,12 @@ export const stockStates = {
     await openStockLab(page, {
       answer: (body, route) =>
         route.fulfill(
-          rpc({
-            entries: body.includes("zzz") ? [] : ROWS,
-            nextCursor: null,
-          })
+          rpc(
+            attentionPage(body, ROWS) ?? {
+              entries: body.includes("zzz") ? [] : ROWS,
+              nextCursor: null,
+            }
+          )
         ) as Promise<void>,
     });
     await rowOf(page, SHIRT_ROW).waitFor();
@@ -279,7 +375,7 @@ export const stockStates = {
   async receiveBlocked(page: Page) {
     await openList(page);
     await openCommand(page, "Receber", "Camiseta do teste");
-    await page.getByText("Sem custo conhecido, não dá para receber").waitFor();
+    await page.getByText("Antes de receber, informe o custo").waitFor();
     await showScreenAlone(page);
   },
 

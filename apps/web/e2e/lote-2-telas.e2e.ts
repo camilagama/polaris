@@ -36,6 +36,27 @@ const rpc = (json: unknown, status = 200) => ({
 const refusal = (code: string, status: number) =>
   rpc({ code, data: undefined, defined: false, message: code, status }, status);
 const unavailable = refusal("SERVICE_UNAVAILABLE", 503);
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+
+const unavailableForAnotherReason = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "billing_not_configured" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
 
 type Handler = (route: Route) => Promise<void>;
 const reply =
@@ -201,6 +222,30 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
   ]);
   await expect(field).toHaveValue("");
   await expect(field).toBeFocused();
+});
+
+test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não repete sozinho", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/categories", "Categorias", {
+    "category/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "category/list": reply({ categories: [] }),
+  });
+  await page.getByLabel("Nova categoria").fill("Acessórios");
+  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
 });
 
 test("Categorias: nome repetido é dito junto do campo de cima e o que foi digitado fica", async ({
@@ -479,6 +524,65 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await expect(name).toBeFocused();
 });
 
+test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await expect(page.getByText("salvo neste aparelho")).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
+    "Bia Souza"
+  );
+});
+
+test("Clientes: cadastrar com um 503 de outro motivo também diz que pode ter sido salvo e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(unavailableForAnotherReason);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  expect(created).toBe(1);
+});
+
 for (const width of FORM_WIDTHS) {
   test(`Clientes a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
     page,
@@ -567,6 +671,32 @@ test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formul�
   await expect(
     page.getByRole("dialog", { name: "Novo cliente" })
   ).toBeVisible();
+});
+
+test("Clientes: a linha não traz observações nem a data, e o editor traz a data e as observações", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({
+      customers: [
+        customer(1, "Ana Lima", {
+          email: "ana@exemplo.com",
+          notes: "Prefere o WhatsApp.",
+        }),
+      ],
+    }),
+  });
+  const row = page.locator("[data-customer-id]");
+  await expect(row).toContainText("11 91234-5678 · ana@exemplo.com");
+  await expect(row).not.toContainText("Prefere o WhatsApp.");
+  await expect(row).not.toContainText("Atualizado em");
+  await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await expect(dialog).toContainText("Atualizado em 14 de out. de 2026");
+  await expect(dialog.getByLabel("Observações")).toHaveValue(
+    "Prefere o WhatsApp."
+  );
 });
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({

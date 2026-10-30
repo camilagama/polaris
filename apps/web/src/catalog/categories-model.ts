@@ -2,7 +2,11 @@ import {
   type CategoryReadModel,
   categoryNameCodePointLength,
 } from "@polaris/contracts";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 
 export type CategoryListStatus = "active" | "archived" | "deleted";
 export type CategoryAction = "archive" | "delete" | "restore";
@@ -55,12 +59,13 @@ export function categoryErrorMessage(
   error: unknown,
   action?: CategoryFailure
 ): string {
-  const unaccepted = legalAcceptanceMessage(
+  const common = commonFailureMessage(
     error,
-    action === undefined ? "as categorias" : undefined
+    action === undefined ? "as categorias" : undefined,
+    { directWrite: action !== undefined }
   );
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -87,7 +92,9 @@ export function categoryErrorMessage(
     return "A categoria não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo está temporariamente indisponível. Tente novamente.";
+    return action === undefined
+      ? "O catálogo está temporariamente indisponível. Tente novamente."
+      : CHANGE_FAULT_UNKNOWN;
   }
   return "Não foi possível concluir a operação. Tente novamente.";
 }

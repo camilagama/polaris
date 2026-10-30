@@ -239,33 +239,61 @@ describe("pay the charge that failed (AC-43)", () => {
 });
 
 describe("commandRefusal: each reason its own text (AS-17)", () => {
-  it("the provider down: AC-26 on cancel, nothing cancelled; try again", () => {
-    expect(
-      commandRefusal(
-        "cancel",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      )
-    ).toEqual({
-      reread: false,
-      retry: true,
-      text: "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo.",
-    });
-    // never "Nada foi cancelado" on the refund: on a repeat the renewal is already cancelled (AS-42)
-    expect(
-      commandRefusal(
-        "refund",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      ).text
-    ).toBe(
-      "Não conseguimos pedir o reembolso agora. Nada foi cobrado a mais. Tente de novo."
-    );
-    expect(
-      commandRefusal(
-        "overdue",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      ).text
-    ).toContain("página de pagamento");
-  });
+  const CANCEL_TEXT =
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
+  const REFUND_TEXT =
+    "Não deu para confirmar o pedido de reembolso. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
+  const OVERDUE_TEXT =
+    "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.";
+
+  const unavailable = [
+    [
+      "billing_provider_unavailable",
+      RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable"),
+    ],
+    ["no reason", { code: "SERVICE_UNAVAILABLE", status: 503 }],
+    ["empty data", { code: "SERVICE_UNAVAILABLE", data: {}, status: 503 }],
+    ["server_busy", RPC_ERROR("SERVICE_UNAVAILABLE", "server_busy")],
+    ["platform_cut", RPC_ERROR("SERVICE_UNAVAILABLE", "platform_cut")],
+    ["an unknown reason", RPC_ERROR("SERVICE_UNAVAILABLE", "some_new_reason")],
+  ] as const;
+
+  it.each(unavailable)(
+    "cancel, %s: may have been done, so the plan is read and nothing says nothing was cancelled",
+    (_label, error) => {
+      const refusal = commandRefusal("cancel", error);
+      expect(refusal).toEqual({
+        reread: true,
+        retry: false,
+        text: CANCEL_TEXT,
+      });
+      expect(refusal.text).not.toContain("Nada foi cancelado");
+    }
+  );
+
+  it.each(unavailable)(
+    "refund, %s: may have been done, so the plan is read and nothing says nothing was charged",
+    (_label, error) => {
+      const refusal = commandRefusal("refund", error);
+      expect(refusal).toEqual({
+        reread: true,
+        retry: false,
+        text: REFUND_TEXT,
+      });
+      expect(refusal.text).not.toContain("Nada foi cobrado");
+    }
+  );
+
+  it.each(unavailable)(
+    "overdue, %s: opening the page only reads, so nothing was charged and it is tried again",
+    (_label, error) => {
+      expect(commandRefusal("overdue", error)).toEqual({
+        reread: false,
+        retry: true,
+        text: OVERDUE_TEXT,
+      });
+    }
+  );
 
   it.each([
     ["command_in_progress", "Já tem um pedido em andamento"],

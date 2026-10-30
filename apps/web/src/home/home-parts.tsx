@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 
 /**
@@ -19,6 +20,8 @@ interface BlockProps {
   children: ReactNode;
   className?: string;
   id: string;
+  /** The (i) beside the heading, for a block with a term or an estimate to explain (never a warning). */
+  help?: { about: string; text: string };
   /** The heading of the block, a `h2`: also the name of the region. */
   title: ReactNode;
 }
@@ -27,6 +30,7 @@ export function HomeBlock({
   action,
   children,
   className,
+  help,
   id,
   title,
 }: BlockProps) {
@@ -37,9 +41,16 @@ export function HomeBlock({
       role="region"
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h2 className="text-section" id={id}>
-          {title}
-        </h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="text-section" id={id}>
+            {title}
+          </h2>
+          {help ? (
+            <HelpTip about={help.about} className="-my-1">
+              {help.text}
+            </HelpTip>
+          ) : null}
+        </div>
         {action}
       </div>
       {children}

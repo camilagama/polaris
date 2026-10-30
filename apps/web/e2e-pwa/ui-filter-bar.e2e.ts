@@ -579,7 +579,7 @@ test.describe("a 360 px, com toque", () => {
   }) => {
     await openGallery(page);
     const closed = (
-      await touchFaults(page, { exemptInlineLinks: true, minimum: 48 })
+      await touchFaults(page, { exemptInlineLinks: true, minimum: 44 })
     ).filter((fault) => CLOSED_FAULT.test(fault));
     expect(closed).toEqual([]);
   });

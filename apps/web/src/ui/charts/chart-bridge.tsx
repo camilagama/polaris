@@ -7,6 +7,9 @@ import {
 } from "../bklit/charts/chart-context";
 import { XAxis } from "../bklit/charts/x-axis";
 
+/** The width of one character of a value label (11 px, tabular), to keep the label inside the plot. */
+const LABEL_CHAR = 6.4;
+
 /** The width a date of the x axis ("17/10" in 12 px) needs with air around it, in pixels. */
 const DATE_SLOT = 55;
 
@@ -41,11 +44,13 @@ function DayMarks({
   color,
   label,
   markers,
+  peakOnly,
 }: {
   best: number | null;
   color: string;
   label: ((value: number) => string) | null;
   markers: DayMarkers;
+  peakOnly: boolean;
 }) {
   const { data, innerWidth, isLoaded, xAccessor, xScale } = useChart();
   const yScale = useYScale();
@@ -70,8 +75,11 @@ function DayMarks({
         ]
       : [];
   });
+  // only the peak, with its date ("18/10 · R$ 1.840,00"): a peak with no date does not say which day it is
   const labelled = new Set(
-    label ? [best, last].filter((index) => index !== null) : []
+    label
+      ? (peakOnly ? [best] : [best, last]).filter((index) => index !== null)
+      : []
   );
   return (
     <g data-chart-marks="">
@@ -96,11 +104,15 @@ function DayMarks({
         ? shown
             .filter((mark) => labelled.has(mark.index))
             .map((mark) => {
-              // the label of a ring near an edge is anchored inside the plot, so it is never cut
+              const text = peakOnly
+                ? `${String(data[mark.index]?.label ?? "")} · ${label(mark.value)}`
+                : label(mark.value);
+              // the label of a ring near an edge is anchored inside the plot, so it is never cut or over the y axis
+              const half = (text.length * LABEL_CHAR) / 2;
               let anchor: "end" | "middle" | "start" = "middle";
-              if (mark.x > innerWidth - 32) {
+              if (mark.x + half > innerWidth) {
                 anchor = "end";
-              } else if (mark.x < 32) {
+              } else if (mark.x - half < 0) {
                 anchor = "start";
               }
               return (
@@ -112,7 +124,7 @@ function DayMarks({
                   x={mark.x}
                   y={Math.max(10, mark.y - 10)}
                 >
-                  {label(mark.value)}
+                  {text}
                 </text>
               );
             })
@@ -132,6 +144,7 @@ export function ChartBridge({
   handle,
   label = null,
   markers = "best",
+  peakOnly = false,
 }: {
   bestIndex: number | null;
   /** The color of the series: the rings are drawn in it. */
@@ -139,6 +152,8 @@ export function ChartBridge({
   handle: MutableRefObject<ChartHandle | null>;
   label?: ((value: number) => string) | null;
   markers?: DayMarkers;
+  /** Write only the best day's value, with its date. */
+  peakOnly?: boolean;
 }) {
   const { data, isLoaded, lines, setTooltipData, xAccessor, xScale, yScale } =
     useChart();
@@ -190,6 +205,12 @@ export function ChartBridge({
     yScale,
   ]);
   return (
-    <DayMarks best={bestIndex} color={color} label={label} markers={markers} />
+    <DayMarks
+      best={bestIndex}
+      color={color}
+      label={label}
+      markers={markers}
+      peakOnly={peakOnly}
+    />
   );
 }

@@ -1,9 +1,11 @@
 import type { createDatabase } from "@polaris/db/client";
+import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
   type TenantRequestIdentity,
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "@polaris/db/tenant-transaction";
+import { isSessionFresh } from "./auth/session-policy";
 import {
   type AuthenticatedRequestContextDependencies,
   createAuthenticatedRequestContext,
@@ -33,6 +35,12 @@ export interface TenantRequestContextInput<T> {
   ) => Promise<T>;
   request: Request;
   requestedOrganizationId: string;
+  /**
+   * Refuses a session signed in more than 15 minutes ago. The check runs inside the transaction, after the
+   * membership and the capability, so a non-owner still gets the capability refusal, and the refusal rolls back
+   * before `operation` writes anything.
+   */
+  requireFreshSession?: boolean;
 }
 
 export function createTenantRequestContext(
@@ -67,7 +75,14 @@ export function createTenantRequestContext(
             requestedOrganizationId: input.requestedOrganizationId,
             sessionId: session.session.id,
           },
-          input.operation
+          input.requireFreshSession
+            ? (transaction, identity) => {
+                if (!isSessionFresh(session.session.createdAt)) {
+                  throw new FreshSessionRequiredError();
+                }
+                return input.operation(transaction, identity);
+              }
+            : input.operation
         );
       },
       request: input.request,
@@ -84,7 +99,10 @@ export type TenantTransactionRunner = <T>(
 ) => Promise<T>;
 
 interface TenantRequestSequenceInput<T>
-  extends Omit<TenantRequestContextInput<T>, "isolationLevel" | "operation"> {
+  extends Omit<
+    TenantRequestContextInput<T>,
+    "isolationLevel" | "operation" | "requireFreshSession"
+  > {
   operation: (inTransaction: TenantTransactionRunner) => Promise<T>;
 }
 

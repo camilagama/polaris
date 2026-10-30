@@ -54,6 +54,7 @@
   --sidebar-primary: oklch(0.2 0.005 85);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.93 0.006 85);
+  --sidebar-hover: oklch(0.945 0.006 85);
   --sidebar-accent-foreground: oklch(0.2 0.005 85);
   --sidebar-border: oklch(0.925 0.005 85);
   --sidebar-ring: oklch(0.585 0.115 165);
@@ -78,11 +79,13 @@
   --google-yellow: oklch(0.844 0.172 85);
   --google-green: oklch(0.673 0.162 144);
   --google-blue: oklch(0.565 0.163 253);
-  /* visible heights of the controls (mouse); with touch they go one step up in the block below */
+  /* visible heights of the controls (mouse); with touch they go one step up in the block below. `--h-xl` is for the
+     main action of a screen only (DESIGN.md, "Tamanho de controle por papel"): 36 with a mouse, 44 with touch */
   --h-xs: 1.5rem;
   --h-sm: 1.75rem;
   --h-md: 2rem;
   --h-lg: 2.25rem;
+  --h-xl: 2.25rem;
 }
 
 .dark {
@@ -101,7 +104,7 @@
   --accent: oklch(0.33 0.0035 85);
   --accent-foreground: oklch(0.945 0.005 85);
   --destructive: oklch(0.77 0.13 25);
-  --border: oklch(0.32 0.0035 85);
+  --border: oklch(1 0 0 / 0.06);
   --input: oklch(0.55 0.0035 85);
   --ring: oklch(0.64 0.134 165);
   --chart-1: oklch(0.74 0.14 165);
@@ -122,9 +125,10 @@
   --sidebar-foreground: oklch(0.78 0.004 85);
   --sidebar-primary: oklch(0.93 0.005 85);
   --sidebar-primary-foreground: oklch(0.2 0.0035 85);
-  --sidebar-accent: oklch(0.28 0.0035 85);
+  --sidebar-accent: oklch(0.235 0.0035 85);
+  --sidebar-hover: oklch(0.21 0.0035 85);
   --sidebar-accent-foreground: oklch(0.945 0.005 85);
-  --sidebar-border: oklch(0.275 0.0035 85);
+  --sidebar-border: oklch(1 0 0 / 0.06);
   --sidebar-ring: oklch(0.64 0.134 165);
   /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.81 0.11 80);
@@ -138,7 +142,7 @@
   --btn-shine: oklch(1 0 0 / 0);
   --btn-drop: oklch(0 0 0 / 0.5);
   --card-glow: oklch(1 0 0 / 0.04);
-  --card-ring: oklch(0.945 0.005 85 / 0.06);
+  --card-ring: oklch(1 0 0 / 0.06);
 }
 
 /* The variables Bklit UI's chart blocks read (src/ui/bklit/charts/), mapped once to the tokens above and to nothing of
@@ -210,6 +214,7 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
@@ -230,6 +235,7 @@
   --spacing-ctl-sm: var(--h-sm);
   --spacing-ctl-md: var(--h-md);
   --spacing-ctl-lg: var(--h-lg);
+  --spacing-ctl-xl: var(--h-xl);
 }
 
 @theme {
@@ -257,6 +263,8 @@
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.03em;
   /* money values */
+  --text-value-sm: 0.9375rem;
+  --text-value-sm--line-height: 1.25rem;
   --text-value-md: 1.0625rem;
   --text-value-md--line-height: 1.5rem;
   --text-value-lg: 1.625rem;
@@ -328,6 +336,7 @@
     --h-sm: 2rem;
     --h-md: 2.25rem;
     --h-lg: 2.5rem;
+    --h-xl: 2.75rem;
     --text-title: 1.375rem;
     --text-title--line-height: 1.75rem;
     --text-value-lg: 1.5rem;
@@ -350,13 +359,14 @@
   }
 }
 
-/* A 48 px touch area around a smaller control: an invisible pseudo-element, only with touch */
+/* A 44 px touch area around a smaller control: an invisible pseudo-element, only with touch. The controls of a group
+   (row actions, filters, segments) do not need it: as small as 24 px, with 8 px between targets (WCAG 2.2, 2.5.8). */
 @utility touch-hit {
   @media (pointer: coarse), (max-width: 759.98px) {
     position: relative;
     &::before {
       position: absolute;
-      inset: min(0px, calc(50% - 24px));
+      inset: min(0px, calc(50% - 22px));
       content: "";
     }
   }
@@ -370,7 +380,7 @@
     isolation: isolate;
     &::before {
       position: absolute;
-      inset: min(0px, calc(50% - 24px)) 0;
+      inset: min(0px, calc(50% - 22px)) 0;
       z-index: -1;
       content: "";
     }

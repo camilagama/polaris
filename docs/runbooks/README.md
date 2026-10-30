@@ -12,7 +12,7 @@ Cada runbook deve registrar gatilho, pré-requisitos de acesso, alvo seguro, pas
 
 Gates e provas por fase:
 
-- Provas de arquitetura (Fase 1): [Banco e Drizzle](./database-poc.md), [RLS and Hyperdrive gate](./rls-hyperdrive-gate.md) e [Gate de persistência offline](./offline-persistence-gate.md).
+- Provas de arquitetura (Fase 1): [Banco e Drizzle](./database-poc.md) (histórico), [RLS and Hyperdrive gate](./rls-hyperdrive-gate.md) e [Gate de persistência offline](./offline-persistence-gate.md).
 - Identidade e acesso (Fase 2): [Gate Auth](./better-auth-gate.md), [E-mail transacional](./email-auth.md), [Auth abuse protection](./auth-abuse-protection.md), [Contexto tenant e audit trail](./tenant-context-gate.md) e [Gate 2 em runtime](./gate2-runtime.md).
 - Catálogo, estoque e mídia (Fase 3): [Gate do ledger de estoque](./inventory-ledger-gate.md) e [Media storage reconciliation](./media-storage-reconciliation.md). O Gate 3 formal fica no runbook `docs/runbooks/gate-3-catalog-stock.md`, escrito pelo responsável.
 - Catálogo, estoque e mídia (Fase 3): [Gate 3 — catálogo, estoque e mídia privada](./gate-3-catalog-stock.md).
@@ -35,6 +35,8 @@ Testes (interface, [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-t
 Testes (Fase 13): a [matriz de concorrência](../architecture/concurrency-matrix.md) lista cada corrida do sistema, a proteção, o gate que a prova e o que falta; a suíte `gates:concurrency` roda só essas corridas, repetidas (`POLARIS_CONCURRENCY_REPEAT`), num PostgreSQL 18 descartável.
 
 Testes (Fase 13): a [propriedade modelo × PostgreSQL](./gate-4-sales-core.md#propriedade-modelo--postgresql-estoque-e-devolução) (`stock-property`) gera sequências de comandos de estoque, venda e devolução e as compara com um modelo em memória; 20 sequências por PR, a execução longa por `POLARIS_PROPERTY_RUNS` (obrigatória em PR de estoque, venda, devolução, cancelamento ou custo médio) e a reprodução pela semente impressa.
+
+Lojistas da validação (plano Free, emenda de 28/10/2026 do [ADR 0043](../adr/0043-runtime-offline-no-app.md)): [Onboarding acompanhado](./onboarding-acompanhado.md), com a regra da importação de planilha (fora do horário de vendas, uma loja por vez, a tela aberta e a mesma planilha para continuar).
 
 Dependências: [Auditoria de dependências](./dependency-audit.md), com o procedimento do job "Dependency audit", as exceções vigentes e seus prazos de revisão.
 
@@ -67,7 +69,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 
 - [ ] **Rotacionar a credencial owner do PR11** (o status pede e não registra conclusão) e registrar a rotação.
 - [ ] **Remover os Workers e o Hyperdrive de PoC** criados nos PR11 e PR12 (inclusive subdomínio `workers.dev` temporário e role temporária de gate), e confirmar com um HTTP 404 nos endereços antigos.
-- [ ] **Dropar as tabelas de PoC** `db_poc_operations` e `rls_poc_operations` (esta tem uma política `FOR ALL TO PUBLIC` e o papel de tenant mantém DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)) (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
+- [ ] **Conferir que as tabelas de PoC sumiram** depois do migrate de produção: a migration 0108 apaga `db_poc_operations` e `rls_poc_operations` (esta tinha uma política `FOR ALL TO PUBLIC` e o papel de tenant mantinha DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)), e `SELECT to_regclass('public.db_poc_operations'), to_regclass('public.rls_poc_operations')` deve devolver dois nulos. As rotas e as variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) já saíram do código e da configuração, e o `verify:staging-isolation` recusa as duas variáveis em qualquer bloco do `wrangler.jsonc` ([emenda do ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md#emenda-30102026-as-superfícies-de-prova-saíram-do-banco-e-da-configuração)). Os gates de RLS criam a própria tabela na base descartável e a apagam ao terminar.
 - [ ] Confirmar que o laboratório offline não está no bundle de produção.
 
 ### Borda e segurança de rede
@@ -110,5 +112,6 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 - [ ] A role de autenticação tem `EXECUTE` em `bump_user_authorization_epoch` e a role de tenant não (a migration 0043 concede e revoga); verificar no ambiente real.
 - [ ] CI com PostgreSQL 18, replay de migrations e checagem de drift ativos ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md)).
 - [ ] **Chave do runtime offline** (`VITE_OFFLINE_RUNTIME_ENABLED=true` na build): ligada só em staging até o checklist do Gate 5; confirmar que a build de produção está sem ela (nada de aparelho registrado, lease ou dados locais) até lá. Ligá-la registra um aparelho por usuário, emite leases de até 72 horas e grava uma cópia local da organização ([ADR 0043](../adr/0043-runtime-offline-no-app.md)).
+- [ ] **Dados da empresa nos textos legais** (`VITE_LEGAL_RAZAO_SOCIAL`, `VITE_LEGAL_ENDERECO`, `VITE_LEGAL_CONTATO_EMAIL` e `VITE_LEGAL_DPO_EMAIL`, todos públicos, `vars` do GitHub Actions, lidas no build de produção): trocar o valor é mudar a variável e fazer o deploy de novo, e o hash do texto não muda. O que o build de produção reprova está na emenda de 30/10/2026 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). Estado: o passo que passa as `vars` ao build entra no workflow do staging depois do PR dos textos legais, aplicado pelo mantenedor, e o de produção ainda não existe; até lá, o staging mostra os valores de exemplo. **A razão social tem duas fontes**, e trocar só uma deixa a outra com o nome antigo: (1) a constante `BILLING_EMAIL_SUPPLIER` em `billing-notice-email.tsx`, o rodapé dos e-mails de cobrança; (2) `VITE_LEGAL_RAZAO_SOCIAL`, os Termos.
 - [ ] **Bloqueante para ligar a escrita offline:** concluir o checklist manual do [Gate 5](./gate-5-offline.md#checklist-manual-em-aparelho-físico-adiado-bloqueia-ligar-a-escrita-offline) em iPhone e Android reais.
 - [ ] **Bloqueante para ligar a escrita offline:** prova em Android Chrome real do outbox (IndexedDB) e das coleções (OPFS), incluindo sobreviver a matar o processo, e o resultado de `navigator.storage.persist()` visível ao usuário ([ADR 0032](../adr/0032-outbox-duravel-de-comandos.md)). Prova em Android Chrome real da persistência offline antes de ligar escrita offline em produção ([ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md)).

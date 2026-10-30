@@ -312,7 +312,7 @@ test("cancelar no teste: vai até o fim, nada é cobrado e não há outro teste 
   await expect(dialog.getByRole("button", CANCEL_BUTTON)).toHaveCount(0);
 });
 
-test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda o mesmo pedido; clique duplo, um pedido só", async ({
+test("cancelar com o provedor fora: não afirma que nada foi cancelado, sem tentar de novo, Atualizar lê o plano; clique duplo, um pedido só", async ({
   page,
 }) => {
   let release: () => void = () => undefined;
@@ -322,17 +322,10 @@ test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda
   const calls = await openScreen(page, {
     commands: {
       cancelRenewal: [
-        (route) =>
-          route.fulfill(
-            refusal("SERVICE_UNAVAILABLE", 503, "billing_provider_unavailable")
-          ),
         async (route) => {
           await held;
           await route.fulfill(
-            rpc({
-              accessEndsAt: "2026-11-24T03:00:00.000Z",
-              result: "cancelled",
-            })
+            refusal("SERVICE_UNAVAILABLE", 503, "billing_provider_unavailable")
           );
         },
       ],
@@ -341,24 +334,23 @@ test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda
   });
   await page.getByRole("button", CANCEL_BUTTON).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", CANCEL_BUTTON).click();
-  await expect(dialog.getByRole("alert")).toHaveText(
-    "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo."
-  );
-  // the notice takes the focus, so it comes into view inside the dialog at 360 px
-  await expect(dialog.getByRole("alert")).toBeFocused();
-  await expect(planTitle(page)).toHaveText("Plano Pro");
-  // the same gesture again: the button waits off, and a double click sends one request
   await dialog.getByRole("button", CANCEL_BUTTON).dblclick();
   await expect(
     dialog.getByRole("button", { name: "Cancelando…" })
   ).toHaveAttribute("aria-disabled", "true");
   release();
-  await expect(planTitle(page)).toHaveText("Pro até 23/11/2026");
-  expect(calls.bodies.cancelRenewal).toHaveLength(2);
-  expect(nth(calls.bodies.cancelRenewal, 1).requestId).toBe(
-    nth(calls.bodies.cancelRenewal, 0).requestId
+  const alert = dialog.getByRole("alert");
+  await expect(alert).toContainText(
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo."
   );
+  await expect(alert).not.toContainText("Nada foi cancelado");
+  // the notice takes the focus, so it comes into view inside the dialog at 360 px
+  await expect(alert).toBeFocused();
+  await expect(planTitle(page)).toHaveText("Plano Pro");
+  await alert.getByRole("button", { name: "Atualizar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(planTitle(page)).toHaveText("Pro até 23/11/2026");
+  expect(calls.bodies.cancelRenewal).toHaveLength(1);
 });
 
 test("cada recusa dos comandos tem texto próprio: trava, limite, confirmação perdida e o plano que mudou (AS-17)", async ({

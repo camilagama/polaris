@@ -1,9 +1,10 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { HideValuesButton } from "@/ui/hidden-values";
-import { formatLastConfirmed } from "../dashboard/dashboard-model";
+import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -15,13 +16,13 @@ import {
 } from "../offline/runtime/runtime-context";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { AttentionBlock } from "./home-attention";
+import { KPI_GRID } from "@/ui/kpi-card";
+import { AttentionBlock, AttentionNotes } from "./home-attention";
 import { ChartBlock, type ChartDays } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import { KpiCards } from "./home-kpi-cards";
-import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import {
   copyLine,
   type GoalView,
@@ -31,26 +32,50 @@ import {
   newSaleOfflineText,
   pickGoal,
 } from "./home-model";
-import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
+import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
+import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 
 /**
- * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then Hoje,
- * Mês, Meta, Precisa de atenção, Mais vendidos and the chart, in this order at 360 px, and in two columns from 1024
- * px with Nova venda, Hoje and Mês above the fold (AC-4). A store that never sold sees the checklist in place of the
+ * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
+ * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
+ * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
+ * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
  * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
  * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
  */
 
-/** The places of the blocks beside the chart from 1024 px: the right column, one row each. */
-const SIDE = [
-  "lg:col-start-2 lg:row-start-1",
-  "lg:col-start-2 lg:row-start-2",
-  "lg:col-start-2 lg:row-start-3",
-] as const;
+const REFRESHING_TEXT = "Atualizando…";
+const NO_COPY_TEXT = "Sem internet e sem números guardados";
 
-const NO_COPY_TEXT = "Sem internet e sem números guardados neste aparelho";
+/**
+ * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
+ * reads the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would drop
+ * it on the body).
+ */
+function RefreshButton({
+  busy,
+  className,
+  onClick,
+}: {
+  busy: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      aria-disabled={busy || undefined}
+      className={cn("max-md:size-ctl-lg max-md:px-0", className)}
+      onClick={busy ? undefined : onClick}
+      type="button"
+      variant="outline"
+    >
+      <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+      <span className="max-md:sr-only">Atualizar</span>
+    </Button>
+  );
+}
 
 /** "Nova venda", and without a connection what it can do then (AC-30), said under it. */
 function NewSale({ offlineText }: { offlineText: string | null }) {
@@ -152,13 +177,13 @@ function figureBlocks(
         />
       ),
       main: (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <div className={KPI_GRID}>
           <BlockSkeleton
-            className="col-span-2 lg:col-span-1"
+            className="md:col-span-2 lg:col-span-1"
             label="Carregando os números de hoje…"
           />
           <BlockSkeleton
-            className="col-span-2 lg:col-span-1"
+            className="md:col-span-2 lg:col-span-1"
             label="Carregando os números do mês…"
           />
           <BlockSkeleton label="Carregando o resultado estimado…" />
@@ -225,10 +250,7 @@ function staleCopyBlocks(
         </div>
       ),
     },
-    updated: copyLine(
-      formatLastConfirmed(figures.confirmedAt, timezone),
-      figures.stale
-    ),
+    updated: copyLine(figures.confirmedAt, timezone, figures.stale),
   };
 }
 
@@ -289,7 +311,8 @@ function pageBlocks({
       offline.figures.todayShown
     ),
     updated: copyLine(
-      formatLastConfirmed(offline.figures.confirmedAt, timezone),
+      offline.figures.confirmedAt,
+      timezone,
       offline.figures.stale
     ),
   };
@@ -303,7 +326,9 @@ function figuresLine(
   if (state.figures.status === "ready") {
     return homeUpdatedLine(state.figures.data.month.generatedAt, timezone);
   }
-  return state.figures.status === "loading" ? <SlowReadNote /> : null;
+  return state.figures.status === "loading" ? (
+    <SlowReadNote announce={false} />
+  ) : null;
 }
 
 /**
@@ -314,16 +339,16 @@ function noFigures(today: string): Blocks {
   return {
     ...NO_BLOCKS,
     main: (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <div className={KPI_GRID}>
         <HomeBlock
-          className="col-span-2 lg:col-span-1"
+          className="md:col-span-2 lg:col-span-1"
           id="home-today"
           title="Vendas hoje"
         >
           <p className="text-muted-foreground">{NO_COPY_TEXT}</p>
         </HomeBlock>
         <HomeBlock
-          className="col-span-2 lg:col-span-1"
+          className="md:col-span-2 lg:col-span-1"
           id="home-month"
           title={`Vendas em ${monthTitle(today).toLowerCase()}`}
         >
@@ -340,9 +365,12 @@ function noFigures(today: string): Blocks {
  */
 function HomeHeader({
   offlineText,
+  refresh,
   updated,
 }: {
   offlineText: string | null;
+  /** The gesture "Atualizar", or null when there is nothing to read (no connection, session refused). */
+  refresh: { busy: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
 }) {
   return (
@@ -353,18 +381,46 @@ function HomeHeader({
           <p
             className="min-h-5 text-muted-foreground text-support"
             id="home-updated"
+            role="status"
           >
             {updated}
           </p>
         </div>
-        <HideValuesButton className="md:hidden" />
+        <div className="flex items-start gap-2 md:hidden">
+          {refresh ? (
+            <RefreshButton busy={refresh.busy} onClick={refresh.onClick} />
+          ) : null}
+          <HideValuesButton />
+        </div>
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
+        {refresh ? (
+          <RefreshButton
+            busy={refresh.busy}
+            className="max-md:hidden"
+            onClick={refresh.onClick}
+          />
+        ) : null}
         <HideValuesButton className="max-md:hidden" />
         <NewSale offlineText={offlineText} />
       </div>
     </header>
   );
+}
+
+/** "Atualizar" is offered only where a read can happen; `refreshing` is true while the button's own read runs. */
+function refreshGesture(
+  canRefresh: boolean,
+  reloading: boolean,
+  reload: () => void
+): {
+  refresh: { busy: boolean; onClick: () => void } | null;
+  refreshing: boolean;
+} {
+  return {
+    refresh: canRefresh ? { busy: reloading, onClick: reload } : null,
+    refreshing: canRefresh && reloading,
+  };
 }
 
 /**
@@ -519,19 +575,17 @@ function pickGoalBlock({
 }
 
 /**
- * The blocks under the KPI cards. The source has the order of a phone (Atenção, Meta, Vendas por dia, Ritmo de vendas,
- * Mais vendidos, v7 § 3); from 1024 px the chart takes the left 2/3 beside Atenção and Meta, and the map the left 2/3
- * of the next row beside Mais vendidos. Without the map the chart takes the three rows, as before it, and the ranking
- * stacks under the goal; the row of the goal takes what is left over, so no gap opens between Atenção and Meta.
+ * The blocks under the KPI cards. The source has the order of a phone (Meta, Vendas por dia, Ritmo de vendas, Mais
+ * vendidos, v7 § 3); from 1024 px the chart takes the left 2/3 with Meta at the top of the right column, and the map
+ * takes the row under it, beside Mais vendidos. Without the map the chart takes both rows and the ranking goes under the
+ * goal; without the chart the blocks go two to a row.
  */
 function LowerBlocks({
-  attention,
   chart,
   goal,
   ranking,
   rhythm,
 }: {
-  attention: React.ReactNode;
   chart: React.ReactNode;
   goal: React.ReactNode;
   ranking: React.ReactNode;
@@ -547,22 +601,24 @@ function LowerBlocks({
           ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
           : "lg:grid-cols-2",
         placed &&
-          (mapped
-            ? "lg:grid-rows-[auto_1fr_auto]"
-            : "lg:grid-rows-[auto_auto_1fr]")
+          (mapped ? "lg:grid-rows-[auto_1fr_auto]" : "lg:grid-rows-[auto_1fr]")
       )}
     >
-      {attention ? (
-        <div className={cn("grid min-w-0", placed && SIDE[0])}>{attention}</div>
-      ) : null}
       {goal ? (
-        <div className={cn("grid min-w-0", placed && SIDE[1])}>{goal}</div>
+        <div
+          className={cn(
+            "grid min-w-0",
+            placed && "lg:col-start-2 lg:row-start-1"
+          )}
+        >
+          {goal}
+        </div>
       ) : null}
       {placed ? (
         <div
           className={cn(
             "grid min-w-0 lg:col-start-1 lg:row-start-1",
-            mapped ? "lg:row-span-2" : "lg:row-span-3"
+            "lg:row-span-2"
           )}
         >
           {chart}
@@ -579,7 +635,17 @@ function LowerBlocks({
         </div>
       ) : null}
       {ranking ? (
-        <div className={cn("grid min-w-0", placed && SIDE[2])}>{ranking}</div>
+        <div
+          className={cn(
+            "grid min-w-0",
+            placed &&
+              (mapped
+                ? "lg:col-start-2 lg:row-start-3"
+                : "lg:col-start-2 lg:row-start-2")
+          )}
+        >
+          {ranking}
+        </div>
       ) : null}
     </div>
   );
@@ -593,11 +659,18 @@ function LowerBlocks({
  * outlasts the connection going and coming back.
  */
 export function HomePage() {
-  const { organization, organizationId } = useCurrentOrganization();
+  const { organization, organizationId, organizations } =
+    useCurrentOrganization();
   const { timezone } = organization;
+  const activeIds = useMemo(
+    () => organizations.map((item) => item.id),
+    [organizations]
+  );
   const {
     online,
     reads,
+    reload,
+    reloading,
     retryFigures,
     retryGoals,
     retryRhythm,
@@ -640,6 +713,11 @@ export function HomePage() {
         timezone,
         today,
       });
+  const { refresh, refreshing } = refreshGesture(
+    online && !state.sessionRefused,
+    reloading,
+    reload
+  );
   const goalBlock = pickGoalBlock({
     goal,
     offline,
@@ -650,33 +728,43 @@ export function HomePage() {
   });
 
   // with the session refused nothing about the stock is known: only this device's own line can be said
+  const stock: HomeState["stock"] =
+    state.sessionRefused || offline ? { status: "hidden" } : state.stock;
   const attention =
     state.sessionRefused && refused === 0 ? null : (
       <AttentionBlock
-        offline={offline !== null && reads.inventory}
         refused={refused}
         soldWithoutCost={
           figures ? figures.month.quality.itemLinesWithUnknownCost : null
         }
-        stock={
-          state.sessionRefused || offline ? { status: "hidden" } : state.stock
-        }
+        stock={stock}
       />
+    );
+  // what the check of the stock says when it has no lines: a discreet line under the cards, only with the stock's read
+  const attentionNotes =
+    state.sessionRefused || !reads.inventory ? null : (
+      <AttentionNotes offline={offline !== null} stock={stock} />
     );
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <HomeHeader
         offlineText={offline ? newSaleOfflineText(canSellOffline) : null}
-        updated={updated}
+        refresh={refresh}
+        updated={refreshing ? REFRESHING_TEXT : updated}
       />
+      <ReopenedNotice />
+      <ClosedStoreLine activeIds={activeIds} />
       <div
-        aria-busy={view === null && state.figures.status === "loading"}
+        aria-busy={
+          refreshing || (view === null && state.figures.status === "loading")
+        }
         className="grid gap-4"
       >
+        {attention}
         {blocks.main}
+        {attentionNotes}
         <LowerBlocks
-          attention={attention}
           chart={blocks.chart}
           goal={goalBlock}
           ranking={blocks.ranking}

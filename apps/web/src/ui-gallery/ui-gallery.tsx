@@ -55,6 +55,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
 import {
@@ -164,6 +165,12 @@ const SALE_METHODS = [
   { label: "Transferência", value: "transferencia" },
   { label: "Outro", value: "outro" },
 ];
+
+const GROUP_ACTIONS = [
+  { Icon: PlusIcon, name: "Aumentar" },
+  { Icon: MinusIcon, name: "Diminuir" },
+  { Icon: CheckIcon, name: "Confirmar" },
+] as const;
 
 const LONG_LIST = Array.from(
   { length: 40 },
@@ -537,6 +544,56 @@ export function UiGallery() {
             </div>
           </Section>
 
+          <Section title="Tamanho por papel">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
+              <div className="grid content-start gap-2" data-papel="comum">
+                <p className="text-muted-foreground text-support">
+                  Controle comum
+                </p>
+                <Button className="w-fit" variant="outline">
+                  Cancelar
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="principal">
+                <p className="text-muted-foreground text-support">
+                  Ação principal
+                </p>
+                <Button className="w-fit" size="xl">
+                  Nova venda
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="grupo">
+                <p className="text-muted-foreground text-support">
+                  Controles em grupo
+                </p>
+                <div className="flex gap-2" data-target-group="">
+                  {GROUP_ACTIONS.map(({ Icon, name }) => (
+                    <Button
+                      aria-label={name}
+                      className="size-6 before:content-none!"
+                      key={name}
+                      size="icon-xs"
+                      variant="outline"
+                    >
+                      <Icon aria-hidden="true" />
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid content-start gap-2" data-papel="campo">
+                <p className="text-muted-foreground text-support">
+                  Campo de texto
+                </p>
+                <Input aria-label="Campo comum" placeholder="Comum" />
+                <Input
+                  aria-label="Campo principal"
+                  className="touch:h-11"
+                  placeholder="Busca"
+                />
+              </div>
+            </div>
+          </Section>
+
           <Section title="Campos">
             <div className="grid max-w-sm gap-1.5">
               <Label htmlFor="galeria-nome">Nome do produto</Label>
@@ -656,6 +713,50 @@ export function UiGallery() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            </div>
+          </Section>
+
+          <Section title="Ajuda (i)">
+            {/* The cards clip their overflow, as in the app: the popup is in a portal and must come out whole. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Resultado estimado
+                    </CardTitle>
+                    <HelpTip about="Resultado estimado">
+                      Vendas menos custos, taxas e despesas de 1 a 23/10.
+                      Compara com 1 a 23/09.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Ticket médio
+                    </CardTitle>
+                    <HelpTip
+                      about="Ticket médio"
+                      link={{ href: "/dashboard", label: "Ver o resultado" }}
+                    >
+                      Vendas líquidas divididas pelo número de vendas.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </Section>
 
@@ -1004,21 +1105,28 @@ export function UiGallery() {
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
               <span className="text-support">
-                <MoneyText text="Melhor dia: 18/10, R$ 1.840,00" />
+                <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: false, text: "+19,1%", trend: "up" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: false,
+                      text: "+19,1%",
+                      trend: "up",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="sales"
-                footer="41 vendas no mês"
+                help={{
+                  about: "Vendas",
+                  text: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-vendas"
-                note="vs. 1 a 25/09"
+                note="41 vendas"
                 spark={
                   <OnDemandSparkline
                     color="var(--chart-sales)"
@@ -1027,20 +1135,27 @@ export function UiGallery() {
                     values={GALLERY_KPI_SERIES}
                   />
                 }
-                title="Vendas em outubro"
+                title="Vendas"
                 value={<HeroValue amount="2660.60" />}
               />
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: true, text: "-R$ 12,00", trend: "down" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: true,
+                      text: "-R$ 12,00",
+                      trend: "down",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="result"
-                footer="Não é lucro líquido nem dinheiro já recebido."
+                footer="Não é lucro líquido nem caixa"
+                help={{
+                  about: "Resultado estimado",
+                  text: "Vendas menos custos, taxas e despesas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-resultado"
-                note="vs. 1 a 25/09"
                 title="Resultado estimado"
                 value={<HeroValue amount="-48.30" size="md" />}
               />

@@ -105,7 +105,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
-      legalBuildGuardPlugin(),
+      legalBuildGuardPlugin(viteEnv),
       uiPlugins(),
       react(),
       cloudflare(),

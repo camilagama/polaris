@@ -514,7 +514,7 @@ const CARD = {
   ticket: 2,
 } as const;
 
-const kpiCards = (page: Page) => page.locator("[data-kpi-row] > [data-kpi]");
+const kpiCards = (page: Page) => page.locator("[data-kpi-row] [data-kpi]");
 const card = (page: Page, index: number) => kpiCards(page).nth(index);
 const quality = (page: Page) =>
   page.getByRole("region", { name: "Qualidade dos dados" });
@@ -570,14 +570,17 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   await expect(card(page, CARD.result)).toContainText("outubro inteiro");
   await expect(card(page, CARD.netSales)).toContainText("Vendas em outubro");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-  await expect(card(page, CARD.netSales)).toContainText("2 vendas no mês");
+  await expect(card(page, CARD.netSales)).toContainText("2 vendas");
   await expect(card(page, CARD.ticket)).toContainText("Ticket médio");
   await expect(card(page, CARD.ticket)).toContainText("R$ 65,00");
   await expect(card(page, CARD.margin)).toContainText("Margem");
   await expect(card(page, CARD.margin)).toContainText("52,69%");
   // the chips compare with the same days of September (v7 § 8): R$ 130,00 against R$ 100,00
   await expect(card(page, CARD.netSales)).toContainText("+30,0%");
-  await expect(card(page, CARD.netSales)).toContainText("vs. 1 a 14/09");
+  // what it compares with is in the name of the chip and in the (i), not in sight
+  await expect(
+    card(page, CARD.netSales).locator("[data-kpi-delta]")
+  ).toHaveAttribute("aria-label", "+30,0% em relação a 1 a 14/09");
   // the chips of sales and ticket read `dailySales`; the result's chip reads the summary of the same month
   expect(server.salesComparisons).toContainEqual({
     from: "2026-09-01",
@@ -746,12 +749,10 @@ test("nenhum custo de mercadoria conhecido: o CMV é “—” com a nota, a bar
 
   const result = card(page, CARD.result);
   await expect(result).toContainText(
-    "Sem custo conhecido: o resultado não dá para estimar."
+    "Sem custo informado: não dá para estimar."
   );
   await expect(result).not.toContainText(AN_AMOUNT);
-  await expect(card(page, CARD.margin)).toContainText(
-    "Sem custo conhecido no período."
-  );
+  await expect(card(page, CARD.margin)).toContainText("Sem custo informado");
   await expect(card(page, CARD.margin)).not.toContainText("%");
 
   const cogs = chainRow(page, "(CMV)");
@@ -1012,6 +1013,37 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await expect(copyNotice(page)).toHaveCount(0);
 });
 
+test("sem conexão, o mês vazio guardado mostra o estado vazio com a cópia dita como tal, e os dois botões seguem como com conexão", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.fixture = { ...FIXTURE, "2026-10": { expenses: [], sales: [] } };
+  const user = await openDashboard(page, server);
+  const empty = page.getByText("Sem vendas nem despesas em 1 a 31 de outubro");
+  await expect(empty).toBeVisible();
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+  const newSale = page.getByRole("link", { exact: true, name: "Nova venda" });
+  const newExpense = page.getByRole("link", {
+    exact: true,
+    name: "Nova despesa",
+  });
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+
+  server.networkDown = true;
+  await signIn(page, user);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
+  await expect(empty).toBeVisible();
+  await expect(kpiCards(page)).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(newSale).toBeVisible();
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toBeVisible();
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+});
+
 test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai", async ({
   page,
 }) => {
@@ -1170,7 +1202,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     // the card of the result: the badge and the count, no sparkline and no chip (AC-9)
     const result = card(page, CARD.result);
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("1 de 30 dias sem custo informado");
+    await expect(result).toContainText("1 de 30 dias sem custo");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(

@@ -43,5 +43,6 @@ Preconditions:
 - Há dois "Novo produto" na loja vazia (o do topo e o do vazio): `.first()`.
 - No celular, Produtos não está na barra de baixo: só pelo "Mais" (a barra marca "Estoque" como a área).
 - "Importar planilha" fica desligado sem conexão, com o motivo "Importar planilha precisa de conexão.": é `aria-disabled`, e o `click()` do Playwright espera até estourar o tempo; use `click({ force: true })` para provar que nada abre.
+- A importação vai a uma linha a cada 7 s: use poucas linhas por drive. A pausa do regime do plano Free ("O servidor está ocupado. A importação continua sozinha às HH:MM.", com "Parar a importação") não acontece no workerd local: responda a uma chamada de `product/importBatch` com a página da plataforma (`page.route`, 503 com `cf-ray`, sem a marca do Worker) e diga isso na evidência.
 - O CSV é gerado no drive; não há planilha de exemplo versionada. Nome que já existe na loja entra como "já existe", não como erro.
 - Com o Dialog modal aberto, o resto da página sai da árvore de acessibilidade: `getByRole` de fora do Dialog não acha nada até ele fechar.

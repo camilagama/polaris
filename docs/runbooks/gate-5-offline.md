@@ -18,7 +18,7 @@ O plano define o Gate 5 assim: o offline só é considerado pronto quando (1) um
 
 A suíte `gate5` roda, em sequência: `offline-devices`, `offline-lease`, `sync-log`, `bootstrap`, `sync-push`, `offline-product`, `offline-customer`, `offline-stock`, `offline-sale` e `offline-e2e`. Cada um termina com `"status": "passed"`.
 
-Localmente, `bun run test:offline-browser` (em `apps/web`) roda as duas configurações de navegador. Os cenários do PR62 (recarregar, matar e reabrir, reconectar, duas abas, conflito, atualização pendente) e sua cobertura estão no [ADR 0042](../adr/0042-suite-de-navegador-do-offline-e-versoes.md); a compatibilidade com versões antigas do app está no arquivo dourado de payloads.
+Localmente, `bun run test:offline-browser` (em `apps/web`) roda as duas configurações de navegador; o projeto `chromium-visual` (regressão visual) precisa de Docker e, sem ele, fica de fora com um aviso ([testes-de-tela](testes-de-tela.md#regressão-visual)). Os cenários do PR62 (recarregar, matar e reabrir, reconectar, duas abas, conflito, atualização pendente) e sua cobertura estão no [ADR 0042](../adr/0042-suite-de-navegador-do-offline-e-versoes.md); a compatibilidade com versões antigas do app está no arquivo dourado de payloads.
 
 No CI, o job **Offline persistence browser gate** roda os cenários de navegador (Chromium desktop e Pixel 5 emulado) da persistência (PR12), das coleções locais (PR50b), do outbox (PR52), do painel de atenção (PR58) e da saída com pendências (PR59); o job de gates PostgreSQL 18 roda a suíte `ci`, que inclui as provas de banco acima.
 

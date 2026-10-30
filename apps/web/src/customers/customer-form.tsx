@@ -17,6 +17,7 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogForm,
   DialogHeader,
@@ -37,6 +38,7 @@ import {
   ProductTextField,
 } from "../catalog/product-fields";
 import { ActionFeedback } from "../catalog/products-page-parts";
+import { formatDate } from "../catalog/screen-parts";
 import { focusLater } from "../lib/focus";
 import type { CustomerDraft } from "./customer-draft";
 import { NAME_REQUIRED_TEXT } from "./customers-model";
@@ -335,6 +337,11 @@ export function CustomerForm({
             <DialogTitle>
               {editingCustomer ? "Editar cliente" : "Novo cliente"}
             </DialogTitle>
+            {editingCustomer ? (
+              <DialogDescription>
+                Atualizado em {formatDate(editingCustomer.updatedAt)}
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
           <DialogBody>
             <ActionFeedback

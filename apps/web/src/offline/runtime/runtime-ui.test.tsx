@@ -33,6 +33,7 @@ const snapshot = (
   leaseExpiresAt: null,
   legalAcceptanceRequired: false,
   online: true,
+  organizationClosed: false,
   phase: "ready",
   reason: null,
   renewalRefused: false,
@@ -123,6 +124,41 @@ describe("the sync status in the header", () => {
     ).toMatchObject({ tone: "offline" });
   });
 
+  it("says the server is busy when it died on the send, and keeps 'Envio falhou' for any other failure", () => {
+    expect(
+      syncStatusLabel(
+        snapshot({
+          counts: counts({ pending: 2 }),
+          reason: "server_busy",
+          syncing: false,
+        })
+      )
+    ).toEqual({
+      attention: false,
+      short: "Ocupado · 2",
+      text: "Servidor ocupado · 2 operações guardadas neste aparelho",
+      tone: "offline",
+    });
+    expect(
+      syncStatusLabel(snapshot({ reason: "server_busy", syncing: false }))
+    ).toMatchObject({
+      short: "Ocupado",
+      text: "Servidor ocupado · tentando de novo sozinho",
+    });
+    expect(
+      syncStatusLabel(
+        snapshot({
+          counts: counts({ pending: 2 }),
+          reason: "sync_failed",
+          syncing: false,
+        })
+      )
+    ).toMatchObject({
+      short: "Envio falhou",
+      text: "Não foi possível enviar · 2 operações guardadas",
+    });
+  });
+
   it("a refused operation becomes a call for attention, whatever else is going on", () => {
     expect(
       syncStatusLabel(
@@ -151,6 +187,12 @@ describe("the sync status in the header", () => {
       snapshot({ online: false }),
       snapshot({ counts: counts({ pending: 12 }) }),
       snapshot({ reason: "sync_failed", syncing: false }),
+      snapshot({ reason: "server_busy", syncing: false }),
+      snapshot({
+        counts: counts({ pending: 12 }),
+        reason: "server_busy",
+        syncing: false,
+      }),
       snapshot({ syncing: true }),
       snapshot({ phase: "starting" }),
       snapshot({ phase: "unavailable", reason: "no_lease_offline" }),

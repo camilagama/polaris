@@ -60,7 +60,7 @@ const DEVICES_SIGN_IN_AGAIN = signInPath({
 
 /**
  * "Trocar senha" lives under the devices, in a "Segurança" section of its own, as an outline button with the
- * 48 px touch area (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with
+ * 44 px touch area (UX review of the P9: a text link in a paragraph was a 26 px target nobody found). Only with
  * the password on (ADR 0100, AC-46).
  */
 function SecuritySection() {

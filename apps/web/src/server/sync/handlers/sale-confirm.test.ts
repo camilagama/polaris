@@ -14,6 +14,7 @@ import {
   PaymentProfileVersionConflictError,
 } from "@polaris/domain/sales/payment-profile";
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
+import { logger } from "@polaris/observability/logger";
 import { describe, expect, it, vi } from "vitest";
 import { InvalidSyncPayloadError } from "../push";
 import { createSaleConfirmHandler } from "./sale-confirm";
@@ -167,6 +168,55 @@ describe("sale.confirm handler", () => {
         paymentProfile: { expectedVersion: 3, id: profileId },
       })
     );
+  });
+
+  it("counts a sale refused for stock when a device syncs it, by store, with no product and no amount", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    const confirmSale = vi.fn().mockRejectedValue(new InsufficientStockError());
+    const handler = createSaleConfirmHandler({
+      confirmSale: confirmSale as never,
+    });
+    await expect(
+      handler.execute({} as never, identity, handler.parse(sale), {
+        baseVersion: null,
+        commandId,
+        requestId: "req-1",
+      })
+    ).rejects.toBeInstanceOf(InsufficientStockError);
+    expect(info.mock.calls).toEqual([
+      [
+        "sale_refused_insufficient_stock",
+        { organizationId: "org-1", origin: "sync", requestId: "req-1" },
+      ],
+    ]);
+    confirmSale.mockRejectedValueOnce(new SaleProductUnavailableError());
+    await expect(
+      handler.execute({} as never, identity, handler.parse(sale), {
+        baseVersion: null,
+        commandId,
+      })
+    ).rejects.toBeInstanceOf(SaleProductUnavailableError);
+    expect(info).toHaveBeenCalledTimes(1);
+    info.mockRestore();
+  });
+
+  it("keeps the refusal for stock when the log itself throws", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {
+      throw new Error("log sink down");
+    });
+    const confirmSale = vi.fn().mockRejectedValue(new InsufficientStockError());
+    const handler = createSaleConfirmHandler({
+      confirmSale: confirmSale as never,
+    });
+    await expect(
+      handler.execute({} as never, identity, handler.parse(sale), {
+        baseVersion: null,
+        commandId,
+        requestId: "req-1",
+      })
+    ).rejects.toBeInstanceOf(InsufficientStockError);
+    expect(info).toHaveBeenCalledTimes(1);
+    info.mockRestore();
   });
 
   it("names a profile that changed or went away as its own refusals", () => {

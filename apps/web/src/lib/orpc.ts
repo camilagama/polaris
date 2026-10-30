@@ -4,7 +4,15 @@ import type { PolarisRpcClient } from "@polaris/contracts";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import { browserConnection } from "./browser-connection";
 import { markLegalAcceptanceRequired } from "./legal-acceptance";
-import { isLegalAcceptanceRefusal, rpcErrorCode } from "./rpc-error";
+import {
+  markOrganizationClosed,
+  requestedOrganizationId,
+} from "./organization-closed";
+import {
+  isLegalAcceptanceRefusal,
+  isOrganizationClosedRefusal,
+  rpcErrorCode,
+} from "./rpc-error";
 import { trackWrite } from "./writes-in-flight";
 
 function createPolarisRpcClient(origin: string): PolarisRpcClient {
@@ -17,8 +25,15 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
       (options) => trackWrite(options.path, () => options.next()),
       // The server said, in answer to one of the screen's own calls, that the session is over: the shell
       // offers "Entrar de novo" (it never navigates by itself while something may be in progress).
-      onError((error) => {
-        if (rpcErrorCode(error) === "UNAUTHORIZED") {
+      onError((error, options) => {
+        // the closed store first: it is a FORBIDDEN too, and the session is fine. Only the reason says so; a FORBIDDEN
+        // without it is never taken for a closure
+        const closedId = isOrganizationClosedRefusal(error)
+          ? requestedOrganizationId(options.input)
+          : null;
+        if (closedId !== null) {
+          markOrganizationClosed(closedId);
+        } else if (rpcErrorCode(error) === "UNAUTHORIZED") {
           endSessionHere();
         } else if (isLegalAcceptanceRefusal(error)) {
           // not a refused session: nothing is dropped, the shell shows the fixed notice with `/aceite`

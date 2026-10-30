@@ -1322,7 +1322,7 @@ Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8a → P8 → 
 
 - **P0 (docs):** o ADR 0100, as emendas dos ADRs 0017, 0044 e 0047 e os ajustes nas regras de autenticação e privacidade.
 - **P1 (app):** limitador do login social, 302 no callback e testes de open redirect no servidor.
-- **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (`[preencher]` e aviso de rascunho). Vem antes do P3 para não haver link morto.
+- **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (a lista está na seção "Emenda (30/10/2026)" do [ADR 0100](../docs/adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Vem antes do P3 para não haver link morto.
 - **P2 (db):** migration do bloqueio por e-mail, gate `login-lock`, classe de retenção e job de expurgo.
 - **P3 (app):** `/entrar` só com Google, `voltar` e motivo, "Entrar de novo", "Sair" com destino, o texto único de sessão encerrada e `/api/auth-methods`.
 - **P4 (db):** migration do aceite legal (só acrescenta), gate `legal-acceptance` e a classe de retenção `legal_acceptance`.

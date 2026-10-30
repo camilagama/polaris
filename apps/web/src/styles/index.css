@@ -16,7 +16,7 @@
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
 @source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
-@source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
+@source "../inventory/{inventory-page,stock-action-strip,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
 @source "../catalog/{products-page,products-page-parts,product-dialog,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-file-picker,product-media-list,product-media-crop}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
@@ -29,16 +29,16 @@
 @source "../payment-profiles/{payment-profiles-page,payment-profile-form,payment-profile-list}.tsx";
 /* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
-@source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card,app-shell/screen-tabs,app-shell/screen-title}.tsx";
+@source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card,app-shell/menu-progress,app-shell/screen-tabs,app-shell/screen-title}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
 /* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
-@source "../organization/organization-setup.tsx";
+@source "../organization/{organization-setup,close-store-section,closed-store-page}.tsx";
 @source "../legal/{legal-app,legal-frame,legal-page}.tsx";
 @source "../legal/acceptance/acceptance-page.tsx";
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
    and of the connection, the acceptance, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,closed-store-notice,first-access,grace-notice,action-strip}.tsx";
 /* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
 @source "../settings/app-version-line.tsx";
 @source "../offline/logout-dialog.tsx";
@@ -46,7 +46,7 @@
 /* The lab of those pieces (browser checks only). */
 @source "../offline-poc/screens-lab-shell-pieces.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
-@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
+@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels,sale-draft-bar}.tsx";
 /* The expenses screen (v5.1, segmented since UI-H): the page, the forms in dialogs, the list, the recurring rules, the categories and the month picker. */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
@@ -54,11 +54,13 @@
 @source "../offline/attention-panel.tsx";
 @source "../offline/runtime/{devices-page,device-item}.tsx";
 /* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
-@source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
+@source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,empty-result,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
-@source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
+@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting,limit-help}.tsx";
+/* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */
+@source "../data-export/{data-export-page,data-export-list,data-export-cards}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */
 @source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 @source "../sales/{sale-return-panel,sale-return-table,sale-cancel-panel,sale-operation-actions,sale-reason-fields,operation-failure-notice,sale-customer-panel,sale-id-missing}.tsx";

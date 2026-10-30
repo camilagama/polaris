@@ -29,8 +29,14 @@ import { orpcClient } from "./orpc";
 import { clearPaymentProfileCaches } from "./payment-profile-cache";
 import { clearPeriodSummaryCaches } from "./period-summary-cache";
 import { rpcErrorCode } from "./rpc-error";
+import { clearClosedStores } from "../organization/closed-stores-memory";
 import { writeSessionMarker } from "./session-marker";
 import { isSigningOut } from "./sign-out";
+import {
+  clearSaleAttempts,
+  sessionStorageOrNull,
+} from "../sales/sale-attempt-storage";
+import { clearSaleDrafts } from "../sales/sale-draft-storage";
 
 interface OrganizationContextValue {
   /**
@@ -96,8 +102,11 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         if (rpcErrorCode(error) === "UNAUTHORIZED") {
           // The session is over: its organizations must not be offered offline.
           clearOrganizationsCache(browserStorage());
+          clearClosedStores(browserStorage());
           clearPaymentProfileCaches(browserStorage());
           clearPeriodSummaryCaches(browserStorage());
+          clearSaleDrafts(sessionStorageOrNull());
+          clearSaleAttempts(sessionStorageOrNull());
         }
         // the flag is the server's word: a list from the device's copy does not carry it
         setBillingSelfService(false);
@@ -148,6 +157,10 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     loadOrganizations();
   }, [loadOrganizations]);
   const select = useCallback((organizationId: string) => {
+    // the cart of the store left behind is not kept: it would come back after the person forgot it. The attempt sent
+    // with no answer is, since that sale may be on the server and retyping the cart must reach it
+    clearSaleDrafts(sessionStorageOrNull(), organizationId);
+    clearSaleAttempts(sessionStorageOrNull(), organizationId, true);
     writePreferredOrganizationId(browserStorage(), organizationId);
     setLoad((current) => selectOrganization(current, organizationId));
   }, []);

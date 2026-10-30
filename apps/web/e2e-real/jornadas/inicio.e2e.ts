@@ -85,12 +85,15 @@ test("início: a venda de hoje aparece em Hoje e abrir a tela não grava nada no
   const today = page.getByRole("region", { name: "Vendas hoje" });
   await expect(today).toContainText("R$ 90,00");
   await expect(today).toContainText("1 venda");
-  await expect(page.getByRole("region", { name: "Meta" })).toContainText(
-    "Defina quanto quer vender no mês e acompanhe aqui."
-  );
   await expect(
-    page.getByRole("region", { name: "Precisa de atenção" })
-  ).toContainText("Nada precisa de atenção agora.");
+    page.getByRole("region", { name: "Meta" }).getByRole("link", {
+      name: "Definir meta",
+    })
+  ).toBeVisible();
+  // nothing to do: the block is not there
+  await expect(
+    page.getByRole("region", { name: "Precisa de ação" })
+  ).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Mais vendidos do mês" })
   ).toContainText("Vela aromática");

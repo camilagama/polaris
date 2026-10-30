@@ -11,7 +11,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
+import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { SaleCancelPanel } from "./sale-cancel-panel";
@@ -38,7 +40,7 @@ import { SaleReturnPanel } from "./sale-return-panel";
 
 /** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
-/** A link on a line of its own: it gets the 48 px touch area. */
+/** A link on a line of its own: it gets the 44 px touch area. */
 const LINK =
   "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
@@ -80,6 +82,9 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   // the sale changed and the detail is being read again: what the page offers is still the old state
   const [refreshing, setRefreshing] = useState(false);
   const sequence = useRef<RequestSequence>({ current: 0 });
+  // the store's date of the sale, from the last read: a return or a cancellation of a sale from before the open month
+  // changes the days the Início keeps ("janela anterior")
+  const occurredOn = useRef<string | null>(null);
 
   const loadDetail = useCallback(async () => {
     const token = nextRequestToken(sequence.current);
@@ -92,6 +97,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
         { isCurrent: () => isLatestRequest(sequence.current, token) }
       );
       if (isLatestRequest(sequence.current, token)) {
+        occurredOn.current = value.sale.sale.occurredOn;
         setLoad({ status: "ready", value });
       }
     } catch (error) {
@@ -110,6 +116,13 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
   }, [loadDetail]);
   const handleSaleChanged = useCallback(
     (next: SaleNotice) => {
+      // also after a failure that asks to reload: the server may have taken the attempt, and a copy that may be old is
+      // worse than one more read
+      invalidatePreviousWindow(
+        browserStorage(),
+        organizationId,
+        occurredOn.current
+      );
       setNotice(next);
       // only after a success, whose panel is done: a failure keeps the panel mounted, with its locked attempt
       setRefreshing(next.ok);
@@ -117,7 +130,7 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
         .catch(() => undefined)
         .then(() => setRefreshing(false));
     },
-    [loadDetail]
+    [loadDetail, organizationId]
   );
 
   return (

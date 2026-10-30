@@ -32,6 +32,14 @@ type LoadableMap<T> = Record<string, Loadable<T>>;
 interface SaleCatalog {
   profiles: Loadable<PaymentProfileReadModel[]>;
   /**
+   * Reads the variants of a cart that came back from the tab and keeps their balances. Only the server's answer is
+   * returned to judge the lines: the device's copy may simply not have a variant yet, so offline (or on a failed
+   * read) it is null, the lines stay, and the server checks them at the confirmation.
+   */
+  readLines: (
+    variantIds: readonly string[]
+  ) => Promise<InventoryBalanceEntryReadModel[] | null>;
+  /**
    * Reloads the payment profiles and re-reads the balances of the variants on
    * the sale, all variants in one call (two for more than 100 lines).
    */
@@ -212,5 +220,42 @@ export function useSaleCatalog(
     [loadProfiles, organizationId]
   );
 
-  return { profiles, refresh, resetStock, seedStock, stock };
+  const readLines = useCallback(
+    async (variantIds: readonly string[]) => {
+      const { current } = generation;
+      const workspace = localRef.current;
+      try {
+        if (workspace) {
+          const { outbox, writer } = workspace.stores;
+          const { entries } = filterLocalStockEntries(
+            localStockEntries(await readLocalCatalog(writer, outbox)),
+            { productStatus: "all", variantIds }
+          );
+          if (generation.current === current) {
+            setStock((map) => stockAfterRefresh(map, variantIds, entries));
+          }
+          return null;
+        }
+        const pages = await Promise.all(
+          chunkIds(variantIds).map((chunk) =>
+            readWithRetry(() =>
+              orpcClient.inventory.listBalances(
+                lineBalancesRequest(organizationId, chunk)
+              )
+            )
+          )
+        );
+        const entries = pages.flatMap((page) => page.entries);
+        if (generation.current === current) {
+          setStock((map) => stockAfterRefresh(map, variantIds, entries));
+        }
+        return entries;
+      } catch {
+        return null;
+      }
+    },
+    [organizationId]
+  );
+
+  return { profiles, readLines, refresh, resetStock, seedStock, stock };
 }

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { ActionStrip } from "../app-shell/action-strip";
 import {
   type AttentionAction,
   type AttentionItem,
@@ -233,6 +234,15 @@ function ItemCard({
   );
 }
 
+/** "2 registros recusados · 1 na fila atrás deles": the refused, then the ones waiting behind them. */
+export function refusedText(summary: AttentionSummary): string {
+  const refused = summary.items.length;
+  const text = `${refused} ${refused === 1 ? "registro recusado" : "registros recusados"}`;
+  return summary.waitingBehind > 0
+    ? `${text} · ${summary.waitingBehind} na fila atrás ${refused === 1 ? "dele" : "deles"}`
+    : text;
+}
+
 export function AttentionPanel({
   busyCommandId = null,
   errorMessage = null,
@@ -252,16 +262,7 @@ export function AttentionPanel({
   }
   return (
     <AttentionFrame>
-      <p className="text-muted-foreground text-support">
-        O servidor recusou{" "}
-        {summary.items.length === 1
-          ? "1 registro"
-          : `${summary.items.length} registros`}{" "}
-        feito{summary.items.length === 1 ? "" : "s"} offline.
-        {summary.waitingBehind > 0
-          ? ` ${summary.waitingBehind} ${summary.waitingBehind === 1 ? "registro espera" : "registros esperam"} na fila atrás ${summary.waitingBehind === 1 ? "dele" : "deles"}.`
-          : ""}
-      </p>
+      <ActionStrip>{refusedText(summary)}</ActionStrip>
       {errorMessage ? (
         <Alert variant="destructive">
           <CircleAlertIcon aria-hidden="true" />

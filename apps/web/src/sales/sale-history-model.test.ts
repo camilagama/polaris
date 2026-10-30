@@ -181,11 +181,33 @@ describe("rows", () => {
     });
     expect(cancelled).toMatchObject({
       itemCountText: "1 item",
-      methodText: "Cartão de crédito",
+      methodText: "Crédito",
       statusLabel: "Cancelada",
       statusTone: "cancelled",
     });
     expect(saleDetailHref(id(1))).toBe(`/sales/detail?saleId=${id(1)}`);
+  });
+
+  it("writes the method of every sale with the short names of the choice cards of Vender", () => {
+    const methods = [
+      "pix",
+      "cash",
+      "credit_card",
+      "debit_card",
+      "bank_transfer",
+      "other",
+    ] as const;
+    const rows = historyRows(
+      loaded(methods.map((paymentMethod, n) => entry(n, { paymentMethod })))
+    );
+    expect(rows.map((row) => row.methodText)).toEqual([
+      "Pix",
+      "Dinheiro",
+      "Crédito",
+      "Débito",
+      "Transferência",
+      "Outro",
+    ]);
   });
 
   it("badges a sale that has returns, keeping its status", () => {

@@ -37,7 +37,7 @@ describe("Tabs", () => {
   it("applies the three rules of the project", () => {
     // the height of the list comes from the --h-* tokens (32 px with a mouse, 36 px with touch)
     expect(markup).toContain("h-ctl-md");
-    // a 48 px touch area around each tab and the 3 px outline of the keyboard
+    // a 44 px touch area around each tab and the 3 px outline of the keyboard
     expect(
       markup.match(TAB_TAG)?.every((tab) => tab.includes("touch-hit"))
     ).toBe(true);

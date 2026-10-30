@@ -99,7 +99,7 @@ describe("estados da lista", () => {
   it("sem produto nenhum convida a cadastrar o primeiro, com o botão", () => {
     const markup = html();
     expect(markup).toContain("Nenhum produto ainda");
-    expect(markup).toContain("Cadastre o primeiro para vender.");
+    expect(markup).not.toContain("Cadastre o primeiro");
     expect(markup).toContain("Novo produto");
   });
 
@@ -128,11 +128,25 @@ describe("linha do produto", () => {
       total: 2,
     });
     expect(markup).toContain("Camiseta do teste");
-    expect(markup).toContain("Roupas");
-    expect(markup).toContain("Algodão, corte reto.");
-    expect(markup).toContain("Sem categoria");
+    expect(markup).toContain("Roupas · Algodão, corte reto.");
+    expect(markup).toContain(">Sem categoria<");
     expect(markup).toContain(">CA<");
     expect(markup).toContain(">ME<");
+  });
+
+  it("a linha de apoio é uma só, de uma linha, e a data de atualização não está na lista", () => {
+    const markup = html({
+      products: [
+        product(1, {
+          categoryId: clothes.id,
+          description: "Algodão,\n\ncorte   reto.",
+        }),
+      ],
+      total: 1,
+    });
+    expect(markup).toContain("Roupas · Algodão, corte reto.");
+    expect(markup).toContain("line-clamp-1");
+    expect(markup).not.toContain("Atualizado");
   });
 
   it("uma categoria que a lista não conhece aparece como 'Categoria vinculada', não some", () => {

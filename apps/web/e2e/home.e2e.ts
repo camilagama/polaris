@@ -1,10 +1,11 @@
 /// <reference lib="dom" />
 
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { READ_PROCEDURES } from "../src/lib/read-gate";
+import { pickDate } from "./date-pickers";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -174,6 +175,16 @@ class FakeServer {
   readonly diesNext = new Map<string, number>();
   /** How long each read of the Início takes to answer (ms), so the reads of an opening overlap. */
   latencyMs = 0;
+  /** The store's date of the sale that `sale.get` returns. */
+  saleOccurredOn = "2026-09-12";
+  /** The expenses of the store, whatever the month asked: `expense.list` returns the active ones, or the voided. */
+  readonly expenses: Array<{
+    competenceOn: string;
+    description: string;
+    id: string;
+    status: "active" | "voided";
+    version: number;
+  }> = [];
 
   /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
   readonly held = new Map<string, Promise<void>>();
@@ -315,6 +326,26 @@ class FakeServer {
     };
   }
 
+  expenseView(expense: FakeServer["expenses"][number]) {
+    return {
+      ...EXPENSE_CATEGORY_FIELDS,
+      amount: "80.00",
+      competenceOn: expense.competenceOn,
+      createdAt: new Date(this.now).toISOString(),
+      description: expense.description,
+      id: expense.id,
+      organizationId: ORGANIZATION_ID,
+      payee: null,
+      recurringRuleId: null,
+      saleId: null,
+      status: expense.status,
+      updatedAt: new Date(this.now).toISOString(),
+      version: expense.version,
+      voidedAt:
+        expense.status === "voided" ? new Date(this.now).toISOString() : null,
+    };
+  }
+
   answer(procedure: string, input: Record<string, unknown>) {
     switch (procedure) {
       case "report/periodSummary":
@@ -327,6 +358,66 @@ class FakeServer {
         return json({ goals: this.scenario.goals });
       case "inventory/listBalances":
         return json(this.balances(input));
+      case "sale/get":
+        return json(saleDetail(this.saleOccurredOn));
+      case "sale/getCustomerLink":
+        return json({
+          current: { customerId: null, version: 0 },
+          history: [],
+          saleId: SALE_ID,
+        });
+      case "sale/cancel":
+        return json({
+          cancellation: {
+            cancelledAt: new Date(this.now).toISOString(),
+            cancelledBy: USER_ID,
+            commandId: String(input.commandId ?? SALE_ID),
+            id: "0199c2d0-0000-7000-8000-0000000000c4",
+            reasonCode: null,
+            reasonNote: null,
+            saleId: SALE_ID,
+          },
+          replayed: false,
+          restocked: [{ position: 0, quantity: 1, variantId: VARIANT }],
+        });
+      case "expense/listCategories":
+        return json({ categories: [EXPENSE_CATEGORY] });
+      case "expense/list": {
+        const rows = this.expenses.filter(
+          (expense) => expense.status === (input.status ?? "active")
+        );
+        return json({
+          count: rows.length,
+          expenses: rows.map((expense) => this.expenseView(expense)),
+          nextCursor: null,
+          total: "0.00",
+        });
+      }
+      case "expense/create": {
+        const created = {
+          competenceOn: String(input.competenceOn),
+          description: String(input.description),
+          id: `0199c2d0-0000-7000-8000-0000000000f${this.expenses.length}`,
+          status: "active" as const,
+          version: 1,
+        };
+        this.expenses.push(created);
+        return json(this.expenseView(created));
+      }
+      case "expense/update":
+      case "expense/void": {
+        const found = this.expenses.find((expense) => expense.id === input.id);
+        if (!found) {
+          return null;
+        }
+        if (procedure === "expense/void") {
+          found.status = "voided";
+        } else {
+          found.competenceOn = String(input.competenceOn);
+        }
+        found.version += 1;
+        return json({ changed: true, expense: this.expenseView(found) });
+      }
       case "sale/list":
         return json({
           hasMore: false,
@@ -353,12 +444,113 @@ const KILLED_FOR_CPU = {
 const WORKER_PATHS = /\/(rpc|api)\//;
 
 const HOME_PROCEDURES = new Set([
+  "expense/create",
+  "expense/list",
+  "expense/listCategories",
+  "expense/update",
+  "expense/void",
   "goal/list",
   "inventory/listBalances",
   "report/dailySales",
   "report/periodSummary",
+  "sale/cancel",
+  "sale/get",
+  "sale/getCustomerLink",
   "sale/list",
 ]);
+
+const EXPENSE_CATEGORY_FIELDS = {
+  categoryGroup: "operational",
+  categoryId: "0199c2d0-0000-7000-8000-0000000000e2",
+  categoryName: "Aluguel",
+};
+const EXPENSE_CATEGORY = {
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  groupKey: "operational",
+  id: EXPENSE_CATEGORY_FIELDS.categoryId,
+  name: "Aluguel",
+  organizationId: ORGANIZATION_ID,
+  status: "active",
+  systemKey: null,
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version: 1,
+};
+
+const CANCELLED_NOTICE = /Venda cancelada\./;
+const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
+const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
+const NO_FEE = {
+  amount: null,
+  fixedAmount: null,
+  mode: "not_applicable",
+  percentage: null,
+};
+
+/** A confirmed sale of `occurredOn`, as `sale.get` returns it: one shirt, paid in cash, never returned. */
+function saleDetail(occurredOn: string) {
+  const at = `${occurredOn}T15:00:00.000Z`;
+  return {
+    cancellation: null,
+    customer: { customerId: null, version: 0 },
+    returnSummary: [
+      {
+        availableToReturn: 1,
+        position: 0,
+        restockedQuantity: 0,
+        returnedQuantity: 0,
+        sold: 1,
+      },
+    ],
+    returns: [],
+    sale: {
+      adjustments: [],
+      items: [
+        {
+          chargedUnitPrice: "50.00",
+          listedUnitPrice: "50.00",
+          position: 0,
+          productId: PRODUCT,
+          productLabel: "Camiseta básica",
+          quantity: 1,
+          unitCost: "20.00",
+          variantId: VARIANT,
+        },
+      ],
+      payment: {
+        amount: "50.00",
+        anticipationFee: NO_FEE,
+        anticipationRequested: false,
+        expectedSettlementDays: null,
+        installmentPlan: null,
+        installments: null,
+        method: "cash",
+        paymentProfileId: null,
+        paymentProfileName: null,
+        paymentProfileRuleId: null,
+        paymentProfileVersion: null,
+        processingFee: NO_FEE,
+      },
+      sale: {
+        commandId: "0199c2d0-0000-7000-8000-0000000000c3",
+        confirmedAt: at,
+        currency: "BRL",
+        id: SALE_ID,
+        occurredAt: at,
+        occurredOn,
+        recordedAt: null,
+      },
+      totals: {
+        discountTotal: "0.00",
+        freightTotal: "0.00",
+        paymentSurchargeTotal: "0.00",
+        subtotal: "50.00",
+        surchargeTotal: "0.00",
+        totalDue: "50.00",
+      },
+    },
+  };
+}
 
 async function serve(page: Page, server: FakeServer) {
   // a read with no answer is judged by the probe of /health: it answers, so it was an isolated failure (not offline)
@@ -501,11 +693,27 @@ async function openHome(page: Page, server: FakeServer, at = NOON) {
  * R$ 5.254,03 on the 31st. Over the target of R$ 5.000,00 the phrase says the day the rhythm crosses it (the 7th day
  * would give R$ 4.931,10: the 31st, the last one, is the first above), and under a target of R$ 6.000,00 where it gets.
  */
-const GOAL_PROJECTION =
-  "No ritmo dos últimos 7 dias, a meta é batida até 31/10. Estimativa.";
+const GOAL_PROJECTION = "No ritmo atual, a meta deve ser batida até 31/10.";
 const GOAL_PROJECTION_SHORT =
-  "No ritmo dos últimos 7 dias, chega a R$ 5.254,03 em 31/10. Estimativa.";
+  "No ritmo atual, deve chegar a R$ 5.254,03 em 31/10.";
 const GOAL_PROJECTION_NO_SALES = "Sem vendas nos últimos 7 dias para estimar.";
+/** The foot of the menu: in the sidebar from 760 px, in "Mais" below it. */
+async function openMenuFoot(page: Page) {
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  if (await more.isVisible()) {
+    await more.click();
+  }
+}
+
+/** "Mais" is a modal dialog: the page behind it waits for it to close. */
+async function closeMenuFoot(page: Page) {
+  const panel = page.getByRole("dialog", { name: "Mais" });
+  if (await panel.isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+  }
+}
+
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
 const newSale = (page: Page) =>
@@ -565,8 +773,10 @@ test.describe("loja com venda", () => {
     // the KPI cards (v7 § 3): Friday `23/10` against the mean of the 4 Fridays before it (only `02/10` sold, R$ 80,00)
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("R$ 320,10");
-    await expect(today).toContainText("2 vendas hoje");
-    await expect(today).toContainText("sexta-feira, 23/10");
+    // one line of support: what it compares with and the count
+    await expect(today).toContainText("vs. média das sextas · 2 vendas");
+    // no date at rest: the title says it is today
+    await expect(today.locator("[data-kpi-date]")).toHaveCount(0);
     // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "16,0 vezes"
     await expect(
       today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
@@ -574,7 +784,10 @@ test.describe("loja com venda", () => {
     await expect(today.locator("[data-kpi-delta=up] .sr-only")).toHaveText(
       "16,0 vezes"
     );
-    await expect(today).toContainText("vs. média das 4 sextas anteriores");
+    // the base is in sight ("vs. média das sextas"), so the chip has no name of its own
+    await expect(today.locator("[data-kpi-delta=up]")).not.toHaveAttribute(
+      "aria-label"
+    );
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
     await expect(
       today.locator("[data-kpi-spark] [aria-hidden=true] svg")
@@ -582,24 +795,29 @@ test.describe("loja com venda", () => {
     await expect(today.locator("svg text")).toHaveCount(0);
     await expect(today.getByRole("slider")).toHaveAttribute(
       "aria-valuetext",
-      "sexta-feira, 23/10: R$ 320,10"
+      "Hoje: R$ 320,10"
     );
 
     // 1 to 23 October against 1 to 23 September: R$ 2.660,60 against R$ 170,00
     const month = region(page, "Vendas em outubro");
     await expect(month).toContainText("R$ 2.660,60");
-    await expect(month).toContainText("1 a 23/10");
+    // the month and its period are said once, above the three cards of the month
+    await expect(page.locator("[data-kpi-group]")).toHaveText(
+      "Outubro · 1 a 23/10"
+    );
+    await expect(month.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(
       month.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
     ).toHaveText("15,7×");
-    await expect(month).toContainText("vs. 1 a 23/09");
-    await expect(month).toContainText("12 vendas no mês");
+    await expect(month.locator("[data-kpi-delta=up]")).toHaveAttribute(
+      "aria-label",
+      "15,7 vezes em relação a 1 a 23/09"
+    );
+    await expect(month).toContainText("12 vendas");
 
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText(
-      "Não é lucro líquido nem dinheiro já recebido."
-    );
+    await expect(result).toContainText("Não é lucro líquido nem caixa");
     // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9); the number is
     // the server's card of the whole month, and the date says so
     await expect(result.locator("[data-kpi-date]")).toHaveText(
@@ -613,17 +831,14 @@ test.describe("loja com venda", () => {
 
     const ticket = region(page, "Ticket médio");
     await expect(ticket).toContainText("R$ 221,72");
-    // at 360 px the card of half the width says the short line; its date says the month
-    await expect(
-      ticket.getByText("Média por venda", { exact: true })
-    ).toBeVisible();
-    await expect(ticket.getByText("Média por venda no mês")).toBeHidden();
+    // nothing under the number: what it is and what it compares with are in the (i) and in the name of the chip
+    await expect(ticket).not.toContainText("Média por venda");
     await expect(ticket.locator("[data-kpi-delta]")).toHaveCount(1);
 
     const meta = region(page, "Meta");
     await expect(meta).toContainText("Meta de outubro");
     // the store's today is `23/10`: 8 days after it up to the 31st
-    await expect(meta).toContainText("de 01/10 a 31/10 · faltam 8 dias");
+    await expect(meta).toContainText("1 a 31/10 · faltam 8 dias");
     // the ring (v7 § 3 item 9): an image that says it in words, the drawing of Bklit UI hidden inside it
     const ring = meta.getByRole("img");
     await expect(ring).toHaveAttribute(
@@ -643,10 +858,10 @@ test.describe("loja com venda", () => {
       meta.getByRole("link", { name: "Ver as outras" })
     ).toHaveAttribute("href", "/dashboard?meta=lista");
 
-    const attention = region(page, "Precisa de atenção");
+    const attention = region(page, "Precisa de ação");
     await expect(attention.getByRole("link")).toHaveText([
       "1 variante sem custoInforme para as próximas vendas.",
-      "3 variantes sem saldoDê entrada no estoque.",
+      "3 variantes sem saldo",
     ]);
     await expect(attention.getByRole("link").first()).toHaveAttribute(
       "href",
@@ -672,7 +887,12 @@ test.describe("loja com venda", () => {
       "true"
     );
     await expect(chart).toContainText("R$ 2.580,60");
-    await expect(chart).toContainText("Melhor dia: 18/10, R$ 1.840,00");
+    // the period it adds up, and the peak written once, in the drawing, with its date
+    await expect(chart).toContainText("17 a 23/10");
+    await expect(chart).not.toContainText("Melhor dia");
+    await expect(chart.locator("[data-chart-value-label]")).toHaveText(
+      "18/10 · R$ 1.840,00"
+    );
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
       "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total"
@@ -683,7 +903,7 @@ test.describe("loja com venda", () => {
       "18/10/2026R$ 1.840,00"
     );
     await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart).toContainText("Vendas líquidas de 24/09 a 23/10");
+    await expect(chart).toContainText("24/09 a 23/10");
     await expect(chart).toContainText("R$ 2.660,60");
 
     // the order of the parts at 360 px (AC-4), and nothing scrolls sideways
@@ -693,11 +913,11 @@ test.describe("loja com venda", () => {
         nodes.map((node) => node.querySelector("h2")?.textContent)
       );
     expect(names).toEqual([
+      "Precisa de ação",
       "Vendas hoje",
       "Vendas em outubro",
       "Resultado estimado",
       "Ticket médio",
-      "Precisa de atenção",
       "Meta",
       "Vendas por dia",
       "Ritmo de vendas",
@@ -762,7 +982,7 @@ test.describe("loja com venda", () => {
     }) => {
       await page.setViewportSize({ height: 740, width });
       await openHome(page, new FakeServer(SOLD));
-      const link = region(page, "Precisa de atenção").getByRole("link").first();
+      const link = region(page, "Precisa de ação").getByRole("link").first();
       await expect(link).toContainText("Informe para as próximas vendas.");
       const measure = await link.evaluate((anchor) => {
         const text = anchor.querySelector<HTMLElement>("[data-attention-text]");
@@ -813,7 +1033,7 @@ test.describe("loja com venda", () => {
       page.getByRole("heading", { level: 1, name: "Início" })
     ).toBeVisible();
     await expect(region(page, "Vendas hoje")).toContainText("R$ 520,10");
-    await expect(region(page, "Vendas hoje")).toContainText("3 vendas hoje");
+    await expect(region(page, "Vendas hoje")).toContainText("3 vendas");
     expect(periodCalls(server).length).toBeGreaterThan(before);
   });
 
@@ -880,6 +1100,172 @@ test.describe("loja com venda", () => {
   });
 });
 
+/**
+ * One command of this device that the server refused (as `sync.push` leaves it), written into the outbox of the runtime
+ * that opened with the page, and read again on a reload: the third line of "Precisa de ação".
+ */
+async function leaveOneRefused(page: Page) {
+  await page.evaluate(
+    async ({ deviceId, organizationId }) => {
+      const names = (await indexedDB.databases())
+        .map(({ name }) => name ?? "")
+        .filter((name) => name.startsWith("polaris-outbox-"));
+      for (const name of names) {
+        // biome-ignore lint/performance/noAwaitInLoops: one database, the one of this person
+        await new Promise<void>((resolve, reject) => {
+          const opening = indexedDB.open(name);
+          opening.onerror = () => reject(opening.error);
+          opening.onsuccess = () => {
+            const tx = opening.result.transaction(
+              ["commands", "meta"],
+              "readwrite"
+            );
+            const at = new Date().toISOString();
+            tx.objectStore("commands").put({
+              attempts: 1,
+              baseVersion: null,
+              commandId: crypto.randomUUID(),
+              createdAt: at,
+              deviceId,
+              lastAttemptAt: at,
+              lease: "lease",
+              organizationId,
+              payload: { name: "Bia Souza" },
+              rejection: { at, code: "validation_failed" },
+              seq: 1,
+              status: "rejected",
+              type: "customer.create",
+            });
+            tx.objectStore("meta").put(1, "lastSeq");
+            tx.oncomplete = () => {
+              opening.result.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        });
+      }
+    },
+    { deviceId: DEVICE.id, organizationId: ORGANIZATION_ID }
+  );
+  await page.reload();
+}
+
+test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () => {
+  test("com três itens de ação, o número de Hoje e o título do mês ficam dentro da janela de 360 × 740 (AC-4)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openWithCopy(page, new FakeServer(SOLD));
+    await leaveOneRefused(page);
+    const attention = region(page, "Precisa de ação");
+    await expect(attention.getByRole("link")).toHaveCount(3, {
+      timeout: 20_000,
+    });
+    await expect(attention).toContainText("1 registro recusado neste aparelho");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+
+    const bottom = async (target: Locator) => {
+      const box = await target.first().boundingBox();
+      return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
+    };
+    // the number of Hoje, and the line that names the month and its period (the title of the month's cards)
+    expect(
+      await bottom(region(page, "Vendas hoje").locator("[data-kpi-value]"))
+    ).toBeLessThanOrEqual(740);
+    expect(await bottom(page.locator("[data-kpi-group]"))).toBeLessThanOrEqual(
+      740
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+  });
+
+  test("a altura da página a 360 px com os mesmos três itens de ação", async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openWithCopy(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+    await leaveOneRefused(page);
+    await expect(region(page, "Precisa de ação").getByRole("link")).toHaveCount(
+      3,
+      { timeout: 20_000 }
+    );
+    await expect(
+      region(page, "Vendas por dia").locator("svg").first()
+    ).toBeVisible();
+    const height = await page.evaluate(
+      () => document.documentElement.scrollHeight
+    );
+    testInfo.annotations.push({
+      description: `scrollHeight a 360 px: ${height}`,
+      type: "altura-da-pagina",
+    });
+    expect(height).toBeGreaterThan(740);
+  });
+
+  const HELPS: readonly [string, string][] = [
+    [
+      "Vendas hoje",
+      "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores.",
+    ],
+    ["Vendas", "Vendas líquidas de 1 a 23/10. Compara com 1 a 23/09."],
+    [
+      "Ticket médio",
+      "Vendas líquidas divididas pelo número de vendas, de 1 a 23/10. Compara com 1 a 23/09.",
+    ],
+    [
+      "Resultado estimado",
+      "Vendas menos custos, taxas e despesas do mês inteiro.",
+    ],
+    [
+      "Meta",
+      "Estimativa: a média dos últimos 7 dias repetida até o fim da meta.",
+    ],
+    [
+      "Vendas por dia",
+      "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores.",
+    ],
+  ];
+
+  for (const [about, text] of HELPS) {
+    test(`o (i) de "${about}" abre pelo teclado, diz o que o número é e devolve o foco ao fechar`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width: 1280 });
+      await openHome(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const help = page.getByRole("button", {
+        exact: true,
+        name: `Sobre ${about}`,
+      });
+      await help.focus();
+      await page.keyboard.press("Enter");
+      const popup = page.getByRole("dialog");
+      await expect(popup).toContainText(text);
+      await page.keyboard.press("Escape");
+      await expect(popup).toHaveCount(0);
+      await expect(help).toBeFocused();
+    });
+  }
+
+  test("a ajuda não carrega aviso: o que é de dinheiro fica à vista, com o (i) fechado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, results: { "2026-10-20": null } })
+    );
+    const result = region(page, "Resultado estimado");
+    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Não é lucro líquido nem caixa");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+});
+
 test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
   const empty = (stock: Scenario["stock"]): Scenario => ({
     days: {},
@@ -934,9 +1320,80 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await expect(
       region(page, "Meta").getByRole("link", { name: "Definir meta" })
     ).toHaveAttribute("href", "/dashboard?meta=nova");
-    await expect(region(page, "Precisa de atenção")).toContainText(
-      "Nada precisa de atenção agora."
+    // nothing to do: the block is not there, and says nothing about it
+    await expect(region(page, "Precisa de ação")).toHaveCount(0);
+    // the foot of the menu follows the same three steps, linked back to them
+    await openMenuFoot(page);
+    await expect(
+      page.getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 1 de 3 concluídos",
+      })
+    ).toHaveAttribute("href", "/#home-checklist");
+  });
+
+  test("cadastrar o 1º produto em Produtos: o pé do menu diz 2 de 3 na hora, e o Início diz o mesmo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const created = {
+      archivedAt: null,
+      categoryId: null,
+      createdAt: "2026-10-23T15:00:00.000Z",
+      deletedAt: null,
+      description: null,
+      id: PRODUCT,
+      name: "Bolsa de couro",
+      organizationId: ORGANIZATION_ID,
+      status: "active",
+      updatedAt: "2026-10-23T15:00:00.000Z",
+      version: 1,
+    };
+    let registered = false;
+    await page.route("**/rpc/product/list", (route) =>
+      route.fulfill(json({ products: registered ? [created] : [] }))
     );
+    await page.route("**/rpc/category/list", (route) =>
+      route.fulfill(json({ categories: [] }))
+    );
+    await page.route("**/rpc/product/create", (route) => {
+      registered = true;
+      return route.fulfill(json(created));
+    });
+    const server = new FakeServer(
+      empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+    );
+    await openHome(page, server);
+    const checklist = region(page, "Primeiros passos");
+    await expect(checklist).toContainText("2Cadastrar o 1º produto");
+    const foot = (done: number) =>
+      page.getByRole("link", {
+        exact: true,
+        name: `Primeiros passos, ${done} de 3 concluídos`,
+      });
+    await expect(foot(1)).toBeVisible();
+    await checklist.getByRole("link", { name: "Cadastrar à mão" }).click();
+    await page.waitForURL("**/products?novo=1");
+    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+    await page.getByRole("button", { name: "Cadastrar produto" }).click();
+    await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
+    // the Início was not opened again: nothing was read, the foot follows the registration
+    await expect(foot(2)).toBeVisible();
+    await expect(foot(1)).toHaveCount(0);
+    server.scenario.stock = {
+      all: 1,
+      unknownCost: 1,
+      withoutStock: 1,
+      withStock: 0,
+    };
+    await page
+      .getByRole("link", { exact: true, name: "Início" })
+      .first()
+      .click();
+    await expect(
+      region(page, "Primeiros passos").getByRole("listitem").nth(1)
+    ).toContainText("Cadastrar o 1º produto (feito)");
+    await expect(foot(2)).toBeVisible();
   });
 
   test("produto sem quantidade: 'Dar entrada no estoque' abre o painel do produto", async ({
@@ -950,6 +1407,14 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto (feito)");
+    await openMenuFoot(page);
+    await expect(
+      page.getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 2 de 3 concluídos",
+      })
+    ).toBeVisible();
+    await closeMenuFoot(page);
     const step = checklist.getByRole("link", {
       name: "Dar entrada no estoque",
     });
@@ -959,6 +1424,39 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     await step.click();
     await page.waitForURL(PRODUCT_LINK);
+  });
+
+  test("o link do pé do menu leva ao bloco, vindo de outra tela e de Mais no celular", async ({
+    page,
+  }) => {
+    // short enough that the block starts below the fold
+    await page.setViewportSize({ height: 340, width: 360 });
+    const server = new FakeServer(
+      empty({ all: 1, unknownCost: 1, withoutStock: 1, withStock: 0 })
+    );
+    server.now = NOON;
+    await page.clock.install({ time: new Date(NOON) });
+    await serve(page, server);
+    // a full load of the address: the block comes after the reads, so the page scrolls to it by itself
+    await page.goto("/#home-checklist");
+    const title = page.getByRole("heading", {
+      exact: true,
+      name: "Primeiros passos",
+    });
+    await expect(title).toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(title).not.toBeInViewport();
+    // on the Início itself, from "Mais": the panel closes and the page goes to the block
+    await page.getByRole("button", { exact: true, name: "Mais" }).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    await panel
+      .getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 2 de 3 concluídos",
+      })
+      .click();
+    await expect(panel).toBeHidden();
+    await expect(title).toBeInViewport();
   });
 
   test("com estoque, o botão vai à Venda", async ({ page }) => {
@@ -986,14 +1484,15 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       })
     );
     await expect(region(page, "Vendas hoje")).toContainText(
-      "Nenhuma venda hoje ainda"
+      "Nenhuma venda ainda"
     );
     const month = region(page, "Vendas em outubro");
-    await expect(month).toContainText("Nenhuma venda este mês ainda");
+    await expect(month).toContainText("Nenhuma venda ainda");
     await expect(
       month.getByRole("link", { name: "Fazer uma venda" })
     ).toHaveAttribute("href", "/sales");
     await expect(region(page, "Primeiros passos")).toHaveCount(0);
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
     await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
     await expect(region(page, "Vendas por dia")).toContainText(
       "Sem vendas no período."
@@ -1013,12 +1512,6 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     "2026-10-20": 12_615,
     "2026-10-23": 9603,
   };
-  const months = (page: Page) => [
-    region(page, "Vendas em outubro"),
-    region(page, "Resultado estimado"),
-    region(page, "Ticket médio"),
-  ];
-
   test("o dedo ou o mouse numa sparkline do mês lê o mesmo dia nos três cartões; Vendas hoje lê sozinho; ao sair, volta para hoje", async ({
     page,
   }) => {
@@ -1038,22 +1531,21 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     // the 18th of 23 days: the cards read the 1st to the 18th together
     const x = strip.x + 4 + ((strip.width - 8) * 17) / 22;
     await page.mouse.move(x, strip.y + strip.height / 2);
-    for (const card of months(page)) {
-      // biome-ignore lint/performance/noAwaitInLoops: one card at a time
-      await expect(card.locator("[data-kpi-date]")).toHaveText("1 a 18/10");
-    }
+    await expect(page.locator("[data-kpi-group]")).toHaveText(
+      "Outubro · 1 a 18/10"
+    );
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 1.920,00");
-    await expect(sales).toContainText("7 vendas até 18/10");
+    await expect(sales).toContainText("7 vendas");
     await expect(result.locator("[data-kpi-value]")).toHaveText("R$ 576,00");
+    // Vendas hoje reads alone: it has no date at rest and the strip of the month does not move it
     await expect(
       region(page, "Vendas hoje").locator("[data-kpi-date]")
-    ).toHaveText("sexta-feira, 23/10");
+    ).toHaveCount(0);
 
     await page.mouse.move(10, 10);
-    for (const card of months(page)) {
-      // biome-ignore lint/performance/noAwaitInLoops: one card at a time
-      await expect(card.locator("[data-kpi-date]")).toHaveText("1 a 23/10");
-    }
+    await expect(page.locator("[data-kpi-group]")).toHaveText(
+      "Outubro · 1 a 23/10"
+    );
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 2.660,60");
   });
 
@@ -1074,10 +1566,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       "aria-valuetext",
       "Até 22/10: R$ 2.340,50"
     );
-    for (const card of months(page)) {
-      // biome-ignore lint/performance/noAwaitInLoops: one card at a time
-      await expect(card.locator("[data-kpi-date]")).toHaveText("1 a 22/10");
-    }
+    await expect(page.locator("[data-kpi-group]")).toHaveText(
+      "Outubro · 1 a 22/10"
+    );
     // the outline of the keyboard focus goes round the strip, inside it
     expect(
       await slider.evaluate((node) => {
@@ -1088,15 +1579,18 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
 
     const today = region(page, "Vendas hoje").getByRole("slider");
     await today.focus();
-    for (const card of months(page)) {
-      // biome-ignore lint/performance/noAwaitInLoops: one card at a time
-      await expect(card.locator("[data-kpi-date]")).toHaveText("1 a 23/10");
-    }
+    await expect(page.locator("[data-kpi-group]")).toHaveText(
+      "Outubro · 1 a 23/10"
+    );
     await page.keyboard.press("ArrowLeft");
     await expect(today).toHaveAttribute(
       "aria-valuetext",
-      "quinta-feira, 22/10: R$ 0,00"
+      "qui, 22/10: R$ 0,00"
     );
+    // another day than today: its date is at the top right
+    await expect(
+      region(page, "Vendas hoje").locator("[data-kpi-date]")
+    ).toHaveText("qui, 22/10");
     await expect(region(page, "Vendas hoje")).toContainText("Nenhuma venda");
   });
 
@@ -1139,9 +1633,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toHaveText("R$ ••••valor escondido");
     // the percents, the counts and the shape stay
     await expect(region(page, "Vendas hoje")).toContainText("16,0×");
-    await expect(region(page, "Vendas em outubro")).toContainText(
-      "12 vendas no mês"
-    );
+    await expect(region(page, "Vendas em outubro")).toContainText("12 vendas");
     await expect(region(page, "Mais vendidos do mês")).toContainText("9 un.");
     const chart = region(page, "Vendas por dia");
     await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
@@ -1184,9 +1676,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     );
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText(
-      "1 de 23 dias sem custo informado: o gráfico do resultado volta quando o custo for conhecido."
+    // the badge and the days on one line, the warning under it
+    await expect(result.locator("[data-kpi-unknown]")).toHaveText(
+      "· 1 de 23 dias sem custo"
     );
+    await expect(result).toContainText("Não é lucro líquido nem caixa");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(result.getByRole("slider")).toHaveCount(0);
@@ -1223,11 +1717,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
     await expect(result).toContainText(
-      "Sem custo conhecido: o resultado não dá para estimar."
+      "Sem custo informado: não dá para estimar."
     );
     await expect(result).toContainText("—");
     await expect(result).not.toContainText("R$");
-    await expect(result).not.toContainText("dias sem custo informado");
+    await expect(result).not.toContainText("dias sem custo");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(result.getByRole("slider")).toHaveCount(0);
@@ -1237,32 +1731,235 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(region(page, "Vendas em outubro")).toContainText("R$");
   });
 
-  test("Vendas por dia: área verde com um anel em cada dia, cheio com venda e vazado no zero, e os 7 dias antes tracejados", async ({
+  test("Vendas por dia: o anel do melhor dia e o de hoje, só o pico escrito (com a data), sem legenda nem linha de leitura em repouso", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     const chart = region(page, "Vendas por dia");
-    const marks = chart.locator("[data-chart-mark]");
-    await expect(marks).toHaveCount(7);
-    // `17/10` to `23/10`: sold on 18, 20 and 23
-    await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(3);
-    await expect(chart.locator("[data-chart-mark=none]")).toHaveCount(4);
+    // the best day and today, whatever the period: `17/10` to `23/10` sold on 18 and on 23
+    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
+    await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(2);
     await expect(chart.locator("[data-chart-best]")).toHaveAttribute(
       "r",
       "5.5"
     );
+    // only the peak is written, with its date: today's value is in its card
     await expect(chart.locator("[data-chart-value-label]")).toHaveText([
-      "R$ 1.840,00",
-      "R$ 320,10",
+      "18/10 · R$ 1.840,00",
     ]);
-    await expect(chart.locator("[data-chart-legend]")).toContainText(
-      "7 dias antes"
-    );
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    // 30 days: the ring of the best day and of today only, no comparison yet
-    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
+    // the days before are a faint line with no legend, and nothing above the drawing at rest
     await expect(chart.locator("[data-chart-legend]")).toHaveCount(0);
+    await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
+    await chart.getByRole("tab", { name: "30 dias" }).click();
+    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
+    await expect(chart.locator("[data-chart-value-label]")).toHaveCount(1);
+  });
+
+  for (const width of [360, 320]) {
+    test(`Vendas por dia: o rótulo do pico não encosta no eixo nem sai do gráfico (${width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      const label = chart.locator("[data-chart-value-label]");
+      await expect(label).toHaveText("18/10 · R$ 1.840,00");
+      const boxes = await chart
+        .locator("[data-chart-area] svg text")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const box = node.getBoundingClientRect();
+            return {
+              isLabel: node.hasAttribute("data-chart-value-label"),
+              left: box.left,
+              right: box.right,
+              text: node.textContent ?? "",
+              top: box.top,
+              bottom: box.bottom,
+            };
+          })
+        );
+      const peak = boxes.find((box) => box.isLabel);
+      expect(peak).toBeDefined();
+      for (const other of boxes.filter((box) => !box.isLabel)) {
+        const apart =
+          (peak?.right ?? 0) <= other.left ||
+          other.right <= (peak?.left ?? 0) ||
+          (peak?.bottom ?? 0) <= other.top ||
+          other.bottom <= (peak?.top ?? 0);
+        expect(apart, `o rótulo do pico sobre "${other.text}"`).toBe(true);
+      }
+      expect(peak?.left ?? 0).toBeGreaterThanOrEqual(0);
+      expect(peak?.right ?? 0).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test("Vendas por dia: o melhor dia tem anel cheio, hoje sem venda tem anel vazado e sem rótulo, e os outros dias não têm anel", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    // the week of the chart sold on the 18th and the 20th; today (`23/10`) sold nothing
+    const { "2026-10-23": _today, ...noSaleToday } = SOLD.days;
+    await openHome(page, new FakeServer({ ...SOLD, days: noSaleToday }));
+    const chart = region(page, "Vendas por dia");
+    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
+    const best = chart.locator("[data-chart-best]");
+    await expect(best).toHaveAttribute("data-chart-mark", "sold");
+    await expect(best).toHaveAttribute("r", "5.5");
+    await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(1);
+    // the ring of today is hollow (a card-colored fill, the stroke in the color of the series) and smaller than the best's
+    const hollow = chart.locator("[data-chart-mark=none]");
+    await expect(hollow).toHaveCount(1);
+    await expect(hollow).toHaveAttribute("fill", "var(--card)");
+    await expect(hollow).toHaveAttribute("r", "3.5");
+    // only the peak is written: the hollow ring of today carries no label, and its value (zero) is not written anywhere
+    await expect(chart.locator("[data-chart-value-label]")).toHaveText([
+      "18/10 · R$ 1.840,00",
+    ]);
+    const labelX = await chart
+      .locator("[data-chart-value-label]")
+      .getAttribute("x");
+    const hollowX = await hollow.getAttribute("cx");
+    expect(Number(labelX)).not.toBe(Number(hollowX));
+    await expect(chart.locator("[data-chart-marks] text")).toHaveCount(1);
+    // the best day comes first on the axis, today last: no other day has a ring
+    const xs = await chart
+      .locator("[data-chart-mark]")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Number(node.getAttribute("cx")))
+      );
+    expect(xs[0]).toBeLessThan(xs[1] ?? 0);
+  });
+
+  test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com os dois valores, e a ajuda abre pelo teclado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    const chart = region(page, "Vendas por dia");
+    const slider = chart.getByRole("slider");
+    await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
+    await slider.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(slider).toHaveAttribute(
+      "aria-valuetext",
+      "22/10: Vendas R$ 0,00, 7 dias antes R$ 0,00"
+    );
+    await expect(chart.locator("[data-chart-reading]")).toContainText(
+      "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
+    );
+    await slider.blur();
+    await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
+
+    const help = chart.getByRole("button", { name: "Sobre Vendas por dia" });
+    await help.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByText(
+        "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores."
+      )
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(help).toBeFocused();
+  });
+
+  for (const viewport of [
+    { height: 740, width: 360 },
+    { height: 800, width: 1280 },
+  ]) {
+    test(`Vendas por dia: ler um dia pelo teclado não move o gráfico nem o que vem depois (${viewport.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      const area = chart.locator("[data-chart-area]");
+      const numbers = chart.getByRole("button", { name: "Ver os números" });
+      const box = async (locator: Locator) => {
+        const found = await locator.boundingBox();
+        if (!found) {
+          throw new Error("elemento sem caixa");
+        }
+        return found;
+      };
+      const at = async () => ({
+        area: await box(area),
+        numbers: await box(numbers),
+        region: await box(chart),
+      });
+      await expect(area).toBeVisible();
+      await chart.getByRole("slider").focus();
+      const before = await at();
+      await page.keyboard.press("ArrowLeft");
+      const reading = chart.locator("[data-chart-reading]");
+      await expect(reading).toContainText(
+        "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
+      );
+      await expect(reading).toBeVisible();
+      const tooltipRows = chart.locator("[data-chart-tooltip-row]");
+      await expect(tooltipRows).toHaveCount(0);
+      const during = await at();
+      expect(during).toEqual(before);
+
+      const read = await box(reading);
+      const frame = await box(area.locator(".."));
+      expect(read.x).toBeGreaterThanOrEqual(frame.x);
+      expect(read.y).toBeGreaterThanOrEqual(frame.y);
+      expect(read.x + read.width).toBeLessThanOrEqual(frame.x + frame.width);
+      expect(read.y + read.height).toBeLessThanOrEqual(frame.y + frame.height);
+      expect(read.x - frame.x).toBeLessThan(frame.width / 4);
+      expect(read.y - frame.y).toBeLessThan(frame.height / 4);
+
+      await page.keyboard.press("ArrowLeft");
+      await expect(reading).toContainText("21/10");
+      await expect(tooltipRows).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      const frameKeys = await box(area);
+      await page.mouse.move(
+        frameKeys.x + frameKeys.width / 2,
+        frameKeys.y + frameKeys.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
+      await expect(reading).toHaveCount(0);
+      await page.keyboard.press("ArrowLeft");
+      await expect(reading).toContainText("20/10");
+      await expect(tooltipRows).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      await chart.getByRole("slider").blur();
+      await expect(reading).toHaveCount(0);
+      expect(await at()).toEqual(before);
+
+      const frameNow = await box(area);
+      await page.mouse.move(
+        frameNow.x + frameNow.width / 3,
+        frameNow.y + frameNow.height / 2
+      );
+      await expect(tooltipRows.first()).toBeVisible();
+      await expect(reading).toHaveCount(0);
+      expect(await at()).toEqual(before);
+    });
+  }
+
+  test("Vendas por dia: o toque (só o pointerdown, sem movimento) devolve o gráfico ao dedo depois de ler um dia pelo teclado", async ({
+    page,
+  }) => {
+    await openHome(page, new FakeServer(SOLD));
+    const chart = region(page, "Vendas por dia");
+    const area = chart.locator("[data-chart-area]");
+    await expect(area).toBeVisible();
+    await chart.getByRole("slider").focus();
+    await page.keyboard.press("ArrowLeft");
+    const reading = chart.locator("[data-chart-reading]");
+    await expect(reading).toContainText("22/10");
+
+    await area.dispatchEvent("pointerdown", {
+      isPrimary: true,
+      pointerType: "touch",
+    });
+    await expect(reading).toHaveCount(0);
   });
 });
 
@@ -1331,13 +2028,9 @@ test.describe("meta (AC-10, AC-11)", () => {
     server.scenario = { ...SOLD, goals: [] };
     await page.reload();
     const empty = region(page, "Meta");
-    await expect(empty.locator('[data-goal-ring="vazio"]')).toHaveAttribute(
-      "aria-hidden",
-      "true"
-    );
-    await expect(empty).toContainText(
-      "Defina quanto quer vender no mês e acompanhe aqui."
-    );
+    // no goal: the title and the button, no ring and no sentence (the button says it)
+    await expect(empty.locator("[data-goal-ring]")).toHaveCount(0);
+    await expect(empty).not.toContainText("Defina quanto");
     await expect(
       empty.getByRole("link", { name: "Definir meta" })
     ).toHaveAttribute("href", "/dashboard?meta=nova");
@@ -1422,20 +2115,18 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       "Não foi possível carregar a meta.",
       { timeout: 15_000 }
     );
-    const attention = region(page, "Precisa de atenção");
-    await expect(attention).toContainText(
-      "Avisos do estoque indisponíveis agora.",
-      { timeout: 15_000 }
-    );
-    await expect(attention.getByRole("link")).toHaveCount(0);
+    await expect(
+      page.getByText("Avisos do estoque indisponíveis agora.")
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(region(page, "Precisa de ação")).toHaveCount(0);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     server.broken.delete("goal/list");
     await region(page, "Meta")
       .getByRole("button", { name: "Tentar novamente" })
       .click();
-    await expect(region(page, "Meta")).toContainText(
-      "Defina quanto quer vender no mês e acompanhe aqui."
-    );
+    await expect(
+      region(page, "Meta").getByRole("link", { name: "Definir meta" })
+    ).toBeVisible();
   });
 
   test("401: o aviso de sessão do shell, nenhum erro nos blocos", async ({
@@ -1451,8 +2142,8 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       page.getByText("Não foi possível carregar os números da loja.")
     ).toHaveCount(0);
     await expect(region(page, "Meta")).toHaveCount(0);
-    // with no answer about the stock, the block does not say that nothing needs attention
-    await expect(region(page, "Precisa de atenção")).toHaveCount(0);
+    // with no answer about the stock, the block does not say that nothing needs doing
+    await expect(region(page, "Precisa de ação")).toHaveCount(0);
     await expect(newSale(page)).toBeVisible();
   });
 
@@ -1487,7 +2178,7 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     await page.clock.runFor(2 * 60_000);
     await expect.poll(() => periodCalls(server).length).toBeGreaterThan(before);
     await expect(region(page, "Vendas hoje")).toContainText(
-      "Nenhuma venda hoje ainda"
+      "Nenhuma venda ainda"
     );
   });
 
@@ -1599,9 +2290,336 @@ async function reopenWithoutNetwork(page: Page, server: FakeServer, at = NOON) {
   ).toBeVisible({ timeout: 20_000 });
 }
 
-const OFFLINE_SALE =
-  "Você pode vender sem internet. A venda é enviada quando a conexão voltar.";
-const NO_COPY = "Sem internet e sem números guardados neste aparelho";
+/** The reads of B (the days before the month) and of the month (A) of the Início, by the period they asked for. */
+const beforeReads = (server: FakeServer) =>
+  periodCalls(server).filter((call) => call.input.to === "2026-09-30").length;
+const monthReads = (server: FakeServer) =>
+  periodCalls(server).filter((call) => call.input.from === "2026-10-01").length;
+const UPDATED_AT = /atualizado às \d{2}:\d{2}/;
+const refreshButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Atualizar" });
+
+test.describe("janela anterior do Início: uma leitura por dia da loja (relógio controlado)", () => {
+  test("a segunda abertura no mesmo dia lê só o mês; no dia seguinte, as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 1]);
+
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(3);
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 2]);
+
+    server.now = NOON + DAY;
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText(
+      "Nenhuma venda ainda"
+    );
+    expect(periodCalls(server)).toHaveLength(5);
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 3]);
+  });
+
+  test("voltar à aba no mesmo dia relê o mês e não a janela anterior", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => monthReads(server)).toBe(2);
+    expect(beforeReads(server)).toBe(1);
+  });
+
+  test("Atualizar relê as duas, mesmo no mesmo dia", async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(2);
+
+    await refreshButton(page).click();
+
+    await expect.poll(() => periodCalls(server).length).toBe(4);
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+  });
+
+  test("Atualizar pelo teclado: o foco fica no botão, o status diz 'Atualizando…' e depois 'atualizado às', e um segundo Enter não lê de novo", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server)).toHaveLength(2);
+    const updated = page.locator("#home-updated");
+    await expect(updated).toHaveAttribute("role", "status");
+    await expect(updated).toContainText(UPDATED_AT);
+    const busy = page.locator("[aria-busy='true']:has(#home-today)");
+    await expect(busy).toHaveCount(0);
+
+    let answer: () => void = () => undefined;
+    server.held.set(
+      "report/periodSummary",
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const button = refreshButton(page);
+    await button.focus();
+    await page.keyboard.press("Enter");
+
+    await expect(updated).toHaveText("Atualizando…");
+    await expect(busy).toHaveCount(1);
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).not.toHaveAttribute("disabled");
+    await expect(button).toBeFocused();
+    await expect.poll(() => periodCalls(server).length).toBe(4);
+
+    await page.keyboard.press("Enter");
+    await expect(button).toBeFocused();
+    expect(periodCalls(server)).toHaveLength(4);
+
+    answer();
+    await expect(updated).toHaveText(UPDATED_AT);
+    await expect(busy).toHaveCount(0);
+    await expect(button).not.toHaveAttribute("aria-disabled");
+    await expect(button).toBeFocused();
+    expect(periodCalls(server)).toHaveLength(4);
+  });
+
+  test("Tentar novamente depois de uma falha também lê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    // the month fails on the next opening, with the day's copy of B in hand
+    server.broken.set("report/periodSummary", "500");
+    await page.reload();
+    const retry = page.getByRole("button", { name: "Tentar novamente" });
+    await expect(retry.first()).toBeVisible({ timeout: 20_000 });
+    server.broken.delete("report/periodSummary");
+    const asked = periodCalls(server).length;
+
+    await retry.first().click();
+
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(periodCalls(server).length).toBe(asked + 2);
+  });
+
+  test("com outra janela (a virada do mês), lê as duas", async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+
+    server.now = Date.parse("2026-11-01T15:00:00.000Z");
+    await page.clock.setSystemTime(new Date(server.now));
+    await page.reload();
+    await expect(region(page, "Vendas em novembro")).toBeVisible();
+
+    expect(periodCalls(server)).toHaveLength(4);
+    expect(
+      periodCalls(server)
+        .slice(2)
+        .map((call) => `${call.input.from}..${call.input.to}`)
+        .sort()
+    ).toEqual(["2026-10-01..2026-10-31", "2026-11-01..2026-11-30"]);
+  });
+
+  test("com o relógio do aparelho um dia atrás do servidor, a cópia do dia do aparelho não serve", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server, NOON - DAY);
+    // the eve of the server's day: nothing sold on it, and Vendas hoje has no date to say so
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 0,00");
+    await expect.poll(() => copyKeys(page)).toHaveLength(3);
+    // the copy was read on the eve of the server's day while the device clock still says that eve: the copy is
+    // the device's today, not the store's, and the month's answer says so
+    server.now = NOON;
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+  });
+
+  test("a loja recusa os números: a janela anterior guardada some junto e não volta sem o servidor", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    server.broken.set("report/periodSummary", "403");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => copyKeys(page)).toEqual([]);
+
+    server.broken.delete("report/periodSummary");
+    await page.clock.runFor(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect(beforeReads(server)).toBe(2);
+  });
+});
+
+test.describe("janela anterior do Início: o que muda neste aparelho", () => {
+  const cancelSale = async (page: Page) => {
+    await page.goto(`/sales/detail?saleId=${SALE_ID}`);
+    await page
+      .getByRole("button", { exact: true, name: "Cancelar venda" })
+      .click();
+    await page.getByRole("button", { name: "Revisar cancelamento" }).click();
+    await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
+    await expect(page.getByText(CANCELLED_NOTICE)).toBeVisible();
+  };
+
+  test("cancelar neste aparelho uma venda de antes do mês: a próxima abertura relê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.saleOccurredOn = "2026-09-12";
+    await openWithCopy(page, server);
+
+    await cancelSale(page);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 2]);
+
+    // read again from the server, the copy is of the day again
+    await page.reload();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    expect([beforeReads(server), monthReads(server)]).toEqual([2, 3]);
+  });
+
+  test("cancelar uma venda do mês corrente não mexe na janela anterior", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.saleOccurredOn = "2026-10-05";
+    await openWithCopy(page, server);
+
+    await cancelSale(page);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+
+    expect([beforeReads(server), monthReads(server)]).toEqual([1, 2]);
+  });
+});
+
+test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
+  const fillCompetence = async (page: Page, competenceOn: string) => {
+    await pickDate(page, "Data de competência", competenceOn);
+    await page.getByLabel("Valor (R$)").fill("80");
+    await page.getByLabel("Descrição").fill("Conta de luz");
+  };
+  const registerExpense = async (page: Page, competenceOn: string) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { exact: true, name: "Nova despesa" })
+      .click();
+    const form = page.getByRole("dialog", {
+      exact: true,
+      name: "Nova despesa",
+    });
+    await expect(form).toBeVisible();
+    await fillCompetence(page, competenceOn);
+    await form
+      .getByRole("combobox", { exact: true, name: "Categoria" })
+      .click();
+    await page.getByRole("option", { exact: true, name: "Aluguel" }).click();
+    await page.getByRole("button", { name: "Registrar despesa" }).click();
+    await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  };
+  const editExpense = async (page: Page, competenceOn: string) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { name: "Editar despesa Conta de luz" })
+      .click();
+    await pickDate(page, "Data de competência", competenceOn);
+    await page.getByRole("button", { name: "Salvar alterações" }).click();
+    await expect(page.getByText("Despesa atualizada.")).toBeVisible();
+  };
+  const voidExpense = async (page: Page) => {
+    await page.goto("/expenses");
+    await page
+      .getByRole("button", { name: "Anular despesa Conta de luz" })
+      .click();
+    await expect(page.getByText("Despesa anulada.")).toBeVisible();
+  };
+  const seeded = (competenceOn: string) => {
+    const server = new FakeServer(SOLD);
+    server.expenses.push({
+      competenceOn,
+      description: "Conta de luz",
+      id: "0199c2d0-0000-7000-8000-0000000000e9",
+      status: "active",
+      version: 1,
+    });
+    return server;
+  };
+  /** Opens the Início again and says how many of the two windows it read: [B, A]. */
+  const reopened = async (page: Page, server: FakeServer) => {
+    const beforeB = beforeReads(server);
+    const beforeA = monthReads(server);
+    await page.goto("/");
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    return [beforeReads(server) - beforeB, monthReads(server) - beforeA];
+  };
+
+  test("registrar com competência de antes do mês: a próxima abertura relê as duas", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await registerExpense(page, "2026-09-15");
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("registrar com competência do mês corrente: a janela anterior segue da cópia, só o mês é lido", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await registerExpense(page, "2026-10-03");
+    expect(await reopened(page, server)).toEqual([0, 1]);
+  });
+
+  test("editar a competência de uma despesa do mês para antes dele: relê as duas", async ({
+    page,
+  }) => {
+    const server = seeded("2026-10-05");
+    await openWithCopy(page, server);
+    await editExpense(page, "2026-09-15");
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("editar a competência de uma despesa de antes do mês para dentro dele: relê as duas", async ({
+    page,
+  }) => {
+    const server = seeded("2026-09-15");
+    await openWithCopy(page, server);
+    await editExpense(page, "2026-10-05");
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("anular uma despesa de antes do mês: relê as duas", async ({ page }) => {
+    const server = seeded("2026-09-15");
+    await openWithCopy(page, server);
+    await voidExpense(page);
+    expect(await reopened(page, server)).toEqual([1, 1]);
+  });
+
+  test("anular uma despesa do mês corrente: a janela anterior segue da cópia", async ({
+    page,
+  }) => {
+    const server = seeded("2026-10-05");
+    await openWithCopy(page, server);
+    await voidExpense(page);
+    expect(await reopened(page, server)).toEqual([0, 1]);
+  });
+});
+
+const OFFLINE_SALE = "Sem internet. A venda é enviada quando a conexão voltar.";
+const NO_COPY = "Sem internet e sem números guardados";
+const CONFIRMED = "Confirmado em 23/10 12:00";
 
 test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("com cópia, a rede cai: os números ficam como último resultado confirmado, a meta, a linha do aparelho e os avisos só com conexão", async ({
@@ -1613,7 +2631,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.context().setOffline(true);
 
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+      page.getByText(CONFIRMED, {
         exact: true,
       })
     ).toBeVisible();
@@ -1629,12 +2647,10 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Meta")).toContainText("Meta de outubro");
     await expect(region(page, "Meta")).toContainText("53,4%");
     await expect(region(page, "Meta")).not.toContainText("Ver as outras");
-    await expect(region(page, "Precisa de atenção")).toContainText(
-      "Avisos do estoque só com conexão."
-    );
-    await expect(region(page, "Precisa de atenção")).not.toContainText(
-      "sem saldo"
-    );
+    await expect(
+      page.getByText("Avisos do estoque só com conexão.")
+    ).toBeVisible();
+    await expect(page.getByText("sem saldo")).toHaveCount(0);
     await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
     await expect(
@@ -1709,7 +2725,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await reopenWithoutNetwork(page, server, NOON + HOUR);
     expect(await page.evaluate(() => navigator.onLine)).toBe(true);
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+      page.getByText(CONFIRMED, {
         exact: true,
       })
     ).toBeVisible({ timeout: 20_000 });
@@ -1738,9 +2754,9 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas por dia")).toHaveCount(0);
     await expect(page.getByText("Ver os números")).toHaveCount(0);
     await expect(region(page, "Meta")).toContainText("Metas só com conexão.");
-    await expect(region(page, "Precisa de atenção")).toContainText(
-      "Avisos do estoque só com conexão."
-    );
+    await expect(
+      page.getByText("Avisos do estoque só com conexão.")
+    ).toBeVisible();
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
   });
 
@@ -1755,19 +2771,14 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       await openWithCopy(page, server);
       await reopenWithoutNetwork(page, server, NOON + hours * HOUR);
       const line = page.locator("#home-updated");
-      await expect(line).toContainText(
-        "Último resultado confirmado: 23/10/2026 12:00",
-        { timeout: 20_000 }
-      );
+      await expect(line).toContainText(CONFIRMED, { timeout: 20_000 });
       if (stale) {
-        await expect(line).toContainText(
-          "Estes números podem estar desatualizados."
-        );
+        await expect(line).toContainText("pode estar desatualizado");
       } else {
         await expect(line).not.toContainText("desatualizados");
       }
       await expect(region(page, "Vendas hoje")).toContainText(
-        "Sem números de hoje neste aparelho"
+        "Sem números de hoje"
       );
       await expect(region(page, "Vendas hoje")).not.toContainText("R$ 320,10");
       // the month is still the confirmed one, said as such
@@ -1784,11 +2795,11 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await openWithCopy(page, server);
     await reopenWithoutNetwork(page, server, NOON - 2 * DAY);
     await expect(page.locator("#home-updated")).toContainText(
-      "Estes números podem estar desatualizados.",
+      "pode estar desatualizado",
       { timeout: 20_000 }
     );
     await expect(region(page, "Vendas hoje")).toContainText(
-      "Sem números de hoje neste aparelho"
+      "Sem números de hoje"
     );
   });
 
@@ -1841,7 +2852,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
     );
     await expect(region(page, "Vendas hoje")).toContainText(
-      "Sem números de hoje neste aparelho"
+      "Sem números de hoje"
     );
     await expect(region(page, "Vendas por dia")).toHaveCount(0);
     await expect(page.getByText("a mais que no mesmo período")).toHaveCount(0);
@@ -1917,7 +2928,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     await page.clock.runFor(15 * 60_000);
     await expect(region(page, "Vendas hoje")).toContainText(
-      "Sem números de hoje neste aparelho"
+      "Sem números de hoje"
     );
     await expect(region(page, "Vendas em outubro")).toContainText(
       "R$ 2.660,60"
@@ -1943,9 +2954,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(page.getByText("Carregando os números de hoje…")).toHaveCount(
       0
     );
-    await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00")
-    ).toBeVisible();
+    await expect(page.getByText(CONFIRMED)).toBeVisible();
     server.broken.delete("report/periodSummary");
     await expect(
       page.getByText("Sexta-feira, 23 de outubro · atualizado às 12:00")
@@ -1973,18 +2982,18 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
     await expect(region(page, "Vendas em outubro")).toContainText(NO_COPY);
     const places = async () => ({
-      attention: await region(page, "Precisa de atenção").boundingBox(),
+      goal: await region(page, "Meta").boundingBox(),
       month: await region(page, "Vendas em outubro").boundingBox(),
       today: await region(page, "Vendas hoje").boundingBox(),
     });
     const before = await places();
-    // Hoje on the left, the month on the right in the same row, Meta and Atenção below them
+    // Hoje on the left, the month on the right in the same row, Meta below them
     expect(before.month?.x ?? 0).toBeGreaterThan(
       (before.today?.x ?? 0) + (before.today?.width ?? 0)
     );
     expect(before.month?.y).toBe(before.today?.y);
     const bottom = (before.today?.y ?? 0) + (before.today?.height ?? 0);
-    expect(before.attention?.y ?? 0).toBeGreaterThan(bottom);
+    expect(before.goal?.y ?? 0).toBeGreaterThan(bottom);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
@@ -2135,9 +3144,14 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     const map = rhythm(page);
-    await expect(map).toContainText(
-      "Últimas 26 semanas · um quadrado por dia, mais escuro é mais venda"
-    );
+    // the line says only the weeks; how to read a square is in the (i) of the block
+    await expect(map).toContainText("Últimas 26 semanas");
+    await expect(map).not.toContainText("um quadrado por dia");
+    await map.getByRole("button", { name: "Sobre Ritmo de vendas" }).click();
+    await expect(
+      page.getByText("Cada quadrado é um dia: quanto mais escuro, mais venda.")
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(reading(page)).toHaveText(READING);
     await expect(bestLine(page)).toHaveText("Melhor dia: 18/10, R$ 1.840,00");
     // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
@@ -2403,7 +3417,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await openWithCopy(page, server);
     await page.context().setOffline(true);
     await expect(
-      page.getByText("Último resultado confirmado: 23/10/2026 12:00", {
+      page.getByText(CONFIRMED, {
         exact: true,
       })
     ).toBeVisible();
@@ -2597,7 +3611,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
       timeout: 15_000,
     });
     await expect(region(page, "Meta")).toBeVisible();
-    await expect(region(page, "Precisa de atenção")).toBeVisible();
+    await expect(region(page, "Precisa de ação")).toBeVisible();
 
     expect(flying.maxReads).toBeLessThanOrEqual(4);
     // the screen's reads leave after the first session lookup ended

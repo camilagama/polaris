@@ -43,8 +43,6 @@ interface Gate {
   /** Proves nothing without the job's own Postgres: never selected against Neon. */
   localOnly?: boolean;
   name: string;
-  /** Reads the synthetic `rls_poc_operations` rows the Neon bootstrap seeds. */
-  needsPocFixture?: boolean;
   script: string;
 }
 
@@ -71,6 +69,8 @@ const gates: Gate[] = [
   ["economics", "verify-economics-gate.ts"],
   // the daily sales series of the Início's map, aggregated in SQL, equals the engine's daily series
   ["daily-sales", "verify-daily-sales-gate.ts"],
+  // the period summary, aggregated in SQL, equals the engine in every field (scenarios and a property of 200 cases)
+  ["period-summary-sql", "verify-period-summary-sql-gate.ts"],
   ["goals", "verify-goals-gate.ts"],
   // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
   ["home-writes", "verify-home-writes-gate.ts"],
@@ -149,6 +149,8 @@ const gates: Gate[] = [
   ["auth-tables-row-security", "verify-auth-tables-row-security-gate.ts"],
   // one account per (provider_id, account_id) (0106): Better Auth 1.7 refuses a key held by two rows
   ["account-key", "verify-account-key-gate.ts"],
+  // size ceilings of the catalog in code points, the domain numbers (0107): option value 80, SKU 64
+  ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
@@ -218,7 +220,6 @@ gates.push(
       POLARIS_TENANT_CONTEXT_TEST_EXPECTED_HOSTNAME: context.host,
     }),
     name: "tenant-context",
-    needsPocFixture: true,
     script: "verify-tenant-context-gate.ts",
   },
   // the environment marker as a database comment (ADR 0097): a throwaway database and a non-superuser owner, which the runner
@@ -256,7 +257,6 @@ gates.push(
     }),
     localOnly: true,
     name: "rls",
-    needsPocFixture: true,
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   },
   // every migration replayed by an owner who is not a superuser, as on Neon. It parks the polaris_* roles of the gate
@@ -318,6 +318,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
     "home-writes",
     "billing-catalog",
@@ -443,6 +444,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
   ],
   // Phase 7 (billing and entitlements): grows with every gate of the phase.
@@ -599,15 +601,6 @@ async function main() {
       `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
     await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
-    if (isLocalCi && selected.some((gate) => gate.needsPocFixture)) {
-      // what the Neon bootstrap seeds by hand; the migrations create only the table
-      await admin.query(
-        `INSERT INTO public.rls_poc_operations (organization_id, token, value)
-         VALUES ('org_a', 'seed-a', 'synthetic data for org_a'),
-                ('org_b', 'seed-b', 'synthetic data for org_b')
-         ON CONFLICT (organization_id, token) DO NOTHING`
-      );
-    }
     const runtime = new URL(url);
     runtime.username = login;
     runtime.password = password;

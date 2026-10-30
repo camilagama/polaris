@@ -81,7 +81,7 @@ describe("the list of customers", () => {
     );
   });
 
-  it("draws the name, the contacts, the notes, the state in words and the date", () => {
+  it("draws the name, the contacts and the state in words, and leaves the notes and the date to the editor", () => {
     const html = render({
       customers: [
         customer(1, "Ana Lima", {
@@ -92,9 +92,9 @@ describe("the list of customers", () => {
     });
     expect(html).toContain("Ana Lima");
     expect(html).toContain("(11) 90000-0001 · ana@exemplo.com");
-    expect(html).toContain("Prefere o WhatsApp.");
+    expect(html).not.toContain("Prefere o WhatsApp.");
     expect(html).toContain("Ativo");
-    expect(html).toContain("Atualizado em");
+    expect(html).not.toContain("Atualizado em");
     expect(html).toContain('data-customer-id="');
   });
 
@@ -116,7 +116,9 @@ describe("the list of customers", () => {
       ],
     });
     expect(html).toContain("Anonimizado");
-    expect(html).toContain("Dados pessoais removidos.");
+    expect(html).toContain(
+      "Dados pessoais removidos: não dá para editar nem restaurar; as vendas dele não mudam."
+    );
     expect(html).not.toContain("Mais ações para");
   });
 
