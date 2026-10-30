@@ -81,6 +81,7 @@ interface PanelOptions {
   listed?: Store[];
   lists?: readonly Store[][];
   path?: string;
+  recover?: Answer;
   request?: Answer;
   statuses?: readonly (Store | null | Answer)[];
 }
@@ -88,6 +89,7 @@ interface PanelOptions {
 interface Calls {
   downloads: string[];
   lists: number;
+  recovers: Record<string, unknown>[];
   requests: Record<string, unknown>[];
   statuses: number;
 }
@@ -98,11 +100,18 @@ async function openPanel(
     lists = [[]],
     listed = [],
     path = PATH,
+    recover = (route) => route.fulfill(rpc({ recovered: true })),
     request = (route) => route.fulfill(rpc({ id: EXPORT_ID })),
     statuses = [store()],
   }: PanelOptions = {}
 ): Promise<Calls> {
-  const calls: Calls = { downloads: [], lists: 0, requests: [], statuses: 0 };
+  const calls: Calls = {
+    downloads: [],
+    lists: 0,
+    recovers: [],
+    requests: [],
+    statuses: 0,
+  };
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: SESSION_USER }),
@@ -143,6 +152,13 @@ async function openPanel(
       const answer = lists[Math.min(calls.lists, lists.length - 1)];
       calls.lists += 1;
       return route.fulfill(rpc({ exports: answer ?? [] }));
+    }
+    if (procedure === "organization/recoverClosure") {
+      calls.recovers.push(
+        (route.request().postDataJSON() as { json: Record<string, unknown> })
+          .json
+      );
+      return recover(route);
     }
     if (procedure === "dataExport/requestClosed") {
       calls.requests.push(
@@ -427,4 +443,172 @@ test("o botão de desfazer some quando a janela acaba, sem nova leitura (AC-8, A
   await page.clock.runFor(2 * 60_000);
   await expect(undoButton(page)).toHaveCount(0);
   expect(calls.statuses).toBe(1);
+});
+
+const undoDialog = (page: Page) =>
+  page.getByRole("dialog", { name: "Desfazer o encerramento?" });
+const confirmUndo = (page: Page) =>
+  undoDialog(page).getByRole("button", { name: "Sim, desfazer" });
+const REOPENED = /reaberta/i;
+
+test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () => {
+  test("o botão abre a confirmação com os efeitos, e Voltar fecha sem chamar o servidor", async ({
+    page,
+  }) => {
+    const calls = await openPanel(page);
+    await undoButton(page).click();
+    await expect(undoDialog(page)).toBeVisible();
+    await expect(undoDialog(page)).toContainText(
+      "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado continua esperando."
+    );
+    await expect(confirmUndo(page)).toBeVisible();
+    await undoDialog(page).getByRole("button", { name: "Voltar" }).click();
+    await expect(undoDialog(page)).toHaveCount(0);
+    await undoButton(page).click();
+    await page.keyboard.press("Escape");
+    await expect(undoDialog(page)).toHaveCount(0);
+    expect(calls.recovers).toEqual([]);
+    expect(calls.statuses).toBe(1);
+  });
+
+  test("Sim, desfazer: um pedido no duplo clique, 'Desfazendo…' enquanto vai, e o Início da loja reaberta", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls = await openPanel(page, {
+      recover: async (route) => {
+        await held;
+        await route.fulfill(rpc({ recovered: true }));
+      },
+    });
+    await page.evaluate(
+      ([key, id]) =>
+        window.localStorage.setItem(
+          key,
+          JSON.stringify([{ id, name: "Loja do teste" }])
+        ),
+      ["polaris.closedStores", STORE_ID]
+    );
+    await undoButton(page).click();
+    await confirmUndo(page).dblclick();
+    const sending = undoDialog(page).getByRole("button", {
+      name: "Desfazendo…",
+    });
+    await expect(sending).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      undoDialog(page).getByRole("button", { name: "Voltar" })
+    ).toHaveAttribute("aria-disabled", "true");
+    await sending.click({ force: true });
+    release();
+    await page.waitForURL((url) => url.pathname === "/");
+    expect(new URL(page.url()).search).toBe("?reaberta=1");
+    expect(calls.recovers).toEqual([{ organizationId: STORE_ID }]);
+    expect(
+      await page.evaluate(() => ({
+        closed: window.localStorage.getItem("polaris.closedStores"),
+        preferred: window.localStorage.getItem(
+          "polaris.preferredOrganizationId"
+        ),
+      }))
+    ).toEqual({ closed: null, preferred: STORE_ID });
+  });
+
+  test("recusa por prazo: o painel passa a encerrada e diz que não foi desfeito, sem o botão", async ({
+    page,
+  }) => {
+    const calls = await openPanel(page, {
+      recover: (route) =>
+        route.fulfill(refusal("CONFLICT", 409, "closure_not_recoverable")),
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "O prazo para desfazer acabou. O encerramento não foi desfeito."
+    );
+    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(undoDialog(page)).toHaveCount(0);
+    await expect(page.getByRole("main")).toContainText(
+      "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
+    );
+    await expect(undoButton(page)).toHaveCount(0);
+    await expect(page.getByRole("main")).not.toContainText(REOPENED);
+    await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
+    expect(calls.recovers).toHaveLength(1);
+    expect(calls.statuses).toBe(1);
+  });
+
+  test("recusa por outra loja ativa (L6): o texto próprio, e nada de reaberta", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      recover: (route) =>
+        route.fulfill(refusal("CONFLICT", 409, "another_organization_active")),
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Não dá para reabrir: você já tem uma loja ativa. Só uma loja ativa por conta."
+    );
+    await expect(page.getByRole("main")).not.toContainText(REOPENED);
+    await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
+  });
+
+  for (const [label, answer] of [
+    ["falha de rede", (route: Route) => route.abort("internetdisconnected")],
+    [
+      "503",
+      (route: Route) =>
+        route.fulfill(refusal("SERVICE_UNAVAILABLE", 503, "server_busy")),
+    ],
+  ] as const) {
+    test(`${label}: não afirma que reabriu nem que não desfez, e Atualizar confere`, async ({
+      page,
+    }) => {
+      const calls = await openPanel(page, {
+        recover: answer,
+        statuses: [store(), store({ canRecover: false, phase: "closed" })],
+      });
+      await undoButton(page).click();
+      await confirmUndo(page).click();
+      await expect(page.getByRole("alert")).toHaveText(
+        "Não deu para confirmar se o encerramento foi desfeito. Toque em Atualizar para conferir."
+      );
+      await expect(page.getByRole("main")).not.toContainText(REOPENED);
+      expect(new URL(page.url()).pathname).toBe("/loja-encerrada");
+      await page
+        .getByRole("button", { exact: true, name: "Atualizar" })
+        .first()
+        .click();
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(page.getByRole("main")).toContainText(
+        "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
+      );
+      expect(calls.recovers).toHaveLength(1);
+      expect(calls.statuses).toBe(2);
+    });
+  }
+
+  test("a janela acaba com a confirmação aberta: ela fecha sozinha, sem chamada (AC-14)", async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date("2026-11-19T08:59:00-03:00") });
+    const calls = await openPanel(page);
+    await undoButton(page).click();
+    await expect(undoDialog(page)).toBeVisible();
+    await page.clock.runFor(2 * 60_000);
+    await expect(undoDialog(page)).toHaveCount(0);
+    await expect(undoButton(page)).toHaveCount(0);
+    expect(calls.recovers).toEqual([]);
+    expect(calls.statuses).toBe(1);
+  });
+
+  test("o pé do painel leva a abrir outra loja", async ({ page }) => {
+    await openPanel(page);
+    await expect(
+      page.getByRole("link", { exact: true, name: "Abrir outra loja" })
+    ).toHaveAttribute("href", "/?nova-loja=1");
+  });
 });

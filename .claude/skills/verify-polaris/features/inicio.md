@@ -13,6 +13,7 @@ O Início (`/`) é a primeira tela depois de entrar: a data de hoje, o atalho "N
 - `inicio-esconder` o botão "Esconder valores".
 - `inicio-atualizar` o botão "Atualizar" (só o ícone no celular) relê todos os blocos, as duas janelas dos números incluídas; só com internet.
 - `inicio-nova-venda` o link "Nova venda" leva a `/sales`.
+- Linha da loja encerrada: com loja ativa e uma encerrada já vista neste navegador, "Você também tem uma loja encerrada: {nome}." com o link "Ver" sob o cabeçalho; `/?reaberta=1` mostra uma vez "Loja reaberta. Você já pode usar o Polaris." (`role=status`) e tira a marca do endereço.
 
 ## How to get to it (user POV)
 

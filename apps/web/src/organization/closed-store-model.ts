@@ -4,6 +4,7 @@ import type {
   RequestRefusal,
 } from "../data-export/data-export-model";
 import {
+  isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   rpcErrorCode,
   rpcErrorReason,
@@ -43,8 +44,14 @@ export const PANEL_CHOOSE_TEXT = "Você tem mais de uma loja encerrada.";
 export const PANEL_BACK_HOME = "Voltar ao início";
 export const DOWNLOAD_BUTTON = "Baixar meus dados";
 export const UNDO_BUTTON = "Desfazer encerramento";
-export const UNDO_UNAVAILABLE_TEXT =
-  "Desfazer o encerramento por aqui ainda não está disponível.";
+export const UNDO_TITLE = "Desfazer o encerramento?";
+export const UNDO_EFFECTS_TEXT =
+  "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado continua esperando.";
+export const UNDO_CONFIRM = "Sim, desfazer";
+export const UNDO_SENDING = "Desfazendo…";
+export const UNDO_BACK = "Voltar";
+export const REOPENED_TEXT = "Loja reaberta. Você já pode usar o Polaris.";
+export const NEW_STORE_LINK = "Abrir outra loja";
 export const RENEWAL_TERM = "Renovação do plano";
 
 const RENEWAL_TEXT: Readonly<Record<NonNullable<Renewal>, string>> = {
@@ -259,4 +266,60 @@ export function panelLoadFailure(
     return "acceptance";
   }
   return rpcErrorCode(error) === "UNAUTHORIZED" ? "session" : "error";
+}
+
+export type UndoFailure =
+  | { kind: "acceptance" }
+  | { kind: "session" }
+  | { kind: "window_over"; text: string }
+  | { kind: "said"; text: string };
+
+export const UNDO_WINDOW_OVER_TEXT =
+  "O prazo para desfazer acabou. O encerramento não foi desfeito.";
+export const UNDO_OTHER_ACTIVE_TEXT =
+  "Não dá para reabrir: você já tem uma loja ativa. Só uma loja ativa por conta.";
+export const UNDO_REFUSED_TEXT =
+  "O encerramento não foi desfeito. Toque em Atualizar para ver a situação da loja.";
+export const UNDO_UNKNOWN_TEXT =
+  "Não deu para confirmar se o encerramento foi desfeito. Toque em Atualizar para conferir.";
+
+/**
+ * What the panel says of an undo that did not answer "recovered". Only a 4xx says nothing was done; any other failure
+ * (no answer, a 5xx, a 429) may come after the reopening, so it never says "reaberta" nor "não foi desfeito".
+ */
+export function undoFailure(error: unknown): UndoFailure {
+  if (isLegalAcceptanceRefusal(error)) {
+    return { kind: "acceptance" };
+  }
+  const code = rpcErrorCode(error);
+  if (code === "UNAUTHORIZED") {
+    return { kind: "session" };
+  }
+  if (!isDefiniteRpcRejection(error)) {
+    return { kind: "said", text: UNDO_UNKNOWN_TEXT };
+  }
+  const reason = rpcErrorReason(error);
+  if (code === "CONFLICT" && reason === "closure_not_recoverable") {
+    return { kind: "window_over", text: UNDO_WINDOW_OVER_TEXT };
+  }
+  if (code === "CONFLICT" && reason === "another_organization_active") {
+    return { kind: "said", text: UNDO_OTHER_ACTIVE_TEXT };
+  }
+  return { kind: "said", text: UNDO_REFUSED_TEXT };
+}
+
+/** The store as the panel shows it once the server said the window is over: closed, with no undo. */
+export function closedAfterWindow(store: ClosedStore): ClosedStore {
+  return { ...store, canRecover: false, phase: "closed" };
+}
+
+export const DEVICE_CLOSED_LINK = "Ver a loja encerrada";
+const DEVICE_CLOSED_REST =
+  "A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila.";
+
+/** The notice of a device whose store was closed; without the date while it is not known (or not the user's to read). */
+export function deviceClosedText(store: ClosedStore | null): string {
+  return store
+    ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}. ${DEVICE_CLOSED_REST}`
+    : `Esta loja foi encerrada. ${DEVICE_CLOSED_REST}`;
 }

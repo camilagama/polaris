@@ -56,6 +56,7 @@ import {
   type CurrentOrganization,
   useOrganizationLoad,
 } from "../lib/current-organization";
+import type { OrganizationLoad } from "../lib/current-organization-model";
 import {
   legalAcceptancePath,
   useLegalAcceptanceRequired,
@@ -74,7 +75,9 @@ import {
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
+import { ClosedStoreNotice, useClosedStoreHere } from "./closed-store-notice";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
+import { FirstAccess } from "./first-access";
 import { trialChargeDay } from "../subscription/plan-notice";
 import { GraceNoticeSlot, usePlanNoticeFacts } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
@@ -669,6 +672,60 @@ function useShellProgress(
   };
 }
 
+/**
+ * The store this page worked in was closed: its notice takes the place of the page (and of the first access, once the
+ * organizations are read again without it), so nothing sends the person to the sign-in screen or round again.
+ */
+function useClosedNotice(load: OrganizationLoad): ReactNode {
+  const currentId = load.status === "ready" ? load.current.id : null;
+  const closedHere = useClosedStoreHere(currentId);
+  if (closedHere === null || (currentId !== null && currentId !== closedHere)) {
+    return null;
+  }
+  return <ClosedStoreNotice organizationId={closedHere} />;
+}
+
+/** The first access (no organization yet), with the notices of the shell above it; a closed store's notice alone. */
+function FirstAccessPage({
+  acceptanceNotice,
+  closedNotice,
+  onOpened,
+  sessionNotice,
+}: {
+  acceptanceNotice: boolean;
+  closedNotice: ReactNode;
+  onOpened: () => void;
+  sessionNotice: boolean;
+}) {
+  if (closedNotice) {
+    return (
+      <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
+        <main className="mx-auto max-w-[420px]" id="conteudo">
+          {closedNotice}
+        </main>
+      </div>
+    );
+  }
+  return (
+    <>
+      {sessionNotice || acceptanceNotice ? (
+        // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
+        <div className="flow-root bg-background px-(--gutter) pt-4">
+          <div className="mx-auto max-w-[420px]">
+            {sessionNotice ? <SessionEndedNotice alone /> : null}
+            {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
+          </div>
+        </div>
+      ) : null}
+      <FirstAccess>
+        <Suspense fallback={<PageLoading fullPage />}>
+          <OrganizationSetup onOpened={onOpened} />
+        </Suspense>
+      </FirstAccess>
+    </>
+  );
+}
+
 interface AppShellProps {
   children: ReactNode;
   /** An online-only screen with a form: offline, the notice says the typed text stays. */
@@ -725,23 +782,16 @@ export function AppShell({
     sessionOver,
     routeId
   );
+  const closedNotice = useClosedNotice(load);
   // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
   if (requiresOrganization && load.status === "empty" && !accessExpired) {
     return (
-      <>
-        {showNotice || showAcceptanceNotice ? (
-          // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
-          <div className="flow-root bg-background px-(--gutter) pt-4">
-            <div className="mx-auto max-w-[420px]">
-              {showNotice ? <SessionEndedNotice alone /> : null}
-              {showAcceptanceNotice ? <LegalAcceptanceNotice /> : null}
-            </div>
-          </div>
-        ) : null}
-        <Suspense fallback={<PageLoading fullPage />}>
-          <OrganizationSetup onOpened={reload} />
-        </Suspense>
-      </>
+      <FirstAccessPage
+        acceptanceNotice={showAcceptanceNotice}
+        closedNotice={closedNotice}
+        onOpened={reload}
+        sessionNotice={showNotice}
+      />
     );
   }
   return (
@@ -778,13 +828,17 @@ export function AppShell({
             facts={planFacts}
             onSubscription={routeId === "subscription"}
           />
-          <OfflineAccessGate>
-            {requiresOrganization ? (
-              <OrganizationGate>{children}</OrganizationGate>
-            ) : (
-              children
-            )}
-          </OfflineAccessGate>
+          {closedNotice && requiresOrganization ? (
+            closedNotice
+          ) : (
+            <OfflineAccessGate>
+              {requiresOrganization ? (
+                <OrganizationGate>{children}</OrganizationGate>
+              ) : (
+                children
+              )}
+            </OfflineAccessGate>
+          )}
         </main>
         <AppFooter />
         <BottomBar navId={navId} />

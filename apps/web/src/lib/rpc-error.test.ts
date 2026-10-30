@@ -7,6 +7,7 @@ import {
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isOrganizationClosedRefusal,
   isPlatformCut,
   isTransientReadFailure,
   readErrorMessage,
@@ -97,6 +98,54 @@ describe("the refusal for lack of the legal acceptance", () => {
     expect(message).toContain("Termos de Uso");
     expect(message).toContain("Política de Privacidade");
     expect(message).not.toContain("organização");
+  });
+});
+
+describe("the refusal for a closed organization", () => {
+  it("is a FORBIDDEN with the reason organization_closed, and nothing else", () => {
+    expect(
+      isOrganizationClosedRefusal({
+        code: "FORBIDDEN",
+        data: { reason: "organization_closed" },
+        status: 403,
+      })
+    ).toBe(true);
+    // a FORBIDDEN with no reason (a membership withdrawn, a capability denied) is never a closed store
+    expect(isOrganizationClosedRefusal({ code: "FORBIDDEN" })).toBe(false);
+    expect(
+      isOrganizationClosedRefusal({ code: "FORBIDDEN", data: undefined })
+    ).toBe(false);
+    expect(
+      isOrganizationClosedRefusal({
+        code: "FORBIDDEN",
+        data: { reason: "legal_acceptance_required" },
+      })
+    ).toBe(false);
+    expect(
+      isOrganizationClosedRefusal({
+        code: "UNAUTHORIZED",
+        data: { reason: "organization_closed" },
+      })
+    ).toBe(false);
+    expect(
+      isOrganizationClosedRefusal({
+        code: "CONFLICT",
+        data: { reason: "organization_closed" },
+      })
+    ).toBe(false);
+    expect(isOrganizationClosedRefusal(new TypeError("Failed to fetch"))).toBe(
+      false
+    );
+    expect(isOrganizationClosedRefusal(null)).toBe(false);
+  });
+
+  it("is not the refusal for the legal acceptance", () => {
+    expect(
+      isLegalAcceptanceRefusal({
+        code: "FORBIDDEN",
+        data: { reason: "organization_closed" },
+      })
+    ).toBe(false);
   });
 });
 

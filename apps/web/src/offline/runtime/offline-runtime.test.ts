@@ -2195,6 +2195,217 @@ describe("a server that waits for the legal acceptance", () => {
   });
 });
 
+/** The refusal the server gives for a closed organization (ADR 0081), shaped like the oRPC one. */
+function closedRefusal(): Error {
+  return Object.assign(new Error("organization closed"), {
+    code: "FORBIDDEN",
+    data: { reason: "organization_closed" },
+    status: 403,
+  });
+}
+
+describe("a server that says the organization was closed", () => {
+  const scope = `${userId}-${organizationId}`;
+  const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+  const sessionUserKey = "polaris.offline.session-user";
+
+  /** The queue as the person sees it: the same commands, in the same order, still waiting (attempts aside). */
+  async function commandsOf(w: ReturnType<typeof world>) {
+    const kept = w.stores.get(scope);
+    return ((await kept?.outbox.snapshot())?.commands ?? []).map(
+      ({ commandId, payload, status, type }) => ({
+        commandId,
+        payload,
+        status,
+        type,
+      })
+    );
+  }
+
+  /** What every closed refusal leaves: copy and lease gone, queue, device and remembered user kept, no session refused. */
+  async function expectClosedDrop(
+    w: ReturnType<typeof world>,
+    runtime: ReturnType<ReturnType<typeof world>["make"]>,
+    before: Awaited<ReturnType<typeof commandsOf>>,
+    device: string | null
+  ) {
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      organizationClosed: true,
+      phase: "unavailable",
+      reason: "organization_closed",
+      sessionRefused: false,
+    });
+    expect(runtime.context()).toBeNull();
+    expect(w.wiped).toEqual([scope]);
+    expect(w.purged).toEqual([]);
+    expect(w.keyValues.read(leaseKeyName)).toBeNull();
+    expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+    expect(w.keyValues.read(sessionUserKey)).toBe(userId);
+    expect(await commandsOf(w)).toEqual(before);
+  }
+
+  it("on the push: the collections and the lease go, the queue stays as it was, and the session is not refused", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    await queueProduct(runtime, "Calça", 2);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+    expect(before).toHaveLength(2);
+
+    w.failures.push = true;
+    w.failures.pushCode = "FORBIDDEN";
+    w.failures.pushData = { reason: "organization_closed" };
+    await runtime.syncNow();
+
+    expect(w.calls.push).toBeGreaterThan(0);
+    await expectClosedDrop(w, runtime, before, device);
+    // nothing more goes out: the runtime is no longer ready
+    const pushes = w.calls.push;
+    await runtime.syncNow();
+    expect(w.calls.push).toBe(pushes);
+  });
+
+  it("on the renewal of the lease, at a sync: the same drop, and never the refused session", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    w.advance(73); // the lease ended, so the sync has to ask for a new one
+    w.failures.issueLease.push(closedRefusal());
+    await runtime.syncNow();
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("on the renewal while a cached lease still works: the cached lease does not stand in for a closed store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    w.advance(61); // inside the 12 h before the exp: the sync renews, and the old lease would still do
+    w.failures.issueLease.push(closedRefusal());
+    await runtime.syncNow();
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("on the lease asked at start: the device is not forgotten nor registered again, the collections go and the queue stays", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    const registered = w.calls.registerDevice;
+    w.keyValues.remove(leaseKeyName);
+
+    w.failures.issueLease.push(closedRefusal());
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    expect(w.calls.registerDevice).toBe(registered);
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told by a screen's own read: the same drop, once, and the remembered user stays", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = await commandsOf(w);
+    const device = w.keyValues.read("polaris.offline.device");
+
+    await runtime.dropClosedCopy(organizationId);
+    await runtime.dropClosedCopy(organizationId);
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told while the runtime is still starting: the drop waits for the start, which does not undo it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    w.keyValues.remove(leaseKeyName);
+
+    let release: () => void = () => undefined;
+    w.gates.issueLease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runtime = w.make();
+    const starting = runtime.start(organizationId);
+    const dropping = runtime.dropClosedCopy(organizationId);
+    release();
+    await Promise.all([starting, dropping]);
+
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("told before the runtime started for the store: the start that follows drops the copy instead of opening it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await queueProduct(first, "Camiseta", 1);
+    const before = await commandsOf(w);
+    await first.stop();
+    const device = w.keyValues.read("polaris.offline.device");
+    const leases = w.calls.issueLease;
+
+    const runtime = w.make();
+    await runtime.dropClosedCopy(organizationId);
+    expect(w.wiped).toEqual([]);
+    await runtime.start(organizationId);
+
+    expect(w.calls.issueLease).toBe(leases);
+    await expectClosedDrop(w, runtime, before, device);
+  });
+
+  it("stopping clears the mark: another store opens as usual", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.dropClosedCopy(organizationId);
+    expect(runtime.getSnapshot().organizationClosed).toBe(true);
+
+    await runtime.stop();
+    expect(runtime.getSnapshot().organizationClosed).toBe(false);
+    await runtime.start("org-2");
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      phase: "ready",
+    });
+  });
+
+  it("contrast: a FORBIDDEN with no reason on the push is a refused session, not a closed store", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.push = true;
+    w.failures.pushCode = "FORBIDDEN";
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      organizationClosed: false,
+      reason: "session_refused",
+      sessionRefused: true,
+    });
+  });
+});
+
 describe("conexão com prova (F7)", () => {
   const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
 

@@ -1,9 +1,17 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { documentTitle } from "../app-shell/navigation-model";
 import {
   type DataExportCalls,
@@ -11,7 +19,16 @@ import {
 } from "../data-export/data-export-cards";
 import { listRefusal, requestRefusal } from "../data-export/data-export-model";
 import { useConnectionOnline } from "../lib/browser-connection";
-import { closedStorePath, closedStoreQuery } from "../lib/closed-store-path";
+import {
+  closedStorePath,
+  closedStoreQuery,
+  NEW_STORE_PATH,
+  REOPENED_PATH,
+} from "../lib/closed-store-path";
+import {
+  browserStorage,
+  writePreferredOrganizationId,
+} from "../lib/current-organization-model";
 import { legalAcceptancePath } from "../lib/legal-acceptance";
 import { orpcClient } from "../lib/orpc";
 import { signInPath } from "../lib/sign-in-path";
@@ -21,6 +38,7 @@ import { TEXT_LINK } from "../sign-in/entry-ui";
 import { NEW_TAB_HINT } from "../sign-in/sign-in-texts";
 import {
   type ClosedStore,
+  closedAfterWindow,
   closedExportFileHref,
   closedRequestRefusal,
   closedStoreExports,
@@ -28,6 +46,7 @@ import {
   copyRequestOpen,
   DOWNLOAD_BUTTON,
   justClosedText,
+  NEW_STORE_LINK,
   PANEL_BACK_HOME,
   PANEL_CHOOSE_TEXT,
   PANEL_LOAD_FAILED_TEXT,
@@ -40,14 +59,25 @@ import {
   phaseLines,
   RENEWAL_TERM,
   renewalText,
+  UNDO_BACK,
   UNDO_BUTTON,
-  UNDO_UNAVAILABLE_TEXT,
+  UNDO_CONFIRM,
+  UNDO_EFFECTS_TEXT,
+  UNDO_SENDING,
+  UNDO_TITLE,
+  undoFailure,
   undoOpen,
 } from "./closed-store-model";
+import {
+  rememberClosedStore,
+  rememberClosedStores,
+} from "./closed-stores-memory";
 
 const PAGE_TITLE = "Loja encerrada";
 const COPY_SECTION_ID = "copia-dos-dados";
-const UNDO_REASON_ID = "closed-store-undo-reason";
+const OFFLINE_ID = "closed-store-offline";
+const UNDO_DIALOG = "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md";
+const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** `setTimeout` takes no longer delay: a later end of the window is caught by the next read. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -59,14 +89,18 @@ type Load =
   | { status: "acceptance" }
   | { status: "loaded"; stores: readonly ClosedStore[] };
 
+/** Each read also refreshes what the Início of an active store remembers of the closed ones (no read of its own). */
 async function readStores(storeId: string | null): Promise<ClosedStore[]> {
   if (storeId !== null && UUID.test(storeId)) {
     const { organization } = await orpcClient.organization.closedStatus({
       organizationId: storeId,
     });
+    rememberClosedStore(browserStorage(), storeId, organization);
     return organization ? [organization] : [];
   }
-  return (await orpcClient.organization.listClosed()).organizations;
+  const { organizations } = await orpcClient.organization.listClosed();
+  rememberClosedStores(browserStorage(), organizations);
+  return organizations;
 }
 
 /**
@@ -146,9 +180,14 @@ interface StatusCardProps {
   now: number;
   online: boolean;
   onRefresh: () => void;
-  onUndo?: ((store: ClosedStore) => void) | undefined;
+  onUndo: () => void;
   store: ClosedStore;
 }
+
+const offlineOff = (online: boolean) =>
+  online
+    ? {}
+    : { "aria-describedby": OFFLINE_ID, "aria-disabled": true as const };
 
 function StatusCard({
   now,
@@ -159,11 +198,10 @@ function StatusCard({
 }: StatusCardProps) {
   const undo = undoOpen(store, now);
   const handleUndo = useCallback(() => {
-    if (online && onUndo) {
-      onUndo(store);
+    if (online) {
+      onUndo();
     }
-  }, [online, onUndo, store]);
-  const undoOff = !(online && onUndo);
+  }, [online, onUndo]);
   return (
     <Card>
       <CardContent className="grid gap-4">
@@ -184,11 +222,10 @@ function StatusCard({
           )}
           {undo ? (
             <Button
-              aria-describedby={undoOff ? UNDO_REASON_ID : undefined}
-              aria-disabled={undoOff ? true : undefined}
               className="max-sm:w-full"
               onClick={handleUndo}
               variant="outline"
+              {...offlineOff(online)}
             >
               {UNDO_BUTTON}
             </Button>
@@ -197,21 +234,11 @@ function StatusCard({
             className="max-sm:w-full"
             onClick={onRefresh}
             variant="outline"
-            {...(online
-              ? {}
-              : {
-                  "aria-describedby": "closed-store-offline",
-                  "aria-disabled": true,
-                })}
+            {...offlineOff(online)}
           >
             Atualizar
           </Button>
         </div>
-        {undo && !onUndo ? (
-          <p className="text-muted-foreground" id={UNDO_REASON_ID}>
-            {UNDO_UNAVAILABLE_TEXT}
-          </p>
-        ) : null}
       </CardContent>
     </Card>
   );
@@ -269,21 +296,161 @@ function CopySection({
   );
 }
 
+interface UndoDialogProps {
+  onBack: () => void;
+  onConfirm: () => void;
+  open: boolean;
+  pending: boolean;
+}
+
+/** Wireframe C: a small dialog, nothing sent before "Sim, desfazer"; "Voltar" only closes it. */
+function UndoDialog({ onBack, onConfirm, open, pending }: UndoDialogProps) {
+  const guarded = useCallback(
+    (next: boolean) => {
+      if (!(next || pending)) {
+        onBack();
+      }
+    },
+    [onBack, pending]
+  );
+  return (
+    <Dialog onOpenChange={guarded} open={open}>
+      <DialogContent className={UNDO_DIALOG} showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{UNDO_TITLE}</DialogTitle>
+          <DialogDescription>{UNDO_EFFECTS_TEXT}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-3">
+          <Button
+            aria-disabled={pending || undefined}
+            className={OFF}
+            onClick={pending ? undefined : onBack}
+            type="button"
+            variant="outline"
+          >
+            {UNDO_BACK}
+          </Button>
+          <Button
+            aria-disabled={pending || undefined}
+            className={OFF}
+            onClick={pending ? undefined : onConfirm}
+            type="button"
+          >
+            {pending ? UNDO_SENDING : UNDO_CONFIRM}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** What the panel learned from an undo, for the store it was read with: an Atualizar brings the server's word back. */
+interface UndoResult {
+  from: ClosedStore;
+  notice: string;
+  store: ClosedStore;
+}
+
+function leaveForSession(kind: "acceptance" | "session") {
+  const returnTo = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(
+    kind === "session"
+      ? signInPath({ reason: "sessao", returnTo })
+      : legalAcceptancePath(returnTo)
+  );
+}
+
+/**
+ * The undo: one request however many taps, the dialog held while it is on its way, and the answer said as it is. Only
+ * "recovered" says "reaberta" (on the Início it goes to); the end of the window turns the panel to closed.
+ */
+function useUndo(store: ClosedStore) {
+  const [dialog, setDialog] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<UndoResult | null>(null);
+  const sending = useRef<boolean>(false);
+  const shown = result?.from === store ? result : null;
+
+  const confirm = useCallback(async () => {
+    if (sending.current) {
+      return;
+    }
+    sending.current = true;
+    setPending(true);
+    try {
+      await orpcClient.organization.recoverClosure({
+        organizationId: store.id,
+      });
+      const storage = browserStorage();
+      rememberClosedStore(storage, store.id, null);
+      writePreferredOrganizationId(storage, store.id);
+      window.location.assign(REOPENED_PATH);
+    } catch (error: unknown) {
+      const failure = undoFailure(error);
+      if (failure.kind === "session" || failure.kind === "acceptance") {
+        leaveForSession(failure.kind);
+        return;
+      }
+      setResult({
+        from: store,
+        notice: failure.text,
+        store:
+          failure.kind === "window_over" ? closedAfterWindow(store) : store,
+      });
+      setDialog(false);
+    } finally {
+      sending.current = false;
+      setPending(false);
+    }
+  }, [store]);
+
+  const open = useCallback(() => {
+    setResult(null);
+    setDialog(true);
+  }, []);
+  const back = useCallback(() => setDialog(false), []);
+  return {
+    back,
+    confirm,
+    dialog,
+    notice: shown?.notice ?? null,
+    open,
+    pending,
+    store: shown?.store ?? store,
+  };
+}
+
+function UndoNotice({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <Alert ref={ref} role="alert" tabIndex={-1} variant="destructive">
+      <AlertDescription>{text}</AlertDescription>
+    </Alert>
+  );
+}
+
 function StorePanel({
   justClosed,
   online,
   onRefresh,
-  store,
+  store: read,
 }: {
   justClosed: boolean;
   online: boolean;
   onRefresh: () => void;
   store: ClosedStore;
 }) {
+  const undo = useUndo(read);
+  const { store } = undo;
   const now = useNowUntil(
     Date.parse(store.recoverUntil),
     Date.parse(store.exportOpenUntil)
   );
+  // the window ends with the dialog open: it closes, unless the request is already on its way
+  const dialogOpen = undo.dialog && (undo.pending || undoOpen(store, now));
   return (
     <>
       <h1 className="text-balance font-semibold text-2xl/8 tracking-tight">
@@ -296,11 +463,19 @@ function StorePanel({
           </AlertDescription>
         </Alert>
       ) : null}
+      {undo.notice ? <UndoNotice key={undo.notice} text={undo.notice} /> : null}
       <StatusCard
         now={now}
         online={online}
         onRefresh={onRefresh}
+        onUndo={undo.open}
         store={store}
+      />
+      <UndoDialog
+        onBack={undo.back}
+        onConfirm={undo.confirm}
+        open={dialogOpen}
+        pending={undo.pending}
       />
       {store.phase === "purged" ? null : (
         <CopySection now={now} online={online} store={store} />
@@ -446,7 +621,7 @@ export function ClosedStorePage() {
       >
         <p className="font-semibold text-[1.0625rem] tracking-tight">Polaris</p>
         {online ? null : (
-          <Alert id="closed-store-offline" role="status" variant="warning">
+          <Alert id={OFFLINE_ID} role="status" variant="warning">
             <AlertDescription>{PANEL_OFFLINE_TEXT}</AlertDescription>
           </Alert>
         )}
@@ -457,6 +632,9 @@ export function ClosedStorePage() {
           onRefresh={handleRefresh}
         />
         <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
+          <a className={TEXT_LINK} href={NEW_STORE_PATH}>
+            {NEW_STORE_LINK}
+          </a>
           <a
             className={TEXT_LINK}
             href={LEGAL_PATHS.terms}

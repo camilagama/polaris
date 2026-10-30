@@ -33,6 +33,7 @@ const snapshot = (
   leaseExpiresAt: null,
   legalAcceptanceRequired: false,
   online: true,
+  organizationClosed: false,
   phase: "ready",
   reason: null,
   renewalRefused: false,
