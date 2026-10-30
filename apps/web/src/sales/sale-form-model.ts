@@ -748,7 +748,7 @@ export function stockView(
       costText: null,
       needsEntry: false,
       quantity: null,
-      text: `${load.message} Você ainda pode vender; o servidor confirma o saldo.`,
+      text: `${load.message} Você ainda pode vender: o saldo é conferido ao confirmar.`,
       tone: "warning",
     };
   }
@@ -1460,9 +1460,13 @@ function stockWarnings(
   for (const item of items) {
     const balance = stock[item.variantId];
     const total = requested.get(item.variantId) ?? 0;
-    if (balance?.status === "ready" && total > balance.value.quantity) {
+    if (
+      balance?.status === "ready" &&
+      balance.value.quantity !== 0 &&
+      total > balance.value.quantity
+    ) {
       warnings[item.draftId] =
-        `Quantidade acima do saldo exibido (${balance.value.quantity}). Você pode continuar; o servidor confirma o estoque e recusa a venda se for insuficiente.`;
+        `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
     }
   }
   return warnings;
