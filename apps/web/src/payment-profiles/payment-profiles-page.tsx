@@ -110,9 +110,6 @@ export function errorText(
     typeof error === "object" && error !== null && "code" in error
       ? String((error as { code?: unknown }).code)
       : "";
-  if (code === "SERVICE_UNAVAILABLE" && subject === undefined) {
-    return CHANGE_FAULT_UNKNOWN;
-  }
   if (code === "UNAUTHORIZED") {
     return "Não foi possível concluir a operação com o perfil de pagamento.";
   }
