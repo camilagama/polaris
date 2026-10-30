@@ -20,6 +20,7 @@ import {
   planReadSucceeded,
   rememberedPlanNotice,
   rememberPlanNotice,
+  trialChargeDay,
   untilText,
 } from "./plan-notice";
 import {
@@ -914,19 +915,43 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
   };
   const GRACE_FACTS = {
     accessEndsAt: "2026-10-31T03:00:00.000Z",
+    nextCharge: null,
     state: "grace",
   } as const;
 
-  it("keeps only the state, the end of the access, the store and when it was read", () => {
+  it("keeps only the state, the end of the access, the day of the next charge, the store and when it was read", () => {
     const store = fakeStore();
     rememberPlanNotice("loja-a", GRACE_FACTS, 1000, store);
     expect(JSON.parse(store.values.get(PLAN_NOTICE_KEY) ?? "null")).toEqual({
       accessEndsAt: "2026-10-31T03:00:00.000Z",
+      nextChargeOn: null,
       organizationId: "loja-a",
       readAt: 1000,
       state: "grace",
     });
-    expect(rememberedPlanNotice("loja-a", store)).toMatchObject(GRACE_FACTS);
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      accessEndsAt: GRACE_FACTS.accessEndsAt,
+      state: "grace",
+    });
+  });
+
+  it("keeps the day of the first charge of a trial, never its amount", () => {
+    const store = fakeStore();
+    rememberPlanNotice(
+      "loja-a",
+      {
+        accessEndsAt: "2026-11-10T03:00:00.000Z",
+        nextCharge: { amount: "24.90", on: "2026-11-10" },
+        state: "trialing",
+      },
+      1000,
+      store
+    );
+    expect(store.values.get(PLAN_NOTICE_KEY)).not.toContain("24.90");
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      nextChargeOn: "2026-11-10",
+      state: "trialing",
+    });
   });
 
   it("never gives one store's plan to another", () => {
@@ -950,9 +975,31 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       JSON.stringify({ organizationId: "loja-a", readAt: "x", state: "grace" }),
       JSON.stringify({
         accessEndsAt: 1,
+        nextChargeOn: null,
         organizationId: "loja-a",
         readAt: 1,
         state: "grace",
+      }),
+      // kept before the day of the charge was: read again
+      JSON.stringify({
+        accessEndsAt: null,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: "10/11",
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: 20_261_110,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
       }),
     ]) {
       store.values.set(PLAN_NOTICE_KEY, value);
@@ -966,6 +1013,44 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
     clearPlanNotice(store);
     expect(store.values.has(PLAN_NOTICE_KEY)).toBe(false);
     expect(rememberedPlanNotice("loja-a", store)).toBeNull();
+  });
+});
+
+const DAY_WORD = /dia/;
+
+describe("trialChargeDay (the trial at the foot of the menu)", () => {
+  const TODAY = "2026-10-29";
+
+  it("is the dd/mm of the first charge, in a trial only", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: "2026-11-10", state: "trialing" }, TODAY)
+    ).toBe("10/11");
+    for (const state of ["active", "grace", "free", "trial_setup"] as const) {
+      expect(
+        trialChargeDay({ nextChargeOn: "2026-11-10", state }, TODAY)
+      ).toBeNull();
+    }
+  });
+
+  it("is nothing without a charge to come (the renewal was cancelled)", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: null, state: "trialing" }, TODAY)
+    ).toBeNull();
+  });
+
+  it("is the day itself on the day of the charge, and nothing once it is past", () => {
+    const trial = { nextChargeOn: "2026-10-29", state: "trialing" } as const;
+    expect(trialChargeDay(trial, "2026-10-29")).toBe("29/10");
+    expect(trialChargeDay(trial, "2026-10-30")).toBeNull();
+  });
+
+  it("never says a count of days (AS-3, AC-12)", () => {
+    const text = trialChargeDay(
+      { nextChargeOn: "2026-11-01", state: "trialing" },
+      TODAY
+    );
+    expect(text).toBe("01/11");
+    expect(text).not.toMatch(DAY_WORD);
   });
 });
 

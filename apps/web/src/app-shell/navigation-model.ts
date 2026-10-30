@@ -42,8 +42,8 @@ export type RouteId =
   | "sale-history"
   | "subscription";
 
-/** The group of the sidebar an item is in; the first one has no label. */
-export type NavGroup = "Catálogo" | "Configurações" | "Resultado" | null;
+/** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
+export type NavGroup = "Gestão" | "Vendas" | null;
 
 export interface NavItem {
   group: NavGroup;
@@ -52,31 +52,35 @@ export interface NavItem {
   label: string;
 }
 
-/** The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1). */
+/**
+ * The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
+ * for what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar
+ * of the phone already treats it (`BOTTOM_BAR_AREA`).
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
-  { group: null, href: "/sales", id: "sale", label: "Vender" },
-  { group: null, href: "/sales/history", id: "history", label: "Histórico" },
-  { group: "Catálogo", href: "/inventory", id: "inventory", label: "Estoque" },
-  { group: "Catálogo", href: "/products", id: "products", label: "Produtos" },
-  { group: "Catálogo", href: "/customers", id: "customers", label: "Clientes" },
+  { group: "Vendas", href: "/sales", id: "sale", label: "Vender" },
   {
-    group: "Resultado",
-    href: "/dashboard",
-    id: "dashboard",
-    label: "Resultado",
+    group: "Vendas",
+    href: "/sales/history",
+    id: "history",
+    label: "Histórico",
   },
+  { group: "Gestão", href: "/inventory", id: "inventory", label: "Estoque" },
+  { group: "Gestão", href: "/products", id: "products", label: "Produtos" },
+  { group: "Gestão", href: "/customers", id: "customers", label: "Clientes" },
+  { group: "Gestão", href: "/dashboard", id: "dashboard", label: "Resultado" },
   {
-    group: "Configurações",
+    group: null,
     href: "/configuracoes",
     id: "settings",
     label: "Configurações",
   },
 ];
 
-/** The ninth destination, only while this device has a refused record: after Histórico, with the count. */
+/** The ninth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
-  group: null,
+  group: "Vendas",
   href: "/attention",
   id: "attention",
   label: "Pendências",

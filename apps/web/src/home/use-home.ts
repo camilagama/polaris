@@ -20,6 +20,10 @@ import { isLegalAcceptanceRefusal, rpcErrorCode } from "../lib/rpc-error";
 import { isSigningOut } from "../lib/sign-out";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { isSessionOver } from "../offline/runtime/session-ended";
+import {
+  type FirstStepsFacts,
+  rememberFirstSteps,
+} from "../app-shell/first-steps";
 import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
   type BalancesPage,
@@ -300,6 +304,20 @@ function keepPreviousWindow(
 }
 
 /**
+ * Tells the foot of the menu the steps the Início read (`when` the read is still the current one); never while the
+ * session ends, which drops them.
+ */
+function tellFirstSteps(
+  organizationId: string,
+  facts: FirstStepsFacts | null,
+  when: boolean
+): void {
+  if (when && !(isSessionOver() || isSigningOut())) {
+    rememberFirstSteps(organizationId, facts);
+  }
+}
+
+/**
  * Whether the store ever sold (V, cancelled sales included) and, when it did not, what it has: a product (P, archived
  * ones included) and a variant with stock (E). Null when the store sold: then there is no checklist (AC-23).
  */
@@ -532,26 +550,27 @@ export function useHome(
 
   const loadChecklist = useCallback(
     async (ticket: number, figures: HomeFigures | null) => {
-      if (
-        figures === null ||
-        !reads.sales ||
-        !noSaleCounted(figures.month, figures.before)
-      ) {
+      const current = () => ticket === sequence.current.numbers;
+      const unasked = figures === null || !reads.sales;
+      if (unasked || !noSaleCounted(figures.month, figures.before)) {
+        // the figures counted a sale: the foot of the menu drops its steps too
+        tellFirstSteps(organizationId, null, !unasked && current());
         settle(ticket, "checklist", { block: { data: null, status: "ready" } });
         return;
       }
       try {
         const read = await readChecklist(
           organizationId,
-          () => ticket === sequence.current.numbers,
+          current,
           reads.inventory
         );
-        if (read === "sold" && ticket === sequence.current.numbers) {
+        const data = read === "sold" ? null : read;
+        tellFirstSteps(organizationId, data, current());
+        if (read === "sold" && current()) {
           keepCopy(reads.report && !copyRefused.current, (storage) =>
             writeHomeCopy(storage, organizationId, { hadSale: true })
           );
         }
-        const data = read === "sold" ? null : read;
         settle(ticket, "checklist", { block: { data, status: "ready" } });
       } catch (error) {
         // not knowing whether the store sold, the figures stand with their empty states

@@ -5,7 +5,8 @@ import { clockPartsInTimezone } from "../lib/dates";
 import { formatCalendarDate } from "../lib/format";
 
 /**
- * The part of the Assinatura the shell needs on every screen (the notice of grace at the top, AS-35, and the return of
+ * The part of the Assinatura the shell needs on every screen (the notice of grace at the top, AS-35, the trial at the
+ * foot of the menu, and the return of
  * the checkouts opened before the return moved to the Assinatura): the days of the plan, São Paulo's, as the server's.
  * Kept apart from the screen's model, so the shell does not carry the screen.
  */
@@ -30,6 +31,8 @@ export function untilText(instant: string): string {
   );
   return `${date}, ${time}`;
 }
+
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Whole calendar days from `today` to `day` (both `AAAA-MM-DD`), never negative. */
 export function daysUntil(day: string, today: string): number {
@@ -87,23 +90,56 @@ export function graceNotice(
   };
 }
 
+// ---- the trial at the foot of the menu ---------------------------------------------------------------------------
+
+/**
+ * "dd/mm" of the first charge of a trial, for the foot of the menu: the date and never a count of days, because the
+ * Pix trial counts from the bank's approval (AS-3, AC-12). Null out of a trial, when there is no charge to come (the
+ * renewal was cancelled), and when the day kept is before `today` (São Paulo's `AAAA-MM-DD`): the trial is over, and
+ * the copy no longer says what the server knows.
+ */
+export function trialChargeDay(
+  plan: Pick<RememberedNotice, "nextChargeOn" | "state">,
+  today: string
+): string | null {
+  if (
+    plan.state !== "trialing" ||
+    plan.nextChargeOn === null ||
+    plan.nextChargeOn < today
+  ) {
+    return null;
+  }
+  const [, month, day] = plan.nextChargeOn.split("-");
+  return month && day ? `${day}/${month}` : null;
+}
+
 // ---- what the notice remembers between the screens of this tab ------------------------------------------------
 
 /**
  * The state of the plan the notice reads, kept for this tab only (`sessionStorage`, or the page's memory where the
- * browser refuses it), so every screen of the owner does not read the whole plan again: nothing but the state and the
- * end of the access, never a plan shown as current on the Assinatura (which reads its own, AS-8). What was read is
+ * browser refuses it), so every screen of the owner does not read the whole plan again: nothing but the state, the
+ * end of the access and the day of the next charge, never a plan shown as current on the Assinatura (which reads its own, AS-8). What was read is
  * shown at once, and read again once it is older than a few minutes (the notice stays while it is read again).
  */
 export const PLAN_NOTICE_KEY = "polaris.billing.planNotice";
 export const PLAN_NOTICE_FOR_MS = 5 * 60_000;
 
-export type PlanNoticeFacts = Pick<BillingPlanView, "accessEndsAt" | "state">;
+/** What a read of the plan gives the shell. */
+export type PlanNoticeRead = Pick<
+  BillingPlanView,
+  "accessEndsAt" | "nextCharge" | "state"
+>;
 
-export interface RememberedNotice extends PlanNoticeFacts {
+export interface RememberedNotice
+  extends Pick<BillingPlanView, "accessEndsAt" | "state"> {
+  /** The day of the next charge (`nextCharge.on`), without its amount. */
+  nextChargeOn: string | null;
   organizationId: string;
   readAt: number;
 }
+
+/** What the shell shows of the plan: what this tab read of it. */
+export type PlanNoticeFacts = RememberedNotice;
 
 type SessionStore = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 
@@ -136,12 +172,13 @@ function tell(): void {
 
 export function rememberPlanNotice(
   organizationId: string,
-  plan: PlanNoticeFacts,
+  plan: PlanNoticeRead,
   now: number = Date.now(),
   store: SessionStore | null = sessionStore()
 ): void {
   const value: RememberedNotice = {
     accessEndsAt: plan.accessEndsAt,
+    nextChargeOn: plan.nextCharge?.on ?? null,
     organizationId,
     readAt: now,
     state: plan.state,
@@ -178,12 +215,20 @@ export function rememberedPlanNotice(
       value.organizationId !== organizationId ||
       typeof value.readAt !== "number" ||
       typeof value.state !== "string" ||
-      !(value.accessEndsAt === null || typeof value.accessEndsAt === "string")
+      !(
+        value.accessEndsAt === null || typeof value.accessEndsAt === "string"
+      ) ||
+      !(
+        value.nextChargeOn === null ||
+        (typeof value.nextChargeOn === "string" &&
+          CALENDAR_DAY.test(value.nextChargeOn))
+      )
     ) {
       return null;
     }
     return {
       accessEndsAt: value.accessEndsAt,
+      nextChargeOn: value.nextChargeOn,
       organizationId,
       readAt: value.readAt,
       state: value.state,

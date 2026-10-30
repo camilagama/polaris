@@ -10,6 +10,7 @@ import {
   bottomBarMark,
   documentTitle,
   entryPageFor,
+  inBottomBar,
   legacyAddress,
   menuItemsOf,
   NAV_ITEMS,
@@ -39,16 +40,43 @@ describe("main menu", () => {
     expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(8);
   });
 
-  it("groups the sidebar: Catálogo, Resultado and Configurações", () => {
+  it("groups the sidebar: Início alone, Vendas, Gestão and Configurações alone", () => {
     const groups = navGroups(NAV_ITEMS).map((group) => [
       group.label,
       group.items.map((item) => item.label),
     ]);
     expect(groups).toEqual([
-      [null, ["Início", "Vender", "Histórico"]],
-      ["Catálogo", ["Estoque", "Produtos", "Clientes"]],
-      ["Resultado", ["Resultado"]],
-      ["Configurações", ["Configurações"]],
+      [null, ["Início"]],
+      ["Vendas", ["Vender", "Histórico"]],
+      ["Gestão", ["Estoque", "Produtos", "Clientes", "Resultado"]],
+      [null, ["Configurações"]],
+    ]);
+  });
+
+  it("keeps Pendências in Vendas, after Histórico", () => {
+    const groups = navGroups(menuItemsOf({ attention: true })).map((group) => [
+      group.label,
+      group.items.map((item) => item.label),
+    ]);
+    expect(groups[1]).toEqual([
+      "Vendas",
+      ["Vender", "Histórico", "Pendências"],
+    ]);
+  });
+
+  it("on the phone, without the destinations of the bottom bar, keeps the labels of what is left", () => {
+    const rest = menuItemsOf({ attention: true }).filter(
+      (item) => !inBottomBar(item.id)
+    );
+    expect(
+      navGroups(rest).map((group) => [
+        group.label,
+        group.items.map((item) => item.label),
+      ])
+    ).toEqual([
+      ["Vendas", ["Pendências"]],
+      ["Gestão", ["Produtos", "Clientes", "Resultado"]],
+      [null, ["Configurações"]],
     ]);
   });
 
