@@ -12,7 +12,7 @@ export const HELP_INTRO =
   "O Polaris não tem chat nem telefone. Escreva um e-mail e diga o nome da loja e o que aconteceu.";
 export const SUPPORT_LINE = "Dúvidas sobre o app, a assinatura ou um erro.";
 export const DPO_LINE =
-  "Pedidos sobre dados pessoais, seus ou dos seus clientes, vão ao encarregado (DPO).";
+  "Pedidos e dúvidas sobre os seus dados pessoais ou sobre a Política de Privacidade vão ao encarregado (DPO).";
 export const BEFORE_WRITING = [
   "Se o app não abre ou mostra erro, recarregue a página e tente de novo.",
   "Anote a versão do app: ela fica no fim de Configurações.",

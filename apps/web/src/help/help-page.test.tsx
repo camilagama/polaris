@@ -39,12 +39,12 @@ describe("the page Ajuda e contato", () => {
       `aria-label="Escrever ao encarregado de dados: ${DPO_EMAIL}"`
     );
     expect(text()).toContain(
-      "Pedidos sobre dados pessoais, seus ou dos seus clientes, vão ao encarregado (DPO)."
+      "Pedidos e dúvidas sobre os seus dados pessoais ou sobre a Política de Privacidade vão ao encarregado (DPO)."
     );
     expect(text()).toContain(
       "Suporte Dúvidas sobre o app, a assinatura ou um erro."
     );
-    expect(text()).toContain("Dados pessoais Pedidos sobre");
+    expect(text()).toContain("Dados pessoais Pedidos e dúvidas sobre");
   });
 
   it("names its sections, with the two cards as regions", () => {
