@@ -396,7 +396,7 @@ export class OfflineRuntime {
   /** The stores a call of this page was refused for as closed: never opened again by this runtime. */
   private readonly closedOrganizations = new Set<string>();
   /** A drop for a closed store is on its way: a run that meets the same refusal meanwhile leaves it to finish. */
-  private droppingClosed = false;
+  private closedDrop: Promise<void> | null = null;
   /** Ends the reads (the pull) of the run in flight; a send that needs the queue out does not wait for them. */
   private pullAbort: AbortController | null = null;
   /** `trySend` is waiting for the run in flight: its pull is cut even if it has not got that far yet. */
@@ -1576,18 +1576,23 @@ export class OfflineRuntime {
       await this.dropCopyNow(run, options.forgetDevice, false);
       return;
     }
-    // a sync that met the refusal while another drop was on its way leaves that one to finish
-    if (this.droppingClosed || this.snapshot.organizationClosed) {
+    // a sync that met the refusal while another drop was on its way waits for that one
+    if (this.closedDrop) {
+      await this.closedDrop;
       return;
     }
-    this.droppingClosed = true;
+    if (this.snapshot.organizationClosed) {
+      return;
+    }
     if (this.organizationId) {
       this.closedOrganizations.add(this.organizationId);
     }
+    const drop = this.dropCopyNow(run, options.forgetDevice, true);
+    this.closedDrop = drop;
     try {
-      await this.dropCopyNow(run, options.forgetDevice, true);
+      await drop;
     } finally {
-      this.droppingClosed = false;
+      this.closedDrop = null;
     }
   }
 

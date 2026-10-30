@@ -284,6 +284,8 @@ describe("the undo and the moment after the closure", () => {
   });
 });
 
+const TECHNICAL_IN_UNDO = /_|organização|closure|FORBIDDEN|CONFLICT/;
+const CLAIMS_AN_OUTCOME = /reaberta|não foi desfeito/i;
 const refusal = (code: string, reason?: string, status = 409) => ({
   code,
   data: reason === undefined ? undefined : { reason },
@@ -325,7 +327,7 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
         text: UNDO_UNKNOWN_TEXT,
       });
     }
-    expect(UNDO_UNKNOWN_TEXT).not.toMatch(/reaberta|não foi desfeito/i);
+    expect(UNDO_UNKNOWN_TEXT).not.toMatch(CLAIMS_AN_OUTCOME);
   });
 
   it("a definite refusal with no reason of its own says nothing was undone, without a code", () => {
@@ -362,7 +364,7 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
       UNDO_REFUSED_TEXT,
       UNDO_UNKNOWN_TEXT,
     ]) {
-      expect(text).not.toMatch(/_|organização|closure|FORBIDDEN|CONFLICT/);
+      expect(text).not.toMatch(TECHNICAL_IN_UNDO);
     }
   });
 });
