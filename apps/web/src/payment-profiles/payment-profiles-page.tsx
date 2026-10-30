@@ -25,7 +25,7 @@ import {
   commonFailureMessage,
   isConnectionFailure,
   isPlatformCut,
-  unconfirmedWriteFaultMessage,
+  rpcErrorCode,
 } from "../lib/rpc-error";
 import { useHoldSwap } from "../lib/unsent-work";
 import {
@@ -50,16 +50,33 @@ const REPEATED_RULES_TEXT =
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
 export const SAVE_NOT_CONFIRMED_TEXT =
   "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve.";
+/** Any 503 of a write: it may have been saved, whatever its reason. Reads never come here. */
+function writeFaultUnknown(cause: unknown): string | undefined {
+  return rpcErrorCode(cause) === "SERVICE_UNAVAILABLE"
+    ? CHANGE_FAULT_UNKNOWN
+    : undefined;
+}
+
 /** A save whose answer did not come, that the server cut or that met its 503: it may have been saved. Null for any other failure. */
-function saveNotConfirmedText(cause: unknown): string | null {
+export function saveNotConfirmedText(cause: unknown): string | null {
   if (isPlatformCut(cause)) {
     return `O servidor está ocupado. ${SAVE_NOT_CONFIRMED_TEXT}`;
   }
-  const faultUnknown = unconfirmedWriteFaultMessage(cause);
+  const faultUnknown = writeFaultUnknown(cause);
   if (faultUnknown !== undefined) {
     return faultUnknown;
   }
   return isConnectionFailure(cause) ? SAVE_NOT_CONFIRMED_TEXT : null;
+}
+/** An archive or restore whose answer did not come, that the server cut or that met its 503: the change may have been made. Null for any other failure. */
+export function lifecycleNotConfirmedText(cause: unknown): string | null {
+  if (isPlatformCut(cause)) {
+    return CHANGE_CUT_BY_SERVER;
+  }
+  return (
+    writeFaultUnknown(cause) ??
+    (isConnectionFailure(cause) ? CHANGE_OUTCOME_UNKNOWN : null)
+  );
 }
 /** What the form and the page say once it was closed to check: the draft is kept, and so is the doubt. */
 const MAYBE_SAVED_TEXT = "Este perfil pode já ter sido salvo.";
@@ -78,7 +95,7 @@ const GENERIC_ERROR_TEXT =
   "Não foi possível concluir a operação. Revise os dados e tente novamente.";
 const LOAD_ERROR_TEXT = "Não foi possível carregar os perfis. Tente novamente.";
 
-function errorText(
+export function errorText(
   error: unknown,
   subject?: string,
   fallback = GENERIC_ERROR_TEXT
@@ -93,6 +110,9 @@ function errorText(
     typeof error === "object" && error !== null && "code" in error
       ? String((error as { code?: unknown }).code)
       : "";
+  if (code === "SERVICE_UNAVAILABLE" && subject === undefined) {
+    return CHANGE_FAULT_UNKNOWN;
+  }
   if (code === "UNAUTHORIZED") {
     return "Não foi possível concluir a operação com o perfil de pagamento.";
   }
@@ -528,20 +548,12 @@ export function PaymentProfilesPage() {
         }
         await loadProfiles();
       } catch (cause) {
-        const faultUnknown = unconfirmedWriteFaultMessage(cause);
-        if (
-          isConnectionFailure(cause) ||
-          isPlatformCut(cause) ||
-          faultUnknown !== undefined
-        ) {
-          setUncertain(
-            isPlatformCut(cause)
-              ? CHANGE_CUT_BY_SERVER
-              : (faultUnknown ?? CHANGE_OUTCOME_UNKNOWN)
-          );
-          readAgainIfAnswers();
-        } else {
+        const doubt = lifecycleNotConfirmedText(cause);
+        if (doubt === null) {
           setError(errorText(cause));
+        } else {
+          setUncertain(doubt);
+          readAgainIfAnswers();
         }
       } finally {
         setPending(false);

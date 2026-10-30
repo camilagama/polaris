@@ -4,7 +4,11 @@ import type {
 } from "@polaris/contracts";
 import { type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
-import { commonFailureMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
@@ -30,6 +34,9 @@ export function priceErrorMessage(error: unknown): string {
     return common;
   }
   const code = rpcErrorCode(error);
+  if (code === "SERVICE_UNAVAILABLE") {
+    return CHANGE_FAULT_UNKNOWN;
+  }
   if (code === "CONFLICT") {
     return "O produto mudou. Atualize as variantes antes de tentar novamente.";
   }
