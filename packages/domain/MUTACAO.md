@@ -17,6 +17,7 @@ Precisa de `node` no PATH (o Stryker abre processos filhos). Em `packages/domain
 ## Por que é assim
 
 - `inPlace: true`: o Stryker copia o projeto para uma pasta temporária e reescreve o `tsconfig.json` com a API do TypeScript, que o TypeScript 7 não tem; no lugar, ele troca os arquivos e os restaura ao sair.
+- Se o processo for morto sem restaurar (SIGKILL, queda da máquina), arquivos de `src/` ficam mutados: rode `git status` e `git checkout -- packages/domain/src` antes de commitar.
 - `vitest.mutation.config.ts` limita os testes às quatro pastas; com `coverageAnalysis: perTest`, cada mutante roda só os testes que passam pela linha mutada.
 - `@stryker-mutator/vitest-runner` precisa da 10.1.1 ou mais nova para o Vitest 5 (o filtro por nome de teste usa ` > ` entre as suítes).
 - O workflow agendado não roda no PR: ele é entregue como patch de texto (`mutation-nightly.yml`) e aplicado por quem cuida de `.github/workflows`, depois do merge.
