@@ -104,7 +104,6 @@ function useExportList(organizationId: string) {
     };
   }, [load]);
 
-  // a copy the server just accepted: shown as it is (preparing) without reading the list again
   const add = useCallback((item: DataExportItem) => {
     setExports((current) => [
       item,

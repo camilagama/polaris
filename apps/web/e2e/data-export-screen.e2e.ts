@@ -22,7 +22,7 @@ const SESSION_USER = {
 };
 const EXPORT_ID = "0199c2d0-0000-7000-8000-0000000000aa";
 const PATH = "/configuracoes?aba=seus-dados";
-/** 30/10/2026 12:00 in São Paulo. */
+/** `2026-10-30T12:00` in São Paulo. */
 const NOW = new Date("2026-10-30T15:00:00.000Z");
 const TECHNICAL = /export_|_error|server_busy|requested|running/;
 
@@ -197,12 +197,10 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   expect(calls.requests).toEqual([
     { formats: ["json", "csv"], organizationId: ORGANIZATION.id },
   ]);
-  // shown as the server accepted it, without reading the list again
   await expect(list(page)).toContainText(
     "Preparando sua cópia. Pode levar até uma hora. Você pode sair e voltar."
   );
   expect(calls.reads).toBe(1);
-  // one copy in flight: asking again is off and says why
   await expect(askButton(page)).toHaveAttribute("aria-disabled", "true");
   await expect(
     page.getByText("Já há uma cópia sendo preparada. Espere ela ficar pronta.")
@@ -237,7 +235,6 @@ test("sem formato marcado o botão não envia e o campo diz o que falta (AC-2)",
     "Marque pelo menos um formato."
   );
   expect(calls.requests).toEqual([]);
-  // with images only, the request carries images only
   await format(page, "Imagens dos produtos").click();
   await expect(page.getByText("Marque pelo menos um formato.")).toHaveCount(0);
   await askButton(page).click();
@@ -370,7 +367,6 @@ test("as recusas do pedido: limite de 3, já em preparo e o 503 que não se repe
   await page.clock.runFor(10 * 60_000);
   expect(busy.requests).toHaveLength(1);
   expect(busy.reads).toBe(1);
-  // the person reads the list, and only then asks again
   await list(page).getByRole("button", { name: "Atualizar" }).click();
   await expect.poll(() => busy.reads).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -405,7 +401,6 @@ test("sem conexão: um só aviso, nada sai e a volta não lê sozinha (AC-7)", a
   await page.context().setOffline(true);
   await expect(page.getByText("Sem internet.")).toHaveCount(1);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  // off with the notice's reason, still focusable; a forced click sends nothing
   await expect(askButton(page)).toHaveAttribute("aria-disabled", "true");
   await askButton(page).click({ force: true });
   const link = list(page).getByRole("link", {

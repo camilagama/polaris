@@ -26,7 +26,7 @@ import {
 const ZONE = "America/Sao_Paulo";
 const TECHNICAL_WORDS =
   /export_|_error|storage_failed|\b(requested|running|failed|expired)\b/;
-/** 30/10/2026 12:00 in São Paulo. */
+/** `2026-10-30T12:00` in São Paulo. */
 const NOW = Date.parse("2026-10-30T15:00:00.000Z");
 
 function item(overrides: Partial<DataExportItem> = {}): DataExportItem {
