@@ -702,7 +702,7 @@ export class OfflineRuntime {
       return { readable: false, workspaces: [] };
     }
     const userId = await this.signedInUserForLogout();
-    if (!userId) {
+    if (!(userId && this.namespaceRegistryReadable())) {
       return { readable: false, workspaces: [] };
     }
     const workspaces: LogoutWorkspace[] = [];
@@ -1175,6 +1175,28 @@ export class OfflineRuntime {
       throw new Error("no_session_offline");
     }
     return { confirmed: false, userId: remembered };
+  }
+
+  /**
+   * The registry of namespaces is the only index of the queues on this browser: absent is an empty browser, but one
+   * that does not parse or has an entry of another shape hides what it lists, and an empty list from it proves nothing.
+   */
+  private namespaceRegistryReadable(): boolean {
+    try {
+      const parsed: unknown = JSON.parse(
+        this.dependencies.keyValues.read(NAMESPACES_KEY) ?? "[]"
+      );
+      return (
+        Array.isArray(parsed) &&
+        parsed.every(
+          (item) =>
+            typeof item?.organizationId === "string" &&
+            typeof item?.userId === "string"
+        )
+      );
+    } catch {
+      return false;
+    }
   }
 
   private namespaces(): { organizationId: string; userId: string }[] {

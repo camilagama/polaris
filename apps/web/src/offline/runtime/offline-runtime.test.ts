@@ -882,6 +882,18 @@ describe("starting", () => {
     });
   });
 
+  it.each(["{", '{"a":1}', '[{"userId":"u"}]', "[null]"])(
+    "inspecting a logout does not take an unreadable registry of namespaces (%s) for an empty browser",
+    async (registry) => {
+      const w = world();
+      w.keyValues.write("polaris.offline.namespaces", registry);
+      expect(await w.make().inspectLogout()).toEqual({
+        readable: false,
+        workspaces: [],
+      });
+    }
+  );
+
   it("logging out with no store open only reaches the namespaces of whoever is signed in, and names no one when the server answers nonsense", async () => {
     const w = world();
     const first = w.make();

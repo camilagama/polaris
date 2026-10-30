@@ -77,7 +77,12 @@ export function useLogout(destination: LeavePath) {
     ) => {
       // cleared first so that the same message again is a new one, and is brought to view again
       setMessage(null);
-      const deps = await dependencies();
+      let deps: LogoutFlowDependencies | null = null;
+      try {
+        deps = await dependencies();
+      } catch {
+        // a namespace that could not be opened to look at: same as one that could not be read
+      }
       if (!deps) {
         setMessage(
           "Não foi possível verificar o trabalho guardado neste aparelho agora. Tente de novo com conexão, depois que o app terminar de abrir."
@@ -158,11 +163,11 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
   // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
   useEffect(() => {
     const shown = blocked ? blockedRef.current : messageRef.current;
-    if (shown && needsAttention) {
+    if (shown) {
       shown.scrollIntoView({ block: "nearest" });
       shown.focus();
     }
-  }, [blocked, message, needsAttention]);
+  }, [blocked, message]);
   return (
     <>
       {/* the menu that held "Sair" is closed by now: the state is said here, not only by a disabled item */}
