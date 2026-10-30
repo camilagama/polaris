@@ -175,15 +175,47 @@ export function serverCutWriteMessage(error: unknown): string | undefined {
 }
 
 /**
+ * A direct write (no queue, no idempotency key) that met the Worker's own 503 `server_busy`. The fault may come at the
+ * COMMIT or after it, so the change may be saved: the text never says it was not and never invites a second try, which
+ * could double it.
+ */
+export const CHANGE_FAULT_UNKNOWN =
+  "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
+
+/** The text of a direct write the Worker answered with a 503 `server_busy` (or with no reason, as `isTransientReadFailure` also counts it: doubt is the safe side); undefined for any other error. */
+export function unconfirmedWriteFaultMessage(
+  error: unknown
+): string | undefined {
+  if (rpcErrorCode(error) !== "SERVICE_UNAVAILABLE") {
+    return undefined;
+  }
+  const reason = rpcErrorReason(error);
+  return reason === undefined || reason === TRANSIENT_REASON
+    ? CHANGE_FAULT_UNKNOWN
+    : undefined;
+}
+
+interface CommonFailureOptions {
+  /** The call is a direct write: its 503 `server_busy` says the change may have been saved (`CHANGE_FAULT_UNKNOWN`). */
+  directWrite?: boolean;
+}
+
+/**
  * What a screen says of a failed call before its own codes: the missing legal acceptance (`legalAcceptanceMessage`)
- * and, for a write (no `subject`), the server's cut (`serverCutWriteMessage`). Undefined for any other error.
+ * and, for a write (no `subject`), the server's cut (`serverCutWriteMessage`) and, when the screen says it is a direct
+ * write, the 503 `server_busy` (`unconfirmedWriteFaultMessage`). Undefined for any other error.
  */
 export function commonFailureMessage(
   error: unknown,
-  subject?: string
+  subject?: string,
+  options: CommonFailureOptions = {}
 ): string | undefined {
+  const legal = legalAcceptanceMessage(error, subject);
+  if (legal !== undefined || subject !== undefined) {
+    return legal;
+  }
   return (
-    legalAcceptanceMessage(error, subject) ??
-    (subject === undefined ? serverCutWriteMessage(error) : undefined)
+    serverCutWriteMessage(error) ??
+    (options.directWrite ? unconfirmedWriteFaultMessage(error) : undefined)
   );
 }

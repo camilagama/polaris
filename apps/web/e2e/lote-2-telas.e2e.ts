@@ -36,6 +36,16 @@ const rpc = (json: unknown, status = 200) => ({
 const refusal = (code: string, status: number) =>
   rpc({ code, data: undefined, defined: false, message: code, status }, status);
 const unavailable = refusal("SERVICE_UNAVAILABLE", 503);
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
 
 type Handler = (route: Route) => Promise<void>;
 const reply =
@@ -201,6 +211,30 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
   ]);
   await expect(field).toHaveValue("");
   await expect(field).toBeFocused();
+});
+
+test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não repete sozinho", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/categories", "Categorias", {
+    "category/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "category/list": reply({ categories: [] }),
+  });
+  await page.getByLabel("Nova categoria").fill("Acessórios");
+  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
 });
 
 test("Categorias: nome repetido é dito junto do campo de cima e o que foi digitado fica", async ({
