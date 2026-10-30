@@ -1,4 +1,5 @@
 import type { ProductReadModel } from "@polaris/contracts";
+import { firstProductRegistered } from "../app-shell/first-steps";
 import { orpcClient } from "../lib/orpc";
 import { uuidv7 } from "../lib/uuidv7";
 import { createOfflineProduct } from "../offline/product-create";
@@ -77,6 +78,7 @@ export async function createProduct(
       productId: names.ids.productId,
       variantId: names.ids.variantId,
     });
+    firstProductRegistered(organizationId, product.id);
     return `Produto “${product.name}” cadastrado${openingUnitsText(input)}.`;
   }
   const stores = workspace.runtime.context();
