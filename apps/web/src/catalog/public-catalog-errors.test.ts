@@ -99,3 +99,33 @@ describe("profileFieldError (U-48)", () => {
     expect(profileFieldError(new Error("offline"))).toBeNull();
   });
 });
+
+describe("publicCatalogErrorMessage com o 503 de uma escrita", () => {
+  const busy = rpcError("SERVICE_UNAVAILABLE", "server_busy");
+
+  it("salvar o perfil, o interruptor e os produtos dizem que pode ter sido salvo", () => {
+    for (const action of ["profile", "switch", "products"] as const) {
+      const message = publicCatalogErrorMessage(busy, action);
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(
+        publicCatalogErrorMessage(rpcError("SERVICE_UNAVAILABLE"), action)
+      ).toBe(message);
+    }
+  });
+
+  it("a leitura mantém o texto de antes, e outro motivo também", () => {
+    expect(publicCatalogErrorMessage(busy, "load")).toBe(
+      "O catálogo público está temporariamente indisponível. Tente novamente."
+    );
+    expect(
+      publicCatalogErrorMessage(
+        rpcError("SERVICE_UNAVAILABLE", "other"),
+        "profile"
+      )
+    ).toBe(
+      "O catálogo público está temporariamente indisponível. Tente novamente."
+    );
+  });
+});

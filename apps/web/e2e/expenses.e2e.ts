@@ -492,6 +492,54 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   );
 });
 
+test("registrar com o 503 server_busy diz que pode ter sido salva, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  let created = 0;
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/create", (route) => {
+      created += 1;
+      return route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "SERVICE_UNAVAILABLE",
+            data: { reason: "server_busy" },
+            defined: false,
+            message: "Unavailable",
+            status: 503,
+          },
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 503,
+      });
+    })
+  );
+
+  await fillExpense(page, {
+    amount: "80",
+    category: "Aluguel",
+    description: "Conta de luz",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await expect(page.getByText("salva neste aparelho")).toHaveCount(0);
+  // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  expect(server.expenses).toHaveLength(0);
+  await expect(page.getByLabel("Descrição")).toHaveValue("Conta de luz");
+});
+
 for (const viewport of FORM_VIEWPORTS) {
   test(`a data de competência, a ${viewport.name} px: abre em hoje, escolhe um dia e o servidor recebe esse dia`, async ({
     page,

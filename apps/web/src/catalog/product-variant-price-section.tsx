@@ -24,8 +24,8 @@ import {
 
 const INVALID_PRICE = "Informe um valor em reais, como 59,90.";
 
-function priceErrorMessage(error: unknown): string {
-  const common = commonFailureMessage(error);
+export function priceErrorMessage(error: unknown): string {
+  const common = commonFailureMessage(error, undefined, { directWrite: true });
   if (common !== undefined) {
     return common;
   }
