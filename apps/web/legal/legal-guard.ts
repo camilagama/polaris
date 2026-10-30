@@ -51,10 +51,23 @@ export interface LegalGuardResult {
 }
 
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
-const emailAddress =
-  /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+const emailLocalPart = /^[A-Za-z0-9._%+-]+$/;
+const domainLabel = /^[A-Za-z0-9-]+$/;
+const topLevelDomain = /^[A-Za-z]{2,}$/;
 const markdownOrInvisible = /[\p{C}\p{Z}*[\]<>|`]/u;
 const exampleValue = /exemplo|@example\.(?:com|org|net)$/iu;
+
+function isEmailAddress(value: string): boolean {
+  const parts = value.split("@");
+  const labels = (parts[1] ?? "").split(".");
+  return (
+    parts.length === 2 &&
+    emailLocalPart.test(parts[0] ?? "") &&
+    labels.length >= 2 &&
+    labels.every((label) => domainLabel.test(label)) &&
+    topLevelDomain.test(labels.at(-1) ?? "")
+  );
+}
 
 export type LegalCompanyEnv = Readonly<Record<string, string | undefined>>;
 
@@ -106,7 +119,7 @@ export function legalCompanyValues(
       problems.push(
         `variável ${name} com ficha, caractere invisível ou de Markdown`
       );
-    } else if (kind === "email" && !emailAddress.test(value)) {
+    } else if (kind === "email" && !isEmailAddress(value)) {
       problems.push(`variável ${name} não é um e-mail válido`);
     }
   }

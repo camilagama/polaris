@@ -49,7 +49,7 @@ export function fillLegalCompanyFields(
   return text;
 }
 
-const UNFILLED_FIELD = /\{\{[^\n]*?(?:\}\}|$)/gmu;
+const UNFILLED_FIELD = /\{\{[^\n}]*(?:\}\}?)?/gu;
 
 /** The `{{...}}` tokens still in a text, closed or not, in order. */
 export function findUnfilledFields(text: string): string[] {
