@@ -168,6 +168,7 @@ describe("tabs", () => {
         "Aparelhos",
         "Assinatura",
         "Senha",
+        "Seus dados",
       ],
     });
   });

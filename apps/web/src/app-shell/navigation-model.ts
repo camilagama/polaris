@@ -30,6 +30,7 @@ export type RouteId =
   | "categories"
   | "customers"
   | "dashboard"
+  | "data-export"
   | "devices"
   | "expenses"
   | "home"
@@ -191,6 +192,7 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
       { label: "Aparelhos", route: "devices", value: "aparelhos" },
       { label: "Assinatura", route: "subscription", value: "assinatura" },
       { label: "Senha", route: "account-security", value: "senha" },
+      { label: "Seus dados", route: "data-export", value: "seus-dados" },
     ],
   };
 
@@ -356,6 +358,7 @@ export function tabHref(screen: TabScreenId, value: string): string {
 const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "account-security",
   "categories",
+  "data-export",
   "expenses",
   "payment-profiles",
   "public-catalog",

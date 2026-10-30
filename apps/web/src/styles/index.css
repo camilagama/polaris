@@ -59,6 +59,8 @@
 @source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting,limit-help}.tsx";
+/* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */
+@source "../data-export/{data-export-page,data-export-list}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */
 @source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 @source "../sales/{sale-return-panel,sale-return-table,sale-cancel-panel,sale-operation-actions,sale-reason-fields,operation-failure-notice,sale-customer-panel,sale-id-missing}.tsx";
