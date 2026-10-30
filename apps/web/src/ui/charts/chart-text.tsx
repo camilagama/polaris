@@ -1,4 +1,5 @@
 /* Polaris adaptation of the Bklit UI area chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
+import { cn } from "@/lib/utils";
 import type { ChartColor, ChartPoint } from "./chart-data";
 
 /** A second series in the box of the chart: a dashed line with no fill, on the scale of the main one. */
@@ -42,18 +43,22 @@ export interface DayReading {
  * No aria-live: the keyboard control speaks the same day and value (`aria-valuetext`); a live line would say it twice.
  */
 export function Reading({
+  className,
   formatValue,
   name,
   note,
   point,
   secondary,
-}: DayReading) {
+}: DayReading & { className?: string }) {
   if (!point) {
     return null;
   }
   return (
     <p
-      className="flex min-h-[1.125rem] flex-wrap items-baseline gap-x-2 text-muted-foreground text-support"
+      className={cn(
+        "flex min-h-[1.125rem] flex-wrap items-baseline gap-x-2 text-muted-foreground text-support",
+        className
+      )}
       data-chart-reading=""
     >
       <span>{point.label}</span>{" "}
