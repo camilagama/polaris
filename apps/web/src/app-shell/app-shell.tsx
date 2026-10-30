@@ -388,10 +388,10 @@ function AppSidebar({
               onAttention={showLogoutAttention}
               organization={organization}
             />
-            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them;
+            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them, and the links that wrap onto a second row are far enough apart for theirs not to meet;
                 folded, the links go under the content (`AppFooter`) */}
             <LegalLinks
-              className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden"
+              className="touch:mt-3 gap-x-4 gap-y-1 touch:gap-y-7 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden"
               current={navId === "help"}
             />
             <div className="hidden group-data-[collapsible=icon]:block">
@@ -638,7 +638,7 @@ function AppFooter({ current }: { current: boolean }) {
     <footer
       className={`mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm ${state === "collapsed" ? "" : "md:hidden"}`}
     >
-      <LegalLinks className="gap-x-5 gap-y-2" current={current} />
+      <LegalLinks className="gap-x-5 gap-y-2 touch:gap-y-6" current={current} />
     </footer>
   );
 }
