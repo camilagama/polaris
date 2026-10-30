@@ -697,6 +697,23 @@ const GOAL_PROJECTION = "No ritmo atual, a meta deve ser batida até 31/10.";
 const GOAL_PROJECTION_SHORT =
   "No ritmo atual, deve chegar a R$ 5.254,03 em 31/10.";
 const GOAL_PROJECTION_NO_SALES = "Sem vendas nos últimos 7 dias para estimar.";
+/** The foot of the menu: in the sidebar from 760 px, in "Mais" below it. */
+async function openMenuFoot(page: Page) {
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  if (await more.isVisible()) {
+    await more.click();
+  }
+}
+
+/** "Mais" is a modal dialog: the page behind it waits for it to close. */
+async function closeMenuFoot(page: Page) {
+  const panel = page.getByRole("dialog", { name: "Mais" });
+  if (await panel.isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+  }
+}
+
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
 const newSale = (page: Page) =>
@@ -1306,6 +1323,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     // nothing to do: the block is not there, and says nothing about it
     await expect(region(page, "Precisa de ação")).toHaveCount(0);
     // the foot of the menu follows the same three steps, linked back to them
+    await openMenuFoot(page);
     await expect(
       page.getByRole("link", {
         exact: true,
@@ -1325,12 +1343,14 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto (feito)");
+    await openMenuFoot(page);
     await expect(
       page.getByRole("link", {
         exact: true,
         name: "Primeiros passos, 2 de 3 concluídos",
       })
     ).toBeVisible();
+    await closeMenuFoot(page);
     const step = checklist.getByRole("link", {
       name: "Dar entrada no estoque",
     });
