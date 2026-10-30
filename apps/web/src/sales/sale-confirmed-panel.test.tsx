@@ -54,7 +54,11 @@ describe("the panel of a confirmed sale", () => {
     const line = html.slice(
       html.indexOf(">", html.indexOf('id="sale-first-sale-line"')) + 1
     );
-    const text = line.slice(0, line.indexOf("</p>")).replace(/<[^>]*>/g, "");
+    const text = line
+      .slice(0, line.indexOf("</p>"))
+      .split("<")
+      .map((part) => part.slice(part.indexOf(">") + 1))
+      .join("");
     expect(text).toBe(
       "1ª venda registrada. Veja o Hoje no Início e o resultado estimado em Resultado."
     );
