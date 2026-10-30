@@ -86,8 +86,6 @@ export const PURGE_SURVIVING_TABLES: Readonly<Record<string, string>> =
       "Auditoria do Admin, imutável: sobrevive à organização (ADR 0070 e 0079). O detalhe é curto, um código ou um resultado; o reenvio de um evento morto (ADR 0085) deixou de gravar o motivo do operador (migration 0075), mas uma linha escrita antes dela pode trazê-lo, e o purge não reescreve a auditoria (limite no ADR 0081).",
     platform_internal_organizations:
       "Marcador da plataforma de que a loja é do próprio Polaris (QA, do dono, do time) e fica fora do funil de ativação (ADR 0071 emendado): só o ID da loja, o instante e o operador que marcou, sem dado pessoal nem texto livre. Vive com a linha da organização, que o purge mantém, e sai com ela (chave estrangeira em cascata); a loja purgada já fica fora do funil.",
-    rls_poc_operations:
-      "Tabela da prova de RLS da Fase 1, sem chave estrangeira para organizations e sem dado de tenant real.",
     support_cases:
       "Casos de suporte e de privacidade: o registro do caso (datas, tipo, decisão, IDs opacos) sobrevive como evidência do atendimento; o texto livre é apagado no purge (ADR 0077 e 0081, decisão de 18/10/2026).",
     tenant_access_grants:

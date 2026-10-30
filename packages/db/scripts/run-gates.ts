@@ -43,8 +43,6 @@ interface Gate {
   /** Proves nothing without the job's own Postgres: never selected against Neon. */
   localOnly?: boolean;
   name: string;
-  /** Reads the synthetic `rls_poc_operations` rows the Neon bootstrap seeds. */
-  needsPocFixture?: boolean;
   script: string;
 }
 
@@ -222,7 +220,6 @@ gates.push(
       POLARIS_TENANT_CONTEXT_TEST_EXPECTED_HOSTNAME: context.host,
     }),
     name: "tenant-context",
-    needsPocFixture: true,
     script: "verify-tenant-context-gate.ts",
   },
   // the environment marker as a database comment (ADR 0097): a throwaway database and a non-superuser owner, which the runner
@@ -260,7 +257,6 @@ gates.push(
     }),
     localOnly: true,
     name: "rls",
-    needsPocFixture: true,
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   },
   // every migration replayed by an owner who is not a superuser, as on Neon. It parks the polaris_* roles of the gate
@@ -605,15 +601,6 @@ async function main() {
       `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
     );
     await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
-    if (isLocalCi && selected.some((gate) => gate.needsPocFixture)) {
-      // what the Neon bootstrap seeds by hand; the migrations create only the table
-      await admin.query(
-        `INSERT INTO public.rls_poc_operations (organization_id, token, value)
-         VALUES ('org_a', 'seed-a', 'synthetic data for org_a'),
-                ('org_b', 'seed-b', 'synthetic data for org_b')
-         ON CONFLICT (organization_id, token) DO NOTHING`
-      );
-    }
     const runtime = new URL(url);
     runtime.username = login;
     runtime.password = password;

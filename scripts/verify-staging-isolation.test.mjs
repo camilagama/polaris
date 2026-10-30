@@ -459,6 +459,31 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([]);
   });
 
+  it("refuses the switches of the database proof routes in any block, even off", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: { ...entry.config.env.staging, targetEnvironment: "staging" },
+    }));
+    const web = entryOf(entries, "web").config;
+    web.vars = { ...web.vars, DB_POC_ENABLED: "false" };
+    web.env.staging.vars = {
+      ...web.env.staging.vars,
+      DB_RLS_POC_ENABLED: "false",
+    };
+    web.env.production.vars.DB_RLS_POC_ENABLED = "false";
+    const catalog = entryOf(entries, "catalog");
+    catalog.built = {
+      ...catalog.built,
+      vars: { ...catalog.built.vars, DB_POC_ENABLED: "true" },
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: top level: vars.DB_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "web: env.staging: vars.DB_RLS_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "web: env.production: vars.DB_RLS_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "catalog: built wrangler.json: vars.DB_POC_ENABLED is a switch of a proof route that left the app; remove it",
+    ]);
+  });
+
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
     const entries = repositoryEntries();
     const web = entryOf(entries, "web").config.env.staging;

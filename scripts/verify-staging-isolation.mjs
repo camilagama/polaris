@@ -14,7 +14,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
- * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
+ * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database);
+ * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
+ *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
  */
@@ -519,6 +521,26 @@ function checkCrossEnvironment(entries, problems) {
   }
 }
 
+const PROOF_SWITCHES = ["DB_POC_ENABLED", "DB_RLS_POC_ENABLED"];
+
+function checkNoProofSwitches(app, config, built, problems) {
+  const blocks = [
+    ["top level", config],
+    ["env.staging", config.env?.staging],
+    ["env.production", config.env?.production],
+    ["built wrangler.json", built ?? undefined],
+  ];
+  for (const [where, block] of blocks) {
+    for (const name of PROOF_SWITCHES) {
+      if (block?.vars && Object.hasOwn(block.vars, name)) {
+        problems.push(
+          `${app}: ${where}: vars.${name} is a switch of a proof route that left the app; remove it`
+        );
+      }
+    }
+  }
+}
+
 /**
  * `entries`: one `{ app, config, built }` per Worker, `config` the parsed wrangler.jsonc and `built`
  * the parsed wrangler.json of the staging build (or undefined when not checked). Returns the problems.
@@ -527,6 +549,7 @@ export function findIsolationProblems(entries) {
   const problems = [];
   for (const { app, config, built } of entries) {
     checkTopLevel(app, config, problems);
+    checkNoProofSwitches(app, config, built, problems);
     const staging = config.env?.staging;
     const production = config.env?.production;
     if (!(staging && production)) {

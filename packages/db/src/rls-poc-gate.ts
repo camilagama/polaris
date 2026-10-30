@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import type { createRlsPocDatabase } from "./rls-poc-client";
-import { rlsPocOperations } from "./schema/rls-poc";
+import { type createRlsPocDatabase, rlsPocOperations } from "./rls-poc-client";
 import {
   type TenantTransaction,
   withRlsPocTransaction,
