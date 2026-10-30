@@ -12,6 +12,7 @@ A tela Vender (`/sales`) é o formulário "Nova venda": itens buscados no catál
 - `venda-confirmar` "Confirmar venda" mostra a região "Venda confirmada"; o estoque baixa.
 - `venda-em-andamento` a venda montada e não confirmada fica na aba (`sessionStorage`, `polaris.sale.draft.v1:<loja>`): sair de Vender, recarregar ou trocar de build e voltar a devolve, com o `status` "Venda em andamento" e o botão "Limpar venda" sob o título.
 - `venda-sem-estoque` o item com saldo 0 diz "Sem estoque: saldo 0. Para vender, dê entrada no estoque." (sem a permissão de estoque, "Peça a quem cuida do estoque para dar entrada.") com o link "Dar entrada no estoque"; a recusa do servidor ao confirmar diz "A venda não foi registrada: falta estoque de <item> (pediu N, saldo S)." com o mesmo link; o link leva ao [Estoque](estoque.md).
+- `venda-primeira-linha` só na 1ª venda da loja que o servidor confirma, e só se esta aba soube pelo Início que a loja nunca vendeu (abra `/` antes de vender): o painel "Venda confirmada" termina com "1ª venda registrada. Veja o Hoje no Início e o resultado estimado em Resultado." e os links "Ver o Início" e "Ver o Resultado"; a 2ª venda não a mostra (e2e-real `primeira-venda.e2e.ts`).
 - `venda-sem-produto` loja sem produto: "Cadastre um produto para vender." e o botão "Cadastrar produto".
 
 ## How to get to it (user POV)

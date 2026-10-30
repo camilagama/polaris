@@ -120,14 +120,17 @@ export function rememberedFirstSteps(
 /**
  * The server confirmed a sale of this store: its steps are over at once, on every screen. A sale kept on the device is
  * not one yet (it is not an official sale until the server confirms it); the Início reads the steps again anyway.
+ * True only for the sale that ended them, the one this tab knew to be the first: the confirmation panel says so once.
  */
 export function firstSaleConfirmed(
   organizationId: string,
   store: SessionStore | null = sessionStore()
-): void {
-  if (rememberedFirstSteps(organizationId, store) !== null) {
-    rememberFirstSteps(organizationId, null, store);
+): boolean {
+  if (rememberedFirstSteps(organizationId, store) === null) {
+    return false;
   }
+  rememberFirstSteps(organizationId, null, store);
+  return true;
 }
 
 /**

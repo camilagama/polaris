@@ -5,6 +5,7 @@ Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e
 ## Sub-features
 
 - `resultado-periodo` aba Resultado: `group "Período"` (no celular, o combobox "Período") ("Este mês", "Mês passado", "Últimos 30 dias", "Período"), "Atualizar", "Esconder valores", "Qualidade dos dados" e as regiões "Resultado estimado", "Vendas em <mês>", "Ticket médio", "Margem".
+- `resultado-vazio` período sem venda nem despesa: "Sem vendas nem despesas em <período>" com os links "Nova venda" (leva a `/sales`) e, só com `expense:create`, "Nova despesa" (leva a `/dashboard?aba=despesas`); loja `vazia`.
 - `metas` aba Metas: `region "Metas"`, "Nova meta"; vazio: "Nenhuma meta ainda".
 - `despesas` aba Despesas: "Lançamentos", "Recorrentes" e "Categorias"; "Nova despesa"; vazio: "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
 

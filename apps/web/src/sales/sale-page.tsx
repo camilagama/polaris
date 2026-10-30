@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
+import { firstSaleConfirmed } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
@@ -38,7 +39,6 @@ import type {
 } from "../offline/runtime/offline-runtime";
 import { isSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { firstSaleConfirmed } from "../app-shell/first-steps";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import {
@@ -174,6 +174,20 @@ function draftReadMessage(read: SaleDraftRead): string | null {
   return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
 }
 
+/**
+ * The sale the server just confirmed, when it is the first of the store as this tab knew it: a sale it already had
+ * (replayed) is not new, even when the steps were still open here.
+ */
+function firstSaleIdOf(
+  organizationId: string,
+  submission: SubmissionState
+): string | null {
+  const first = firstSaleConfirmed(organizationId);
+  return first && submission.phase === "confirmed" && !submission.sale.replayed
+    ? submission.sale.saleId
+    : null;
+}
+
 export function SalePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
@@ -198,6 +212,7 @@ export function SalePage() {
     restoredDraft?.startedAt ?? null
   );
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [firstSaleId, setFirstSaleId] = useState<string | null>(null);
   const [form, setForm] = useState<SaleFormState>(
     () => restoredDraft?.form ?? createBlankSaleForm(newId)
   );
@@ -588,7 +603,7 @@ export function SalePage() {
           announceSaleSettled(organizationId, sentCommandId);
         }
         if (device === null) {
-          firstSaleConfirmed(organizationId);
+          setFirstSaleId(firstSaleIdOf(organizationId, outcome.submission));
         }
       }
       setSubmission(outcome.submission);
@@ -853,6 +868,7 @@ export function SalePage() {
       />
       {submission.phase === "confirmed" ? (
         <ConfirmedSalePanel
+          firstSale={firstSaleId === submission.sale.saleId}
           key={submission.sale.saleId}
           organizationId={organizationId}
           panelRef={confirmedRef}

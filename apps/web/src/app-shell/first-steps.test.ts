@@ -82,6 +82,21 @@ describe("the first steps of the menu", () => {
     expect(rememberedFirstSteps("loja-a", store)).toBeNull();
   });
 
+  it("tell that a confirmed sale was the first only once, and only for the store whose steps were still open", () => {
+    const store = fakeStore();
+    rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
+    expect(firstSaleConfirmed("loja-b", store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(true);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
+  });
+
+  it("do not call a sale the first when the Início never read the steps, or read a store that sold", () => {
+    const store = fakeStore();
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
+    rememberFirstSteps("loja-a", null, store);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
+  });
+
   it("move to two of three when the first product is registered, for that store only", () => {
     const store = fakeStore();
     rememberFirstSteps("loja-a", { firstProductId: null }, store);
