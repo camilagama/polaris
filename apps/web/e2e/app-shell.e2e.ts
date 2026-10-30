@@ -1099,6 +1099,7 @@ test.describe("barra do celular a 360 e 320 px", () => {
         "Clientes",
         "Resultado",
         "Configurações",
+        "Ajuda e contato",
       ]);
       await expect(
         panel.getByRole("button", { exact: true, name: "Sair" })
