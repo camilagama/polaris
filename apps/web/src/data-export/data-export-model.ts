@@ -1,7 +1,8 @@
 import {
   isConnectionFailure,
   isPlatformCut,
-  legalAcceptanceWriteMessage,
+  isLegalAcceptanceRefusal,
+  legalAcceptanceMessage,
   readErrorMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -221,8 +222,9 @@ export function requestRefusal(error: unknown): RequestRefusal {
   if (reason === "export_already_running") {
     return { repeatsNow: true, text: ALREADY_RUNNING_TEXT };
   }
-  if (reason === "legal_acceptance_required") {
-    return { repeatsNow: false, text: legalAcceptanceWriteMessage };
+  const unaccepted = legalAcceptanceMessage(error);
+  if (unaccepted !== undefined) {
+    return { repeatsNow: false, text: unaccepted };
   }
   if (rpcErrorCode(error) === "FORBIDDEN") {
     return { repeatsNow: false, text: NO_EXPORT_PERMISSION_TEXT };
@@ -232,10 +234,7 @@ export function requestRefusal(error: unknown): RequestRefusal {
 
 /** What a failed read of the list says. */
 export function listRefusal(error: unknown): string {
-  if (
-    rpcErrorCode(error) === "FORBIDDEN" &&
-    rpcErrorReason(error) !== "legal_acceptance_required"
-  ) {
+  if (rpcErrorCode(error) === "FORBIDDEN" && !isLegalAcceptanceRefusal(error)) {
     return NO_EXPORT_PERMISSION_TEXT;
   }
   return readErrorMessage(error, "suas cópias");
