@@ -354,6 +354,36 @@ test("Voltar fecha sem pedir nada, e a recusa do servidor tem texto próprio sem
   expect(calls.closures).toHaveLength(1);
 });
 
+test("entrada de mais de 15 minutos: o texto próprio, sem dizer que só o dono encerra, e nenhuma segunda chamada", async ({
+  page,
+}) => {
+  const calls = await openScreen(page, {
+    closure: (route) =>
+      route.fulfill(
+        rpc(
+          {
+            code: "FORBIDDEN",
+            data: { reason: "fresh_session_required" },
+            defined: false,
+            message: "FORBIDDEN",
+            status: 403,
+          },
+          403
+        )
+      ),
+  });
+  await openButton(page).click();
+  await nameField(page).fill("Loja do teste");
+  await confirmButton(page).click();
+  await expect(dialog(page).getByRole("alert")).toHaveText(
+    "Por segurança, para encerrar a loja é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e encerre a loja. Nada foi encerrado."
+  );
+  await expect(dialog(page)).not.toContainText("dono");
+  await expect(dialog(page)).not.toContainText("fresh_session_required");
+  await page.waitForTimeout(1500);
+  expect(calls.closures).toHaveLength(1);
+});
+
 test("com a cobrança pelo app ligada, o aviso diz que a renovação é cancelada e que o painel mostra quando (AC-2)", async ({
   page,
 }) => {

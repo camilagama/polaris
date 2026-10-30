@@ -10,10 +10,12 @@ import type {
   recoverOrganizationClosure,
   requestOrganizationClosure,
 } from "@polaris/db/organization-closure-repository";
+import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import type { listUserOrganizations } from "@polaris/db/organization-membership-query";
 import type { RenewalCancellationStatus } from "@polaris/domain/billing/renewal-cancellation";
 import type { RenewalStatusReader } from "../billing/renewal-status";
 import { billingSelfServiceEnabled } from "../billing/self-service";
+import { isSessionFresh } from "../auth/session-policy";
 import type { WorkerBindings } from "../environment";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
 import type { withTenantRequestContext } from "../tenant-request-context";
@@ -194,6 +196,9 @@ export function createOrganizationRpcHandlers(
         .withAuthenticatedRequestContext({
           bindings: context.bindings,
           operation: async (database, session) => {
+            if (!isSessionFresh(session.session.createdAt)) {
+              throw new FreshSessionRequiredError();
+            }
             await closure.recoverOrganizationClosure(
               database,
               session.user.id,
@@ -225,6 +230,7 @@ export function createOrganizationRpcHandlers(
           },
           request: context.request,
           requestedOrganizationId: input.organizationId,
+          requireFreshSession: true,
         })
         .catch(dependencies.toRpcError)
   );
