@@ -1483,6 +1483,21 @@ export function stockQueueFailed(
 }
 
 /**
+ * Where a confirmation goes. Without a connection a movement is kept on the device, but a cost is refused: it names the
+ * balance as read, which could change before it is sent. An attempt locked on the server (outcome unknown) is retried
+ * there, as it was sent: sending it to the device with another payload could record the movement twice.
+ */
+export function stockConfirmRoute(
+  state: StockCommandState,
+  offline: boolean
+): "device" | "refuse" | "server" {
+  if (!offline || state.submission.phase === "locked") {
+    return "server";
+  }
+  return state.action === "cost" ? "refuse" : "device";
+}
+
+/**
  * The connection dropped while the cost panel was open: a cost is never kept on the device to be sent later (the
  * balance it names could change meanwhile), so nothing was sent and the panel says so.
  */

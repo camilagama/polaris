@@ -23,6 +23,7 @@ import {
   startStockCommand,
   stepStockQuantity,
   stockActionBlock,
+  stockConfirmRoute,
   stockConsequence,
   stockFailed,
   stockFieldRefusal,
@@ -1130,6 +1131,20 @@ describe("informing the cost of units on hand (the cost panel)", () => {
       phase: "failed",
     });
     expect(refused.step).toBe("confirming");
+  });
+
+  it("goes to the server online, is refused offline, and a locked attempt is retried on the server", () => {
+    const state = confirming(filled("cost", costFields, unknownCostTarget));
+    expect(stockConfirmRoute(state, false)).toBe("server");
+    expect(stockConfirmRoute(state, true)).toBe("refuse");
+    const count = confirming(filled("count", countFields));
+    expect(stockConfirmRoute(count, true)).toBe("device");
+    const locked = stockFailed(
+      prepareStockSubmission({ createId: ids(), organizationId, state }).state,
+      new TypeError("network")
+    );
+    expect(locked.submission.phase).toBe("locked");
+    expect(stockConfirmRoute(locked, true)).toBe("server");
   });
 
   it("answers a version conflict with its own words, a fresh attempt and a new read", () => {

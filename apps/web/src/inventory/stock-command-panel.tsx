@@ -40,6 +40,7 @@ import {
   type StockResult,
   startStockCommand,
   stockActionBlock,
+  stockConfirmRoute,
   stockFailed,
   stockFieldRefusal,
   stockQueueFailed,
@@ -306,11 +307,8 @@ export function StockCommandPanel({
     if (inFlight.current) {
       return;
     }
-    if (
-      local &&
-      state.action === "cost" &&
-      state.submission.phase !== "locked"
-    ) {
+    const route = stockConfirmRoute(state, local !== undefined);
+    if (route === "refuse") {
       setState(costRefusedOffline(state));
       return;
     }
@@ -326,10 +324,7 @@ export function StockCommandPanel({
     inFlight.current = true;
     try {
       const { call } = prepared;
-      // An attempt locked on the server (outcome unknown) is retried there, as it
-      // was sent: sending it to the device with another payload could record the
-      // movement twice.
-      if (local && state.submission.phase !== "locked") {
+      if (route === "device") {
         await confirmOnDevice(call);
         return;
       }
