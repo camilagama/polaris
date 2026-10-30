@@ -15,7 +15,7 @@ import {
   confirmedSaleView,
   loadErrorMessage,
   localDay,
-  SALE_METHODS,
+  SALE_METHOD_CARDS,
 } from "./sale-form-model";
 import {
   type ReturnTableRow,
@@ -27,7 +27,7 @@ import {
 
 export const SALES_PAGE_SIZE = 50;
 
-const methodLabels = new Map<string, string>(SALE_METHODS);
+const methodLabels = new Map<string, string>(SALE_METHOD_CARDS);
 
 /** Shown beside Confirmada/Cancelada when the sale has at least one return. */
 const RETURNS_BADGE = "Com devoluções";

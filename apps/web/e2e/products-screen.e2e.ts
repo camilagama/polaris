@@ -165,6 +165,9 @@ async function useEveryControl(page: Page) {
   const name = page.getByLabel("Nome do produto");
   await expect(name).toHaveValue("Camiseta do teste");
   await expect(name).toBeFocused();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Produto · atualizado em 14 de out. de 2026"
+  );
   const category = page.getByRole("combobox", {
     exact: true,
     name: "Categoria",
@@ -665,9 +668,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
-  await expect(
-    page.getByText("Cadastre o primeiro para vender.")
-  ).toBeVisible();
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });

@@ -17,12 +17,6 @@ import { productInitials } from "./product-search-model";
 
 export type ProductListStatus = "active" | "archived";
 
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
-
-function formatDate(value: string): string {
-  return dateFormatter.format(new Date(value));
-}
-
 /** Everything but creating needs the server to know the product and to be reachable. */
 export function lockedReasonFor(
   syncState: PendingProduct | undefined,
@@ -148,6 +142,14 @@ function pendingLabelFor(
   return pendingAction === `restore:${productId}` ? "Restaurando…" : null;
 }
 
+function supportLine(
+  categoryName: string | null,
+  description: string | null
+): string {
+  const text = description?.replace(/\s+/g, " ").trim();
+  return [categoryName ?? "Sem categoria", text].filter(Boolean).join(" · ");
+}
+
 function ProductRow({
   categoryName,
   lockedReason,
@@ -171,14 +173,9 @@ function ProductRow({
       </span>
       <div className="grid min-w-0 flex-1 gap-0.5">
         <p className="font-medium [overflow-wrap:anywhere]">{product.name}</p>
-        <p className="text-muted-foreground text-support">
-          {categoryName ?? "Sem categoria"}
+        <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
+          {supportLine(categoryName, product.description)}
         </p>
-        {product.description ? (
-          <p className="line-clamp-2 whitespace-pre-line text-muted-foreground text-support [overflow-wrap:anywhere]">
-            {product.description}
-          </p>
-        ) : null}
         {syncState ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
             <Badge
@@ -209,9 +206,6 @@ function ProductRow({
           </p>
         ) : null}
       </div>
-      <span className="hidden shrink-0 text-muted-foreground text-support md:block">
-        Atualizado em {formatDate(product.updatedAt)}
-      </span>
       <ProductMenu
         {...actions}
         locked={lockedReason !== null}
@@ -282,12 +276,7 @@ export function ProductList({
               aria-hidden="true"
               className="size-6 text-muted-foreground"
             />
-            <div className="grid gap-0.5">
-              <p className="font-medium">Nenhum produto ainda</p>
-              <p className="text-muted-foreground text-support">
-                Cadastre o primeiro para vender.
-              </p>
-            </div>
+            <p className="font-medium">Nenhum produto ainda</p>
             <Button onClick={onNew} type="button">
               Novo produto
             </Button>

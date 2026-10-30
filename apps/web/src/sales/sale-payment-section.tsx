@@ -37,8 +37,8 @@ import {
   MAX_SALE_ADJUSTMENTS,
   NO_PROFILE_CHOICE,
   SALE_DATE_HINT,
+  SALE_METHOD_CARDS,
   type SaleFormState,
-  type SaleMethod,
 } from "./sale-form-model";
 
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
@@ -52,16 +52,6 @@ const noProfileOption: ChoiceOption = {
   id: NO_PROFILE_CHOICE,
   label: "Sem perfil de pagamento",
 };
-
-/** The short names of the choice cards (the summary and the receipt keep the full ones of SALE_METHODS). */
-const METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
-  ["pix", "Pix"],
-  ["cash", "Dinheiro"],
-  ["credit_card", "Crédito"],
-  ["debit_card", "Débito"],
-  ["bank_transfer", "Transferência"],
-  ["other", "Outro"],
-];
 
 /* -------------------------------------------------------------------------- */
 /* Adjustments                                                                */
@@ -355,7 +345,7 @@ export function PaymentSection({
               onValueChange={handleMethod}
               value={form.payment.method === "" ? null : form.payment.method}
             >
-              {METHOD_CARDS.map(([method, label]) => (
+              {SALE_METHOD_CARDS.map(([method, label]) => (
                 <FieldLabel
                   className="has-data-disabled:opacity-50"
                   htmlFor={`sale-method-${method}`}

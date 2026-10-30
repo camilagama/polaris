@@ -569,6 +569,32 @@ test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formul�
   ).toBeVisible();
 });
 
+test("Clientes: a linha não traz observações nem a data, e o editor traz a data e as observações", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({
+      customers: [
+        customer(1, "Ana Lima", {
+          email: "ana@exemplo.com",
+          notes: "Prefere o WhatsApp.",
+        }),
+      ],
+    }),
+  });
+  const row = page.locator("[data-customer-id]");
+  await expect(row).toContainText("11 91234-5678 · ana@exemplo.com");
+  await expect(row).not.toContainText("Prefere o WhatsApp.");
+  await expect(row).not.toContainText("Atualizado em");
+  await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
+  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await expect(dialog).toContainText("Atualizado em 14 de out. de 2026");
+  await expect(dialog.getByLabel("Observações")).toHaveValue(
+    "Prefere o WhatsApp."
+  );
+});
+
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
   page,
 }) => {
