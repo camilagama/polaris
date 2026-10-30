@@ -1,3 +1,4 @@
+import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
@@ -49,6 +50,8 @@ import {
 } from "@/ui/sidebar";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { canManageBilling } from "../lib/billing-access";
+import { useConnectionOnline } from "../lib/browser-connection";
 import {
   type CurrentOrganization,
   useOrganizationLoad,
@@ -58,6 +61,7 @@ import {
   useLegalAcceptanceRequired,
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
+import { useNow } from "../lib/use-now";
 import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
@@ -71,8 +75,10 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
 import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
-import { GraceNoticeSlot } from "./grace-notice";
+import { trialChargeDay } from "../subscription/plan-notice";
+import { GraceNoticeSlot, usePlanNoticeFacts } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
+import { MenuProgress, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
@@ -192,6 +198,10 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
 }
 
 interface AppSidebarProps {
+  /** "dd/mm" of the first charge of the trial, for the foot of the menu. */
+  chargeDay: string | null;
+  /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
+  firstSteps: number | null;
   navId: NavId | null;
   /** The screen works only with a connection: the state says so while offline (U-54). */
   onlineOnly: boolean;
@@ -203,7 +213,13 @@ interface AppSidebarProps {
  * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot. Pendências
  * is there only while this device has a refused record, with the count (map of navigation, § 1).
  */
-function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
+function AppSidebar({
+  chargeDay,
+  firstSteps,
+  navId,
+  onlineOnly,
+  organization,
+}: AppSidebarProps) {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
   // the answer of "Sair" may come after "Mais" was closed, or with the column folded: open it to show the warning
   const showLogoutAttention = useCallback(() => {
@@ -243,7 +259,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
       <SidebarContent>
         <nav aria-label="Principal">
           {navGroups(items).map((group) => (
-            <SidebarGroup key={group.label ?? "inicio"}>
+            <SidebarGroup key={group.label ?? group.items[0]?.id}>
               {group.label ? (
                 <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               ) : null}
@@ -302,6 +318,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
         {isMobile ? (
           // the phone keeps "Sair" straight in "Mais", with the theme
           <div className="grid gap-3 p-1">
+            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
             <ThemeSegmented />
             {organization || email ? (
               <div className="grid min-w-0 gap-0.5">
@@ -320,6 +337,7 @@ function AppSidebar({ navId, onlineOnly, organization }: AppSidebarProps) {
         ) : (
           // the desktop: the card of the store, with the theme, the other stores and "Sair" in its menu (v7 § 3 item 12)
           <div className="grid gap-3 p-1">
+            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
             <StoreCard
               email={email}
               logout={logout}
@@ -619,6 +637,38 @@ function ShellNotices({
   );
 }
 
+/**
+ * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace and the trial
+ * at the foot of the menu, only for whom manages the billing; nothing of either once the session is over.
+ */
+function useShellProgress(
+  current: CurrentOrganization | null,
+  sessionOver: boolean,
+  routeId: RouteId | undefined
+) {
+  const organization = sessionOver ? null : current;
+  const online = useConnectionOnline();
+  const now = useNow(60_000);
+  const planFacts = usePlanNoticeFacts(
+    organization?.organizationId ?? "",
+    organization !== null &&
+      canManageBilling(
+        organization.billingSelfService,
+        organization.organization.role
+      ),
+    routeId !== "subscription"
+  );
+  return {
+    // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
+    chargeDay:
+      planFacts === null || (routeId === "subscription" && !online)
+        ? null
+        : trialChargeDay(planFacts, saoPauloDateOf(now)),
+    firstSteps: useFirstSteps(organization?.organizationId ?? null),
+    planFacts,
+  };
+}
+
 interface AppShellProps {
   children: ReactNode;
   /** An online-only screen with a form: offline, the notice says the typed text stays. */
@@ -670,6 +720,11 @@ export function AppShell({
           select,
         }
       : null;
+  const { chargeDay, firstSteps, planFacts } = useShellProgress(
+    organization,
+    sessionOver,
+    routeId
+  );
   // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
   if (requiresOrganization && load.status === "empty" && !accessExpired) {
     return (
@@ -698,6 +753,8 @@ export function AppShell({
         Ir para o conteúdo
       </a>
       <AppSidebar
+        chargeDay={chargeDay}
+        firstSteps={firstSteps}
         navId={navId}
         onlineOnly={onlineOnly}
         organization={organization}
@@ -718,9 +775,8 @@ export function AppShell({
             session={showNotice}
           />
           <GraceNoticeSlot
-            hidden={sessionOver}
+            facts={planFacts}
             onSubscription={routeId === "subscription"}
-            organization={organization}
           />
           <OfflineAccessGate>
             {requiresOrganization ? (

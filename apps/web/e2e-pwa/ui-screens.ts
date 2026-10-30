@@ -711,10 +711,11 @@ const ACCOUNT_SOURCES = [
   "src/sign-in/entry-ui.tsx",
 ];
 
-/** The files of the Assinatura, with the notice of grace of the shell. */
+/** The files of the Assinatura, with the notice of grace and the foot of the menu of the shell. */
 const SUBSCRIPTION_SOURCES = [
   "src/subscription",
   "src/app-shell/grace-notice.tsx",
+  "src/app-shell/menu-progress.tsx",
 ];
 
 const subscriptionScreen = (
@@ -906,6 +907,7 @@ export const SCREENS: UiScreen[] = [
   subscriptionScreen("oferta com Pix", subscriptionStates.offer),
   subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
   subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("em teste, com o pé do menu", subscriptionStates.trial),
   subscriptionScreen("cancelar a renovação", subscriptionStates.cancelDialog),
   subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
