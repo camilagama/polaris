@@ -36,7 +36,7 @@ O dono de uma organização precisa poder levar embora o que cadastrou (portabil
 
 ## Limites aceitos
 
-- **A exportação não é imediata**: o job é horário (até uma hora de espera, mais o tempo de montar). Não há aviso por e-mail nem tela ainda: só `dataExport.request` e `dataExport.list` e a rota de download.
+- **A exportação não é imediata**: o job é horário (até uma hora de espera, mais o tempo de montar). Não há aviso por e-mail: a pessoa acompanha na aba "Seus dados" de Configurações (lida ao abrir e em "Atualizar"), que usa `dataExport.request`, `dataExport.list` e a rota de download.
 - **Uma exportação só é tão boa quanto o que o papel do tenant lê.** A trilha de auditoria do tenant não entra (o papel só grava), nem cobrança, sincronização, autorização offline ou membros: o pedido sobre dados da conta é outro fluxo (caso de privacidade, ADR 0077).
 - **Organizações muito grandes falham** (`export_too_large`): a memória do Worker não permite mais. O caminho para elas é um trabalho em lote fora do Worker, que o plano ainda não pede.
 - **O número de chamadas externas por execução do Worker (o plano pago permite 1000, a confirmar na conta) é a razão do teto de 400 imagens.** O teto vem de contagem, não de medição: medir na conta antes do go-live.

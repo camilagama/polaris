@@ -9,12 +9,7 @@ import {
 } from "../lib/rpc-error";
 
 export type ExportFormat = "json" | "csv" | "images";
-export type ExportStatus =
-  | "requested"
-  | "running"
-  | "ready"
-  | "failed"
-  | "expired";
+type ExportStatus = "requested" | "running" | "ready" | "failed" | "expired";
 
 /**
  * One copy as `dataExport.list` gives it. The closed store's list (`dataExport.listClosed`) has the same fields and one
@@ -111,14 +106,14 @@ function instantIn(value: string, timeZone: string): string {
   return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}`;
 }
 
-export type ExportViewKind =
+type ExportViewKind =
   | "preparing"
   | "ready"
   | "expired"
   | "failed"
   | "too_large";
 
-export interface ExportFileView {
+interface ExportFileView {
   label: string;
   ordinal: number;
 }
@@ -201,9 +196,9 @@ function serverFault(error: unknown): boolean {
 }
 
 export interface RequestRefusal {
+  /** Asking again now would only be refused the same way: the button stays off until the list is read again. */
+  repeatsNow: boolean;
   text: string;
-  /** The request may have been made: the screen never sends it again by itself, and the person reads the list first. */
-  unknownOutcome: boolean;
 }
 
 /**
@@ -217,22 +212,22 @@ export function requestRefusal(error: unknown): RequestRefusal {
     unconfirmedWriteFaultMessage(error) !== undefined ||
     serverFault(error)
   ) {
-    return { text: REQUEST_UNCONFIRMED_TEXT, unknownOutcome: true };
+    return { repeatsNow: false, text: REQUEST_UNCONFIRMED_TEXT };
   }
   const reason = rpcErrorReason(error);
   if (reason === "export_limit_reached") {
-    return { text: LIMIT_REACHED_TEXT, unknownOutcome: false };
+    return { repeatsNow: true, text: LIMIT_REACHED_TEXT };
   }
   if (reason === "export_already_running") {
-    return { text: ALREADY_RUNNING_TEXT, unknownOutcome: false };
+    return { repeatsNow: true, text: ALREADY_RUNNING_TEXT };
   }
   if (reason === "legal_acceptance_required") {
-    return { text: legalAcceptanceWriteMessage, unknownOutcome: false };
+    return { repeatsNow: false, text: legalAcceptanceWriteMessage };
   }
   if (rpcErrorCode(error) === "FORBIDDEN") {
-    return { text: NO_EXPORT_PERMISSION_TEXT, unknownOutcome: false };
+    return { repeatsNow: false, text: NO_EXPORT_PERMISSION_TEXT };
   }
-  return { text: REQUEST_FAILED_TEXT, unknownOutcome: false };
+  return { repeatsNow: false, text: REQUEST_FAILED_TEXT };
 }
 
 /** What a failed read of the list says. */

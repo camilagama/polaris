@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * Seus dados in Configurações (corte exportar-meus-dados-na-configuracao) in the real route, with the API answered by
+ * Seus dados in Configurações in the real route, with the API answered by
  * the test: the owner asks for a copy (one call for a double click), reads the list again with Atualizar and downloads
  * the file from the route; each state of a copy and each refusal with its own text; the 503 not sent again; one read in
  * five minutes with the tab open; nothing leaves offline; and whoever is not the owner sees the text without the tab.
@@ -355,6 +355,12 @@ test("as recusas do pedido: limite de 3, já em preparo e o 503 que não se repe
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.clock.install({ time: NOW });
   const busy = await openScreen(page, {
+    lists: [
+      [],
+      (route) =>
+        route.fulfill(refusal("SERVICE_UNAVAILABLE", 503, "server_busy")),
+      [copy()],
+    ],
     requests: [
       (route) =>
         route.fulfill(refusal("SERVICE_UNAVAILABLE", 503, "server_busy")),
@@ -367,10 +373,48 @@ test("as recusas do pedido: limite de 3, já em preparo e o 503 que não se repe
   await page.clock.runFor(10 * 60_000);
   expect(busy.requests).toHaveLength(1);
   expect(busy.reads).toBe(1);
+  // a read that fails keeps the doubt on screen: the person has not seen the list yet
   await list(page).getByRole("button", { name: "Atualizar" }).click();
   await expect.poll(() => busy.reads).toBe(2);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByText("O pedido não foi confirmado.", { exact: false })
+  ).toBeVisible();
+  await list(page).getByRole("button", { name: "Atualizar" }).click();
+  await expect.poll(() => busy.reads).toBe(3);
+  await expect(list(page)).toContainText("Preparando sua cópia.");
+  await expect(
+    page.getByText("O pedido não foi confirmado.", { exact: false })
+  ).toHaveCount(0);
   expect(busy.requests).toHaveLength(1);
+});
+
+test("a lista que responde depois do pedido não tira da tela a cópia recém-pedida", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openScreen(page, {
+    lists: [
+      async (route) => {
+        await held;
+        await route.fulfill(rpc({ exports: [] }));
+      },
+    ],
+  });
+  await askButton(page).click();
+  await expect(list(page)).toContainText("Preparando sua cópia.");
+  await expect(page.getByText("Pedido feito.")).toBeVisible();
+  const lateList = page.waitForResponse("**/rpc/dataExport/list");
+  release();
+  await lateList;
+  // the late answer of the read sent before the request is dropped
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve))
+  );
+  await expect(list(page)).toContainText("Preparando sua cópia.");
+  await expect(list(page)).not.toContainText("Nenhuma cópia pedida ainda.");
 });
 
 test("com a aba aberta 5 minutos, a lista é lida uma vez: sem temporizador e sem leitura ao voltar o foco (AC-6)", async ({

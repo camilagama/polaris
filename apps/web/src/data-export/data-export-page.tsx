@@ -24,7 +24,6 @@ import {
   exportFileHref,
   exportView,
   formatsProblem,
-  LIMIT_REACHED_TEXT,
   listRefusal,
   NO_EXPORT_PERMISSION_TEXT,
   orderedFormats,
@@ -42,7 +41,7 @@ const FORMATS_ERROR_ID = "data-export-formats-error";
 const BLOCKED_REASON_ID = "data-export-blocked-reason";
 
 /**
- * Seus dados (corte exportar-meus-dados-na-configuracao): the owner asks for a copy of the store's data and downloads it
+ * Seus dados: the owner asks for a copy of the store's data and downloads it
  * (ADR 0078). Only with `organization:export`; the server refuses the others anyway.
  */
 export function DataExportPage() {
@@ -76,20 +75,24 @@ function useExportList(organizationId: string) {
   const [refreshing, setRefreshing] = useState(true);
   const latestRead = useRef(0);
 
-  const load = useCallback(async () => {
+  /** Whether this read answered and is the one on screen. */
+  const load = useCallback(async (): Promise<boolean> => {
     latestRead.current += 1;
     const read = latestRead.current;
     setRefreshing(true);
     try {
       const answer = await orpcClient.dataExport.list({ organizationId });
-      if (read === latestRead.current) {
-        setExports(answer.exports);
-        setLoadError(null);
+      if (read !== latestRead.current) {
+        return false;
       }
+      setExports(answer.exports);
+      setLoadError(null);
+      return true;
     } catch (error) {
       if (read === latestRead.current) {
         setLoadError(listRefusal(error));
       }
+      return false;
     } finally {
       if (read === latestRead.current) {
         setRefreshing(false);
@@ -105,6 +108,9 @@ function useExportList(organizationId: string) {
   }, [load]);
 
   const add = useCallback((item: DataExportItem) => {
+    // a read sent before the request would answer without it and take it off the screen
+    latestRead.current += 1;
+    setRefreshing(false);
     setExports((current) => [
       item,
       ...(current ?? []).filter((other) => other.id !== item.id),
@@ -162,11 +168,7 @@ function requestControlProps(online: boolean, blocked: boolean) {
 
 /** Whether the refusal is one that asking again now would only repeat (the button stays off until Atualizar). */
 function refusedForNow(outcome: RequestOutcome): boolean {
-  return (
-    outcome?.kind === "refused" &&
-    (outcome.text === LIMIT_REACHED_TEXT ||
-      outcome.text === ALREADY_RUNNING_TEXT)
-  );
+  return outcome?.kind === "refused" && outcome.repeatsNow;
 }
 
 function RequestFeedback({
@@ -348,9 +350,15 @@ function DataExportScreen({
   );
 
   const { load } = list;
+  // the refusal and the doubt of a request stay until the person sees the list as the server has it now
   const refresh = useCallback(() => {
-    setOutcome(null);
-    load().catch(() => undefined);
+    load()
+      .then((read) => {
+        if (read) {
+          setOutcome(null);
+        }
+      })
+      .catch(() => undefined);
   }, [load]);
 
   const fileHref = useCallback(

@@ -235,28 +235,28 @@ describe("a refused or unanswered request", () => {
     );
     expect(refusal).toEqual({
       text: REQUEST_UNCONFIRMED_TEXT,
-      unknownOutcome: true,
+      repeatsNow: false,
     });
     expect(REQUEST_UNCONFIRMED_TEXT).toBe(
       "O pedido não foi confirmado. Pode ter sido feito: toque em Atualizar antes de repetir."
     );
-    expect(
-      requestRefusal(rpcError("SERVICE_UNAVAILABLE", 503)).unknownOutcome
-    ).toBe(true);
+    expect(requestRefusal(rpcError("SERVICE_UNAVAILABLE", 503)).text).toBe(
+      REQUEST_UNCONFIRMED_TEXT
+    );
   });
 
   it("no answer and the cut of the platform are the same doubt", () => {
-    expect(
-      requestRefusal(new TypeError("Failed to fetch")).unknownOutcome
-    ).toBe(true);
+    expect(requestRefusal(new TypeError("Failed to fetch")).text).toBe(
+      REQUEST_UNCONFIRMED_TEXT
+    );
     expect(
       requestRefusal(rpcError("INTERNAL_SERVER_ERROR", 503, "platform_cut"))
-        .unknownOutcome
-    ).toBe(true);
+        .text
+    ).toBe(REQUEST_UNCONFIRMED_TEXT);
     expect(
       requestRefusal(rpcError("INTERNAL_SERVER_ERROR", 500, "internal_error"))
-        .unknownOutcome
-    ).toBe(true);
+        .text
+    ).toBe(REQUEST_UNCONFIRMED_TEXT);
   });
 
   it("the limit of 3 a day and the copy already in preparation have their own text", () => {
@@ -264,12 +264,12 @@ describe("a refused or unanswered request", () => {
       requestRefusal(rpcError("CONFLICT", 409, "export_limit_reached"))
     ).toEqual({
       text: LIMIT_REACHED_TEXT,
-      unknownOutcome: false,
+      repeatsNow: true,
     });
     expect(LIMIT_REACHED_TEXT).toContain("3 cópias nas últimas 24 horas");
     expect(
       requestRefusal(rpcError("CONFLICT", 409, "export_already_running"))
-    ).toEqual({ text: ALREADY_RUNNING_TEXT, unknownOutcome: false });
+    ).toEqual({ text: ALREADY_RUNNING_TEXT, repeatsNow: true });
     expect(ALREADY_RUNNING_TEXT).toContain("Já há uma cópia sendo preparada");
   });
 
