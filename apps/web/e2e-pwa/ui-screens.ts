@@ -881,6 +881,9 @@ export const SCREENS: UiScreen[] = [
   stockScreen("recebimento registrado", stockStates.receiveDone),
   stockScreen("recebimento sem resposta", stockStates.receiveLocked),
   stockScreen("contagem", stockStates.count),
+  stockScreen("informar custo", stockStates.cost),
+  stockScreen("informar custo a confirmar", stockStates.costConfirming),
+  stockScreen("custo informado", stockStates.costDone),
   stockScreen(
     "baixa sem observação",
     stockStates.writeOffNote,
