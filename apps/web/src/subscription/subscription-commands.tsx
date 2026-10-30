@@ -571,9 +571,7 @@ export function PlanActions({
         </ActionRow>
       ) : null}
       {support ? (
-        <p className="m-0 text-muted-foreground">
-          {supportRefundText(refund, null)}
-        </p>
+        <p className="m-0 text-muted-foreground">{supportRefundText(refund)}</p>
       ) : null}
       <CancelRenewalDialog
         onOpenChange={close}

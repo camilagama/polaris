@@ -1,6 +1,7 @@
 import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
+import CircleHelpIcon from "lucide-react/dist/esm/icons/circle-help";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
 import HouseIcon from "lucide-react/dist/esm/icons/house";
@@ -85,6 +86,8 @@ import { MenuProgress, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
+  HELP_HREF,
+  HELP_LABEL,
   inBottomBar,
   menuItemsOf,
   NAV_ITEMS,
@@ -111,6 +114,7 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
   customers: UsersIcon,
   dashboard: BarChart3Icon,
   history: ClockIcon,
+  help: CircleHelpIcon,
   home: HouseIcon,
   inventory: PackageIcon,
   products: TagIcon,
@@ -197,6 +201,34 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+/**
+ * "Ajuda e contato": a line of the "Mais" sheet after the destinations, and on the
+ * desktop, with the column folded, an icon in the foot (open, the page is the third link of `LegalLinks`).
+ */
+function HelpMenuItem({ current }: { current: boolean }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-current={current ? "page" : undefined}
+        href={HELP_HREF}
+        isActive={current}
+        tooltip={HELP_LABEL}
+      >
+        <CircleHelpIcon aria-hidden />
+        <span className="group-data-[collapsible=icon]:sr-only">
+          {HELP_LABEL}
+        </span>
+        {current ? (
+          <span
+            aria-hidden="true"
+            className="ml-auto size-1.5 shrink-0 rounded-full bg-mark group-data-[collapsible=icon]:hidden"
+          />
+        ) : null}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
 
@@ -314,6 +346,15 @@ function AppSidebar({
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
+          {isMobile ? (
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <HelpMenuItem current={navId === "help"} />
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
         </nav>
       </SidebarContent>
       <SidebarFooter>
@@ -347,9 +388,17 @@ function AppSidebar({
               onAttention={showLogoutAttention}
               organization={organization}
             />
-            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them;
+            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them, and the links that wrap onto a second row are far enough apart for theirs not to meet;
                 folded, the links go under the content (`AppFooter`) */}
-            <LegalLinks className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden" />
+            <LegalLinks
+              className="touch:mt-3 gap-x-4 gap-y-1 touch:gap-y-7 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden"
+              current={navId === "help"}
+            />
+            <div className="hidden group-data-[collapsible=icon]:block">
+              <SidebarMenu>
+                <HelpMenuItem current={navId === "help"} />
+              </SidebarMenu>
+            </div>
           </div>
         )}
       </SidebarFooter>
@@ -362,7 +411,7 @@ function AppSidebar({
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
  * screens of its area (`aria-current="true"`): Estoque on Produtos and Clientes. "Mais" carries it on the screens of
- * no destination of the bar (Pendências, Resultado and Configurações, with their tabs), and the number of operations of
+ * no destination of the bar (Pendências, Resultado, Configurações with their tabs, and Ajuda e contato), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
@@ -531,8 +580,17 @@ function LegalAcceptanceGate({ atOpen }: { atOpen: boolean }) {
   );
 }
 
-/** The two legal pages, linked from every screen of the app (AC-70); they open in another tab. */
-function LegalLinks({ className }: { className: string }) {
+/**
+ * The two legal pages, linked from every screen of the app (AC-70); they open in another tab. "Ajuda e contato" is
+ * beside them and opens in this one: it is a page of the shell.
+ */
+function LegalLinks({
+  className,
+  current,
+}: {
+  className: string;
+  current: boolean;
+}) {
   const link =
     "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
@@ -557,6 +615,15 @@ function LegalLinks({ className }: { className: string }) {
           Política de Privacidade
         </a>
       </li>
+      <li>
+        <a
+          aria-current={current ? "page" : undefined}
+          className={link}
+          href={HELP_HREF}
+        >
+          {HELP_LABEL}
+        </a>
+      </li>
     </ul>
   );
 }
@@ -565,13 +632,13 @@ function LegalLinks({ className }: { className: string }) {
  * The legal links under the content, on the phone and beside the folded column: from 760 px they are at the foot of
  * the open sidebar (`AppSidebar`), once.
  */
-function AppFooter() {
+function AppFooter({ current }: { current: boolean }) {
   const { state } = useSidebar();
   return (
     <footer
       className={`mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm ${state === "collapsed" ? "" : "md:hidden"}`}
     >
-      <LegalLinks className="gap-x-5 gap-y-2" />
+      <LegalLinks className="gap-x-5 gap-y-2 touch:gap-y-6" current={current} />
     </footer>
   );
 }
@@ -838,7 +905,7 @@ export function AppShell({
             </OfflineAccessGate>
           )}
         </main>
-        <AppFooter />
+        <AppFooter current={navId === "help"} />
         <BottomBar navId={navId} />
       </SidebarInset>
     </SidebarProvider>

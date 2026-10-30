@@ -4,6 +4,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -427,7 +428,13 @@ test.describe("celular (360 px)", () => {
     await expect(panel.getByRole("link", { name: "Início" })).toHaveCount(0);
     await expect(
       panel.getByRole("navigation", { name: "Principal" }).getByRole("link")
-    ).toHaveText(["Produtos", "Clientes", "Resultado", "Configurações"]);
+    ).toHaveText([
+      "Produtos",
+      "Clientes",
+      "Resultado",
+      "Configurações",
+      "Ajuda e contato",
+    ]);
     // the bottom bar is not regrouped: what is left of Gestão keeps its label, Vendas has nothing left here
     await expect(panel.locator('[data-sidebar="group-label"]')).toHaveText([
       "Gestão",
@@ -1092,6 +1099,7 @@ test.describe("barra do celular a 360 e 320 px", () => {
         "Clientes",
         "Resultado",
         "Configurações",
+        "Ajuda e contato",
       ]);
       await expect(
         panel.getByRole("button", { exact: true, name: "Sair" })
@@ -1357,5 +1365,183 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
         () => document.documentElement.scrollWidth <= window.innerWidth
       )
     ).toBe(true);
+  });
+});
+
+const DPO_LINK = /^Escrever ao encarregado de dados: /;
+const MAILTO = /^mailto:.+@.+/;
+
+const helpLink = (page: Page) =>
+  page.getByRole("link", { exact: true, name: "Ajuda e contato" });
+
+async function expectHelpPage(page: Page) {
+  await expect.poll(() => pathOf(page)).toBe("/ajuda");
+  await expect(
+    page.getByRole("heading", {
+      exact: true,
+      level: 1,
+      name: "Ajuda e contato",
+    })
+  ).toBeVisible();
+  await expect(page).toHaveTitle("Ajuda e contato · Polaris");
+  const support = page.getByRole("link", {
+    name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+  });
+  await expect(support).toHaveText(SUPPORT_ADDRESS);
+  await expect(support).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+  await expect(page.getByRole("link", { name: DPO_LINK })).toHaveAttribute(
+    "href",
+    MAILTO
+  );
+}
+
+test.describe("Ajuda e contato", () => {
+  test("no celular, Mais leva a Ajuda em 2 toques, e a página marca Mais", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.goto("/sales/history");
+    let taps = 0;
+    await more(page).click();
+    taps += 1;
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    // after the destinations (Configurações is the last of them) and before the foot: the theme and "Sair"
+    const links = panel.getByRole("link");
+    await expect(links.last()).toHaveText("Ajuda e contato");
+    await expect(links.nth(-2)).toHaveText("Configurações");
+    await panel
+      .getByRole("link", { exact: true, name: "Ajuda e contato" })
+      .click();
+    taps += 1;
+    expect(taps).toBe(2);
+    await expectHelpPage(page);
+    await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
+    await more(page).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "Mais" })
+        .locator('[aria-current="page"]')
+    ).toHaveText("Ajuda e contato");
+  });
+
+  test("no celular, a linha do Mais é um item comum como os destinos, e a página não rola de lado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+    const boxes = await Promise.all(
+      [
+        page.getByRole("link", {
+          name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+        }),
+        page.getByRole("link", { name: DPO_LINK }),
+      ].map((link) => link.boundingBox())
+    );
+    for (const box of boxes) {
+      // the link is the text; its area of touch (`touch-hit`) reaches 44 px around it
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(20);
+    }
+    await more(page).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    const item = panel.getByRole("link", {
+      exact: true,
+      name: "Ajuda e contato",
+    });
+    const sibling = panel.getByRole("link", {
+      exact: true,
+      name: "Configurações",
+    });
+    // an ordinary item of the sheet, the same as the destinations above it (`SidebarMenuButton`)
+    const [itemBox, siblingBox] = await Promise.all([
+      item.boundingBox(),
+      sibling.boundingBox(),
+    ]);
+    expect(itemBox?.height ?? 0).toBeGreaterThanOrEqual(32);
+    expect(itemBox?.height).toBe(siblingBox?.height);
+    expect(itemBox?.width).toBe(siblingBox?.width);
+  });
+
+  test("no desktop, o terceiro link ao lado dos legais abre Ajuda, na lateral aberta e na recolhida", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await page.goto("/products");
+    await expect(sidebar(page).getByRole("link")).toHaveText(DESTINATIONS);
+    const legal = page.locator("[data-sidebar=footer] ul");
+    await expect(legal.getByRole("link")).toHaveText([
+      "Termos de Uso",
+      "Política de Privacidade",
+      "Ajuda e contato",
+    ]);
+    await legal
+      .getByRole("link", { exact: true, name: "Ajuda e contato" })
+      .click();
+    await expectHelpPage(page);
+    await expect(
+      page
+        .locator("[data-sidebar=footer] ul")
+        .getByRole("link", { name: "Ajuda e contato" })
+    ).toHaveAttribute("aria-current", "page");
+
+    // folded: the icon of the foot, with its name, and the same link under the content
+    await page.keyboard.press("Control+b");
+    await expect(helpLink(page)).toHaveCount(2);
+    await expect(helpLink(page).first()).toBeVisible();
+    await expect(helpLink(page).last()).toBeVisible();
+  });
+
+  test("o rodapé de toda página tem o terceiro link, também no celular", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.goto("/customers");
+    const footer = page.getByRole("contentinfo");
+    await expect(footer.getByRole("link")).toHaveText([
+      "Termos de Uso",
+      "Política de Privacidade",
+      "Ajuda e contato",
+    ]);
+    await footer.getByRole("link", { name: "Ajuda e contato" }).click();
+    await expectHelpPage(page);
+  });
+
+  test("sem conexão, a página aberta segue inteira e os links de e-mail continuam lá", async ({
+    context,
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    const requests: string[] = [];
+    page.on("request", (request) =>
+      requests.push(new URL(request.url()).pathname)
+    );
+    await context.setOffline(true);
+    await expectHelpPage(page);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.getByText("O Polaris não tem chat nem telefone.", { exact: false })
+    ).toBeVisible();
+    // the page asks nothing of the server (AC-5): no form, no field, and nothing after it opened
+    await expect(
+      page.locator("main form, main input, main textarea")
+    ).toHaveCount(0);
+    await page.waitForTimeout(300);
+    expect(
+      requests.filter(
+        (path) => path.startsWith("/rpc/") && !path.startsWith("/rpc/sync/")
+      )
+    ).toEqual([]);
   });
 });

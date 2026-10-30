@@ -10,6 +10,8 @@ import {
   bottomBarMark,
   documentTitle,
   entryPageFor,
+  HELP_HREF,
+  HELP_LABEL,
   inBottomBar,
   legacyAddress,
   menuItemsOf,
@@ -418,6 +420,27 @@ describe("resolveRoute", () => {
     }
   });
 
+  it("opens Ajuda e contato inside the shell, working offline, and not as a destination of the menu", () => {
+    expect(HELP_HREF).toBe("/ajuda");
+    expect(resolveRoute("/ajuda")).toEqual({
+      connectionForm: true,
+      id: "help",
+      kind: "page",
+      navId: "help",
+      onlineOnly: false,
+      screen: "help",
+      title: "Ajuda e contato",
+    });
+    expect(resolveRoute("/ajuda/").kind).toBe("page");
+    expect(HELP_LABEL).toBe("Ajuda e contato");
+    expect(NAV_ITEMS.map((item) => item.href)).not.toContain(HELP_HREF);
+    expect(
+      menuItemsOf({ attention: true }).map((item) => item.href)
+    ).not.toContain(HELP_HREF);
+    // "Mais" carries the mark on this page, as on every page that is no destination of the bar
+    expect(bottomBarMark("help")).toBe("more");
+  });
+
   it("ignores trailing slashes", () => {
     expect(resolveRoute("/inventory/")).toMatchObject({ id: "inventory" });
     expect(resolveRoute("/sales/history//")).toMatchObject({
@@ -482,6 +505,7 @@ describe("the screen key of an error report", () => {
   const shellPaths = [
     ...NAV_ITEMS.map((item) => item.href),
     ATTENTION_NAV_ITEM.href,
+    HELP_HREF,
     "/sales/detail",
   ];
   const tabAddresses = (

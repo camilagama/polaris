@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const GOOGLE_URL =
@@ -122,6 +123,7 @@ const touchHeight = (control: Locator) =>
         : 0;
     return box.height + Math.max(0, grow);
   });
+const AN_ANSWER_TIME = /responderemos|respondemos|em até \d+|dias úteis/i;
 const googleButton = (page: Page) => page.getByRole("button", { name: BUTTON });
 
 test.describe("a tela de entrada, com o servidor interceptado", () => {
@@ -538,6 +540,33 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     await expect(
       page.getByText("Verificando se você já entrou…")
     ).toBeVisible();
+  });
+
+  test("sob o cartão, 'Precisa de ajuda? Escreva para {endereço}.' com o e-mail do suporte, sem prazo e sem rolar de lado a 320 e 360 px", async ({
+    page,
+  }) => {
+    await serve(page, newServer());
+    for (const width of [320, 360, 1280]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one width after the other
+      await page.setViewportSize({ height: 740, width });
+      await page.goto("/entrar");
+      const line = page.getByText("Precisa de ajuda? Escreva para");
+      await expect(line).toBeVisible();
+      await expect(line).toHaveText(
+        `Precisa de ajuda? Escreva para ${SUPPORT_ADDRESS}.`
+      );
+      await expect(
+        page.getByRole("link", {
+          name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+        })
+      ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    }
+    await expect(page.getByText(AN_ANSWER_TIME)).toHaveCount(0);
   });
 
   test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 44 px (V4, V5)", async ({

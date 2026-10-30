@@ -39,6 +39,7 @@
    and of the connection, the acceptance, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
 @source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,closed-store-notice,first-access,grace-notice,action-strip}.tsx";
+@source "../help/help-page.tsx";
 /* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
 @source "../settings/app-version-line.tsx";
 @source "../offline/logout-dialog.tsx";

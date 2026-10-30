@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NoWorkerAnswerError } from "../lib/connection";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   BRASILIA_TIMEZONE,
   BRAZIL_TIMEZONES,
@@ -75,7 +76,9 @@ describe("setupErrorMessage", () => {
     );
     expect(setupErrorMessage({ code: "FORBIDDEN" })).toContain("email");
     expect(setupErrorMessage({ code: "BAD_REQUEST" })).toContain("Revise");
-    expect(setupErrorMessage({ code: "CONFLICT" })).toContain("suporte");
+    expect(setupErrorMessage({ code: "CONFLICT" })).toBe(
+      `Sua conta já tem uma loja que não abriu sozinha. Escreva para o suporte: ${SUPPORT_EMAIL}.`
+    );
     expect(setupErrorMessage({ code: "SERVICE_UNAVAILABLE" })).toContain(
       "indisponível"
     );

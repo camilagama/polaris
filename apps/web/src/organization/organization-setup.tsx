@@ -111,6 +111,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
 
   return (
     <EntryScreen
+      help
       support="Dê um nome à sua loja. Dá para mudar depois."
       title={TITLE}
     >

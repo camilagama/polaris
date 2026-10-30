@@ -5,6 +5,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { accessDateText, untilText } from "./plan-notice";
 import { keptList, type Refusal } from "./subscription-model";
 
@@ -172,19 +173,13 @@ export function refundDialogText(amount: string): DialogText {
 
 /**
  * The way of Pix while its refund goes to support (AC-30, AC-44, R-1): the last minute of the window, that a request
- * sent until then counts, and only the store's name. The box is the configuration's (`BILLING_SUPPORT_EMAIL`), never
- * the code's: without it the line names the support only.
+ * sent until then counts, and only the store's name. The address is the one of `lib/support-contact`, the same the
+ * Terms carry.
  */
 export function supportRefundText(
-  refund: NonNullable<BillingPlanView["refund"]>,
-  supportEmail: string | null
+  refund: NonNullable<BillingPlanView["refund"]>
 ): string {
-  // the box is at the end of every e-mail of the subscription (`billingEmailFooter`)
-  const to =
-    supportEmail === null
-      ? "o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura)"
-      : supportEmail;
-  return `Para desistir e receber o reembolso de ${formatBrlAmount(refund.amount)}, escreva para ${to} até ${untilText(refund.until)} com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`;
+  return `Para desistir e receber o reembolso de ${formatBrlAmount(refund.amount)}, escreva para o suporte do Polaris (${SUPPORT_EMAIL}) até ${untilText(refund.until)} com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`;
 }
 
 /**
