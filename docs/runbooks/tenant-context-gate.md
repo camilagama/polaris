@@ -56,7 +56,7 @@ Na raiz do repositório, rode o bloco abaixo. O URL é solicitado como SecureStr
 
 O comando db:migrate usa URL direta. A migration requer o papel runtime já provisionado. Se o role, host, versão, banco ou confirmação não corresponder, o script falha antes de criar fixtures. O gate verifica se o owner atual pode usar SET ROLE; se não puder, concede temporariamente membership no papel runtime a esse owner e revoga no finally. Se o processo for interrompido antes da limpeza, execute REVOKE polaris_pr11_runtime FROM neondb_owner no mesmo banco descartável antes de reutilizá-lo.
 
-O gate também roda no CI, como `tenant-context` da suíte `ci` (`bun run --filter @polaris/db gates:ci`), num PostgreSQL 18 do job com as migrations do zero; o executor semeia as duas linhas sintéticas de `rls_poc_operations` que, no Neon, o bootstrap do PR11 cria. Num PostgreSQL local o dono é superusuário, o que o gate aceita (ele exige `BYPASSRLS`).
+O gate também roda no CI, como `tenant-context` da suíte `ci` (`bun run --filter @polaris/db gates:ci`), num PostgreSQL 18 do job com as migrations do zero; o banco do app não tem `rls_poc_operations` (a migration 0108 a apagou), e o próprio gate a cria na base descartável, a partir da migration 0001, e a apaga ao terminar (`packages/db/scripts/rls-gate-fixture.ts`); as duas linhas sintéticas ele grava como o papel de tenant, como sempre gravou. Isso vale também na branch Neon descartável. Num PostgreSQL local o dono é superusuário, o que o gate aceita (ele exige `BYPASSRLS`).
 
 ## Resultado exigido
 

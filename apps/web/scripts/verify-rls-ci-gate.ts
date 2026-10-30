@@ -7,6 +7,7 @@ import {
   assertAllowedGateUrl,
   isLocalGateHost,
 } from "../../../packages/db/scripts/gate-hosts";
+import { withSeededRlsGateFixture } from "../../../packages/db/scripts/rls-gate-fixture";
 import { type RlsPocEnv, rlsPocRoutes } from "../poc/rls-poc";
 
 /**
@@ -19,7 +20,8 @@ import { type RlsPocEnv, rlsPocRoutes } from "../poc/rls-poc";
  * login, then runs the real gate against it. What it proves: the policy, FORCE
  * RLS, cross-tenant reads and writes, rollback, the transaction-local context
  * and the retry after a killed backend. What stays Neon-only: pooling and SQL
- * caching of Hyperdrive itself.
+ * caching of Hyperdrive itself. The table it proves on is not in the app's
+ * database: it exists, with its two seeds, only while the gate runs.
  *
  * Environment (set by the runner, never printed):
  *   POLARIS_RLS_ADMIN_DATABASE_URL    owner URL of the disposable database
@@ -43,7 +45,6 @@ for (const candidate of [adminUrl, runtimeUrl]) {
 const app = new Hono<RlsPocEnv>();
 app.route("/api/poc/rls", rlsPocRoutes);
 const env: RlsPocEnv["Bindings"] = {
-  DB_RLS_POC_ENABLED: "true",
   HYPERDRIVE: { connectionString: runtimeUrl },
 };
 const server = createServer(async (incoming, outgoing) => {
@@ -66,22 +67,26 @@ const server = createServer(async (incoming, outgoing) => {
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const { port } = server.address() as AddressInfo;
 
-const exitCode = await new Promise<number>((resolve) => {
-  const child = spawn(process.execPath, ["scripts/verify-rls-gate.ts"], {
-    cwd: fileURLToPath(new URL("../../../packages/db", import.meta.url)),
-    env: {
-      ...process.env,
-      POLARIS_RLS_POC_URL: `http://127.0.0.1:${port}/api/poc/rls/run`,
-    },
-    stdio: "inherit",
-  });
-  child.on("close", (code) => resolve(code ?? 1));
-  child.on("error", () => resolve(1));
-  // the executor stops this process on its time limit: take the gate down with it
-  process.once("SIGTERM", () => child.kill());
-});
+const exitCode = await withSeededRlsGateFixture(adminUrl, () => runGate(port));
 await new Promise<void>((resolve) => {
   server.closeAllConnections();
   server.close(() => resolve());
 });
 process.exitCode = exitCode;
+
+function runGate(serverPort: number): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const child = spawn(process.execPath, ["scripts/verify-rls-gate.ts"], {
+      cwd: fileURLToPath(new URL("../../../packages/db", import.meta.url)),
+      env: {
+        ...process.env,
+        POLARIS_RLS_POC_URL: `http://127.0.0.1:${serverPort}/api/poc/rls/run`,
+      },
+      stdio: "inherit",
+    });
+    child.on("close", (code) => resolve(code ?? 1));
+    child.on("error", () => resolve(1));
+    // the executor stops this process on its time limit: take the gate down with it
+    process.once("SIGTERM", () => child.kill());
+  });
+}

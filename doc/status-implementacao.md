@@ -2694,3 +2694,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Recebimento bloqueado | Em revisão | "Antes de receber, informe o custo das unidades que você já tem." com o botão "Informar custo", que troca o painel aberto; `receiveStock` continua recusando. |
 | Provas (AC-3, AC-5) | Em revisão | Unidade: `stock-command-model.test.ts`, `stock-list-model.test.ts`. Gate `inventory` (PostgreSQL 18): contagem de delta 0 com valoração sobre custo desconhecido, versão velha recusada sem mudar nada, e o `periodSummary` de um dia anterior igual antes e depois. Navegador: `e2e-pwa/ui-stock-cost.e2e.ts`, `e2e/stock-screen.e2e.ts`, e a jornada real `e2e-real/jornadas/estoque.e2e.ts` (linha, faixa e Início diminuem). |
 | Limites | Registrado | Com saldo e custo desconhecido, a linha não oferece mais "Contar": contar com diferença essa variante pede informar o custo antes (ou baixar). Os textos do Petković e a nota de arquitetura citados no corte não estavam na máquina do dev: os textos seguem a tarefa, e os de conflito, recusa, sem conexão e bloqueio do painel de custo são do dev, para revisão. |
+
+### Superfícies de prova fora do banco e da configuração (t548, D1 do fechamento do staging; migration 0108)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Migration | Em revisão | `0108_tirar_superficies_poc.sql` (número provisório até o merge): `DROP POLICY IF EXISTS` da política de `rls_poc_operations` e `DROP TABLE IF EXISTS` de `rls_poc_operations` e `db_poc_operations`, com o marcador `expand-contract: contract` (nenhum Worker do app usa as tabelas). Schema do Drizzle e listas da exportação e do purge sem as duas. |
+| Gates de RLS | Em revisão | `tenant-context` e `rls` (suíte `ci`) criam a tabela na base descartável a partir da migration 0001 e a apagam ao terminar (`packages/db/scripts/rls-gate-fixture.ts`); o executor deixou de semear. Nenhuma asserção saiu. |
+| Configuração | Em revisão | `DB_RLS_POC_ENABLED` saiu da rota de RLS e do `wrangler.pr11.jsonc`; `DB_POC_ENABLED` já não existia no código. `verify:staging-isolation` recusa as duas em qualquer bloco. O script `poc` de `packages/db` saiu. |
+| Fora | Registrado | Workers, Hyperdrive e credenciais de PoC no Cloudflare e no Neon (console do operador); laboratório offline (D2). |
