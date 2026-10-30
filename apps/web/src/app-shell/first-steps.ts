@@ -141,8 +141,8 @@ function keptOnDevice(
 /**
  * A sale was kept on this device (no connection): it is not an official sale yet, so the steps stay as they are, but the
  * store may have sold by the time the server confirms the next one, which then is not the first. The Início reading the
- * steps again keeps that mark: the server has not seen the sale kept here, so its word does not undo it. Only the store
- * selling (no steps) drops it.
+ * steps again keeps that mark: the server has not seen the sale kept here, so its word does not undo it. The mark goes
+ * with the steps (the store sold, the session ended) or when another store takes the slot.
  */
 export function deviceSaleKept(
   organizationId: string,

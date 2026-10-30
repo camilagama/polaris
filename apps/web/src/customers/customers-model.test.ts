@@ -183,6 +183,15 @@ describe("customerErrorMessage com o 503 de uma escrita", () => {
     }
   });
 
+  it("um 503 com outro motivo, na conferência de repetidos, mantém o texto da conferência", () => {
+    expect(
+      customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        "duplicate-check"
+      )
+    ).toContain("possíveis clientes repetidos");
+  });
+
   it("um 503 com outro motivo, na leitura da lista, mantém o texto das leituras", () => {
     expect(
       customerErrorMessage(
