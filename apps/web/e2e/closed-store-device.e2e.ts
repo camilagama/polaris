@@ -646,7 +646,9 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
       discardDialog(page).getByRole("button", { exact: true, name: "Voltar" })
     ).toBeFocused();
     const text = await discardDialog(page).innerText();
-    expect(text).toContain("vendas");
+    expect(text).toContain(
+      "O servidor não confirmou o que será descartado: vendas"
+    );
     expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
     expect(text).toContain("Isso não tem volta.");
 

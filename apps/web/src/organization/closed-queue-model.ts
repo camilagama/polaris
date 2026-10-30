@@ -106,13 +106,13 @@ function kindsList(kinds: QueueKinds): string {
     : (parts[0] ?? "operações");
 }
 
-/** Says "vendas" whenever one of the operations is a sale, and what is lost: it never reached the server. */
+/** Says "vendas" whenever one of the operations is a sale, and what is lost: the server never confirmed it. */
 export function discardBody(kinds: QueueKinds): string {
   const lost =
     kinds.sales > 0
       ? "As vendas não estarão na cópia dos seus dados."
       : "Isso não estará na cópia dos seus dados.";
-  return `O que será descartado nunca chegou ao servidor: ${kindsList(kinds)} deste aparelho. ${lost} Isso não tem volta.`;
+  return `O servidor não confirmou o que será descartado: ${kindsList(kinds)} deste aparelho. ${lost} Isso não tem volta.`;
 }
 
 export function leftText(remaining: number): string {

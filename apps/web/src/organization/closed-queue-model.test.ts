@@ -144,7 +144,9 @@ describe("o tipo da operação (AC-7)", () => {
 
   it("fila de vendas diz vendas e que a venda não estará na cópia", () => {
     const text = discardBody({ others: 0, registers: 0, sales: 3 });
-    expect(text).toContain("nunca chegou ao servidor: vendas deste aparelho");
+    expect(text).toContain(
+      "O servidor não confirmou o que será descartado: vendas deste aparelho"
+    );
     expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
     expect(text).toContain("Isso não tem volta.");
   });
@@ -157,14 +159,14 @@ describe("o tipo da operação (AC-7)", () => {
 
   it("fila só de cadastros não fala de vendas", () => {
     const text = discardBody({ others: 0, registers: 2, sales: 0 });
-    expect(text).toContain("servidor: cadastros deste aparelho");
+    expect(text).toContain("descartado: cadastros deste aparelho");
     expect(text).not.toContain("venda");
     expect(text).toContain("Isso não estará na cópia dos seus dados.");
   });
 
   it("sem tipo conhecido diz operações e a frase da cópia", () => {
     const text = discardBody({ others: 4, registers: 0, sales: 0 });
-    expect(text).toContain("servidor: operações deste aparelho");
+    expect(text).toContain("descartado: operações deste aparelho");
     expect(text).not.toContain("venda");
     expect(text).toContain("não estará na cópia dos seus dados");
   });
