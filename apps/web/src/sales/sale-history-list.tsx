@@ -59,7 +59,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         <p className="flex min-w-0 text-muted-foreground text-support">
           <span className="min-w-[5ch] truncate">{row.customerText}</span>
           <span className="flex max-w-[calc(100%_-_5ch)] shrink-0 whitespace-pre">
-            <span className="truncate">{` · ${row.methodText}`}</span>
+            <span className="overflow-hidden text-ellipsis">{` · ${row.methodText}`}</span>
             <span className="shrink-0">{` · ${row.itemCountText}`}</span>
           </span>
         </p>

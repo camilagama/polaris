@@ -35,6 +35,15 @@ for (const width of WIDTHS) {
       await expect(support).toBeVisible();
       const name = support.getByText(LONG_NAME, { exact: true });
       const rest = support.getByText(" · Crédito · 2 itens");
+      expect(
+        await rest.evaluate((el) => {
+          const text = el.firstElementChild?.firstChild;
+          const range = document.createRange();
+          range.setStart(text as Node, 0);
+          range.setEnd(text as Node, 1);
+          return range.getBoundingClientRect().width;
+        })
+      ).toBeGreaterThan(1);
       const measured = await support.evaluate(lineCount);
       expect(measured.height).toBeGreaterThan(0);
       expect(measured.lines).toBeLessThan(1.05);

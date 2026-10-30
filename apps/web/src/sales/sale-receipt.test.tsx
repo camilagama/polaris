@@ -128,7 +128,9 @@ describe("the history list", () => {
     expect(markup).toContain(
       '<span class="min-w-[5ch] truncate">Ana Souza</span>'
     );
-    expect(markup).toContain(" · Pix</span>");
+    expect(markup).toContain(
+      '<span class="overflow-hidden text-ellipsis"> · Pix</span>'
+    );
     expect(markup).toContain('<span class="shrink-0"> · 2 itens</span>');
     expect(markup).toContain("shrink-0 whitespace-pre");
     expect(markup).toContain("min-w-0 flex-1");
