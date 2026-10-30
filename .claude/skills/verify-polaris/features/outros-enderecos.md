@@ -1,10 +1,11 @@
 # Outros endereços
 
-Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só quando há registro recusado), as páginas de entrada, as páginas legais, o aceite e o painel da loja encerrada (fora do shell, sem menu), a página 404 e os endereços antigos que hoje abrem uma aba.
+Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só quando há registro recusado), Ajuda e contato (no shell, estática), as páginas de entrada, as páginas legais, o aceite e o painel da loja encerrada (fora do shell, sem menu), a página 404 e os endereços antigos que hoje abrem uma aba.
 
 ## Sub-features
 
 - `pendencias` `/attention`: os registros deste aparelho que o servidor recusou; o item "Pendências" aparece no menu depois de "Histórico" só enquanto houver algum.
+- `ajuda` `/ajuda`: "Ajuda e contato", dentro do shell: o e-mail do suporte e o do encarregado (DPO) como links `mailto:`, "Antes de escrever" e os links dos Termos e da Política. Estática: abre sem conexão. A linha "Precisa de ajuda? Escreva para {endereço}." também está em `/entrar` e em "Abra a sua loja".
 - `entrada` `/entrar`, `/criar-conta`, `/confirmar-email`, `/esqueci-a-senha`, `/redefinir-senha` e `/desbloquear`.
 - `legais` `/termos` (Termos de Uso) e `/privacidade` (Política de Privacidade), públicas.
 - `aceite` `/aceite`: "Termos de Uso e Política de Privacidade", caixa de aceite e "Continuar".
@@ -15,6 +16,7 @@ Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só qua
 ## How to get to it (user POV)
 
 - Pendências: pelo menu, quando existe; ou `/attention`.
+- Ajuda: no celular, "Mais" → "Ajuda e contato" (2 toques, depois de Configurações); no desktop, o terceiro link "Ajuda e contato" ao lado de "Termos de Uso" e "Política de Privacidade" no pé da lateral e no rodapé; ou `/ajuda`.
 - Entrada: sem sessão, qualquer tela do shell manda para `/entrar?voltar=<endereço>` ("Entrar no Polaris"). Com a senha desligada (padrão), `/entrar` só tem "Continuar com o Google"; as outras páginas de entrada são da senha.
 - Legais: os links "Termos de Uso" e "Política de Privacidade" do rodapé de toda tela.
 - Aceite: depois de entrar, quando falta o aceite da versão vigente.
@@ -27,6 +29,7 @@ Preconditions:
 
 - Doctor OK. Entrada e páginas legais não precisam de loja; para ver a entrada sem sessão, limpe os cookies no drive (`await context.clearCookies()`).
 
+- **Ajuda.** `$V snap /ajuda`: o `h1` é "Ajuda e contato"; `getByRole("link", { name: /^Escrever para o suporte: / })` e `getByRole("link", { name: /^Escrever ao encarregado de dados: / })` têm `href` `mailto:` com o texto do próprio endereço. No celular (360 px), `getByRole("button", { exact: true, name: "Mais" })` abre `getByRole("dialog", { name: "Mais" })` e o link "Ajuda e contato" leva a `/ajuda` (provado em `apps/web/e2e/help.e2e.ts`). O endereço é o de `VITE_LEGAL_CONTATO_EMAIL` do build; sem ela a pilha local mostra o exemplo dos Termos.
 - **Legais.** `$V snap /termos` e `$V snap /privacidade`: o `h1` é "Termos de Uso" e "Política de Privacidade" (provado; estados em `apps/web/e2e-pwa/legal-pages.e2e.ts`).
 - **Entrada.** `await context.clearCookies(); await page.goto("/")` termina em `/entrar?voltar=/` com `getByRole("heading", { level: 1, name: "Entrar no Polaris" })` (provado nesta skill). Os estados da tela estão em `apps/web/e2e/sign-in.e2e.ts`.
 - **Aceite.** `apps/web/e2e/legal-acceptance.e2e.ts` cobre a tela (`getByRole("checkbox")`, "Continuar", `alert`). As lojas desta skill abrem direto no shell, sem passar por `/aceite`.

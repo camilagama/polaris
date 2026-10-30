@@ -243,7 +243,7 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
     phase !== "entering" && (phase === "ready" || slowCheck || googleOff);
 
   return (
-    <EntryScreen title={SIGN_IN_TITLE}>
+    <EntryScreen help title={SIGN_IN_TITLE}>
       {reason ? <p className="text-sm">{reason}</p> : null}
 
       {alertText ? (

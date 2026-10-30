@@ -3,6 +3,7 @@ export type NavId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "help"
   | "history"
   | "home"
   | "inventory"
@@ -15,6 +16,7 @@ export type ScreenId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "help"
   | "home"
   | "inventory"
   | "products"
@@ -33,6 +35,7 @@ export type RouteId =
   | "data-export"
   | "devices"
   | "expenses"
+  | "help"
   | "home"
   | "inventory"
   | "payment-profiles"
@@ -78,6 +81,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Configurações",
   },
 ];
+
+/**
+ * "Ajuda e contato" is no destination of the menu: the phone puts it in "Mais" after the destinations, and the desktop
+ * beside the legal links at the foot of the column. It is a page of the shell, so the offline copy opens it.
+ */
+export const HELP_HREF = "/ajuda";
+export const HELP_LABEL = "Ajuda e contato";
 
 /** The ninth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
@@ -262,6 +272,7 @@ interface RouteDefinition {
 /** The sale detail is reached from the history, not from the menu, so the history stays the current item there. */
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/": { navId: "home", screen: "home", title: "Início" },
+  "/ajuda": { navId: "help", screen: "help", title: HELP_LABEL },
   "/attention": {
     navId: "attention",
     screen: "attention",

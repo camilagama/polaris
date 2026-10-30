@@ -1,5 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   canCancelRenewal,
   cancelDialogText,
@@ -160,12 +161,11 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
     expect(text.description).not.toMatch(A_DEADLINE);
   });
 
-  it("Pix by support: the day, the box of the configuration, what counts and no personal data (AC-44)", () => {
-    const text = supportRefundText(
-      { ...REFUND, via: "suporte" },
-      "caixa@exemplo.test"
+  it("Pix by support: the day, the support address of the legal texts, what counts and no personal data (AC-44)", () => {
+    const text = supportRefundText({ ...REFUND, via: "suporte" });
+    expect(text).toContain(
+      `escreva para o suporte do Polaris (${SUPPORT_EMAIL}) até`
     );
-    expect(text).toContain("escreva para caixa@exemplo.test");
     expect(text).toContain("até 30/10/2026, 23:59");
     expect(text).toContain("com o nome da loja");
     expect(text).toContain(
@@ -174,14 +174,6 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
     expect(text).toContain("Não mande CPF, CNPJ nem dados de pagamento.");
     // no answer time is promised (AC-44 d)
     expect(text).not.toMatch(AN_ANSWER_TIME);
-  });
-
-  it("Pix by support without the box: no address made up", () => {
-    const text = supportRefundText({ ...REFUND, via: "suporte" }, null);
-    expect(text).toContain(
-      "escreva para o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura)"
-    );
-    expect(text).not.toContain("@");
   });
 
   it("the card's refund taken: asked, and confirmed only once the plan read again left the Pro (AS-34)", () => {

@@ -20,6 +20,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
 import {
@@ -122,6 +123,23 @@ function LegalLinks() {
   );
 }
 
+/** "Precisa de ajuda? Escreva para {endereço}." under the card; no promise of when it is answered. */
+function HelpLine() {
+  return (
+    <p className="mt-5 text-center text-muted-foreground text-support">
+      Precisa de ajuda? Escreva para{" "}
+      <a
+        aria-label={`Escrever para o suporte: ${SUPPORT_EMAIL}`}
+        className="focus-ring select-text break-words rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+        href={mailtoHref(SUPPORT_EMAIL)}
+      >
+        {SUPPORT_EMAIL}
+      </a>
+      .
+    </p>
+  );
+}
+
 /** The width of the card: the entry (380 px), the wide one (420 px, the acceptance) and the reading column of a legal text. */
 export type EntryWidth = "narrow" | "reading" | "wide";
 
@@ -141,6 +159,7 @@ const ENTRY_WIDTH: Record<EntryWidth, string> = {
 export function EntryScreen({
   brandHref,
   children,
+  help = false,
   legalLinks = true,
   support,
   title,
@@ -149,6 +168,8 @@ export function EntryScreen({
   /** A page that is public to every visitor, signed in or not, takes the brand back to the start. */
   brandHref?: string;
   children: ReactNode;
+  /** The line "Precisa de ajuda?" with the address of the support: the sign-in and the first access. */
+  help?: boolean;
   /** Without them (the legal texts, which are the pages they point to). */
   legalLinks?: boolean;
   /** The one line under the title, when the screen has one. */
@@ -207,6 +228,7 @@ export function EntryScreen({
               {children}
             </CardContent>
           </Card>
+          {help ? <HelpLine /> : null}
           {legalLinks ? <LegalLinks /> : null}
         </div>
       </main>
