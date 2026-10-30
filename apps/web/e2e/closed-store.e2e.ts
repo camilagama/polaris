@@ -1,0 +1,442 @@
+/// <reference lib="dom" />
+import type { Page, Route } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
+
+/**
+ * The panel of a closed store at `/loja-encerrada`, in the real route, with the API answered by the test: each phase
+ * with its own sentence, the three dates in a list with the days left, the renewal as the server read it, loading,
+ * the failed read with "Tentar novamente", nothing found, the choice between two stores, no session; and the copy of
+ * the closed store: asked for, read again and downloaded from its own route, the recent sign-in refused with its own
+ * text, and no request past D.
+ */
+const STORE_ID = "0199c2d0-0000-7000-8000-00000000a001";
+const OTHER_ID = "0199c2d0-0000-7000-8000-00000000a002";
+const EXPORT_ID = "0199c2d0-0000-7000-8000-0000000000aa";
+const SESSION_USER = { email: "dona@exemplo.test", id: "u", name: "Ana Dona" };
+const PATH = `/loja-encerrada?loja=${STORE_ID}`;
+/** `2026-10-30T12:00` in São Paulo: 20 days to undo, 80 to D. */
+const NOW = new Date("2026-10-30T15:00:00.000Z");
+const TECHNICAL =
+  /closing|deletion_scheduled|deletable|purged|not_handled|fresh_session|closed_export|_required|_unavailable/;
+const SIGN_IN = /\/entrar\?motivo=sessao&voltar=\/loja-encerrada/;
+
+type Store = Record<string, unknown>;
+
+const store = (overrides: Store = {}): Store => ({
+  canRecover: true,
+  deletableFrom: "2027-01-18T03:00:00.000Z",
+  deletionDate: "2027-01-18",
+  exportOpenUntil: "2027-01-18T03:00:00.000Z",
+  id: STORE_ID,
+  milestones: {
+    closure: "2026-10-20T12:00:00.000Z",
+    d7: "2027-01-11T03:00:00.000Z",
+    d30: "2026-12-19T03:00:00.000Z",
+    deletionDay: "2027-01-18T03:00:00.000Z",
+  },
+  name: "Loja do teste",
+  phase: "closing",
+  recoverUntil: "2026-11-19T12:00:00.000Z",
+  renewal: "not_handled",
+  requestedAt: "2026-10-20T12:00:00.000Z",
+  timezone: "America/Sao_Paulo",
+  ...overrides,
+});
+
+const copy = (overrides: Store = {}): Store => ({
+  errorCode: null,
+  expiresAt: null,
+  files: [],
+  formats: ["json", "csv"],
+  id: EXPORT_ID,
+  mode: "closed",
+  readyAt: null,
+  requestedAt: "2026-10-30T14:10:00.000Z",
+  status: "requested",
+  totalBytes: null,
+  ...overrides,
+});
+const READY = copy({
+  expiresAt: "2026-10-31T14:40:00.000Z",
+  files: [{ name: "dados.json", ordinal: 1, sizeBytes: 820_400 }],
+  readyAt: "2026-10-30T14:40:00.000Z",
+  status: "ready",
+  totalBytes: 820_400,
+});
+
+const rpc = (json: unknown, status = 200) => ({
+  body: JSON.stringify({ json, meta: [] }),
+  contentType: "application/json",
+  headers: { ...WORKER_MARK },
+  status,
+});
+const refusal = (code: string, status: number, reason?: string) =>
+  rpc(
+    {
+      code,
+      data: reason === undefined ? undefined : { reason },
+      defined: false,
+      message: code,
+      status,
+    },
+    status
+  );
+
+type Answer = (route: Route) => Promise<void>;
+
+interface PanelOptions {
+  /** What `organization/listClosed` answers (the panel with no store in the address). */
+  listed?: Store[];
+  /** What `dataExport/listClosed` answers, in order; the last one repeats. */
+  lists?: readonly Store[][];
+  path?: string;
+  /** What `dataExport/requestClosed` answers. */
+  request?: Answer;
+  /** What `organization/closedStatus` answers, in order; the last one repeats. */
+  statuses?: readonly (Store | null | Answer)[];
+}
+
+interface Calls {
+  downloads: string[];
+  lists: number;
+  requests: Record<string, unknown>[];
+  statuses: number;
+}
+
+async function openPanel(
+  page: Page,
+  {
+    lists = [[]],
+    listed = [],
+    path = PATH,
+    request = (route) => route.fulfill(rpc({ id: EXPORT_ID })),
+    statuses = [store()],
+  }: PanelOptions = {}
+): Promise<Calls> {
+  const calls: Calls = { downloads: [], lists: 0, requests: [], statuses: 0 };
+  await page.route("**/api/auth/get-session", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ session: { id: "s" }, user: SESSION_USER }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+  await serveHealth(page);
+  await page.route("**/api/closed-exports/**", (route) => {
+    calls.downloads.push(new URL(route.request().url()).pathname);
+    return route.fulfill({
+      body: "{}",
+      headers: {
+        ...WORKER_MARK,
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": 'attachment; filename="dados.json"',
+        "Content-Type": "application/zip",
+      },
+    });
+  });
+  await page.route("**/rpc/**", (route) => {
+    const procedure = new URL(route.request().url()).pathname.replace(
+      "/rpc/",
+      ""
+    );
+    if (procedure === "organization/closedStatus") {
+      const answer = statuses[Math.min(calls.statuses, statuses.length - 1)];
+      calls.statuses += 1;
+      if (typeof answer === "function") {
+        return answer(route);
+      }
+      return route.fulfill(rpc({ organization: answer ?? null }));
+    }
+    if (procedure === "organization/listClosed") {
+      return route.fulfill(rpc({ organizations: listed }));
+    }
+    if (procedure === "dataExport/listClosed") {
+      const answer = lists[Math.min(calls.lists, lists.length - 1)];
+      calls.lists += 1;
+      return route.fulfill(rpc({ exports: answer ?? [] }));
+    }
+    if (procedure === "dataExport/requestClosed") {
+      calls.requests.push(
+        (route.request().postDataJSON() as { json: Record<string, unknown> })
+          .json
+      );
+      return request(route);
+    }
+    return route.abort("internetdisconnected");
+  });
+  await page.goto(path);
+  return calls;
+}
+
+const title = (page: Page, name = "Loja do teste está encerrada") =>
+  page.getByRole("heading", { exact: true, level: 1, name });
+const dates = (page: Page) => page.locator("dl");
+const undoButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Desfazer encerramento" });
+const askButton = (page: Page) =>
+  page.getByRole("button", { name: "Pedir cópia dos dados" });
+const copies = (page: Page) =>
+  page.getByRole("region", { name: "Suas cópias" });
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(NOW);
+});
+
+test.describe("cada fase com a sua frase, as três datas e a renovação (AC-5, AC-6, AC-18)", () => {
+  test("encerrando: até quando dá para desfazer, com os dias, e o botão de desfazer", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    await expect(title(page)).toBeVisible();
+    await expect(page.getByRole("main")).toContainText(
+      "Você encerrou esta loja em 20 de outubro de 2026. Até 19 de novembro de 2026, às 09:00 (faltam 20 dias) você pode desfazer o encerramento. Depois disso não dá mais."
+    );
+    await expect(dates(page)).toContainText("Encerrada em");
+    await expect(dates(page)).toContainText("20 de outubro de 2026");
+    await expect(dates(page)).toContainText("Desfazer até");
+    await expect(dates(page)).toContainText(
+      "19 de novembro de 2026, às 09:00 · faltam 20 dias"
+    );
+    await expect(dates(page)).toContainText(
+      "Dados podem ser apagados a partir de"
+    );
+    await expect(dates(page)).toContainText(
+      "18 de janeiro de 2027 · faltam 80 dias"
+    );
+    await expect(dates(page)).toContainText(
+      "Cancele a renovação no provedor de pagamento."
+    );
+    await expect(dates(page).locator("dt")).toHaveCount(4);
+    await expect(undoButton(page)).toBeVisible();
+    await expect(
+      page.getByRole("link", { exact: true, name: "Baixar meus dados" })
+    ).toHaveAttribute("href", "#copia-dos-dados");
+    await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
+  });
+
+  test("encerrada: não dá mais para desfazer, e não há botão", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      statuses: [
+        store({ canRecover: false, phase: "closed", renewal: "pending" }),
+      ],
+    });
+    await expect(page.getByRole("main")).toContainText(
+      "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
+    );
+    await expect(dates(page)).toContainText(
+      "A renovação do plano está sendo cancelada."
+    );
+    await expect(undoButton(page)).toHaveCount(0);
+  });
+
+  test("apagamento marcado: os dados serão apagados em breve, a cópia ainda pode ser pedida", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date("2027-01-12T15:00:00.000Z"));
+    await openPanel(page, {
+      statuses: [
+        store({
+          canRecover: false,
+          phase: "deletion_scheduled",
+          renewal: "cancelled",
+        }),
+      ],
+    });
+    await expect(page.getByRole("main")).toContainText(
+      "Os dados desta loja estão marcados para serem apagados em breve. Baixe agora o que precisar."
+    );
+    await expect(dates(page)).toContainText(
+      "18 de janeiro de 2027 · faltam 6 dias"
+    );
+    await expect(dates(page)).toContainText(
+      "A renovação do plano foi cancelada."
+    );
+    await expect(askButton(page)).toBeVisible();
+  });
+
+  test("depois de D: a frase dos e-mails, e nenhum pedido de cópia (AC-7)", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date("2027-01-18T15:00:00.000Z"));
+    const calls = await openPanel(page, {
+      lists: [[READY]],
+      statuses: [
+        store({ canRecover: false, phase: "deletable", renewal: null }),
+      ],
+    });
+    await expect(page.getByRole("main")).toContainText(
+      "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00 (horário da sua loja). Depois de apagados, os dados não podem ser recuperados."
+    );
+    await expect(dates(page)).toContainText(
+      "Não conseguimos confirmar agora a situação da renovação do plano."
+    );
+    await expect(dates(page)).toContainText(
+      "18 de janeiro de 2027 · prazo encerrado"
+    );
+    await expect(askButton(page)).toHaveCount(0);
+    await expect(copies(page)).toBeVisible();
+    expect(calls.requests).toHaveLength(0);
+  });
+
+  test("apagada: sem cópia e sem desfazer", async ({ page }) => {
+    const calls = await openPanel(page, {
+      statuses: [store({ canRecover: false, phase: "purged" })],
+    });
+    await expect(page.getByRole("main")).toContainText(
+      "Os dados desta loja foram apagados. Não é possível recuperar nem baixar."
+    );
+    await expect(copies(page)).toHaveCount(0);
+    await expect(askButton(page)).toHaveCount(0);
+    await expect(undoButton(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Baixar meus dados" })
+    ).toHaveCount(0);
+    expect(calls.lists).toBe(0);
+  });
+
+  test("nada encontrado: a frase própria e a volta ao início", async ({
+    page,
+  }) => {
+    await openPanel(page, { statuses: [null] });
+    await expect(title(page, "Loja encerrada")).toBeVisible();
+    await expect(page.getByRole("main")).toContainText(
+      "Não encontramos uma loja encerrada nesta conta."
+    );
+    await expect(
+      page.getByRole("link", { name: "Voltar ao início" })
+    ).toHaveAttribute("href", "/");
+  });
+});
+
+test("carregando, sem botão de ação; a leitura que falha dá Tentar novamente sem afirmar o estado (AC-6)", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls = await openPanel(page, {
+    statuses: [
+      async (route) => {
+        await held;
+        await route.abort("internetdisconnected");
+      },
+      store(),
+    ],
+  });
+  const loading = page.getByRole("status").filter({ hasText: "Carregando…" });
+  await expect(loading).toHaveAttribute("aria-busy", "true");
+  await expect(
+    page.getByRole("main").getByRole("button", { name: "Sair" })
+  ).toBeVisible();
+  await expect(undoButton(page)).toHaveCount(0);
+  release();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+  );
+  await expect(page.getByRole("main")).not.toContainText("está encerrada");
+  await page.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(title(page)).toBeVisible();
+  expect(calls.statuses).toBe(2);
+});
+
+test("sem loja no endereço, lista as encerradas do dono e abre a única ou deixa escolher (e-mail)", async ({
+  page,
+}) => {
+  await openPanel(page, {
+    listed: [store(), store({ id: OTHER_ID, name: "Segunda loja" })],
+    path: "/loja-encerrada",
+  });
+  await expect(title(page, "Loja encerrada")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Segunda loja está encerrada" })
+  ).toHaveAttribute("href", `/loja-encerrada?loja=${OTHER_ID}`);
+  await expect(
+    page.getByRole("link", { name: "Loja do teste está encerrada" })
+  ).toBeVisible();
+});
+
+test("sem sessão, vai à entrada e volta ao painel", async ({ page }) => {
+  await openPanel(page, {
+    statuses: [(route) => route.fulfill(refusal("UNAUTHORIZED", 401))],
+  });
+  await expect(page).toHaveURL(SIGN_IN);
+});
+
+test("a cópia da encerrada: pede uma vez, atualiza e baixa pela rota da encerrada (AC-7)", async ({
+  page,
+}) => {
+  const calls = await openPanel(page, { lists: [[], [READY]] });
+  await expect(copies(page)).toContainText("Nenhuma cópia pedida ainda.");
+  await askButton(page).dblclick();
+  await expect(
+    page.getByRole("status").filter({
+      hasText:
+        "Cópia pedida. Preparando: pode levar até uma hora. Você pode sair e voltar.",
+    })
+  ).toBeVisible();
+  expect(calls.requests).toEqual([
+    { formats: ["json", "csv"], organizationId: STORE_ID },
+  ]);
+  await copies(page).getByRole("button", { name: "Atualizar" }).click();
+  const link = copies(page).getByRole("link", {
+    name: "Baixar dados.json (820 KB)",
+  });
+  await expect(link).toHaveAttribute(
+    "href",
+    `/api/closed-exports/${EXPORT_ID}/files/1`
+  );
+  const download = page.waitForEvent("download");
+  await link.click();
+  await download;
+  expect(calls.downloads).toEqual([`/api/closed-exports/${EXPORT_ID}/files/1`]);
+});
+
+test("o pedido com entrada de mais de 15 minutos tem texto próprio, e o pedido depois de D diz o prazo", async ({
+  page,
+}) => {
+  let answer: Answer = (route) =>
+    route.fulfill(refusal("FORBIDDEN", 403, "fresh_session_required"));
+  await openPanel(page, { request: (route) => answer(route) });
+  await askButton(page).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Por segurança, para pedir a cópia é preciso ter entrado no Polaris há menos de 15 minutos. Saia, entre de novo e peça a cópia."
+  );
+  answer = (route) =>
+    route.fulfill(refusal("CONFLICT", 409, "closed_export_unavailable"));
+  await askButton(page).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "O prazo para pedir uma cópia dos dados terminou em 18 de janeiro de 2027, 00:00 (horário da sua loja). Depois de apagados, os dados não podem ser recuperados."
+  );
+  await expect(askButton(page)).toBeDisabled();
+  await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
+});
+
+test("logo depois de encerrar, a frase do momento aparece uma vez e sai do endereço", async ({
+  page,
+}) => {
+  await openPanel(page, { path: `${PATH}&encerrou=1` });
+  await expect(page.getByRole("status").first()).toContainText(
+    "Loja encerrada. Você pode desfazer até 19 de novembro de 2026, às 09:00. Seus dados ficam guardados e você pode baixá-los."
+  );
+  await expect(page).toHaveURL(`${PATH}`);
+  await page.reload();
+  await expect(title(page)).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText(
+    "Loja encerrada. Você pode"
+  );
+});
+
+test("o botão de desfazer some quando a janela acaba, sem nova leitura (AC-8, AC-14)", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-11-19T11:59:00.000Z") });
+  const calls = await openPanel(page);
+  await expect(undoButton(page)).toBeVisible();
+  await page.clock.runFor(2 * 60_000);
+  await expect(undoButton(page)).toHaveCount(0);
+  expect(calls.statuses).toBe(1);
+});
