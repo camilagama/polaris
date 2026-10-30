@@ -1,4 +1,5 @@
 import type { ProductReadModel } from "@polaris/contracts";
+import { firstProductRegistered } from "../app-shell/first-steps";
 import { orpcClient } from "../lib/orpc";
 import { uuidv7 } from "../lib/uuidv7";
 import { createOfflineProduct } from "../offline/product-create";
@@ -77,6 +78,7 @@ export async function createProduct(
       productId: names.ids.productId,
       variantId: names.ids.variantId,
     });
+    firstProductRegistered(organizationId, product.id);
     return `Produto “${product.name}” cadastrado${openingUnitsText(input)}.`;
   }
   const stores = workspace.runtime.context();
@@ -84,7 +86,7 @@ export async function createProduct(
     // not ready, or the organization changed under the screen: nothing is queued
     throw new Error("offline_runtime_unavailable");
   }
-  await createOfflineProduct({
+  const { command, rows } = await createOfflineProduct({
     deviceId: stores.deviceId,
     input: {
       categoryId: input.categoryId,
@@ -102,7 +104,19 @@ export async function createProduct(
   });
   const name = input.name.trim();
   if (workspace.online) {
-    workspace.runtime.syncNow().catch(() => undefined);
+    workspace.runtime
+      .syncNow()
+      .then(() => stores.outbox.snapshot())
+      .then((queue) => {
+        if (
+          !queue.commands.some(
+            (queued) => queued.commandId === command.commandId
+          )
+        ) {
+          firstProductRegistered(organizationId, rows.product.id);
+        }
+      })
+      .catch(() => undefined);
     // the server has not answered yet: the row says "Aguardando envio" until it does
     return `Produto “${name}” guardado${openingUnitsText(input)}. Enviando…`;
   }

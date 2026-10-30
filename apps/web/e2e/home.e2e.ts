@@ -1332,6 +1332,65 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/#home-checklist");
   });
 
+  test("cadastrar o 1º produto em Produtos move o pé do menu para 2 de 3 na hora, e o Início diz o mesmo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(
+      empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+    );
+    const bolsa = {
+      archivedAt: null,
+      categoryId: null,
+      createdAt: "2026-10-23T12:00:00.000Z",
+      deletedAt: null,
+      description: null,
+      id: PRODUCT,
+      name: "Bolsa de couro",
+      organizationId: ORGANIZATION_ID,
+      status: "active",
+      updatedAt: "2026-10-23T12:00:00.000Z",
+      version: 1,
+    };
+    let created = false;
+    await page.route("**/rpc/product/list", (route) =>
+      route.fulfill(json({ products: created ? [bolsa] : [] }))
+    );
+    await page.route("**/rpc/category/list", (route) =>
+      route.fulfill(json({ categories: [] }))
+    );
+    await page.route("**/rpc/product/create", (route) => {
+      created = true;
+      server.scenario = {
+        ...server.scenario,
+        stock: { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
+      };
+      return route.fulfill(json(bolsa));
+    });
+    await openHome(page, server);
+    const menu = page.getByRole("navigation", { name: "Principal" });
+    const steps = (done: number) =>
+      page.getByRole("link", {
+        exact: true,
+        name: `Primeiros passos, ${done} de 3 concluídos`,
+      });
+    await expect(steps(1)).toBeVisible();
+
+    await menu.getByRole("link", { name: "Produtos" }).click();
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+    await page.getByRole("button", { name: "Cadastrar produto" }).click();
+    await expect(page.getByText("Bolsa de couro").first()).toBeVisible();
+    await expect(steps(2)).toBeVisible();
+    await expect(steps(1)).toHaveCount(0);
+
+    await menu.getByRole("link", { name: "Início" }).click();
+    await expect(
+      region(page, "Primeiros passos").getByRole("listitem").nth(1)
+    ).toContainText("Cadastrar o 1º produto (feito)");
+    await expect(steps(2)).toBeVisible();
+  });
+
   test("produto sem quantidade: 'Dar entrada no estoque' abre o painel do produto", async ({
     page,
   }) => {
@@ -1707,12 +1766,12 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
           nodes.map((node) => {
             const box = node.getBoundingClientRect();
             return {
+              bottom: box.bottom,
               isLabel: node.hasAttribute("data-chart-value-label"),
               left: box.left,
               right: box.right,
               text: node.textContent ?? "",
               top: box.top,
-              bottom: box.bottom,
             };
           })
         );
@@ -1749,6 +1808,10 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(hollow).toHaveCount(1);
     await expect(hollow).toHaveAttribute("fill", "var(--card)");
     await expect(hollow).toHaveAttribute("r", "3.5");
+    // the hollow ring has no label: the only value written is the peak's, and nothing is written for today
+    await expect(chart.locator("[data-chart-value-label]")).toHaveText([
+      "18/10 · R$ 1.840,00",
+    ]);
     // the best day comes first on the axis, today last: no other day has a ring
     const xs = await chart
       .locator("[data-chart-mark]")

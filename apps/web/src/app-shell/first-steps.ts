@@ -129,6 +129,22 @@ export function firstSaleConfirmed(
   }
 }
 
+/**
+ * The server holds a product of this store: the second step is done at once, on every screen, when the Início had read
+ * the store with none. A product kept on the device is not one yet (the Início reads the server's list), so the
+ * callers tell this only once the server has it; with no steps remembered (the store sold, or the Início did not read
+ * them) there is nothing to move.
+ */
+export function firstProductRegistered(
+  organizationId: string,
+  productId: string,
+  store: SessionStore | null = sessionStore()
+): void {
+  if (rememberedFirstSteps(organizationId, store) === 1) {
+    rememberFirstSteps(organizationId, { firstProductId: productId }, store);
+  }
+}
+
 /** The session is over: what the menu kept of the steps goes with it. */
 export function clearFirstSteps(
   store: SessionStore | null = sessionStore()

@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearFirstSteps,
   FIRST_STEPS_KEY,
+  firstProductRegistered,
   firstStepsCount,
   firstSaleConfirmed,
   firstStepsDone,
   rememberedFirstSteps,
   rememberFirstSteps,
+  subscribeFirstSteps,
 } from "./first-steps";
 
 const fakeStore = () => {
@@ -24,6 +26,10 @@ const fakeStore = () => {
 };
 
 describe("the first steps of the menu", () => {
+  beforeEach(() => {
+    clearFirstSteps(fakeStore());
+  });
+
   it("are the three of the Início: the store, the first product, the first sale", () => {
     expect(firstStepsDone({ firstProductId: null })).toEqual([
       true,
@@ -78,6 +84,37 @@ describe("the first steps of the menu", () => {
     expect(rememberedFirstSteps("loja-a", store)).toBe(2);
     firstSaleConfirmed("loja-a", store);
     expect(rememberedFirstSteps("loja-a", store)).toBeNull();
+  });
+
+  it("move to the second step once the server holds a product of the store, and only for it", () => {
+    const store = fakeStore();
+    rememberFirstSteps("loja-a", { firstProductId: null }, store);
+    firstProductRegistered("loja-b", "p1", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBe(1);
+    firstProductRegistered("loja-a", "p1", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBe(2);
+    expect(store.values.get(FIRST_STEPS_KEY)).not.toContain("p1");
+  });
+
+  it("do not come back for a store that sold, nor appear before the Início read them", () => {
+    const store = fakeStore();
+    firstProductRegistered("loja-a", "p1", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBeNull();
+    rememberFirstSteps("loja-a", null, store);
+    firstProductRegistered("loja-a", "p1", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBeNull();
+  });
+
+  it("tell the foot of the menu when the product is registered", () => {
+    const store = fakeStore();
+    rememberFirstSteps("loja-a", { firstProductId: null }, store);
+    let told = 0;
+    const stop = subscribeFirstSteps(() => {
+      told += 1;
+    });
+    firstProductRegistered("loja-a", "p1", store);
+    stop();
+    expect(told).toBe(1);
   });
 
   it("are dropped when the session ends", () => {
