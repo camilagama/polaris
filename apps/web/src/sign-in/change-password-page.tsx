@@ -1,3 +1,4 @@
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import KeyRoundIcon from "lucide-react/dist/esm/icons/key-round";
 import {
   type FormEvent,
@@ -96,6 +97,7 @@ export function CancelLink() {
   const { billingSelfService, organization } = useCurrentOrganization();
   const tab = firstSettingsTab({
     billing: canManageBilling(billingSelfService, organization.role),
+    dataExport: hasCapabilityForRole(organization.role, "organization:export"),
     offline: OFFLINE_RUNTIME_ENABLED,
     // this page is the Senha tab: it exists only with the password on
     passwordOn: true,

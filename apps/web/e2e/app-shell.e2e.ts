@@ -673,6 +673,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
         ["Formas de receber", "/configuracoes"],
         ["Catálogo público", "/configuracoes?aba=catalogo-publico"],
         ["Aparelhos", "/configuracoes?aba=aparelhos"],
+        ["Seus dados", "/configuracoes?aba=seus-dados"],
       ],
       title: "Configurações",
     },

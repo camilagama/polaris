@@ -1,6 +1,6 @@
 # Configurações
 
-Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Formas de receber (`/configuracoes?aba=formas-de-receber`, a primeira, o mesmo que `/configuracoes`), Catálogo público (`/configuracoes?aba=catalogo-publico`), Aparelhos (`/configuracoes?aba=aparelhos`), Assinatura (`/configuracoes?aba=assinatura`) e Senha (`/configuracoes?aba=senha`).
+Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Formas de receber (`/configuracoes?aba=formas-de-receber`, a primeira, o mesmo que `/configuracoes`), Catálogo público (`/configuracoes?aba=catalogo-publico`), Aparelhos (`/configuracoes?aba=aparelhos`), Assinatura (`/configuracoes?aba=assinatura`), Senha (`/configuracoes?aba=senha`) e Seus dados (`/configuracoes?aba=seus-dados`, a última).
 
 ## Sub-features
 
@@ -9,6 +9,7 @@ Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Form
 - `aparelhos` os aparelhos do modo offline e a revogação.
 - `assinatura` o plano e o uso ("Plano Free", barras "Variantes: N de 50", "Imagens: N de 50", "Metas em andamento: N de 1").
 - `senha` troca de senha (atrás da flag de senha).
+- `seus-dados` a cópia dos dados da loja, só para o dono (`organization:export`): cartão "Pedir cópia" (caixas "Dados em JSON", "Dados em planilha (CSV)", "Imagens dos produtos" e o botão "Pedir cópia dos dados") e `region "Suas cópias"` com "Atualizar"; vazio: "Nenhuma cópia pedida ainda."
 
 ## How to get to it (user POV)
 
@@ -26,6 +27,7 @@ Preconditions:
 - **Assinatura no limite.** Com `--assinatura` e loja `limite`: `$V snap "/configuracoes?aba=assinatura"`. `tabpanel "Assinatura"` mostra `region "Plano Free"` com "Você usa 50 de 50 variantes." e `progressbar "Variantes: 50 de 50"`, e o `status` "A assinatura do Pro não está disponível agora. Nada muda no seu plano." Provado nesta skill (captura `snap-configuracoes-aba-assinatura`).
 - **Catálogo público.** `$V snap "/configuracoes?aba=catalogo-publico"`: o aviso do plano, o formulário "Perfil público" e `region "Produtos"` com "Mostrar no catálogo" desligado.
 - **Formas de receber.** "Novo perfil" abre o formulário (`apps/web/e2e/payment-profiles-screen.e2e.ts`).
+- **Seus dados.** `$V snap "/configuracoes?aba=seus-dados"`: o cartão "Pedir cópia" e `region "Suas cópias"`. Pedir cria um pedido real, que fica preparando: o job horário não roda no launch, então "pronta", "expirada" e as recusas só se veem com a API simulada (`apps/web/e2e/data-export-screen.e2e.ts`).
 - **Prova.** `snap` de cada aba pedida, na loja do estado.
 
 ## Gotchas

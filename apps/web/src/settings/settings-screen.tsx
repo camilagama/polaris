@@ -1,3 +1,4 @@
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { useEffect, useState } from "react";
 import { useAddress } from "../app-shell/address";
 import { lazyScreen } from "../app-shell/lazy-screen";
@@ -52,6 +53,14 @@ const PANELS: Readonly<Record<string, TabPanel>> = {
     ),
     value: "senha",
   },
+  "seus-dados": {
+    Screen: lazyScreen(() =>
+      import("../data-export/data-export-page").then((module) => ({
+        default: module.DataExportPage,
+      }))
+    ),
+    value: "seus-dados",
+  },
 };
 
 /** Whether the password is on (ADR 0100, AC-46); null while the server has not said. */
@@ -75,10 +84,11 @@ function usePasswordOn(): boolean | null {
 
 /**
  * Configurações (map of navigation, § 1): Formas de receber, Catálogo público, Aparelhos only with the offline runtime,
- * Assinatura only with `billing:manage` and the self-service on (AS-19), and Senha only with the password on. A tab
- * the address names is drawn even without its condition (an old link to `/subscription` or `/devices`): its screen
- * says itself what this person cannot do there, as it did as a page of its own. Senha is the exception once the
- * server said the password is off (its page would be a 404): the address opens the first tab.
+ * Assinatura only with `billing:manage` and the self-service on (AS-19), Senha only with the password on, and Seus dados
+ * only with `organization:export`. A tab the address names is drawn even without its condition (an old link to
+ * `/subscription` or `/devices`): its screen says itself what this person cannot do there, as it did as a page of its
+ * own. Senha is the exception once the server said the password is off (its page would be a 404): the address opens
+ * the first tab.
  */
 export function SettingsScreen() {
   const { billingSelfService, organization } = useCurrentOrganization();
@@ -87,6 +97,7 @@ export function SettingsScreen() {
   const asked = requestedTab("settings", search).value;
   const shows = settingsTabsShown({
     billing: canManageBilling(billingSelfService, organization.role),
+    dataExport: hasCapabilityForRole(organization.role, "organization:export"),
     offline: OFFLINE_RUNTIME_ENABLED,
     passwordOn: passwordOn === true,
   });
