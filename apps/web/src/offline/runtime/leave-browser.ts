@@ -1,3 +1,4 @@
+import { clearFirstSteps } from "../../app-shell/first-steps";
 import {
   browserStorage,
   clearOrganizationsCache,
@@ -34,6 +35,7 @@ export function clearSessionCaches(): void {
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
   clearPlanNotice();
+  clearFirstSteps();
   clearSaleDrafts(sessionStorageOrNull());
   clearSaleAttempts(sessionStorageOrNull());
 }

@@ -6,10 +6,10 @@ import { serveHealth } from "./worker-mark";
 
 /**
  * The states of the Assinatura the interface guardrails measure: the real route `/subscription` in the shell,
- * with the session and `billing.readPlan` answered by the test (`page.route`), synthetic data only. Five states, as
+ * with the session and `billing.readPlan` answered by the test (`page.route`), synthetic data only. Six states, as
  * few as the other screens (each one loads in every context of the map, and the CI job has a limit of 30 minutes):
  * the offer of a Free store with the form of Pix Automático open, the Pix waiting for the bank, the Pro in force in
- * the window of the refund, the dialog of cancelling the renewal, and the grace with the notice at the top and
+ * the window of the refund, the trial (with the foot of the menu), the dialog of cancelling the renewal, and the grace with the notice at the top and
  * the page of the charge that failed. Each state of the plan, the refusals, the return of the card and the owner's
  * commands are proved in `e2e/subscription-screen.e2e.ts`, `e2e/subscription-commands.e2e.ts` and in the captures
  * of the pull requests.
@@ -123,6 +123,16 @@ const ACTIVE_IN_WINDOW = plan({
   state: "active",
 });
 
+/** The trial by card, with its first charge set: the Assinatura, and the trial at the foot of the menu. */
+const TRIAL = plan({
+  accessEndsAt: "2026-10-31T03:00:00.000Z",
+  cycleMonths: 1,
+  method: "card",
+  nextCharge: { amount: "24.90", on: "2026-10-30" },
+  state: "trialing",
+  trialAvailable: false,
+});
+
 const PIX_RADIO = /Pix Automático/;
 
 async function choosePix(page: Page) {
@@ -134,6 +144,11 @@ async function choosePix(page: Page) {
 }
 
 export const subscriptionStates = {
+  /** The trial: the date of the first charge on the screen and, on the desktop, at the foot of the menu. */
+  trial: (page: Page) =>
+    openSubscription(page, [TRIAL], (current) =>
+      current.getByText("Pro, em teste").first().waitFor()
+    ),
   /** The Pro in force, in the window of the right of withdrawal: the plan, the use, how it pays, its two actions. */
   active: (page: Page) =>
     openSubscription(page, [ACTIVE_IN_WINDOW], (current) =>
