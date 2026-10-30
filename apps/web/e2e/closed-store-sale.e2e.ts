@@ -83,7 +83,7 @@ function closedStore() {
 }
 
 class Store {
-  closed = Boolean(0);
+  closed = false as boolean;
   confirms = 0;
 
   async install(page: Page) {

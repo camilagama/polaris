@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LogoutWorkspace } from "../offline/logout-guard";
-import { readQueueOnDisk } from "./use-device-queue";
+import { readClosedQueueOnDisk, readQueueOnDisk } from "./use-device-queue";
 
 const STORE = "0199c2d0-0000-7000-8000-00000000a001";
 
@@ -58,6 +58,43 @@ describe("the queue of the store read from the disk (AC-3)", () => {
     expect(await readQueueOnDisk([], STORE, no)).toEqual({
       counts: { pending: 0, rejected: 0, sending: 0 },
       kind: "counted",
+    });
+  });
+});
+
+describe("o tipo de cada operação da fila lida (AC-7)", () => {
+  it("conta vendas, cadastros e o resto só da loja pedida", async () => {
+    const commands = (types: string[]) =>
+      types.map((type) => ({ type })) as unknown[];
+    const ws = (label: string, types: string[]): LogoutWorkspace => ({
+      ...workspace(
+        label,
+        { pending: types.length, rejected: 0, sending: 0 },
+        []
+      ),
+      outbox: {
+        snapshot: () =>
+          Promise.resolve({
+            blockedBy: null,
+            commands: commands(types),
+            pending: types.length,
+            rejected: 0,
+            sending: 0,
+          }),
+      } as unknown as LogoutWorkspace["outbox"],
+    });
+    const state = await readClosedQueueOnDisk(
+      [
+        ws(STORE, ["sale.confirm", "customer.create", "stock.receive"]),
+        ws(`${STORE}2 (outra loja)`, ["sale.confirm", "sale.confirm"]),
+      ],
+      STORE,
+      yes
+    );
+    expect(state).toEqual({
+      counts: { pending: 3, rejected: 0, sending: 0 },
+      kind: "counted",
+      kinds: { others: 1, registers: 1, sales: 1 },
     });
   });
 });

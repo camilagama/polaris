@@ -63,10 +63,13 @@ class ClosingServer {
   refusing: Refusing = "none";
   pushAnswer: "accept" | "fail" = "accept";
   listMine = 0;
+  status: Record<string, unknown> = CLOSED;
+  readonly procedures: string[] = [];
+  sessionDown = false as boolean;
   pushes = 0;
   leases = 0;
   closedRefusals = 0;
-  signedOut = Boolean(0);
+  signedOut = false as boolean;
   signOuts = 0;
 
   readonly userId: string;
@@ -113,8 +116,11 @@ class ClosingServer {
 
   async install(page: Page) {
     await serveHealth(page);
-    await page.route("**/api/auth/get-session", (route) =>
-      route.fulfill({
+    await page.route("**/api/auth/get-session", (route) => {
+      if (this.sessionDown) {
+        return route.abort("internetdisconnected");
+      }
+      return route.fulfill({
         body: JSON.stringify(
           this.signedOut
             ? null
@@ -122,8 +128,8 @@ class ClosingServer {
         ),
         contentType: "application/json",
         headers: { ...WORKER_MARK },
-      })
-    );
+      });
+    });
     await page.route("**/api/auth/sign-out", (route) => {
       this.signOuts += 1;
       this.signedOut = true;
@@ -145,6 +151,7 @@ class ClosingServer {
       string,
       unknown
     >;
+    this.procedures.push(procedure);
     switch (procedure) {
       case "organization/listMine":
         this.listMine += 1;
@@ -154,7 +161,10 @@ class ClosingServer {
         });
         return;
       case "organization/closedStatus":
-        await ClosingServer.ok(route, { organization: CLOSED });
+        await ClosingServer.ok(route, { organization: this.status });
+        return;
+      case "dataExport/listClosed":
+        await ClosingServer.ok(route, { exports: [] });
         return;
       case "device/register": {
         const id = uuid(7000 + this.devices.size + 1);
@@ -525,8 +535,10 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     const server = new ClosingServer(`user-${crypto.randomUUID()}`);
     await openSales(page, server);
     await queueTwoSales(page);
-    await page.route("**/rpc/sync/push", (route) =>
-      route.fulfill({
+    let refusals = 0;
+    await page.route("**/rpc/sync/push", (route) => {
+      refusals += 1;
+      return route.fulfill({
         body: JSON.stringify({
           json: {
             code: "FORBIDDEN",
@@ -540,14 +552,373 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
         contentType: "application/json",
         headers: { ...WORKER_MARK },
         status: 403,
-      })
-    );
+      });
+    });
+    const leasesBefore = server.leases;
     await page.context().setOffline(false);
+    // the refusal drops the lease and the app asks for a new one a moment later: the localStorage key is empty only
+    // for that moment, which a poll can miss under load, so the drop is read from the new request
     await expect
-      .poll(() => stored(page, leaseKey(server.userId)), {
-        timeout: 40_000,
-      })
-      .toBeNull();
+      .poll(() => server.leases, { timeout: 40_000 })
+      .toBeGreaterThan(leasesBefore);
+    expect(refusals).toBeGreaterThan(0);
     await expect(notice(page)).toHaveCount(0);
+  });
+});
+
+const OTHER_STORE = "0199c2d0-0000-7000-8000-00000000a002";
+const PANEL = `/loja-encerrada?loja=${ORGANIZATION.id}`;
+const AFTER_WINDOW = { ...CLOSED, canRecover: false, phase: "closed" };
+const WINDOW_TEXT =
+  "2 operações deste aparelho ainda não foram enviadas. Se você desfizer o encerramento, elas serão enviadas.";
+const AFTER_TEXT =
+  "2 operações deste aparelho não foram enviadas e nunca mais serão: esta loja não volta. Elas não estão na cópia dos seus dados.";
+const DISCARD_BUTTON = "Descartar o que não foi enviado…";
+const DISCARD_ANY = /Descartar/;
+const CHECKING = "Conferindo as operações guardadas neste aparelho";
+const DISCARDED = "Operações descartadas neste aparelho.";
+
+async function seedOtherStore(page: Page, userId: string) {
+  return await page.evaluate(
+    async ({ organizationId, user }) => {
+      const material = `polaris:v1:${user.length}:${user}:${organizationId}`;
+      const digest = new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(material)
+        )
+      );
+      const key = [...digest]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("")
+        .slice(0, 32);
+      const name = `polaris-outbox-${key}`;
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const opening = indexedDB.open(name, 1);
+        opening.onupgradeneeded = () => {
+          const created = opening.result;
+          created
+            .createObjectStore("commands", { keyPath: "commandId" })
+            .createIndex("seq", "seq", { unique: true });
+          created.createObjectStore("meta");
+        };
+        opening.onsuccess = () => resolve(opening.result);
+        opening.onerror = () => reject(opening.error);
+      });
+      const commandId = crypto.randomUUID();
+      const at = new Date().toISOString();
+      await new Promise<void>((resolve, reject) => {
+        const tx = database.transaction(["commands", "meta"], "readwrite");
+        tx.objectStore("commands").put({
+          attempts: 0,
+          baseVersion: null,
+          commandId,
+          createdAt: at,
+          deviceId: crypto.randomUUID(),
+          lastAttemptAt: null,
+          lease: "lease",
+          organizationId,
+          payload: { name: "Cliente da outra loja" },
+          rejection: null,
+          seq: 1,
+          status: "pending",
+          type: "customer.create",
+        });
+        tx.objectStore("meta").put(1, "lastSeq");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      database.close();
+      const list = JSON.parse(
+        window.localStorage.getItem("polaris.offline.namespaces") ?? "[]"
+      ) as { organizationId: string; userId: string }[];
+      list.push({ organizationId, userId: user });
+      window.localStorage.setItem(
+        "polaris.offline.namespaces",
+        JSON.stringify(list)
+      );
+      return { commandId, name };
+    },
+    { organizationId: OTHER_STORE, user: userId }
+  );
+}
+
+async function commandsIn(page: Page, name: string) {
+  return await page.evaluate(async (databaseName) => {
+    const databases = (await indexedDB.databases()).map(({ name: n }) => n);
+    if (!databases.includes(databaseName)) {
+      return null;
+    }
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = indexedDB.open(databaseName);
+      opening.onerror = () => reject(opening.error);
+      opening.onsuccess = () => resolve(opening.result);
+    });
+    const rows = await new Promise<{ commandId: string }[]>(
+      (resolve, reject) => {
+        const request = database
+          .transaction("commands", "readonly")
+          .objectStore("commands")
+          .getAll();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      }
+    );
+    database.close();
+    return rows.map(({ commandId }) => commandId);
+  }, name);
+}
+
+const queueSection = (page: Page) =>
+  page.getByRole("region", { exact: true, name: "Neste aparelho" });
+const discardOpener = (page: Page) =>
+  page.getByRole("button", { exact: true, name: DISCARD_BUTTON });
+const discardDialog = (page: Page) =>
+  page.getByRole("dialog", {
+    name: "Descartar 2 operações deste aparelho?",
+  });
+
+async function leaveTwoSalesAndOpenPanel(
+  page: Page,
+  server: ClosingServer,
+  status: Record<string, unknown>
+) {
+  await openSales(page, server);
+  await queueTwoSales(page);
+  const queued = await outboxCommands(page);
+  expect(queued).toHaveLength(2);
+  const other = await seedOtherStore(page, server.userId);
+  server.refusing = "push";
+  server.status = status;
+  await page.context().setOffline(false);
+  await expect(notice(page)).toBeVisible({ timeout: 40_000 });
+  const panelStart = server.procedures.length;
+  await page.goto(PANEL);
+  await expect(
+    page.getByRole("heading", {
+      exact: true,
+      level: 1,
+      name: "Loja do teste está encerrada",
+    })
+  ).toBeVisible();
+  await expect(queueSection(page)).toBeVisible({ timeout: 30_000 });
+  await expect(queueSection(page)).not.toContainText(CHECKING, {
+    timeout: 30_000,
+  });
+  return { other, panelStart, queued };
+}
+
+test.describe("descartar o que não foi enviado, no painel da loja encerrada", () => {
+  test.setTimeout(90_000);
+
+  test("na janela de desfazer só há a frase, sem botão, e a fila fica igual (AC-1)", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { queued } = await leaveTwoSalesAndOpenPanel(page, server, CLOSED);
+
+    await expect(queueSection(page)).toContainText(WINDOW_TEXT);
+    await expect(
+      queueSection(page).getByRole("heading", {
+        exact: true,
+        level: 2,
+        name: "Neste aparelho",
+      })
+    ).toBeVisible();
+    await expect(discardOpener(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: DISCARD_ANY })).toHaveCount(
+      0
+    );
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+  });
+
+  test("depois da janela: os dois passos, só esta loja e nenhuma chamada nova (AC-2, AC-3, AC-5, AC-6, AC-7)", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { other, panelStart, queued } = await leaveTwoSalesAndOpenPanel(
+      page,
+      server,
+      AFTER_WINDOW
+    );
+    const device = await stored(page, DEVICE_KEY);
+
+    await expect(queueSection(page)).toContainText(AFTER_TEXT);
+    await expect(discardOpener(page)).toBeVisible();
+    expect(await commandsIn(page, other.name)).toEqual([other.commandId]);
+
+    await discardOpener(page).click();
+    await expect(discardDialog(page)).toBeVisible();
+    await expect(
+      discardDialog(page).getByRole("button", { exact: true, name: "Voltar" })
+    ).toBeFocused();
+    const text = await discardDialog(page).innerText();
+    expect(text).toContain(
+      "O servidor não confirmou o que será descartado: vendas"
+    );
+    expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
+    expect(text).toContain("Isso não tem volta.");
+
+    await discardDialog(page)
+      .getByRole("button", { exact: true, name: "Voltar" })
+      .click();
+    await expect(discardDialog(page)).toHaveCount(0);
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+
+    const callsBefore = [...server.procedures];
+    await page.evaluate(() => {
+      const counted = window as unknown as { outboxDeletes: number };
+      counted.outboxDeletes = 0;
+      const real = IDBFactory.prototype.deleteDatabase;
+      IDBFactory.prototype.deleteDatabase = function deleteDatabase(
+        this: IDBFactory,
+        name: string
+      ) {
+        if (name.startsWith("polaris-outbox-")) {
+          counted.outboxDeletes += 1;
+        }
+        return real.call(this, name);
+      };
+    });
+    await discardOpener(page).click();
+    await discardDialog(page)
+      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .dblclick();
+
+    await expect(
+      page.getByRole("status").filter({ hasText: DISCARDED })
+    ).toBeVisible();
+    await expect(discardDialog(page)).toHaveCount(0);
+    await expect(
+      queueSection(page).getByRole("heading", { level: 2 })
+    ).toBeFocused();
+    await expect(discardOpener(page)).toHaveCount(0);
+    await expect(queueSection(page)).not.toContainText(
+      "operações deste aparelho não"
+    );
+
+    const left = await outboxCommands(page);
+    for (const commandId of queued) {
+      expect(left).not.toContain(commandId);
+    }
+    expect(await commandsIn(page, other.name)).toEqual([other.commandId]);
+    expect(await stored(page, SESSION_USER_KEY)).toBe(server.userId);
+    expect(await stored(page, DEVICE_KEY)).toBe(device);
+    expect(await stored(page, "polaris.offline.namespaces")).toContain(
+      OTHER_STORE
+    );
+    expect(await stored(page, "polaris.offline.namespaces")).not.toContain(
+      ORGANIZATION.id
+    );
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { outboxDeletes: number }).outboxDeletes
+      )
+    ).toBe(1);
+    expect(server.procedures).toEqual(callsBefore);
+    expect(new Set(server.procedures.slice(panelStart))).toEqual(
+      new Set(["organization/closedStatus", "dataExport/listClosed"])
+    );
+  });
+
+  test("a escrita que falha: diz quantas restam e não afirma o sucesso (AC-5)", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { queued } = await leaveTwoSalesAndOpenPanel(
+      page,
+      server,
+      AFTER_WINDOW
+    );
+    await page.evaluate(() => {
+      const real = IDBFactory.prototype.deleteDatabase;
+      IDBFactory.prototype.deleteDatabase = function deleteDatabase(
+        this: IDBFactory,
+        name: string
+      ) {
+        if (name.startsWith("polaris-outbox-")) {
+          const failing: { error: DOMException; onerror?: () => void } = {
+            error: new DOMException("falhou", "UnknownError"),
+          };
+          setTimeout(() => failing.onerror?.(), 0);
+          return failing as unknown as IDBOpenDBRequest;
+        }
+        return real.call(this, name);
+      };
+    });
+
+    await discardOpener(page).click();
+    await discardDialog(page)
+      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .click();
+
+    await expect(
+      page.getByRole("alert").filter({
+        hasText:
+          "Não foi possível descartar tudo. Restaram 2 operações neste aparelho. Nada mais foi apagado.",
+      })
+    ).toBeVisible();
+    await expect(page.getByText(DISCARDED)).toHaveCount(0);
+    await expect(discardOpener(page)).toBeVisible();
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+  });
+
+  test("sem a conta confirmada na hora de descartar: diz que nada foi apagado e mantém a fila e o botão", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { queued } = await leaveTwoSalesAndOpenPanel(
+      page,
+      server,
+      AFTER_WINDOW
+    );
+    await expect(discardOpener(page)).toBeVisible();
+    server.sessionDown = true;
+
+    await discardOpener(page).click();
+    await discardDialog(page)
+      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .click();
+
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: "Não foi possível descartar agora",
+      })
+    ).toContainText("Nada foi apagado.");
+    await expect(discardDialog(page)).toHaveCount(0);
+    await expect(discardOpener(page)).toBeVisible();
+    await expect(queueSection(page)).toContainText(AFTER_TEXT);
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+  });
+
+  test("sem poder ler a fila, não oferece o descarte nem diz que não há o que descartar (AC-4)", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { queued } = await leaveTwoSalesAndOpenPanel(
+      page,
+      server,
+      AFTER_WINDOW
+    );
+    server.sessionDown = true;
+    await page.reload();
+
+    await expect(queueSection(page)).toContainText(
+      "Não foi possível conferir as operações guardadas neste aparelho. Recarregue a página e tente de novo."
+    );
+    await expect(discardOpener(page)).toHaveCount(0);
+    await expect(page.getByText(DISCARDED)).toHaveCount(0);
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+  });
+
+  test("sem fila neste aparelho, o cartão não aparece", async ({ page }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    server.status = AFTER_WINDOW;
+    await server.install(page);
+    await page.goto(PANEL);
+    await expect(
+      page.getByRole("heading", { exact: true, level: 1 })
+    ).toBeVisible();
+    await expect(queueSection(page)).toHaveCount(0);
   });
 });
