@@ -2,6 +2,7 @@ import type { ProductReadModel } from "@polaris/contracts";
 import { firstProductRegistered } from "../app-shell/first-steps";
 import { orpcClient } from "../lib/orpc";
 import { uuidv7 } from "../lib/uuidv7";
+import type { Outbox } from "../offline/outbox/outbox";
 import { createOfflineProduct } from "../offline/product-create";
 import type { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { toLocalProductRow } from "./local-products";
@@ -55,6 +56,26 @@ export interface NewProductInput {
 }
 
 /**
+ * Sends the queue and, once the command has left it (the outbox only drops a command the server accepted; a refused
+ * one stays and a failed send leaves it waiting), tells the foot of the menu that the store has its first product.
+ */
+function announceWhenAccepted(
+  workspace: NonNullable<Workspace>,
+  stores: { outbox: Pick<Outbox, "snapshot"> },
+  created: { commandId: string; organizationId: string; productId: string }
+): void {
+  workspace.runtime
+    .syncNow()
+    .then(() => stores.outbox.snapshot())
+    .then(({ commands }) => {
+      if (!commands.some((entry) => entry.commandId === created.commandId)) {
+        firstProductRegistered(created.organizationId, created.productId);
+      }
+    })
+    .catch(() => undefined);
+}
+
+/**
  * Creates a product with its price and opening stock and says what happened. With the offline runtime ready it is
  * queued on this device and shown at once (sent now when there is a connection); without it, it is created on the
  * server in one call (the server dates the stock today in the store's time zone). `today` is that date on the device.
@@ -86,7 +107,7 @@ export async function createProduct(
     // not ready, or the organization changed under the screen: nothing is queued
     throw new Error("offline_runtime_unavailable");
   }
-  await createOfflineProduct({
+  const { command, rows } = await createOfflineProduct({
     deviceId: stores.deviceId,
     input: {
       categoryId: input.categoryId,
@@ -104,7 +125,11 @@ export async function createProduct(
   });
   const name = input.name.trim();
   if (workspace.online) {
-    workspace.runtime.syncNow().catch(() => undefined);
+    announceWhenAccepted(workspace, stores, {
+      commandId: command.commandId,
+      organizationId,
+      productId: rows.product.id,
+    });
     // the server has not answered yet: the row says "Aguardando envio" until it does
     return `Produto “${name}” guardado${openingUnitsText(input)}. Enviando…`;
   }

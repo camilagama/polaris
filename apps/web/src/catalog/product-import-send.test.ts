@@ -9,6 +9,7 @@ import type { ImportReadyRow } from "./product-import-rows";
 import {
   CUTS_AT_CEILING_TO_SKIP,
   createImportRun,
+  enteredProductId,
   IMPORT_CALL_INTERVAL_MS,
   PACE_BACK_AFTER_ANSWERS,
   REGIME_PAUSE_STEPS_MS,
@@ -248,6 +249,39 @@ describe("one row per call, by the measure of the Free plan", () => {
     // the failure is no step of the progress: the screen sees only the rows answered
     expect(progress).toEqual([1, 2, 3]);
     expect(summarizeImport(run)).toMatchObject({ entered: 3, pending: 0 });
+  });
+});
+
+describe("the product an import created", () => {
+  const answer = (
+    run: ImportRun,
+    status: "created" | "repeated" | "exists_by_name" | "limit_reached"
+  ) => {
+    const row = run.rows[0] as ProductImportRowInput;
+    const result: ProductImportRowResult =
+      status === "created" || status === "repeated"
+        ? { productId: row.productId, rowNumber: row.rowNumber, status }
+        : { rowNumber: row.rowNumber, status };
+    run.results.set(row.rowNumber, result);
+    return row.productId;
+  };
+
+  it.each(["created", "repeated"] as const)(
+    "is the product of a row the server answered %s",
+    (status) => {
+      const run = createImportRun(readyRows(2), newId);
+      expect(enteredProductId(run)).toBeNull();
+      const productId = answer(run, status);
+      expect(enteredProductId(run)).toBe(productId);
+    }
+  );
+
+  it("is none when the rows were only skipped, refused or left out by the plan", () => {
+    const run = createImportRun(readyRows(2), newId);
+    answer(run, "exists_by_name");
+    expect(enteredProductId(run)).toBeNull();
+    answer(run, "limit_reached");
+    expect(enteredProductId(run)).toBeNull();
   });
 });
 

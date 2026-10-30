@@ -862,3 +862,39 @@ test("AC-13: a prévia com nomes longos não rola de lado a 320 px", async ({
   });
   expect(overflow).toEqual({ body: 0, page: 0 });
 });
+
+async function importOneRowAndOpenMore(page: Page) {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openProducts(page);
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+  const dialog = dialogOf(page);
+  await chooseFile(page, ["Nome", "Alfa"]);
+  await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+  await dialog.getByRole("button", { name: "Importar 1 produto" }).click();
+  await expect(dialog.getByText("Passo 4 de 4 · Resultado")).toBeVisible({
+    timeout: 30_000,
+  });
+  await dialog.getByRole("button", { name: "Ver os produtos" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
+}
+
+const stepsLink = (page: Page, done: number) =>
+  page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+    exact: true,
+    name: `Primeiros passos, ${done} de 3 concluídos`,
+  });
+
+test("a importação que cria um produto muda o pé do menu de 1 de 3 para 2 de 3", async ({
+  page,
+}) => {
+  await importOneRowAndOpenMore(page);
+  await expect(stepsLink(page, 2)).toBeVisible();
+  await expect(stepsLink(page, 1)).toHaveCount(0);
+});

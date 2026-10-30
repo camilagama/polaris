@@ -512,6 +512,16 @@ export async function runImport(
   return { kind: "done" };
 }
 
+/** The product of a row the server created (or had created by an earlier send of the same row), if any row was. */
+export function enteredProductId(run: ImportRun): string | null {
+  for (const result of run.results.values()) {
+    if (result.status === "created" || result.status === "repeated") {
+      return result.productId;
+    }
+  }
+  return null;
+}
+
 export interface ImportSummary {
   /** Created now or by an earlier send of the same rows. */
   entered: number;
