@@ -438,6 +438,18 @@ describe("the device of a closed store (AC-11)", () => {
     );
   });
 
+  it("after a sale refused, says it was not recorded and where the cart is, and never that the sale is in the queue", () => {
+    const text = deviceClosedText(STORE, true, true);
+    expect(text).toBe(
+      "Esta loja foi encerrada em 20 de outubro de 2026. A venda que você acabou de confirmar não foi registrada. A cópia deste aparelho foi apagada; o que já estava na fila continua guardado. O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde."
+    );
+    expect(text).not.toContain("o que não foi enviado");
+    expect(deviceClosedText(null, false, true)).toBe(
+      "Esta loja foi encerrada. A venda que você acabou de confirmar não foi registrada. O que já estava na fila deste aparelho continua guardado. O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde."
+    );
+    expect(deviceClosedText(null, false, true)).not.toContain("apagada");
+  });
+
   it("never says the copy was deleted before the device confirmed it", () => {
     expect(deviceClosedText(STORE, false)).toBe(
       "Esta loja foi encerrada em 20 de outubro de 2026. O que não foi enviado continua guardado na fila deste aparelho."

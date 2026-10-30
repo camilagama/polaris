@@ -8,25 +8,46 @@ const NONE: readonly string[] = [];
  * organizations again, and a closed one is no longer listed.
  */
 let closed: readonly string[] = NONE;
+/** The closed ones whose refusal came back to a sale being confirmed: that sale was never queued on the device. */
+let saleRefused: readonly string[] = NONE;
 const listeners = new Set<() => void>();
 
 /** Every refusal is kept: the one of the store open now must not be lost behind one that came earlier. */
-export function markOrganizationClosed(organizationId: string): void {
-  if (organizationId === "" || closed.includes(organizationId)) {
+export function markOrganizationClosed(
+  organizationId: string,
+  cause: "sale" | "other" = "other"
+): void {
+  if (organizationId === "") {
     return;
   }
-  closed = [...closed, organizationId];
+  const newlyClosed = !closed.includes(organizationId);
+  const newlyRefusedSale =
+    cause === "sale" && !saleRefused.includes(organizationId);
+  if (!(newlyClosed || newlyRefusedSale)) {
+    return;
+  }
+  // a new list also for the cause alone: the notice already on the screen reads it again
+  closed = newlyClosed ? [...closed, organizationId] : [...closed];
+  if (newlyRefusedSale) {
+    saleRefused = [...saleRefused, organizationId];
+  }
   for (const listener of listeners) {
     listener();
   }
 }
 
+/** Whether the refusal of this store came back to a sale the person had just confirmed. */
+export function organizationClosedOnSale(organizationId: string): boolean {
+  return saleRefused.includes(organizationId);
+}
+
 /** The session is over or changed hands: no refusal of the earlier one says anything about the next. */
 export function clearOrganizationsClosedHere(): void {
-  if (closed.length === 0) {
+  if (closed.length === 0 && saleRefused.length === 0) {
     return;
   }
   closed = NONE;
+  saleRefused = NONE;
   for (const listener of listeners) {
     listener();
   }

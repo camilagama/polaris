@@ -12,6 +12,8 @@ import {
   type LogoutFlowResult,
   startLogout,
 } from "./logout-flow";
+import type { OfflineRuntime } from "./offline-runtime";
+import { logoutDependencies } from "./logout-dependencies";
 import { useOfflineRuntime } from "./runtime-context";
 
 /**
@@ -42,6 +44,17 @@ async function revokeCurrentDevice(
   return { endedCurrentSession };
 }
 
+function dependenciesFor(
+  runtime: OfflineRuntime | null,
+  destination: LeavePath
+) {
+  return logoutDependencies(runtime, {
+    leave: () => leaveAfterSignOut(destination),
+    revoke: revokeCurrentDevice,
+    signOut: signOutOnServer,
+  });
+}
+
 /**
  * The protected logout as a hook: "Sair" uses it to go home, the devices screen
  * to go to the sign-in screen (its "Entrar de novo" while the session is still
@@ -53,30 +66,17 @@ export function useLogout(destination: LeavePath) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const dependencies =
-    useCallback(async (): Promise<LogoutFlowDependencies | null> => {
-      // before anything else: protecting the queue purges the workspaces, and the device is revoked after that
-      const deviceId = runtime?.currentDeviceId() ?? null;
-      const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
-      return runtime && workspaces.length > 0
-        ? {
-            device: {
-              forget: () => runtime.forgetDevice(),
-              id: deviceId,
-              isOnline: () => navigator.onLine,
-              revoke: revokeCurrentDevice,
-            },
-            leave: () => leaveAfterSignOut(destination),
-            signOut: signOutOnServer,
-            workspaces,
-          }
-        : null;
-    }, [destination, runtime]);
+  const dependencies = useCallback(
+    () => dependenciesFor(runtime, destination),
+    [destination, runtime]
+  );
 
   const run = useCallback(
     async (
       action: (deps: LogoutFlowDependencies) => Promise<LogoutFlowResult>
     ) => {
+      // cleared first so that the same message again is a new one, and is brought to view again
+      setMessage(null);
       const deps = await dependencies();
       if (!deps) {
         setMessage(
@@ -148,6 +148,7 @@ interface LogoutNoticesProps {
 export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
+  const messageRef = useRef<HTMLParagraphElement>(null);
   const needsAttention = blocked !== null || message !== null;
   useEffect(() => {
     if (needsAttention) {
@@ -156,11 +157,12 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
   }, [needsAttention, onAttention]);
   // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
   useEffect(() => {
-    if (blocked) {
-      blockedRef.current?.scrollIntoView({ block: "nearest" });
-      blockedRef.current?.focus();
+    const shown = blocked ? blockedRef.current : messageRef.current;
+    if (shown && needsAttention) {
+      shown.scrollIntoView({ block: "nearest" });
+      shown.focus();
     }
-  }, [blocked]);
+  }, [blocked, message, needsAttention]);
   return (
     <>
       {/* the menu that held "Sair" is closed by now: the state is said here, not only by a disabled item */}
@@ -170,7 +172,12 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
         </p>
       ) : null}
       {message ? (
-        <p className="m-0 text-destructive text-support" role="alert">
+        <p
+          className="focus-ring m-0 text-destructive text-support"
+          ref={messageRef}
+          role="alert"
+          tabIndex={-1}
+        >
           {message}
         </p>
       ) : null}

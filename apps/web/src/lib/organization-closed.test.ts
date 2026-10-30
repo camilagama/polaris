@@ -3,6 +3,7 @@ import {
   clearOrganizationsClosedHere,
   closedStoreToShow,
   markOrganizationClosed,
+  organizationClosedOnSale,
   organizationsClosedHere,
   requestedOrganizationId,
   subscribeOrganizationsClosed,
@@ -49,6 +50,29 @@ describe("the stores refused as closed", () => {
     markOrganizationClosed("b");
     expect(organizationsClosedHere()).not.toBe(first);
     expect(first).toEqual(["a"]);
+  });
+
+  it("remembers that the refusal came back to a sale, even when the store was already marked", () => {
+    const listener = vi.fn();
+    markOrganizationClosed("a");
+    expect(organizationClosedOnSale("a")).toBe(false);
+    const before = organizationsClosedHere();
+    const unsubscribe = subscribeOrganizationsClosed(listener);
+    markOrganizationClosed("a", "sale");
+    expect(organizationClosedOnSale("a")).toBe(true);
+    expect(organizationClosedOnSale("b")).toBe(false);
+    expect(organizationsClosedHere()).toEqual(["a"]);
+    expect(organizationsClosedHere()).not.toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    markOrganizationClosed("a", "sale");
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("forgets the sale refusal with the rest", () => {
+    markOrganizationClosed("a", "sale");
+    clearOrganizationsClosedHere();
+    expect(organizationClosedOnSale("a")).toBe(false);
   });
 
   it("is cleared as a whole, and only tells when there was something", () => {

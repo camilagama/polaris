@@ -860,6 +860,27 @@ describe("starting", () => {
     expect(w.keyValues.read("polaris.offline.namespaces")).toContain(userId);
   });
 
+  it("inspecting a logout tells an empty copy of the signed-in user from a copy it could not look at", async () => {
+    const w = world();
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: true,
+      workspaces: [],
+    });
+
+    w.network.online = false;
+    expect(await w.make().inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    w.network.online = true;
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    expect(await w.make().inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+  });
+
   it("logging out with no store open only reaches the namespaces of whoever is signed in, and names no one when the server answers nonsense", async () => {
     const w = world();
     const first = w.make();

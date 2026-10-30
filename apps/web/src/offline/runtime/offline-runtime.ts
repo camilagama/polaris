@@ -169,6 +169,11 @@ export interface RuntimeDependencies {
  */
 type RuntimePhase = "expired" | "off" | "ready" | "starting" | "unavailable";
 
+export interface LogoutInspection {
+  readable: boolean;
+  workspaces: LogoutWorkspace[];
+}
+
 export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
   bootstrapped: boolean;
@@ -608,9 +613,18 @@ export class OfflineRuntime {
    * person switches to it. Each workspace releases what it opened.
    */
   async logoutWorkspaces(): Promise<LogoutWorkspace[]> {
+    return (await this.inspectLogout()).workspaces;
+  }
+
+  /**
+   * `logoutWorkspaces` with the one thing an empty list cannot say: whether the runtime could look. `readable` is
+   * false when it could not tell who is signed in (offline, the server unreachable, the start still running), where an
+   * empty list may hide a queue; true with an empty list means the signed-in user has nothing on this browser.
+   */
+  async inspectLogout(): Promise<LogoutInspection> {
     const current = this.logoutWorkspace();
     if (!current) {
-      return await this.closedLogoutWorkspaces();
+      return await this.closedLogoutInspection();
     }
     const others: LogoutWorkspace[] = [];
     for (const item of this.namespaces()) {
@@ -630,7 +644,7 @@ export class OfflineRuntime {
       });
       others.push(workspace);
     }
-    return [current, ...others];
+    return { readable: true, workspaces: [current, ...others] };
   }
 
   /**
@@ -643,13 +657,14 @@ export class OfflineRuntime {
    * (patient-level data) and the lease go anyway, the same rule as a revocation:
    * the queue stays until the person sends or discards it (ADR 0038).
    */
-  private async closedLogoutWorkspaces(): Promise<LogoutWorkspace[]> {
+  private async closedLogoutInspection(): Promise<LogoutInspection> {
     if (this.snapshot.phase === "starting") {
-      return []; // the start is still opening stores: not a moment to open them again
+      // the start is still opening stores: not a moment to open them again
+      return { readable: false, workspaces: [] };
     }
     const userId = await this.signedInUserForLogout();
     if (!userId) {
-      return [];
+      return { readable: false, workspaces: [] };
     }
     const workspaces: LogoutWorkspace[] = [];
     for (const item of this.namespaces()) {
@@ -661,7 +676,7 @@ export class OfflineRuntime {
         workspaces.push(workspace);
       }
     }
-    return workspaces;
+    return { readable: true, workspaces };
   }
 
   /**

@@ -364,16 +364,32 @@ const DEVICE_CLOSED_REST =
 const DEVICE_COPY_KEPT_REST =
   "O que não foi enviado continua guardado na fila deste aparelho.";
 
+const SALE_NOT_RECORDED =
+  "A venda que você acabou de confirmar não foi registrada.";
+const SALE_QUEUE_REST =
+  "A cópia deste aparelho foi apagada; o que já estava na fila continua guardado.";
+const SALE_QUEUE_KEPT_REST =
+  "O que já estava na fila deste aparelho continua guardado.";
+const SALE_CART_KEPT =
+  "O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde.";
+
 /**
  * The notice of a device whose store was closed; without the date while it is not known (or not the user's to read).
- * It says the copy was deleted only once the device confirmed it.
+ * It says the copy was deleted only once the device confirmed it. When the refusal came back to a sale just confirmed
+ * on the server, it says that sale was not recorded and where its cart is: the sale never entered the queue, which the
+ * queue sentence must not suggest.
  */
 export function deviceClosedText(
   store: ClosedStore | null,
-  copyDropped: boolean
+  copyDropped: boolean,
+  saleRefused = false
 ): string {
   const closed = store
     ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}.`
     : "Esta loja foi encerrada.";
+  if (saleRefused) {
+    const queue = copyDropped ? SALE_QUEUE_REST : SALE_QUEUE_KEPT_REST;
+    return `${closed} ${SALE_NOT_RECORDED} ${queue} ${SALE_CART_KEPT}`;
+  }
   return `${closed} ${copyDropped ? DEVICE_CLOSED_REST : DEVICE_COPY_KEPT_REST}`;
 }

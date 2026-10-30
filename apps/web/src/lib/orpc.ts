@@ -32,7 +32,10 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
           ? requestedOrganizationId(options.input)
           : null;
         if (closedId !== null) {
-          markOrganizationClosed(closedId);
+          markOrganizationClosed(
+            closedId,
+            options.path.join("/") === "sale/confirm" ? "sale" : "other"
+          );
         } else if (rpcErrorCode(error) === "UNAUTHORIZED") {
           endSessionHere();
         } else if (isLegalAcceptanceRefusal(error)) {
