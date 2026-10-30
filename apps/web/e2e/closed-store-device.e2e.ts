@@ -427,8 +427,10 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     const server = new ClosingServer(`user-${crypto.randomUUID()}`);
     await openSales(page, server);
     await queueTwoSales(page);
-    await page.route("**/rpc/sync/push", (route) =>
-      route.fulfill({
+    let refusals = 0;
+    await page.route("**/rpc/sync/push", (route) => {
+      refusals += 1;
+      return route.fulfill({
         body: JSON.stringify({
           json: {
             code: "FORBIDDEN",
@@ -442,14 +444,16 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
         contentType: "application/json",
         headers: { ...WORKER_MARK },
         status: 403,
-      })
-    );
+      });
+    });
+    const leasesBefore = server.leases;
     await page.context().setOffline(false);
-    await expect
-      .poll(() => stored(page, leaseKey(server.userId)), {
-        timeout: 40_000,
-      })
-      .toBeNull();
+    // the refusal drops the lease and the app asks for a new one a moment later: the localStorage key is empty only
+    // for that moment, which a poll can miss under load, so the drop is read from the new request
+    await expect.poll(() => server.leases, { timeout: 40_000 }).toBeGreaterThan(
+      leasesBefore
+    );
+    expect(refusals).toBeGreaterThan(0);
     await expect(notice(page)).toHaveCount(0);
   });
 });
