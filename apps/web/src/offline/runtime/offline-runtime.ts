@@ -104,6 +104,14 @@ export class SessionUnreachableError extends Error {
   }
 }
 
+/** Nobody could be named as signed in, so nothing of the closed store's queue was touched. */
+export class NoSessionForDiscardError extends Error {
+  constructor() {
+    super("no_session_for_discard");
+    this.name = "NoSessionForDiscardError";
+  }
+}
+
 export interface OpenedStores {
   close: () => Promise<void> | void;
   outbox: Outbox;
@@ -576,6 +584,37 @@ export class OfflineRuntime {
     }
     await this.closeStores();
     await this.dropClosedAtStart(organizationId, this.generation);
+  }
+
+  /**
+   * Throws away what this device still holds for one closed organization: its queue (with the idempotency marks, which
+   * go with the database) and its collections, for the signed-in user only. Other organizations' queues, the lease of
+   * anything else, the device and the remembered user stay. Nothing here sends: a closed store never takes a command
+   * again. The caller reads the queue afterwards: only the disk says what is left.
+   */
+  async discardClosedQueue(organizationId: string): Promise<void> {
+    const open = this.namespace;
+    const userId =
+      open && open.organizationId === organizationId
+        ? open.userId
+        : await this.signedInUserForLogout();
+    if (!userId) {
+      throw new NoSessionForDiscardError();
+    }
+    const namespace = await this.dependencies.namespaceFor(
+      userId,
+      organizationId
+    );
+    const wasOpen = open?.key === namespace.key;
+    if (wasOpen) {
+      await this.closeStores();
+    }
+    await this.dependencies.purge(namespace, { discardPending: true });
+    this.forgetNamespace(namespace);
+    this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
+    if (wasOpen) {
+      this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
+    }
   }
 
   /** This organization's part of a logout (ADR 0039). */

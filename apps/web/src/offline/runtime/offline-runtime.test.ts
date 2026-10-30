@@ -12,6 +12,7 @@ import { FakeCatalogServer, FakeWriter } from "../test-support";
 import {
   type DataChannel,
   type KeyValueStore,
+  NoSessionForDiscardError,
   OfflineRuntime,
   type OpenedStores,
   type RuntimeApi,
@@ -1282,6 +1283,125 @@ describe("what the rest of the app plugs into", () => {
     runtime.subscribe(listener);
     await runtime.start(organizationId);
     expect(listener).toHaveBeenCalled();
+  });
+});
+
+describe("discarding the queue of a closed store", () => {
+  const dropsStores = (w: ReturnType<typeof world>) => ({
+    purge: (
+      namespace: { key: string },
+      options: { discardPending: boolean }
+    ) => {
+      w.purged.push(options);
+      w.stores.delete(namespace.key);
+      return Promise.resolve();
+    },
+  });
+
+  async function twoStoresQueued(w: ReturnType<typeof world>) {
+    const runtime = w.make();
+    await runtime.start("org-1");
+    await queueProduct(runtime, "Da loja encerrada", 1);
+    await runtime.start("org-2");
+    await queueProduct(runtime, "Da outra loja", 2);
+    await runtime.stop();
+  }
+
+  it("throws away only that store's queue: the other store's queue, the device and the remembered user stay", async () => {
+    const w = world();
+    await twoStoresQueued(w);
+    const deviceBefore = w.keyValues.read("polaris.offline.device");
+    const idle = w.make(null, dropsStores(w));
+
+    await idle.discardClosedQueue("org-1");
+
+    expect(w.purged).toEqual([{ discardPending: true }]);
+    expect(w.stores.has(`${userId}-org-1`)).toBe(false);
+    const other = w.stores.get(`${userId}-org-2`);
+    expect((await other?.outbox.snapshot())?.commands).toHaveLength(1);
+    expect(w.keyValues.read("polaris.offline.namespaces")).not.toContain(
+      "org-1"
+    );
+    expect(w.keyValues.read("polaris.offline.namespaces")).toContain("org-2");
+    expect(w.keyValues.read("polaris.offline.device")).toBe(deviceBefore);
+    expect(w.keyValues.read("polaris.offline.session-user")).toBe(userId);
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.org-1`)
+    ).toBeNull();
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.org-2`)
+    ).not.toBeNull();
+    const workspaces = await w.make().logoutWorkspaces();
+    expect(workspaces.map((workspace) => workspace.label)).toEqual(["org-2"]);
+    await Promise.all(workspaces.map((workspace) => workspace.release?.()));
+  });
+
+  it("only the signed-in user's namespace of that store: another person's queue of the same store stays", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start("org-1");
+    await queueProduct(first, "Da primeira pessoa", 1);
+    await first.stop();
+    w.session.user = "user-2";
+    const second = w.make();
+    await second.start("org-1");
+    await queueProduct(second, "Da segunda pessoa", 2);
+    await second.stop();
+
+    await w.make(null, dropsStores(w)).discardClosedQueue("org-1");
+
+    expect(w.stores.has("user-2-org-1")).toBe(false);
+    expect(
+      (await w.stores.get(`${userId}-org-1`)?.outbox.snapshot())?.commands
+    ).toHaveLength(1);
+  });
+
+  it("with the store open in this runtime, closes it first and leaves the runtime off", async () => {
+    const w = world();
+    const runtime = w.make(null, dropsStores(w));
+    await runtime.start("org-1");
+    await queueProduct(runtime, "Aberta", 1);
+
+    await runtime.discardClosedQueue("org-1");
+
+    expect(w.closed).toContain(`${userId}-org-1`);
+    expect(w.purged).toEqual([{ discardPending: true }]);
+    expect(runtime.getSnapshot().phase).toBe("off");
+    expect(runtime.getSnapshot().counts).toEqual({
+      pending: 0,
+      rejected: 0,
+      sending: 0,
+    });
+  });
+
+  it("without the server naming who is signed in, discards nothing", async () => {
+    const w = world();
+    await twoStoresQueued(w);
+    w.network.online = false;
+
+    await expect(
+      w.make(null, dropsStores(w)).discardClosedQueue("org-1")
+    ).rejects.toBeInstanceOf(NoSessionForDiscardError);
+
+    expect(w.purged).toEqual([]);
+    expect(w.stores.has(`${userId}-org-1`)).toBe(true);
+  });
+
+  it("a failed purge leaves the store remembered, so the disk can be read again", async () => {
+    const w = world();
+    await twoStoresQueued(w);
+    const idle = w.make(null, {
+      purge: () => Promise.reject(new Error("storage_failed")),
+    });
+
+    await expect(idle.discardClosedQueue("org-1")).rejects.toThrow(
+      "storage_failed"
+    );
+
+    expect(w.keyValues.read("polaris.offline.namespaces")).toContain("org-1");
+    expect(
+      (await w.stores.get(`${userId}-org-1`)?.outbox.snapshot())?.commands
+    ).toHaveLength(1);
   });
 });
 
