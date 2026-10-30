@@ -8,8 +8,7 @@ import type { QueueCounts, QueueState } from "./closure-model";
 
 const NONE: QueueCounts = { pending: 0, rejected: 0, sending: 0 };
 
-/** What the store's queue on this disk holds, opened only to be read, as "Sair" reads it. */
-async function inspectQueue(
+async function readQueueOnDisk(
   workspaces: readonly LogoutWorkspace[],
   organizationId: string
 ): Promise<QueueCounts> {
@@ -31,12 +30,6 @@ async function inspectQueue(
   return counts;
 }
 
-/**
- * The queue of this device for the store, while `active`. A runtime that is ready counts it as it goes; one that is
- * not (the plan without offline, a failed start, an expired access) keeps its figures at zero with the queue still on
- * the disk, so the queue is opened and read once, the way "Sair" does it. No runtime at all (the build without
- * offline) holds no queue.
- */
 export function useDeviceQueue(
   organizationId: string,
   active: boolean
@@ -46,7 +39,7 @@ export function useDeviceQueue(
   const phase = snapshot?.phase ?? null;
   const [inspected, setInspected] = useState<QueueState>({ kind: "unknown" });
 
-  const inspect = Boolean(
+  const countsOnlyOnDisk = Boolean(
     runtime &&
       active &&
       phase !== null &&
@@ -54,14 +47,14 @@ export function useDeviceQueue(
       phase !== "starting"
   );
   useEffect(() => {
-    if (!(inspect && runtime)) {
+    if (!(countsOnlyOnDisk && runtime)) {
       return;
     }
     let current = true;
     setInspected({ kind: "unknown" });
     runtime
       .logoutWorkspaces()
-      .then((workspaces) => inspectQueue(workspaces, organizationId))
+      .then((workspaces) => readQueueOnDisk(workspaces, organizationId))
       .then((counts) => {
         if (current) {
           setInspected({ counts, kind: "counted" });
@@ -75,7 +68,7 @@ export function useDeviceQueue(
     return () => {
       current = false;
     };
-  }, [inspect, organizationId, runtime]);
+  }, [countsOnlyOnDisk, organizationId, runtime]);
 
   if (!(runtime && snapshot)) {
     return { counts: NONE, kind: "counted" };

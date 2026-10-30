@@ -11,12 +11,6 @@ import {
   rpcErrorReason,
 } from "../lib/rpc-error";
 
-/**
- * "Encerrar a loja" (ADR 0081): the fixed warnings, the queue of this device, the typed name and what a refusal says.
- * The warnings speak in days, never in dates: only the server knows the dates (in the store's time zone), and the
- * panel shows them once the closure is recorded.
- */
-
 export const CLOSE_SECTION_TITLE = "Encerrar a loja";
 export const CLOSE_SECTION_TEXT =
   "Encerrar para de vez as vendas, o estoque e os cadastros desta loja. Você ainda pode baixar seus dados depois.";
@@ -53,12 +47,10 @@ export const CLOSE_UNCONFIRMED_TEXT =
 export const CLOSE_FAILED_TEXT =
   "Não foi possível encerrar a loja. Nada foi encerrado. Tente de novo.";
 
-/** The title of the dialog. */
 export function closeDialogTitle(storeName: string): string {
   return `Encerrar a loja ${storeName}`;
 }
 
-/** The label of the field that confirms: the name to type is in it, so it reads with the field. */
 export function confirmationLabel(storeName: string): string {
   return `Para confirmar, digite o nome da loja: ${storeName}`;
 }
@@ -81,26 +73,19 @@ export function closureWarnings(billingSelfService: boolean): string[] {
   ];
 }
 
-/** What the queue of this device holds, as the offline runtime counts it. */
 export interface QueueCounts {
   pending: number;
   rejected: number;
   sending: number;
 }
 
-/**
- * The queue of this device: `unknown` while it is still being read, `unreadable` when it could not be, or the counts.
- * No runtime at all (the build without offline) holds no queue: the counts are zero.
- */
 export type QueueState =
   | { kind: "counted"; counts: QueueCounts }
   | { kind: "unknown" }
   | { kind: "unreadable" };
 
 export interface QueueNotice {
-  /** The closure waits until this device has nothing left to send. */
   blocks: boolean;
-  /** The sentences about this device, in order; empty when it holds nothing. */
   lines: string[];
 }
 
@@ -108,10 +93,6 @@ function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
 
-/**
- * What the dialog says of this device's queue: an operation not sent, or one the server refused, keeps the closure
- * off until it is sent or settled in "Precisa de ação" (there is no "discard and close").
- */
 export function queueNotice(queue: QueueState): QueueNotice {
   if (queue.kind === "unknown") {
     return { blocks: true, lines: [QUEUE_CHECKING_TEXT] };
@@ -141,16 +122,10 @@ export function nameConfirmed(typed: string, storeName: string): boolean {
 }
 
 export interface CloseGate {
-  /** The button may send. */
   enabled: boolean;
-  /**
-   * Why it is off: the connection (its own notice), the queue of this device (its sentences, `queueNotice`) or the
-   * name (`NAME_MISSING_TEXT`); null when it is on.
-   */
   reason: "connection" | "queue" | "name" | null;
 }
 
-/** The button "Encerrar a loja": on only online, with the name right and nothing left in this device's queue. */
 export function closeGate({
   online,
   queue,
@@ -177,7 +152,6 @@ export function closeGate({
 }
 
 export interface CloseRefusal {
-  /** Offer the closed store's panel: the closure happened, or may have. */
   panelLink: boolean;
   text: string;
 }
@@ -188,11 +162,6 @@ function serverFault(error: unknown): boolean {
   return typeof status === "number" && status >= 500;
 }
 
-/**
- * What a refused or unanswered `organization.requestClosure` says. No answer, the cut of the platform and any 5xx may
- * come after the closure was recorded: the text says it may have happened and points to the panel, never "nada foi
- * encerrado", and the dialog never sends it again by itself.
- */
 export function closeRefusal(error: unknown): CloseRefusal {
   if (
     isConnectionFailure(error) ||

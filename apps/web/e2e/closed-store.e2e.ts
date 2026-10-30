@@ -3,20 +3,12 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
-/**
- * The panel of a closed store at `/loja-encerrada`, in the real route, with the API answered by the test: each phase
- * with its own sentence, the three dates in a list with the days left, the renewal as the server read it, loading,
- * the failed read with "Tentar novamente", nothing found, the choice between two stores, no session; and the copy of
- * the closed store: asked for, read again and downloaded from its own route, the recent sign-in refused with its own
- * text, and no request past D.
- */
 const STORE_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const OTHER_ID = "0199c2d0-0000-7000-8000-00000000a002";
 const EXPORT_ID = "0199c2d0-0000-7000-8000-0000000000aa";
 const SESSION_USER = { email: "dona@exemplo.test", id: "u", name: "Ana Dona" };
 const PATH = `/loja-encerrada?loja=${STORE_ID}`;
-/** `2026-10-30T12:00` in São Paulo: 20 days to undo, 80 to D. */
-const NOW = new Date("2026-10-30T15:00:00.000Z");
+const NOW = new Date("2026-10-30T12:00:00-03:00");
 const TECHNICAL =
   /closing|deletion_scheduled|deletable|purged|not_handled|fresh_session|closed_export|_required|_unavailable/;
 const SIGN_IN = /\/entrar\?motivo=sessao&voltar=\/loja-encerrada/;
@@ -86,14 +78,10 @@ const refusal = (code: string, status: number, reason?: string) =>
 type Answer = (route: Route) => Promise<void>;
 
 interface PanelOptions {
-  /** What `organization/listClosed` answers (the panel with no store in the address). */
   listed?: Store[];
-  /** What `dataExport/listClosed` answers, in order; the last one repeats. */
   lists?: readonly Store[][];
   path?: string;
-  /** What `dataExport/requestClosed` answers. */
   request?: Answer;
-  /** What `organization/closedStatus` answers, in order; the last one repeats. */
   statuses?: readonly (Store | null | Answer)[];
 }
 
@@ -235,7 +223,7 @@ test.describe("cada fase com a sua frase, as três datas e a renovação (AC-5, 
   test("apagamento marcado: os dados serão apagados em breve, a cópia ainda pode ser pedida", async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date("2027-01-12T15:00:00.000Z"));
+    await page.clock.setFixedTime(new Date("2027-01-12T12:00:00-03:00"));
     await openPanel(page, {
       statuses: [
         store({
@@ -260,7 +248,7 @@ test.describe("cada fase com a sua frase, as três datas e a renovação (AC-5, 
   test("depois de D: a frase dos e-mails, e nenhum pedido de cópia (AC-7)", async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date("2027-01-18T15:00:00.000Z"));
+    await page.clock.setFixedTime(new Date("2027-01-18T12:00:00-03:00"));
     const calls = await openPanel(page, {
       lists: [[READY]],
       statuses: [
@@ -433,7 +421,7 @@ test("logo depois de encerrar, a frase do momento aparece uma vez e sai do ender
 test("o botão de desfazer some quando a janela acaba, sem nova leitura (AC-8, AC-14)", async ({
   page,
 }) => {
-  await page.clock.install({ time: new Date("2026-11-19T11:59:00.000Z") });
+  await page.clock.install({ time: new Date("2026-11-19T08:59:00-03:00") });
   const calls = await openPanel(page);
   await expect(undoButton(page)).toBeVisible();
   await page.clock.runFor(2 * 60_000);

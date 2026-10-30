@@ -5,13 +5,6 @@ import type {
 } from "../data-export/data-export-model";
 import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
 
-/**
- * The panel of a closed store (ADR 0081): what is true of it at each phase, its three dates and the days left, the
- * renewal, and whether a copy can still be asked for. Every date comes from the server (`closedStatus`), in the store's
- * time zone; only the days left and the end of the undo button follow the clock of the device. Nothing here depends on
- * a legal hold or a scheduled purge: the server's phase and dates are the same with or without them.
- */
-
 export type ClosurePhase =
   | "closing"
   | "closed"
@@ -21,13 +14,10 @@ export type ClosurePhase =
 
 export type Renewal = "not_handled" | "pending" | "cancelled" | null;
 
-/** A closed store as `organization.closedStatus` and `organization.listClosed` give it. */
 export interface ClosedStore {
   canRecover: boolean;
   deletableFrom: string;
-  /** D, the store's calendar date (YYYY-MM-DD) from which the data may be deleted. */
   deletionDate: string;
-  /** The last instant a copy may be asked for: the first instant of D. */
   exportOpenUntil: string;
   id: string;
   name: string;
@@ -61,7 +51,6 @@ export const RENEWAL_TEXT: Readonly<Record<NonNullable<Renewal>, string>> = {
 export const RENEWAL_UNKNOWN_TEXT =
   "Não conseguimos confirmar agora a situação da renovação do plano.";
 
-/** The renewal as the server read it; with no reading, nothing is said of it but that. */
 export function renewalText(renewal: Renewal): string {
   return renewal === null ? RENEWAL_UNKNOWN_TEXT : RENEWAL_TEXT[renewal];
 }
@@ -76,7 +65,6 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
 const FIRST_OF_MONTH = /^1 de /;
 const DAY_MS = 86_400_000;
 
-/** A calendar date (YYYY-MM-DD) as the e-mails write it: "18 de janeiro de 2027", "1º de fevereiro de 2027". */
 export function formatCalendarDate(date: string): string {
   return dateFormatter
     .format(new Date(`${date}T12:00:00.000Z`))
@@ -96,7 +84,6 @@ function dateOf(instant: string, timeZone: string): string {
   return formatCalendarDate(localDate(new Date(instant), timeZone));
 }
 
-/** Whole calendar days from today to `date`, both in the store's calendar. */
 function daysUntil(date: string, now: number, timeZone: string): number {
   const today = localDate(new Date(now), timeZone);
   return Math.round(
@@ -106,7 +93,6 @@ function daysUntil(date: string, now: number, timeZone: string): number {
   );
 }
 
-/** "faltam 12 dias", "falta 1 dia", "termina hoje"; null once the date is past. */
 function daysLeftText(days: number): string | null {
   if (days < 0) {
     return null;
@@ -117,17 +103,14 @@ function daysLeftText(days: number): string | null {
   return days === 1 ? "falta 1 dia" : `faltam ${days} dias`;
 }
 
-/** The limit of the copy as the e-mails after D write it: "{D}, 00:00 (horário da sua loja)". */
 export function copyLimitText(store: ClosedStore): string {
   return `${formatCalendarDate(store.deletionDate)}, ${formatTime(store.exportOpenUntil, store.timezone)} (horário da sua loja)`;
 }
 
-/** The sentence of the panel once a copy can no longer be asked for: the same as the e-mails sent from D on. */
 export function copyClosedText(store: ClosedStore): string {
   return `O prazo para pedir uma cópia dos dados terminou em ${copyLimitText(store)}. Depois de apagados, os dados não podem ser recuperados.`;
 }
 
-/** Whether a copy can still be asked for at `now`: up to the first instant of D, and never after the purge. */
 export function copyRequestOpen(store: ClosedStore, now: number): boolean {
   return (
     store.phase !== "purged" &&
@@ -136,7 +119,6 @@ export function copyRequestOpen(store: ClosedStore, now: number): boolean {
   );
 }
 
-/** Whether the undo button shows: only while closing and before `recoverUntil`, by the clock of the device. */
 export function undoOpen(store: ClosedStore, now: number): boolean {
   return (
     store.phase === "closing" &&
@@ -146,13 +128,11 @@ export function undoOpen(store: ClosedStore, now: number): boolean {
 }
 
 export interface PanelDate {
-  /** "faltam 12 dias", or "prazo encerrado". */
   left: string;
   term: string;
   value: string;
 }
 
-/** The three dates, always, each with the days left. */
 export function panelDates(store: ClosedStore, now: number): PanelDate[] {
   const tz = store.timezone;
   const recoverDate = localDate(new Date(store.recoverUntil), tz);
@@ -183,7 +163,6 @@ export function panelDates(store: ClosedStore, now: number): PanelDate[] {
   ];
 }
 
-/** The title of the panel. */
 export function panelTitle(store: ClosedStore): string {
   return `${store.name} está encerrada`;
 }
@@ -234,12 +213,10 @@ export function phaseLines(store: ClosedStore, now: number): string[] {
   ];
 }
 
-/** The sentence at the top of the panel right after the closure (wireframe B). */
 export function justClosedText(store: ClosedStore): string {
   return `Loja encerrada. Você pode desfazer até ${dateOf(store.recoverUntil, store.timezone)}, às ${formatTime(store.recoverUntil, store.timezone)}. Seus dados ficam guardados e você pode baixá-los.`;
 }
 
-/** The closed store's copies the panel lists: only those asked for after the closure are downloaded from it. */
 export function closedStoreExports(
   exports: readonly (DataExportItem & { mode: "active" | "closed" })[]
 ): DataExportItem[] {
@@ -248,7 +225,6 @@ export function closedStoreExports(
     .map(({ mode: _mode, ...item }) => item);
 }
 
-/** The route that streams a file of a closed store's copy (ADR 0081): the session alone, no store in the address. */
 export function closedExportFileHref(
   exportId: string,
   ordinal: number
@@ -258,10 +234,6 @@ export function closedExportFileHref(
 
 export const FRESH_SESSION_TEXT =
   "Por segurança, para pedir a cópia é preciso ter entrado no Polaris há menos de 15 minutos. Saia, entre de novo e peça a cópia.";
-/**
- * What a refused `dataExport.requestClosed` says before the texts of the store's tab: the recent sign-in the server
- * asks for, and the end of the time for a copy (the same sentence and date as the e-mails). Null for the others.
- */
 export function closedRequestRefusal(
   error: unknown,
   store: ClosedStore
@@ -276,7 +248,6 @@ export function closedRequestRefusal(
   return null;
 }
 
-/** What a failed read of the panel is: no session (the sign-in), or a failure that says nothing of the store. */
 export function panelLoadFailure(error: unknown): "session" | "error" {
   return rpcErrorCode(error) === "UNAUTHORIZED" ? "session" : "error";
 }

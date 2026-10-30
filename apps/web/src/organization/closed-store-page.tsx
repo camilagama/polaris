@@ -57,7 +57,6 @@ type Load =
   | { status: "session" }
   | { status: "loaded"; stores: readonly ClosedStore[] };
 
-/** One store by its id (`closedStatus`), or every closed store of the owner (`listClosed`) when the address names none. */
 async function readStores(storeId: string | null): Promise<ClosedStore[]> {
   if (storeId !== null && UUID.test(storeId)) {
     const { organization } = await orpcClient.organization.closedStatus({
@@ -103,7 +102,6 @@ function useClosedStores(storeId: string | null) {
   return { load, reload };
 }
 
-/** Draws again at `at`, with no call: the undo button goes away when its window ends (AC-8). */
 function useNowUntil(at: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -141,7 +139,6 @@ interface StatusCardProps {
   now: number;
   online: boolean;
   onRefresh: () => void;
-  /** The undo step; absent, the button says it is not available yet. */
   onUndo?: ((store: ClosedStore) => void) | undefined;
   store: ClosedStore;
 }
@@ -390,11 +387,6 @@ function PanelBody({
   );
 }
 
-/**
- * `/loja-encerrada` (ADR 0081, wireframe B): outside the shell, with no menu and no store (it no longer opens as a
- * tenant). The owner reads where the closure stands, the three dates and the renewal, asks for a copy until D and
- * downloads it. Only the owner's closed stores are listed by the server; anyone else reads "nada encontrado".
- */
 export function ClosedStorePage() {
   const [{ justClosed, storeId }] = useState(() =>
     closedStoreQuery(window.location.search)
@@ -404,7 +396,6 @@ export function ClosedStorePage() {
 
   useEffect(() => {
     document.title = documentTitle(PAGE_TITLE);
-    // the sentence of the moment after the closure stays on this screen, not on a reload of it
     if (justClosed) {
       window.history.replaceState(
         window.history.state,

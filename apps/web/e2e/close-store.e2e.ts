@@ -5,12 +5,6 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
-/**
- * "Encerrar a loja" at the end of Seus dados, in the real route, with the API answered by the test: the owner closes
- * with the store's name (one call for a double click) and lands on the panel of the closed store; the button stays off
- * with a wrong name and with work kept on this device; the renewal's sentence follows the billing flag; offline the
- * dialog does not open; and whoever is not the owner does not see the section.
- */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
   name: "Loja do teste",
@@ -31,8 +25,7 @@ const LEASE_KEY = {
 };
 const HOUR = 3_600_000;
 const PATH = "/configuracoes?aba=seus-dados";
-/** `2026-10-30T12:00` in São Paulo. */
-const NOW = new Date("2026-10-30T15:00:00.000Z");
+const NOW = new Date("2026-10-30T12:00:00-03:00");
 const PANEL_PATH =
   /\/loja-encerrada\?loja=0199c2d0-0000-7000-8000-00000000a001$/;
 const CLOSED = {
@@ -66,10 +59,8 @@ const inputOf = (route: Route) =>
 
 interface ScreenOptions {
   billingSelfService?: boolean;
-  /** What `organization/requestClosure` answers. */
   closure?: (route: Route) => Promise<void>;
   role?: string;
-  /** Serve the device, the lease and the sync, so the offline runtime opens its queue. */
   runtime?: boolean;
 }
 
@@ -192,7 +183,6 @@ const nameField = (page: Page) =>
 const confirmButton = (page: Page) =>
   dialog(page).getByRole("button", { name: "Encerrar a loja" });
 
-/** The offline runtime opened this person's queue on the device. */
 async function waitForQueue(page: Page) {
   await expect
     .poll(
@@ -207,7 +197,6 @@ async function waitForQueue(page: Page) {
     .toBe(true);
 }
 
-/** One command of this device the server refused, written into the outbox of the runtime, read again on a reload. */
 async function leaveOneRefused(page: Page) {
   await page.evaluate(
     async ({ deviceId, organizationId }) => {

@@ -123,7 +123,6 @@ const REASON_ID: Readonly<Record<"name" | "queue", string>> = {
   queue: QUEUE_ID,
 };
 
-/** Off with a reason: the connection's notice, the queue's sentences or the name's; busy while it sends. */
 function confirmProps(gate: CloseGate, sending: boolean) {
   if (gate.reason === "connection") {
     return connectionControlProps(false, connectionDialogReasonId);
@@ -145,10 +144,6 @@ interface CloseDialogProps {
   storeName: string;
 }
 
-/**
- * "Encerrar a loja {nome}" (wireframe A): the fixed warnings, the queue of this device, the name to type and one
- * `organization.requestClosure` per tap, never sent again by the dialog. Recorded, the page goes to the panel.
- */
 function CloseDialog({
   billingSelfService,
   onOpenChange,
@@ -172,7 +167,6 @@ function CloseDialog({
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      // the answer decides where the page goes: the dialog stays while it waits
       if (!(next || sendingRef.current)) {
         setTyped("");
         setRefusal(null);
@@ -280,10 +274,6 @@ function CloseDialog({
   );
 }
 
-/**
- * "Encerrar a loja" at the end of Seus dados, for the owner of the active store (`organization:close`; the server
- * checks it again). Opening it needs the connection; nothing about the closure is ever kept for later.
- */
 export function CloseStoreSection() {
   const { billingSelfService, organization, organizationId } =
     useCurrentOrganization();

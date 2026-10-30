@@ -24,17 +24,10 @@ const REQUEST_TITLE_ID = "data-export-request-title";
 const FORMATS_ERROR_ID = "data-export-formats-error";
 const BLOCKED_REASON_ID = "data-export-blocked-reason";
 
-/**
- * The calls of one store's copies: the active store's (`dataExport.list`/`request`, in the tenant) or the closed
- * store's (`dataExport.listClosed`/`requestClosed`, outside it). Kept stable by the caller: a new object reads again.
- */
 export interface DataExportCalls {
-  /** The copies as the server lists them. */
   list: () => Promise<readonly DataExportItem[]>;
-  /** What a failed read says. */
   listRefusal: (error: unknown) => string;
   request: (formats: ExportFormat[]) => Promise<{ id: string }>;
-  /** What a refused or unanswered request says. */
   requestRefusal: (error: unknown) => RequestRefusal;
 }
 
@@ -50,7 +43,6 @@ function useExportList(calls: DataExportCalls) {
   const [refreshing, setRefreshing] = useState(true);
   const latestRead = useRef(0);
 
-  /** Whether this read answered and is the one on screen. */
   const load = useCallback(async (): Promise<boolean> => {
     latestRead.current += 1;
     const read = latestRead.current;
@@ -131,7 +123,6 @@ function FormatChoice({
   );
 }
 
-/** Off with a reason (focusable, it says why): no connection, or a copy the server would refuse now. */
 function requestControlProps(online: boolean, blocked: boolean) {
   if (!online) {
     return connectionControlProps(online);
@@ -141,7 +132,6 @@ function requestControlProps(online: boolean, blocked: boolean) {
     : {};
 }
 
-/** Whether the refusal is one that asking again now would only repeat (the button stays off until Atualizar). */
 function refusedForNow(outcome: RequestOutcome): boolean {
   return outcome?.kind === "refused" && outcome.repeatsNow;
 }
@@ -183,14 +173,12 @@ interface RequestCardProps {
   add: (item: DataExportItem) => void;
   online: boolean;
   outcome: RequestOutcome;
-  /** The list shows a copy in preparation. */
   preparing: boolean;
   request: DataExportCalls["request"];
   requestRefusal: DataExportCalls["requestRefusal"];
   setOutcome: (outcome: RequestOutcome) => void;
 }
 
-/** "Pedir cópia": the formats and one request per tap, never sent again by the screen itself. */
 function RequestCard({
   add,
   online,
@@ -306,7 +294,6 @@ function RequestCard({
   );
 }
 
-/** Where the request goes when it can no longer be asked for: the sentence that says so, in its place. */
 function RequestClosedCard({ text }: { text: string }) {
   return (
     <Card aria-labelledby={REQUEST_TITLE_ID} role="region">
@@ -324,16 +311,12 @@ function RequestClosedCard({ text }: { text: string }) {
 
 export interface DataExportCardsProps {
   calls: DataExportCalls;
-  /** The address of a file of a copy: the store's route or the closed store's. */
   fileHref: (exportId: string, ordinal: number) => string;
   online: boolean;
-  /** Set when no copy can be asked for any more (a closed store past D): the request gives way to this sentence. */
   requestClosedText?: string | null;
-  /** The store's time zone, for the dates. */
   timeZone: string;
 }
 
-/** "Pedir cópia" and "Suas cópias" of one store, on the calls it is given. */
 export function DataExportCards({
   calls,
   fileHref,
@@ -350,7 +333,6 @@ export function DataExportCards({
   );
 
   const { load } = list;
-  // the refusal and the doubt of a request stay until the person sees the list as the server has it now
   const refresh = useCallback(() => {
     load()
       .then((read) => {
