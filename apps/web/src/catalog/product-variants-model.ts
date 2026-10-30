@@ -7,6 +7,7 @@ import {
   MAX_PRODUCT_VARIANT_SKU_LENGTH,
 } from "@polaris/domain/catalog/product";
 import {
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -269,7 +270,9 @@ export function variantErrorMessage(error: unknown, subject?: string): string {
     return "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo está temporariamente indisponível. Tente novamente.";
+    return subject === undefined
+      ? CHANGE_FAULT_UNKNOWN
+      : "O catálogo está temporariamente indisponível. Tente novamente.";
   }
   return "Não foi possível carregar ou salvar as variantes. Tente novamente.";
 }

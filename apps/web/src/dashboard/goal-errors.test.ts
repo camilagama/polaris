@@ -114,12 +114,17 @@ describe("goalErrorMessage com o 503 de uma escrita", () => {
     }
   });
 
-  it("um 503 com outro motivo não vira dúvida de escrita", () => {
-    expect(
-      goalErrorMessage(
-        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
-        "create"
-      )
-    ).toBe("As metas estão temporariamente indisponíveis. Tente novamente.");
+  it("um 503 com outro motivo também é dúvida de escrita, e a leitura mantém o texto dela", () => {
+    const other = { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } };
+    for (const action of ["create", "update", "cancel"] as const) {
+      expect(goalErrorMessage(other, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    for (const action of ["load", "history"] as const) {
+      expect(goalErrorMessage(other, action)).toBe(
+        "As metas estão temporariamente indisponíveis. Tente novamente."
+      );
+    }
   });
 });
