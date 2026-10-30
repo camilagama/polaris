@@ -2,7 +2,8 @@
  * The "Primeiros passos" of a store that never sold, as the foot of the menu shows them on every screen: the same
  * three steps as the checklist of the Início (Loja criada, Cadastrar o 1º produto, Fazer a 1ª venda), which reads them
  * and tells the shell. Kept for this tab only (`sessionStorage`, or the page's memory where the browser refuses it):
- * the shell reads nothing of its own, and shows what the Início read last in this tab, until the server confirms a sale.
+ * the shell reads nothing of its own, and shows what the Início read last in this tab, until the server confirms a sale;
+ * registering the first product moves it from one step to two at once, without a read.
  */
 
 export const FIRST_STEPS_TOTAL = 3;
@@ -126,6 +127,21 @@ export function firstSaleConfirmed(
 ): void {
   if (rememberedFirstSteps(organizationId, store) !== null) {
     rememberFirstSteps(organizationId, null, store);
+  }
+}
+
+/**
+ * The server created the first product of this store: the second step is done
+ * at once, on every screen, without reading anything. Only a store whose steps the Início already read as not over
+ * changes: one that sold shows none, and one the Início never read in this tab is not known to have steps to show.
+ */
+export function firstProductRegistered(
+  organizationId: string,
+  productId: string,
+  store: SessionStore | null = sessionStore()
+): void {
+  if (rememberedFirstSteps(organizationId, store) !== null) {
+    rememberFirstSteps(organizationId, { firstProductId: productId }, store);
   }
 }
 

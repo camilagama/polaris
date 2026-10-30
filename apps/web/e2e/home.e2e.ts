@@ -1332,6 +1332,70 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/#home-checklist");
   });
 
+  test("cadastrar o 1º produto em Produtos: o pé do menu diz 2 de 3 na hora, e o Início diz o mesmo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const created = {
+      archivedAt: null,
+      categoryId: null,
+      createdAt: "2026-10-23T15:00:00.000Z",
+      deletedAt: null,
+      description: null,
+      id: PRODUCT,
+      name: "Bolsa de couro",
+      organizationId: ORGANIZATION_ID,
+      status: "active",
+      updatedAt: "2026-10-23T15:00:00.000Z",
+      version: 1,
+    };
+    let registered = false;
+    await page.route("**/rpc/product/list", (route) =>
+      route.fulfill(json({ products: registered ? [created] : [] }))
+    );
+    await page.route("**/rpc/category/list", (route) =>
+      route.fulfill(json({ categories: [] }))
+    );
+    await page.route("**/rpc/product/create", (route) => {
+      registered = true;
+      return route.fulfill(json(created));
+    });
+    const server = new FakeServer(
+      empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+    );
+    await openHome(page, server);
+    const checklist = region(page, "Primeiros passos");
+    await expect(checklist).toContainText("2Cadastrar o 1º produto");
+    const foot = (done: number) =>
+      page.getByRole("link", {
+        exact: true,
+        name: `Primeiros passos, ${done} de 3 concluídos`,
+      });
+    await expect(foot(1)).toBeVisible();
+    await checklist.getByRole("link", { name: "Cadastrar à mão" }).click();
+    await page.waitForURL("**/products?novo=1");
+    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+    await page.getByRole("button", { name: "Cadastrar produto" }).click();
+    await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
+    // the Início was not opened again: nothing was read, the foot follows the registration
+    await expect(foot(2)).toBeVisible();
+    await expect(foot(1)).toHaveCount(0);
+    server.scenario.stock = {
+      all: 1,
+      unknownCost: 1,
+      withoutStock: 1,
+      withStock: 0,
+    };
+    await page
+      .getByRole("link", { exact: true, name: "Início" })
+      .first()
+      .click();
+    await expect(
+      region(page, "Primeiros passos").getByRole("listitem").nth(1)
+    ).toContainText("Cadastrar o 1º produto (feito)");
+    await expect(foot(2)).toBeVisible();
+  });
+
   test("produto sem quantidade: 'Dar entrada no estoque' abre o painel do produto", async ({
     page,
   }) => {
@@ -1731,7 +1795,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     });
   }
 
-  test("Vendas por dia: o melhor dia tem anel cheio, hoje sem venda tem anel vazado e os outros dias não têm anel", async ({
+  test("Vendas por dia: o melhor dia tem anel cheio, hoje sem venda tem anel vazado e sem rótulo, e os outros dias não têm anel", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1749,6 +1813,16 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(hollow).toHaveCount(1);
     await expect(hollow).toHaveAttribute("fill", "var(--card)");
     await expect(hollow).toHaveAttribute("r", "3.5");
+    // only the peak is written: the hollow ring of today carries no label, and its value (zero) is not written anywhere
+    await expect(chart.locator("[data-chart-value-label]")).toHaveText([
+      "18/10 · R$ 1.840,00",
+    ]);
+    const labelX = await chart
+      .locator("[data-chart-value-label]")
+      .getAttribute("x");
+    const hollowX = await hollow.getAttribute("cx");
+    expect(Number(labelX)).not.toBe(Number(hollowX));
+    await expect(chart.locator("[data-chart-marks] text")).toHaveCount(1);
     // the best day comes first on the axis, today last: no other day has a ring
     const xs = await chart
       .locator("[data-chart-mark]")
