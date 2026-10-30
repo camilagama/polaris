@@ -97,7 +97,6 @@ async function serveListing(page: Page, listing: () => Listing) {
       await route.fallback();
       return;
     }
-    // the first access asks for the owner's closed stores: none here
     if (route.request().url().includes("organization/listClosed")) {
       await route.fulfill({
         body: JSON.stringify({ json: { organizations: [] }, meta: [] }),

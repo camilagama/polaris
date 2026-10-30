@@ -110,7 +110,6 @@ describe("the refusal for a closed organization", () => {
         status: 403,
       })
     ).toBe(true);
-    // a FORBIDDEN with no reason (a membership withdrawn, a capability denied) is never a closed store
     expect(isOrganizationClosedRefusal({ code: "FORBIDDEN" })).toBe(false);
     expect(
       isOrganizationClosedRefusal({ code: "FORBIDDEN", data: undefined })

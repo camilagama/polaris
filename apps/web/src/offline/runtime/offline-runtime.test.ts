@@ -2195,7 +2195,6 @@ describe("a server that waits for the legal acceptance", () => {
   });
 });
 
-/** The refusal the server gives for a closed organization (ADR 0081), shaped like the oRPC one. */
 function closedRefusal(): Error {
   return Object.assign(new Error("organization closed"), {
     code: "FORBIDDEN",
@@ -2209,7 +2208,6 @@ describe("a server that says the organization was closed", () => {
   const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
   const sessionUserKey = "polaris.offline.session-user";
 
-  /** The queue as the person sees it: the same commands, in the same order, still waiting (attempts aside). */
   async function commandsOf(w: ReturnType<typeof world>) {
     const kept = w.stores.get(scope);
     return ((await kept?.outbox.snapshot())?.commands ?? []).map(
@@ -2222,7 +2220,6 @@ describe("a server that says the organization was closed", () => {
     );
   }
 
-  /** What every closed refusal leaves: copy and lease gone, queue, device and remembered user kept, no session refused. */
   async function expectClosedDrop(
     w: ReturnType<typeof world>,
     runtime: ReturnType<ReturnType<typeof world>["make"]>,
@@ -2262,7 +2259,6 @@ describe("a server that says the organization was closed", () => {
 
     expect(w.calls.push).toBeGreaterThan(0);
     await expectClosedDrop(w, runtime, before, device);
-    // nothing more goes out: the runtime is no longer ready
     const pushes = w.calls.push;
     await runtime.syncNow();
     expect(w.calls.push).toBe(pushes);

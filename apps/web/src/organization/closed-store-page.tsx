@@ -303,7 +303,6 @@ interface UndoDialogProps {
   pending: boolean;
 }
 
-/** Wireframe C: a small dialog, nothing sent before "Sim, desfazer"; "Voltar" only closes it. */
 function UndoDialog({ onBack, onConfirm, open, pending }: UndoDialogProps) {
   const guarded = useCallback(
     (next: boolean) => {
@@ -344,7 +343,6 @@ function UndoDialog({ onBack, onConfirm, open, pending }: UndoDialogProps) {
   );
 }
 
-/** What the panel learned from an undo, for the store it was read with: an Atualizar brings the server's word back. */
 interface UndoResult {
   from: ClosedStore;
   notice: string;

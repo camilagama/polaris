@@ -55,12 +55,10 @@ const leaseKey = (userId: string) =>
 
 type Refusing = "lease" | "none" | "push" | "read";
 
-/** Plays the server of one user and one store, and refuses on the path the test names. */
 class ClosingServer {
   readonly devices = new Map<string, string>();
   readonly stock = new SaleLabServer();
   refusing: Refusing = "none";
-  /** `fail`: the push gets a 500 (the queue stays as it was, nothing refused). */
   pushAnswer: "accept" | "fail" = "accept";
   listMine = 0;
   pushes = 0;
@@ -275,7 +273,6 @@ async function keepOneSale(page: Page) {
   ).toBeVisible();
 }
 
-/** Works offline and leaves two sales waiting on the device. */
 async function queueTwoSales(page: Page) {
   await page.context().setOffline(true);
   await expect(chip(page)).toContainText("Sem conexão", { timeout: 15_000 });
@@ -284,7 +281,6 @@ async function queueTwoSales(page: Page) {
   await expect(chip(page)).toContainText("Sem conexão · 2 operações guardadas");
 }
 
-/** The commands the outbox (IndexedDB) holds, in queue order, whatever the namespace is called. */
 async function outboxCommands(page: Page) {
   return await page.evaluate(async () => {
     const found: string[] = [];
@@ -321,7 +317,6 @@ async function outboxCommands(page: Page) {
 const stored = (page: Page, key: string) =>
   page.evaluate((name) => window.localStorage.getItem(name), key);
 
-/** How many OPFS files of local collections this device holds. */
 const collectionFiles = (page: Page) =>
   page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();
@@ -336,7 +331,6 @@ const collectionFiles = (page: Page) =>
     return count;
   });
 
-/** What every path of the refusal leaves: the notice, the copy and lease gone, the queue and the session kept, no loop. */
 async function expectClosedDevice(
   page: Page,
   server: ClosingServer,
@@ -356,7 +350,6 @@ async function expectClosedDevice(
   expect(await stored(page, SESSION_USER_KEY)).toBe(server.userId);
   expect(await stored(page, DEVICE_KEY)).toBe(device);
   await expect(page.getByText("Sua sessão acabou")).toHaveCount(0);
-  // no loop: the page stays, and the organizations are not read over and over
   const reads = server.listMine;
   await page.waitForTimeout(3000);
   expect(new URL(page.url()).pathname).toBe("/sales");
@@ -420,7 +413,6 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     const queued = await outboxCommands(page);
     const device = await stored(page, DEVICE_KEY);
 
-    // the push fails (nothing refused, the queue waits) and the screen's own read says the store was closed
     server.pushAnswer = "fail";
     server.refusing = "read";
     await page.context().setOffline(false);

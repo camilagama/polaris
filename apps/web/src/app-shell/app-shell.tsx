@@ -685,7 +685,6 @@ function useClosedNotice(load: OrganizationLoad): ReactNode {
   return <ClosedStoreNotice organizationId={closedHere} />;
 }
 
-/** The first access (no organization yet), with the notices of the shell above it; a closed store's notice alone. */
 function FirstAccessPage({
   acceptanceNotice,
   closedNotice,
@@ -709,7 +708,6 @@ function FirstAccessPage({
   return (
     <>
       {sessionNotice || acceptanceNotice ? (
-        // the notices of the shell stay above the card: the session that ended and the acceptance that is missing
         <div className="flow-root bg-background px-(--gutter) pt-4">
           <div className="mx-auto max-w-[420px]">
             {sessionNotice ? <SessionEndedNotice alone /> : null}

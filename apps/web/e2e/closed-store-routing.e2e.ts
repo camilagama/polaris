@@ -97,7 +97,6 @@ async function serveAccount(page: Page, account: Account): Promise<Calls> {
       account.mine = [ACTIVE];
       return route.fulfill(rpc({ organization: ACTIVE }));
     }
-    // the Início's own reads and the device: answered, not part of this test
     return route.fulfill(failure("INTERNAL_SERVER_ERROR", 500));
   });
   return calls;
@@ -159,7 +158,6 @@ test("ativa e encerrada: do painel, 'Abrir outra loja' abre o formulário sem vo
     .getByRole("link", { exact: true, name: "Abrir outra loja" })
     .click();
   await expect(setupTitle(page)).toBeVisible();
-  // the mark leaves the address: a reload of the form is a normal opening
   await expect.poll(() => new URL(page.url()).search).toBe("");
   expect(calls.listClosed).toBe(1);
 
