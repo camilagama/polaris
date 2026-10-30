@@ -302,6 +302,9 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
       phase: "closed",
     });
     expect(undoOpen(closedAfterWindow(STORE), DURING_WINDOW)).toBe(false);
+    expect(panelDates(closedAfterWindow(STORE), DURING_WINDOW)[1]?.left).toBe(
+      "prazo encerrado"
+    );
     expect(phaseLines(closedAfterWindow(STORE), DURING_WINDOW)[0]).toBe(
       "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
     );

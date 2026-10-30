@@ -147,8 +147,11 @@ export interface PanelDate {
 export function panelDates(store: ClosedStore, now: number): PanelDate[] {
   const tz = store.timezone;
   const recoverDate = localDate(new Date(store.recoverUntil), tz);
+  // only a store still closing counts down to the end of the undo: past it (by the server's word) the time is over
   const recoverLeft = daysLeftText(
-    Date.parse(store.recoverUntil) > now ? daysUntil(recoverDate, now, tz) : -1
+    store.phase === "closing" && Date.parse(store.recoverUntil) > now
+      ? daysUntil(recoverDate, now, tz)
+      : -1
   );
   const deletionLeft = daysLeftText(
     Date.parse(store.deletableFrom) > now

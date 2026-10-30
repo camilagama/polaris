@@ -65,6 +65,7 @@ import {
   UNDO_EFFECTS_TEXT,
   UNDO_SENDING,
   UNDO_TITLE,
+  UNDO_UNKNOWN_TEXT,
   undoFailure,
   undoOpen,
 } from "./closed-store-model";
@@ -424,7 +425,13 @@ function UndoNotice({ text }: { text: string }) {
     ref.current?.focus();
   }, []);
   return (
-    <Alert ref={ref} role="alert" tabIndex={-1} variant="destructive">
+    <Alert
+      ref={ref}
+      role="alert"
+      tabIndex={-1}
+      // the outcome is not known: a warning, not a refusal
+      variant={text === UNDO_UNKNOWN_TEXT ? "warning" : "destructive"}
+    >
       <AlertDescription>{text}</AlertDescription>
     </Alert>
   );

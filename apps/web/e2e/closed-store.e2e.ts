@@ -534,6 +534,9 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
       "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
     );
     await expect(undoButton(page)).toHaveCount(0);
+    await expect(dates(page)).toContainText(
+      "19 de novembro de 2026, às 09:00 · prazo encerrado"
+    );
     await expect(page.getByRole("main")).not.toContainText(REOPENED);
     await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
     expect(calls.recovers).toHaveLength(1);
