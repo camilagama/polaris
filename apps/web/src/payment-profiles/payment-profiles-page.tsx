@@ -605,7 +605,7 @@ export function PaymentProfilesPage() {
                 regionRef={feedbackRef}
                 uncertain={uncertain}
                 uncertainAction={
-                  offersCheckAndClose(uncertain)
+                  maybeSaved && offersCheckAndClose(uncertain)
                     ? { label: CHECK_AND_CLOSE_LABEL, onClick: handleDismiss }
                     : undefined
                 }

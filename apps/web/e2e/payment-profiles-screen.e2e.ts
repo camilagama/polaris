@@ -619,6 +619,10 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
   ).toHaveCount(0);
   await page.waitForTimeout(6000);
   expect(archives).toBe(1);
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  await expect(
+    page.getByRole("button", { name: "Fechar e conferir" })
+  ).toHaveCount(0);
 });
 
 test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56)", async ({
