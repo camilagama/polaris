@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { NoSessionForDiscardError } from "../offline/runtime/offline-runtime";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import {
   type ClosedQueue,
@@ -23,6 +24,7 @@ import {
   DISCARD_BUTTON,
   DISCARD_CONFIRM,
   DISCARD_DONE_TEXT,
+  DISCARD_NO_SESSION_TEXT,
   DISCARD_SENDING,
   DISCARD_UNREAD_TEXT,
   type DiscardOutcome,
@@ -91,7 +93,13 @@ function useClosedQueue(organizationId: string) {
     setPending(true);
     try {
       await runtime.discardClosedQueue(organizationId);
-    } catch {
+    } catch (error) {
+      if (error instanceof NoSessionForDiscardError) {
+        setOutcome({ kind: "no_session" });
+        sending.current = false;
+        setPending(false);
+        return;
+      }
       // the answer is what the disk says afterwards, not whether the call threw
     }
     const after = await read();
@@ -105,7 +113,7 @@ function useClosedQueue(organizationId: string) {
 }
 
 interface DiscardDialogProps {
-  finalFocus: RefObject<HTMLElement | null>;
+  finalFocus: RefObject<HTMLElement | null> | undefined;
   onBack: () => void;
   onConfirm: () => void;
   open: boolean;
@@ -171,6 +179,15 @@ function DiscardDialog({
   );
 }
 
+function failureText(outcome: Exclude<DiscardOutcome, { kind: "done" }>) {
+  if (outcome.kind === "left") {
+    return leftText(outcome.remaining);
+  }
+  return outcome.kind === "no_session"
+    ? DISCARD_NO_SESSION_TEXT
+    : DISCARD_UNREAD_TEXT;
+}
+
 function OutcomeNotice({ outcome }: { outcome: DiscardOutcome }) {
   if (outcome.kind === "done") {
     return (
@@ -183,11 +200,7 @@ function OutcomeNotice({ outcome }: { outcome: DiscardOutcome }) {
   }
   return (
     <Alert role="alert" variant="destructive">
-      <AlertDescription>
-        {outcome.kind === "left"
-          ? leftText(outcome.remaining)
-          : DISCARD_UNREAD_TEXT}
-      </AlertDescription>
+      <AlertDescription>{failureText(outcome)}</AlertDescription>
     </Alert>
   );
 }
@@ -253,7 +266,7 @@ export function ClosedQueueSection({ store }: { store: ClosedStore }) {
               {DISCARD_BUTTON}
             </Button>
             <DiscardDialog
-              finalFocus={titleRef}
+              finalFocus={outcome ? titleRef : undefined}
               onBack={back}
               onConfirm={confirm}
               open={dialog}

@@ -104,6 +104,14 @@ export class SessionUnreachableError extends Error {
   }
 }
 
+/** Nobody could be named as signed in, so nothing of the closed store's queue was touched. */
+export class NoSessionForDiscardError extends Error {
+  constructor() {
+    super("no_session_for_discard");
+    this.name = "NoSessionForDiscardError";
+  }
+}
+
 export interface OpenedStores {
   close: () => Promise<void> | void;
   outbox: Outbox;
@@ -591,7 +599,7 @@ export class OfflineRuntime {
         ? open.userId
         : await this.signedInUserForLogout();
     if (!userId) {
-      throw new Error("no_session_for_discard");
+      throw new NoSessionForDiscardError();
     }
     const namespace = await this.dependencies.namespaceFor(
       userId,
@@ -603,6 +611,7 @@ export class OfflineRuntime {
     }
     await this.dependencies.purge(namespace, { discardPending: true });
     this.forgetNamespace(namespace);
+    this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
     if (wasOpen) {
       this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
     }

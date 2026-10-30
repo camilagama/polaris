@@ -657,6 +657,20 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
 
     const callsBefore = [...server.procedures];
+    await page.evaluate(() => {
+      const counted = window as unknown as { outboxDeletes: number };
+      counted.outboxDeletes = 0;
+      const real = IDBFactory.prototype.deleteDatabase;
+      IDBFactory.prototype.deleteDatabase = function deleteDatabase(
+        this: IDBFactory,
+        name: string
+      ) {
+        if (name.startsWith("polaris-outbox-")) {
+          counted.outboxDeletes += 1;
+        }
+        return real.call(this, name);
+      };
+    });
     await discardOpener(page).click();
     await discardDialog(page)
       .getByRole("button", { exact: true, name: "Sim, descartar" })
@@ -687,6 +701,11 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     expect(await stored(page, "polaris.offline.namespaces")).not.toContain(
       ORGANIZATION.id
     );
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { outboxDeletes: number }).outboxDeletes
+      )
+    ).toBe(1);
     expect(server.procedures).toEqual(callsBefore);
     expect(new Set(server.procedures.slice(panelStart))).toEqual(
       new Set(["organization/closedStatus", "dataExport/listClosed"])
@@ -732,6 +751,34 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     ).toBeVisible();
     await expect(page.getByText(DISCARDED)).toHaveCount(0);
     await expect(discardOpener(page)).toBeVisible();
+    expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
+  });
+
+  test("sem a conta confirmada na hora de descartar: diz que nada foi apagado e mantém a fila e o botão", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    const { queued } = await leaveTwoSalesAndOpenPanel(
+      page,
+      server,
+      AFTER_WINDOW
+    );
+    await expect(discardOpener(page)).toBeVisible();
+    server.sessionDown = true;
+
+    await discardOpener(page).click();
+    await discardDialog(page)
+      .getByRole("button", { exact: true, name: "Sim, descartar" })
+      .click();
+
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: "Não foi possível descartar agora",
+      })
+    ).toContainText("Nada foi apagado.");
+    await expect(discardDialog(page)).toHaveCount(0);
+    await expect(discardOpener(page)).toBeVisible();
+    await expect(queueSection(page)).toContainText(AFTER_TEXT);
     expect(await outboxCommands(page)).toEqual(expect.arrayContaining(queued));
   });
 

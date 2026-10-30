@@ -12,6 +12,7 @@ import { FakeCatalogServer, FakeWriter } from "../test-support";
 import {
   type DataChannel,
   type KeyValueStore,
+  NoSessionForDiscardError,
   OfflineRuntime,
   type OpenedStores,
   type RuntimeApi,
@@ -1324,6 +1325,12 @@ describe("discarding the queue of a closed store", () => {
     expect(w.keyValues.read("polaris.offline.namespaces")).toContain("org-2");
     expect(w.keyValues.read("polaris.offline.device")).toBe(deviceBefore);
     expect(w.keyValues.read("polaris.offline.session-user")).toBe(userId);
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.org-1`)
+    ).toBeNull();
+    expect(
+      w.keyValues.read(`polaris.offline.lease.${userId}.org-2`)
+    ).not.toBeNull();
     const workspaces = await w.make().logoutWorkspaces();
     expect(workspaces.map((workspace) => workspace.label)).toEqual(["org-2"]);
     await Promise.all(workspaces.map((workspace) => workspace.release?.()));
@@ -1374,7 +1381,7 @@ describe("discarding the queue of a closed store", () => {
 
     await expect(
       w.make(null, dropsStores(w)).discardClosedQueue("org-1")
-    ).rejects.toThrow("no_session_for_discard");
+    ).rejects.toBeInstanceOf(NoSessionForDiscardError);
 
     expect(w.purged).toEqual([]);
     expect(w.stores.has(`${userId}-org-1`)).toBe(true);

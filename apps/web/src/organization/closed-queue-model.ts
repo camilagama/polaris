@@ -26,8 +26,12 @@ export type ClosedQueue =
   | { kind: "unknown" }
   | { kind: "unreadable" };
 
+export const DISCARD_NO_SESSION_TEXT =
+  "Não foi possível descartar agora: não deu para confirmar a sua conta. Nada foi apagado. Confira a conexão e tente de novo.";
+
 export type DiscardOutcome =
   | { kind: "done" }
+  | { kind: "no_session" }
   | { kind: "left"; remaining: number }
   | { kind: "unread" };
 
