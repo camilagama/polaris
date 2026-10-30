@@ -170,11 +170,33 @@ describe("customerErrorMessage com o 503 de uma escrita", () => {
     );
   });
 
-  it("um 503 com outro motivo não vira dúvida de escrita", () => {
+  it("um 503 com outro motivo, numa escrita, também diz que pode ter sido salvo, sem convidar a repetir", () => {
+    for (const action of ["save", "archive", "restore", "anonymize"] as const) {
+      const message = customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        action
+      );
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+    }
+  });
+
+  it("um 503 com outro motivo, na conferência de repetidos, mantém o texto da conferência", () => {
     expect(
       customerErrorMessage(
         { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
-        "save"
+        "duplicate-check"
+      )
+    ).toContain("possíveis clientes repetidos");
+  });
+
+  it("um 503 com outro motivo, na leitura da lista, mantém o texto das leituras", () => {
+    expect(
+      customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        "load"
       )
     ).toBe(
       "A lista de clientes está temporariamente indisponível. Tente novamente."

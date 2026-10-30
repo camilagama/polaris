@@ -1013,6 +1013,37 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await expect(copyNotice(page)).toHaveCount(0);
 });
 
+test("sem conexão, o mês vazio guardado mostra o estado vazio com a cópia dita como tal, e os dois botões seguem como com conexão", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.fixture = { ...FIXTURE, "2026-10": { expenses: [], sales: [] } };
+  const user = await openDashboard(page, server);
+  const empty = page.getByText("Sem vendas nem despesas em 1 a 31 de outubro");
+  await expect(empty).toBeVisible();
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+  const newSale = page.getByRole("link", { exact: true, name: "Nova venda" });
+  const newExpense = page.getByRole("link", {
+    exact: true,
+    name: "Nova despesa",
+  });
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+
+  server.networkDown = true;
+  await signIn(page, user);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
+  await expect(empty).toBeVisible();
+  await expect(kpiCards(page)).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(newSale).toBeVisible();
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toBeVisible();
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+});
+
 test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai", async ({
   page,
 }) => {

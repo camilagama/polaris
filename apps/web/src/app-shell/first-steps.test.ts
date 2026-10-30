@@ -99,7 +99,7 @@ describe("the first steps of the menu", () => {
     expect(firstSaleConfirmed("loja-a", store)).toBe(false);
   });
 
-  it("do not call the next sale the first after one was kept on the device, until the Início reads the steps again", () => {
+  it("do not call the next sale the first after one was kept on the device, even when the Início reads the steps again", () => {
     const store = fakeStore();
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
     deviceSaleKept("loja-b", store);
@@ -111,7 +111,23 @@ describe("the first steps of the menu", () => {
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
     deviceSaleKept("loja-a", store);
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
-    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(true);
+    expect(rememberedFirstSteps("loja-a", store)).toBe(2);
+    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+  });
+
+  it("keep the sale kept on the device through a new read of the steps and a product registered, but only for its store", () => {
+    const store = fakeStore();
+    rememberFirstSteps("loja-a", { firstProductId: null }, store);
+    deviceSaleKept("loja-a", store);
+    rememberFirstSteps("loja-a", { firstProductId: null }, store);
+    firstProductRegistered("loja-a", "p1", store);
+    expect(rememberedFirstSteps("loja-a", store)).toBe(2);
+    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+
+    rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
+    deviceSaleKept("loja-a", store);
+    rememberFirstSteps("loja-b", { firstProductId: "p1" }, store);
+    expect(confirmedSaleWasFirst("loja-b", false, store)).toBe(true);
   });
 
   it("keep nothing of a sale kept on the device when there are no steps to show", () => {

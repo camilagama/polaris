@@ -1,5 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import {
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   legalAcceptanceMessage,
   rpcErrorCode,
@@ -110,7 +111,9 @@ export function customerErrorMessage(
     return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "A lista de clientes está temporariamente indisponível. Tente novamente.";
+    return action === "load"
+      ? "A lista de clientes está temporariamente indisponível. Tente novamente."
+      : CHANGE_FAULT_UNKNOWN;
   }
   if (action === "load") {
     return "Não foi possível carregar os clientes. Tente novamente.";
