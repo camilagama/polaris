@@ -410,7 +410,9 @@ export interface StockAttentionLink {
 }
 
 function countText(page: VariantCount): string {
-  return page.more ? "100 ou mais" : formatQuantity(page.count);
+  return page.more
+    ? `${STOCK_ATTENTION_PAGE_SIZE} ou mais`
+    : formatQuantity(page.count);
 }
 
 /**

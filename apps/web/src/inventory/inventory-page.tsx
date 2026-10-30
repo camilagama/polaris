@@ -394,9 +394,14 @@ export function InventoryPage() {
         return;
       }
       event.preventDefault();
-      setFilters(
-        readStockLinkFilters(new URL(link.href, window.location.origin).search)
-      );
+      // the number counts active products with no search: the list opens on the same ground
+      setFilters({
+        ...readStockLinkFilters(
+          new URL(link.href, window.location.origin).search
+        ),
+        includeArchived: false,
+        query: "",
+      });
     },
     [setFilters]
   );

@@ -10,9 +10,9 @@ import {
 } from "./stock-list-model";
 
 /**
- * The links of the strip, from the counts behind "Precisa de ação" on the stock screen. They are the store's, not the list's: the filters of the
- * list do not change them. None while unread, without a connection (the device does not hold the cost) and when a
- * read fails: the strip is then simply not there. `version` reads again after a movement or a reload.
+ * The links of "Precisa de ação" on the stock screen, from the store's counts (not the list's: its filters do not
+ * change them). None while unread, without a connection (the device does not hold the cost) and when a read fails.
+ * `version` reads again after a movement or a reload.
  */
 export function useStockAttention(
   organizationId: string,

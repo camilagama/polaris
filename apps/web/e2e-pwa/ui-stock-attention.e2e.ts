@@ -56,6 +56,27 @@ test.describe("Estoque, Precisa de ação", () => {
     );
   });
 
+  test("o link da faixa limpa a busca e os arquivados, que o número não conta", async ({
+    page,
+  }) => {
+    await stockStates.list(page);
+    await page.getByLabel("Buscar no estoque").fill("jeans");
+    await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
+    await strip(page)
+      .getByRole("link", { name: "1 variante sem saldo" })
+      .click();
+    await expect(page.getByLabel("Buscar no estoque")).toHaveValue("");
+    await expect(
+      page.getByRole("checkbox", { name: "Incluir arquivados" })
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("tab", { name: "Sem saldo", selected: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("list", { name: "Saldos por variante" })
+    ).toContainText("Boné aba reta");
+  });
+
   test("os links levam o mesmo endereço do Início", async ({ page }) => {
     await stockStates.list(page);
     await expect(

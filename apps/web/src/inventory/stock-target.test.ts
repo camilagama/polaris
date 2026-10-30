@@ -43,6 +43,22 @@ describe("targetBalanceText", () => {
     );
   });
 
+  it("writes the year across New Year's Eve, by the device's own calendar", () => {
+    const afterMidnight = new Date(2026, 0, 1, 0, 30);
+    expect(
+      targetBalanceText(
+        target({ updatedAt: new Date(2025, 11, 31, 23, 30).toISOString() }),
+        afterMidnight
+      )
+    ).toContain("último movimento 31/12/2025 23:30");
+    expect(
+      targetBalanceText(
+        target({ updatedAt: new Date(2026, 0, 1, 0, 10).toISOString() }),
+        afterMidnight
+      )
+    ).toContain("último movimento 01/01 00:10");
+  });
+
   it("says an unknown cost and a variant that never moved", () => {
     expect(
       targetBalanceText(
