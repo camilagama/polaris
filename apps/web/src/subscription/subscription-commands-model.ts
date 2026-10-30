@@ -1,7 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { formatBrlAmount } from "../lib/format";
 import {
-  CHANGE_FAULT_UNKNOWN,
   isConnectionFailure,
   rpcErrorCode,
   rpcErrorReason,
@@ -260,16 +259,28 @@ export function safeOverduePaymentUrl(value: string): string | null {
 const CONNECTION_TEXT =
   "A conexão falhou antes da resposta. Confira a conexão e tente de novo: o pedido não é feito duas vezes.";
 
-const PROVIDER_TEXT: Readonly<Record<OwnerCommand, string>> = {
-  // AC-26
+const OVERDUE_TEXT =
+  "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.";
+
+const UNCONFIRMED_TEXT = {
   cancel:
-    "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo.",
-  overdue:
-    "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.",
-  // never "Nada foi cancelado" (AS-42): on a repeat the renewal is already cancelled
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
   refund:
-    "Não conseguimos pedir o reembolso agora. Nada foi cobrado a mais. Tente de novo.",
-};
+    "Não deu para confirmar o pedido de reembolso. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
+} as const;
+
+/**
+ * `billing_provider_unavailable` is the server saying the provider failed or the time ran out, and it may come after
+ * the provider acted; the Worker's own 503 with no reason may too. Repeating is safe on the server (the plan read
+ * decides what is left to do), so cancelling and refunding read the plan before a new try and never say nothing was done. Opening the page of the
+ * charge only reads: it says nothing was charged and offers the try again.
+ */
+function unavailableRefusal(command: OwnerCommand): Refusal {
+  if (command === "overdue") {
+    return { reread: false, retry: true, text: OVERDUE_TEXT };
+  }
+  return { reread: true, retry: false, text: UNCONFIRMED_TEXT[command] };
+}
 
 /**
  * The text of each refusal of the owner's commands, by its reason (ADR 0104, decision 3): "Tentar de novo" when the
@@ -302,7 +313,7 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
         text: "Não conseguimos confirmar o pedido. Tente de novo: ele não é feito duas vezes.",
       };
     case "billing_provider_unavailable":
-      return { reread: false, retry: true, text: PROVIDER_TEXT[command] };
+      return unavailableRefusal(command);
     case "nothing_to_cancel":
       return {
         reread: true,
@@ -358,9 +369,7 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
     };
   }
   if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
-    // only `billing_provider_unavailable` says the provider failed before any effect; the Worker's own 503
-    // (`server_busy`, no reason) may come after the command took effect, so the plan is read before a new try
-    return { reread: true, retry: false, text: CHANGE_FAULT_UNKNOWN };
+    return unavailableRefusal(command);
   }
   return {
     reread: true,
@@ -371,5 +380,5 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
 
 /** An address of the page of the charge out of Asaas's exact hosts: said as the provider's failure. */
 export function unsafeOverdueRefusal(): Refusal {
-  return { reread: false, retry: true, text: PROVIDER_TEXT.overdue };
+  return { reread: false, retry: true, text: OVERDUE_TEXT };
 }
