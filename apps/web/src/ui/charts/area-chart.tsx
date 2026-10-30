@@ -496,7 +496,10 @@ export function AreaChart({
           secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
         />
       ) : null}
-      <div className="relative rounded-md" style={{ height: boxHeight }}>
+      <div
+        className="relative isolate rounded-md"
+        style={{ height: boxHeight }}
+      >
         <ReadingAt place={place} reading={reading} where="over" />
         <div
           aria-label={label}

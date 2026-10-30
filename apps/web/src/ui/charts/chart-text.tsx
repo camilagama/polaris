@@ -38,7 +38,7 @@ export interface DayReading {
 }
 
 /**
- * The reading of the day in focus, a line of text above the drawing. With a second series it says both, and the note
+ * The reading of the day in focus, a line of text: above the drawing, or over its corner when the caller places it. With a second series it says both, and the note
  * of the caller after them ("05/10 · Vendas R$ 320,00 · Custos R$ 2.050,00 · inclui R$ 1.800,00 de despesas").
  * No aria-live: the keyboard control speaks the same day and value (`aria-valuetext`); a live line would say it twice.
  */

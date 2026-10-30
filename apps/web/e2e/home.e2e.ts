@@ -1896,6 +1896,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       await expect(reading).toContainText(
         "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
       );
+      await expect(reading).toBeVisible();
       const during = await at();
       expect(during).toEqual(before);
 
