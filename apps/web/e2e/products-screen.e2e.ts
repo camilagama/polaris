@@ -768,6 +768,72 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   );
 });
 
+test("cadastrar o 1º produto muda o pé do menu de 1 de 3 para 2 de 3 sem abrir o Início", async ({
+  page,
+}) => {
+  const created = product(1, "Bolsa de couro");
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([]), answer([created])],
+    others: {
+      "product/create": (route) => route.fulfill(rpc(created)),
+    },
+  });
+  const steps = (done: number) =>
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: `Primeiros passos, ${done} de 3 concluídos`,
+    });
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  await more.click();
+  await expect(steps(1)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Mais" })).toBeHidden();
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(
+    page.getByText("Produto “Bolsa de couro” cadastrado.")
+  ).toBeVisible();
+  await more.click();
+  await expect(steps(2)).toBeVisible();
+  await expect(steps(1)).toHaveCount(0);
+});
+
+test("o cadastro que o servidor recusa deixa o pé do menu em 1 de 3", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: { "product/create": (route) => route.fulfill(unavailable) },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: "Primeiros passos, 1 de 3 concluídos",
+    })
+  ).toBeVisible();
+});
+
 test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {

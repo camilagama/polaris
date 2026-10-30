@@ -1,6 +1,9 @@
 import type { ProductReadModel } from "@polaris/contracts";
+import { firstProductRegistered } from "../app-shell/first-steps";
 import { orpcClient } from "../lib/orpc";
 import { uuidv7 } from "../lib/uuidv7";
+import type { LocalWriter } from "../offline/bootstrap";
+import type { Outbox } from "../offline/outbox/outbox";
 import { createOfflineProduct } from "../offline/product-create";
 import type { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { toLocalProductRow } from "./local-products";
@@ -54,6 +57,36 @@ export interface NewProductInput {
 }
 
 /**
+ * Sends the queue and, once the command has left it with its product still on the device, tells the foot of the menu
+ * that the store has its first product. The outbox drops a command the server accepted; a refused one stays and a
+ * failed send leaves it waiting. A person discarding the product removes the command too, but takes the local rows
+ * with it, so only the rows still there say it was accepted.
+ */
+function announceWhenAccepted(
+  workspace: NonNullable<Workspace>,
+  stores: {
+    outbox: Pick<Outbox, "snapshot">;
+    writer: Pick<LocalWriter, "keys">;
+  },
+  created: { commandId: string; organizationId: string; productId: string }
+): void {
+  workspace.runtime
+    .syncNow()
+    .then(() =>
+      Promise.all([stores.outbox.snapshot(), stores.writer.keys("products")])
+    )
+    .then(([{ commands }, productIds]) => {
+      const queued = commands.some(
+        (entry) => entry.commandId === created.commandId
+      );
+      if (!queued && productIds.includes(created.productId)) {
+        firstProductRegistered(created.organizationId, created.productId);
+      }
+    })
+    .catch(() => undefined);
+}
+
+/**
  * Creates a product with its price and opening stock and says what happened. With the offline runtime ready it is
  * queued on this device and shown at once (sent now when there is a connection); without it, it is created on the
  * server in one call (the server dates the stock today in the store's time zone). `today` is that date on the device.
@@ -77,6 +110,7 @@ export async function createProduct(
       productId: names.ids.productId,
       variantId: names.ids.variantId,
     });
+    firstProductRegistered(organizationId, product.id);
     return `Produto “${product.name}” cadastrado${openingUnitsText(input)}.`;
   }
   const stores = workspace.runtime.context();
@@ -84,7 +118,7 @@ export async function createProduct(
     // not ready, or the organization changed under the screen: nothing is queued
     throw new Error("offline_runtime_unavailable");
   }
-  await createOfflineProduct({
+  const { command, rows } = await createOfflineProduct({
     deviceId: stores.deviceId,
     input: {
       categoryId: input.categoryId,
@@ -102,7 +136,11 @@ export async function createProduct(
   });
   const name = input.name.trim();
   if (workspace.online) {
-    workspace.runtime.syncNow().catch(() => undefined);
+    announceWhenAccepted(workspace, stores, {
+      commandId: command.commandId,
+      organizationId,
+      productId: rows.product.id,
+    });
     // the server has not answered yet: the row says "Aguardando envio" until it does
     return `Produto “${name}” guardado${openingUnitsText(input)}. Enviando…`;
   }

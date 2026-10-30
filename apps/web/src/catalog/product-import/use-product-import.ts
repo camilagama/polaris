@@ -19,6 +19,7 @@ import {
   previewImport,
 } from "../product-import-rows";
 import {
+  announceEnteredProduct,
   createImportRun,
   type ImportRun,
   runImport,
@@ -211,7 +212,10 @@ export function useProductImport({
               }));
             }
           },
-          onProgress: () => setTick((count) => count + 1),
+          onProgress: () => {
+            announceEnteredProduct(run, organizationId);
+            setTick((count) => count + 1);
+          },
           organizationId,
           retryAfterMs: browserConnection.takeRetryAfterMs,
           send: (input) => orpcClient.product.importBatch(input),
