@@ -36,6 +36,8 @@ export function useStockAttention(
       setAttention(null);
       return;
     }
+    // a new read drops the failure line: it must not stay over a screen that is reading again
+    setAttention((previous) => (previous === "failed" ? null : previous));
     const isCurrent = () => request === latest.current;
     const read = (kind: "unknown-cost" | "without-stock") =>
       readWithRetry(
