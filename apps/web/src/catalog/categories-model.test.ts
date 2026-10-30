@@ -64,6 +64,27 @@ describe("what the screen says when a call fails", () => {
     );
   });
 
+  it("says a write the busy server did not confirm may have been saved, and a read keeps the old text", () => {
+    const busy = {
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+    };
+    for (const action of [
+      "create",
+      "rename",
+      "archive",
+      "restore",
+      "delete",
+    ] as const) {
+      expect(categoryErrorMessage(busy, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    expect(categoryErrorMessage(busy)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
   it("falls back to a sentence that asks to try again", () => {
     expect(categoryErrorMessage(new Error("boom"), "delete")).toBe(
       "Não foi possível concluir a operação. Tente novamente."

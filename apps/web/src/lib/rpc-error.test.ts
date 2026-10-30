@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NoWorkerAnswerError } from "./connection";
 import {
   CHANGE_CUT_BY_SERVER,
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   isConnectionFailure,
   isDefiniteRpcRejection,
@@ -12,6 +13,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
   serverCutWriteMessage,
+  unconfirmedWriteFaultMessage,
 } from "./rpc-error";
 
 describe("rpc error helpers", () => {
@@ -237,5 +239,43 @@ describe("a call the platform killed (the regime of the Free plan)", () => {
     expect(readErrorMessage(platformCut, "os produtos")).not.toMatch(
       MAY_HAVE_BEEN_SAVED
     );
+  });
+
+  it("says a direct write that met the Worker's 503 may have been saved, only when the screen says it is one", () => {
+    expect(CHANGE_FAULT_UNKNOWN).toBe(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    );
+    expect(CHANGE_FAULT_UNKNOWN).not.toMatch(BLAMES_THE_NETWORK);
+    expect(unconfirmedWriteFaultMessage(workerBusy)).toBe(CHANGE_FAULT_UNKNOWN);
+    expect(
+      unconfirmedWriteFaultMessage({ code: "SERVICE_UNAVAILABLE", status: 503 })
+    ).toBe(CHANGE_FAULT_UNKNOWN);
+    expect(
+      commonFailureMessage(workerBusy, undefined, { directWrite: true })
+    ).toBe(CHANGE_FAULT_UNKNOWN);
+    expect(commonFailureMessage(workerBusy)).toBeUndefined();
+    expect(
+      commonFailureMessage(workerBusy, "os produtos", { directWrite: true })
+    ).toBeUndefined();
+    expect(
+      commonFailureMessage(platformCut, undefined, { directWrite: true })
+    ).toBe(CHANGE_CUT_BY_SERVER);
+    expect(readErrorMessage(workerBusy, "os produtos")).toBe(
+      "Não foi possível carregar os produtos. Tente novamente."
+    );
+  });
+
+  it("is no unknown fault for another reason of the 503, for a 4xx or for no answer", () => {
+    for (const error of [
+      {
+        code: "SERVICE_UNAVAILABLE",
+        data: { reason: "billing_not_configured" },
+      },
+      { code: "CONFLICT" },
+      { code: "INTERNAL_SERVER_ERROR" },
+      new TypeError("Failed to fetch"),
+    ]) {
+      expect(unconfirmedWriteFaultMessage(error)).toBeUndefined();
+    }
   });
 });

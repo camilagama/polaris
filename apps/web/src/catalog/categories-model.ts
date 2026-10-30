@@ -57,7 +57,8 @@ export function categoryErrorMessage(
 ): string {
   const common = commonFailureMessage(
     error,
-    action === undefined ? "as categorias" : undefined
+    action === undefined ? "as categorias" : undefined,
+    { directWrite: action !== undefined }
   );
   if (common !== undefined) {
     return common;

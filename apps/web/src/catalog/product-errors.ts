@@ -53,7 +53,8 @@ export function productErrorMessage(
 ): string {
   const common = commonFailureMessage(
     error,
-    action === undefined ? "os produtos" : undefined
+    action === undefined ? "os produtos" : undefined,
+    { directWrite: action !== undefined }
   );
   if (common !== undefined) {
     return common;

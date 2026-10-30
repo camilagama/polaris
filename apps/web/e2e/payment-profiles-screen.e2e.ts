@@ -53,6 +53,16 @@ const unavailable = rpc(
   },
   503
 );
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
 const badRequest = rpc(
   {
     code: "BAD_REQUEST",
@@ -518,6 +528,37 @@ test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
   await expect(
     page.getByRole("button", { name: "Restaurar perfil Maquininha da loja" })
   ).toBeVisible();
+});
+
+test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fechar e conferir' e não repete sozinho", async ({
+  page,
+}) => {
+  let creates = 0;
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "paymentProfile/create": (route) => {
+        creates += 1;
+        return route.fulfill(serverBusy);
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  await page.getByLabel("Nome do perfil").fill("Maquininha");
+  await page.getByRole("button", { name: "Criar perfil" }).click();
+  await expect(
+    page.getByText(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Fechar e conferir" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(creates).toBe(1);
 });
 
 test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56)", async ({
