@@ -182,6 +182,44 @@ describe("AreaChart: a second series (the costs of the Resultado)", () => {
   });
 });
 
+describe("AreaChart: a quiet chart (Vendas por dia do Início)", () => {
+  const before = WEEK.map((day) => ({ ...day, value: day.value / 2 }));
+  const quiet = html(
+    <AreaChart
+      data={WEEK}
+      formatValue={money}
+      label="Vendas líquidas por dia"
+      name="Vendas"
+      readingAtRest={false}
+      secondary={{
+        data: before,
+        legend: "7 dias antes",
+        name: "7 dias antes",
+        subtle: true,
+      }}
+      valueLabels="peak"
+    />
+  );
+
+  it("shows no reading line at rest: nothing sits above the drawing", () => {
+    expect(quiet).not.toContain("data-chart-reading");
+    // the keyboard control still speaks both values of the day in focus
+    expect(quiet.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: Vendas R$ 520,00, 7 dias antes R$ 260,00"'
+    );
+  });
+
+  it("names the faint line by no legend: the help of the block and the reading of a day say it", () => {
+    expect(quiet).not.toContain("data-chart-legend");
+  });
+
+  it("keeps the reading line by default, as the Resultado has it", () => {
+    expect(
+      html(<AreaChart data={WEEK} formatValue={money} label="x" />)
+    ).toContain("data-chart-reading");
+  });
+});
+
 describe("AreaChart: a second series with unknown days (AC-9 of the Resultado, emenda de 25/10)", () => {
   const UNKNOWN = {
     legend: "dia sem custo informado",

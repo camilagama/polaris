@@ -555,9 +555,35 @@ describe("exact totals and command body", () => {
       context({ stock: { [variantId]: balance(1, null) } })
     );
     expect(result.body).not.toBeNull();
-    expect(result.stockWarnings[lineOf(form).draftId]).toContain(
-      "Quantidade acima do saldo exibido (1)"
+    expect(result.stockWarnings[lineOf(form).draftId]).toBe(
+      "Acima do saldo (1): a venda é recusada se ele não bastar."
     );
+  });
+
+  it("shows no quantity warning at balance 0, where the zero-balance line already says what to do", () => {
+    const form = validForm();
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.body).not.toBeNull();
+    expect(result.stockWarnings).toEqual({});
+  });
+
+  it("shows no quantity warning on any line of a variant at balance 0", () => {
+    let form = addItem(validForm(), "item-2");
+    form = selectItemProduct(form, "item-2", productId);
+    form = selectItemVariant(form, "item-2", variantId, "Camiseta — Azul / M");
+    form = updateItem(form, "item-2", {
+      chargedUnitPrice: "10",
+      listedUnitPrice: "10",
+      quantity: "2",
+    });
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.stockWarnings).toEqual({});
   });
 
   it("sums repeated lines of the same variant for the stock warning", () => {
@@ -747,6 +773,95 @@ describe("a profile that left the list after a lost answer", () => {
     const reloaded = reconcileProfileReload(form, [profile(4)], true);
     expect(reloaded.profile.reviewNotice).toContain("mudou");
     expect(reloaded.profile.choice).toBe(form.profile.choice);
+  });
+});
+
+describe("a profile edited after a lost answer", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  const later = new Date("2026-05-01T12:05:00.000Z");
+  const ids = sequentialIds();
+
+  function confirm(
+    form: SaleFormState,
+    version: number,
+    previous: SaleAttempt | null,
+    attemptUnsettled: boolean
+  ) {
+    const reviewed = acknowledgeProfileReview(form, [profile(version)]);
+    const { body } = evaluate(
+      reviewed,
+      context({ profiles: [profile(version)] })
+    );
+    if (body === null) {
+      throw new Error("expected a valid body");
+    }
+    const prepared = prepareConfirmation({
+      attemptUnsettled,
+      body,
+      createId: ids,
+      now: previous === null ? now : later,
+      organizationId,
+      previousAttempt: previous,
+    });
+    if (!prepared.ok) {
+      throw new Error(prepared.message);
+    }
+    return prepared;
+  }
+
+  const sent = () => confirm(creditCardForm(), 3, null, false);
+
+  it("records the profile and version the body was sent with", () => {
+    expect(sent().attempt.paymentProfile).toEqual({
+      expectedVersion: 3,
+      id: profileId,
+    });
+  });
+
+  it("resends the version of the first send, with the same command ID, while the outcome is unknown", () => {
+    const first = sent();
+    const again = confirm(creditCardForm(), 4, first.attempt, true);
+    expect(again.request.paymentProfile).toEqual({
+      expectedVersion: 3,
+      id: profileId,
+    });
+    expect(again.attempt).toBe(first.attempt);
+    expect(again.request).toEqual(first.request);
+  });
+
+  it("takes the live version, and a new command ID, once the outcome is not unknown", () => {
+    const first = sent();
+    const again = confirm(creditCardForm(), 4, first.attempt, false);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
+  });
+
+  it("takes the live version when the cart changed too: another payload, another sale", () => {
+    const first = sent();
+    const edited = updateItem(
+      creditCardForm(),
+      lineOf(creditCardForm()).draftId,
+      {
+        quantity: "3",
+      }
+    );
+    const again = confirm(edited, 4, first.attempt, true);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
+  });
+
+  it("does not carry the version to another profile", () => {
+    const first = sent();
+    const other = {
+      ...first.attempt,
+      paymentProfile: {
+        expectedVersion: 3,
+        id: "77777777-7777-4777-8777-777777777777",
+      },
+    };
+    const again = confirm(creditCardForm(), 4, other, true);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
   });
 });
 
@@ -2110,5 +2225,16 @@ describe("the refusal for stock", () => {
       "Sem estoque: saldo 0. Peça a quem cuida do estoque para dar entrada."
     );
     expect(stockView(zero, false)?.text).not.toContain("servidor");
+  });
+
+  it("tells the seller they can still sell when the balance could not be read", () => {
+    const text = stockView(
+      { message: "Não foi possível ler o estoque.", status: "error" },
+      true
+    )?.text;
+    expect(text).toBe(
+      "Não foi possível ler o estoque. Você ainda pode vender: o saldo é conferido ao confirmar."
+    );
+    expect(text).not.toContain("servidor");
   });
 });

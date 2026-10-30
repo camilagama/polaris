@@ -1105,21 +1105,28 @@ export function UiGallery() {
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
               <span className="text-support">
-                <MoneyText text="Melhor dia: 18/10, R$ 1.840,00" />
+                <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: false, text: "+19,1%", trend: "up" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: false,
+                      text: "+19,1%",
+                      trend: "up",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="sales"
-                footer="41 vendas no mês"
+                help={{
+                  about: "Vendas",
+                  text: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-vendas"
-                note="vs. 1 a 25/09"
+                note="41 vendas"
                 spark={
                   <OnDemandSparkline
                     color="var(--chart-sales)"
@@ -1128,20 +1135,27 @@ export function UiGallery() {
                     values={GALLERY_KPI_SERIES}
                   />
                 }
-                title="Vendas em outubro"
+                title="Vendas"
                 value={<HeroValue amount="2660.60" />}
               />
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: true, text: "-R$ 12,00", trend: "down" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: true,
+                      text: "-R$ 12,00",
+                      trend: "down",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="result"
-                footer="Não é lucro líquido nem dinheiro já recebido."
+                footer="Não é lucro líquido nem caixa"
+                help={{
+                  about: "Resultado estimado",
+                  text: "Vendas menos custos, taxas e despesas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-resultado"
-                note="vs. 1 a 25/09"
                 title="Resultado estimado"
                 value={<HeroValue amount="-48.30" size="md" />}
               />

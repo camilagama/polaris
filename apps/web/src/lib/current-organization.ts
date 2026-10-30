@@ -155,9 +155,10 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     loadOrganizations();
   }, [loadOrganizations]);
   const select = useCallback((organizationId: string) => {
-    // the cart of the store left behind is not kept: it would come back after the person forgot it
+    // the cart of the store left behind is not kept: it would come back after the person forgot it. The attempt sent
+    // with no answer is, since that sale may be on the server and retyping the cart must reach it
     clearSaleDrafts(sessionStorageOrNull(), organizationId);
-    clearSaleAttempts(sessionStorageOrNull(), organizationId);
+    clearSaleAttempts(sessionStorageOrNull(), organizationId, true);
     writePreferredOrganizationId(browserStorage(), organizationId);
     setLoad((current) => selectOrganization(current, organizationId));
   }, []);

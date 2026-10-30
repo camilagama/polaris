@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { helpTipTextProblem } from "../ui/help-tip-text";
 import {
   dayReading,
   moneyDelta,
   monthKpis,
   percentDelta,
+  resultHelp,
   todaySeries,
+  unknownDaysFit,
   unknownDaysText,
 } from "./home-kpis";
 
@@ -175,12 +178,18 @@ describe("dayReading (Vendas hoje)", () => {
     const { before, month } = build();
     // mean of 837,40 / 4 = 209,35; (320,10 - 209,35) / 209,35 = +52,9%
     expect(dayReading(before, month, TODAY, TODAY)).toEqual({
-      count: "4 vendas hoje",
-      date: "domingo, 25/10",
+      count: "4 vendas",
+      // no date at rest: the title says it is today
+      date: "",
       delta: { money: false, text: "+52,9%", trend: "up" },
-      note: "vs. média dos 4 domingos anteriores",
+      help: "Vendas líquidas de hoje. Compara com a média dos 4 domingos anteriores.",
+      note: "vs. média dos domingos",
       value: "320.10",
     });
+    // another day of the strip is dated, and the help says whose it is
+    const read = dayReading(before, month, "2026-10-18", TODAY);
+    expect(read.date).toBe("dom, 18/10");
+    expect(read.help.startsWith("Vendas líquidas de dom, 18/10.")).toBe(true);
   });
 
   it("writes the feminine for a weekday that is feminine", () => {
@@ -194,9 +203,12 @@ describe("dayReading (Vendas hoje)", () => {
       date === "2026-09-25" ? { netSales: "100.00", salesCount: 1 } : undefined
     );
     const reading = dayReading(before, month, "2026-10-23", "2026-10-23");
-    expect(reading.date).toBe("sexta-feira, 23/10");
-    expect(reading.note).toBe("vs. média das 4 sextas anteriores");
+    expect(reading.date).toBe("");
+    expect(reading.note).toBe("vs. média das sextas");
     expect(reading.delta?.text).toBe("0,0%");
+    expect(reading.help).toBe(
+      "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores."
+    );
   });
 
   it("says the 4 weekdays had no sale, with no chip", () => {
@@ -208,7 +220,10 @@ describe("dayReading (Vendas hoje)", () => {
     });
     const reading = dayReading(before, month, TODAY, TODAY);
     expect(reading.delta).toBeNull();
-    expect(reading.note).toBe("Os 4 domingos anteriores não tiveram venda");
+    expect(reading.note).toBeNull();
+    expect(reading.help).toBe(
+      "Vendas líquidas de hoje. Sem venda nos 4 domingos anteriores, não há comparação."
+    );
 
     const friday = dayReading(
       days("2026-09-01", "2026-09-30"),
@@ -217,7 +232,10 @@ describe("dayReading (Vendas hoje)", () => {
       "2026-10-23"
     );
     expect(friday.delta).toBeNull();
-    expect(friday.note).toBe("As 4 sextas anteriores não tiveram venda");
+    expect(friday.note).toBeNull();
+    expect(friday.help).toBe(
+      "Vendas líquidas de hoje. Sem venda nas 4 sextas-feiras anteriores, não há comparação."
+    );
   });
 
   it("says nothing when one of the 4 weekdays is not in the series", () => {
@@ -234,7 +252,7 @@ describe("dayReading (Vendas hoje)", () => {
       day.date === TODAY ? { ...day, netSales: "0.00", salesCount: 0 } : day
     );
     expect(dayReading(before, empty, TODAY, TODAY).count).toBe(
-      "Nenhuma venda hoje ainda"
+      "Nenhuma venda ainda"
     );
     expect(dayReading(before, empty, TODAY, "2026-10-26").count).toBe(
       "Nenhuma venda"
@@ -272,11 +290,18 @@ describe("monthKpis: sales", () => {
     const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     const { sales } = kpis.read(16);
     expect(sales).toEqual({
-      count: "17 vendas até 17/10",
+      count: "17 vendas",
       date: "1 a 17/10",
       // 17 x 20,00 against 17 x 10,00
-      delta: { money: false, text: "+100,0%", trend: "up" },
-      note: "vs. 1 a 17/09",
+      delta: {
+        basis: "em relação a 1 a 17/09",
+        money: false,
+        text: "+100,0%",
+        trend: "up",
+      },
+      help: "Vendas líquidas de 1 a 17/10. Compara com 1 a 17/09.",
+      // the comparison is in the (i) and in the name of the chip, not in sight
+      note: null,
       value: "340.00",
     });
   });
@@ -284,10 +309,16 @@ describe("monthKpis: sales", () => {
   it("reads the server's cards at rest", () => {
     const kpis = monthKpis(september(), october(), TODAY, cards, costs);
     expect(kpis.read(null).sales).toEqual({
-      count: "25 vendas no mês",
+      count: "25 vendas",
       date: "1 a 25/10",
-      delta: { money: false, text: "+100,0%", trend: "up" },
-      note: "vs. 1 a 25/09",
+      delta: {
+        basis: "em relação a 1 a 25/09",
+        money: false,
+        text: "+100,0%",
+        trend: "up",
+      },
+      help: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+      note: null,
       value: "500.00",
     });
   });
@@ -308,7 +339,9 @@ describe("monthKpis: sales", () => {
     );
     const { sales } = kpis.read(null);
     expect(sales.delta).toBeNull();
-    expect(sales.note).toBe("Sem vendas de 1 a 25/09 para comparar");
+    expect(sales.help).toBe(
+      "Vendas líquidas de 1 a 25/10. Sem vendas de 1 a 25/09, não há comparação."
+    );
   });
 
   it("never compares with less: a short B gives no chip", () => {
@@ -317,17 +350,18 @@ describe("monthKpis: sales", () => {
       null
     );
     expect(sales.delta).toBeNull();
-    expect(sales.note).toBeNull();
+    expect(sales.help).toBe("Vendas líquidas de 1 a 25/10.");
     // but a day inside the short B still compares
     expect(
-      monthKpis(before, october(), TODAY, cards, costs).read(9).sales.note
-    ).toBe("vs. 1 a 10/09");
+      monthKpis(before, october(), TODAY, cards, costs).read(9).sales.delta
+        ?.basis
+    ).toBe("em relação a 1 a 10/09");
   });
 
   it("compares the 31st with the whole of a 30-day previous month", () => {
     const kpis = monthKpis(september(), october(), "2026-10-31", cards, costs);
     const { sales } = kpis.read(null);
-    expect(sales.note).toBe("vs. 1 a 30/09");
+    expect(sales.delta?.basis).toBe("em relação a 1 a 30/09");
     // 31 x 20,00 = 620,00 against 30 x 10,00 = 300,00
     expect(sales.delta?.text).toBe("+106,7%");
     expect(sales.date).toBe("1 a 31/10");
@@ -376,10 +410,17 @@ describe("monthKpis: ticket", () => {
     );
     // 33,33 against 10,00
     expect(ticket).toEqual({
-      count: "Média por venda de 01/10",
+      // nothing under the number: what it is and what it compares with are in the (i)
+      count: "",
       date: "01/10",
-      delta: { money: false, text: "+233,3%", trend: "up" },
-      note: "vs. 01/09",
+      delta: {
+        basis: "em relação a 01/09",
+        money: false,
+        text: "+233,3%",
+        trend: "up",
+      },
+      help: "Vendas líquidas divididas pelo número de vendas, de 01/10. Compara com 01/09.",
+      note: null,
       value: "33.33",
     });
   });
@@ -408,9 +449,11 @@ describe("monthKpis: ticket", () => {
       costs
     ).read(null);
     expect(ticket.value).toBe("20.00");
-    expect(ticket.count).toBe("Média por venda no mês");
-    expect(ticket.countNarrow).toBe("Média por venda");
-    expect(ticket.note).toBe("vs. 1 a 25/09");
+    expect(ticket.count).toBe("");
+    expect(ticket.help).toBe(
+      "Vendas líquidas divididas pelo número de vendas, de 1 a 25/10. Compara com 1 a 25/09."
+    );
+    expect(ticket.delta?.basis).toBe("em relação a 1 a 25/09");
     expect(ticket.delta?.text).toBe("+100,0%");
   });
 });
@@ -432,9 +475,10 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.result).toEqual({ kind: "noCost" });
     expect(kpis.series.result).toBeNull();
     expect(kpis.read(null).result).toEqual({
-      count: "Sem custo conhecido: o resultado não dá para estimar.",
+      count: "Sem custo informado: não dá para estimar.",
       date: "outubro inteiro",
       delta: null,
+      help: "Vendas menos custos, taxas e despesas de 1 a 25/10.",
       note: null,
       value: null,
     });
@@ -579,10 +623,16 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.result).toEqual({ kind: "known" });
     // 3 x 5,00 against 3 x 2,00
     expect(kpis.read(2).result).toEqual({
-      count: "Não é lucro líquido nem dinheiro já recebido.",
+      count: "Não é lucro líquido nem caixa",
       date: "1 a 03/10",
-      delta: { money: true, text: "+R$ 9,00", trend: "up" },
-      note: "vs. 1 a 03/09",
+      delta: {
+        basis: "em relação a 1 a 03/09",
+        money: true,
+        text: "+R$ 9,00",
+        trend: "up",
+      },
+      help: "Vendas menos custos, taxas e despesas de 1 a 03/10. Compara com 1 a 03/09.",
+      note: null,
       value: "15.00",
     });
     expect(kpis.read(null).result.value).toBe("125.00");
@@ -662,15 +712,71 @@ describe("monthKpis: result (AC-9)", () => {
     // 1 to `02/09` is known, 1 to `03/09` is not
     expect(kpis.read(1).result.delta?.text).toBe("+R$ 6,00");
     expect(kpis.read(2).result.delta).toBeNull();
-    expect(kpis.read(2).result.note).toBeNull();
+    expect(kpis.read(2).result.help).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 03/10."
+    );
     expect(kpis.read(null).result.delta).toBeNull();
   });
 });
 
 describe("unknownDaysText", () => {
   it("says how many days lack a cost", () => {
-    expect(unknownDaysText(1, 23)).toBe(
-      "1 de 23 dias sem custo informado: o gráfico do resultado volta quando o custo for conhecido."
+    expect(unknownDaysText(1, 23)).toBe("1 de 23 dias sem custo");
+    expect(unknownDaysText(5, 23)).toBe("5 de 23 dias sem custo");
+  });
+});
+
+describe("the days with no cost, on the line or in the (i)", () => {
+  it("stay on the line of the badge while two digits fit on each side, and go to the (i) after", () => {
+    expect(unknownDaysFit(5, 23)).toBe(true);
+    // the widest a month can be, and the widest the line has room for
+    expect(unknownDaysFit(31, 31)).toBe(true);
+    expect(unknownDaysFit(99, 99)).toBe(true);
+    // a long period of the Resultado
+    expect(unknownDaysFit(5, 120)).toBe(false);
+    expect(unknownDaysFit(100, 100)).toBe(false);
+  });
+
+  it("are said in words by the help when they do not fit, in place of the comparison", () => {
+    expect(
+      resultHelp("de 1 a 23/10", "1 a 23/09", { total: 23, unknown: 5 })
+    ).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 23/10. Compara com 1 a 23/09."
     );
+    const long = resultHelp("de 01/06 a 28/10", "1 a 23/09", {
+      total: 120,
+      unknown: 5,
+    });
+    expect(long).toBe(
+      "Vendas menos custos, taxas e despesas de 01/06 a 28/10. 5 de 120 dias ainda sem custo informado."
+    );
+    expect(helpTipTextProblem(long)).toBeNull();
+  });
+});
+
+describe("the texts of the (i) of the cards", () => {
+  it("stay within two sentences and 160 characters, in every reading", () => {
+    const { before, month } = {
+      before: days("2026-09-01", "2026-09-30", () => ({
+        netSales: "10.00",
+        salesCount: 1,
+      })),
+      month: days("2026-10-01", "2026-10-31", () => ({
+        netSales: "20.00",
+        salesCount: 1,
+      })),
+    };
+    const kpis = monthKpis(before, month, TODAY, cards, costs);
+    const texts = [
+      dayReading(before, month, TODAY, TODAY).help,
+      dayReading(before, month, "2026-10-18", TODAY).help,
+      ...[null, 0, 9, 24].flatMap((index) => {
+        const read = kpis.read(index);
+        return [read.sales.help, read.result.help, read.ticket.help];
+      }),
+    ];
+    for (const text of texts) {
+      expect(helpTipTextProblem(text), text).toBeNull();
+    }
   });
 });
