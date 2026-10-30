@@ -96,6 +96,19 @@ test.describe("Estoque, Precisa de ação", () => {
     await expect(strip(page)).toHaveCount(0);
   });
 
+  test("se a leitura da faixa falha, a linha diz que os avisos estão indisponíveis", async ({
+    page,
+  }) => {
+    await stockStates.attentionUnavailable(page);
+    await expect(strip(page)).toHaveCount(0);
+    await expect(
+      page.getByText("Avisos do estoque indisponíveis agora.")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("list", { name: "Saldos por variante" })
+    ).toContainText("Camiseta do teste");
+  });
+
   test("o subtítulo virou a ajuda do título, e a lista perdeu o Atualizado", async ({
     page,
   }) => {
@@ -108,7 +121,9 @@ test.describe("Estoque, Precisa de ação", () => {
       "Receber, contar e baixar mudam o saldo aqui. Venda e devolução mudam sozinhas."
     );
     await page.keyboard.press("Escape");
-    await expect(page.getByText("4 variantes", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Mostrando 4 variantes", { exact: true })
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Carregar mais" })
     ).toBeVisible();

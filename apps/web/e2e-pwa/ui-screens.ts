@@ -870,6 +870,7 @@ export const SCREENS: UiScreen[] = [
   saleScreen("sem conexão", saleStates.offline),
   stockScreen("lista", stockStates.list),
   stockScreen("carregando", stockStates.loading),
+  stockScreen("avisos indisponíveis", stockStates.attentionUnavailable),
   stockScreen("vazio", stockStates.empty),
   stockScreen("busca sem resultado", stockStates.noResult),
   stockScreen("erro ao ler", stockStates.error),

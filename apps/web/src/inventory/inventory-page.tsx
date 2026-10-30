@@ -20,7 +20,6 @@ import { Field, FieldLabel } from "@/ui/field";
 import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
-import { ActionStrip } from "../app-shell/action-strip";
 import { StatusNav } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -44,6 +43,7 @@ import {
   readStockLinkFilters,
   type StockAttentionLink,
 } from "./stock-list-model";
+import { LINK, StockActionStrip } from "./stock-action-strip";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -57,9 +57,6 @@ interface OpenCommand {
   target: StockTarget;
 }
 
-/** A link inside a sentence: no touch area of its own (a line of text), only the focus ring. */
-const LINK =
-  "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 /** A link on a line of its own: it gets the 44 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
 
@@ -94,59 +91,6 @@ function OfflineStockNotice() {
         ). Custo médio só com conexão.
       </AlertDescription>
     </Alert>
-  );
-}
-
-function AttentionLink({
-  first,
-  link,
-  onApply,
-}: {
-  first: boolean;
-  link: StockAttentionLink;
-  onApply: (
-    event: MouseEvent<HTMLAnchorElement>,
-    link: StockAttentionLink
-  ) => void;
-}) {
-  const handleClick = useCallback(
-    (event: MouseEvent<HTMLAnchorElement>) => onApply(event, link),
-    [link, onApply]
-  );
-  return (
-    <>
-      {first ? null : " · "}
-      <a className={LINK} href={link.href} onClick={handleClick}>
-        {link.text}
-      </a>
-    </>
-  );
-}
-
-function StockActionStrip({
-  links,
-  onApply,
-}: {
-  links: StockAttentionLink[];
-  onApply: (
-    event: MouseEvent<HTMLAnchorElement>,
-    link: StockAttentionLink
-  ) => void;
-}) {
-  if (links.length === 0) {
-    return null;
-  }
-  return (
-    <ActionStrip>
-      {links.map((link, position) => (
-        <AttentionLink
-          first={position === 0}
-          key={link.id}
-          link={link}
-          onApply={onApply}
-        />
-      ))}
-    </ActionStrip>
   );
 }
 
@@ -293,7 +237,7 @@ export function InventoryPage() {
     state,
   } = useStockList(organizationId, offlineWorkspace, linkFilters);
   const [attentionVersion, setAttentionVersion] = useState(0);
-  const attentionLinks = useStockAttention(
+  const attention = useStockAttention(
     organizationId,
     !offline,
     attentionVersion
@@ -418,7 +362,11 @@ export function InventoryPage() {
         </div>
       </header>
 
-      <StockActionStrip links={attentionLinks} onApply={handleAttentionLink} />
+      <StockActionStrip
+        links={attention.links}
+        onApply={handleAttentionLink}
+        unavailable={attention.unavailable}
+      />
 
       {offline ? <OfflineStockNotice /> : null}
       {entryLink.status === "missing" || entryLink.status === "unavailable" ? (

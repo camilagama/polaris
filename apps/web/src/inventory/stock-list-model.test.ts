@@ -421,10 +421,13 @@ describe("views", () => {
     });
     expect(stockMoreView(ready([entry(1)])).visible).toBe(false);
     expect(stockCountText(ready([entry(1)]))).toBe("1 variante");
-    expect(stockCountText(withMore)).toBe("1 variante");
+    expect(
+      stockCountText(ready([entry(1), entry(2), entry(3), entry(4)]))
+    ).toBe("4 variantes");
+    expect(stockCountText(withMore)).toBe("Mostrando 1 variante");
     expect(
       stockCountText(ready([entry(1), entry(2), entry(3), entry(4)], "c"))
-    ).toBe("4 variantes");
+    ).toBe("Mostrando 4 variantes");
   });
 });
 

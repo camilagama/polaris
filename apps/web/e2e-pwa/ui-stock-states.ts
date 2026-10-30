@@ -146,6 +146,18 @@ async function serveList(page: Page, list: ServedList) {
   );
 }
 
+const serverFailure = () =>
+  rpc(
+    {
+      code: "INTERNAL_SERVER_ERROR",
+      data: undefined,
+      defined: false,
+      message: "Internal server error",
+      status: 500,
+    },
+    500
+  );
+
 /** The list of the stock screen answered with the synthetic rows: for the screen opened in the real shell. */
 export async function serveStockRows(page: Page) {
   await serveList(page, served(ROWS, "cursor-2"));
@@ -227,24 +239,32 @@ export const stockStates = {
     await showScreenAlone(page);
   },
 
+  /** The reads of "Precisa de ação" fail while the list answers: the strip says its notices are unavailable. */
+  async attentionUnavailable(page: Page) {
+    await openStockLab(page, {
+      answer: (body, route) =>
+        route.fulfill(
+          body.includes('"limit":100')
+            ? serverFailure()
+            : rpc({ entries: matching(body, ROWS), nextCursor: "cursor-2" })
+        ) as Promise<void>,
+    });
+    await rowOf(page, SHIRT_ROW).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
+    await showScreenAlone(page);
+  },
+
   /** The read failed: the message and the retry. */
   async error(page: Page) {
     await openStockLab(page, {
-      answer: (_body, route) =>
-        route.fulfill(
-          rpc(
-            {
-              code: "INTERNAL_SERVER_ERROR",
-              data: undefined,
-              defined: false,
-              message: "Internal server error",
-              status: 500,
-            },
-            500
-          )
-        ) as Promise<void>,
+      answer: (_body, route) => route.fulfill(serverFailure()) as Promise<void>,
     });
     await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
     await showScreenAlone(page);
   },
 

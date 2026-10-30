@@ -9,17 +9,25 @@ import {
   variantCount,
 } from "./stock-list-model";
 
+export interface StockAttentionView {
+  links: StockAttentionLink[];
+  unavailable: boolean;
+}
+
 /**
  * The links of "Precisa de ação" on the stock screen, from the store's counts (not the list's: its filters do not
- * change them). None while unread, without a connection (the device does not hold the cost) and when a read fails.
- * `version` reads again after a movement or a reload.
+ * change them). No links while unread and without a connection (the device does not hold the cost); a failed read
+ * is `unavailable`, so the screen does not say nothing needs action without having read. `version` reads again after
+ * a movement or a reload.
  */
 export function useStockAttention(
   organizationId: string,
   enabled: boolean,
   version: number
-): StockAttentionLink[] {
-  const [attention, setAttention] = useState<StockAttention | null>(null);
+): StockAttentionView {
+  const [attention, setAttention] = useState<StockAttention | "failed" | null>(
+    null
+  );
   const latest = useRef(0);
   useEffect(() => {
     latest.current += 1;
@@ -53,7 +61,7 @@ export function useStockAttention(
       })
       .catch(() => {
         if (isCurrent()) {
-          setAttention(null);
+          setAttention("failed");
         }
       });
     return () => {
@@ -61,7 +69,13 @@ export function useStockAttention(
     };
   }, [enabled, organizationId, version]);
   return useMemo(
-    () => (attention === null ? [] : stockAttentionLinks(attention)),
+    () => ({
+      links:
+        attention === null || attention === "failed"
+          ? []
+          : stockAttentionLinks(attention),
+      unavailable: attention === "failed",
+    }),
     [attention]
   );
 }

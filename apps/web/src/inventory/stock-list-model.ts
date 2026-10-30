@@ -346,7 +346,8 @@ export function stockMoreView(state: StockListState): StockMoreView {
 }
 
 /**
- * "12 variantes" caption above the list; "Carregar mais" says there are more. Without a connection and with "Sem custo"
+ * "12 variantes" caption above the list; with more pages it says "Mostrando 12 variantes", since the number alone
+ * would read as the total. Without a connection and with "Sem custo"
  * on there is no count: the device does not know how many variants lack a cost, and a zero would be invented.
  */
 export function stockCountText(
@@ -359,7 +360,8 @@ export function stockCountText(
   }
   const count = state.entries.length;
   const noun = count === 1 ? "variante" : "variantes";
-  return `${formatQuantity(count)} ${noun}`;
+  const shown = `${formatQuantity(count)} ${noun}`;
+  return state.nextCursor === null ? shown : `Mostrando ${shown}`;
 }
 
 /* -------------------------------------------------------------------------- */
