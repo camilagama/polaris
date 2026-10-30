@@ -27,20 +27,20 @@ export function SaleStatusBadges({
   );
 }
 
-const ROW = "flex items-center gap-3 px-3 py-2.5 md:px-4";
+const ROW = "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4";
 
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
     <>
       <span
         aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
+        className="hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
       >
         {row.customerInitials}
       </span>
-      <div className="grid min-w-0 flex-1 gap-0.5">
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="font-medium">
+          <p className="whitespace-nowrap font-medium">
             {row.dateText}
             {row.timeText ? (
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -56,18 +56,22 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
             statusTone={row.statusTone}
           />
         </div>
-        <p className="line-clamp-2 text-muted-foreground text-support [overflow-wrap:anywhere]">
-          {row.customerText} · {row.methodText} · {row.itemCountText}
+        <p className="flex min-w-0 text-muted-foreground text-support">
+          <span className="truncate">{row.customerText}</span>
+          <span className="shrink-0 whitespace-pre">
+            {" · "}
+            {row.methodText} · {row.itemCountText}
+          </span>
         </p>
       </div>
       <Money
-        className="shrink-0 font-semibold text-value-md tracking-tight"
+        className="shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
         text={row.totalText}
       />
       {chevron ? (
         <ChevronRightIcon
           aria-hidden="true"
-          className="hidden size-4 shrink-0 text-muted-foreground min-[22rem]:block"
+          className="size-3.5 shrink-0 text-muted-foreground md:size-4"
         />
       ) : null}
     </>

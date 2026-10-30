@@ -12,6 +12,7 @@ const twMerge = extendTailwindMerge({
             "support",
             "section",
             "title",
+            "value-sm",
             "value-md",
             "value-lg",
             "value-xl",

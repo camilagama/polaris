@@ -263,6 +263,8 @@
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.03em;
   /* money values */
+  --text-value-sm: 0.9375rem;
+  --text-value-sm--line-height: 1.25rem;
   --text-value-md: 1.0625rem;
   --text-value-md--line-height: 1.5rem;
   --text-value-lg: 1.625rem;

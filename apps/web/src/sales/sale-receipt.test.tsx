@@ -122,11 +122,14 @@ describe("the history list", () => {
   });
 
   it("writes customer, method and items on one line, with no 'Cliente:' prefix", () => {
+    const plain = (html: string) => html.replace(/<[^>]+>/g, "");
     const markup = renderToStaticMarkup(
       <SaleHistoryList offline={false} rows={[row()]} />
     );
-    expect(markup).toContain("Ana Souza · Pix · 2 itens");
-    expect(markup).toContain("line-clamp-2");
+    expect(plain(markup)).toContain("Ana Souza · Pix · 2 itens");
+    expect(markup).toContain('<span class="truncate">Ana Souza</span>');
+    expect(markup).toContain("shrink-0 whitespace-pre");
+    expect(markup).not.toContain("line-clamp");
     expect(markup).not.toContain("Cliente:");
     const none = renderToStaticMarkup(
       <SaleHistoryList
@@ -140,7 +143,7 @@ describe("the history list", () => {
         ]}
       />
     );
-    expect(none).toContain("Sem cliente · Dinheiro · 1 item");
+    expect(plain(none)).toContain("Sem cliente · Dinheiro · 1 item");
   });
 
   it("ends the row in a chevron with a connection and has none without one", () => {
