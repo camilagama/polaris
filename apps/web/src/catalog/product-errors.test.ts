@@ -60,6 +60,18 @@ describe("mensagem de erro de produto", () => {
     );
   });
 
+  it("um 503 com outro motivo também é dúvida de escrita, e a leitura mantém o texto dela", () => {
+    const other = refusal("SERVICE_UNAVAILABLE", "other");
+    for (const action of ["create", "update", "archive", "restore"] as const) {
+      expect(productErrorMessage(other, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    expect(productErrorMessage(other)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
   it("sessão recusada: ler diz que não carregou, escrever diz que o produto não mudou", () => {
     expect(productErrorMessage(refusal("UNAUTHORIZED"))).toBe(
       "Não foi possível carregar os produtos."

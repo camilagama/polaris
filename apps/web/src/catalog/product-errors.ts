@@ -1,5 +1,6 @@
 import { isLimitReached } from "../subscription/limit-help-model";
 import {
+  CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -45,6 +46,13 @@ export function isCategoryUnavailable(error: unknown): boolean {
 }
 
 export type ProductAction = "archive" | "restore";
+
+/** A 503 of a read keeps its text; a direct write may have been saved, so it never invites a second try. */
+function unavailableMessage(action: string | undefined): string {
+  return action === undefined
+    ? "O catálogo está temporariamente indisponível. Tente novamente."
+    : CHANGE_FAULT_UNKNOWN;
+}
 
 /** What the person is told when a product call fails; no action means the list could not be read. */
 export function productErrorMessage(
@@ -92,7 +100,7 @@ export function productErrorMessage(
     return "O produto mudou em outra solicitação. Atualize a lista e tente novamente.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo está temporariamente indisponível. Tente novamente.";
+    return unavailableMessage(action);
   }
   return "Não foi possível concluir a operação. Tente novamente.";
 }

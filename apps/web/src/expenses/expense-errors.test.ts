@@ -38,13 +38,18 @@ describe("expenseErrorMessage com o 503", () => {
     }
   });
 
-  it("um 503 com outro motivo não vira dúvida de escrita", () => {
-    expect(
-      expenseErrorMessage(
-        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
-        "save"
-      )
-    ).toBe("As despesas estão temporariamente indisponíveis. Tente novamente.");
+  it("um 503 com outro motivo também é dúvida de escrita, e a leitura mantém o texto dela", () => {
+    const other = { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } };
+    for (const action of WRITES) {
+      expect(expenseErrorMessage(other, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    for (const action of ["load", "rule-load"] as const) {
+      expect(expenseErrorMessage(other, action)).toBe(
+        "As despesas estão temporariamente indisponíveis. Tente novamente."
+      );
+    }
   });
 
   it("o corte da plataforma mantém o texto próprio", () => {
