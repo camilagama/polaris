@@ -36,6 +36,8 @@ const LEASE_KEY = {
 };
 const HOUR = 3_600_000;
 const DARK = /\bdark\b/;
+/** A count of days, which the trial at the foot of the menu never says (AS-3, AC-12). */
+const DAYS = /\d+ dias?\b/;
 const LEFT_TO_START = /\/(entrar\?motivo=saiu.*)?$/;
 const DEVICE = {
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -191,11 +193,25 @@ test.describe("desktop (1280 px)", () => {
     await expect(bottomBar(page)).toBeHidden();
     // the eight destinations (map of navigation, § 1): no Pendências with nothing refused
     await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
+    // Início and Configurações alone; Vendas and Gestão with their small label (map of navigation, § 1)
     await expect(nav.locator('[data-sidebar="group-label"]')).toHaveText([
-      "Catálogo",
-      "Resultado",
-      "Configurações",
+      "Vendas",
+      "Gestão",
     ]);
+    const groups = nav.locator('[data-sidebar="group"]');
+    await expect(groups).toHaveCount(4);
+    await expect(groups.nth(0).getByRole("link")).toHaveText(["Início"]);
+    await expect(groups.nth(1).getByRole("link")).toHaveText([
+      "Vender",
+      "Histórico",
+    ]);
+    await expect(groups.nth(2).getByRole("link")).toHaveText([
+      "Estoque",
+      "Produtos",
+      "Clientes",
+      "Resultado",
+    ]);
+    await expect(groups.nth(3).getByRole("link")).toHaveText(["Configurações"]);
     const current = nav.locator('[aria-current="page"]');
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("Produtos");
@@ -412,6 +428,10 @@ test.describe("celular (360 px)", () => {
     await expect(
       panel.getByRole("navigation", { name: "Principal" }).getByRole("link")
     ).toHaveText(["Produtos", "Clientes", "Resultado", "Configurações"]);
+    // the bottom bar is not regrouped: what is left of Gestão keeps its label, Vendas has nothing left here
+    await expect(panel.locator('[data-sidebar="group-label"]')).toHaveText([
+      "Gestão",
+    ]);
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");
     await expect(
@@ -1081,4 +1101,227 @@ test.describe("barra do celular a 360 e 320 px", () => {
       ).toHaveCount(0);
     });
   }
+});
+
+test.describe("pé do menu: primeiros passos e teste grátis", () => {
+  /** A trial with its first charge set, as the server reads it (every key: the answer is strict). */
+  const TRIAL_PLAN = {
+    accessEndsAt: "2026-11-11T03:00:00.000Z",
+    cycleMonths: 1,
+    kept: { historyMonths: 3, products: 18, sales: 47 },
+    limits: { goals: 3, images: 5000, variants: 2000 },
+    method: "card",
+    nextCharge: { amount: "24.90", on: "2026-11-10" },
+    offer: {
+      methods: ["card", "pix_automatic"],
+      prices: [
+        { amount: "249.00", cycleMonths: 12 },
+        { amount: "24.90", cycleMonths: 1 },
+      ],
+    },
+    recovery: null,
+    refund: null,
+    refundPending: false,
+    refundWindowEndedOn: null,
+    renewalCancelled: false,
+    resubscribeFrom: null,
+    state: "trialing",
+    trialAvailable: false,
+    usage: { goals: 1, images: 12, variants: 38 },
+  };
+  const STEPS_NAME = "Primeiros passos, 2 de 3 concluídos";
+  const TRIAL_NAME =
+    "Teste grátis, primeira cobrança em 10/11, abrir Assinatura";
+
+  /**
+   * The shell of a store in its trial: `steps` is what the Início read of the first steps in this tab, `role` and
+   * `billingSelfService` say whether this person manages the billing. Counts the reads of the plan.
+   */
+  async function serveFoot(
+    page: Page,
+    {
+      billingSelfService = true,
+      role = "owner",
+      steps = 2,
+    }: { billingSelfService?: boolean; role?: string; steps?: number | null }
+  ) {
+    const organizations = [
+      {
+        id: ORGANIZATION_ID,
+        name: "Loja do teste",
+        role,
+        timezone: "America/Sao_Paulo",
+      },
+    ];
+    await serve(page, organizations);
+    await page.route("**/rpc/organization/listMine", (route) =>
+      route.fulfill(json({ billingSelfService, organizations }))
+    );
+    const reads = { plan: 0 };
+    await page.route("**/rpc/billing/readPlan", (route) => {
+      reads.plan += 1;
+      return route.fulfill(json(TRIAL_PLAN));
+    });
+    if (steps !== null) {
+      await page.addInitScript(
+        ([organizationId, done]) => {
+          sessionStorage.setItem(
+            "polaris.home.firstSteps",
+            JSON.stringify({ done, organizationId })
+          );
+        },
+        [ORGANIZATION_ID, steps] as const
+      );
+    }
+    return reads;
+  }
+
+  const stepsLink = (page: Page) =>
+    page.getByRole("link", { exact: true, name: STEPS_NAME });
+  const trialLink = (page: Page) =>
+    page.getByRole("link", { exact: true, name: TRIAL_NAME });
+
+  test("1280 px: os dois itens acima do cartão da loja, cada um levando ao seu lugar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const reads = await serveFoot(page, {});
+    await page.goto("/products");
+    await expect(stepsLink(page)).toBeVisible();
+    await expect(stepsLink(page)).toHaveAttribute("href", "/#home-checklist");
+    await expect(stepsLink(page)).toContainText("Primeiros passos");
+    await expect(stepsLink(page)).toContainText("2 de 3");
+    await expect(trialLink(page)).toBeVisible();
+    await expect(trialLink(page)).toHaveAttribute(
+      "href",
+      "/configuracoes?aba=assinatura"
+    );
+    await expect(trialLink(page)).toContainText("1ª cobrança em 10/11");
+    await expect(trialLink(page)).toContainText("Assinatura");
+    // the date, never a count of days (AS-3, AC-12)
+    await expect(page.locator("[data-menu-progress]")).not.toContainText(DAYS);
+    // out of the destinations, at the foot, in order: steps, trial, the card of the store
+    await expect(
+      sidebar(page).getByRole("link", { name: "Primeiros passos" })
+    ).toHaveCount(0);
+    const steps = await stepsLink(page).boundingBox();
+    const trial = await trialLink(page).boundingBox();
+    const card = await page.locator("[data-store-card]").boundingBox();
+    expect(steps?.y ?? 0).toBeLessThan(trial?.y ?? 0);
+    expect((trial?.y ?? 0) + (trial?.height ?? 0)).toBeLessThanOrEqual(
+      card?.y ?? 0
+    );
+    expect(reads.plan).toBe(1);
+    await trialLink(page).click();
+    await page.waitForURL("**/configuracoes?aba=assinatura");
+  });
+
+  test("sem billing:manage (papel sem a permissão), nada da assinatura aparece nem é lido, nem em Mais", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const reads = await serveFoot(page, { role: "cashier" });
+    await page.goto("/products");
+    // the steps are not of the billing: they stay
+    await expect(stepsLink(page)).toBeVisible();
+    await expect(trialLink(page)).toHaveCount(0);
+    await expect(page.getByText("Teste grátis")).toHaveCount(0);
+    await expect(page.locator("[data-menu-trial]")).toHaveCount(0);
+
+    await page.setViewportSize({ height: 740, width: 360 });
+    await more(page).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    await expect(
+      panel.getByRole("link", { exact: true, name: STEPS_NAME })
+    ).toBeVisible();
+    await expect(panel.getByText("Teste grátis")).toHaveCount(0);
+    expect(reads.plan).toBe(0);
+  });
+
+  test("dono com o autosserviço desligado: nada da assinatura", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const reads = await serveFoot(page, {
+      billingSelfService: false,
+      steps: null,
+    });
+    await page.goto("/products");
+    await expect(page.locator("[data-store-card]")).toBeVisible();
+    await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
+    await expect(page.getByText("Teste grátis")).toHaveCount(0);
+    expect(reads.plan).toBe(0);
+  });
+
+  test("sem passos lidos (a loja já vendeu) e fora do teste: o pé fica só com o cartão", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, { steps: null });
+    await page.route("**/rpc/billing/readPlan", (route) =>
+      route.fulfill(json({ ...TRIAL_PLAN, nextCharge: null, state: "active" }))
+    );
+    await page.goto("/products");
+    await expect(page.locator("[data-store-card]")).toBeVisible();
+    await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
+  });
+
+  test("recolhida, só os ícones, com o texto no tooltip e o nome inteiro no link", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, {});
+    await page.goto("/products");
+    await page
+      .getByRole("button", { exact: true, name: "Recolher menu" })
+      .click();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Expandir menu" })
+    ).toBeVisible();
+    for (const [link, tooltip] of [
+      [stepsLink(page), "Primeiros passos · 2 de 3"],
+      [trialLink(page), "Teste grátis · 1ª cobrança em 10/11"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one tooltip at a time
+      await expect(link).toBeVisible();
+      const box = await link.boundingBox();
+      expect(box?.width ?? 99).toBeLessThanOrEqual(48);
+      await link.hover();
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
+        tooltip
+      );
+      await page.mouse.move(600, 400);
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
+    }
+  });
+
+  test("360 px: as duas linhas ficam em Mais, antes do tema", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serveFoot(page, {});
+    await page.goto("/products");
+    await expect(bottomBar(page)).toBeVisible();
+    await more(page).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    const steps = panel.getByRole("link", { exact: true, name: STEPS_NAME });
+    const trial = panel.getByRole("link", { exact: true, name: TRIAL_NAME });
+    await expect(steps).toBeVisible();
+    await expect(trial).toBeVisible();
+    const theme = panel.getByRole("group", { name: "Aparência" });
+    const stepsBox = await steps.boundingBox();
+    const trialBox = await trial.boundingBox();
+    const themeBox = await theme.boundingBox();
+    expect(stepsBox?.y ?? 0).toBeLessThan(trialBox?.y ?? 0);
+    expect((trialBox?.y ?? 0) + (trialBox?.height ?? 0)).toBeLessThanOrEqual(
+      themeBox?.y ?? 0
+    );
+    // a touch target of the phone, and nothing out of the sheet's width
+    expect(trialBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
+  });
 });

@@ -1305,6 +1305,13 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/dashboard?meta=nova");
     // nothing to do: the block is not there, and says nothing about it
     await expect(region(page, "Precisa de ação")).toHaveCount(0);
+    // the foot of the menu follows the same three steps, linked back to them
+    await expect(
+      page.getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 1 de 3 concluídos",
+      })
+    ).toHaveAttribute("href", "/#home-checklist");
   });
 
   test("produto sem quantidade: 'Dar entrada no estoque' abre o painel do produto", async ({
@@ -1318,6 +1325,12 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto (feito)");
+    await expect(
+      page.getByRole("link", {
+        exact: true,
+        name: "Primeiros passos, 2 de 3 concluídos",
+      })
+    ).toBeVisible();
     const step = checklist.getByRole("link", {
       name: "Dar entrada no estoque",
     });
@@ -1362,6 +1375,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       month.getByRole("link", { name: "Fazer uma venda" })
     ).toHaveAttribute("href", "/sales");
     await expect(region(page, "Primeiros passos")).toHaveCount(0);
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
     await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
     await expect(region(page, "Vendas por dia")).toContainText(
       "Sem vendas no período."

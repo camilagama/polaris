@@ -5,6 +5,7 @@ import { buttonVariants } from "@/ui/button";
 import { Money } from "@polaris/domain/money/money";
 import { MoneyText } from "@/ui/hidden-values";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { firstStepsDone } from "../app-shell/first-steps";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
@@ -125,7 +126,7 @@ function FirstProductWays() {
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
   const link = checklistLink(next);
-  const done = [true, checklist.firstProductId !== null, false];
+  const done = firstStepsDone(checklist);
   return (
     <HomeBlock
       className="lg:col-span-2"
