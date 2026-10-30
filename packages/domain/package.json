@@ -71,9 +71,12 @@
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
+    "test:mutation": "bun scripts/mutation.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "fast-check": "^4.10.2"
   }
 }
