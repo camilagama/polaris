@@ -4,6 +4,7 @@ import {
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isOrganizationClosedRefusal,
   isPlatformCut,
   isTransientReadFailure,
   rpcErrorCode,
@@ -192,6 +193,12 @@ export interface RuntimeSnapshot {
    */
   legalAcceptanceRequired: boolean;
   online: boolean;
+  /**
+   * The server refused a call because the organization was closed (ADR 0081): the local copy and the lease were
+   * dropped as for a refused session, the queue stays, and the session itself is fine (nothing reads the
+   * organizations again for it). It holds until the runtime stops.
+   */
+  organizationClosed: boolean;
   phase: RuntimePhase;
   /**
    * Why the runtime is unavailable or the last sync failed; null when fine. A failed sync is `server_busy` when the
@@ -233,6 +240,23 @@ function isSessionRefusal(error: unknown): boolean {
   }
   const code = rpcErrorCode(error);
   return code === "UNAUTHORIZED" || code === "FORBIDDEN";
+}
+
+/**
+ * The runtime already knows the store was closed (a call of this page was refused for it): no lease is asked for it
+ * again, and whatever was on its way ends as the server's own refusal would.
+ */
+class KnownClosedError extends Error {
+  constructor() {
+    super("organization_closed");
+    this.name = "KnownClosedError";
+  }
+}
+
+function isClosedRefusal(error: unknown): boolean {
+  return (
+    error instanceof KnownClosedError || isOrganizationClosedRefusal(error)
+  );
 }
 
 /**
@@ -351,6 +375,7 @@ export class OfflineRuntime {
     leaseExpiresAt: null,
     legalAcceptanceRequired: false,
     online: true,
+    organizationClosed: false,
     phase: "off",
     reason: null,
     renewalRefused: false,
@@ -366,6 +391,12 @@ export class OfflineRuntime {
   private deviceId: string | null = null;
   private lease: string | null = null;
   private inFlight: Promise<void> | null = null;
+  /** The start in progress, so a drop asked meanwhile acts on what it opens and is not undone by it. */
+  private startRun: Promise<void> | null = null;
+  /** The stores a call of this page was refused for as closed: never opened again by this runtime. */
+  private readonly closedOrganizations = new Set<string>();
+  /** A drop for a closed store is on its way: a run that meets the same refusal meanwhile leaves it to finish. */
+  private closedDrop: Promise<void> | null = null;
   /** Ends the reads (the pull) of the run in flight; a send that needs the queue out does not wait for them. */
   private pullAbort: AbortController | null = null;
   /** `trySend` is waiting for the run in flight: its pull is cut even if it has not got that far yet. */
@@ -511,6 +542,40 @@ export class OfflineRuntime {
       { generation: this.generation, namespace, stores, userId },
       { forgetDevice: false }
     );
+  }
+
+  /**
+   * A screen's own call was refused because the organization was closed: the same drop as a refused session (the
+   * collections and the lease go, the queue stays), but the remembered user stays, since the session is fine. The
+   * store is remembered as closed for the life of this runtime: a start that comes after the refusal (the screen's read
+   * may answer first) drops the copy instead of opening it.
+   */
+  async dropClosedCopy(organizationId: string): Promise<void> {
+    this.closedOrganizations.add(organizationId);
+    await this.startRun?.catch(() => undefined);
+    await this.inFlight?.catch(() => undefined);
+    if (this.organizationId !== organizationId) {
+      // not the store this runtime has open: its lease goes now, its copy at the start that finds it closed
+      const user =
+        this.userId ?? this.dependencies.keyValues.read(SESSION_USER_KEY);
+      if (user) {
+        this.dependencies.keyValues.remove(leaseKey(user, organizationId));
+      }
+      return;
+    }
+    if (this.snapshot.organizationClosed) {
+      return;
+    }
+    const { namespace, stores, userId } = this;
+    if (namespace && stores && userId) {
+      await this.dropLocalCopy(
+        { generation: this.generation, namespace, stores, userId },
+        { forgetDevice: false, organizationClosed: true }
+      );
+      return;
+    }
+    await this.closeStores();
+    await this.dropClosedAtStart(organizationId, this.generation);
   }
 
   /** This organization's part of a logout (ADR 0039). */
@@ -674,6 +739,18 @@ export class OfflineRuntime {
 
   // ------------------------------------------------------------ lifecycle
   async start(organizationId: string): Promise<void> {
+    const run = this.startNow(organizationId);
+    this.startRun = run;
+    try {
+      await run;
+    } finally {
+      if (this.startRun === run) {
+        this.startRun = null;
+      }
+    }
+  }
+
+  private async startNow(organizationId: string): Promise<void> {
     if (
       this.organizationId === organizationId &&
       (this.snapshot.phase === "starting" ||
@@ -686,11 +763,20 @@ export class OfflineRuntime {
     const { generation } = this;
     this.organizationId = organizationId;
     this.set({ ...this.snapshot, phase: "starting", reason: null });
+    if (this.closedOrganizations.has(organizationId)) {
+      await this.dropClosedBeforeBoot(organizationId, generation);
+      return;
+    }
     try {
       await this.boot(organizationId, generation);
     } catch (error) {
       if (generation === this.generation) {
         await this.closeStores();
+        if (isClosedRefusal(error)) {
+          this.closedOrganizations.add(organizationId);
+          await this.dropClosedAtStart(organizationId, generation);
+          return;
+        }
         // without the legal acceptance nothing is forgotten: the device, the lease and the namespace stay
         const legal = isLegalAcceptanceRefusal(error);
         const failure = error instanceof Error ? error.message : "start_failed";
@@ -723,6 +809,7 @@ export class OfflineRuntime {
       lastSyncAt: null,
       leaseExpiresAt: null,
       legalAcceptanceRequired: false,
+      organizationClosed: false,
       phase: "off",
       reason: null,
       renewalRefused: false,
@@ -1095,6 +1182,9 @@ export class OfflineRuntime {
     organizationId: string,
     deviceId: string
   ): Promise<string> {
+    if (this.closedOrganizations.has(organizationId)) {
+      throw new KnownClosedError();
+    }
     const cached = this.cachedLease(userId, organizationId);
     const usable =
       cached &&
@@ -1131,6 +1221,9 @@ export class OfflineRuntime {
     try {
       issued = await this.dependencies.api.issueLease(deviceId, organizationId);
     } catch (error) {
+      if (isClosedRefusal(error)) {
+        throw error; // the lease left is no use for a closed store: the copy and the lease go
+      }
       if (usable) {
         return usable.lease; // renewing failed but the cached lease still works: keep going on it
       }
@@ -1181,8 +1274,9 @@ export class OfflineRuntime {
         isConnectionFailure(error) ||
         (error instanceof Error && error.message === "no_lease_offline") ||
         isPlanRefusal(error) ||
-        // the device is not somebody else's: the server only waits for the acceptance
-        isLegalAcceptanceRefusal(error)
+        // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
+        isLegalAcceptanceRefusal(error) ||
+        isClosedRefusal(error)
       ) {
         throw error;
       }
@@ -1396,6 +1490,12 @@ export class OfflineRuntime {
             syncing: false,
           });
         }
+      } else if (isClosedRefusal(error)) {
+        // before the session refusal (it is a FORBIDDEN too): the session is fine, the store is not
+        await this.dropLocalCopy(run, {
+          forgetDevice: false,
+          organizationClosed: true,
+        });
       } else if (isSessionRefusal(error)) {
         this.dependencies.keyValues.remove(SESSION_USER_KEY);
         await this.dropLocalCopy(run, { forgetDevice: false });
@@ -1472,21 +1572,51 @@ export class OfflineRuntime {
    */
   private async dropLocalCopy(
     run: RunScope,
-    options: { forgetDevice: boolean }
+    options: { forgetDevice: boolean; organizationClosed?: boolean }
   ) {
-    const { generation, namespace, stores } = run;
-    if (generation !== this.generation) {
+    if (run.generation !== this.generation) {
       return; // another organization or user took over while the answer was on its way
     }
+    const closed = options.organizationClosed === true;
+    if (!closed) {
+      await this.dropCopyNow(run, options.forgetDevice, false);
+      return;
+    }
+    // a sync that met the refusal while another drop was on its way waits for that one
+    if (this.closedDrop) {
+      await this.closedDrop;
+      return;
+    }
+    if (this.snapshot.organizationClosed) {
+      return;
+    }
+    if (this.organizationId) {
+      this.closedOrganizations.add(this.organizationId);
+    }
+    const drop = this.dropCopyNow(run, options.forgetDevice, true);
+    this.closedDrop = drop;
+    try {
+      await drop;
+    } finally {
+      this.closedDrop = null;
+    }
+  }
+
+  private async dropCopyNow(
+    run: RunScope,
+    forgetDevice: boolean,
+    closed: boolean
+  ) {
+    const { generation, namespace, stores } = run;
     const queued = (await stores.outbox.snapshot()).commands.length > 0;
     await this.closeStores();
     this.forgetLease();
     this.lease = null;
-    if (options.forgetDevice) {
+    if (forgetDevice) {
       this.dependencies.keyValues.remove(DEVICE_KEY);
       this.deviceId = null;
     }
-    let reason = "session_refused";
+    let reason = closed ? "organization_closed" : "session_refused";
     try {
       if (queued) {
         await this.dependencies.wipeCollections(namespace);
@@ -1506,9 +1636,62 @@ export class OfflineRuntime {
       counts: EMPTY_COUNTS,
       dataVersion: this.snapshot.dataVersion + 1,
       leaseExpiresAt: null,
+      organizationClosed: closed,
       phase: "unavailable",
       reason,
-      sessionRefused: true,
+      sessionRefused: !closed,
+      syncing: false,
+    });
+  }
+
+  /** A store already known as closed: only who is signed in is asked, to find the copy to drop. */
+  private async dropClosedBeforeBoot(
+    organizationId: string,
+    generation: number
+  ) {
+    try {
+      const { userId } = await this.sessionUser();
+      if (generation === this.generation) {
+        this.userId = userId;
+      }
+    } catch {
+      // without knowing who is signed in nothing is opened, and nothing can be dropped: `purge_failed` says so
+    }
+    await this.dropClosedAtStart(organizationId, generation);
+  }
+
+  /**
+   * The lease was refused at start because the organization was closed: no store is open, so the collections of its
+   * namespace are wiped from the disk (the queue stays) and its lease is forgotten. The device and the remembered user
+   * stay: the person may own another store, or reopen this one.
+   */
+  private async dropClosedAtStart(organizationId: string, generation: number) {
+    const { userId } = this;
+    let reason = userId ? "organization_closed" : "purge_failed";
+    if (userId) {
+      this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
+      try {
+        await this.dependencies.wipeCollections(
+          await this.dependencies.namespaceFor(userId, organizationId)
+        );
+      } catch {
+        reason = "purge_failed";
+      }
+    }
+    this.lease = null;
+    if (generation !== this.generation) {
+      return;
+    }
+    this.set({
+      ...this.snapshot,
+      bootstrapped: false,
+      counts: EMPTY_COUNTS,
+      dataVersion: this.snapshot.dataVersion + 1,
+      leaseExpiresAt: null,
+      organizationClosed: true,
+      phase: "unavailable",
+      reason,
+      sessionRefused: false,
       syncing: false,
     });
   }
@@ -1856,6 +2039,15 @@ export class OfflineRuntime {
       });
       this.channel?.post();
       await this.refreshCounts();
+      return;
+    }
+    // before the session refusal too: the store was closed, the session is fine and the queue stays
+    if (isClosedRefusal(error)) {
+      this.lastOutcome = "answered";
+      await this.dropLocalCopy(run, {
+        forgetDevice: false,
+        organizationClosed: true,
+      });
       return;
     }
     if (isSessionRefusal(error)) {

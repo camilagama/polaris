@@ -66,6 +66,9 @@ async function serveFirstAccess(
     if (procedure === "organization/listMine") {
       return list ? list(route) : route.fulfill(rpc({ organizations: [] }));
     }
+    if (procedure === "organization/listClosed") {
+      return route.fulfill(rpc({ organizations: [] }));
+    }
     if (procedure === "organization/createInitial") {
       return create
         ? create(route)

@@ -6,6 +6,7 @@ import {
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { writeSessionMarker } from "../../lib/session-marker";
+import { clearClosedStores } from "../../organization/closed-stores-memory";
 import { markSigningOut } from "../../lib/sign-out";
 import {
   clearSaleAttempts,
@@ -32,6 +33,7 @@ export function forgetSessionCaches(): void {
  */
 export function clearSessionCaches(): void {
   clearOrganizationsCache(browserStorage());
+  clearClosedStores(browserStorage());
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
   clearPlanNotice();

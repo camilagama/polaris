@@ -35,6 +35,7 @@ import {
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
+import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
@@ -658,8 +659,13 @@ function LowerBlocks({
  * outlasts the connection going and coming back.
  */
 export function HomePage() {
-  const { organization, organizationId } = useCurrentOrganization();
+  const { organization, organizationId, organizations } =
+    useCurrentOrganization();
   const { timezone } = organization;
+  const activeIds = useMemo(
+    () => organizations.map((item) => item.id),
+    [organizations]
+  );
   const {
     online,
     reads,
@@ -747,6 +753,8 @@ export function HomePage() {
         refresh={refresh}
         updated={refreshing ? REFRESHING_TEXT : updated}
       />
+      <ReopenedNotice />
+      <ClosedStoreLine activeIds={activeIds} />
       <div
         aria-busy={
           refreshing || (view === null && state.figures.status === "loading")

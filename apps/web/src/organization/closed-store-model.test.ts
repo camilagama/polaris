@@ -7,16 +7,32 @@ import {
   closedStoreExports,
   copyClosedText,
   copyRequestOpen,
+  DEVICE_CLOSED_LINK,
+  deviceClosedText,
   FRESH_SESSION_TEXT,
   justClosedText,
+  notRecoverableOutcome,
   panelDates,
   panelLoadFailure,
   panelTitle,
   phaseLines,
   RENEWAL_UNKNOWN_TEXT,
+  REOPENED_TEXT,
   renewalText,
+  UNDO_ALREADY_REOPENED_TEXT,
+  UNDO_CONFIRM,
+  UNDO_EFFECTS_TEXT,
+  UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
+  UNDO_OTHER_ACTIVE_TEXT,
+  UNDO_REFUSED_TEXT,
+  UNDO_TITLE,
+  UNDO_UNKNOWN_TEXT,
+  UNDO_WINDOW_OVER_TEXT,
+  undoFailure,
   undoOpen,
+  undoOutcomeUnknown,
 } from "./closed-store-model";
+import { NoWorkerAnswerError } from "../lib/connection";
 
 const STORE: ClosedStore = {
   canRecover: true,
@@ -268,5 +284,151 @@ describe("the undo and the moment after the closure", () => {
         status: 403,
       })
     ).toBe("acceptance");
+  });
+});
+
+const TECHNICAL_IN_UNDO = /_|organização|closure|FORBIDDEN|CONFLICT/;
+const CLAIMS_AN_OUTCOME = /reaberta|não foi desfeito/i;
+const refusal = (code: string, reason?: string, status = 409) => ({
+  code,
+  data: reason === undefined ? undefined : { reason },
+  status,
+});
+
+describe("the answer of an undo (AC-8, AC-10)", () => {
+  it("leaves the phase of closure_not_recoverable to a new read of the server", () => {
+    expect(undoFailure(refusal("CONFLICT", "closure_not_recoverable"))).toEqual(
+      { kind: "not_recoverable" }
+    );
+  });
+
+  it("a store the server no longer lists as closed was reopened elsewhere", () => {
+    expect(notRecoverableOutcome(null, DURING_WINDOW)).toEqual({
+      kind: "reopened",
+      store: null,
+      text: UNDO_ALREADY_REOPENED_TEXT,
+    });
+    expect(UNDO_ALREADY_REOPENED_TEXT).toBe(
+      "A loja já foi reaberta em outro aparelho."
+    );
+  });
+
+  it("a read that confirms the closed store says the window is over and shows the server's store, without the undo", () => {
+    const reread = at("closed", { canRecover: false });
+    const outcome = notRecoverableOutcome(reread, AFTER_WINDOW);
+    expect(outcome).toEqual({
+      kind: "said",
+      store: reread,
+      text: UNDO_WINDOW_OVER_TEXT,
+    });
+    expect(undoOpen(reread, AFTER_WINDOW)).toBe(false);
+    expect(panelDates(reread, AFTER_WINDOW)[1]?.left).toBe("prazo encerrado");
+    expect(phaseLines(reread, AFTER_WINDOW)[0]).toBe(
+      "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
+    );
+  });
+
+  it("a read that still shows an open undo does not claim the window is over", () => {
+    expect(notRecoverableOutcome(at("closing"), DURING_WINDOW)).toEqual({
+      kind: "said",
+      store: at("closing"),
+      text: UNDO_REFUSED_TEXT,
+    });
+  });
+
+  it("a failed read says it may be either, as a warning, with no store of its own", () => {
+    expect(notRecoverableOutcome(undefined, DURING_WINDOW)).toEqual({
+      kind: "said",
+      store: null,
+      text: UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
+    });
+    expect(UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT).toBe(
+      "O prazo acabou ou a loja já foi reaberta. Toque em Atualizar para ver a situação da loja."
+    );
+    expect(undoOutcomeUnknown(UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT)).toBe(true);
+    expect(undoOutcomeUnknown(UNDO_UNKNOWN_TEXT)).toBe(true);
+    expect(undoOutcomeUnknown(UNDO_WINDOW_OVER_TEXT)).toBe(false);
+  });
+
+  it("says why another active store blocks it (L6)", () => {
+    expect(
+      undoFailure(refusal("CONFLICT", "another_organization_active"))
+    ).toEqual({ kind: "said", text: UNDO_OTHER_ACTIVE_TEXT });
+  });
+
+  it("never says reopened nor not undone when the answer may have come after the reopening", () => {
+    for (const error of [
+      new NoWorkerAnswerError("intercepted"),
+      new TypeError("Failed to fetch"),
+      refusal("SERVICE_UNAVAILABLE", undefined, 503),
+      refusal("SERVICE_UNAVAILABLE", "server_busy", 503),
+      refusal("INTERNAL_SERVER_ERROR", undefined, 500),
+      refusal("TOO_MANY_REQUESTS", undefined, 429),
+    ]) {
+      expect(undoFailure(error)).toEqual({
+        kind: "said",
+        text: UNDO_UNKNOWN_TEXT,
+      });
+    }
+    expect(UNDO_UNKNOWN_TEXT).not.toMatch(CLAIMS_AN_OUTCOME);
+  });
+
+  it("a definite refusal with no reason of its own says nothing was undone, without a code", () => {
+    for (const error of [
+      refusal("FORBIDDEN", undefined, 403),
+      refusal("NOT_FOUND", undefined, 404),
+      refusal("CONFLICT", "something_else"),
+      refusal("BAD_REQUEST", undefined, 400),
+    ]) {
+      expect(undoFailure(error)).toEqual({
+        kind: "said",
+        text: UNDO_REFUSED_TEXT,
+      });
+    }
+  });
+
+  it("sends a missing session or acceptance to its own screen", () => {
+    expect(undoFailure(refusal("UNAUTHORIZED", undefined, 401))).toEqual({
+      kind: "session",
+    });
+    expect(
+      undoFailure(refusal("FORBIDDEN", "legal_acceptance_required", 403))
+    ).toEqual({ kind: "acceptance" });
+  });
+
+  it("shows no technical code in any text of the undo", () => {
+    for (const text of [
+      UNDO_TITLE,
+      UNDO_EFFECTS_TEXT,
+      UNDO_CONFIRM,
+      REOPENED_TEXT,
+      UNDO_WINDOW_OVER_TEXT,
+      UNDO_ALREADY_REOPENED_TEXT,
+      UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
+      UNDO_OTHER_ACTIVE_TEXT,
+      UNDO_REFUSED_TEXT,
+      UNDO_UNKNOWN_TEXT,
+    ]) {
+      expect(text).not.toMatch(TECHNICAL_IN_UNDO);
+    }
+  });
+});
+
+describe("the device of a closed store (AC-11)", () => {
+  it("says when the store was closed, in its time zone, and that the queue stays", () => {
+    expect(deviceClosedText(STORE, true)).toBe(
+      "Esta loja foi encerrada em 20 de outubro de 2026. A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila."
+    );
+    expect(deviceClosedText(null, true)).toBe(
+      "Esta loja foi encerrada. A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila."
+    );
+  });
+
+  it("never says the copy was deleted before the device confirmed it", () => {
+    expect(deviceClosedText(STORE, false)).toBe(
+      "Esta loja foi encerrada em 20 de outubro de 2026. O que não foi enviado continua guardado na fila deste aparelho."
+    );
+    expect(deviceClosedText(null, false)).not.toContain("apagada");
+    expect(DEVICE_CLOSED_LINK).toBe("Ver a loja encerrada");
   });
 });

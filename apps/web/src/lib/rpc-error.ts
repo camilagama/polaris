@@ -34,6 +34,19 @@ export function isLegalAcceptanceRefusal(error: unknown): boolean {
   );
 }
 
+/**
+ * The server refused the call because the organization was closed (ADR 0081): a FORBIDDEN with its own reason, read
+ * before any refused session. The device drops its copy and its leases but keeps the queue, and the screen offers the
+ * closed store's panel; the session itself is fine, so nothing goes to the sign-in screen. A FORBIDDEN without this
+ * reason is never taken for it.
+ */
+export function isOrganizationClosedRefusal(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" &&
+    rpcErrorReason(error) === "organization_closed"
+  );
+}
+
 const LEGAL_ACCEPTANCE_MISSING =
   "falta aceitar os Termos de Uso e a Política de Privacidade.";
 
