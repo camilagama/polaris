@@ -27,7 +27,7 @@ const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
 const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
-const COUNT_SHIRT = "Contar estoque de Camiseta do teste, Azul";
+const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
 
 const VARIANT_IDS = /"variantIds":\["([^"]+)"\]/;
 
@@ -221,11 +221,9 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("button", { name: RECEIVE_JEANS })).toBeFocused();
 
-  // a count (the valuation field, as the cost is unknown) and a write-off (the choice list and the note)
-  await page.getByRole("button", { name: COUNT_SHIRT }).click();
-  await expect(
-    page.getByLabel("Custo unitário para valoração (R$)")
-  ).toBeVisible();
+  // the cost of units with none (where counting was) and a write-off (the choice list and the note)
+  await page.getByRole("button", { name: INFORM_SHIRT }).click();
+  await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
   await page.getByRole("button", { name: "Fechar" }).click();
   await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await page
@@ -550,11 +548,9 @@ for (const width of [360, 320]) {
     expect(measured.past).toBe(0);
     expect(new Set(measured.heights).size).toBe(1);
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window
-    // from a variant without cost the way forward is a count with the unit cost
-    await page.getByRole("button", { name: COUNT_SHIRT }).click();
-    await expect(
-      page.getByLabel("Custo unitário para valoração (R$)")
-    ).toBeVisible();
+    // from a variant with units and no cost the way forward is to inform the cost
+    await page.getByRole("button", { name: INFORM_SHIRT }).click();
+    await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
     const past = await page.evaluate(() => {
       const limit = window.innerWidth + 0.5;
       const heading = [...document.querySelectorAll("h1")].find(

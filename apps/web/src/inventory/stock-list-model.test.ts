@@ -20,6 +20,7 @@ import {
   stockMoreStarted,
   stockMoreView,
   readStockLinkFilters,
+  stockRowActions,
   stockRows,
   type VariantCount,
   variantCount,
@@ -524,5 +525,57 @@ describe("stockAttentionRequest and variantCount", () => {
     expect(variantCount({ entries: [entry(1)], nextCursor: "c" })).toEqual(
       page(1, true)
     );
+  });
+});
+
+describe("stockRowActions (the buttons of a row, AC-1 and AC-7)", () => {
+  const actionsOf = (
+    overrides: Partial<InventoryBalanceEntryReadModel>,
+    costUnavailable = false
+  ) => {
+    const [row] = stockRows([entry(1, overrides)], costUnavailable);
+    if (!row) {
+      throw new Error("no row");
+    }
+    return stockRowActions(row.target);
+  };
+  const labels = (actions: ReturnType<typeof actionsOf>) =>
+    actions.map((action) => action.label);
+
+  it("offers to inform the cost where counting was, for units with no cost", () => {
+    const actions = actionsOf({ movingAverageCost: null, quantity: 3 });
+    expect(labels(actions)).toEqual(["Receber", "Informar custo", "Baixar"]);
+    expect(actions[1]).toEqual({
+      action: "cost",
+      label: "Informar custo",
+      name: "Informar custo de Camiseta Polaris · Azul / M",
+    });
+  });
+
+  it("does not offer it once the cost is known", () => {
+    expect(labels(actionsOf({ quantity: 3 }))).toEqual([
+      "Receber",
+      "Contar",
+      "Baixar",
+    ]);
+  });
+
+  it("offers to give entry, not to inform the cost, with no units and no cost", () => {
+    const actions = actionsOf({ movingAverageCost: null, quantity: 0 });
+    expect(labels(actions)).toEqual(["Dar entrada", "Contar", "Baixar"]);
+    expect(actions[0]).toEqual({
+      action: "receive",
+      label: "Dar entrada",
+      name: "Dar entrada no estoque de Camiseta Polaris, Azul / M",
+    });
+  });
+
+  it("keeps the three commands without a connection: the device does not know the cost", () => {
+    expect(
+      labels(actionsOf({ movingAverageCost: null, quantity: 3 }, true))
+    ).toEqual(["Receber", "Contar", "Baixar"]);
+    expect(
+      labels(actionsOf({ movingAverageCost: null, quantity: 0 }, true))
+    ).toEqual(["Receber", "Contar", "Baixar"]);
   });
 });

@@ -25,7 +25,7 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { STOCK_ACTIONS, type StockAction } from "./stock-command-model";
+import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
 import {
   PANEL_OPEN_REASON,
@@ -59,10 +59,6 @@ interface OpenCommand {
 
 /** A link on a line of its own: it gets the 44 px touch area. */
 const STANDALONE_LINK = `touch-hit ${LINK}`;
-
-function isStockAction(value: string | undefined): value is StockAction {
-  return STOCK_ACTIONS.some((action) => action === value);
-}
 
 function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
   return (
@@ -325,6 +321,11 @@ export function InventoryPage() {
       );
     }
   }, [open]);
+  const handleInformCost = useCallback((target: StockTarget) => {
+    setOpen((current) =>
+      current === null ? current : { ...current, action: "cost", target }
+    );
+  }, []);
   const handleReload = useCallback(() => reload(), [reload]);
   const handleAttentionLink = useCallback(
     (event: MouseEvent<HTMLAnchorElement>, link: StockAttentionLink) => {
@@ -439,6 +440,7 @@ export function InventoryPage() {
               local={offlineWorkspace ?? undefined}
               onBalance={applyBalance}
               onClose={handleClose}
+              onInformCost={handleInformCost}
               onReloadList={reload}
               organizationId={organizationId}
               target={open.target}
@@ -505,6 +507,7 @@ export function InventoryPage() {
                     local={offlineWorkspace ?? undefined}
                     onBalance={applyBalance}
                     onClose={handleClose}
+                    onInformCost={handleInformCost}
                     onReloadList={reload}
                     organizationId={organizationId}
                     target={open.target}
