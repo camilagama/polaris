@@ -38,7 +38,6 @@ import { TEXT_LINK } from "../sign-in/entry-ui";
 import { NEW_TAB_HINT } from "../sign-in/sign-in-texts";
 import {
   type ClosedStore,
-  closedAfterWindow,
   closedExportFileHref,
   closedRequestRefusal,
   closedStoreExports,
@@ -47,6 +46,8 @@ import {
   DOWNLOAD_BUTTON,
   justClosedText,
   NEW_STORE_LINK,
+  type NotRecoverableOutcome,
+  notRecoverableOutcome,
   PANEL_BACK_HOME,
   PANEL_CHOOSE_TEXT,
   PANEL_LOAD_FAILED_TEXT,
@@ -65,9 +66,10 @@ import {
   UNDO_EFFECTS_TEXT,
   UNDO_SENDING,
   UNDO_TITLE,
-  UNDO_UNKNOWN_TEXT,
+  type UndoFailure,
   undoFailure,
   undoOpen,
+  undoOutcomeUnknown,
 } from "./closed-store-model";
 import {
   rememberClosedStore,
@@ -359,9 +361,43 @@ function leaveForSession(kind: "acceptance" | "session") {
   );
 }
 
+function leaveForReopened(storeId: string) {
+  const storage = browserStorage();
+  rememberClosedStore(storage, storeId, null);
+  writePreferredOrganizationId(storage, storeId);
+  window.location.assign(REOPENED_PATH);
+}
+
+/** One read of the store after a refusal that does not say which phase it is in; a failed read says nothing of it. */
+async function rereadAfterRefusal(
+  storeId: string
+): Promise<ClosedStore | null | undefined | "acceptance" | "session"> {
+  try {
+    const [fresh] = await readStores(storeId);
+    return fresh ?? null;
+  } catch (error: unknown) {
+    const failure = panelLoadFailure(error);
+    return failure === "error" ? undefined : failure;
+  }
+}
+
+async function refusedOutcome(
+  failure: Extract<UndoFailure, { kind: "not_recoverable" | "said" }>,
+  storeId: string
+): Promise<NotRecoverableOutcome | "acceptance" | "session"> {
+  if (failure.kind === "said") {
+    return { kind: "said", store: null, text: failure.text };
+  }
+  const reread = await rereadAfterRefusal(storeId);
+  return typeof reread === "string"
+    ? reread
+    : notRecoverableOutcome(reread, Date.now());
+}
+
 /**
  * The undo: one request however many taps, the dialog held while it is on its way, and the answer said as it is. Only
- * "recovered" says "reaberta" (on the Início it goes to); the end of the window turns the panel to closed.
+ * "recovered" says "reaberta" (on the Início it goes to). A refusal that may mean an ended window or a store already
+ * reopened is told by a new read of the server (its phase and canRecover), not by the device alone.
  */
 function useUndo(store: ClosedStore) {
   const [dialog, setDialog] = useState(false);
@@ -380,23 +416,28 @@ function useUndo(store: ClosedStore) {
       await orpcClient.organization.recoverClosure({
         organizationId: store.id,
       });
-      const storage = browserStorage();
-      rememberClosedStore(storage, store.id, null);
-      writePreferredOrganizationId(storage, store.id);
       // the button stays locked until the Início replaces the page: a second tap would be refused as "not undone"
-      window.location.assign(REOPENED_PATH);
+      leaveForReopened(store.id);
     } catch (error: unknown) {
       const failure = undoFailure(error);
       if (failure.kind === "session" || failure.kind === "acceptance") {
         leaveForSession(failure.kind);
         return;
       }
+      const outcome = await refusedOutcome(failure, store.id);
+      if (outcome === "session" || outcome === "acceptance") {
+        leaveForSession(outcome);
+        return;
+      }
       setResult({
         from: store,
-        notice: failure.text,
-        store:
-          failure.kind === "window_over" ? closedAfterWindow(store) : store,
+        notice: outcome.text,
+        store: outcome.store ?? store,
       });
+      if (outcome.kind === "reopened") {
+        leaveForReopened(store.id);
+        return;
+      }
       setDialog(false);
       sending.current = false;
       setPending(false);
@@ -430,7 +471,7 @@ function UndoNotice({ text }: { text: string }) {
       role="alert"
       tabIndex={-1}
       // the outcome is not known: a warning, not a refusal
-      variant={text === UNDO_UNKNOWN_TEXT ? "warning" : "destructive"}
+      variant={undoOutcomeUnknown(text) ? "warning" : "destructive"}
     >
       <AlertDescription>{text}</AlertDescription>
     </Alert>

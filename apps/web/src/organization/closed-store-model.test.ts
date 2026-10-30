@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   type ClosedStore,
   type ClosurePhase,
-  closedAfterWindow,
   closedExportFileHref,
   closedRequestRefusal,
   closedStoreExports,
@@ -12,6 +11,7 @@ import {
   deviceClosedText,
   FRESH_SESSION_TEXT,
   justClosedText,
+  notRecoverableOutcome,
   panelDates,
   panelLoadFailure,
   panelTitle,
@@ -19,8 +19,10 @@ import {
   RENEWAL_UNKNOWN_TEXT,
   REOPENED_TEXT,
   renewalText,
+  UNDO_ALREADY_REOPENED_TEXT,
   UNDO_CONFIRM,
   UNDO_EFFECTS_TEXT,
+  UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
   UNDO_OTHER_ACTIVE_TEXT,
   UNDO_REFUSED_TEXT,
   UNDO_TITLE,
@@ -28,6 +30,7 @@ import {
   UNDO_WINDOW_OVER_TEXT,
   undoFailure,
   undoOpen,
+  undoOutcomeUnknown,
 } from "./closed-store-model";
 import { NoWorkerAnswerError } from "../lib/connection";
 
@@ -293,21 +296,58 @@ const refusal = (code: string, reason?: string, status = 409) => ({
 });
 
 describe("the answer of an undo (AC-8, AC-10)", () => {
-  it("turns the panel to closed only when the server says the window is over", () => {
+  it("leaves the phase of closure_not_recoverable to a new read of the server", () => {
     expect(undoFailure(refusal("CONFLICT", "closure_not_recoverable"))).toEqual(
-      { kind: "window_over", text: UNDO_WINDOW_OVER_TEXT }
+      { kind: "not_recoverable" }
     );
-    expect(closedAfterWindow(STORE)).toMatchObject({
-      canRecover: false,
-      phase: "closed",
+  });
+
+  it("a store the server no longer lists as closed was reopened elsewhere", () => {
+    expect(notRecoverableOutcome(null, DURING_WINDOW)).toEqual({
+      kind: "reopened",
+      store: null,
+      text: UNDO_ALREADY_REOPENED_TEXT,
     });
-    expect(undoOpen(closedAfterWindow(STORE), DURING_WINDOW)).toBe(false);
-    expect(panelDates(closedAfterWindow(STORE), DURING_WINDOW)[1]?.left).toBe(
-      "prazo encerrado"
+    expect(UNDO_ALREADY_REOPENED_TEXT).toBe(
+      "A loja já foi reaberta em outro aparelho."
     );
-    expect(phaseLines(closedAfterWindow(STORE), DURING_WINDOW)[0]).toBe(
+  });
+
+  it("a read that confirms the closed store says the window is over and shows the server's store, without the undo", () => {
+    const reread = at("closed", { canRecover: false });
+    const outcome = notRecoverableOutcome(reread, AFTER_WINDOW);
+    expect(outcome).toEqual({
+      kind: "said",
+      store: reread,
+      text: UNDO_WINDOW_OVER_TEXT,
+    });
+    expect(undoOpen(reread, AFTER_WINDOW)).toBe(false);
+    expect(panelDates(reread, AFTER_WINDOW)[1]?.left).toBe("prazo encerrado");
+    expect(phaseLines(reread, AFTER_WINDOW)[0]).toBe(
       "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
     );
+  });
+
+  it("a read that still shows an open undo does not claim the window is over", () => {
+    expect(notRecoverableOutcome(at("closing"), DURING_WINDOW)).toEqual({
+      kind: "said",
+      store: at("closing"),
+      text: UNDO_REFUSED_TEXT,
+    });
+  });
+
+  it("a failed read says it may be either, as a warning, with no store of its own", () => {
+    expect(notRecoverableOutcome(undefined, DURING_WINDOW)).toEqual({
+      kind: "said",
+      store: null,
+      text: UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
+    });
+    expect(UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT).toBe(
+      "O prazo acabou ou a loja já foi reaberta. Toque em Atualizar para ver a situação da loja."
+    );
+    expect(undoOutcomeUnknown(UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT)).toBe(true);
+    expect(undoOutcomeUnknown(UNDO_UNKNOWN_TEXT)).toBe(true);
+    expect(undoOutcomeUnknown(UNDO_WINDOW_OVER_TEXT)).toBe(false);
   });
 
   it("says why another active store blocks it (L6)", () => {
@@ -363,6 +403,8 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
       UNDO_CONFIRM,
       REOPENED_TEXT,
       UNDO_WINDOW_OVER_TEXT,
+      UNDO_ALREADY_REOPENED_TEXT,
+      UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
       UNDO_OTHER_ACTIVE_TEXT,
       UNDO_REFUSED_TEXT,
       UNDO_UNKNOWN_TEXT,

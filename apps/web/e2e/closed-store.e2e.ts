@@ -516,12 +516,13 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     ).toEqual({ closed: null, preferred: STORE_ID });
   });
 
-  test("recusa por prazo: o painel passa a encerrada e diz que não foi desfeito, sem o botão", async ({
+  test("recusa por prazo: a releitura confirma a encerrada, e o painel diz que não foi desfeito, sem o botão", async ({
     page,
   }) => {
     const calls = await openPanel(page, {
       recover: (route) =>
         route.fulfill(refusal("CONFLICT", 409, "closure_not_recoverable")),
+      statuses: [store(), store({ canRecover: false, phase: "closed" })],
     });
     await undoButton(page).click();
     await confirmUndo(page).click();
@@ -540,7 +541,74 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     await expect(page.getByRole("main")).not.toContainText(REOPENED);
     await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
     expect(calls.recovers).toHaveLength(1);
-    expect(calls.statuses).toBe(1);
+    expect(calls.statuses).toBe(2);
+  });
+
+  test("recusa com a loja já reaberta em outro aparelho: a releitura não lista a loja, e o painel leva ao Início", async ({
+    page,
+  }) => {
+    const calls = await openPanel(page, {
+      recover: (route) =>
+        route.fulfill(refusal("CONFLICT", 409, "closure_not_recoverable")),
+      statuses: [store(), null],
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await page.waitForURL((url) => url.pathname === "/");
+    expect(new URL(page.url()).search).toBe("?reaberta=1");
+    expect(calls.recovers).toHaveLength(1);
+    expect(calls.statuses).toBe(2);
+    expect(
+      await page.evaluate(() =>
+        window.localStorage.getItem("polaris.preferredOrganizationId")
+      )
+    ).toBe(STORE_ID);
+  });
+
+  test("recusa com a releitura falha: o texto neutro, o botão fica, e nada se repete sozinho", async ({
+    page,
+  }) => {
+    const calls = await openPanel(page, {
+      recover: (route) =>
+        route.fulfill(refusal("CONFLICT", 409, "closure_not_recoverable")),
+      statuses: [store(), (route) => route.abort("internetdisconnected")],
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "O prazo acabou ou a loja já foi reaberta. Toque em Atualizar para ver a situação da loja."
+    );
+    await expect(undoDialog(page)).toHaveCount(0);
+    await expect(undoButton(page)).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/loja-encerrada");
+    expect(calls.recovers).toHaveLength(1);
+    expect(calls.statuses).toBe(2);
+  });
+
+  test("o segundo toque depois de uma resposta perdida: a recusa de uma loja já reaberta leva ao Início, não diz que o prazo acabou", async ({
+    page,
+  }) => {
+    let recovers = 0;
+    const calls = await openPanel(page, {
+      recover: (route) => {
+        recovers += 1;
+        return recovers === 1
+          ? route.abort("internetdisconnected")
+          : route.fulfill(refusal("CONFLICT", 409, "closure_not_recoverable"));
+      },
+      statuses: [store(), null],
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Não deu para confirmar se o encerramento foi desfeito. Toque em Atualizar para conferir."
+    );
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await page.waitForURL((url) => url.pathname === "/");
+    expect(new URL(page.url()).search).toBe("?reaberta=1");
+    expect(calls.recovers).toHaveLength(2);
+    expect(calls.statuses).toBe(2);
   });
 
   test("recusa por outra loja ativa (L6): o texto próprio, e nada de reaberta", async ({
