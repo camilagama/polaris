@@ -296,9 +296,8 @@ export function CloseStoreSection() {
       <CardContent className="grid justify-items-start gap-3">
         <p className="text-muted-foreground">{CLOSE_SECTION_TEXT}</p>
         <Button
-          className="max-sm:w-full"
           onClick={handleOpen}
-          variant="destructive"
+          variant="outline"
           {...connectionControlProps(online)}
         >
           {CLOSE_OPEN_BUTTON}
