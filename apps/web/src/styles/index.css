@@ -32,7 +32,7 @@
 @source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card,app-shell/menu-progress,app-shell/screen-tabs,app-shell/screen-title}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
 /* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
-@source "../organization/{organization-setup,close-store-section,closed-store-page}.tsx";
+@source "../organization/{organization-setup,close-store-section,closed-queue-section,closed-store-page}.tsx";
 @source "../legal/{legal-app,legal-frame,legal-page}.tsx";
 @source "../legal/acceptance/acceptance-page.tsx";
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session

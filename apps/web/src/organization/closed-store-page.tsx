@@ -36,6 +36,7 @@ import { LogoutControl } from "../offline/runtime/logout-control";
 import { IdleRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { TEXT_LINK } from "../sign-in/entry-ui";
 import { NEW_TAB_HINT } from "../sign-in/sign-in-texts";
+import { ClosedQueueSection } from "./closed-queue-section";
 import {
   type ClosedStore,
   closedExportFileHref,
@@ -523,6 +524,7 @@ function StorePanel({
         open={dialogOpen}
         pending={undo.pending}
       />
+      <ClosedQueueSection store={store} />
       {store.phase === "purged" ? null : (
         <CopySection now={now} online={online} store={store} />
       )}
@@ -665,38 +667,40 @@ export function ClosedStorePage() {
         className="mx-auto grid w-full min-w-0 max-w-2xl content-start gap-4 px-(--gutter) py-8"
         id="conteudo"
       >
-        <p className="font-semibold text-[1.0625rem] tracking-tight">Polaris</p>
-        {online ? null : (
-          <Alert id={OFFLINE_ID} role="status" variant="warning">
-            <AlertDescription>{PANEL_OFFLINE_TEXT}</AlertDescription>
-          </Alert>
-        )}
-        <PanelBody
-          justClosed={justClosed}
-          load={load}
-          online={online}
-          onRefresh={handleRefresh}
-        />
-        <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
-          <a className={TEXT_LINK} href={NEW_STORE_PATH}>
-            {NEW_STORE_LINK}
-          </a>
-          <a
-            className={TEXT_LINK}
-            href={LEGAL_PATHS.terms}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Termos de Uso
-            <span className="sr-only"> ({NEW_TAB_HINT})</span>
-          </a>
-          <IdleRuntimeProvider>
+        <IdleRuntimeProvider>
+          <p className="font-semibold text-[1.0625rem] tracking-tight">
+            Polaris
+          </p>
+          {online ? null : (
+            <Alert id={OFFLINE_ID} role="status" variant="warning">
+              <AlertDescription>{PANEL_OFFLINE_TEXT}</AlertDescription>
+            </Alert>
+          )}
+          <PanelBody
+            justClosed={justClosed}
+            load={load}
+            online={online}
+            onRefresh={handleRefresh}
+          />
+          <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
+            <a className={TEXT_LINK} href={NEW_STORE_PATH}>
+              {NEW_STORE_LINK}
+            </a>
+            <a
+              className={TEXT_LINK}
+              href={LEGAL_PATHS.terms}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Termos de Uso
+              <span className="sr-only"> ({NEW_TAB_HINT})</span>
+            </a>
             <LogoutControl
               reason="saiu"
               returnTo={`${window.location.pathname}${window.location.search}`}
             />
-          </IdleRuntimeProvider>
-        </footer>
+          </footer>
+        </IdleRuntimeProvider>
       </main>
     </div>
   );
