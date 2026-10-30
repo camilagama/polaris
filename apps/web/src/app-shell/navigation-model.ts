@@ -130,7 +130,7 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 /**
  * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose area it
  * is in (Estoque for Produtos and Clientes, map § 2). "more" for the items of no destination of the bar, which "Mais"
- * marks: Pendências, Resultado and Configurações.
+ * marks: Pendências, Resultado, Configurações and Ajuda e contato.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
   customers: "inventory",

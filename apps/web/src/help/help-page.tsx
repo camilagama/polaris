@@ -1,13 +1,13 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardTitle } from "@/ui/card";
+import { HELP_LABEL } from "../app-shell/navigation-model";
 import { ScreenTitle } from "../app-shell/screen-title";
 import { DPO_EMAIL, mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 
 const LINK =
   "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-export const HELP_TITLE = "Ajuda e contato";
 export const HELP_INTRO =
   "O Polaris não tem chat nem telefone. Escreva um e-mail e diga o nome da loja e o que aconteceu.";
 export const SUPPORT_LINE = "Dúvidas sobre o app, a assinatura ou um erro.";
@@ -64,7 +64,7 @@ export function HelpPage() {
   return (
     <div className="grid max-w-[640px] gap-6">
       <header className="grid gap-2">
-        <ScreenTitle>{HELP_TITLE}</ScreenTitle>
+        <ScreenTitle>{HELP_LABEL}</ScreenTitle>
         <p className="m-0 text-muted-foreground">{HELP_INTRO}</p>
       </header>
       <ContactCard

@@ -394,9 +394,11 @@ function AppSidebar({
               className="touch:mt-3 gap-x-4 gap-y-1 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden"
               current={navId === "help"}
             />
-            <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
-              <HelpMenuItem current={navId === "help"} />
-            </SidebarMenu>
+            <div className="hidden group-data-[collapsible=icon]:block">
+              <SidebarMenu>
+                <HelpMenuItem current={navId === "help"} />
+              </SidebarMenu>
+            </div>
           </div>
         )}
       </SidebarFooter>
@@ -409,7 +411,7 @@ function AppSidebar({
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
  * screens of its area (`aria-current="true"`): Estoque on Produtos and Clientes. "Mais" carries it on the screens of
- * no destination of the bar (Pendências, Resultado and Configurações, with their tabs), and the number of operations of
+ * no destination of the bar (Pendências, Resultado, Configurações with their tabs, and Ajuda e contato), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
