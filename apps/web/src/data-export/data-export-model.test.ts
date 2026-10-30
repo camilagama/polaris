@@ -11,6 +11,7 @@ import {
   FAILED_TEXT,
   formatFileSize,
   formatsProblem,
+  FRESH_SESSION_TEXT,
   LIMIT_REACHED_TEXT,
   listRefusal,
   NO_EXPORT_PERMISSION_TEXT,
@@ -312,6 +313,15 @@ describe("a refused or unanswered request", () => {
     expect(listRefusal(rpcError("FORBIDDEN", 403))).toBe(
       NO_EXPORT_PERMISSION_TEXT
     );
+  });
+
+  it("a session signed in too long ago asks to sign in again, not for the owner", () => {
+    const refusal = requestRefusal(
+      rpcError("FORBIDDEN", 403, "fresh_session_required")
+    );
+    expect(refusal).toEqual({ repeatsNow: false, text: FRESH_SESSION_TEXT });
+    expect(refusal.text).toContain("15 minutos");
+    expect(refusal.text).not.toBe(NO_EXPORT_PERMISSION_TEXT);
   });
 
   it("anything else is a plain failure, with no code", () => {

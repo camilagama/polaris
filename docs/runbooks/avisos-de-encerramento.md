@@ -73,6 +73,7 @@ Casos:
 - **`d7` falho** (endereço recusado): o dono corrige o endereço, e então reemitir. Se o endereço não puder ser corrigido, dispensar com `email_undeliverable`.
 - **Conta do dono apagada**: dispensar com `owner_account_deleted`.
 - **E-mail nunca verificado**: esperar a verificação, ou dispensar com `email_not_verified` depois da decisão do caso.
+- **Dono que não consegue pedir a cópia, encerrar ou desfazer** (403 `fresh_session_required`): a sessão tem mais de 15 minutos. Peça que saia e entre de novo e repita; não há ato do Admin que dispense isso.
 
 Recusas (todas com 409 e uma mensagem):
 

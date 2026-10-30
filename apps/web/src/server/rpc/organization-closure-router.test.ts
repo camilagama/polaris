@@ -1,5 +1,6 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
   AnotherOrganizationActiveError,
   ClosureConfirmationError,
@@ -57,15 +58,19 @@ function createClient(overrides: Record<string, unknown>) {
   };
 }
 
-function authenticated() {
-  return (input: {
-    operation: (database: unknown, current: typeof session) => Promise<unknown>;
-  }) => input.operation({}, session);
+function authenticated(createdAt = new Date()) {
+  return async (input: {
+    operation: (
+      database: unknown,
+      current: { session: { createdAt: Date }; user: typeof session.user }
+    ) => Promise<unknown>;
+  }) => input.operation({}, { session: { createdAt }, user: session.user });
 }
 
-function tenant(capabilities: { seen?: string[] } = {}) {
+function tenant(capabilities: { fresh?: unknown[]; seen?: string[] } = {}) {
   return (input: TenantRequestContextInput<unknown>) => {
     capabilities.seen?.push(input.capability);
+    capabilities.fresh?.push(input.requireFreshSession);
     return input.operation({} as never, {
       capability: input.capability,
       organizationId: input.requestedOrganizationId,
@@ -101,6 +106,43 @@ describe("organization.requestClosure", () => {
       expect.objectContaining({ organizationId }),
       { confirmation: "Loja Horizonte" }
     );
+  });
+
+  it("asks the tenant context for a session signed in within 15 minutes", async () => {
+    const fresh: unknown[] = [];
+    const client = createClient({
+      closureRepository: {
+        requestOrganizationClosure: () =>
+          Promise.resolve({ recoverUntil, revokedLeases: 0 }),
+      },
+      withTenantRequestContext: tenant({ fresh }),
+    });
+
+    await client.organization.requestClosure({
+      confirmation: "Loja Horizonte",
+      organizationId,
+    });
+    expect(fresh).toEqual([true]);
+  });
+
+  it("answers 403 fresh_session_required when the context refuses the session, and does nothing", async () => {
+    const requestOrganizationClosure = vi.fn();
+    const client = createClient({
+      closureRepository: { requestOrganizationClosure },
+      withTenantRequestContext: () =>
+        Promise.reject(new FreshSessionRequiredError()),
+    });
+
+    await expect(
+      client.organization.requestClosure({
+        confirmation: "Loja Horizonte",
+        organizationId,
+      })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "fresh_session_required" },
+    });
+    expect(requestOrganizationClosure).not.toHaveBeenCalled();
   });
 
   it("answers 401 without a session and does nothing", async () => {
@@ -229,6 +271,24 @@ describe("organization.recoverClosure", () => {
       session.user.id,
       organizationId
     );
+  });
+
+  it("refuses a session signed in 15 minutes ago or more and changes nothing", async () => {
+    const recoverOrganizationClosure = vi.fn();
+    const client = createClient({
+      closureRepository: { recoverOrganizationClosure },
+      withAuthenticatedRequestContext: authenticated(
+        new Date(Date.now() - 15 * 60 * 1000)
+      ),
+    });
+
+    await expect(
+      client.organization.recoverClosure({ organizationId })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "fresh_session_required" },
+    });
+    expect(recoverOrganizationClosure).not.toHaveBeenCalled();
   });
 
   it("answers a conflict when the window is over or it is not the owner's to undo", async () => {

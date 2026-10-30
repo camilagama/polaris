@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FRESH_SESSION_TEXT } from "../data-export/data-export-model";
 import {
   type ClosedStore,
   type ClosurePhase,
@@ -7,7 +8,6 @@ import {
   closedStoreExports,
   copyClosedText,
   copyRequestOpen,
-  FRESH_SESSION_TEXT,
   justClosedText,
   panelDates,
   panelLoadFailure,

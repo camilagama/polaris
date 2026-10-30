@@ -1,11 +1,13 @@
 import type { createDatabase } from "@polaris/db/client";
-import type {
-  AuthorizedTenantTransactionInput,
-  TenantRequestIdentity,
-  TenantRequestTransaction,
-  withAuthorizedTenantTransaction,
+import { FreshSessionRequiredError } from "@polaris/db/device-repository";
+import {
+  type AuthorizedTenantTransactionInput,
+  TenantAuthorizationError,
+  type TenantRequestIdentity,
+  type TenantRequestTransaction,
+  type withAuthorizedTenantTransaction,
 } from "@polaris/db/tenant-transaction";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "./environment";
 import { TenantRequestContextError } from "./request-context-error";
 import {
@@ -260,6 +262,102 @@ describe("tenant request context", () => {
 
     expect(fixture.createDatabase).toHaveBeenCalledOnce();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
+  });
+});
+
+describe("tenant request context with requireFreshSession", () => {
+  const NOW = new Date("2026-10-30T15:00:00.000Z");
+  const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+  function runWith(
+    createdAt: Date | string,
+    options: { requireFreshSession?: boolean } = {}
+  ) {
+    const fixture = createFixture({
+      session: { createdAt, id: "session-1" },
+      user: { id: "session-user-42" },
+    });
+    const operation = vi.fn(async () => "tenant result");
+    const result = fixture.context({
+      ...baseInput,
+      operation,
+      ...options,
+    });
+    return { fixture, operation, result };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refuses a 16-minute session before the operation, with the reason the router maps", async () => {
+    const { operation, result, fixture } = runWith(
+      new Date(NOW.getTime() - 16 * 60 * 1000),
+      { requireFreshSession: true }
+    );
+
+    await expect(result).rejects.toMatchObject({
+      code: "fresh_session_required",
+    });
+    expect(fixture.runTransaction).toHaveBeenCalledOnce();
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("without the flag the same old session runs the operation", async () => {
+    const { operation, result } = runWith(
+      new Date(NOW.getTime() - 16 * 60 * 1000)
+    );
+
+    await expect(result).resolves.toBe("tenant result");
+    expect(operation).toHaveBeenCalledOnce();
+  });
+
+  it("lets 14:59 through and refuses 15:00", async () => {
+    const inside = runWith(new Date(NOW.getTime() - (FIFTEEN_MINUTES - 1000)), {
+      requireFreshSession: true,
+    });
+    await expect(inside.result).resolves.toBe("tenant result");
+
+    const atTheLimit = runWith(new Date(NOW.getTime() - FIFTEEN_MINUTES), {
+      requireFreshSession: true,
+    });
+    await expect(atTheLimit.result).rejects.toBeInstanceOf(
+      FreshSessionRequiredError
+    );
+    expect(atTheLimit.operation).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unreadable creation time before the operation", async () => {
+    const { operation, result } = runWith("not a date", {
+      requireFreshSession: true,
+    });
+
+    await expect(result).rejects.toMatchObject({ code: "session_required" });
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-owner with the capability refusal, which the transaction raises before the freshness check", async () => {
+    const fixture = createFixture({
+      session: {
+        createdAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+        id: "session-1",
+      },
+      user: { id: "session-user-42" },
+    });
+    fixture.runTransaction.mockImplementationOnce(() =>
+      Promise.reject(new TenantAuthorizationError("capability_denied"))
+    );
+    const operation = vi.fn(async () => "tenant result");
+
+    await expect(
+      fixture.context({ ...baseInput, operation, requireFreshSession: true })
+    ).rejects.toBeInstanceOf(TenantAuthorizationError);
+    expect(operation).not.toHaveBeenCalled();
   });
 });
 

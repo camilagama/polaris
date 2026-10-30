@@ -1,7 +1,8 @@
 import { localDate } from "@polaris/domain/organization/closure-deadlines";
-import type {
-  DataExportItem,
-  RequestRefusal,
+import {
+  type DataExportItem,
+  FRESH_SESSION_TEXT,
+  type RequestRefusal,
 } from "../data-export/data-export-model";
 import {
   isLegalAcceptanceRefusal,
@@ -236,8 +237,6 @@ export function closedExportFileHref(
   return `/api/closed-exports/${encodeURIComponent(exportId)}/files/${ordinal}`;
 }
 
-export const FRESH_SESSION_TEXT =
-  "Por segurança, para pedir a cópia é preciso ter entrado no Polaris há menos de 15 minutos. Saia, entre de novo e peça a cópia.";
 export function closedRequestRefusal(
   error: unknown,
   store: ClosedStore

@@ -401,6 +401,28 @@ test("as recusas do pedido: limite de 3, já em preparo e o 503 que não se repe
   expect(busy.requests).toHaveLength(1);
 });
 
+test("sessão antiga: o 403 diz para entrar de novo e o pedido não se repete sozinho", async ({
+  page,
+}) => {
+  await page.clock.install({ time: NOW });
+  const calls = await openScreen(page, {
+    requests: [
+      (route) =>
+        route.fulfill(refusal("FORBIDDEN", 403, "fresh_session_required")),
+    ],
+  });
+  await askButton(page).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Por segurança, para pedir a cópia é preciso ter entrado no Polaris há menos de 15 minutos. Saia, entre de novo e peça a cópia."
+  );
+  await expect(
+    page.getByText("Só o dono da loja pode pedir", { exact: false })
+  ).toHaveCount(0);
+  await page.clock.runFor(10 * 60_000);
+  expect(calls.requests).toHaveLength(1);
+  expect(calls.reads).toBe(1);
+});
+
 test("a lista que responde depois do pedido não tira da tela a cópia recém-pedida", async ({
   page,
 }) => {
