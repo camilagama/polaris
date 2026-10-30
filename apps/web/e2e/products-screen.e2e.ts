@@ -55,6 +55,21 @@ const unavailable = rpc(
   503
 );
 
+/** The Worker's own 503 for an unexpected fault, with its reason: on a write it may have come after the COMMIT. */
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+/** What a direct write that met `serverBusy` says: it may have been saved, so no second try is offered. */
+const CHANGE_FAULT_UNKNOWN =
+  "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
+
 /** The page Cloudflare answers for a Worker the platform killed (1102): a 503 with `cf-ray` and no mark. */
 const platformCut = {
   body: "<html><body>Worker exceeded resource limits</body></html>",
@@ -753,6 +768,32 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   );
 });
 
+test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "product/create": (route) => {
+        created += 1;
+        return route.fulfill(serverBusy);
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
+  await expect(page.getByRole("alert")).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+});
+
 test("arquivar pelo menu: 'Arquivando…' na linha, o resultado dito e focado e a lista lida de novo", async ({
   page,
 }) => {
@@ -859,10 +900,8 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await page.getByRole("button", { name: "Desfazer" }).click();
-  // the Worker's own 503 is a fault it answered, not the platform's cut
-  await expect(page.getByRole("alert")).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  // the Worker's own 503 is a fault it answered, not the platform's cut: the restore may have been saved
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
   await expect(page.getByRole("alert")).not.toContainText("ocupado");
   const undo = page.getByRole("button", { name: "Desfazer" });
   await expect(undo).toBeEnabled();

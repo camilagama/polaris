@@ -24,6 +24,7 @@ import {
   commonFailureMessage,
   isConnectionFailure,
   isPlatformCut,
+  unconfirmedWriteFaultMessage,
 } from "../lib/rpc-error";
 import { useHoldSwap } from "../lib/unsent-work";
 import {
@@ -48,10 +49,14 @@ const REPEATED_RULES_TEXT =
 /** A save whose answer the connection cut: it may have been saved, so the text never says it was not. */
 export const SAVE_NOT_CONFIRMED_TEXT =
   "Não deu para confirmar se o perfil foi salvo. Toque em Fechar e conferir: se ele não estiver na lista, abra de novo e salve.";
-/** A save whose answer did not come, or that the server cut: it may have been saved. Null for any other failure. */
+/** A save whose answer did not come, that the server cut or that met its 503: it may have been saved. Null for any other failure. */
 function saveNotConfirmedText(cause: unknown): string | null {
   if (isPlatformCut(cause)) {
     return `O servidor está ocupado. ${SAVE_NOT_CONFIRMED_TEXT}`;
+  }
+  const faultUnknown = unconfirmedWriteFaultMessage(cause);
+  if (faultUnknown !== undefined) {
+    return faultUnknown;
   }
   return isConnectionFailure(cause) ? SAVE_NOT_CONFIRMED_TEXT : null;
 }
@@ -68,7 +73,9 @@ function errorText(
   subject?: string,
   fallback = GENERIC_ERROR_TEXT
 ): string {
-  const common = commonFailureMessage(error, subject);
+  const common = commonFailureMessage(error, subject, {
+    directWrite: subject === undefined,
+  });
   if (common !== undefined) {
     return common;
   }

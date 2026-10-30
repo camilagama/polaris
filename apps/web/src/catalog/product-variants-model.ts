@@ -243,7 +243,9 @@ export const VARIANT_LIMIT_REACHED =
   "Seu plano chegou ao limite de variantes. Nada foi alterado.";
 
 export function variantErrorMessage(error: unknown, subject?: string): string {
-  const common = commonFailureMessage(error, subject);
+  const common = commonFailureMessage(error, subject, {
+    directWrite: subject === undefined,
+  });
   if (common !== undefined) {
     return common;
   }

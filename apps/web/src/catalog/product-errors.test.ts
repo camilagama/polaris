@@ -46,6 +46,20 @@ describe("mensagem de erro de produto", () => {
     expect(productErrorMessage(workerBusy, "create")).not.toContain("ocupado");
   });
 
+  it("a escrita que o servidor ocupado não confirmou diz que pode ter sido salva e não convida a repetir", () => {
+    const busy = refusal("SERVICE_UNAVAILABLE", "server_busy");
+    for (const action of ["create", "update", "archive", "restore"] as const) {
+      const message = productErrorMessage(busy, action);
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+    }
+    expect(productErrorMessage(busy)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
   it("sessão recusada: ler diz que não carregou, escrever diz que o produto não mudou", () => {
     expect(productErrorMessage(refusal("UNAUTHORIZED"))).toBe(
       "Não foi possível carregar os produtos."
