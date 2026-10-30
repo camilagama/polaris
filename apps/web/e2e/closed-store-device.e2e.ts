@@ -570,9 +570,9 @@ const OTHER_STORE = "0199c2d0-0000-7000-8000-00000000a002";
 const PANEL = `/loja-encerrada?loja=${ORGANIZATION.id}`;
 const AFTER_WINDOW = { ...CLOSED, canRecover: false, phase: "closed" };
 const WINDOW_TEXT =
-  "2 operações deste aparelho ainda não foram enviadas. Se você desfizer o encerramento, elas serão enviadas.";
+  "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo.";
 const AFTER_TEXT =
-  "2 operações deste aparelho não foram enviadas e nunca mais serão: esta loja não volta. Elas não estão na cópia dos seus dados.";
+  "2 operações deste aparelho ficaram sem confirmação do servidor e não serão mais enviadas: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados.";
 const DISCARD_BUTTON = "Descartar o que não foi enviado…";
 const DISCARD_ANY = /Descartar/;
 const CHECKING = "Conferindo as operações guardadas neste aparelho";
@@ -756,7 +756,9 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     expect(text).toContain(
       "O servidor não confirmou o que será descartado: vendas"
     );
-    expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
+    expect(text).toContain(
+      "Vendas sem confirmação não estarão na cópia dos seus dados."
+    );
     expect(text).toContain("Isso não tem volta.");
 
     await discardDialog(page)

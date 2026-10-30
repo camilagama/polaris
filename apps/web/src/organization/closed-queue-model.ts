@@ -76,14 +76,14 @@ function operations(count: number): string {
 
 export function windowText(total: number): string {
   return total === 1
-    ? "1 operação deste aparelho ainda não foi enviada. Se você desfizer o encerramento, ela será enviada."
-    : `${total} operações deste aparelho ainda não foram enviadas. Se você desfizer o encerramento, elas serão enviadas.`;
+    ? "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela será enviada de novo."
+    : `${total} operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo.`;
 }
 
 function afterText(total: number): string {
   return total === 1
-    ? "1 operação deste aparelho não foi enviada e nunca mais será: esta loja não volta. Ela não está na cópia dos seus dados."
-    : `${total} operações deste aparelho não foram enviadas e nunca mais serão: esta loja não volta. Elas não estão na cópia dos seus dados.`;
+    ? "1 operação deste aparelho ficou sem confirmação do servidor e não será mais enviada: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados."
+    : `${total} operações deste aparelho ficaram sem confirmação do servidor e não serão mais enviadas: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados.`;
 }
 
 export function discardTitle(total: number): string {
@@ -110,8 +110,8 @@ function kindsList(kinds: QueueKinds): string {
 export function discardBody(kinds: QueueKinds): string {
   const lost =
     kinds.sales > 0
-      ? "As vendas não estarão na cópia dos seus dados."
-      : "Isso não estará na cópia dos seus dados.";
+      ? "Vendas sem confirmação não estarão na cópia dos seus dados."
+      : "O que não foi confirmado não estará na cópia dos seus dados.";
   return `O servidor não confirmou o que será descartado: ${kindsList(kinds)} deste aparelho. ${lost} Isso não tem volta.`;
 }
 

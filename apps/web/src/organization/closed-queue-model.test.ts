@@ -106,10 +106,10 @@ describe("o que o cartão diz da fila (AC-1, AC-4)", () => {
     });
     expect(view).toEqual({ kind: "window", text: windowText(2) });
     expect(windowText(2)).toBe(
-      "2 operações deste aparelho ainda não foram enviadas. Se você desfizer o encerramento, elas serão enviadas."
+      "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo."
     );
     expect(windowText(1)).toBe(
-      "1 operação deste aparelho ainda não foi enviada. Se você desfizer o encerramento, ela será enviada."
+      "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela será enviada de novo."
     );
   });
 
@@ -120,13 +120,14 @@ describe("o que o cartão diz da fila (AC-1, AC-4)", () => {
     );
     expect(view).toMatchObject({ kind: "after", total: 4 });
     expect(view).toMatchObject({
-      text: "4 operações deste aparelho não foram enviadas e nunca mais serão: esta loja não volta. Elas não estão na cópia dos seus dados.",
+      text: "4 operações deste aparelho ficaram sem confirmação do servidor e não serão mais enviadas: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados.",
     });
   });
 
-  it("só recusadas também contam", () => {
+  it("só recusadas também contam, e uma só vai no singular", () => {
     expect(queueView(counted({ rejected: 1 }), STORE)).toMatchObject({
       kind: "after",
+      text: "1 operação deste aparelho ficou sem confirmação do servidor e não será mais enviada: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados.",
       total: 1,
     });
   });
@@ -142,26 +143,32 @@ describe("o tipo da operação (AC-7)", () => {
     expect(kindOf("algo.novo")).toBe("others");
   });
 
-  it("fila de vendas diz vendas e que a venda não estará na cópia", () => {
+  it("fila de vendas diz vendas e a frase de vendas sem confirmação", () => {
     const text = discardBody({ others: 0, registers: 0, sales: 3 });
     expect(text).toContain(
       "O servidor não confirmou o que será descartado: vendas deste aparelho"
     );
-    expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
+    expect(text).toContain(
+      "Vendas sem confirmação não estarão na cópia dos seus dados."
+    );
     expect(text).toContain("Isso não tem volta.");
   });
 
   it("fila mista com venda diz vendas e cadastros, e a frase da venda", () => {
     const text = discardBody({ others: 0, registers: 2, sales: 1 });
     expect(text).toContain("vendas e cadastros");
-    expect(text).toContain("As vendas não estarão na cópia dos seus dados.");
+    expect(text).toContain(
+      "Vendas sem confirmação não estarão na cópia dos seus dados."
+    );
   });
 
   it("fila só de cadastros não fala de vendas", () => {
     const text = discardBody({ others: 0, registers: 2, sales: 0 });
     expect(text).toContain("descartado: cadastros deste aparelho");
     expect(text).not.toContain("venda");
-    expect(text).toContain("Isso não estará na cópia dos seus dados.");
+    expect(text).toContain(
+      "O que não foi confirmado não estará na cópia dos seus dados."
+    );
   });
 
   it("sem tipo conhecido diz operações e a frase da cópia", () => {
