@@ -748,7 +748,7 @@ export function stockView(
       costText: null,
       needsEntry: false,
       quantity: null,
-      text: `${load.message} Você ainda pode vender; o servidor confirma o saldo.`,
+      text: `${load.message} Você ainda pode vender: o saldo é conferido ao confirmar.`,
       tone: "warning",
     };
   }
@@ -1460,9 +1460,13 @@ function stockWarnings(
   for (const item of items) {
     const balance = stock[item.variantId];
     const total = requested.get(item.variantId) ?? 0;
-    if (balance?.status === "ready" && total > balance.value.quantity) {
+    if (
+      balance?.status === "ready" &&
+      balance.value.quantity !== 0 &&
+      total > balance.value.quantity
+    ) {
       warnings[item.draftId] =
-        `Quantidade acima do saldo exibido (${balance.value.quantity}). Você pode continuar; o servidor confirma o estoque e recusa a venda se for insuficiente.`;
+        `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
     }
   }
   return warnings;
@@ -1623,6 +1627,8 @@ export function evaluateSaleForm(
 export interface SaleAttempt {
   commandId: string;
   occurredAt: string;
+  /** The profile and version the body was sent with, for a resend whose first answer was lost. Absent in older attempts. */
+  paymentProfile?: SaleCommandBody["paymentProfile"] | undefined;
   /** Device clock when the attempt started; local evidence only. */
   recordedAt: string;
   signature: string;
@@ -1639,7 +1645,8 @@ function bodySignature(
 /**
  * The server replays a repeated command ID only for an identical payload, so
  * an identical retry keeps the previous command ID and commercial instant. Any
- * change to the payload (including a new profile version) starts a new attempt.
+ * change to the payload (including a new profile version) starts a new attempt,
+ * but for the version kept by `bodyOfUnsettledAttempt`.
  */
 export function resolveSaleAttempt(
   previous: SaleAttempt | null,
@@ -1656,9 +1663,44 @@ export function resolveSaleAttempt(
   return {
     commandId: createId(),
     occurredAt: occurredAtOverride ?? now.toISOString(),
+    paymentProfile: body.paymentProfile,
     recordedAt: now.toISOString(),
     signature,
   };
+}
+
+/**
+ * An attempt sent with no answer may already be a sale on the server, which replays it before it looks at the profile
+ * version. When the only change to the body is the version of the same profile, edited in the meantime, the body goes
+ * again with the version it was sent with: the live one would be another payload, a new command ID and the sale twice.
+ * If the sale never reached the server, that version is refused as a version conflict, a definite answer.
+ */
+function bodyOfUnsettledAttempt(
+  previous: SaleAttempt | null,
+  body: SaleCommandBody,
+  organizationId: string,
+  occurredAtOverride: string | null
+): SaleCommandBody {
+  const sent = previous?.paymentProfile;
+  if (
+    previous === null ||
+    !sent ||
+    body.paymentProfile?.id !== sent.id ||
+    body.paymentProfile.expectedVersion === sent.expectedVersion
+  ) {
+    return body;
+  }
+  const sentBody = {
+    ...body,
+    paymentProfile: {
+      ...body.paymentProfile,
+      expectedVersion: sent.expectedVersion,
+    },
+  };
+  return bodySignature(sentBody, organizationId, occurredAtOverride) ===
+    previous.signature
+    ? sentBody
+    : body;
 }
 
 export type PreparedConfirmation =
@@ -1671,6 +1713,8 @@ export type PreparedConfirmation =
  * shape or arithmetic reasons.
  */
 export function prepareConfirmation(input: {
+  /** The previous attempt was sent with no answer: see `bodyOfUnsettledAttempt`. */
+  attemptUnsettled?: boolean;
   body: SaleCommandBody;
   createId: () => string;
   now: Date;
@@ -1690,16 +1734,24 @@ export function prepareConfirmation(input: {
       ok: false,
     };
   }
+  const body = input.attemptUnsettled
+    ? bodyOfUnsettledAttempt(
+        input.previousAttempt,
+        input.body,
+        input.organizationId,
+        override
+      )
+    : input.body;
   const attempt = resolveSaleAttempt(
     input.previousAttempt,
-    input.body,
+    body,
     input.organizationId,
     input.createId,
     input.now,
     override
   );
   const command = {
-    ...input.body,
+    ...body,
     commandId: attempt.commandId,
     occurredAt: attempt.occurredAt,
     recordedAt: attempt.recordedAt,

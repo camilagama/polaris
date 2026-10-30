@@ -84,10 +84,15 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(kpis.month).toBe("outubro");
     const rest = kpis.read(null);
     expect(rest.sales).toMatchObject({
-      count: "25 vendas no mês",
+      count: "25 vendas",
       date: "1 a 25/10",
-      delta: { text: "+25,0%", trend: "up" },
-      note: "vs. 1 a 25/09",
+      delta: {
+        basis: "em relação a 1 a 25/09",
+        text: "+25,0%",
+        trend: "up",
+      },
+      help: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+      note: null,
       value: "1250.00",
     });
     // every day known: the result is the sum of the days, with its chip in reais
@@ -131,7 +136,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const rest = kpis.read(null);
     // vendas: 25 x 50,00 = 1250,00 against 25 x 40,00 = 1000,00
     expect(rest.sales.delta).toMatchObject({ text: "+25,0%", trend: "up" });
-    expect(rest.sales.note).toBe("vs. 1 a 25/09");
+    expect(rest.sales.delta?.basis).toBe("em relação a 1 a 25/09");
     // ticket: 50,00 against 1000,00 / 50 sales = 20,00
     expect(rest.ticket.delta).toMatchObject({ text: "+150,0%", trend: "up" });
     // resultado: 1000,00 against 25 x 30,00 = 750,00, from the summary's days, not from the sales read
@@ -141,8 +146,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     // a day read compares the same days of the sales read: 10 x 50,00 against 10 x 40,00
     expect(kpis.read(9).sales).toMatchObject({
-      delta: { text: "+25,0%" },
-      note: "vs. 1 a 10/09",
+      delta: { basis: "em relação a 1 a 10/09", text: "+25,0%" },
     });
   });
 
@@ -156,7 +160,10 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       today: "2026-10-25",
     }).read(null);
     expect([rest.sales.delta, rest.ticket.delta]).toEqual([null, null]);
-    expect([rest.sales.note, rest.ticket.note]).toEqual([null, null]);
+    expect([rest.sales.help, rest.ticket.help]).toEqual([
+      "Vendas líquidas de 1 a 25/10.",
+      "Vendas líquidas divididas pelo número de vendas, de 1 a 25/10.",
+    ]);
     expect(rest.result.delta).toMatchObject({ text: "+R$ 250,00" });
   });
 
@@ -185,9 +192,8 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     const day = kpis.read(9);
     expect(day.sales).toMatchObject({
-      count: "10 vendas até 10/10",
+      count: "10 vendas",
       date: "1 a 10/10",
-      note: "vs. 1 a 10/09",
       value: "500.00",
     });
     expect(day.result.value).toBe("400.00");
@@ -265,7 +271,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect([alone.sales.delta, alone.result.delta, alone.ticket.delta]).toEqual(
       [null, null, null]
     );
-    expect(alone.sales.note).toBeNull();
+    expect(alone.sales.help).toBe("Vendas líquidas de 1 a 25/10.");
     const unknownBefore = resultKpis({
       cards: CARDS,
       daily: days("2026-10-01", 31),
@@ -299,7 +305,9 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       today: "2026-10-25",
     }).read(null);
     expect(rest.sales.delta).toBeNull();
-    expect(rest.sales.note).toBe("Sem vendas de 1 a 25/09 para comparar");
+    expect(rest.sales.help).toBe(
+      "Vendas líquidas de 1 a 25/10. Sem vendas de 1 a 25/09, não há comparação."
+    );
   });
 
   it("compares the last 30 days with the 30 before them, and calls it a period", () => {
@@ -317,9 +325,9 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     expect(kpis.month).toBeNull();
     const rest = kpis.read(null);
-    expect(rest.sales.count).toBe("25 vendas no período");
+    expect(rest.sales.count).toBe("25 vendas");
     expect(rest.sales.date).toBe("26/09 a 25/10");
-    expect(rest.sales.note).toBe("vs. 27/08 a 25/09");
+    expect(rest.sales.delta?.basis).toBe("em relação a 27/08 a 25/09");
     expect(rest.sales.delta?.text).toBe("0,0%");
   });
 

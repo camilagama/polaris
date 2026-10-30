@@ -175,11 +175,10 @@ export interface ChainRow {
 }
 
 /** What the subtotals from the CMV on say when no cost of the period is known: the dash, and why. */
-export const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
+const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
 
 /** What a card of the estimated result says when no cost of the goods is known (the Resultado and the Início). */
-export const NO_KNOWN_COST_RESULT =
-  "Sem custo conhecido: o resultado não dá para estimar.";
+export const NO_KNOWN_COST_RESULT = "Sem custo informado: não dá para estimar.";
 
 /** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
 const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
