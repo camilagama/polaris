@@ -3,7 +3,7 @@ import type {
   InventoryBalanceReadModel,
   PolarisRpcClient,
 } from "@polaris/contracts";
-import { formatInstant, formatQuantity } from "../lib/format";
+import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
 import {
   costText,
@@ -234,7 +234,6 @@ export interface StockRow {
   skuText: string | null;
   target: StockTarget;
   tone: "empty" | "ok";
-  updatedText: string;
   variantText: string;
 }
 
@@ -255,10 +254,6 @@ export function stockRows(
     skuText: entry.sku,
     target: stockTarget(entry, { costUnavailable }),
     tone: entry.quantity === 0 ? "empty" : "ok",
-    updatedText:
-      entry.updatedAt === null
-        ? "Sem movimentos"
-        : formatInstant(entry.updatedAt),
     variantText: variantLabelText(entry),
   }));
 }
@@ -351,7 +346,8 @@ export function stockMoreView(state: StockListState): StockMoreView {
 }
 
 /**
- * "12 variantes" / "mais variantes disponíveis" caption above the list. Without a connection and with "Sem custo"
+ * "12 variantes" caption above the list; with more pages it says "Mostrando 12 variantes", since the number alone
+ * would read as the total. Without a connection and with "Sem custo"
  * on there is no count: the device does not know how many variants lack a cost, and a zero would be invented.
  */
 export function stockCountText(
@@ -364,7 +360,95 @@ export function stockCountText(
   }
   const count = state.entries.length;
   const noun = count === 1 ? "variante" : "variantes";
-  return state.nextCursor === null
-    ? `${formatQuantity(count)} ${noun}`
-    : `${formatQuantity(count)} ${noun} ${count === 1 ? "carregada" : "carregadas"}; há mais`;
+  const shown = `${formatQuantity(count)} ${noun}`;
+  return state.nextCursor === null ? shown : `Mostrando ${shown}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* "Precisa de ação"                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** The most variants one read of the strip counts: a page; a full page says "100 ou mais". */
+const STOCK_ATTENTION_PAGE_SIZE = 100;
+
+/** Variants of one kind that need attention: as many as came, and whether the page was full. */
+export interface VariantCount {
+  count: number;
+  more: boolean;
+}
+
+export interface StockAttention {
+  unknownCost: VariantCount;
+  withoutStock: VariantCount;
+}
+
+/** The two reads behind the strip: variants of active products with no balance, and with no known cost. */
+export function stockAttentionRequest(
+  organizationId: string,
+  kind: "unknown-cost" | "without-stock"
+): ListBalancesInput {
+  return {
+    limit: STOCK_ATTENTION_PAGE_SIZE,
+    organizationId,
+    productStatus: "active",
+    ...(kind === "without-stock"
+      ? { stock: "without_stock" as const }
+      : { cost: "unknown" as const }),
+  };
+}
+
+export function variantCount(page: StockPage): VariantCount {
+  return {
+    count: page.entries.length,
+    more: page.nextCursor !== null,
+  };
+}
+
+export interface StockAttentionLink {
+  /** The address that opens the list already filtered; the strip applies the same filter without leaving. */
+  href: string;
+  id: "unknown-cost" | "without-stock";
+  text: string;
+}
+
+function countText(page: VariantCount): string {
+  return page.more
+    ? `${STOCK_ATTENTION_PAGE_SIZE} ou mais`
+    : formatQuantity(page.count);
+}
+
+/**
+ * "1 variante sem saldo" and "1 sem custo": the noun is said once, by the first of the two. Empty when nothing needs
+ * attention, and the strip then does not show.
+ */
+export function stockAttentionLinks(
+  attention: StockAttention
+): StockAttentionLink[] {
+  const kinds = [
+    {
+      count: attention.withoutStock,
+      href: "/inventory?filtro=sem-saldo",
+      id: "without-stock",
+      reason: "sem saldo",
+    },
+    {
+      count: attention.unknownCost,
+      href: "/inventory?filtro=sem-custo",
+      id: "unknown-cost",
+      reason: "sem custo",
+    },
+  ] as const;
+  return kinds
+    .filter((kind) => kind.count.count > 0)
+    .map((kind, position) => {
+      const noun =
+        position === 0
+          ? ` ${kind.count.count === 1 && !kind.count.more ? "variante" : "variantes"}`
+          : "";
+      return {
+        href: kind.href,
+        id: kind.id,
+        text: `${countText(kind.count)}${noun} ${kind.reason}`,
+      };
+    });
 }

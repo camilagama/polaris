@@ -26,7 +26,6 @@ const row: StockRow = {
     version: 3,
   },
   tone: "ok",
-  updatedText: "13/10/2026",
   variantText: "Azul / M",
 };
 

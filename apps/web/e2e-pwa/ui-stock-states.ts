@@ -94,6 +94,32 @@ const refusal = (reason: string) =>
     400
   );
 
+/** The rows the read asks for: by balance and by cost, as the server filters them. */
+function matching(body: string, entries: readonly unknown[]) {
+  return (entries as (typeof SHIRT)[]).filter(
+    (row) =>
+      (!body.includes("without_stock") || row.quantity === 0) &&
+      (!body.includes('"with_stock"') || row.quantity > 0) &&
+      (!body.includes('"cost":"unknown"') || row.movingAverageCost === null)
+  );
+}
+
+/**
+ * The reads of "Precisa de ação" (a page of 100 of active products) are told apart from the list's (a page of 50):
+ * they count the rows that fit, whatever the list was asked for.
+ */
+function attentionPage(body: string, entries: readonly unknown[]) {
+  if (!body.includes('"limit":100')) {
+    return null;
+  }
+  return {
+    entries: matching(body, entries).filter(
+      (row) => row.productStatus === "active"
+    ),
+    nextCursor: null,
+  };
+}
+
 interface ServedList {
   /** Called for each read of the list, with the body the screen sent; answers the route. */
   answer: (body: string, route: Route) => Promise<void> | void;
@@ -103,8 +129,15 @@ const served = (
   entries: readonly unknown[],
   nextCursor: string | null = null
 ): ServedList => ({
-  answer: (_body, route) =>
-    route.fulfill(rpc({ entries, nextCursor })) as Promise<void>,
+  answer: (body, route) =>
+    route.fulfill(
+      rpc(
+        attentionPage(body, entries) ?? {
+          entries: matching(body, entries),
+          nextCursor,
+        }
+      )
+    ) as Promise<void>,
 });
 
 async function serveList(page: Page, list: ServedList) {
@@ -112,6 +145,18 @@ async function serveList(page: Page, list: ServedList) {
     list.answer(route.request().postData() ?? "", route)
   );
 }
+
+const serverFailure = () =>
+  rpc(
+    {
+      code: "INTERNAL_SERVER_ERROR",
+      data: undefined,
+      defined: false,
+      message: "Internal server error",
+      status: 500,
+    },
+    500
+  );
 
 /** The list of the stock screen answered with the synthetic rows: for the screen opened in the real shell. */
 export async function serveStockRows(page: Page) {
@@ -194,24 +239,32 @@ export const stockStates = {
     await showScreenAlone(page);
   },
 
+  /** The reads of "Precisa de ação" fail while the list answers: the strip says its notices are unavailable. */
+  async attentionUnavailable(page: Page) {
+    await openStockLab(page, {
+      answer: (body, route) =>
+        route.fulfill(
+          body.includes('"limit":100')
+            ? serverFailure()
+            : rpc({ entries: matching(body, ROWS), nextCursor: "cursor-2" })
+        ) as Promise<void>,
+    });
+    await rowOf(page, SHIRT_ROW).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
+    await showScreenAlone(page);
+  },
+
   /** The read failed: the message and the retry. */
   async error(page: Page) {
     await openStockLab(page, {
-      answer: (_body, route) =>
-        route.fulfill(
-          rpc(
-            {
-              code: "INTERNAL_SERVER_ERROR",
-              data: undefined,
-              defined: false,
-              message: "Internal server error",
-              status: 500,
-            },
-            500
-          )
-        ) as Promise<void>,
+      answer: (_body, route) => route.fulfill(serverFailure()) as Promise<void>,
     });
     await page.getByRole("button", { name: "Tentar novamente" }).waitFor();
+    await page
+      .getByText("Avisos do estoque indisponíveis agora.")
+      .waitFor({ timeout: 20_000 });
     await showScreenAlone(page);
   },
 
@@ -239,10 +292,12 @@ export const stockStates = {
     await openStockLab(page, {
       answer: (body, route) =>
         route.fulfill(
-          rpc({
-            entries: body.includes("zzz") ? [] : ROWS,
-            nextCursor: null,
-          })
+          rpc(
+            attentionPage(body, ROWS) ?? {
+              entries: body.includes("zzz") ? [] : ROWS,
+              nextCursor: null,
+            }
+          )
         ) as Promise<void>,
     });
     await rowOf(page, SHIRT_ROW).waitFor();

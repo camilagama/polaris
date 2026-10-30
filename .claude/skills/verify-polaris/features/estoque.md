@@ -4,9 +4,10 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 
 ## Sub-features
 
-- `estoque-lista` a `list "Saldos por variante"`, com "Saldo", "Custo médio" e "Atualizado" por variante.
+- `estoque-lista` a `list "Saldos por variante"`, com "Saldo" e "Custo médio" por variante (a data do último movimento está no painel de cada movimento: "Saldo atual: 5 · custo médio R$ 62,40 · último movimento 14/10 09:00").
+- `estoque-precisa-de-acao` a faixa "Precisa de ação" sob o título, só com variante sem saldo ou sem custo: "1 variante sem saldo · 1 sem custo", cada número um link que aplica `?filtro=sem-saldo` ou `?filtro=sem-custo` sem sair da tela; sem conexão ou sem item, não aparece. O `HelpTip` "Sobre Estoque" no título diz o que muda o saldo.
 - `estoque-vazio` loja sem produto: "Nenhuma variante cadastrada. Cadastre um produto para controlar o estoque dele."
-- `estoque-filtros` `search "Filtrar estoque"`: `searchbox "Buscar no estoque"`, as abas "Todas", "Com saldo" e "Sem saldo", "Sem custo" e "Incluir produtos arquivados".
+- `estoque-filtros` `search "Filtrar estoque"`: `searchbox "Buscar no estoque"`, as abas "Todas", "Com saldo" e "Sem saldo", "Sem custo" e "Incluir arquivados".
 - `estoque-receber` recebimento com quantidade e custo unitário.
 - `estoque-contar` contagem (o saldo passa a ser o contado).
 - `estoque-baixar` baixa com motivo; acima do saldo é recusada.

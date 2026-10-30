@@ -56,7 +56,7 @@ import {
 import {
   costText,
   type StockTarget,
-  targetCostText,
+  targetBalanceText,
   unitsText,
 } from "./stock-target";
 
@@ -422,9 +422,8 @@ export function StockCommandPanel({
           {labels.title}
         </h3>
         <p className="text-muted-foreground text-support">
-          {state.target.productName} · {state.target.variantText}. Saldo atual:{" "}
-          {unitsText(state.target.quantity)} · custo médio:{" "}
-          {targetCostText(state.target)}.
+          {state.target.productName} · {state.target.variantText}.{" "}
+          {targetBalanceText(state.target)}
         </p>
       </div>
       {state.target.archived ? (

@@ -2659,6 +2659,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | --- | --- | --- |
 | Leitura em andamento por loja | Em revisão | `usePlanNoticeFacts` guardava um só `useRef(false)`: trocar de loja com a leitura da anterior em andamento deixava a nova sem leitura até o tique seguinte (até 1 min). Agora o ref guarda o conjunto de lojas com leitura em andamento (`planReadInFlight`, `planReadStarted`, `planReadEnded` em `subscription/plan-notice.ts`); a mesma loja, no mesmo componente, não dispara duas leituras e o fim de uma libera só ela. A resposta atrasada continua indo para a loja que a pediu. Provas: `subscription-model.test.ts` e a guarda de fonte `grace-notice-backoff.test.ts`. Sem mudança de tela, texto ou rede. |
 
+### "Precisa de ação" no Estoque e nas Pendências, e os textos do Estoque (t516, lote A6-B5; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Faixa no Estoque | Em revisão | `app-shell/action-strip.tsx` (o mesmo componente das Pendências) sob o título: "1 variante sem saldo · 1 sem custo", cada número um link (`?filtro=sem-saldo`, `?filtro=sem-custo`) que aplica o filtro sem sair da tela e limpa a busca e os arquivados, que o número não conta. Duas leituras `listBalances` de 100 de produtos ativos (`use-stock-attention.ts`, `stockAttentionRequest`), reeditadas depois de um movimento e de "Atualizar"; cheia, "100 ou mais". Sem item ou sem conexão (o aparelho não tem o custo), a faixa não aparece; lendo, nada; se uma das leituras falha, no lugar da faixa uma linha discreta diz "Avisos do estoque indisponíveis agora.", como o Início, para a tela não dizer que nada precisa de ação sem ter lido. |
+| Textos do Estoque | Em revisão | O subtítulo virou o `HelpTip` do título; a contagem é "4 variantes" quando a lista acabou e "Mostrando 4 variantes" quando há "Carregar mais" (o servidor não devolve o total); "Incluir arquivados"; aviso sem conexão encurtado. A coluna "Atualizado" saiu da linha no mesmo PR em que o painel de movimento ganhou a data: "Saldo atual: 5 · custo médio R$ 62,40 · último movimento 14/10 09:00" (sem conexão, "Saldo do aparelho: 5 · custo médio só com conexão"). Depois de uma releitura do saldo o painel não tem a data (a leitura não a traz) e diz só saldo e custo. |
+| Pendências | Em revisão | A frase de abertura virou a faixa "Precisa de ação": "2 registros recusados · 1 na fila atrás deles". O chip "Atenção" mantém o nome. |
+| Provas | Em revisão | Unidade: `stock-list-model.test.ts` (contagem, faixa, leituras), `stock-target.test.ts` (painel com e sem conexão, data, ano), `attention-panel.test.tsx`. Navegador: `e2e-pwa/ui-stock-attention.e2e.ts` (cada link aplica o filtro, sem faixa, a linha de avisos indisponíveis, painel com data, axe), `e2e/stock-screen.e2e.ts` (as duas leituras). Baselines `estoque-lista`, `estoque-vazio` e `estoque-erro` (12 imagens) refeitas com as imagens do CI; `pendencias-vazio` não muda (sem registro, sem faixa). |
+
 ### Menu lateral: grupos Vendas e Gestão, e o pé com os primeiros passos e o teste grátis (t518, lotes A3 e A4; sem migration)
 
 | Item | Status | Observação |

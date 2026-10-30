@@ -16,6 +16,11 @@ export interface StockTarget {
   movingAverageCost: string | null;
   productName: string;
   quantity: number;
+  /**
+   * When the balance last moved, as the list read it; null when it never moved. Absent once a newer balance replaced
+   * the one the list read (a balance read carries no date), so the panel says nothing rather than a stale date.
+   */
+  updatedAt?: string | null | undefined;
   variantId: string;
   variantText: string;
   /** The optimistic version a count must name. */
@@ -55,6 +60,7 @@ export function stockTarget(
     movingAverageCost: entry.movingAverageCost,
     productName: entry.productName,
     quantity: entry.quantity,
+    updatedAt: entry.updatedAt,
     variantId: entry.variantId,
     variantText: variantLabelText(entry),
     version: entry.version,
@@ -66,8 +72,9 @@ export function retarget(
   target: StockTarget,
   balance: InventoryBalanceReadModel
 ): StockTarget {
+  const { updatedAt: _stale, ...rest } = target;
   return {
-    ...target,
+    ...rest,
     movingAverageCost: balance.movingAverageCost,
     quantity: balance.quantity,
     version: balance.version,
@@ -78,11 +85,57 @@ export function unitsText(quantity: number): string {
   return `${formatQuantity(quantity)} ${quantity === 1 ? "unidade" : "unidades"}`;
 }
 
-/** The cost line of a target: unavailable offline, unknown, or the average. */
-export function targetCostText(target: StockTarget): string {
-  return target.costUnavailable
-    ? "Disponível com conexão"
-    : costText(target.movingAverageCost);
+const movementDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "2-digit",
+});
+const movementYearFormatter = new Intl.DateTimeFormat("pt-BR", {
+  year: "numeric",
+});
+
+/** Day, month and time in the device's time zone; the year only when it is not the current one. */
+function movementInstantText(value: string, now: Date): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const parts = Object.fromEntries(
+    movementDateFormatter
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  );
+  const year = movementYearFormatter.format(date);
+  const showYear = year !== movementYearFormatter.format(now);
+  return `${parts.day}/${parts.month}${showYear ? `/${year}` : ""} ${parts.hour}:${parts.minute}`;
+}
+
+/**
+ * The line under the title of the movement panel: balance, average cost and the instant of the last movement.
+ * Without a connection the balance is the device's, and the cost and the instant are not on it.
+ */
+export function targetBalanceText(
+  target: StockTarget,
+  now: Date = new Date()
+): string {
+  if (target.costUnavailable) {
+    return `Saldo do aparelho: ${formatQuantity(target.quantity)} · custo médio só com conexão`;
+  }
+  const cost =
+    target.movingAverageCost === null
+      ? "custo médio desconhecido"
+      : `custo médio ${formatBrlAmount(target.movingAverageCost)}`;
+  const parts = [`Saldo atual: ${formatQuantity(target.quantity)}`, cost];
+  if (target.updatedAt === null) {
+    parts.push("sem movimentos");
+  } else if (target.updatedAt !== undefined) {
+    const moved = movementInstantText(target.updatedAt, now);
+    if (moved !== null) {
+      parts.push(`último movimento ${moved}`);
+    }
+  }
+  return parts.join(" · ");
 }
 
 /** Average cost for display; an unknown cost is never shown as zero. */

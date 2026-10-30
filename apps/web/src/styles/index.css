@@ -16,7 +16,7 @@
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
 @source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
-@source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
+@source "../inventory/{inventory-page,stock-action-strip,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
 @source "../catalog/{products-page,products-page-parts,product-dialog,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-file-picker,product-media-list,product-media-crop}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
@@ -38,7 +38,7 @@
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
    and of the connection, the acceptance, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice,action-strip}.tsx";
 /* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
 @source "../settings/app-version-line.tsx";
 @source "../offline/logout-dialog.tsx";
