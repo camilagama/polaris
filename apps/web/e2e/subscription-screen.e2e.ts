@@ -825,7 +825,7 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "billing_provider_unavailable" },
-      "O serviço de pagamento não respondeu. Nada foi cobrado.",
+      "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -867,6 +867,7 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
     seen.add((await alert.textContent()) ?? "");
     const reread = [
       "already_subscribed",
+      "billing_provider_unavailable",
       "checkout_pending_confirmation",
       "cycle_not_offered",
       "renewal_cancelled_until",

@@ -699,6 +699,9 @@ describe("waitsForProvider and abandonedCheckoutText", () => {
 });
 
 describe("checkoutRefusal", () => {
+  const CHECKOUT_UNCONFIRMED =
+    "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
+
   const cases: [string, string, boolean, boolean, string][] = [
     [
       "CONFLICT",
@@ -745,9 +748,9 @@ describe("checkoutRefusal", () => {
     [
       "SERVICE_UNAVAILABLE",
       "billing_provider_unavailable",
-      false,
       true,
-      "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
+      true,
+      CHECKOUT_UNCONFIRMED,
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -833,10 +836,55 @@ describe("checkoutRefusal", () => {
     );
   });
 
-  it("allows retry on SERVICE_UNAVAILABLE without a known reason", () => {
-    expect(
-      checkoutRefusal({ code: "SERVICE_UNAVAILABLE", data: {}, message: "" })
-    ).toMatchObject({ reread: false, retry: true });
+  it.each([
+    [
+      "a 503 with no reason",
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+    ],
+    ["a 503 with no body", { code: "SERVICE_UNAVAILABLE" }],
+    [
+      "the server_busy of the Worker",
+      rpcError("SERVICE_UNAVAILABLE", "server_busy"),
+    ],
+    [
+      "the cut of the platform (503)",
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ],
+    [
+      "the cut of the platform (500)",
+      { ...rpcError("INTERNAL_SERVER_ERROR", "platform_cut"), status: 500 },
+    ],
+  ])(
+    "does not know whether the page was opened on %s, and says nothing was charged only because creating it never charges",
+    (_, error) => {
+      expect(checkoutRefusal(error)).toEqual({
+        reread: true,
+        retry: true,
+        text: CHECKOUT_UNCONFIRMED,
+      });
+    }
+  );
+
+  it("never says the service did not answer, which blames the provider for what the screen does not know", () => {
+    for (const error of [
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+      rpcError("SERVICE_UNAVAILABLE", "billing_provider_unavailable"),
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ]) {
+      expect(checkoutRefusal(error).text).not.toContain("não respondeu");
+    }
+  });
+
+  it("asks to reread on an unknown reason, with no word about a charge", () => {
+    const refusal = checkoutRefusal(
+      rpcError("INTERNAL_SERVER_ERROR", "something_new")
+    );
+    expect(refusal).toEqual({
+      reread: true,
+      retry: false,
+      text: "Não foi possível começar a assinatura agora. Atualize e tente de novo.",
+    });
+    expect(refusal.text).not.toContain("cobrado");
   });
 
   it("asks to reread on an unknown CONFLICT", () => {

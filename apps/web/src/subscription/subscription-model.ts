@@ -5,6 +5,7 @@ import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   isConnectionFailure,
+  isPlatformCut,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -571,6 +572,15 @@ export interface Refusal {
 const CONNECTION_TEXT =
   "A conexão falhou antes da resposta. Nada foi cobrado. Confira a conexão e tente de novo.";
 
+/**
+ * `billing_provider_unavailable`, the Worker's 503 with no reason and the cut of the platform may come after the
+ * provider created the checkout, and the screen cannot tell. Creating it never charges (the card is typed on the
+ * provider's page; the Pix is authorized in the bank), so "Nada foi cobrado" is true; what is unknown is whether
+ * the page exists, and trying again discards the one left.
+ */
+const CHECKOUT_UNCONFIRMED_TEXT =
+  "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
+
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {
   if (isConnectionFailure(error)) {
@@ -641,9 +651,9 @@ export function checkoutRefusal(error: unknown): Refusal {
       };
     case "billing_provider_unavailable":
       return {
-        reread: false,
+        reread: true,
         retry: true,
-        text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
+        text: CHECKOUT_UNCONFIRMED_TEXT,
       };
     case "billing_not_configured":
     case "billing_self_service_off":
@@ -673,12 +683,8 @@ export function checkoutRefusal(error: unknown): Refusal {
     default:
       break;
   }
-  if (code === "SERVICE_UNAVAILABLE") {
-    return {
-      reread: false,
-      retry: true,
-      text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
-    };
+  if (code === "SERVICE_UNAVAILABLE" || isPlatformCut(error)) {
+    return { reread: true, retry: true, text: CHECKOUT_UNCONFIRMED_TEXT };
   }
   return {
     reread: true,
