@@ -956,7 +956,7 @@ const costReasonOutcomes = new Map<string, ReasonOutcome>([
     {
       discardAttempt: true,
       message:
-        "O saldo mudou depois que você abriu o painel (uma venda, um recebimento ou outro movimento). Atualizamos o saldo: revise e confirme o custo de novo.",
+        "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo.",
       refreshBalance: true,
     },
   ],
