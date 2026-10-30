@@ -1,5 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { CHANGE_FAULT_UNKNOWN } from "../lib/rpc-error";
 import {
   canCancelRenewal,
   cancelDialogText,
@@ -266,6 +267,29 @@ describe("commandRefusal: each reason its own text (AS-17)", () => {
       ).text
     ).toContain("página de pagamento");
   });
+
+  it.each([
+    ["cancel", "Nada foi cancelado"],
+    ["overdue", "Nada foi cobrado"],
+    ["refund", "Nada foi cobrado a mais"],
+  ] as const)(
+    "%s: a 503 with no reason or server_busy may come after the effect, so it does not say nothing was done",
+    (command, claim) => {
+      for (const error of [
+        { code: "SERVICE_UNAVAILABLE", status: 503 },
+        { code: "SERVICE_UNAVAILABLE", data: {}, status: 503 },
+        RPC_ERROR("SERVICE_UNAVAILABLE", "server_busy"),
+      ]) {
+        const refusal = commandRefusal(command, error);
+        expect(refusal).toEqual({
+          reread: true,
+          retry: false,
+          text: CHANGE_FAULT_UNKNOWN,
+        });
+        expect(refusal.text).not.toContain(claim);
+      }
+    }
+  );
 
   it.each([
     ["command_in_progress", "Já tem um pedido em andamento"],

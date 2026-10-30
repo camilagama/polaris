@@ -1,6 +1,7 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { formatBrlAmount } from "../lib/format";
 import {
+  CHANGE_FAULT_UNKNOWN,
   isConnectionFailure,
   rpcErrorCode,
   rpcErrorReason,
@@ -357,7 +358,9 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
     };
   }
   if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
-    return { reread: false, retry: true, text: PROVIDER_TEXT[command] };
+    // only `billing_provider_unavailable` says the provider failed before any effect; the Worker's own 503
+    // (`server_busy`, no reason) may come after the command took effect, so the plan is read before a new try
+    return { reread: true, retry: false, text: CHANGE_FAULT_UNKNOWN };
   }
   return {
     reread: true,

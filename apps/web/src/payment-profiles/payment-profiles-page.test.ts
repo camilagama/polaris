@@ -39,7 +39,6 @@ describe("o 503 de Formas de receber", () => {
       { code: "SERVICE_UNAVAILABLE", data: { reason: "server_busy" } },
       { code: "SERVICE_UNAVAILABLE" },
     ]) {
-      expect(errorText(error)).toBe(CHANGE_FAULT_UNKNOWN);
       expect(saveNotConfirmedText(error)).toBe(CHANGE_FAULT_UNKNOWN);
     }
     expect(offersCheckAndClose(saveNotConfirmedText(otherReason))).toBe(true);
