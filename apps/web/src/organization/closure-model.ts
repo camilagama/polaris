@@ -5,6 +5,7 @@ import {
 import { CLOSURE_DELETABLE_AFTER_DAYS } from "@polaris/domain/organization/closure-deadlines";
 import {
   isConnectionFailure,
+  isDefiniteRpcRejection,
   isPlatformCut,
   legalAcceptanceMessage,
   rpcErrorCode,
@@ -191,5 +192,7 @@ export function closeRefusal(error: unknown): CloseRefusal {
   if (code === "UNAUTHORIZED") {
     return { panelLink: false, text: CLOSE_SESSION_TEXT };
   }
-  return { panelLink: false, text: CLOSE_FAILED_TEXT };
+  return isDefiniteRpcRejection(error)
+    ? { panelLink: false, text: CLOSE_FAILED_TEXT }
+    : { panelLink: true, text: CLOSE_UNCONFIRMED_TEXT };
 }

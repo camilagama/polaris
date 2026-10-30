@@ -12,6 +12,7 @@ import {
 import { listRefusal, requestRefusal } from "../data-export/data-export-model";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { closedStorePath, closedStoreQuery } from "../lib/closed-store-path";
+import { legalAcceptancePath } from "../lib/legal-acceptance";
 import { orpcClient } from "../lib/orpc";
 import { signInPath } from "../lib/sign-in-path";
 import { LogoutControl } from "../offline/runtime/logout-control";
@@ -55,6 +56,7 @@ type Load =
   | { status: "loading" }
   | { status: "error" }
   | { status: "session" }
+  | { status: "acceptance" }
   | { status: "loaded"; stores: readonly ClosedStore[] };
 
 async function readStores(storeId: string | null): Promise<ClosedStore[]> {
@@ -102,16 +104,21 @@ function useClosedStores(storeId: string | null) {
   return { load, reload };
 }
 
-function useNowUntil(at: number): number {
+function useNowUntil(first: number, second: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const wait = at - Date.now();
-    if (wait <= 0 || wait > MAX_TIMER_MS) {
+    const current = Date.now();
+    const next = Math.min(
+      ...[first, second].filter((at) => at > current),
+      Number.POSITIVE_INFINITY
+    );
+    const wait = next - current;
+    if (wait > MAX_TIMER_MS) {
       return;
     }
     const timer = window.setTimeout(() => setNow(Date.now()), wait);
     return () => window.clearTimeout(timer);
-  }, [at]);
+  }, [first, second, now]);
   return Math.max(now, Date.now());
 }
 
@@ -211,9 +218,11 @@ function StatusCard({
 }
 
 function CopySection({
+  now,
   online,
   store,
 }: {
+  now: number;
   online: boolean;
   store: ClosedStore;
 }) {
@@ -236,9 +245,10 @@ function CopySection({
       requestRefusal: (error) =>
         closedRequestRefusal(error, store) ?? requestRefusal(error),
     }),
-    [store]
+    // an Atualizar of the panel brings a new object with the same store: the list is not read again for it
+    [store.id, store.deletionDate, store.exportOpenUntil, store.timezone]
   );
-  const open = copyRequestOpen(store, Date.now());
+  const open = copyRequestOpen(store, now);
   return (
     <section
       aria-labelledby={`${COPY_SECTION_ID}-title`}
@@ -270,7 +280,10 @@ function StorePanel({
   onRefresh: () => void;
   store: ClosedStore;
 }) {
-  const now = useNowUntil(Date.parse(store.recoverUntil));
+  const now = useNowUntil(
+    Date.parse(store.recoverUntil),
+    Date.parse(store.exportOpenUntil)
+  );
   return (
     <>
       <h1 className="text-balance font-semibold text-2xl/8 tracking-tight">
@@ -290,7 +303,7 @@ function StorePanel({
         store={store}
       />
       {store.phase === "purged" ? null : (
-        <CopySection online={online} store={store} />
+        <CopySection now={now} online={online} store={store} />
       )}
     </>
   );
@@ -328,7 +341,11 @@ function PanelBody({
   online: boolean;
   onRefresh: () => void;
 }) {
-  if (load.status === "loading" || load.status === "session") {
+  if (
+    load.status === "loading" ||
+    load.status === "session" ||
+    load.status === "acceptance"
+  ) {
     return (
       <p aria-busy="true" className="text-muted-foreground" role="status">
         {PANEL_LOADING_TEXT}
@@ -406,13 +423,12 @@ export function ClosedStorePage() {
   }, [justClosed, storeId]);
 
   useEffect(() => {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
     if (load.status === "session") {
-      window.location.assign(
-        signInPath({
-          reason: "sessao",
-          returnTo: `${window.location.pathname}${window.location.search}`,
-        })
-      );
+      window.location.assign(signInPath({ reason: "sessao", returnTo }));
+    }
+    if (load.status === "acceptance") {
+      window.location.assign(legalAcceptancePath(returnTo));
     }
   }, [load.status]);
 

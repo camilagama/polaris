@@ -8,10 +8,26 @@ import type { QueueCounts, QueueState } from "./closure-model";
 
 const NONE: QueueCounts = { pending: 0, rejected: 0, sending: 0 };
 
-async function readQueueOnDisk(
+/** Whether this browser keeps any queue at all, whoever's store it is. */
+async function anyOutboxOnDisk(): Promise<boolean> {
+  const databases = await indexedDB.databases();
+  return databases.some(({ name }) => name?.startsWith("polaris-outbox-"));
+}
+
+/**
+ * No workspace at all is also what the runtime gives when it could not name the signed-in person: with a queue on
+ * the disk, that is a queue nobody read, never an empty one.
+ */
+export async function readQueueOnDisk(
   workspaces: readonly LogoutWorkspace[],
-  organizationId: string
-): Promise<QueueCounts> {
+  organizationId: string,
+  outboxOnDisk: () => Promise<boolean> = anyOutboxOnDisk
+): Promise<QueueState> {
+  if (workspaces.length === 0) {
+    return (await outboxOnDisk())
+      ? { kind: "unreadable" }
+      : { counts: NONE, kind: "counted" };
+  }
   const counts = { ...NONE };
   try {
     for (const workspace of workspaces) {
@@ -27,7 +43,7 @@ async function readQueueOnDisk(
   } finally {
     await Promise.all(workspaces.map((workspace) => workspace.release?.()));
   }
-  return counts;
+  return { counts, kind: "counted" };
 }
 
 export function useDeviceQueue(
@@ -55,9 +71,9 @@ export function useDeviceQueue(
     runtime
       .logoutWorkspaces()
       .then((workspaces) => readQueueOnDisk(workspaces, organizationId))
-      .then((counts) => {
+      .then((state) => {
         if (current) {
-          setInspected({ counts, kind: "counted" });
+          setInspected(state);
         }
       })
       .catch(() => {

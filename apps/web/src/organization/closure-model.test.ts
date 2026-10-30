@@ -196,6 +196,8 @@ describe("what a refused or unanswered closure says", () => {
       [error("FORBIDDEN", 403), CLOSE_FORBIDDEN_TEXT, false],
       [error("UNAUTHORIZED", 401), CLOSE_SESSION_TEXT, false],
       [error("BAD_REQUEST", 400), CLOSE_FAILED_TEXT, false],
+      [new Error("unexpected"), CLOSE_UNCONFIRMED_TEXT, true],
+      [error("PRECONDITION_FAILED", 418), CLOSE_UNCONFIRMED_TEXT, true],
     ];
     for (const [failure, text, panelLink] of cases) {
       expect(closeRefusal(failure)).toEqual({ panelLink, text });

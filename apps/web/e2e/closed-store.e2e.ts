@@ -262,7 +262,7 @@ test.describe("cada fase com a sua frase, as três datas e a renovação (AC-5, 
       "Não conseguimos confirmar agora a situação da renovação do plano."
     );
     await expect(dates(page)).toContainText(
-      "18 de janeiro de 2027 · prazo encerrado"
+      "18 de janeiro de 2027 · já podem ser apagados"
     );
     await expect(askButton(page)).toHaveCount(0);
     await expect(copies(page)).toBeVisible();

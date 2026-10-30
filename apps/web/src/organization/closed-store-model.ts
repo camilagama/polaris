@@ -3,7 +3,11 @@ import type {
   DataExportItem,
   RequestRefusal,
 } from "../data-export/data-export-model";
-import { rpcErrorCode, rpcErrorReason } from "../lib/rpc-error";
+import {
+  isLegalAcceptanceRefusal,
+  rpcErrorCode,
+  rpcErrorReason,
+} from "../lib/rpc-error";
 
 export type ClosurePhase =
   | "closing"
@@ -156,7 +160,7 @@ export function panelDates(store: ClosedStore, now: number): PanelDate[] {
       value: `${dateOf(store.recoverUntil, tz)}, às ${formatTime(store.recoverUntil, tz)}`,
     },
     {
-      left: deletionLeft ?? "prazo encerrado",
+      left: deletionLeft ?? "já podem ser apagados",
       term: "Dados podem ser apagados a partir de",
       value: formatCalendarDate(store.deletionDate),
     },
@@ -248,6 +252,11 @@ export function closedRequestRefusal(
   return null;
 }
 
-export function panelLoadFailure(error: unknown): "session" | "error" {
+export function panelLoadFailure(
+  error: unknown
+): "session" | "acceptance" | "error" {
+  if (isLegalAcceptanceRefusal(error)) {
+    return "acceptance";
+  }
   return rpcErrorCode(error) === "UNAUTHORIZED" ? "session" : "error";
 }

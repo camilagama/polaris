@@ -141,7 +141,9 @@ describe("the three dates and the days left (AC-5)", () => {
     expect(dates[2]?.left).toBe("falta 1 dia");
     const lastDay = Date.parse("2026-11-19T11:00:00.000Z");
     expect(panelDates(at("closing"), lastDay)[1]?.left).toBe("termina hoje");
-    expect(panelDates(at("deletable"), AT_D)[2]?.left).toBe("prazo encerrado");
+    expect(panelDates(at("deletable"), AT_D)[2]?.left).toBe(
+      "já podem ser apagados"
+    );
   });
 
   it("writes the dates of another time zone in its own calendar", () => {
@@ -256,5 +258,15 @@ describe("the undo and the moment after the closure", () => {
     );
     expect(panelLoadFailure(new TypeError("Failed to fetch"))).toBe("error");
     expect(panelLoadFailure({ code: "FORBIDDEN", status: 403 })).toBe("error");
+    expect(
+      panelLoadFailure({
+        code: "FORBIDDEN",
+        data: {
+          pending: [{ document: "terms", version: 1 }],
+          reason: "legal_acceptance_required",
+        },
+        status: 403,
+      })
+    ).toBe("acceptance");
   });
 });
