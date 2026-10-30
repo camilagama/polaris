@@ -627,6 +627,25 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
   });
 
+  test("recusa por entrada de mais de 15 minutos: o texto próprio, sem releitura nem segunda chamada", async ({
+    page,
+  }) => {
+    const calls = await openPanel(page, {
+      recover: (route) =>
+        route.fulfill(refusal("FORBIDDEN", 403, "fresh_session_required")),
+    });
+    await undoButton(page).click();
+    await confirmUndo(page).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Por segurança, para desfazer o encerramento é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e desfaça o encerramento. Nada foi alterado."
+    );
+    await expect(page.getByRole("main")).not.toContainText(REOPENED);
+    await expect(page.getByRole("main")).not.toContainText(TECHNICAL);
+    await page.waitForTimeout(1500);
+    expect(calls.recovers).toHaveLength(1);
+    expect(calls.statuses).toBe(1);
+  });
+
   for (const [label, answer] of [
     ["falha de rede", (route: Route) => route.abort("internetdisconnected")],
     [

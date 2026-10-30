@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FRESH_SESSION_TEXT } from "../data-export/data-export-model";
 import {
   type ClosedStore,
   type ClosurePhase,
@@ -9,7 +10,6 @@ import {
   copyRequestOpen,
   DEVICE_CLOSED_LINK,
   deviceClosedText,
-  FRESH_SESSION_TEXT,
   justClosedText,
   notRecoverableOutcome,
   panelDates,
@@ -22,6 +22,7 @@ import {
   UNDO_ALREADY_REOPENED_TEXT,
   UNDO_CONFIRM,
   UNDO_EFFECTS_TEXT,
+  UNDO_FRESH_SESSION_TEXT,
   UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
   UNDO_OTHER_ACTIVE_TEXT,
   UNDO_REFUSED_TEXT,
@@ -385,6 +386,19 @@ describe("the answer of an undo (AC-8, AC-10)", () => {
         text: UNDO_REFUSED_TEXT,
       });
     }
+  });
+
+  it("an entry older than 15 minutes says to sign in again and that nothing was changed", () => {
+    expect(
+      undoFailure(refusal("FORBIDDEN", "fresh_session_required", 403))
+    ).toEqual({ kind: "said", text: UNDO_FRESH_SESSION_TEXT });
+    expect(UNDO_FRESH_SESSION_TEXT).toBe(
+      "Por segurança, para desfazer o encerramento é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e desfaça o encerramento. Nada foi alterado."
+    );
+    expect(undoFailure(refusal("FORBIDDEN", "something_else", 403))).toEqual({
+      kind: "said",
+      text: UNDO_REFUSED_TEXT,
+    });
   });
 
   it("sends a missing session or acceptance to its own screen", () => {

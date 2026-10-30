@@ -41,6 +41,8 @@ export const CLOSE_ALREADY_CLOSED_TEXT =
   "Esta loja já foi encerrada. Veja a loja encerrada.";
 export const CLOSE_FORBIDDEN_TEXT =
   "Só o dono da loja pode encerrá-la. Nada foi encerrado.";
+export const CLOSE_FRESH_SESSION_TEXT =
+  "Por segurança, para encerrar a loja é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e encerre a loja. Nada foi encerrado.";
 export const CLOSE_SESSION_TEXT =
   "Sua sessão terminou. Entre de novo para encerrar a loja. Nada foi encerrado.";
 export const CLOSE_UNCONFIRMED_TEXT =
@@ -180,6 +182,9 @@ export function closeRefusal(error: unknown): CloseRefusal {
   }
   if (reason === "organization_closed") {
     return { panelLink: true, text: CLOSE_ALREADY_CLOSED_TEXT };
+  }
+  if (reason === "fresh_session_required") {
+    return { panelLink: false, text: CLOSE_FRESH_SESSION_TEXT };
   }
   const unaccepted = legalAcceptanceMessage(error);
   if (unaccepted !== undefined) {

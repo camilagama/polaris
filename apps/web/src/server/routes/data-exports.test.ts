@@ -91,6 +91,23 @@ describe("the data export download", () => {
     );
   });
 
+  it("downloads with an old session: the recent sign-in is asked only to request the copy", async () => {
+    const asked: unknown[] = [];
+    const t = build({
+      tenant: (request) => {
+        asked.push(request.requireFreshSession);
+        return request.operation({} as never, {
+          capability: request.capability,
+          organizationId: request.requestedOrganizationId,
+          role: "owner",
+          userId: "user_1",
+        });
+      },
+    });
+    expect((await t.get(good)).status).toBe(200);
+    expect(asked).toEqual([undefined]);
+  });
+
   it("answers 404 for a malformed id or file number without opening a transaction", async () => {
     const t = build({});
     for (const path of [

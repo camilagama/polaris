@@ -209,6 +209,9 @@ function serverFault(error: unknown): boolean {
   return typeof status === "number" && status >= 500;
 }
 
+export const FRESH_SESSION_TEXT =
+  "Por segurança, para pedir a cópia é preciso ter entrado no Polaris há menos de 15 minutos. Saia, entre de novo e peça a cópia.";
+
 export interface RequestRefusal {
   /** Asking again now would only be refused the same way: the button stays off until the list is read again. */
   repeatsNow: boolean;
@@ -229,6 +232,9 @@ export function requestRefusal(error: unknown): RequestRefusal {
     return { repeatsNow: false, text: REQUEST_UNCONFIRMED_TEXT };
   }
   const reason = rpcErrorReason(error);
+  if (reason === "fresh_session_required") {
+    return { repeatsNow: false, text: FRESH_SESSION_TEXT };
+  }
   if (reason === "export_limit_reached") {
     return { repeatsNow: true, text: LIMIT_REACHED_TEXT };
   }

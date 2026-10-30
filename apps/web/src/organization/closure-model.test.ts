@@ -5,6 +5,7 @@ import {
   CLOSE_ALREADY_CLOSED_TEXT,
   CLOSE_FAILED_TEXT,
   CLOSE_FORBIDDEN_TEXT,
+  CLOSE_FRESH_SESSION_TEXT,
   CLOSE_MISMATCH_TEXT,
   CLOSE_NOT_ACTIVE_TEXT,
   CLOSE_SESSION_TEXT,
@@ -194,6 +195,12 @@ describe("what a refused or unanswered closure says", () => {
         true,
       ],
       [error("FORBIDDEN", 403), CLOSE_FORBIDDEN_TEXT, false],
+      [
+        error("FORBIDDEN", 403, "fresh_session_required"),
+        CLOSE_FRESH_SESSION_TEXT,
+        false,
+      ],
+      [error("FORBIDDEN", 403, "something_else"), CLOSE_FORBIDDEN_TEXT, false],
       [error("UNAUTHORIZED", 401), CLOSE_SESSION_TEXT, false],
       [error("BAD_REQUEST", 400), CLOSE_FAILED_TEXT, false],
       [new Error("unexpected"), CLOSE_UNCONFIRMED_TEXT, true],
@@ -203,6 +210,13 @@ describe("what a refused or unanswered closure says", () => {
       expect(closeRefusal(failure)).toEqual({ panelLink, text });
       expect(text).not.toMatch(TECHNICAL);
     }
+  });
+
+  it("tells the owner with an old login to sign in again, not that only the owner can close", () => {
+    expect(CLOSE_FRESH_SESSION_TEXT).toBe(
+      "Por segurança, para encerrar a loja é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e encerre a loja. Nada foi encerrado."
+    );
+    expect(CLOSE_FRESH_SESSION_TEXT).not.toContain("dono");
   });
 
   it("says the missing legal acceptance with the common text, not as no permission", () => {
