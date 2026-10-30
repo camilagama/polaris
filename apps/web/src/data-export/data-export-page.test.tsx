@@ -69,6 +69,7 @@ describe("Seus dados without organization:export (AC-1)", () => {
     );
     expect(html).not.toMatch(CONTROL);
     expect(html).not.toContain("Pedir cópia dos dados");
+    expect(html).not.toContain("Encerrar a loja");
   });
 });
 
@@ -92,6 +93,14 @@ describe("Seus dados for the owner", () => {
     expect(html).toContain("Pedir cópia dos dados");
     expect(html).toContain("Suas cópias");
     expect(html).toContain("Atualizar");
+  });
+
+  it("ends with Encerrar a loja, the closure's only way in (ADR 0081)", () => {
+    const html = pageOf("owner");
+    expect(html).toContain('aria-labelledby="close-store-title"');
+    expect(html.lastIndexOf("Encerrar a loja")).toBeGreaterThan(
+      html.indexOf("Suas cópias")
+    );
   });
 });
 

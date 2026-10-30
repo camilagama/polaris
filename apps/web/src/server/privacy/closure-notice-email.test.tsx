@@ -5,6 +5,7 @@ import {
   CLOSURE_NOTICE_MILESTONES,
 } from "@polaris/domain/organization/closure-deadlines";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { copyClosedText } from "../../organization/closed-store-model";
 import {
   closureNoticeContent,
   closureNoticeDeletionDate,
@@ -395,11 +396,34 @@ describe("the first day of deletion of a notice", () => {
   });
 });
 
+describe("the panel and the e-mails after D", () => {
+  it("say the same sentence of the end of the copy, with the same date and time (AC-7)", () => {
+    const content = closureNoticeContent(
+      notice({ dueAt: base.deletableFrom, milestone: "deletion_day" })
+    );
+    expect(content.paragraphs).toContain(
+      copyClosedText({
+        canRecover: false,
+        deletableFrom: base.deletableFrom.toISOString(),
+        deletionDate: base.deletionDate,
+        exportOpenUntil: base.deletableFrom.toISOString(),
+        id: "0199c2d0-0000-7000-8000-00000000a001",
+        name: STORE,
+        phase: "deletable",
+        recoverUntil: base.recoverUntil.toISOString(),
+        renewal: null,
+        requestedAt: base.requestedAt.toISOString(),
+        timezone: base.timeZone,
+      })
+    );
+  });
+});
+
 describe("the panel link", () => {
-  it("is the origin only, with no path, query or token", () => {
+  it("is the panel of the closed store on the origin, with no store, query or token", () => {
     expect(
       closureNoticePanelUrl("https://app.example.invalid/some/path?token=x")
-    ).toBe("https://app.example.invalid/");
+    ).toBe("https://app.example.invalid/loja-encerrada");
   });
 });
 
@@ -409,8 +433,12 @@ describe("the rendered e-mail", () => {
       notice(),
       "https://app.example.invalid/some/path?token=x"
     );
-    expect(message.html).toContain("https://app.example.invalid/");
-    expect(message.text).toContain("https://app.example.invalid/");
+    expect(message.html).toContain(
+      "https://app.example.invalid/loja-encerrada"
+    );
+    expect(message.text).toContain(
+      "https://app.example.invalid/loja-encerrada"
+    );
     expect(message.html).not.toContain("token=x");
     expect(message.text).not.toContain("token=x");
     expect(message.subject).toContain(STORE);

@@ -1,6 +1,7 @@
 import { Suspense, useEffect } from "react";
 import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import { resolveLegalRoute } from "../legal/legal-routes";
+import { isClosedStorePath } from "../lib/closed-store-path";
 import { OrganizationProvider } from "../lib/current-organization";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
@@ -87,6 +88,12 @@ const LegalApp = lazyScreen<{ document: LegalDocumentId }>(() =>
 const AcceptancePage: Page = lazyScreen(() =>
   import("../legal/acceptance/acceptance-page").then((module) => ({
     default: module.AcceptancePage,
+  }))
+);
+
+const ClosedStorePage: Page = lazyScreen(() =>
+  import("../organization/closed-store-page").then((module) => ({
+    default: module.ClosedStorePage,
   }))
 );
 
@@ -187,6 +194,21 @@ function AcceptanceApp() {
   );
 }
 
+/** The panel of a closed store stands apart too (ADR 0081): the store no longer opens as a tenant. */
+function ClosedStoreApp() {
+  return (
+    <ErrorBoundary
+      fullPage
+      message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+      onRetry={ClosedStorePage.reset}
+    >
+      <Suspense fallback={<PageLoading fullPage />}>
+        <ClosedStorePage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
 function StoreApp() {
   // the tab is in the address: a change of tab is a change of route for the shell (the chip, the connection notice)
   const { pathname, search } = useAddress();
@@ -231,6 +253,9 @@ export function App() {
   }
   if (isLegalAcceptancePath(window.location.pathname)) {
     return <AcceptanceApp />;
+  }
+  if (isClosedStorePath(window.location.pathname)) {
+    return <ClosedStoreApp />;
   }
   // a card checkout opened before the return moved to the Assinatura comes back to the root: the same return there
   const checkoutReturn = legacyCheckoutReturnPath(
