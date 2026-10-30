@@ -34,6 +34,24 @@ if (!(adminUrl && runtimeUrl)) {
     "POLARIS_RLS_ADMIN_DATABASE_URL and POLARIS_RLS_RUNTIME_DATABASE_URL are required."
   );
 }
+// the gate checks these too, but the fixture is dropped and created here before the gate starts
+if (process.env.POLARIS_RLS_CONFIRM_DISPOSABLE !== "polaris-pr11-rls-gate") {
+  throw new Error(
+    "Set POLARIS_RLS_CONFIRM_DISPOSABLE=polaris-pr11-rls-gate only for the disposable database."
+  );
+}
+const expectedHostname = process.env.POLARIS_RLS_EXPECTED_HOSTNAME;
+const gateDatabase = process.env.POLARIS_GATE_DATABASE ?? "neondb";
+const parsedAdminUrl = new URL(adminUrl);
+if (
+  !expectedHostname ||
+  parsedAdminUrl.hostname !== expectedHostname ||
+  decodeURIComponent(parsedAdminUrl.pathname.slice(1)) !== gateDatabase
+) {
+  throw new Error(
+    "The owner URL must point at POLARIS_RLS_EXPECTED_HOSTNAME and POLARIS_GATE_DATABASE."
+  );
+}
 for (const candidate of [adminUrl, runtimeUrl]) {
   if (!isLocalGateHost(assertAllowedGateUrl(candidate).hostname)) {
     throw new Error(

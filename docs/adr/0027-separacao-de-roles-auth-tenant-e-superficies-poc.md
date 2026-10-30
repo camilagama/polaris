@@ -44,4 +44,3 @@ A parte de banco e configuração da decisão "Superfícies PoC saem do build de
 - O `verify:staging-isolation` recusa `DB_POC_ENABLED` e `DB_RLS_POC_ENABLED` em qualquer bloco do `wrangler.jsonc` (nível de cima, staging, produção) e no `wrangler.json` da build, com qualquer valor.
 
 Continua fora do repositório e do código: remover os Workers e o Hyperdrive de PoC no Cloudflare e rotacionar a credencial owner do PR11 (checklist de go-live dos [runbooks](../runbooks/README.md#superfícies-e-credenciais-de-prova)). O laboratório offline é outra etapa.
-

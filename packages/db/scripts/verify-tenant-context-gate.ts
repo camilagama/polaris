@@ -17,7 +17,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
-import { createRlsGateFixture, dropRlsGateFixture } from "./rls-gate-fixture";
+import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
@@ -493,7 +493,7 @@ async function main() {
       can_update: false,
     });
     pocFixtureCreated = true;
-    await createRlsGateFixture(adminPool);
+    await recreateRlsGateFixture(adminPool);
     const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
       await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole);
     adminRoleName = resolvedAdminRoleName;

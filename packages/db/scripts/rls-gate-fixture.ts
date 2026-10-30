@@ -2,10 +2,9 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 
 /**
- * The table the RLS proof reads and writes, `rls_poc_operations`, lives only for the gate that uses it: the app's
- * database no longer has it (migration 0108). The gate creates it from migration 0001, the same statements the Neon
- * bootstrap runs on an empty project (table, ENABLE and FORCE RLS, the policy and the runtime grants), and drops it
- * in its `finally`. Run it only on a database the gate has already confirmed is disposable.
+ * `rls_poc_operations` lives only while the gate that proves RLS on it runs: the app's database does not have it.
+ * The statements are migration 0001's, the ones the Neon bootstrap runs on an empty project. Only for a database the
+ * gate has already confirmed is disposable.
  */
 
 const fixtureMigration = new URL(
@@ -26,8 +25,7 @@ const rlsGateSeeds = [
   },
 ] as const;
 
-/** Drops a fixture left by an interrupted run and creates it again, empty. */
-export async function createRlsGateFixture(pool: Pool): Promise<void> {
+export async function recreateRlsGateFixture(pool: Pool): Promise<void> {
   const statements = await readFile(fixtureMigration, "utf8");
   const client = await pool.connect();
   try {
@@ -43,7 +41,6 @@ export async function createRlsGateFixture(pool: Pool): Promise<void> {
   }
 }
 
-/** The two rows the RLS gate reads, each written under its own organization so FORCE RLS lets it in. */
 export async function seedRlsGateFixture(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
@@ -68,17 +65,29 @@ export async function seedRlsGateFixture(pool: Pool): Promise<void> {
 }
 
 export async function dropRlsGateFixture(pool: Pool): Promise<void> {
-  await pool.query("DROP TABLE IF EXISTS public.rls_poc_operations");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // a connection left inside a transaction on the table would hold the drop until the runner's time limit
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query("DROP TABLE IF EXISTS public.rls_poc_operations");
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-/** For a gate outside this package: the seeded fixture lives exactly while `run` runs, on the owner URL given. */
+/** The seeded fixture lives exactly while `run` runs, on the owner URL given. */
 export async function withSeededRlsGateFixture<T>(
   adminUrl: string,
   run: () => Promise<T>
 ): Promise<T> {
   const pool = new Pool({ connectionString: adminUrl, max: 1 });
   try {
-    await createRlsGateFixture(pool);
+    await recreateRlsGateFixture(pool);
     await seedRlsGateFixture(pool);
     return await run();
   } finally {
