@@ -255,15 +255,23 @@ export function SalePage() {
     },
     [organizationId]
   );
-  const attemptOutcomeUnknown = useCallback(
+  const readAttemptState = useCallback(
     () =>
       readSaleAttemptState(
         sessionStorageOrNull(),
         organizationId,
         new Date(),
         draftStartedAt.current
-      )?.outcomeUnknown === true,
+      ),
     [organizationId]
+  );
+  const attemptOutcomeUnknown = useCallback(
+    () => readAttemptState()?.outcomeUnknown === true,
+    [readAttemptState]
+  );
+  const attemptUnsettled = useCallback(
+    () => readAttemptState()?.unsettled === true,
+    [readAttemptState]
   );
   const inFlightRef = useRef<boolean>(false);
   const confirmedRef = useRef<HTMLElement | null>(null);
@@ -655,6 +663,7 @@ export function SalePage() {
         return;
       }
       const prepared = prepareConfirmation({
+        attemptUnsettled: attemptUnsettled(),
         body,
         createId: newId,
         now: submittedAt,
@@ -677,6 +686,7 @@ export function SalePage() {
     },
     [
       activeProfiles,
+      attemptUnsettled,
       catalog.stock,
       form,
       organizationId,
@@ -712,6 +722,7 @@ export function SalePage() {
       return;
     }
     const prepared = prepareConfirmation({
+      attemptUnsettled: attemptUnsettled(),
       body,
       createId: newId,
       now: clickedAt,
@@ -755,6 +766,7 @@ export function SalePage() {
   }, [
     activeProfiles,
     applyOutcome,
+    attemptUnsettled,
     catalog.stock,
     form,
     organizationId,

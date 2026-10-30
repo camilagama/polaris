@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Locator, Page, Route, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { ORGANIZATION, serveHome } from "./ui-home-states";
 import { CONFIRMED_SALE } from "./ui-sale-states";
@@ -14,6 +14,7 @@ import { WORKER_MARK } from "./worker-mark";
  * in `update.e2e.ts`.
  */
 const SHIRT_OPTION = /Camiseta do teste/;
+const PROFILE_OPTION = /Maquininha do balcão/;
 const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
 const ATTEMPT_KEY = `polaris.sale.attempt.v1:${ORGANIZATION.id}`;
 const CONFIRMED_REGION = /Venda confirmada/;
@@ -34,25 +35,56 @@ const SHIRT = {
   version: 1,
 };
 
+const PROFILE = {
+  archivedAt: null,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  id: "0199c2d0-0000-7000-8000-0000000000c1",
+  name: "Maquininha do balcão",
+  organizationId: ORGANIZATION.id,
+  rules: [
+    {
+      anticipationFee: {
+        fixedAmount: null,
+        mode: "percentage",
+        percentage: "1.500000",
+      },
+      expectedSettlementDays: 30,
+      id: "0199c2d0-0000-7000-8000-0000000000c2",
+      installmentPlan: "merchant",
+      installments: 3,
+      method: "credit_card",
+      processingFee: {
+        fixedAmount: "0.50",
+        mode: "fixed_and_percentage",
+        percentage: "2.990000",
+      },
+    },
+  ],
+  status: "active",
+  updatedAt: "2026-10-01T12:00:00.000Z",
+  version: 3,
+};
+
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
   headers: { ...WORKER_MARK },
 });
 
-/** The catalog the server answers now: a test takes the shirt out of it, or changes its price. */
+/** The catalog the server answers now: a test takes the shirt out of it, changes its price, or takes the profile away. */
 interface Catalog {
   entries: (typeof SHIRT)[];
+  profiles: (typeof PROFILE)[];
 }
 
 async function serveSale(page: Page): Promise<Catalog> {
-  const catalog: Catalog = { entries: [SHIRT] };
+  const catalog: Catalog = { entries: [SHIRT], profiles: [] };
   await serveHome(page, { signedIn: true });
   await page.route("**/rpc/inventory/listBalances", (route: Route) =>
     route.fulfill(rpc({ entries: catalog.entries, nextCursor: null }))
   );
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
-    route.fulfill(rpc({ profiles: [] }))
+    route.fulfill(rpc({ profiles: catalog.profiles }))
   );
   return catalog;
 }
@@ -86,6 +118,32 @@ async function buildCart(page: Page) {
   await page
     .getByRole("option", { exact: true, name: "Sem perfil de pagamento" })
     .click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+}
+
+/** Two shirts on credit in 3 installments with the profile: a cart whose body carries the profile and its version. */
+async function buildCreditCart(page: Page) {
+  const item = itemOne(page);
+  await item.getByLabel("Produto ou variante").fill("cam");
+  await item
+    .getByRole("list", { name: "Variantes encontradas" })
+    .getByRole("button", { name: SHIRT_OPTION })
+    .click();
+  await item.getByRole("button", { name: "Mais uma unidade" }).click();
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Crédito" })
+    .check();
+  await page.getByLabel("Número de parcelas").fill("3");
+  await page
+    .getByRole("combobox", { exact: true, name: "Quem parcela" })
+    .click();
+  await page.getByRole("option", { exact: true, name: "Lojista (eu)" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  await page
+    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    .click();
+  await page.getByRole("option", { name: PROFILE_OPTION }).click();
   await page.getByRole("listbox").waitFor({ state: "detached" });
 }
 
@@ -323,6 +381,67 @@ test("AC-6: resposta perdida, preço mudado e recarga: o carrinho vai como foi, 
   ).toHaveCount(0);
 });
 
+async function reloadSale(page: Page) {
+  const reread = page.waitForResponse("**/rpc/paymentProfile/list");
+  await page.reload();
+  await page
+    .getByRole("heading", { exact: true, name: "Nova venda" })
+    .waitFor();
+  await reread;
+}
+
+test("AC-6: resposta perdida e perfil fora da lista na recarga: a escolha fica e a venda volta com o mesmo commandId", async ({
+  page,
+}) => {
+  const catalog = await serveSale(page);
+  catalog.profiles = [PROFILE];
+  const sent: { json: { commandId: string } }[] = [];
+  await page.route("**/rpc/sale/confirm", (route: Route) => {
+    sent.push(route.request().postDataJSON());
+    return route.abort("connectionreset");
+  });
+  await openSale(page);
+  await buildCreditCart(page);
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(1);
+
+  catalog.profiles = [];
+  await reloadSale(page);
+  catalog.profiles = [PROFILE];
+  await reloadSale(page);
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toContainText("Maquininha do balcão");
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toEqual(sent[0]);
+});
+
+test("AC-6: resposta perdida e perfil editado na recarga: a revisão é pedida e a venda volta com a versão e o commandId do envio", async ({
+  page,
+}) => {
+  const catalog = await serveSale(page);
+  catalog.profiles = [PROFILE];
+  const sent: unknown[] = [];
+  await page.route("**/rpc/sale/confirm", (route: Route) => {
+    sent.push(route.request().postDataJSON());
+    return route.abort("connectionreset");
+  });
+  await openSale(page);
+  await buildCreditCart(page);
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(1);
+
+  catalog.profiles = [{ ...PROFILE, version: 4 }];
+  await reloadSale(page);
+  await page
+    .getByRole("button", { name: "Revisei a prévia atualizada" })
+    .click();
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toEqual(sent[0]);
+});
+
 test("AC-3 e AC-6: a venda confirmada nunca volta como rascunho", async ({
   page,
 }) => {
@@ -356,49 +475,97 @@ test("AC-3 e AC-6: a venda confirmada nunca volta como rascunho", async ({
   ).toHaveCount(0);
 });
 
-test("AC-3: trocar de loja apaga a venda da loja deixada", async ({
-  page,
-}, testInfo) => {
+const OTHER_STORE = {
+  ...ORGANIZATION,
+  id: "0199c2d0-0000-7000-8000-00000000a002",
+  name: "Outra loja",
+};
+
+/** The store is chosen in the menu of the desktop; a phone does it in the "Mais" sheet. */
+async function serveTwoStores(page: Page, testInfo: TestInfo) {
   test.skip(
     testInfo.project.name !== "chromium-desktop",
     "a loja do celular se troca na folha Mais; o apagar é o mesmo"
   );
-  await serveSale(page);
-  const other = {
-    ...ORGANIZATION,
-    id: "0199c2d0-0000-7000-8000-00000000a002",
-    name: "Outra loja",
-  };
+  const catalog = await serveSale(page);
   await page.route("**/rpc/organization/listMine", (route: Route) =>
-    route.fulfill(rpc({ organizations: [ORGANIZATION, other] }))
+    route.fulfill(rpc({ organizations: [ORGANIZATION, OTHER_STORE] }))
   );
+  return catalog;
+}
+
+async function chooseStore(page: Page, name: string) {
+  await page.getByRole("button", { name: "Loja, tema e Sair" }).click();
+  await page.getByRole("menuitemradio", { name }).click();
+  // a radio item keeps the menu open
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+}
+
+test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida", async ({
+  page,
+}, testInfo) => {
+  await serveTwoStores(page, testInfo);
   await openSale(page);
   await buildCart(page);
-  // the attempt of a sale sent with no answer goes with the cart it was made for
   await page.evaluate(
-    (key) => window.sessionStorage.setItem(key, "{}"),
+    (key) =>
+      window.sessionStorage.setItem(
+        key,
+        JSON.stringify({
+          commandId: "0199c2d0-0000-7000-8000-0000000000e1",
+          occurredAt: new Date().toISOString(),
+          recordedAt: new Date().toISOString(),
+          signature: "{}",
+          unsettled: false,
+        })
+      ),
     ATTEMPT_KEY
   );
 
-  const chooseStore = async (name: string) => {
-    await page.getByRole("button", { name: "Loja, tema e Sair" }).click();
-    await page.getByRole("menuitemradio", { name }).click();
-    // a radio item keeps the menu open
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("menu")).toHaveCount(0);
-  };
-  await chooseStore("Outra loja");
+  await chooseStore(page, "Outra loja");
   await page
     .getByRole("heading", { exact: true, name: "Nova venda" })
     .waitFor();
-  const kept = await storageKeys(page, "sessionStorage");
-  expect(kept).not.toContain(DRAFT_KEY);
-  expect(kept).not.toContain(ATTEMPT_KEY);
+  const left = await storageKeys(page, "sessionStorage");
+  expect(left).not.toContain(DRAFT_KEY);
+  expect(left).not.toContain(ATTEMPT_KEY);
 
-  await chooseStore("Loja do teste");
+  await chooseStore(page, "Loja do teste");
   await menuLink(page, "Vender").click();
   await page
     .getByRole("heading", { exact: true, name: "Nova venda" })
     .waitFor();
   await expectBlankLine(page);
+});
+
+test("AC-3 e AC-6: trocar de loja e voltar com a resposta perdida: o mesmo carrinho redigitado leva o mesmo commandId", async ({
+  page,
+}, testInfo) => {
+  await serveTwoStores(page, testInfo);
+  const sent: unknown[] = [];
+  await page.route("**/rpc/sale/confirm", (route: Route) => {
+    sent.push(route.request().postDataJSON());
+    return route.abort("connectionreset");
+  });
+  await openSale(page);
+  await buildCart(page);
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(1);
+
+  await chooseStore(page, "Outra loja");
+  await page
+    .getByRole("heading", { exact: true, name: "Nova venda" })
+    .waitFor();
+  const left = await storageKeys(page, "sessionStorage");
+  expect(left).not.toContain(DRAFT_KEY);
+  expect(left).toContain(ATTEMPT_KEY);
+
+  await chooseStore(page, "Loja do teste");
+  await menuLink(page, "Vender").click();
+  await expectBlankLine(page);
+  await buildCart(page);
+  await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toEqual(sent[0]);
 });

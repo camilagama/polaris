@@ -39,6 +39,19 @@ function isAttempt(value: unknown): value is StoredAttempt {
   );
 }
 
+function sentProfileOf(value: unknown): SaleAttempt["paymentProfile"] {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const { expectedVersion, id } = value as Record<string, unknown>;
+  return typeof id === "string" &&
+    id.length > 0 &&
+    typeof expectedVersion === "number" &&
+    Number.isInteger(expectedVersion)
+    ? { expectedVersion, id }
+    : undefined;
+}
+
 export interface SaleAttemptRead {
   attempt: SaleAttempt;
   /**
@@ -46,6 +59,8 @@ export interface SaleAttemptRead {
    * server, so it must go again exactly as it was sent.
    */
   outcomeUnknown: boolean;
+  /** Sent with no answer and not settled since, in this cart or not: the sale may be on the server. */
+  unsettled: boolean;
 }
 
 /**
@@ -85,14 +100,17 @@ export function readSaleAttemptState(
       return null;
     }
     const { commandId, occurredAt, signature } = parsed;
+    const paymentProfile = sentProfileOf(parsed.paymentProfile);
     return {
       attempt: {
         commandId,
         occurredAt,
         recordedAt: parsed.recordedAt,
         signature,
+        ...(paymentProfile ? { paymentProfile } : {}),
       },
       outcomeUnknown: ofThisCart,
+      unsettled: parsed.unsettled === true,
     };
   } catch {
     return null;
@@ -136,13 +154,25 @@ export function writeSaleAttempt(
 type AttemptStorage = PreferenceStorage &
   Partial<Pick<Storage, "key" | "length">>;
 
+function isUnsettledAttempt(text: string | null): boolean {
+  try {
+    const parsed: unknown = text === null ? null : JSON.parse(text);
+    return isAttempt(parsed) && parsed.unsettled === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Forgets the attempts of every store of this tab, but the one kept (the store just chosen): they go with the drafts
- * they were made for, on "Sair", a refused session and a change of store.
+ * they were made for, on "Sair", a refused session and a change of store. `keepUnsettled` leaves the attempts sent with
+ * no answer: on a change of store the sale may already be on the server, and the same cart typed again after coming
+ * back must reach it with the same command ID (it still expires with `SALE_ATTEMPT_MAX_AGE_MS`).
  */
 export function clearSaleAttempts(
   storage: AttemptStorage | null,
-  keepOrganizationId: string | null = null
+  keepOrganizationId: string | null = null,
+  keepUnsettled = false
 ): void {
   try {
     if (!storage?.key || storage.length === undefined) {
@@ -153,7 +183,11 @@ export function clearSaleAttempts(
     const found: string[] = [];
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
-      if (key?.startsWith(KEY_PREFIX) && key !== keep) {
+      if (
+        key?.startsWith(KEY_PREFIX) &&
+        key !== keep &&
+        !(keepUnsettled && isUnsettledAttempt(storage.getItem(key)))
+      ) {
         found.push(key);
       }
     }
