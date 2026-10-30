@@ -1904,9 +1904,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       expect(read.x).toBeGreaterThanOrEqual(frame.x);
       expect(read.y).toBeGreaterThanOrEqual(frame.y);
       expect(read.x + read.width).toBeLessThanOrEqual(frame.x + frame.width);
-      expect(read.y + read.height).toBeLessThanOrEqual(
-        frame.y + frame.height
-      );
+      expect(read.y + read.height).toBeLessThanOrEqual(frame.y + frame.height);
       expect(read.x - frame.x).toBeLessThan(frame.width / 4);
       expect(read.y - frame.y).toBeLessThan(frame.height / 4);
 

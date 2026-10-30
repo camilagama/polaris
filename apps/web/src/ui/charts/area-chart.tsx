@@ -37,7 +37,13 @@ import {
   seriesMax,
   yAxisMargin,
 } from "./chart-data";
-import { Legend, Reading, spokenValue, TooltipLines } from "./chart-text";
+import {
+  type DayReading,
+  Legend,
+  Reading,
+  spokenValue,
+  TooltipLines,
+} from "./chart-text";
 
 /* The keyboard control is a native range input laid over the drawing: transparent, with no track and no thumb (the
    drawing shows the point in focus, with the tooltip of the block) and deaf to the pointer (the box under it moves
@@ -155,8 +161,11 @@ function useMotion(still: boolean) {
       } as const);
 }
 
-/** Whether the line that reads the day in focus is on the screen: at rest if the caller wants it, else once the keyboard moved the focus. */
-function showsReading({
+/**
+ * Where the line that reads the day in focus is: above the drawing at rest if the caller wants it there, over the corner
+ * of the drawing once the keyboard moved the focus, or not on the screen.
+ */
+function readingPlace({
   atRest,
   loading,
   picked,
@@ -164,8 +173,37 @@ function showsReading({
   atRest: boolean;
   loading: boolean;
   picked: boolean;
-}): boolean {
-  return !loading && (atRest || picked);
+}): "above" | "over" | null {
+  if (loading) {
+    return null;
+  }
+  if (atRest) {
+    return "above";
+  }
+  return picked ? "over" : null;
+}
+
+const READING_OVER_CLASS =
+  "pointer-events-none absolute top-1 left-1 z-[60] max-w-[calc(100%-0.5rem)] rounded-sm bg-card/90 px-1.5 py-0.5";
+
+function ReadingAt({
+  place,
+  reading,
+  where,
+}: {
+  place: "above" | "over" | null;
+  reading: DayReading;
+  where: "above" | "over";
+}) {
+  if (place !== where) {
+    return null;
+  }
+  return (
+    <Reading
+      {...reading}
+      {...(where === "over" ? { className: READING_OVER_CLASS } : {})}
+    />
+  );
 }
 
 function EmptyChart({
@@ -435,7 +473,7 @@ export function AreaChart({
     secondary,
   };
   const boxHeight = height + EXTRA_HEIGHT;
-  const readingShown = showsReading({
+  const place = readingPlace({
     atRest: readingAtRest,
     loading,
     picked: picked?.key === signature,
@@ -443,7 +481,7 @@ export function AreaChart({
 
   return (
     <div className={cn("grid gap-2", className)} data-chart="">
-      {readingShown && readingAtRest ? <Reading {...reading} /> : null}
+      <ReadingAt place={place} reading={reading} where="above" />
       {loading && readingAtRest ? (
         <p aria-hidden="true" className="min-h-[1.125rem]" />
       ) : null}
@@ -459,12 +497,7 @@ export function AreaChart({
         />
       ) : null}
       <div className="relative rounded-md" style={{ height: boxHeight }}>
-        {readingShown && !readingAtRest ? (
-          <Reading
-            {...reading}
-            className="pointer-events-none absolute top-1 left-1 z-[60] max-w-[calc(100%-0.5rem)] rounded-sm bg-card/90 px-1.5 py-0.5"
-          />
-        ) : null}
+        <ReadingAt place={place} reading={reading} where="over" />
         <div
           aria-label={label}
           className="size-full"
