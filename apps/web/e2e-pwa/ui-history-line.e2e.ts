@@ -1,12 +1,14 @@
 /// <reference lib="dom" />
 import { expect, test } from "@playwright/test";
-import { historyStates } from "./ui-history-states";
+import { historyStates, WORST_CUSTOMER_NAME } from "./ui-history-states";
 
 /**
  * The line of a sale in the history, "cliente · forma de pagamento · itens": with a connection the row is a link
- * that ends in a chevron. On a phone the line is one line: the customer name is cut with an ellipsis and the payment
- * method and the item count are never cut nor pushed under the total; the date and time stay on one line. Without a
- * connection the row is plain text, with no link and no chevron.
+ * that ends in a chevron. On a phone the line is one line: the customer name is cut with an ellipsis and the short
+ * payment method and the item count are not cut nor pushed under the total. In the widest case (the longest name,
+ * "Transferência", twelve items, a total of five digits) the name is at its minimum, the method is cut last (the item
+ * count stays) and nothing reaches the total. The date and time stay on one line. Without a connection the row is
+ * plain text, with no link and no chevron.
  */
 const LONG_NAME =
   "Maria Aparecida da Conceição Albuquerque de Oliveira Santos Filho";
@@ -29,12 +31,10 @@ for (const width of WIDTHS) {
     }) => {
       await historyStates.list(page);
       const row = page.getByRole("link").filter({ hasText: LONG_NAME });
-      const support = row.getByText(
-        `${LONG_NAME} · Cartão de crédito · 2 itens`
-      );
+      const support = row.getByText(`${LONG_NAME} · Crédito · 2 itens`);
       await expect(support).toBeVisible();
       const name = support.getByText(LONG_NAME, { exact: true });
-      const rest = support.getByText(" · Cartão de crédito · 2 itens");
+      const rest = support.getByText(" · Crédito · 2 itens");
       const measured = await support.evaluate(lineCount);
       expect(measured.height).toBeGreaterThan(0);
       expect(measured.lines).toBeLessThan(1.05);
@@ -62,6 +62,46 @@ for (const width of WIDTHS) {
         chevronBox?.x ?? 0
       );
     });
+
+    for (const customer of [WORST_CUSTOMER_NAME, "Ana Lima"]) {
+      test(`no pior caso (${customer.split(" ")[0]}, Transferência, 12 itens, R$ 12.345,67) a linha de apoio não toca o valor nem o chevron (o nome e, se preciso, por último o método são cortados; os itens ficam)`, async ({
+        page,
+      }) => {
+        await historyStates.worstCase(page);
+        const row = page.getByRole("link").filter({ hasText: customer });
+        const support = row.getByText(`${customer} · Transferência · 12 itens`);
+        await expect(support).toBeVisible();
+        expect((await support.evaluate(lineCount)).lines).toBeLessThan(1.05);
+        const items = support.getByText(" · 12 itens", { exact: true });
+        const chevron = row.locator("svg[aria-hidden='true']").last();
+        const [name, rest, itemsBox, total, chevronBox, supportBox] =
+          await Promise.all([
+            support.getByText(customer, { exact: true }).boundingBox(),
+            support.getByText(" · Transferência · 12 itens").boundingBox(),
+            items.boundingBox(),
+            row.getByText("12.345,67").boundingBox(),
+            chevron.boundingBox(),
+            support.boundingBox(),
+          ]);
+        for (const box of [
+          name,
+          rest,
+          itemsBox,
+          total,
+          chevronBox,
+          supportBox,
+        ]) {
+          expect(box).not.toBeNull();
+        }
+        const right = (box: typeof name) => (box?.x ?? 0) + (box?.width ?? 0);
+        for (const box of [name, rest, itemsBox, supportBox]) {
+          expect(right(box)).toBeLessThanOrEqual(total?.x ?? 0);
+        }
+        expect(right(total)).toBeLessThanOrEqual(chevronBox?.x ?? 0);
+        expect(name?.width ?? 0).toBeGreaterThan(30);
+        expect(right(itemsBox)).toBeLessThanOrEqual(right(supportBox) + 0.5);
+      });
+    }
 
     test("um nome curto aparece inteiro, e a data e a hora ficam em uma linha em toda venda", async ({
       page,

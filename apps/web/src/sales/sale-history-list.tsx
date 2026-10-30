@@ -38,7 +38,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
       >
         {row.customerInitials}
       </span>
-      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5">
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p className="whitespace-nowrap font-medium">
             {row.dateText}
@@ -57,9 +57,10 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           />
         </div>
         <p className="flex min-w-0 text-muted-foreground text-support">
-          <span className="truncate">{row.customerText}</span>
-          <span className="shrink-0 whitespace-pre">
-            {` · ${row.methodText} · ${row.itemCountText}`}
+          <span className="min-w-[5ch] truncate">{row.customerText}</span>
+          <span className="flex max-w-[calc(100%_-_5ch)] shrink-0 whitespace-pre">
+            <span className="truncate">{` · ${row.methodText}`}</span>
+            <span className="shrink-0">{` · ${row.itemCountText}`}</span>
           </span>
         </p>
       </div>

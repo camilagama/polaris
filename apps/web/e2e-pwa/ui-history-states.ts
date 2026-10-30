@@ -57,6 +57,29 @@ const SALES = [
   }),
 ];
 
+const WORST_NAME =
+  "Maria Aparecida da Conceição Albuquerque de Oliveira Santos Filho";
+
+// the widest support line: the longest name, the widest method, twelve items and a total of five digits
+const WORST_SALES = [
+  entry(5, {
+    customerId: id(92),
+    customerName: WORST_NAME,
+    hasReturns: true,
+    itemCount: 12,
+    paymentMethod: "bank_transfer",
+    totalDue: "12345.67",
+  }),
+  entry(6, {
+    customerId: id(93),
+    customerName: "Ana Lima",
+    itemCount: 12,
+    paymentMethod: "bank_transfer",
+    totalDue: "12345.67",
+  }),
+  SALES[2],
+];
+
 const rpc = (body: unknown) => ({
   body: JSON.stringify({ json: body, meta: [] }),
   contentType: "application/json",
@@ -64,7 +87,12 @@ const rpc = (body: unknown) => ({
 });
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
-async function openHistoryLab(page: Page, answers: boolean, hold = false) {
+async function openHistoryLab(
+  page: Page,
+  answers: boolean,
+  hold = false,
+  sales: readonly unknown[] = SALES
+) {
   if (hold) {
     // the server never answers: the list stays loading
     await page.route(
@@ -73,7 +101,7 @@ async function openHistoryLab(page: Page, answers: boolean, hold = false) {
     );
   } else if (answers) {
     await page.route("**/rpc/sale/list", (route: Route) =>
-      route.fulfill(rpc({ hasMore: true, sales: SALES }))
+      route.fulfill(rpc({ hasMore: true, sales }))
     );
   }
   await serveLabWorker(page);
@@ -117,12 +145,21 @@ async function showScreenAlone(page: Page) {
   await page.waitForTimeout(300);
 }
 
+export const WORST_CUSTOMER_NAME = WORST_NAME;
+
 export const historyStates = {
   /** The server's list: every badge, a long name, and "Carregar mais". */
   async list(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
     await page.getByRole("button", { name: "Carregar mais" }).waitFor();
+    await showScreenAlone(page);
+  },
+
+  /** The widest lines: a long name with "Transferência", twelve items and R$ 12.345,67, and the credit sale. */
+  async worstCase(page: Page) {
+    await openHistoryLab(page, true, false, WORST_SALES);
+    await page.getByText("Ana Lima").waitFor();
     await showScreenAlone(page);
   },
 

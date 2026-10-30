@@ -67,6 +67,16 @@ export const SALE_METHODS: ReadonlyArray<readonly [SaleMethod, string]> = [
   ["other", "Outro"],
 ];
 
+/** The short names of the choice cards of the sale and of the line of the history; the summary and the receipt keep the full ones of SALE_METHODS. */
+export const SALE_METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
+  ["pix", "Pix"],
+  ["cash", "Dinheiro"],
+  ["credit_card", "Crédito"],
+  ["debit_card", "Débito"],
+  ["bank_transfer", "Transferência"],
+  ["other", "Outro"],
+];
+
 export const ADJUSTMENT_KINDS: ReadonlyArray<
   readonly [AdjustmentKind, string]
 > = [
