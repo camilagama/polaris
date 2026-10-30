@@ -541,6 +541,7 @@ async function exerciseSaleCustomer(page: Page) {
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
 const STOCK_SOURCES = [
+  "src/app-shell/action-strip.tsx",
   "src/inventory/inventory-page.tsx",
   "src/inventory/stock-command-panel.tsx",
   "src/inventory/stock-panel-fields.tsx",
@@ -573,6 +574,7 @@ const DEVICE_SOURCES = [
   "src/offline/runtime/devices-page.tsx",
 ];
 const ATTENTION_SOURCES = [
+  "src/app-shell/action-strip.tsx",
   "src/offline/attention-panel.tsx",
   "src/offline/runtime/attention-page.tsx",
 ];

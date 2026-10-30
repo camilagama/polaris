@@ -86,8 +86,10 @@ interface OpenOptions {
   search?: string;
 }
 
-/** The bodies of the reads the screen sent, in order (what each filter asked the server for). */
+/** The bodies of the reads of the list the screen sent, in order (what each filter asked the server for). */
 let listRequests: string[] = [];
+/** The two reads of "Precisa de ação", a page of 100 each: the store's counts, whatever the filters. */
+let attentionRequests: string[] = [];
 
 async function openStockLab(
   page: Page,
@@ -99,13 +101,16 @@ async function openStockLab(
   }: OpenOptions = {}
 ) {
   listRequests = [];
+  attentionRequests = [];
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
   // the lab has no server: the list comes from here, and it answers by the filters the screen sent
   await page.route("**/rpc/inventory/listBalances", (route) => {
     const body = route.request().postData() ?? "";
-    listRequests.push(body);
+    (body.includes('"limit":100') ? attentionRequests : listRequests).push(
+      body
+    );
     const wanted = VARIANT_IDS.exec(body)?.[1];
     if (wanted !== undefined && entryReadFails) {
       return route.fulfill({
@@ -169,7 +174,7 @@ async function openStockLab(
   await expect(
     page.getByRole("heading", { exact: true, name: "Estoque" })
   ).toBeVisible();
-  await expect(page.getByText(count)).toBeVisible();
+  await expect(page.getByText(count, { exact: true })).toBeVisible();
 }
 
 async function useEveryControl(page: Page) {
@@ -181,9 +186,7 @@ async function useEveryControl(page: Page) {
     "true"
   );
   await filter.getByRole("tab", { name: "Todas" }).click();
-  await page
-    .getByRole("checkbox", { name: "Incluir produtos arquivados" })
-    .click();
+  await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
   await expect(page.getByText("3 variantes")).toBeVisible();
   await expect(page.getByText("Arquivado", { exact: true })).toBeVisible();
   await expect(
@@ -318,6 +321,27 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
   expect(listRequests.at(-1)).not.toContain('"cost"');
 });
 
+test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda com o filtro da lista", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const strip = page.locator('[data-slot="action-strip"]');
+  await expect(strip).toContainText("1 variante sem custo");
+  await expect.poll(() => attentionRequests.length).toBe(2);
+  expect(
+    attentionRequests.some((body) => body.includes('"cost":"unknown"'))
+  ).toBe(true);
+  expect(
+    attentionRequests.every((body) => body.includes('"productStatus":"active"'))
+  ).toBe(true);
+  await stockFilter(page, "Sem saldo").click();
+  await expect(page.getByText("0 variantes", { exact: true })).toBeVisible();
+  await expect(strip).toContainText("1 variante sem custo");
+  await strip.getByRole("link", { name: "1 variante sem custo" }).click();
+  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  expect(attentionRequests).toHaveLength(2);
+});
+
 test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   page,
 }) => {
@@ -337,6 +361,8 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
   expect(listRequests.at(-1)).toContain('"cost":"unknown"');
 });
 
+const MUG_PANEL =
+  /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido · último movimento \d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}/;
 const COUNT_LINE = /^\d+ variantes?/;
 
 test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
@@ -392,9 +418,7 @@ test("?entrada= abre o painel de entrada da variante, mesmo arquivada e fora da 
   await expect(
     page.getByRole("heading", { name: "Receber estoque" })
   ).toBeVisible();
-  await expect(
-    page.getByText("Caneca esmaltada · Sem opções. Saldo atual: 0 unidades")
-  ).toBeVisible();
+  await expect(page.getByText(MUG_PANEL)).toBeVisible();
   await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
   expect(new URL(page.url()).search).toBe("?screen=stock");
   expect(listRequests.some((body) => body.includes(MUG.variantId))).toBe(true);

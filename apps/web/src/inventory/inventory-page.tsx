@@ -1,3 +1,4 @@
+import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
@@ -17,7 +18,9 @@ import { Card } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
 import { SearchField } from "@/ui/search-field";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
+import { ActionStrip } from "../app-shell/action-strip";
 import { StatusNav } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -39,8 +42,10 @@ import {
   stockListView,
   stockMoreView,
   readStockLinkFilters,
+  type StockAttentionLink,
 } from "./stock-list-model";
 import { type StockTarget, stockTarget } from "./stock-target";
+import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
 import { useStockList } from "./use-stock-list";
 
@@ -81,14 +86,67 @@ function OfflineStockNotice() {
       <CloudOffIcon aria-hidden="true" />
       <AlertTitle>Sem conexão.</AlertTitle>
       <AlertDescription>
-        O saldo é o do aparelho, com o que está na fila. Receber, contar e
-        baixar ficam guardados e vão quando a conexão voltar (acompanhe em{" "}
+        Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
+        (veja{" "}
         <a className={LINK} href="/attention">
           Pendências
         </a>
-        ). O custo médio só aparece com conexão.
+        ). Custo médio só com conexão.
       </AlertDescription>
     </Alert>
+  );
+}
+
+function AttentionLink({
+  first,
+  link,
+  onApply,
+}: {
+  first: boolean;
+  link: StockAttentionLink;
+  onApply: (
+    event: MouseEvent<HTMLAnchorElement>,
+    link: StockAttentionLink
+  ) => void;
+}) {
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => onApply(event, link),
+    [link, onApply]
+  );
+  return (
+    <>
+      {first ? null : " · "}
+      <a className={LINK} href={link.href} onClick={handleClick}>
+        {link.text}
+      </a>
+    </>
+  );
+}
+
+function StockActionStrip({
+  links,
+  onApply,
+}: {
+  links: StockAttentionLink[];
+  onApply: (
+    event: MouseEvent<HTMLAnchorElement>,
+    link: StockAttentionLink
+  ) => void;
+}) {
+  if (links.length === 0) {
+    return null;
+  }
+  return (
+    <ActionStrip>
+      {links.map((link, position) => (
+        <AttentionLink
+          first={position === 0}
+          key={link.id}
+          link={link}
+          onApply={onApply}
+        />
+      ))}
+    </ActionStrip>
   );
 }
 
@@ -146,7 +204,7 @@ function StockItem({
             ) : null}
           </p>
         </div>
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support md:grid-cols-3">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support">
           <Figure label="Saldo">
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span
@@ -171,9 +229,6 @@ function StockItem({
             >
               {row.costText}
             </span>
-          </Figure>
-          <Figure className="col-span-2 md:col-span-1" label="Atualizado">
-            <span className="tabular-nums">{row.updatedText}</span>
           </Figure>
         </dl>
         <RowActions
@@ -229,8 +284,31 @@ export function InventoryPage() {
   const [linkFilters] = useState(() =>
     readStockLinkFilters(window.location.search)
   );
-  const { applyBalance, filters, loadMore, reload, setFilters, state } =
-    useStockList(organizationId, offlineWorkspace, linkFilters);
+  const {
+    applyBalance: applyListBalance,
+    filters,
+    loadMore,
+    reload: reloadList,
+    setFilters,
+    state,
+  } = useStockList(organizationId, offlineWorkspace, linkFilters);
+  const [attentionVersion, setAttentionVersion] = useState(0);
+  const attentionLinks = useStockAttention(
+    organizationId,
+    !offline,
+    attentionVersion
+  );
+  const applyBalance = useCallback(
+    (balance: InventoryBalanceReadModel, updatedAt: string | null) => {
+      applyListBalance(balance, updatedAt);
+      setAttentionVersion((version) => version + 1);
+    },
+    [applyListBalance]
+  );
+  const reload = useCallback(() => {
+    reloadList();
+    setAttentionVersion((version) => version + 1);
+  }, [reloadList]);
   const [open, setOpen] = useState<OpenCommand | null>(null);
   const entryLink = useStockEntryLink(organizationId, offlineWorkspace);
   const offlineRef = useRef(offline);
@@ -304,15 +382,38 @@ export function InventoryPage() {
     }
   }, [open]);
   const handleReload = useCallback(() => reload(), [reload]);
+  const handleAttentionLink = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, link: StockAttentionLink) => {
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setFilters(
+        readStockLinkFilters(new URL(link.href, window.location.origin).search)
+      );
+    },
+    [setFilters]
+  );
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <h1 className="text-title">Estoque</h1>
-        <p className="text-muted-foreground text-support">
-          Receba, conte ou baixe. Venda e devolução movem o saldo sozinhas.
-        </p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-title">Estoque</h1>
+          <HelpTip about="Estoque">
+            Receber, contar e baixar mudam o saldo aqui. Venda e devolução mudam
+            sozinhas.
+          </HelpTip>
+        </div>
       </header>
+
+      <StockActionStrip links={attentionLinks} onApply={handleAttentionLink} />
 
       {offline ? <OfflineStockNotice /> : null}
       {entryLink.status === "missing" || entryLink.status === "unavailable" ? (
@@ -349,9 +450,7 @@ export function InventoryPage() {
               id="stock-archived"
               onCheckedChange={handleArchived}
             />
-            <FieldLabel htmlFor="stock-archived">
-              Incluir produtos arquivados
-            </FieldLabel>
+            <FieldLabel htmlFor="stock-archived">Incluir arquivados</FieldLabel>
           </Field>
           <Button onClick={handleReload} type="button" variant="ghost">
             <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />

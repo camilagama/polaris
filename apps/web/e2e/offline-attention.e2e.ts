@@ -38,7 +38,9 @@ test("uma venda recusada por estoque aparece, bloqueia a fila e sobrevive a reca
   await expect(items(page).first()).toContainText("Venda de 1 item");
   await expect(items(page).first()).toContainText("parando a fila");
   await expect(items(page).first()).toContainText("Código: insufficient_stock");
-  await expect(page.getByText("1 registro espera na fila")).toBeVisible();
+  await expect(
+    page.getByText("1 registro recusado · 1 na fila atrás dele")
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Reenviar venda" })
   ).toBeVisible();

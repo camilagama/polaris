@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AttentionItem, AttentionSummary } from "./attention";
-import { AttentionPanel, type AttentionPanelProps } from "./attention-panel";
+import {
+  AttentionPanel,
+  type AttentionPanelProps,
+  refusedText,
+} from "./attention-panel";
 
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
@@ -63,6 +67,30 @@ describe("the attention panel", () => {
     expect(html).not.toContain("<button");
   });
 
+  it("says the count in the strip, in the singular and without the queue", () => {
+    expect(refusedText({ items: [item()], waitingBehind: 0 })).toBe(
+      "1 registro recusado"
+    );
+    expect(refusedText({ items: [item()], waitingBehind: 1 })).toBe(
+      "1 registro recusado · 1 na fila atrás dele"
+    );
+    expect(
+      refusedText({
+        items: [
+          item(),
+          item({ commandId: "0199c2d0-0000-7000-8000-000000000103" }),
+        ],
+        waitingBehind: 1,
+      })
+    ).toBe("2 registros recusados · 1 na fila atrás deles");
+  });
+
+  it("has no strip when nothing needs attention", () => {
+    expect(render({ items: [], waitingBehind: 0 })).not.toContain(
+      "Precisa de ação"
+    );
+  });
+
   it("shows each refused operation with its cause, code and only its own actions", () => {
     const html = render({
       items: [
@@ -84,7 +112,9 @@ describe("the attention panel", () => {
     expect(html).toContain("Produto Camiseta");
     expect(html).toContain("Código: sku_conflict");
     expect(html).toContain("parando a fila");
-    expect(html).toContain("3 registros esperam na fila");
+    expect(html).toContain("Precisa de ação");
+    expect(html).toContain("2 registros recusados · 3 na fila atrás deles");
+    expect(html).not.toContain("O servidor recusou");
     expect(html.match(/Reenviar venda/g)).toHaveLength(1);
     expect(html.match(/Descartar…/g)).toHaveLength(2);
   });

@@ -618,7 +618,9 @@ test.describe("estoque", () => {
     await openStockLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
     await expect(
-      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+      page.getByText("Saldo do aparelho. Receber, contar e baixar vão", {
+        exact: false,
+      })
     ).toBeVisible();
     await expect(shirtRow(page)).toContainText("Só com conexão");
     await expect(rowBalance(shirtRow(page))).toContainText("5");
@@ -647,7 +649,9 @@ test.describe("estoque", () => {
     });
     // back online the list is the server's again, with the cost column
     await expect(
-      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+      page.getByText("Saldo do aparelho. Receber, contar e baixar vão", {
+        exact: false,
+      })
     ).toHaveCount(0);
   });
 
@@ -1267,7 +1271,9 @@ for (const mode of ["offline", "mentindo"] as const) {
         .getByRole("button", { exact: true, name: "Sincronizar" })
         .click();
       await expect(
-        page.getByText("O saldo é o do aparelho, com o que está na fila.")
+        page.getByText("Saldo do aparelho. Receber, contar e baixar vão", {
+          exact: false,
+        })
       ).toBeVisible({ timeout: 15_000 });
       await expect(rowBalance(shirtRow(page))).toContainText("5");
       await expect(shirtRow(page)).not.toContainText("R$ 0,00");
@@ -1702,7 +1708,9 @@ test.describe("conexão com prova", () => {
     await expect(page.getByTestId("message")).toContainText("Sincronizar: ok");
     await page.waitForTimeout(3000);
     await expect(
-      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+      page.getByText("Saldo do aparelho. Receber, contar e baixar vão", {
+        exact: false,
+      })
     ).toHaveCount(0);
     await expect(chip(page)).not.toContainText("Offline");
   });
@@ -1776,7 +1784,9 @@ test.describe("conexão com prova", () => {
       .getByRole("button", { exact: true, name: "Sincronizar" })
       .click();
     await expect(
-      page.getByText("O saldo é o do aparelho, com o que está na fila.")
+      page.getByText("Saldo do aparelho. Receber, contar e baixar vão", {
+        exact: false,
+      })
     ).toBeVisible({ timeout: 15_000 });
     await page.clock.runFor(60_000);
     // the first minute offline, counted from the probe that found it

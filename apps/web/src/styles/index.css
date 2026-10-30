@@ -38,7 +38,7 @@
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
    and of the connection, the acceptance, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
+@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice,action-strip}.tsx";
 /* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
 @source "../settings/app-version-line.tsx";
 @source "../offline/logout-dialog.tsx";
