@@ -9,7 +9,7 @@ import {
   createInitialOrganizationInDatabase,
 } from "../src/organization-repository";
 import { memberships, organizations } from "../src/schema/organization";
-import { rlsPocOperations } from "../src/schema/rls-poc";
+import { rlsPocOperations } from "../src/rls-poc-client";
 import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
@@ -17,6 +17,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
@@ -292,6 +293,7 @@ async function main() {
   let gatePassed = false;
   let adminRoleName: string | undefined;
   let runtimeRoleMembershipGrantAttempted = false;
+  let pocFixtureCreated = false;
 
   async function createUser(name: string): Promise<string> {
     const id = randomUUID();
@@ -490,6 +492,8 @@ async function main() {
       can_select: false,
       can_update: false,
     });
+    pocFixtureCreated = true;
+    await recreateRlsGateFixture(adminPool);
     const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
       await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole);
     adminRoleName = resolvedAdminRoleName;
@@ -1062,6 +1066,13 @@ async function main() {
       fixtureUserIds,
     });
     cleanupErrors.push(...fixtureCleanupErrors);
+    if (pocFixtureCreated) {
+      try {
+        await dropRlsGateFixture(adminPool);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
     const poolsClosed = await Promise.allSettled([
       adminPool.end(),
       runtimeClientConnected ? runtimeClient.end() : Promise.resolve(),

@@ -29,6 +29,7 @@ import { orpcClient } from "./orpc";
 import { clearPaymentProfileCaches } from "./payment-profile-cache";
 import { clearPeriodSummaryCaches } from "./period-summary-cache";
 import { rpcErrorCode } from "./rpc-error";
+import { clearClosedStores } from "../organization/closed-stores-memory";
 import { writeSessionMarker } from "./session-marker";
 import { isSigningOut } from "./sign-out";
 import {
@@ -101,6 +102,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         if (rpcErrorCode(error) === "UNAUTHORIZED") {
           // The session is over: its organizations must not be offered offline.
           clearOrganizationsCache(browserStorage());
+          clearClosedStores(browserStorage());
           clearPaymentProfileCaches(browserStorage());
           clearPeriodSummaryCaches(browserStorage());
           clearSaleDrafts(sessionStorageOrNull());

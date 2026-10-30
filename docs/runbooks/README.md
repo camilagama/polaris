@@ -12,7 +12,7 @@ Cada runbook deve registrar gatilho, pré-requisitos de acesso, alvo seguro, pas
 
 Gates e provas por fase:
 
-- Provas de arquitetura (Fase 1): [Banco e Drizzle](./database-poc.md), [RLS and Hyperdrive gate](./rls-hyperdrive-gate.md) e [Gate de persistência offline](./offline-persistence-gate.md).
+- Provas de arquitetura (Fase 1): [Banco e Drizzle](./database-poc.md) (histórico), [RLS and Hyperdrive gate](./rls-hyperdrive-gate.md) e [Gate de persistência offline](./offline-persistence-gate.md).
 - Identidade e acesso (Fase 2): [Gate Auth](./better-auth-gate.md), [E-mail transacional](./email-auth.md), [Auth abuse protection](./auth-abuse-protection.md), [Contexto tenant e audit trail](./tenant-context-gate.md) e [Gate 2 em runtime](./gate2-runtime.md).
 - Catálogo, estoque e mídia (Fase 3): [Gate do ledger de estoque](./inventory-ledger-gate.md) e [Media storage reconciliation](./media-storage-reconciliation.md). O Gate 3 formal fica no runbook `docs/runbooks/gate-3-catalog-stock.md`, escrito pelo responsável.
 - Catálogo, estoque e mídia (Fase 3): [Gate 3 — catálogo, estoque e mídia privada](./gate-3-catalog-stock.md).
@@ -69,7 +69,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 
 - [ ] **Rotacionar a credencial owner do PR11** (o status pede e não registra conclusão) e registrar a rotação.
 - [ ] **Remover os Workers e o Hyperdrive de PoC** criados nos PR11 e PR12 (inclusive subdomínio `workers.dev` temporário e role temporária de gate), e confirmar com um HTTP 404 nos endereços antigos.
-- [ ] **Dropar as tabelas de PoC** `db_poc_operations` e `rls_poc_operations` (esta tem uma política `FOR ALL TO PUBLIC` e o papel de tenant mantém DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)) (e fixtures do gate de RLS) no ambiente de produção e remover as rotas e variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) do Worker de produção, que devem estar `false` ou ausentes.
+- [ ] **Conferir que as tabelas de PoC sumiram** depois do migrate de produção: a migration 0108 apaga `db_poc_operations` e `rls_poc_operations` (esta tinha uma política `FOR ALL TO PUBLIC` e o papel de tenant mantinha DML sobre ela; ver [ADR 0044](../adr/0044-revisao-de-seguranca-adicional.md)), e `SELECT to_regclass('public.db_poc_operations'), to_regclass('public.rls_poc_operations')` deve devolver dois nulos. As rotas e as variáveis de PoC (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`) já saíram do código e da configuração, e o `verify:staging-isolation` recusa as duas variáveis em qualquer bloco do `wrangler.jsonc` ([emenda do ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md#emenda-30102026-as-superfícies-de-prova-saíram-do-banco-e-da-configuração)). Os gates de RLS criam a própria tabela na base descartável e a apagam ao terminar.
 - [ ] Confirmar que o laboratório offline não está no bundle de produção.
 
 ### Borda e segurança de rede

@@ -8,7 +8,7 @@ Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só qua
 - `entrada` `/entrar`, `/criar-conta`, `/confirmar-email`, `/esqueci-a-senha`, `/redefinir-senha` e `/desbloquear`.
 - `legais` `/termos` (Termos de Uso) e `/privacidade` (Política de Privacidade), públicas.
 - `aceite` `/aceite`: "Termos de Uso e Política de Privacidade", caixa de aceite e "Continuar".
-- `loja-encerrada` `/loja-encerrada`: o painel da loja encerrada do dono ("{nome} está encerrada"), com a fase, as três datas, a renovação e a cópia dos dados. `?loja=<id>` abre uma loja (`organization.closedStatus`); sem ele, lista as encerradas do dono (`organization.listClosed`). O botão "Abrir o painel" dos e-mails do encerramento leva aqui.
+- `loja-encerrada` `/loja-encerrada`: o painel da loja encerrada do dono ("{nome} está encerrada"), com a fase, as três datas, a renovação e a cópia dos dados. `?loja=<id>` abre uma loja (`organization.closedStatus`); sem ele, lista as encerradas do dono (`organization.listClosed`). O botão "Abrir o painel" dos e-mails do encerramento leva aqui. "Desfazer encerramento" abre o diálogo "Desfazer o encerramento?" ("Voltar" / "Sim, desfazer"); reaberta vai a `/?reaberta=1`. O pé tem "Abrir outra loja" (`/?nova-loja=1`).
 - `nao-encontrada` qualquer outro endereço do shell: "Erro 404", "Página não encontrada".
 - `enderecos-antigos` `/categories`, `/expenses`, `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba nova no lugar.
 
@@ -39,5 +39,6 @@ Preconditions:
 
 - Aqui `/entrar` diz "A entrada com o Google não está disponível agora. Tente de novo em instantes." com "Tentar novamente": o Google não está configurado na pilha local, e não deve estar. Não prove a entrada de verdade aqui.
 - O painel da loja encerrada só fica no ar com a sessão: sem ela, vai a `/entrar?motivo=sessao&voltar=/loja-encerrada…`. O pedido de cópia da encerrada exige entrada de até 15 minutos; numa sessão mais velha, a recusa diz para sair e entrar de novo.
+- Conta sem loja ativa: `/` lê `organization.listClosed` e, com loja encerrada do dono, vai sozinha para `/loja-encerrada?loja=<id>`; para ver "Abra a sua loja" de uma conta assim, abra `/?nova-loja=1`. A linha "Você também tem uma loja encerrada" do Início só aparece num navegador que já abriu o painel daquela loja (fica em `localStorage`, `polaris.closedStores`). Os estados do aparelho com a loja encerrada, com a API simulada, estão em `apps/web/e2e/closed-store-device.e2e.ts`; o roteamento em `apps/web/e2e/closed-store-routing.e2e.ts`.
 - A barra no fim (`/entrar/`) é redirecionada para o endereço sem barra.
 - O snap espera um `h1`: a 404 tem o seu ("Página não encontrada"); se um endereço não tiver, escreva um drive em `drives/local/`.

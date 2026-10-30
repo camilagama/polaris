@@ -70,6 +70,7 @@ const EXPIRED: RuntimeSnapshot = {
   leaseExpiresAt: "2026-10-17T12:00:00.000Z",
   legalAcceptanceRequired: false,
   online: true,
+  organizationClosed: false,
   phase: "expired",
   reason: "offline_access_expired",
   renewalRefused: false,

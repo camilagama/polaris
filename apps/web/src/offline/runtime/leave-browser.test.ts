@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_MARKER_KEY } from "../../lib/session-marker";
+import { CLOSED_STORES_KEY } from "../../organization/closed-stores-memory";
 import { leaveAfterSignOut, leaveTo } from "./leave-browser";
 
 function fakeWindow() {
@@ -31,5 +32,15 @@ describe("leaving the page", () => {
     leaveTo("/entrar?motivo=sessao");
     expect(stored.has(SESSION_MARKER_KEY)).toBe(false);
     expect(assign).toHaveBeenCalledWith("/entrar?motivo=sessao");
+  });
+
+  it("forgets the closed stores of the session too: the next person must not see their names", () => {
+    const { stored } = fakeWindow();
+    stored.set(
+      CLOSED_STORES_KEY,
+      JSON.stringify([{ id: "a", name: "Doce Mel" }])
+    );
+    leaveTo("/");
+    expect(stored.has(CLOSED_STORES_KEY)).toBe(false);
   });
 });

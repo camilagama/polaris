@@ -750,6 +750,13 @@
       "when": 1793253478758,
       "tag": "0107_limite_de_sku_e_valor_de_opcao",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1793378600123,
+      "tag": "0108_tirar_superficies_poc",
+      "breakpoints": true
     }
   ]
 }

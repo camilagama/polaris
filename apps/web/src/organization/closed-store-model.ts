@@ -5,6 +5,7 @@ import {
   type RequestRefusal,
 } from "../data-export/data-export-model";
 import {
+  isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   rpcErrorCode,
   rpcErrorReason,
@@ -44,8 +45,14 @@ export const PANEL_CHOOSE_TEXT = "Você tem mais de uma loja encerrada.";
 export const PANEL_BACK_HOME = "Voltar ao início";
 export const DOWNLOAD_BUTTON = "Baixar meus dados";
 export const UNDO_BUTTON = "Desfazer encerramento";
-export const UNDO_UNAVAILABLE_TEXT =
-  "Desfazer o encerramento por aqui ainda não está disponível.";
+export const UNDO_TITLE = "Desfazer o encerramento?";
+export const UNDO_EFFECTS_TEXT =
+  "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado continua esperando.";
+export const UNDO_CONFIRM = "Sim, desfazer";
+export const UNDO_SENDING = "Desfazendo…";
+export const UNDO_BACK = "Voltar";
+export const REOPENED_TEXT = "Loja reaberta. Você já pode usar o Polaris.";
+export const NEW_STORE_LINK = "Abrir outra loja";
 export const RENEWAL_TERM = "Renovação do plano";
 
 const RENEWAL_TEXT: Readonly<Record<NonNullable<Renewal>, string>> = {
@@ -141,8 +148,11 @@ export interface PanelDate {
 export function panelDates(store: ClosedStore, now: number): PanelDate[] {
   const tz = store.timezone;
   const recoverDate = localDate(new Date(store.recoverUntil), tz);
+  // only a store still closing counts down to the end of the undo: past it (by the server's word) the time is over
   const recoverLeft = daysLeftText(
-    Date.parse(store.recoverUntil) > now ? daysUntil(recoverDate, now, tz) : -1
+    store.phase === "closing" && Date.parse(store.recoverUntil) > now
+      ? daysUntil(recoverDate, now, tz)
+      : -1
   );
   const deletionLeft = daysLeftText(
     Date.parse(store.deletableFrom) > now
@@ -258,4 +268,107 @@ export function panelLoadFailure(
     return "acceptance";
   }
   return rpcErrorCode(error) === "UNAUTHORIZED" ? "session" : "error";
+}
+
+export type UndoFailure =
+  | { kind: "acceptance" }
+  | { kind: "session" }
+  | { kind: "not_recoverable" }
+  | { kind: "said"; text: string };
+
+export const UNDO_WINDOW_OVER_TEXT =
+  "O prazo para desfazer acabou. O encerramento não foi desfeito.";
+export const UNDO_ALREADY_REOPENED_TEXT =
+  "A loja já foi reaberta em outro aparelho.";
+export const UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT =
+  "O prazo acabou ou a loja já foi reaberta. Toque em Atualizar para ver a situação da loja.";
+export const UNDO_OTHER_ACTIVE_TEXT =
+  "Não dá para reabrir: você já tem uma loja ativa. Só uma loja ativa por conta.";
+export const UNDO_REFUSED_TEXT =
+  "O encerramento não foi desfeito. Toque em Atualizar para ver a situação da loja.";
+export const UNDO_UNKNOWN_TEXT =
+  "Não deu para confirmar se o encerramento foi desfeito. Toque em Atualizar para conferir.";
+
+/**
+ * What the panel says of an undo that did not answer "recovered". Only a 4xx says nothing was done; any other failure
+ * (no answer, a 5xx, a 429) may come after the reopening, so it never says "reaberta" nor "não foi desfeito".
+ * `closure_not_recoverable` covers an ended window, a store already active and a store out of "closing": the panel
+ * reads the store again and `notRecoverableOutcome` lets the server say which.
+ */
+export function undoFailure(error: unknown): UndoFailure {
+  if (isLegalAcceptanceRefusal(error)) {
+    return { kind: "acceptance" };
+  }
+  const code = rpcErrorCode(error);
+  if (code === "UNAUTHORIZED") {
+    return { kind: "session" };
+  }
+  if (!isDefiniteRpcRejection(error)) {
+    return { kind: "said", text: UNDO_UNKNOWN_TEXT };
+  }
+  const reason = rpcErrorReason(error);
+  if (code === "CONFLICT" && reason === "closure_not_recoverable") {
+    return { kind: "not_recoverable" };
+  }
+  if (code === "CONFLICT" && reason === "another_organization_active") {
+    return { kind: "said", text: UNDO_OTHER_ACTIVE_TEXT };
+  }
+  return { kind: "said", text: UNDO_REFUSED_TEXT };
+}
+
+export type NotRecoverableOutcome =
+  | { kind: "reopened"; store: null; text: string }
+  | { kind: "said"; store: ClosedStore | null; text: string };
+
+/**
+ * The phase of a refused undo, from the read made right after it: `undefined` when that read failed, `null` when the
+ * server no longer lists the store as closed (it is active again), else the store as the server now describes it.
+ */
+export function notRecoverableOutcome(
+  reread: ClosedStore | null | undefined,
+  now: number
+): NotRecoverableOutcome {
+  if (reread === undefined) {
+    return {
+      kind: "said",
+      store: null,
+      text: UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT,
+    };
+  }
+  if (reread === null) {
+    return { kind: "reopened", store: null, text: UNDO_ALREADY_REOPENED_TEXT };
+  }
+  return {
+    kind: "said",
+    store: reread,
+    text: undoOpen(reread, now) ? UNDO_REFUSED_TEXT : UNDO_WINDOW_OVER_TEXT,
+  };
+}
+
+/** The notices that say the outcome is not known: a warning, not a refusal. */
+export function undoOutcomeUnknown(text: string): boolean {
+  return (
+    text === UNDO_UNKNOWN_TEXT || text === UNDO_NOT_RECOVERABLE_UNKNOWN_TEXT
+  );
+}
+
+export const DEVICE_CLOSED_LINK = "Ver a loja encerrada";
+const DEVICE_CLOSED_REST =
+  "A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila.";
+
+const DEVICE_COPY_KEPT_REST =
+  "O que não foi enviado continua guardado na fila deste aparelho.";
+
+/**
+ * The notice of a device whose store was closed; without the date while it is not known (or not the user's to read).
+ * It says the copy was deleted only once the device confirmed it.
+ */
+export function deviceClosedText(
+  store: ClosedStore | null,
+  copyDropped: boolean
+): string {
+  const closed = store
+    ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}.`
+    : "Esta loja foi encerrada.";
+  return `${closed} ${copyDropped ? DEVICE_CLOSED_REST : DEVICE_COPY_KEPT_REST}`;
 }

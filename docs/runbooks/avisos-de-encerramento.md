@@ -12,7 +12,7 @@ O e-mail leva só o nome da loja, as datas no fuso da organização e um link pa
 
 Pré-requisitos:
 
-- o painel da loja encerrada no ar (`/loja-encerrada`, PR G1 do corte `encerrar-a-loja-e-painel-da-encerrada`): o link e o botão "Abrir o painel" do e-mail levam a essa rota (só a rota, sem loja nem token), que pede o login e mostra a fase, as datas e o pedido de cópia dos dados. O desfazer do encerramento pelo painel chega no G2; ligar a flag antes dele é decisão do Arrascaeta (o e-mail convida a desfazer, e até o G2 o painel só diz que o desfazer por ali ainda não está disponível);
+- o painel da loja encerrada no ar (`/loja-encerrada`, PR G1 do corte `encerrar-a-loja-e-painel-da-encerrada`): o link e o botão "Abrir o painel" do e-mail levam a essa rota (só a rota, sem loja nem token), que pede o login e mostra a fase, as datas e o pedido de cópia dos dados. O painel também desfaz o encerramento dentro da janela de 30 dias (G2), que é o que o e-mail convida a fazer; ligar a flag continua sendo decisão do responsável;
 - domínio de envio verificado no Resend;
 - segredo `RESEND_API_KEY` e variável `AUTH_EMAIL_FROM` (em `apps/web/wrangler.jsonc`), que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos, e também os e-mails de cobrança e as boas-vindas ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
 - `BETTER_AUTH_BASE_URL`, que monta o link;
@@ -52,6 +52,12 @@ ORDER BY milestone;
 ```
 
 Um `devidos` que não cai ao longo das horas, com o `closure_notice_handover_complete` sem `sent`, pede olhar a configuração antes de qualquer ato de suporte.
+
+## O que o dono e os aparelhos veem
+
+- **Depois do login:** sem loja ativa, o app lê `organization.listClosed` (só nesse caso) e leva o dono ao painel da loja encerrada; quem não é dono, ou não tem loja encerrada, vê "Abra a sua loja". No painel, "Abrir outra loja" abre o formulário.
+- **Desfazer:** só na fase encerrando e dentro da janela. Uma resposta sem confirmação (rede, 5xx, 429) não diz se desfez: o dono toca em Atualizar. Com outra loja ativa, o servidor recusa (`another_organization_active`) e a tela diz que só uma loja ativa por conta.
+- **Aparelho com a loja encerrada:** qualquer chamada da loja recebe `FORBIDDEN` com `data.reason: "organization_closed"`. O app mostra "Esta loja foi encerrada em {data}…" com o link para o painel, apaga a cópia local e a concessão do aparelho e mantém a fila de operações não enviadas. Uma recusa `FORBIDDEN` sem esse motivo continua sendo tratada como sessão recusada. Se um aparelho disser que a sessão acabou numa loja encerrada, confira nos Workers Logs se a recusa saiu sem o motivo.
 
 ## Ato de suporte
 
