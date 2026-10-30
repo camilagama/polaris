@@ -180,14 +180,14 @@ function RequestFeedback({
 }) {
   return (
     <>
-      {blockedText ? (
-        <p className="text-muted-foreground" id={BLOCKED_REASON_ID}>
-          {blockedText}
-        </p>
-      ) : null}
       {outcome?.kind === "done" ? (
         <p className="text-muted-foreground" role="status">
           {REQUEST_DONE_TEXT}
+        </p>
+      ) : null}
+      {blockedText ? (
+        <p className="text-muted-foreground" id={BLOCKED_REASON_ID}>
+          {blockedText}
         </p>
       ) : null}
       {outcome?.kind === "refused" ? (

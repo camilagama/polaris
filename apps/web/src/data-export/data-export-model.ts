@@ -47,7 +47,7 @@ export const NO_FORMAT_TEXT = "Marque pelo menos um formato.";
 export const PREPARING_TEXT =
   "Preparando sua cópia. Pode levar até uma hora. Você pode sair e voltar.";
 export const EXPIRED_TEXT = "Esta cópia expirou. Peça outra.";
-export const FAILED_TEXT = "Não foi possível preparar a cópia. Tente de novo.";
+export const FAILED_TEXT = "Não foi possível preparar a cópia. Peça de novo.";
 export const TOO_LARGE_TEXT =
   "Sua loja é grande demais para uma cópia com imagens. Peça só os dados (JSON ou planilha).";
 export const LIMIT_REACHED_TEXT =
@@ -58,7 +58,8 @@ export const REQUEST_UNCONFIRMED_TEXT =
   "O pedido não foi confirmado. Pode ter sido feito: toque em Atualizar antes de repetir.";
 export const REQUEST_FAILED_TEXT =
   "Não foi possível pedir a cópia. Tente de novo.";
-export const REQUEST_DONE_TEXT = "Pedido feito.";
+export const REQUEST_DONE_TEXT =
+  "Cópia pedida. Preparando: pode levar até uma hora. Você pode sair e voltar.";
 export const NO_EXPORTS_TEXT = "Nenhuma cópia pedida ainda.";
 
 /** What the form says before anything leaves: null when it may send. */
@@ -76,6 +77,23 @@ export function orderedFormats(
   return EXPORT_FORMAT_OPTIONS.map((option) => option.value).filter((value) =>
     chosen.has(value)
   );
+}
+
+const SHORT_FORMAT_NAMES: Record<ExportFormat, string> = {
+  csv: "planilha",
+  images: "imagens",
+  json: "JSON",
+};
+
+/** The formats of a copy in the list: "JSON, planilha e imagens"; the long labels stay on the request's boxes. */
+function shortFormats(formats: readonly ExportFormat[]): string {
+  const names = orderedFormats(formats).map(
+    (value) => SHORT_FORMAT_NAMES[value]
+  );
+  if (names.length <= 1) {
+    return names.join("");
+  }
+  return `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
 }
 
 const KB = 1000;
@@ -121,7 +139,7 @@ interface ExportFileView {
 
 export interface ExportView {
   files: readonly ExportFileView[];
-  /** What was asked for, by name: "Dados em JSON, Dados em planilha (CSV)". */
+  /** What was asked for, in short: "JSON e planilha". */
   formats: string;
   id: string;
   kind: ExportViewKind;
@@ -140,12 +158,7 @@ export function exportView(
   timeZone: string
 ): ExportView {
   const base = {
-    formats: orderedFormats(item.formats)
-      .map(
-        (value) =>
-          EXPORT_FORMAT_OPTIONS.find((option) => option.value === value)?.label
-      )
-      .join(", "),
+    formats: shortFormats(item.formats),
     id: item.id,
     requested: `Pedida em ${instantIn(item.requestedAt, timeZone)}`,
   };

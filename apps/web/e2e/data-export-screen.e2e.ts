@@ -192,7 +192,10 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   await expect(askButton(page)).toBeDisabled();
   release();
   await expect(
-    page.getByRole("status").filter({ hasText: "Pedido feito." })
+    page.getByRole("status").filter({
+      hasText:
+        "Cópia pedida. Preparando: pode levar até uma hora. Você pode sair e voltar.",
+    })
   ).toBeVisible();
   expect(calls.requests).toEqual([
     { formats: ["json", "csv"], organizationId: ORGANIZATION.id },
@@ -205,6 +208,16 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
   await expect(
     page.getByText("Já há uma cópia sendo preparada. Espere ela ficar pronta.")
   ).toBeVisible();
+  const doneBox = await page
+    .getByRole("status")
+    .filter({ hasText: "Cópia pedida." })
+    .boundingBox();
+  const reasonBox = await page
+    .getByText("Já há uma cópia sendo preparada. Espere ela ficar pronta.")
+    .boundingBox();
+  expect(doneBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(
+    reasonBox?.y ?? 0
+  );
 
   await list(page).getByRole("button", { name: "Atualizar" }).click();
   await expect(list(page)).toContainText(
@@ -274,7 +287,7 @@ test("cada estado da cópia tem o seu texto, sem código técnico (AC-3)", async
   await expect(region).toContainText("Sua cópia está pronta.");
   await expect(region).toContainText("Esta cópia expirou. Peça outra.");
   await expect(region).toContainText(
-    "Não foi possível preparar a cópia. Tente de novo."
+    "Não foi possível preparar a cópia. Peça de novo."
   );
   await expect(region).toContainText(
     "Sua loja é grande demais para uma cópia com imagens. Peça só os dados (JSON ou planilha)."
@@ -405,7 +418,11 @@ test("a lista que responde depois do pedido não tira da tela a cópia recém-pe
   });
   await askButton(page).click();
   await expect(list(page)).toContainText("Preparando sua cópia.");
-  await expect(page.getByText("Pedido feito.")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Cópia pedida. Preparando: pode levar até uma hora. Você pode sair e voltar."
+    )
+  ).toBeVisible();
   const lateList = page.waitForResponse("**/rpc/dataExport/list");
   release();
   await lateList;

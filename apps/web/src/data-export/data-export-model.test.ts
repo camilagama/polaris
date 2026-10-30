@@ -17,6 +17,7 @@ import {
   NO_FORMAT_TEXT,
   orderedFormats,
   PREPARING_TEXT,
+  REQUEST_DONE_TEXT,
   REQUEST_FAILED_TEXT,
   REQUEST_UNCONFIRMED_TEXT,
   requestRefusal,
@@ -105,6 +106,33 @@ describe("each state of a copy (AC-3)", () => {
     }
   });
 
+  it("names the formats of a copy in short, the long labels staying on the request", () => {
+    const cases: [DataExportItem["formats"], string][] = [
+      [["json"], "JSON"],
+      [["csv"], "planilha"],
+      [["images"], "imagens"],
+      [["json", "csv"], "JSON e planilha"],
+      [["images", "json"], "JSON e imagens"],
+      [["csv", "images"], "planilha e imagens"],
+      [["images", "csv", "json"], "JSON, planilha e imagens"],
+    ];
+    for (const [formats, expected] of cases) {
+      expect(exportView(item({ formats }), NOW, ZONE).formats).toBe(expected);
+    }
+  });
+
+  it("says a failed copy has to be asked for again", () => {
+    expect(FAILED_TEXT).toBe(
+      "Não foi possível preparar a cópia. Peça de novo."
+    );
+  });
+
+  it("confirms the request with what happens next", () => {
+    expect(REQUEST_DONE_TEXT).toBe(
+      "Cópia pedida. Preparando: pode levar até uma hora. Você pode sair e voltar."
+    );
+  });
+
   it("ready: the deadline in the store's time and one download per file, in order, with its size", () => {
     const view = exportView(READY, NOW, ZONE);
     expect(view.kind).toBe("ready");
@@ -119,7 +147,7 @@ describe("each state of a copy (AC-3)", () => {
       },
     ]);
     expect(view.requested).toBe("Pedida em 30/10/2026 11:10");
-    expect(view.formats).toBe("Dados em JSON, Dados em planilha (CSV)");
+    expect(view.formats).toBe("JSON e planilha");
   });
 
   it("never says ready past the deadline or without files: the download would be refused", () => {
