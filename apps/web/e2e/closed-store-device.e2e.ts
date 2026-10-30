@@ -450,9 +450,9 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     await page.context().setOffline(false);
     // the refusal drops the lease and the app asks for a new one a moment later: the localStorage key is empty only
     // for that moment, which a poll can miss under load, so the drop is read from the new request
-    await expect.poll(() => server.leases, { timeout: 40_000 }).toBeGreaterThan(
-      leasesBefore
-    );
+    await expect
+      .poll(() => server.leases, { timeout: 40_000 })
+      .toBeGreaterThan(leasesBefore);
     expect(refusals).toBeGreaterThan(0);
     await expect(notice(page)).toHaveCount(0);
   });
