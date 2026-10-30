@@ -455,7 +455,7 @@ export function StockCommandPanel({
       ) : null}
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
-          <AlertDescription className="grid justify-items-start gap-2">
+          <AlertDescription className="grid justify-items-start">
             <p>{block}</p>
             {informCost ? (
               <Button
