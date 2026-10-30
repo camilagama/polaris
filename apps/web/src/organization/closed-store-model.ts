@@ -47,7 +47,7 @@ export const UNDO_UNAVAILABLE_TEXT =
   "Desfazer o encerramento por aqui ainda não está disponível.";
 export const RENEWAL_TERM = "Renovação do plano";
 
-export const RENEWAL_TEXT: Readonly<Record<NonNullable<Renewal>, string>> = {
+const RENEWAL_TEXT: Readonly<Record<NonNullable<Renewal>, string>> = {
   cancelled: "A renovação do plano foi cancelada.",
   not_handled: "Cancele a renovação no provedor de pagamento.",
   pending: "A renovação do plano está sendo cancelada.",
@@ -69,7 +69,7 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
 const FIRST_OF_MONTH = /^1 de /;
 const DAY_MS = 86_400_000;
 
-export function formatCalendarDate(date: string): string {
+function formatCalendarDate(date: string): string {
   return dateFormatter
     .format(new Date(`${date}T12:00:00.000Z`))
     .replace(FIRST_OF_MONTH, "1º de ");
@@ -107,7 +107,7 @@ function daysLeftText(days: number): string | null {
   return days === 1 ? "falta 1 dia" : `faltam ${days} dias`;
 }
 
-export function copyLimitText(store: ClosedStore): string {
+function copyLimitText(store: ClosedStore): string {
   return `${formatCalendarDate(store.deletionDate)}, ${formatTime(store.exportOpenUntil, store.timezone)} (horário da sua loja)`;
 }
 

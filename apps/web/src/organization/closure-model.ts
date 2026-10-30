@@ -118,7 +118,7 @@ export function queueNotice(queue: QueueState): QueueNotice {
 }
 
 /** The typed name is the store's: case and surrounding spaces aside, as the server compares it. */
-export function nameConfirmed(typed: string, storeName: string): boolean {
+function nameConfirmed(typed: string, storeName: string): boolean {
   return closureConfirmationMatches(typed, storeName);
 }
 
