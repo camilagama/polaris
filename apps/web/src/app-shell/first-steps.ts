@@ -31,6 +31,8 @@ export const FIRST_STEPS_KEY = "polaris.home.firstSteps";
 interface RememberedSteps {
   /** Null for no steps to show: the store sold, or this person does not read its stock (no checklist on the Início). */
   done: number | null;
+  /** A sale was kept on this device while the steps were open: the next one the server confirms is not the first. */
+  deviceSale?: true;
   organizationId: string;
 }
 
@@ -117,17 +119,68 @@ export function rememberedFirstSteps(
   }
 }
 
+function keptOnDevice(
+  organizationId: string,
+  store: SessionStore | null
+): boolean {
+  try {
+    const value = JSON.parse(
+      storedText(store) ?? "null"
+    ) as Partial<RememberedSteps> | null;
+    return (
+      value?.organizationId === organizationId && value.deviceSale === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A sale was kept on this device (no connection): it is not an official sale yet, so the steps stay as they are, but the
+ * store may have sold by the time the server confirms the next one, which then is not the first. The Início reading the
+ * steps again, with the server's word, starts over.
+ */
+export function deviceSaleKept(
+  organizationId: string,
+  store: SessionStore | null = sessionStore()
+): void {
+  const done = rememberedFirstSteps(organizationId, store);
+  if (done === null) {
+    return;
+  }
+  const value: RememberedSteps = { deviceSale: true, done, organizationId };
+  inMemory = JSON.stringify(value);
+  try {
+    store?.setItem(FIRST_STEPS_KEY, inMemory);
+  } catch {
+    // the page's memory still has it
+  }
+}
+
 /**
  * The server confirmed a sale of this store: its steps are over at once, on every screen. A sale kept on the device is
  * not one yet (it is not an official sale until the server confirms it); the Início reads the steps again anyway.
+ * True only for the sale that ended them, the one this tab knew to be the first: the confirmation panel says so once.
  */
 export function firstSaleConfirmed(
   organizationId: string,
   store: SessionStore | null = sessionStore()
-): void {
-  if (rememberedFirstSteps(organizationId, store) !== null) {
-    rememberFirstSteps(organizationId, null, store);
+): boolean {
+  if (rememberedFirstSteps(organizationId, store) === null) {
+    return false;
   }
+  const kept = keptOnDevice(organizationId, store);
+  rememberFirstSteps(organizationId, null, store);
+  return !kept;
+}
+
+/** The sale the server just confirmed ended the steps and is the first of the store; one it already had (replayed) is not new. */
+export function confirmedSaleWasFirst(
+  organizationId: string,
+  replayed: boolean,
+  store: SessionStore | null = sessionStore()
+): boolean {
+  return firstSaleConfirmed(organizationId, store) && !replayed;
 }
 
 /**
