@@ -4,9 +4,10 @@ import { priceErrorMessage } from "./product-variant-price-section";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 describe("priceErrorMessage", () => {
-  it("o 503 server_busy, ou sem motivo, diz que o preço pode ter sido salvo", () => {
+  it("qualquer 503, com ou sem motivo, diz que o preço pode ter sido salvo", () => {
     for (const error of [
       { code: "SERVICE_UNAVAILABLE", data: { reason: "server_busy" } },
+      { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
       { code: "SERVICE_UNAVAILABLE" },
     ]) {
       const message = priceErrorMessage(error);
@@ -17,13 +18,7 @@ describe("priceErrorMessage", () => {
     }
   });
 
-  it("outro 503 e os demais códigos mantêm o texto de antes", () => {
-    expect(
-      priceErrorMessage({
-        code: "SERVICE_UNAVAILABLE",
-        data: { reason: "other" },
-      })
-    ).toBe("Não foi possível salvar o preço. Tente novamente.");
+  it("os demais códigos mantêm o texto de antes", () => {
     expect(priceErrorMessage({ code: "BAD_REQUEST" })).toBe(
       "Informe um valor em reais, como 59,90."
     );

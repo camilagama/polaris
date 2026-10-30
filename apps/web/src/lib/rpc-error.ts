@@ -175,9 +175,10 @@ export function serverCutWriteMessage(error: unknown): string | undefined {
 }
 
 /**
- * A direct write (no queue, no idempotency key) that met the Worker's own 503 `server_busy`. The fault may come at the
- * COMMIT or after it, so the change may be saved: the text never says it was not and never invites a second try, which
- * could double it.
+ * A direct write (no queue, no idempotency key) that met a 503. The Worker's own `server_busy` may come at the COMMIT
+ * or after it, and a screen whose write mapper says every 503 of a write is this one (`unconfirmedWriteFaultMessage`
+ * covers only `server_busy`) does the same for any reason: the change may be saved, so the text never says it was not
+ * and never invites a second try, which could double it.
  */
 export const CHANGE_FAULT_UNKNOWN =
   "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
