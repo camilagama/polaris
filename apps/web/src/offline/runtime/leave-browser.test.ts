@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  clearOrganizationsClosedHere,
+  markOrganizationClosed,
+  organizationsClosedHere,
+} from "../../lib/organization-closed";
 import { SESSION_MARKER_KEY } from "../../lib/session-marker";
 import { CLOSED_STORES_KEY } from "../../organization/closed-stores-memory";
-import { leaveAfterSignOut, leaveTo } from "./leave-browser";
+import {
+  clearSessionCaches,
+  leaveAfterSignOut,
+  leaveTo,
+} from "./leave-browser";
 
 function fakeWindow() {
   const stored = new Map<string, string>();
@@ -18,7 +27,10 @@ function fakeWindow() {
 }
 
 describe("leaving the page", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    clearOrganizationsClosedHere();
+  });
 
   it("marks that the person left on purpose, then goes (U-01)", () => {
     const { assign, stored } = fakeWindow();
@@ -42,5 +54,17 @@ describe("leaving the page", () => {
     );
     leaveTo("/");
     expect(stored.has(CLOSED_STORES_KEY)).toBe(false);
+  });
+
+  it("forgets the refused stores of the page when the person leaves and when the session is refused", () => {
+    fakeWindow();
+    markOrganizationClosed("a");
+    markOrganizationClosed("b");
+    leaveAfterSignOut("/");
+    expect(organizationsClosedHere()).toEqual([]);
+
+    markOrganizationClosed("c");
+    clearSessionCaches();
+    expect(organizationsClosedHere()).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import {
   browserStorage,
   clearOrganizationsCache,
 } from "../../lib/current-organization-model";
+import { clearOrganizationsClosedHere } from "../../lib/organization-closed";
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { writeSessionMarker } from "../../lib/session-marker";
@@ -34,6 +35,7 @@ export function forgetSessionCaches(): void {
 export function clearSessionCaches(): void {
   clearOrganizationsCache(browserStorage());
   clearClosedStores(browserStorage());
+  clearOrganizationsClosedHere();
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
   clearPlanNotice();
