@@ -70,6 +70,7 @@ export const CLIENT_ERROR_ROUTE_IDS = [
   "dashboard:despesas",
   "dashboard:metas",
   "dashboard:resultado",
+  "help",
   "home",
   "inventory",
   "products:categorias",

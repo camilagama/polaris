@@ -43,6 +43,11 @@ const pages: Readonly<Record<ScreenId, Page>> = {
       default: module.DashboardPage,
     }))
   ),
+  help: lazyScreen(() =>
+    import("../help/help-page").then((module) => ({
+      default: module.HelpPage,
+    }))
+  ),
   home: lazyScreen(() =>
     import("../home/home-page").then((module) => ({
       default: module.HomePage,

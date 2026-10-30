@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -549,7 +550,7 @@ test("Pix na janela: sem botão, o caminho do suporte com a data, o que vale e s
   });
   await expect(
     page.getByText(
-      "Para desistir e receber o reembolso de R$ 24,90, escreva para o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura) até 30/10/2026, 23:59 com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento."
+      `Para desistir e receber o reembolso de R$ 24,90, escreva para o suporte do Polaris (${SUPPORT_ADDRESS}) até 30/10/2026, 23:59 com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`
     )
   ).toBeVisible();
   await expect(

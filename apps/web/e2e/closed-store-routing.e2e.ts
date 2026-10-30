@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -134,6 +135,12 @@ test("sem loja ativa e sem encerrada do dono (ou quem não é dono): 'Abra a sua
   await expect(setupTitle(page)).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/");
   expect(calls.listClosed).toBe(1);
+  await expect(page.getByText("Precisa de ajuda? Escreva para")).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+    })
+  ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
 });
 
 test("com loja ativa, listClosed não é chamado; sem nada lembrado, nenhuma linha", async ({

@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 
 const shellCachePattern = /^polaris-shell-/;
 const polarisTitle = /Polaris$/;
+const helpChunk = /^\/assets\/help-page-[\w-]+\.js$/;
 
 /** Opens the app and waits until the worker controls the page (after a reload). */
 async function installAndControl(page: Page) {
@@ -54,6 +55,20 @@ test("sem rede o app abre a partir do shell em cache, inclusive numa rota intern
 
   await page.goto("/vendas/historico");
   await expect(page).toHaveTitle(polarisTitle);
+  await expect(page.locator("#root")).not.toBeEmpty();
+});
+
+test("Ajuda e contato fica no pré-cache como os Termos e abre sem rede, com o título dela", async ({
+  context,
+  page,
+}) => {
+  await installAndControl(page);
+  expect((await cachedPaths(page)).some((path) => helpChunk.test(path))).toBe(
+    true
+  );
+  await context.setOffline(true);
+  await page.goto("/ajuda");
+  await expect(page).toHaveTitle("Ajuda e contato · Polaris");
   await expect(page.locator("#root")).not.toBeEmpty();
 });
 
