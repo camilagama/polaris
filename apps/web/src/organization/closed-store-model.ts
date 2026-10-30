@@ -286,6 +286,8 @@ export const UNDO_OTHER_ACTIVE_TEXT =
   "Não dá para reabrir: você já tem uma loja ativa. Só uma loja ativa por conta.";
 export const UNDO_REFUSED_TEXT =
   "O encerramento não foi desfeito. Toque em Atualizar para ver a situação da loja.";
+export const UNDO_FRESH_SESSION_TEXT =
+  "Por segurança, para desfazer o encerramento é preciso ter entrado há menos de 15 minutos. Saia, entre de novo e desfaça o encerramento. Nada foi alterado.";
 export const UNDO_UNKNOWN_TEXT =
   "Não deu para confirmar se o encerramento foi desfeito. Toque em Atualizar para conferir.";
 
@@ -309,6 +311,9 @@ export function undoFailure(error: unknown): UndoFailure {
   const reason = rpcErrorReason(error);
   if (code === "CONFLICT" && reason === "closure_not_recoverable") {
     return { kind: "not_recoverable" };
+  }
+  if (reason === "fresh_session_required") {
+    return { kind: "said", text: UNDO_FRESH_SESSION_TEXT };
   }
   if (code === "CONFLICT" && reason === "another_organization_active") {
     return { kind: "said", text: UNDO_OTHER_ACTIVE_TEXT };
