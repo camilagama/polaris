@@ -51,7 +51,7 @@ export interface StockResult {
 /** `cost` is a count with the balance as read and a valuation cost: it sets the unknown cost and leaves the quantity. */
 export type StockAction = "cost" | "count" | "receive" | "write_off";
 
-export const STOCK_ACTIONS: readonly StockAction[] = [
+const STOCK_ACTIONS: readonly StockAction[] = [
   "receive",
   "count",
   "write_off",
