@@ -9,6 +9,7 @@ import {
   LEGAL_CONTENT_SLUGS,
   LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENTS,
+  LEGAL_DRAFT_NOTICE,
   type LegalDocumentId,
   type LegalDocumentVersion,
 } from "@polaris/domain/legal/legal-documents";
@@ -200,9 +201,11 @@ describe("the markers and the draft notice (AC-9, AC-10)", () => {
       production: true,
       readText: readRepositoryText,
     });
-    expect(errors.join("\n")).toContain("aviso de rascunho");
-    expect(errors.join("\n")).not.toContain("variável");
-    expect(errors.join("\n")).not.toContain("{{");
+    expect(errors).toEqual([
+      "Build de produção com texto legal ainda não final: terms: [preencher na publicação] (data de vigência).",
+      "Build de produção com texto legal ainda não final: privacy: [preencher na publicação] (data de vigência).",
+      `Build de produção com texto legal ainda não final: aviso de rascunho: "${LEGAL_DRAFT_NOTICE}".`,
+    ]);
   });
 });
 
@@ -283,15 +286,19 @@ describe("the company variables (VITE_LEGAL_*)", () => {
     );
   });
 
-  it.each(["dpo@", "dpo", "dpo@empresa", "dpo empresa@x.com", "a@b@c.com"])(
-    "stop a production build when the e-mail %j is not valid",
-    (value) => {
-      for (const name of ["VITE_LEGAL_CONTATO_EMAIL", "VITE_LEGAL_DPO_EMAIL"]) {
-        const { errors } = run({ ...company, [name]: value }, true);
-        expect(errors.join("\n")).toContain(`${name} não é um e-mail válido`);
-      }
+  it.each([
+    "dpo@",
+    "dpo",
+    "dpo@empresa",
+    "dpo empresa@x.com",
+    "a@b@c.com",
+    "dpo@empresa.c",
+  ])("stop a production build when the e-mail %j is not valid", (value) => {
+    for (const name of ["VITE_LEGAL_CONTATO_EMAIL", "VITE_LEGAL_DPO_EMAIL"]) {
+      const { errors } = run({ ...company, [name]: value }, true);
+      expect(errors.join("\n")).toContain(`${name} não é um e-mail válido`);
     }
-  );
+  });
 
   it.each([
     "Rua A\nRua B",
@@ -299,6 +306,9 @@ describe("the company variables (VITE_LEGAL_*)", () => {
     "Rua [A](/x)",
     "Rua <b>A</b>",
     "{{DPO_EMAIL}}",
+    "Rua\tA",
+    "Rua A",
+    "Rua‮A",
   ])(
     "stop a production build when the value %j would change the Markdown or the tokens",
     (value) => {
@@ -317,6 +327,29 @@ describe("the company variables (VITE_LEGAL_*)", () => {
     expect(values["{{CONTATO_EMAIL}}"]).toContain("exemplo");
     expect(values["{{DPO_EMAIL}}"]).toContain("exemplo");
     expect(run({}, false)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it.each([
+    "Razão Social de Exemplo Ltda. (exemplo)",
+    "Empresa Exemplo Ltda.",
+    "contato@example.com",
+    "contato@example.org",
+  ])("stop a production build that carries the example %j", (value) => {
+    for (const name of Object.keys(company)) {
+      const { errors } = run({ ...company, [name]: value }, true);
+      expect(errors.join("\n")).toContain(
+        `variável ${name} com valor de exemplo`
+      );
+    }
+  });
+
+  it("let the examples through staging, which shows them on purpose", () => {
+    expect(
+      run(
+        { ...company, VITE_LEGAL_DPO_EMAIL: "dpo-exemplo@example.com" },
+        false
+      )
+    ).toEqual({ errors: [], warnings: [] });
   });
 
   it("keep the examples out of a production build that has no variable", () => {

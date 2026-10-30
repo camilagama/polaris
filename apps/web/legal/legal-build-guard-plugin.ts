@@ -23,16 +23,21 @@ const rawTemplate =
  *
  * It also fills the `{{FICHA}}` tokens of the templates as they load, so the bundle carries the final
  * text and the pages open offline with no Worker. The dev server never counts as production and
- * shows the examples where a variable is absent.
+ * shows the examples where a variable is absent. With `check: false` (the builds of the labs, never
+ * deployed) it only fills, with the examples.
  */
-export function legalBuildGuardPlugin(company: LegalCompanyEnv): Plugin {
+export function legalBuildGuardPlugin(
+  company: LegalCompanyEnv,
+  { check = true }: { check?: boolean } = {}
+): Plugin {
   let building = false;
   let checked = false;
-  const isProduction = () => building && isProductionBuild(process.env);
+  const isProduction = () =>
+    check && building && isProductionBuild(process.env);
   return {
     buildStart() {
       // the Cloudflare plugin builds more than one environment; one check is enough
-      if (!building || checked) {
+      if (!(check && building) || checked) {
         return;
       }
       checked = true;

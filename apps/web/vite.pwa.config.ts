@@ -6,6 +6,7 @@ import {
   MOTION_MODULE,
   precacheBudgetPlugin,
 } from "./pwa/precache-budget";
+import { legalBuildGuardPlugin } from "./legal/legal-build-guard-plugin";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -74,6 +75,7 @@ export default defineConfig({
     "import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED": JSON.stringify("true"),
   },
   plugins: [
+    legalBuildGuardPlugin({}, { check: false }),
     uiPlugins(),
     react(),
     variantMarker,

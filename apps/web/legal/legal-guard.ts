@@ -51,8 +51,10 @@ export interface LegalGuardResult {
 }
 
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
-const emailAddress = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
-const markdownOrLineBreak = /[\r\n*[\]<>|`]/;
+const emailAddress =
+  /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+const markdownOrInvisible = /[\p{C}\p{Z}*[\]<>|`]/u;
+const exampleValue = /exemplo|@example\.(?:com|org|net)$/iu;
 
 export type LegalCompanyEnv = Readonly<Record<string, string | undefined>>;
 
@@ -93,11 +95,16 @@ export function legalCompanyValues(
       continue;
     }
     values[token] = value;
-    if (findPendingMarkers(value).length > 0) {
+    if (production && exampleValue.test(value)) {
+      problems.push(`variável ${name} com valor de exemplo: "${value}"`);
+    } else if (findPendingMarkers(value).length > 0) {
       problems.push(`variável ${name} com marcador pendente: "${value}"`);
-    } else if (value.includes("{{") || markdownOrLineBreak.test(value)) {
+    } else if (
+      value.includes("{{") ||
+      markdownOrInvisible.test(value.replaceAll(" ", ""))
+    ) {
       problems.push(
-        `variável ${name} com ficha, quebra de linha ou caractere de Markdown`
+        `variável ${name} com ficha, caractere invisível ou de Markdown`
       );
     } else if (kind === "email" && !emailAddress.test(value)) {
       problems.push(`variável ${name} não é um e-mail válido`);
