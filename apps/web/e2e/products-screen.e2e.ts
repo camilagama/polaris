@@ -869,7 +869,7 @@ test("desfazer o arquivamento restaura o produto pela mesma chamada do Restaurar
   );
 });
 
-test("o desfazer que o servidor recusa diz o erro e o botão continua para tentar de novo", async ({
+test("o desfazer que o servidor ocupado não confirmou diz que pode ter sido salvo e o botão continua", async ({
   page,
 }) => {
   const shirt = product(1, "Camiseta do teste");
@@ -887,7 +887,7 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
       "product/restore": (route) => {
         restores += 1;
         return restores === 1
-          ? route.fulfill(unavailable)
+          ? route.fulfill(serverBusy)
           : route.fulfill(
               rpc({
                 changed: true,

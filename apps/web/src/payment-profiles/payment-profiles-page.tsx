@@ -20,6 +20,7 @@ import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import {
   CHANGE_CUT_BY_SERVER,
+  CHANGE_FAULT_UNKNOWN,
   CHANGE_OUTCOME_UNKNOWN,
   commonFailureMessage,
   isConnectionFailure,
@@ -588,7 +589,8 @@ export function PaymentProfilesPage() {
                 regionRef={feedbackRef}
                 uncertain={uncertain}
                 uncertainAction={
-                  uncertain === SAVE_NOT_CONFIRMED_TEXT
+                  uncertain === SAVE_NOT_CONFIRMED_TEXT ||
+                  uncertain === CHANGE_FAULT_UNKNOWN
                     ? { label: CHECK_AND_CLOSE_LABEL, onClick: handleDismiss }
                     : undefined
                 }

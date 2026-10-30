@@ -182,7 +182,7 @@ export function serverCutWriteMessage(error: unknown): string | undefined {
 export const CHANGE_FAULT_UNKNOWN =
   "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
 
-/** The text of a direct write the Worker answered with a 503 `server_busy` (`isTransientReadFailure` reads the same 503 as a read); undefined for any other error. */
+/** The text of a direct write the Worker answered with a 503 `server_busy` (or with no reason, as `isTransientReadFailure` also counts it: doubt is the safe side); undefined for any other error. */
 export function unconfirmedWriteFaultMessage(
   error: unknown
 ): string | undefined {
