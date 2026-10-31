@@ -192,6 +192,8 @@ export function panelTitle(store: ClosedStore): string {
  * The sentences of the phase, in order. The days left come from the store's calendar against the clock of the device;
  * the dates are the server's. A phase the server still calls `closing` past `recoverUntil` reads as closed: the button
  * is gone too, and the server would refuse the undo.
+ * A `closing` the server says cannot be undone, still before `recoverUntil`, gets only the deletion sentence: saying the time is
+ * over would contradict the date shown, and no sentence is made up for it.
  */
 export function phaseLines(store: ClosedStore, now: number): string[] {
   const tz = store.timezone;
