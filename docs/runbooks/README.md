@@ -84,7 +84,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 - [ ] Turnstile (site key, secret e hostname), Resend (secret, domínio de envio verificado, remetente) e demais segredos configurados conforme [auth-abuse-protection.md](./auth-abuse-protection.md) e [email-auth.md](./email-auth.md); só então ligar e-mail/senha.
 - [ ] Política de privacidade atualizada com Resend, Turnstile, IP e user-agent de sessão e vínculo Google, e revisão de DPA e região dos providers ([privacy.md](../business-rules/privacy.md)). Retenção legal e legal hold da auditoria definidas.
 
-- [ ] **Restore e deletion ledger ([ADR 0080](../adr/0080-ledger-minimo-de-exclusoes.md)).** O procedimento de [restore e deletion ledger](./deletion-ledger-restore.md) foi ensaiado em ambiente descartável (listar o ledger da origem, restaurar, reaplicar, conferir a consulta vazia) antes do go-live; a branch ou o ambiente de origem de um restore nunca é apagado antes da conferência; decidida a cópia do ledger fora do banco (Fase 16), porque o ledger não sobrevive à perda do próprio banco.
+- [ ] **Restore e deletion ledger ([ADR 0080](../adr/0080-ledger-minimo-de-exclusoes.md)).** O procedimento de [restore e deletion ledger](./deletion-ledger-restore.md) foi ensaiado em ambiente descartável (listar o ledger da origem, restaurar, reaplicar, conferir a consulta vazia) antes do go-live, **com a conferência de ACL do passo 2b** (nenhuma função `SECURITY DEFINER` do `public` executável por PUBLIC e o hash das ACLs das funções igual ao da origem); a branch ou o ambiente de origem de um restore nunca é apagado antes da conferência; decidida a cópia do ledger fora do banco (Fase 16), porque o ledger não sobrevive à perda do próprio banco.
 
 ### Billing
 
