@@ -124,10 +124,9 @@ export function supportCasesView(
     type: "text",
   });
   const reasonError = dom.el("p", {
+    "aria-live": "polite",
     class: "field-error",
-    hidden: "",
     id: "motivo-erro",
-    role: "alert",
   });
   const counter = dom.el(
     "p",
@@ -216,14 +215,12 @@ export function supportCasesView(
 
   const clearReasonError = () => {
     reasonError.textContent = "";
-    reasonError.setAttribute("hidden", "");
     reason.removeAttribute("aria-invalid");
   };
 
   const showReasonError = (text: string) => {
     notice.clear();
     reasonError.textContent = text;
-    reasonError.removeAttribute("hidden");
     reason.setAttribute("aria-invalid", "true");
     reason.focus();
   };

@@ -353,6 +353,11 @@ interface ReadContext {
   wholeMonth: string;
 }
 
+/** "ainda" only for the period still open at its end (today at rest); a reading on a day already gone is of a closed one. */
+function noSalesText(open: boolean): string {
+  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+}
+
 function salesReading({
   atRest,
   cards,
@@ -372,7 +377,7 @@ function salesReading({
   }
   const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: count === 0 ? "Nenhuma venda ainda" : salesCountText(count),
+    count: count === 0 ? noSalesText(atRest) : salesCountText(count),
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,

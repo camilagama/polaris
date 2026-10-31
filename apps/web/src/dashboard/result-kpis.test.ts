@@ -289,6 +289,37 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(unknownBefore.sales.delta).not.toBeNull();
   });
 
+  describe("without any sale", () => {
+    const read = (period: { from: string; to: string }, today: string) =>
+      resultKpis({
+        cards: { ...CARDS, netSales: "0.00", salesCount: 0 },
+        daily: days(period.from, 31, () => ({
+          netSales: "0.00",
+          salesCount: 0,
+        })),
+        period,
+        previous: null,
+        previousSales: null,
+        today,
+      });
+
+    it("says 'ainda' only for a period that has not ended, read at rest", () => {
+      const kpis = read(OCTOBER, "2026-10-25");
+      expect(kpis.read(null).sales.count).toBe("Nenhuma venda ainda");
+    });
+
+    it("never says 'ainda' for a period already closed", () => {
+      const kpis = read(SEPTEMBER, "2026-10-25");
+      expect(kpis.read(null).sales.count).toBe("Sem vendas no período");
+      expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
+    });
+
+    it("never says 'ainda' for a day of the open period already gone", () => {
+      const kpis = read(OCTOBER, "2026-10-25");
+      expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
+    });
+  });
+
   it("says the period before had no sale instead of a percent over nothing", () => {
     const rest = resultKpis({
       cards: CARDS,
