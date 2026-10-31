@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LogoutWorkspace } from "../offline/logout-guard";
+import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import {
   useOfflineRuntime,
   useRuntimeSnapshot,
@@ -8,12 +9,6 @@ import { type ClosedQueue, emptyKinds, kindOf } from "./closed-queue-model";
 import type { QueueCounts, QueueState } from "./closure-model";
 
 const NONE: QueueCounts = { pending: 0, rejected: 0, sending: 0 };
-
-/** Whether this browser keeps any queue at all, whoever's store it is. */
-async function anyOutboxOnDisk(): Promise<boolean> {
-  const databases = await indexedDB.databases();
-  return databases.some(({ name }) => name?.startsWith("polaris-outbox-"));
-}
 
 /**
  * No workspace at all is also what the runtime gives when it could not name the signed-in person: with a queue on

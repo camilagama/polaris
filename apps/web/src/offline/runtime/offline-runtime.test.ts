@@ -19,6 +19,7 @@ import {
   type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { logoutDependencies } from "./logout-dependencies";
 import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
@@ -47,6 +48,8 @@ function memoryKeyValues(): KeyValueStore & { data: Map<string, string> } {
 function world(options: { leaseHours?: number } = {}) {
   const server = new FakeCatalogServer();
   const network = { online: true };
+  /** Whether a queue database exists on the browser, apart from the namespaces the registry lists. */
+  const disk = { outbox: false };
   let clock = new Date("2026-10-14T12:00:00.000Z");
   const calls = {
     issueLease: 0,
@@ -279,6 +282,7 @@ function world(options: { leaseHours?: number } = {}) {
         };
         return Promise.resolve(opened);
       },
+      outboxOnDisk: () => Promise.resolve(disk.outbox),
       purge: (_namespace, purgeOptions) => {
         purged.push(purgeOptions);
         return Promise.resolve();
@@ -320,6 +324,7 @@ function world(options: { leaseHours?: number } = {}) {
         }
       }
     },
+    disk,
     gates,
     keyValues,
     labels,
@@ -880,6 +885,25 @@ describe("starting", () => {
       readable: false,
       workspaces: [],
     });
+  });
+
+  it("inspecting a logout does not take an empty registry for an empty browser while a queue database is on the disk", async () => {
+    const w = world();
+    w.disk.outbox = true;
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    expect(
+      await logoutDependencies(runtime, {
+        leave: () => undefined,
+        revoke: () => Promise.resolve({ endedCurrentSession: false }),
+        signOut,
+      })
+    ).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it.each(["{", '{"a":1}', '[{"userId":"u"}]', "[null]"])(

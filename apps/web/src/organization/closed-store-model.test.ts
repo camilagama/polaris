@@ -438,16 +438,39 @@ describe("the device of a closed store (AC-11)", () => {
     );
   });
 
-  it("after a sale refused, says it was not recorded and where the cart is, and never that the sale is in the queue", () => {
-    const text = deviceClosedText(STORE, true, true);
+  it("after a first try of a sale refused, says it was not recorded and where the cart is, and never that the sale is in the queue", () => {
+    const text = deviceClosedText(STORE, true, "not_recorded");
     expect(text).toBe(
-      "Esta loja foi encerrada em 20 de outubro de 2026. A venda que você acabou de confirmar não foi registrada. A cópia deste aparelho foi apagada; o que já estava na fila continua guardado. O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde."
+      "Esta loja foi encerrada em 20 de outubro de 2026. A venda que você acabou de confirmar não foi registrada. A cópia deste aparelho foi apagada. O que já estava na fila continua guardado. O carrinho fica guardado aqui e volta em Vender se a loja reabrir. Se você fechar o Polaris, ele se perde."
     );
     expect(text).not.toContain("o que não foi enviado");
-    expect(deviceClosedText(null, false, true)).toBe(
-      "Esta loja foi encerrada. A venda que você acabou de confirmar não foi registrada. O que já estava na fila deste aparelho continua guardado. O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde."
+    expect(deviceClosedText(null, false, "not_recorded")).toBe(
+      "Esta loja foi encerrada. A venda que você acabou de confirmar não foi registrada. O que já estava na fila deste aparelho continua guardado. O carrinho fica guardado aqui e volta em Vender se a loja reabrir. Se você fechar o Polaris, ele se perde."
     );
-    expect(deviceClosedText(null, false, true)).not.toContain("apagada");
+    expect(deviceClosedText(null, false, "not_recorded")).not.toContain(
+      "apagada"
+    );
+  });
+
+  it("after a refused sale whose command had already been sent with no answer, does not say it was not recorded", () => {
+    const text = deviceClosedText(STORE, true, "maybe_recorded");
+    expect(text).toBe(
+      "Esta loja foi encerrada em 20 de outubro de 2026. Não deu para saber se a venda que você acabou de confirmar foi registrada. Se uma tentativa anterior chegou ao servidor, ela está na cópia dos seus dados. A cópia deste aparelho foi apagada. O que já estava na fila continua guardado. O carrinho fica guardado aqui e volta em Vender se a loja reabrir. Se você fechar o Polaris, ele se perde."
+    );
+    expect(text).not.toContain("não foi registrada");
+    expect(deviceClosedText(null, false, "maybe_recorded")).not.toContain(
+      "apagada"
+    );
+  });
+
+  it("keeps the sentences of the refused sale free of semicolons and of the word tab", () => {
+    for (const cause of ["not_recorded", "maybe_recorded"] as const) {
+      for (const dropped of [true, false]) {
+        const text = deviceClosedText(STORE, dropped, cause);
+        expect(text).not.toContain(";");
+        expect(text).not.toContain("aba");
+      }
+    }
   });
 
   it("never says the copy was deleted before the device confirmed it", () => {

@@ -22,8 +22,10 @@ const SHIRT_OPTION = /Camiseta do teste · Azul/;
 const REOPENED_URL = /reaberta=1/;
 const DAY = 86_400_000;
 const SALE_REFUSED = "A venda que você acabou de confirmar não foi registrada.";
+const SALE_UNKNOWN =
+  "Não deu para saber se a venda que você acabou de confirmar foi registrada. Se uma tentativa anterior chegou ao servidor, ela está na cópia dos seus dados.";
 const CART_KEPT =
-  "O carrinho continua nesta aba e volta em Vender se a loja reabrir; se você fechar a aba, ele se perde.";
+  "O carrinho fica guardado aqui e volta em Vender se a loja reabrir. Se você fechar o Polaris, ele se perde.";
 const QUEUE_LIE = "o que não foi enviado continua guardado na fila";
 
 const SHIRT_ENTRY = {
@@ -85,6 +87,7 @@ function closedStore() {
 class Store {
   closed = false as boolean;
   confirms = 0;
+  loseFirstConfirm = false as boolean;
 
   async install(page: Page) {
     await serveHealth(page);
@@ -133,6 +136,14 @@ class Store {
       case "sale/confirm":
         this.confirms += 1;
         this.closed = true;
+        if (this.loseFirstConfirm && this.confirms === 1) {
+          return route.fulfill(
+            rpc(
+              { code: "INTERNAL_SERVER_ERROR", message: "x", status: 500 },
+              500
+            )
+          );
+        }
         return route.fulfill(closedRefusal);
       default:
         return route.abort("internetdisconnected");
@@ -198,5 +209,27 @@ test.describe("venda recusada com a loja encerrada", () => {
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
     await expect(page.getByText("Camiseta do teste")).toBeVisible();
     await expect(notice(page)).toHaveCount(0);
+  });
+
+  test("o reenvio de uma venda sem resposta, recusado, não afirma que ela não foi registrada", async ({
+    page,
+  }) => {
+    const store = new Store();
+    store.loseFirstConfirm = true;
+    await store.install(page);
+    await page.goto("/sales");
+    await buildCart(page);
+
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+    await expect.poll(() => store.confirms).toBe(1);
+    await expect(notice(page)).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Tentar novamente (seguro)" })
+      .click();
+
+    await expect(notice(page)).toContainText(SALE_UNKNOWN, { timeout: 20_000 });
+    await expect(notice(page)).toContainText(CART_KEPT);
+    await expect(notice(page)).not.toContainText(SALE_REFUSED);
+    await expect(notice(page)).not.toContainText(QUEUE_LIE);
   });
 });

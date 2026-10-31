@@ -4,6 +4,7 @@ import {
   readSaleAttempt,
   readSaleAttemptState,
   SALE_ATTEMPT_MAX_AGE_MS,
+  saleMayBeOnServer,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
 import type { SaleAttempt } from "./sale-form-model";
@@ -36,6 +37,56 @@ const attempt: SaleAttempt = {
 };
 
 describe("pending sale attempt storage", () => {
+  it("knows a command was sent before with no answer only from its second send on, and keeps it after a refusal settles", () => {
+    const storage = memoryStorage();
+    const sentBefore = () =>
+      saleMayBeOnServer(storage, organizationId, attempt.commandId);
+    writeSaleAttempt(storage, organizationId, attempt, true, true);
+    expect(sentBefore()).toBe(false);
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    expect(sentBefore()).toBe(false);
+    writeSaleAttempt(storage, organizationId, attempt, true, true);
+    expect(sentBefore()).toBe(true);
+    writeSaleAttempt(storage, organizationId, attempt, false);
+    expect(sentBefore()).toBe(true);
+    writeSaleAttempt(storage, organizationId, attempt, true, true);
+    expect(sentBefore()).toBe(true);
+    expect(saleMayBeOnServer(storage, organizationId, "outro")).toBe(true);
+  });
+
+  it("cannot rule out the sale when the storage is blocked or holds no attempt of the command", () => {
+    expect(saleMayBeOnServer(null, organizationId, attempt.commandId)).toBe(
+      true
+    );
+    expect(
+      saleMayBeOnServer(memoryStorage(), organizationId, attempt.commandId)
+    ).toBe(true);
+    const throwing = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => undefined,
+      setItem: () => undefined,
+    };
+    expect(saleMayBeOnServer(throwing, organizationId, attempt.commandId)).toBe(
+      true
+    );
+  });
+
+  it("does not carry the mark to another command, nor from a first try refused for good", () => {
+    const storage = memoryStorage();
+    writeSaleAttempt(storage, organizationId, attempt, true, true);
+    writeSaleAttempt(storage, organizationId, attempt, false);
+    writeSaleAttempt(storage, organizationId, attempt, true, true);
+    expect(saleMayBeOnServer(storage, organizationId, attempt.commandId)).toBe(
+      false
+    );
+    writeSaleAttempt(storage, organizationId, attempt, true);
+    const other = { ...attempt, commandId: "novo" };
+    writeSaleAttempt(storage, organizationId, other, true, true);
+    expect(saleMayBeOnServer(storage, organizationId, "novo")).toBe(false);
+  });
+
   it("keeps the profile and version of the send, and reads an older attempt without them", () => {
     const storage = memoryStorage();
     const sent = {

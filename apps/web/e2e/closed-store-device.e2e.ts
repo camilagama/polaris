@@ -529,6 +529,39 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     expect(await outboxCommands(page)).toEqual(queued);
   });
 
+  test("Sair no painel com a fila no disco e o registro de lojas vazio não encerra a sessão", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    await openSales(page, server);
+    await queueTwoSales(page);
+    const queued = await outboxCommands(page);
+    server.pushAnswer = "fail";
+    server.refusing = "read";
+    await page.context().setOffline(false);
+    await page.reload();
+    await expectClosedDevice(
+      page,
+      server,
+      queued,
+      await stored(page, DEVICE_KEY)
+    );
+    await page.evaluate(() =>
+      window.localStorage.removeItem("polaris.offline.namespaces")
+    );
+
+    await notice(page)
+      .getByRole("link", { name: "Ver a loja encerrada" })
+      .click();
+    await page.getByRole("button", { name: "Sair" }).click();
+
+    await expect(
+      page.getByText("Não foi possível verificar o trabalho guardado")
+    ).toBeVisible({ timeout: 20_000 });
+    expect(server.signOuts).toBe(0);
+    expect(await outboxCommands(page)).toEqual(queued);
+  });
+
   test("contraste: um FORBIDDEN sem motivo no push não vira loja encerrada", async ({
     page,
   }) => {

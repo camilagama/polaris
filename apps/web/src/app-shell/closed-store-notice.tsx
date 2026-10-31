@@ -8,7 +8,7 @@ import {
 } from "../lib/current-organization-model";
 import {
   closedStoreToShow,
-  organizationClosedOnSale,
+  closedSaleRefusal,
   useOrganizationsClosedHere,
 } from "../lib/organization-closed";
 import { orpcClient } from "../lib/orpc";
@@ -111,7 +111,7 @@ export function ClosedStoreNotice({
           {deviceClosedText(
             store,
             copyDropped,
-            organizationClosedOnSale(organizationId)
+            closedSaleRefusal(organizationId)
           )}
         </p>
         {store ? (

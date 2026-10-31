@@ -23,6 +23,7 @@ import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
+import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import { localNamespace } from "../offline/namespace";
 import { openBrowserDataChannel } from "../offline/runtime/data-channel";
 import { DevicesPage } from "../offline/runtime/devices-page";
@@ -265,6 +266,7 @@ export function ScreensLab() {
         namespaceFor: localNamespace,
         openDataChannel: openBrowserDataChannel,
         openStores: openRuntimeStores,
+        outboxOnDisk: anyOutboxOnDisk,
         purge: purgeNamespace,
         wipeCollections: async (namespace) => {
           await wipeLocalStore(namespace);

@@ -159,6 +159,11 @@ export interface RuntimeDependencies {
     namespace: LocalNamespace,
     deviceId: string
   ) => Promise<OpenedStores>;
+  /**
+   * Whether any queue database exists on this browser, whoever's store it is: what tells an empty registry of
+   * namespaces from one that lost the index of a queue still on the disk.
+   */
+  outboxOnDisk: () => Promise<boolean>;
   purge: (
     namespace: LocalNamespace,
     options: { discardPending: boolean }
@@ -715,7 +720,19 @@ export class OfflineRuntime {
         workspaces.push(workspace);
       }
     }
+    if (workspaces.length === 0 && (await this.queueOnDiskUnseen())) {
+      return { readable: false, workspaces: [] };
+    }
     return { readable: true, workspaces };
+  }
+
+  /** A failed look at the disk is no proof that it holds no queue. */
+  private async queueOnDiskUnseen(): Promise<boolean> {
+    try {
+      return await this.dependencies.outboxOnDisk();
+    } catch {
+      return true;
+    }
   }
 
   /**

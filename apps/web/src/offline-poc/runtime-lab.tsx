@@ -3,6 +3,7 @@ import { type ChangeEvent, useCallback, useMemo, useState } from "react";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { wipeLocalStore } from "../offline/local-store";
 import { purgeNamespace } from "../offline/logout-purge";
+import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import { localNamespace } from "../offline/namespace";
 import { createOfflineProduct } from "../offline/product-create";
 import { OfflineRuntime } from "../offline/runtime/offline-runtime";
@@ -76,6 +77,7 @@ export function RuntimeLab() {
         },
         namespaceFor: localNamespace,
         openStores: openRuntimeStores,
+        outboxOnDisk: anyOutboxOnDisk,
         purge: purgeNamespace,
         wipeCollections: async (namespace) => {
           await wipeLocalStore(namespace);

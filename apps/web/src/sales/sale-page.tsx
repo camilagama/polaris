@@ -257,7 +257,7 @@ export function SalePage() {
     restoredAttempt?.attempt ?? null
   );
   const rememberAttempt = useCallback(
-    (attempt: SaleAttempt | null, unsettled = false) => {
+    (attempt: SaleAttempt | null, unsettled = false, sending = false) => {
       attemptRef.current = attempt;
       // an answer that arrives after "Sair" or a refused session must not put back the copy that was dropped
       if (isSigningOut() || isSessionOver()) {
@@ -267,7 +267,8 @@ export function SalePage() {
         sessionStorageOrNull(),
         organizationId,
         attempt,
-        unsettled
+        unsettled,
+        sending
       );
     },
     [organizationId]
@@ -697,7 +698,7 @@ export function SalePage() {
         setSubmission(rejectSubmission(prepared.message));
         return;
       }
-      rememberAttempt(prepared.attempt, true);
+      rememberAttempt(prepared.attempt, true, true);
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {

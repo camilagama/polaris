@@ -1,12 +1,17 @@
 import { createORPCClient, onError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { PolarisRpcClient } from "@polaris/contracts";
+import {
+  saleMayBeOnServer,
+  sessionStorageOrNull,
+} from "../sales/sale-attempt-storage";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import { browserConnection } from "./browser-connection";
 import { markLegalAcceptanceRequired } from "./legal-acceptance";
 import {
   markOrganizationClosed,
   requestedOrganizationId,
+  type SaleRefusalCause,
 } from "./organization-closed";
 import {
   isLegalAcceptanceRefusal,
@@ -14,6 +19,20 @@ import {
   rpcErrorCode,
 } from "./rpc-error";
 import { trackWrite } from "./writes-in-flight";
+
+function closedCause(
+  options: { input: unknown; path: readonly string[] },
+  organizationId: string
+): SaleRefusalCause | "other" {
+  if (options.path.join("/") !== "sale/confirm") {
+    return "other";
+  }
+  const { commandId } = (options.input ?? {}) as { commandId?: unknown };
+  return typeof commandId === "string" &&
+    saleMayBeOnServer(sessionStorageOrNull(), organizationId, commandId)
+    ? "sale_resent"
+    : "sale";
+}
 
 function createPolarisRpcClient(origin: string): PolarisRpcClient {
   const link = new RPCLink({
@@ -32,10 +51,7 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
           ? requestedOrganizationId(options.input)
           : null;
         if (closedId !== null) {
-          markOrganizationClosed(
-            closedId,
-            options.path.join("/") === "sale/confirm" ? "sale" : "other"
-          );
+          markOrganizationClosed(closedId, closedCause(options, closedId));
         } else if (rpcErrorCode(error) === "UNAUTHORIZED") {
           endSessionHere();
         } else if (isLegalAcceptanceRefusal(error)) {

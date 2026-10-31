@@ -19,7 +19,11 @@ function attemptKey(organizationId: string): string {
   return `${KEY_PREFIX}${organizationId}`;
 }
 
-type StoredAttempt = SaleAttempt & { unsettled?: boolean };
+type StoredAttempt = SaleAttempt & {
+  /** An earlier try of this same command was sent and never answered: the server may have recorded it. */
+  earlierUnanswered?: boolean;
+  unsettled?: boolean;
+};
 
 function isAttempt(value: unknown): value is StoredAttempt {
   if (typeof value !== "object" || value === null) {
@@ -129,21 +133,58 @@ export function readSaleAttempt(
   );
 }
 
+function storedAttemptOf(
+  storage: PreferenceStorage | null,
+  organizationId: string
+): StoredAttempt | null {
+  try {
+    const text = storage?.getItem(attemptKey(organizationId));
+    const parsed: unknown = text ? JSON.parse(text) : null;
+    return isAttempt(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Stores the attempt, or forgets it when null. `unsettled` while it is sent or its outcome is unknown. Failure only
- * loses the safety net.
+ * Whether the server may already hold the sale of this command: it was sent once and never answered (a mark that
+ * outlives the settling of the attempt by a refusal), or the storage cannot say, which is no proof that it was not.
+ */
+export function saleMayBeOnServer(
+  storage: PreferenceStorage | null,
+  organizationId: string,
+  commandId: string
+): boolean {
+  const stored = storedAttemptOf(storage, organizationId);
+  return stored?.commandId !== commandId || stored.earlierUnanswered === true;
+}
+
+/**
+ * Stores the attempt, or forgets it when null. `unsettled` while it is sent or its outcome is unknown; `sending` marks
+ * the write made as the command leaves, which is what tells a second try of an unanswered command from its first.
+ * Failure only loses the safety net.
  */
 export function writeSaleAttempt(
   storage: PreferenceStorage | null,
   organizationId: string,
   attempt: SaleAttempt | null,
-  unsettled = false
+  unsettled = false,
+  sending = false
 ): void {
   try {
     if (attempt === null) {
       storage?.removeItem(attemptKey(organizationId));
     } else {
-      const stored: StoredAttempt = { ...attempt, unsettled };
+      const previous = storedAttemptOf(storage, organizationId);
+      const earlierUnanswered =
+        previous?.commandId === attempt.commandId &&
+        (previous.earlierUnanswered === true ||
+          (sending && previous.unsettled === true));
+      const stored: StoredAttempt = {
+        ...attempt,
+        ...(earlierUnanswered ? { earlierUnanswered } : {}),
+        unsettled,
+      };
       storage?.setItem(attemptKey(organizationId), JSON.stringify(stored));
     }
   } catch {
