@@ -764,6 +764,13 @@
       "when": 1793465700000,
       "tag": "0109_purge_menores",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1793480000000,
+      "tag": "0110_purge_parado_sem_log",
+      "breakpoints": true
     }
   ]
 }
