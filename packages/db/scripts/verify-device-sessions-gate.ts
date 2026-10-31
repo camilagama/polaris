@@ -32,6 +32,7 @@ import {
   raceBehindLock,
   raceRounds,
 } from "./concurrency-support";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   type Database,
@@ -1422,9 +1423,6 @@ async function run() {
     const rolledBack = async (body: () => Promise<void>) => {
       await ownerClient.query("BEGIN");
       try {
-        await ownerClient.query(
-          `GRANT ${ownerRole} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
-        );
         await body();
       } finally {
         await ownerClient.query("ROLLBACK");
@@ -1443,9 +1441,9 @@ async function run() {
             "SELECT set_config('app.owner_scope.device_session_user_id', $1, true), set_config('app.user_id', $2, true)",
             [tenantA.userId, appUser]
           );
-          await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
-          const deleted = await ownerClient.query("DELETE FROM public.session");
-          await ownerClient.query("RESET ROLE");
+          const deleted = await withGateRole(ownerClient, ownerRole, () =>
+            ownerClient.query("DELETE FROM public.session")
+          );
           assert.equal(deleted.rowCount, sessionsOfA, "only the sessions of A");
           assert.equal(await countOf(tenantA.userId), 0);
           assert.equal(await countOf(tenantB.userId), sessionsOfB, "B intact");
@@ -1456,17 +1454,18 @@ async function run() {
         await ownerClient.query("SELECT set_config('app.user_id', $1, true)", [
           tenantA.userId,
         ]);
-        await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
-        const seen = await ownerClient.query<{ count: string }>(
-          "SELECT count(*)::text AS count FROM public.session"
-        );
-        assert.equal(seen.rows[0]?.count, "0");
-        const deleted = await ownerClient.query("DELETE FROM public.session");
-        assert.equal(deleted.rowCount, 0);
-        const devicesSeen = await ownerClient.query<{ count: string }>(
-          "SELECT (SELECT count(*) FROM public.devices) + (SELECT count(*) FROM public.device_sessions) AS count"
-        );
-        assert.equal(devicesSeen.rows[0]?.count, "0");
+        await withGateRole(ownerClient, ownerRole, async () => {
+          const seen = await ownerClient.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM public.session"
+          );
+          assert.equal(seen.rows[0]?.count, "0");
+          const deleted = await ownerClient.query("DELETE FROM public.session");
+          assert.equal(deleted.rowCount, 0);
+          const devicesSeen = await ownerClient.query<{ count: string }>(
+            "SELECT (SELECT count(*) FROM public.devices) + (SELECT count(*) FROM public.device_sessions) AS count"
+          );
+          assert.equal(devicesSeen.rows[0]?.count, "0");
+        });
       });
 
       // the body of the function changed in a transaction rolled back, called by the tenant runtime as in production
@@ -1514,22 +1513,20 @@ async function run() {
             await ownerClient.query(
               `GRANT CREATE ON SCHEMA public TO ${ownerRole}`
             );
-            await ownerClient.query(`SET LOCAL ROLE ${ownerRole}`);
-            await ownerClient.query(body);
-            await ownerClient.query("RESET ROLE");
+            await withGateRole(ownerClient, ownerRole, () =>
+              ownerClient.query(body)
+            );
           }
-          await ownerClient.query(
-            `GRANT ${runtimeRole} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
-          );
           await ownerClient.query(
             "SELECT set_config('app.user_id', $1, true)",
             [tenantA.userId]
           );
-          await ownerClient.query(`SET LOCAL ROLE ${runtimeRole}`);
           const call = () =>
-            ownerClient.query<{ ended_session_count: number }>(
-              "SELECT * FROM public.end_device_sessions($1::uuid, NULL, false, false, NULL)",
-              [deviceId]
+            withGateRole(ownerClient, runtimeRole, () =>
+              ownerClient.query<{ ended_session_count: number }>(
+                "SELECT * FROM public.end_device_sessions($1::uuid, NULL, false, false, NULL)",
+                [deviceId]
+              )
             );
           if (label === "no set_config of the scope") {
             // the owner sees no device of the user, so the revoked device is refused: the body fails closed, loudly
@@ -1545,7 +1542,6 @@ async function run() {
             return;
           }
           const ended = await call();
-          await ownerClient.query("RESET ROLE");
           assert.equal(
             await countOf(tenantB.userId),
             sessionsOfB,

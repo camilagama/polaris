@@ -19,14 +19,14 @@ import {
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
 import { createDatabase } from "@polaris/db/client";
-import { createCustomer } from "@polaris/db/customer-repository";
-import { requestDataExport } from "@polaris/db/data-export-repository";
-import { requestOrganizationClosure } from "@polaris/db/organization-closure-repository";
-import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
   type ClosureNoticeRecipientClient,
   createClosureNoticeRecipientClient,
 } from "@polaris/db/closure-notice-recipient";
+import { createCustomer } from "@polaris/db/customer-repository";
+import { requestDataExport } from "@polaris/db/data-export-repository";
+import { requestOrganizationClosure } from "@polaris/db/organization-closure-repository";
+import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
   PURGE_BILLING_FACT_KEYS,
   PURGE_CASCADED_TABLES,
@@ -36,13 +36,14 @@ import {
   PURGE_TABLES_WITHOUT_TENANT_DATA,
 } from "@polaris/db/purge-datasets";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
-import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
 import { PRIVACY_DATA_CATEGORIES } from "@polaris/domain/admin/privacy-case";
+import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
 } from "@polaris/domain/privacy/organization-purge";
+import { withGateRole } from "../../../packages/db/scripts/gate-roles";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -61,15 +62,15 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
-import { verifyClosureNoticeEmail } from "./closure-notice-email-checks";
+import { runDataExports } from "../src/server/privacy/data-export-job";
+import { createRequesterReader } from "../src/server/privacy/data-export-reader";
+import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import { verifyClosureNotices } from "./closure-notice-checks";
+import { verifyClosureNoticeEmail } from "./closure-notice-email-checks";
 import {
   deliverClosureNotice,
   verifyAutomaticPurge,
 } from "./organization-purge-automatic-checks";
-import { runDataExports } from "../src/server/privacy/data-export-job";
-import { createRequesterReader } from "../src/server/privacy/data-export-reader";
-import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 
 /**
  * The full purge of a closed organization on a real PostgreSQL 18 (plan PR107, ADR 0081 and 0102), with the
@@ -368,8 +369,9 @@ async function queryAs(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL ROLE ${role}`);
-    return await client.query(statement, values);
+    return await withGateRole(client, role, () =>
+      client.query(statement, values)
+    );
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
@@ -430,11 +432,12 @@ async function expectCancellationsAppendOnly(pool: {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("SET LOCAL ROLE polaris_admin_owner");
-      await expectSqlState(
-        () => client.query(statement),
-        "42501",
-        `the history is append-only: ${statement}`
+      await withGateRole(client, "polaris_admin_owner", () =>
+        expectSqlState(
+          () => client.query(statement),
+          "42501",
+          `the history is append-only: ${statement}`
+        )
       );
     } finally {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -463,9 +466,12 @@ async function raceCancellationAgainstMark(
   let outcome: Promise<unknown>;
   try {
     await marker.query("BEGIN");
-    await marker.query(
-      "SELECT public.mark_organization_purge_storage_touched($1)",
-      [organizationId]
+    // as the privacy runtime, the only role the function grants EXECUTE, inside the transaction the race holds open
+    await withGateRole(marker, "polaris_privacy_runtime", () =>
+      marker.query(
+        "SELECT public.mark_organization_purge_storage_touched($1)",
+        [organizationId]
+      )
     );
     await new Promise((resolve) => setTimeout(resolve, 2500));
     outcome = cancel().then(
@@ -520,14 +526,17 @@ async function raceMarkAgainstCancellation(
   let outcome: Promise<unknown>;
   try {
     await canceller.query("BEGIN");
-    await canceller.query(
-      "SELECT public.admin_cancel_organization_purge($1, $2, $3, $4)",
-      [
-        cancellation.principalId,
-        cancellation.caseId,
-        cancellation.organizationId,
-        cancellation.reason,
-      ]
+    // as the Admin runtime, the only role the function grants EXECUTE; the lease below is the owner's fixture
+    await withGateRole(canceller, "polaris_admin_runtime", () =>
+      canceller.query(
+        "SELECT public.admin_cancel_organization_purge($1, $2, $3, $4)",
+        [
+          cancellation.principalId,
+          cancellation.caseId,
+          cancellation.organizationId,
+          cancellation.reason,
+        ]
+      )
     );
     await canceller.query(
       "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
@@ -1027,13 +1036,13 @@ async function run() {
       // a charge whose fact carries the payer (a provider adapter that let it through), and a command without
       const billingFact = {
         ...PAYER_FACT,
-        // a kept key whose value is not a plain value goes too (a nested payer)
-        transition: { payer: PAYER_FACT.customerName },
         amount: "24.90",
         currency: "BRL",
         cycleMonths: 1,
         occurredAt: "2026-09-01T12:00:00.000Z",
         periodEndsAt: "2026-10-01T12:00:00.000Z",
+        // a kept key whose value is not a plain value goes too (a nested payer)
+        transition: { payer: PAYER_FACT.customerName },
         type: "charge_succeeded",
       };
       await owner.pool.query(
@@ -2257,8 +2266,9 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SET LOCAL ROLE polaris_purge_owner");
-        return await client.query(statement, values);
+        return await withGateRole(client, "polaris_purge_owner", () =>
+          client.query(statement, values)
+        );
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
@@ -2306,8 +2316,9 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SET LOCAL ROLE polaris_purge_owner");
-        await client.query(statement, values);
+        await withGateRole(client, "polaris_purge_owner", () =>
+          client.query(statement, values)
+        );
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
@@ -2810,8 +2821,8 @@ async function run() {
       await maintenance.purgeOrganizationData(target.organizationId),
       {
         alreadyPurged: true,
-        pseudonymizedBillingEvents: 0,
         deletedRows: 0,
+        pseudonymizedBillingEvents: 0,
         scrubbedTexts: 0,
       }
     );
