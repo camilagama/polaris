@@ -21,7 +21,8 @@ import {
 
 /**
  * Row security with FORCE on `"user"`, `account`, `verification` and `auth_security_audit_event` (migration 0098) on a real PostgreSQL 18. Every role enters through a login of its own (LOGIN, member of its group with INHERIT
- * and without SET), never through SET ROLE of the admin, who only builds the fixtures and the planted defects:
+ * and without SET), never through SET ROLE of the admin, who only builds the fixtures and the planted defects (a planted body
+ * lives only in the admin's rolled-back transaction, so there the call is made as the runtime group by withGateRole):
  *   1. the catalog: the five tables (session too) with row security enabled and forced, the exact policies (name,
  *      command, role, expressions, none TO PUBLIC), the exact grants of before, and the read-only checks of the
  *      definer-hardening gate clean; every value of `auth_security_audit_event_type` is classified, in exactly one of

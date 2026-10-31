@@ -28,7 +28,6 @@ import {
   restoreCategory,
 } from "../src/category-repository";
 import { createDatabase } from "../src/client";
-import { deleteOrganizationsWithAudit } from "./teardown-support";
 import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import {
   archiveProduct,
@@ -44,6 +43,8 @@ import {
 import { categories } from "../src/schema/category";
 import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
+import { becomeGateRole } from "./gate-roles";
+import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -53,7 +54,6 @@ const gateDatabase =
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
 const expectedHost = /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
-const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const rollbackMessagePattern = /intentional Gate 2 rollback/;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const errorStackLineBreak = /\r?\n/;
@@ -110,24 +110,6 @@ async function expectSqlState(
     },
     label
   );
-}
-
-async function ensureSetRole(
-  pool: ReturnType<typeof createDatabase>["pool"],
-  roleName: string
-): Promise<{ adminRole: string; canSet: boolean }> {
-  const result = await pool.query<{
-    adminRole: string;
-    canSet: boolean;
-  }>(
-    'SELECT current_user AS "adminRole", ' +
-      "pg_has_role(current_user, $1, 'SET') AS \"canSet\"",
-    [roleName]
-  );
-  const [row] = result.rows;
-  assert.ok(row);
-  assert.match(row.adminRole, sqlIdentifierPattern);
-  return { adminRole: row.adminRole, canSet: row.canSet };
 }
 
 async function expectForgedCategoryInsertDenied(
@@ -473,9 +455,8 @@ async function main() {
   const fixtureUsers: string[] = [];
   const fixtureOrganizations: string[] = [];
   let connected = false;
-  let adminRole: string | undefined;
-  let grantedRuntimeRole = false;
-  let grantedOnboardingRole = false;
+  // the owner's session acts as the tenant runtime, then the onboarding runtime, then the tenant runtime again
+  let releaseRole: ((failed?: boolean) => Promise<void>) | undefined;
   let passed = false;
 
   async function createUser(
@@ -1049,23 +1030,9 @@ async function main() {
       securityDefiner: true,
     });
 
-    const runtimeSet = await ensureSetRole(adminPool, runtimeRole);
-    ({ adminRole } = runtimeSet);
-    if (!runtimeSet.canSet) {
-      grantedRuntimeRole = true;
-      await adminPool.query(`GRANT ${runtimeRole} TO ${adminRole}`);
-    }
-    const onboardingSet = await ensureSetRole(adminPool, onboardingRole);
-    if (!onboardingSet.canSet) {
-      grantedOnboardingRole = true;
-      await adminPool.query(
-        `GRANT ${onboardingRole} TO ${onboardingSet.adminRole}`
-      );
-    }
-
     await runtimeClient.connect();
     connected = true;
-    await runtimeClient.query(`SET ROLE ${runtimeRole}`);
+    releaseRole = await becomeGateRole(runtimeClient, runtimeRole);
 
     const userA = await createUser("Gate 2 tenant A");
     const userB = await createUser("Gate 2 tenant B");
@@ -1093,8 +1060,8 @@ async function main() {
       "the tenant role cannot execute the onboarding writer"
     );
 
-    await runtimeClient.query("RESET ROLE");
-    await runtimeClient.query(`SET ROLE ${onboardingRole}`);
+    await releaseRole();
+    releaseRole = await becomeGateRole(runtimeClient, onboardingRole);
     const onboardingRequestId = randomUUID();
     const onboardingResult = await runtimeClient.query<{
       created: boolean;
@@ -1157,8 +1124,8 @@ async function main() {
       "42501",
       "the onboarding role has no direct table DML"
     );
-    await runtimeClient.query("RESET ROLE");
-    await runtimeClient.query(`SET ROLE ${runtimeRole}`);
+    await releaseRole();
+    releaseRole = await becomeGateRole(runtimeClient, runtimeRole);
 
     const onboardingMembership = await adminPool.query(
       "SELECT organization_id FROM public.memberships WHERE user_id = $1",
@@ -2795,23 +2762,9 @@ async function main() {
     );
   } finally {
     const cleanupErrors: unknown[] = [];
-    if (connected) {
+    if (connected && releaseRole) {
       try {
-        await runtimeClient.query("RESET ROLE");
-      } catch (error) {
-        cleanupErrors.push(error);
-      }
-    }
-    if (adminRole && grantedRuntimeRole) {
-      try {
-        await adminPool.query(`REVOKE ${runtimeRole} FROM ${adminRole}`);
-      } catch (error) {
-        cleanupErrors.push(error);
-      }
-    }
-    if (adminRole && grantedOnboardingRole) {
-      try {
-        await adminPool.query(`REVOKE ${onboardingRole} FROM ${adminRole}`);
+        await releaseRole();
       } catch (error) {
         cleanupErrors.push(error);
       }

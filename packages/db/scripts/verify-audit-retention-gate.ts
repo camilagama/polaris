@@ -24,6 +24,7 @@ import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import { requestOrganizationClosure } from "../src/organization-closure-repository";
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -100,7 +101,7 @@ async function run() {
   const scalar = async <T>(text: string, values: unknown[] = []) =>
     (await owner.pool.query<{ value: T }>(text, values)).rows[0]?.value;
 
-  /** One transaction as another role (the gate lets the owner `SET ROLE` to the NOLOGIN owners it tests). */
+  /** One transaction as another role (withGateRole, on the NOLOGIN owners it tests). */
   async function asRole<T>(
     role: string,
     work: (client: PoolClient) => Promise<T>,
@@ -109,8 +110,7 @@ async function run() {
     const client = await owner.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`SET LOCAL ROLE ${role}`);
-      const result = await work(client);
+      const result = await withGateRole(client, role, () => work(client));
       await client.query(options.commit === false ? "ROLLBACK" : "COMMIT");
       return result;
     } catch (error) {
@@ -603,17 +603,17 @@ async function run() {
     // ------------------------------------------- every registered type is accepted, with its class
     await rolledBack(async (client) => {
       const written = new Map<string, string>();
-      await client.query("SET LOCAL ROLE polaris_privacy_owner");
-      for (const eventType of Object.keys(TENANT_AUDIT_EVENT_TYPES)) {
-        const id = randomUUID();
-        await client.query(
-          `INSERT INTO ${AUDIT} (id, organization_id, actor_user_id, entity_type, entity_id, event_type)
+      await withGateRole(client, "polaris_privacy_owner", async () => {
+        for (const eventType of Object.keys(TENANT_AUDIT_EVENT_TYPES)) {
+          const id = randomUUID();
+          await client.query(
+            `INSERT INTO ${AUDIT} (id, organization_id, actor_user_id, entity_type, entity_id, event_type)
            VALUES ($1, $2, $3, 'organization', $4, $5)`,
-          [id, orgA.organizationId, orgA.userId, randomUUID(), eventType]
-        );
-        written.set(id, eventType);
-      }
-      await client.query("RESET ROLE");
+            [id, orgA.organizationId, orgA.userId, randomUUID(), eventType]
+          );
+          written.set(id, eventType);
+        }
+      });
       const classes = await client.query<{ event_class: string; id: string }>(
         `SELECT id, event_class FROM ${AUDIT} WHERE id = ANY($1::uuid[])`,
         [[...written.keys()]]
@@ -1265,16 +1265,18 @@ async function run() {
       await client.query(
         `CREATE POLICY audit_gate_retention_all ON ${AUDIT} FOR DELETE TO polaris_retention_owner USING (true)`
       );
-      await client.query("SET LOCAL ROLE polaris_retention_owner");
-      for (const target of [aLive, aVeryOld, ...heldRows]) {
-        await client.query("SAVEPOINT attempt");
-        await assert.rejects(
-          () => client.query(`DELETE FROM ${AUDIT} WHERE id = $1`, [target.id]),
-          (error: unknown) => (error as { code?: string }).code === "23514",
-          `${target.label}: the trigger refuses it for the retention owner too`
-        );
-        await client.query("ROLLBACK TO SAVEPOINT attempt");
-      }
+      await withGateRole(client, "polaris_retention_owner", async () => {
+        for (const target of [aLive, aVeryOld, ...heldRows]) {
+          await client.query("SAVEPOINT attempt");
+          await assert.rejects(
+            () =>
+              client.query(`DELETE FROM ${AUDIT} WHERE id = $1`, [target.id]),
+            (error: unknown) => (error as { code?: string }).code === "23514",
+            `${target.label}: the trigger refuses it for the retention owner too`
+          );
+          await client.query("ROLLBACK TO SAVEPOINT attempt");
+        }
+      });
     });
     // an UPDATE, an INSERT and a TRUNCATE are not in its privileges
     await expectSqlState(
