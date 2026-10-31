@@ -181,6 +181,15 @@ export interface PrivacyMaintenanceClient {
    */
   countPurgesHeldBack: () => Promise<number>;
   /**
+   * How many purges were claimed `minAttempts` times or more, did not finish and recorded no step (the storage
+   * touched, the rows purged) in the last `windowHours`: a purge that dies before it logs leaves only the attempts.
+   * Only the count leaves the database, never an organization.
+   */
+  countStalledOrganizationPurges: (
+    minAttempts: number,
+    windowHours: number
+  ) => Promise<number>;
+  /**
    * Schedules the purge of at most `limit` closed organizations whose D minus 7 local days arrived (ADR 0102),
    * skipping one under a legal hold, a live temporary access of the Admin, a cancellation of the Admin in this
    * closure or a renewal still alive.
@@ -391,6 +400,13 @@ export function createPrivacyMaintenanceClient(
         "SELECT public.count_purges_held_back() AS held_back"
       );
       return Number(result.rows[0]?.held_back ?? 0);
+    },
+    async countStalledOrganizationPurges(minAttempts, windowHours) {
+      const result = await pool.query<{ stalled: number }>(
+        "SELECT public.count_purges_stalled_without_progress($1::integer, $2::integer) AS stalled",
+        [minAttempts, windowHours]
+      );
+      return Number(result.rows[0]?.stalled ?? 0);
     },
     async scheduleClosedOrganizationPurges(limit) {
       const result = await pool.query<{

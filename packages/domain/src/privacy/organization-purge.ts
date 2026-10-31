@@ -34,6 +34,13 @@ export const ORGANIZATION_PURGE_LEASE_SECONDS = 15 * 60;
  */
 export const ORGANIZATION_PURGE_STALLED_ATTEMPTS = 3;
 
+/**
+ * A purge claimed at least `ORGANIZATION_PURGE_STALLED_ATTEMPTS` times, with no step recorded as done in this many
+ * hours, is stalled even when no run logged it: a run the Worker killed (time or CPU) or a lease that ran out writes
+ * no event, and only the attempts, which grow at the claim, show it.
+ */
+export const ORGANIZATION_PURGE_STALLED_WINDOW_HOURS = 24;
+
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class InvalidOrganizationIdError extends Error {
