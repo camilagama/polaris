@@ -494,7 +494,10 @@ function PanelTitle({
 }) {
   return (
     <h1
-      className={cn("font-semibold text-2xl/8 tracking-tight", className)}
+      className={cn(
+        "focus-ring font-semibold text-2xl/8 tracking-tight",
+        className
+      )}
       id={TITLE_ID}
       tabIndex={-1}
     >

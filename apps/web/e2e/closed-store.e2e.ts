@@ -399,8 +399,8 @@ for (const [label, failure] of [
     await expect(notice).toContainText(
       "Não deu para atualizar. O que está na tela é da última leitura."
     );
+    await expect.poll(() => calls.statuses).toBe(3);
     await reading.dispatchEvent("click");
-    expect(calls.statuses).toBe(3);
     release();
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(title(page)).toBeFocused();
