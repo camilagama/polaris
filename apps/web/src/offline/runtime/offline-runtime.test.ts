@@ -49,7 +49,7 @@ function world(options: { leaseHours?: number } = {}) {
   const server = new FakeCatalogServer();
   const network = { online: true };
   /** Whether a queue database exists on the browser, apart from the namespaces the registry lists. */
-  const disk = { outbox: false };
+  const disk = { failure: undefined as Error | undefined, outbox: false };
   let clock = new Date("2026-10-14T12:00:00.000Z");
   const calls = {
     issueLease: 0,
@@ -282,7 +282,10 @@ function world(options: { leaseHours?: number } = {}) {
         };
         return Promise.resolve(opened);
       },
-      outboxOnDisk: () => Promise.resolve(disk.outbox),
+      outboxOnDisk: () =>
+        disk.failure
+          ? Promise.reject(disk.failure)
+          : Promise.resolve(disk.outbox),
       purge: (_namespace, purgeOptions) => {
         purged.push(purgeOptions);
         return Promise.resolve();
@@ -890,6 +893,48 @@ describe("starting", () => {
   it("inspecting a logout does not take an empty registry for an empty browser while a queue database is on the disk", async () => {
     const w = world();
     w.disk.outbox = true;
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    expect(
+      await logoutDependencies(runtime, {
+        leave: () => undefined,
+        revoke: () => Promise.resolve({ endedCurrentSession: false }),
+        signOut,
+      })
+    ).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("inspecting a logout presumes the queue databases on the disk belong to the other people in the registry, so a signed-in user with no queue can leave", async () => {
+    const w = world();
+    w.keyValues.write(
+      "polaris.offline.namespaces",
+      JSON.stringify([{ organizationId, userId: "someone-else" }])
+    );
+    w.disk.outbox = true;
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: true,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    const dependencies = await logoutDependencies(runtime, {
+      leave: () => undefined,
+      revoke: () => Promise.resolve({ endedCurrentSession: false }),
+      signOut,
+    });
+    expect(dependencies?.workspaces).toEqual([]);
+    await dependencies?.signOut();
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("inspecting a logout keeps stopping when the disk cannot be read with the registry empty", async () => {
+    const w = world();
+    w.disk.failure = new Error("indexeddb_unavailable");
     const runtime = w.make();
     expect(await runtime.inspectLogout()).toEqual({
       readable: false,

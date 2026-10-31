@@ -711,7 +711,8 @@ export class OfflineRuntime {
       return { readable: false, workspaces: [] };
     }
     const workspaces: LogoutWorkspace[] = [];
-    for (const item of this.namespaces()) {
+    const registered = this.namespaces();
+    for (const item of registered) {
       if (item.userId === userId) {
         // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
         const workspace = await this.inspectedWorkspace(item, {
@@ -720,13 +721,21 @@ export class OfflineRuntime {
         workspaces.push(workspace);
       }
     }
-    if (workspaces.length === 0 && (await this.queueOnDiskUnseen())) {
+    if (
+      workspaces.length === 0 &&
+      registered.length === 0 &&
+      (await this.queueOnDiskUnseen())
+    ) {
       return { readable: false, workspaces: [] };
     }
     return { readable: true, workspaces };
   }
 
-  /** A failed look at the disk is no proof that it holds no queue. */
+  /**
+   * Only asked when the registry is empty: with namespaces of other people listed, the queue databases on the disk are
+   * presumed theirs, and an orphan queue beside theirs goes undetected (no worse than before this
+   * check existed). A failed look at the disk is no proof that it holds no queue.
+   */
   private async queueOnDiskUnseen(): Promise<boolean> {
     try {
       return await this.dependencies.outboxOnDisk();
