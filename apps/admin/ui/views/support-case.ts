@@ -127,7 +127,6 @@ export function supportCasesView(
     class: "field-error",
     hidden: "",
     id: "motivo-erro",
-    role: "alert",
   });
   const counter = dom.el(
     "p",

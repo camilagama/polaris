@@ -375,6 +375,26 @@ describe("monthKpis: sales", () => {
   });
 });
 
+describe("monthKpis: sales without any sale", () => {
+  const noSales = () => october(() => ({ netSales: "0.00", salesCount: 0 }));
+
+  it("says 'ainda' for the month still open, read at rest", () => {
+    const kpis = monthKpis(
+      september(),
+      noSales(),
+      TODAY,
+      { ...cards, netSales: "0.00", salesCount: 0 },
+      costs
+    );
+    expect(kpis.read(null).sales.count).toBe("Nenhuma venda ainda");
+  });
+
+  it("does not say 'ainda' for a day of the month already gone", () => {
+    const kpis = monthKpis(september(), noSales(), TODAY, cards, costs);
+    expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
+  });
+});
+
 describe("monthKpis: ticket", () => {
   it("divides the cumulative net by the cumulative count, half-up to the cent", () => {
     const first = (net: string) =>

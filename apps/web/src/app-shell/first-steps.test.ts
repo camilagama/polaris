@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   clearFirstSteps,
-  confirmedSaleWasFirst,
   deviceSaleKept,
   FIRST_STEPS_KEY,
   firstProductRegistered,
@@ -105,14 +104,14 @@ describe("the first steps of the menu", () => {
     deviceSaleKept("loja-b", store);
     deviceSaleKept("loja-a", store);
     expect(rememberedFirstSteps("loja-a", store)).toBe(2);
-    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
     expect(rememberedFirstSteps("loja-a", store)).toBeNull();
 
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
     deviceSaleKept("loja-a", store);
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
     expect(rememberedFirstSteps("loja-a", store)).toBe(2);
-    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
   });
 
   it("keep the sale kept on the device through a new read of the steps and a product registered, but only for its store", () => {
@@ -122,12 +121,12 @@ describe("the first steps of the menu", () => {
     rememberFirstSteps("loja-a", { firstProductId: null }, store);
     firstProductRegistered("loja-a", "p1", store);
     expect(rememberedFirstSteps("loja-a", store)).toBe(2);
-    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
 
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
     deviceSaleKept("loja-a", store);
     rememberFirstSteps("loja-b", { firstProductId: "p1" }, store);
-    expect(confirmedSaleWasFirst("loja-b", false, store)).toBe(true);
+    expect(firstSaleConfirmed("loja-b", store)).toBe(true);
   });
 
   it("keep nothing of a sale kept on the device when there are no steps to show", () => {
@@ -136,14 +135,15 @@ describe("the first steps of the menu", () => {
     expect(store.values.get(FIRST_STEPS_KEY)).toBeUndefined();
     rememberFirstSteps("loja-a", null, store);
     deviceSaleKept("loja-a", store);
-    expect(confirmedSaleWasFirst("loja-a", false, store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
   });
 
-  it("do not call a sale the server already had the first, and still end the steps", () => {
+  it("end the steps and call the sale the first even when it is the retry of an answer that never came, and only once", () => {
     const store = fakeStore();
     rememberFirstSteps("loja-a", { firstProductId: "p1" }, store);
-    expect(confirmedSaleWasFirst("loja-a", true, store)).toBe(false);
+    expect(firstSaleConfirmed("loja-a", store)).toBe(true);
     expect(rememberedFirstSteps("loja-a", store)).toBeNull();
+    expect(firstSaleConfirmed("loja-a", store)).toBe(false);
   });
 
   it("move to two of three when the first product is registered, for that store only", () => {

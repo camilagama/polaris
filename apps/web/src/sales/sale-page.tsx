@@ -21,10 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
-import {
-  confirmedSaleWasFirst,
-  deviceSaleKept,
-} from "../app-shell/first-steps";
+import { deviceSaleKept, firstSaleConfirmed } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
@@ -182,10 +179,7 @@ function firstSaleIdOf(
   submission: SubmissionState
 ): string | null {
   const confirmed = submission.phase === "confirmed" ? submission.sale : null;
-  const first = confirmedSaleWasFirst(
-    organizationId,
-    confirmed?.replayed ?? false
-  );
+  const first = firstSaleConfirmed(organizationId);
   return first && confirmed ? confirmed.saleId : null;
 }
 

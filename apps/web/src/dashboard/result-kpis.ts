@@ -197,6 +197,8 @@ interface ReadContext {
   atRest: boolean;
   cards: ResultKpiCards;
   date: string;
+  /** Whether the reading is of the period up to today, which has not ended: at rest, with the period reaching today. */
+  open: boolean;
   /** The period before as the `periodSummary` read it (it has the result of each day): what the result chip compares. */
   prior: Prior;
   /** The period before as `dailySales` read it (sales and counts only): what the chips of sales and ticket compare. */
@@ -208,9 +210,15 @@ interface ReadContext {
   whole: string;
 }
 
+/** "ainda" only for a period that is still open at its end; a closed one, or a day of it already gone, has none. */
+function noSalesText(open: boolean): string {
+  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+}
+
 function salesReading({
   atRest,
   cards,
+  open,
   priorSales,
   range,
   sum,
@@ -227,7 +235,7 @@ function salesReading({
   }
   const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: count === 0 ? "Nenhuma venda ainda" : salesCountText(count),
+    count: count === 0 ? noSalesText(open) : salesCountText(count),
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
@@ -374,6 +382,7 @@ export function resultKpis({
       atRest: index === null,
       cards,
       date,
+      open: index === null && period.to >= today,
       prior: priorResult(at),
       priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period

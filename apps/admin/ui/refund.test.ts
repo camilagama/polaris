@@ -248,8 +248,8 @@ describe("the refund area of the chosen store (AC-9)", () => {
       expect(field.getAttribute("aria-describedby")).toContain("motivo-erro");
       expect(field.getAttribute("aria-invalid")).toBe("true");
       expect(document.activeElement).toBe(field);
-      // the only alert on screen is the field's own, not the area's notice line
-      expect(alertOf(section)).toBe(byId(section, "motivo-erro"));
+      expect(error.hasAttribute("role")).toBe(false);
+      expect(alertOf(section)).toBeUndefined();
       expect(calls).toHaveLength(before);
       field.dispatch("input");
       expect(error.hasAttribute("hidden")).toBe(true);
@@ -289,8 +289,8 @@ describe("the refund area of the chosen store (AC-9)", () => {
     expect(byId(section, "motivo-erro").textContent).toBe(
       "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
     );
-    // the only alert on screen is the field's own, not the area's notice line
-    expect(alertOf(section)).toBe(byId(section, "motivo-erro"));
+    expect(byId(section, "motivo-erro").hasAttribute("role")).toBe(false);
+    expect(alertOf(section)).toBeUndefined();
   });
   it("turns the buttons back on and says the Admin failed when the list is not one", async () => {
     const { listCases, section } = await chosen([json({ next: null })]);
