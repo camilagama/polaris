@@ -4,7 +4,7 @@
 
 **Por quê:** um restore ressuscita o que já foi removido: um cliente anonimizado volta com nome, telefone, email e observações; uma organização purgada volta inteira. A [deletion ledger](../adr/0080-ledger-minimo-de-exclusoes.md) (`public.deletion_ledger`) é o registro mínimo (IDs opacos, tipo de registro, operação, instante) do que deve ser removido de novo. Regra de privacidade: **o restore reaplica o ledger antes de o ambiente ser reutilizado** ([privacidade](../business-rules/privacy.md)).
 
-> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`) foi ensaiado numa branch Neon descartável (31/10/2026, V12; três tentativas, só a terceira válida), e o que o ensaio achou está nos passos 2 e 2b e na conferência do passo 5. Os comandos do passo 2b (a reaplicação das ACLs, a conferência e a limpeza do preparo), **como estão escritos aqui, ainda não foram executados contra um banco**. Confira cada comando com atenção na primeira vez. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
+> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`) foi ensaiado numa branch Neon descartável (31/10/2026, V12; três tentativas, só a terceira válida), e o que o ensaio achou está nos passos 2 e 2b e na conferência do passo 5. Os comandos do passo 2b (a reaplicação das ACLs, a conferência e a limpeza do preparo), **como estão escritos aqui, ainda não foram executados contra um banco**: isso vale em especial para os comandos novos do passo 2b (`pg_restore -L` com `sed`, `has_function_privilege`, o hash com `acldefault` e o `set_option`). Confira cada comando com atenção na primeira vez. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
 
 ## Pré-requisitos de acesso
 
@@ -217,11 +217,15 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
    **Confira também que o isolamento entre lojas sobreviveu (RLS).** O `pg_restore` pode terminar sem erro e deixar uma tabela sem RLS forçado, uma política a menos ou um papel com `BYPASSRLS`; nesses casos uma loja passaria a ler os dados de outra. Rode as três consultas abaixo no ambiente restaurado e, as duas primeiras, também na origem, na mesma sessão com `SET search_path = pg_catalog;` (o texto das políticas depende do `search_path`). As migrations do passo 3 criam tabelas e políticas, então a linha de base muda conforme elas tenham ou não sido aplicadas: se o passo 3 **não** aplicou migration, compare com os valores da origem no instante do `pg_dump` (ou da origem, se ela não recebeu migration depois); se aplicou, rode as consultas 1 e 2 também no restaurado **antes do passo 3** (junto do hash das ACLs do passo 2b) e compare esses valores com os da origem no instante do `pg_dump`, e no passo 5 compare com um banco descartável migrado até o mesmo ponto. Nenhuma consulta usa URI, host ou segredo; a conexão é a do dono do banco, lida do ambiente, como no passo 2. Estas conferências não são cobertas pelo gate `deletion-ledger` e ainda não foram ensaiadas contra um restaurado.
 
-   1. **Tabelas do `public` com RLS ligado e forçado.** Os dois números (`tabelas` e `com_rls_forcado`) têm de ser **iguais aos da origem**:
+   1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da origem**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado:
 
       ```sql
       SELECT count(*) AS tabelas,
-             count(*) FILTER (WHERE c.relrowsecurity AND c.relforcerowsecurity) AS com_rls_forcado
+             count(*) FILTER (WHERE c.relrowsecurity AND c.relforcerowsecurity) AS com_rls_forcado,
+             md5(string_agg(
+               n.nspname || '.' || c.relname || ' ' || c.relrowsecurity::text
+               || ' ' || c.relforcerowsecurity::text,
+               E'\n' ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C")) AS hash_tabelas
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p');
       ```

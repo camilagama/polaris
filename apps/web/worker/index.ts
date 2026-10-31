@@ -343,6 +343,14 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           purgesHeldBack: report.purgesHeldBack,
         });
       }
+      if (report.stalledPurges > 0) {
+        // a purge claimed over and over with no step done: a run killed before its log leaves no event, so the
+        // count from the database stands in for it (the same signal, `purge-parado`; no organization is named)
+        logger.warn("organization_purge_stalled", {
+          source: "no_log",
+          stalledPurges: report.stalledPurges,
+        });
+      }
     } catch (error: unknown) {
       failures.push(error);
     }
